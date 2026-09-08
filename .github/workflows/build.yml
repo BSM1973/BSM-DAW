@@ -23,18 +23,30 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Verify application bundle
-        run: test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app"
-
-      - name: Prepare application artifact
         run: |
-          mkdir -p artifact
-          cp -R "build/BSM_DAW_artefacts/Release/BSM DAW.app" artifact/
-          test -d "artifact/BSM DAW.app/Contents/MacOS"
-          test -f "artifact/BSM DAW.app/Contents/MacOS/BSM DAW"
+          test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app/Contents/MacOS"
+          test -f "build/BSM_DAW_artefacts/Release/BSM DAW.app/Contents/MacOS/BSM DAW"
 
-      - name: Upload macOS application
+      - name: Package macOS application
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            "build/BSM_DAW_artefacts/Release/BSM DAW.app" \
+            "dist/BSM-DAW-macOS.zip"
+          hdiutil create \
+            -volname "BSM DAW" \
+            -srcfolder "build/BSM_DAW_artefacts/Release/BSM DAW.app" \
+            -ov \
+            -format UDZO \
+            "dist/BSM-DAW-macOS.dmg"
+          unzip -l "dist/BSM-DAW-macOS.zip"
+          hdiutil imageinfo "dist/BSM-DAW-macOS.dmg"
+
+      - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:
-          name: BSM-DAW-macOS
-          path: artifact/BSM DAW.app
+          name: BSM-DAW-macOS-Installer
+          path: dist/*
           if-no-files-found: error
