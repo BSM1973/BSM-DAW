@@ -4,29 +4,16 @@ class MainComponent::AudioSettingsWindow final : public juce::DocumentWindow
 {
 public:
     explicit AudioSettingsWindow(AudioEngine& engine)
-        : DocumentWindow("BSM DAW — Audio Settings",
-                         juce::Colour(0xff15181d),
-                         DocumentWindow::closeButton)
+        : DocumentWindow("BSM DAW — Audio Settings", juce::Colour(0xff15181d), DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar(true);
-        setContentOwned(new juce::AudioDeviceSelectorComponent(
-                            engine.getDeviceManager(),
-                            0, 2,
-                            1, 2,
-                            false,
-                            true,
-                            true,
-                            false),
-                        true);
+        setContentOwned(new juce::AudioDeviceSelectorComponent(engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false), true);
         setResizable(true, true);
         centreWithSize(620, 500);
         setVisible(false);
     }
 
-    void closeButtonPressed() override
-    {
-        setVisible(false);
-    }
+    void closeButtonPressed() override { setVisible(false); }
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsWindow)
@@ -91,16 +78,22 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> a)
     g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 
+    auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
+    g.setColour(juce::Colour(0xff252a31));
+    g.fillRoundedRectangle(importButton.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff454b54));
+    g.drawRoundedRectangle(importButton.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.drawText("IMPORT AUDIO", importButton, juce::Justification::centred);
+
     g.setFont(juce::Font(10.0f));
-    const auto deviceStatus = audioEngine.isInitialised()
-        ? audioEngine.getDeviceName()
-        : "AUDIO NOT AVAILABLE";
+    const auto deviceStatus = audioEngine.isInitialised() ? audioEngine.getDeviceName() : "AUDIO NOT AVAILABLE";
     g.setColour(audioEngine.isInitialised() ? juce::Colour(0xff72c58e) : juce::Colour(0xffd06b6b));
     g.drawText(deviceStatus, 925, 39, 300, 16, juce::Justification::left, true);
 
     g.setColour(juce::Colour(0xff858c96));
-    const auto format = juce::String(audioEngine.getSampleRate(), 0) + " Hz  •  "
-                      + juce::String(audioEngine.getBufferSize()) + " samples";
+    const auto format = juce::String(audioEngine.getSampleRate(), 0) + " Hz  •  " + juce::String(audioEngine.getBufferSize()) + " samples";
     g.drawText(format, 925, 55, 250, 16, juce::Justification::left);
 
     g.setFont(juce::Font(12.0f));
@@ -154,7 +147,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f));
-        g.drawText(i == 2 ? "MIDI Region" : "Audio Clip", clip.reduced(10), juce::Justification::centredLeft);
+
+        if (i == 0 && audioEngine.hasAudioFile())
+            g.drawText(audioEngine.getAudioFileName(), clip.reduced(10), juce::Justification::centredLeft, true);
+        else
+            g.drawText(i == 2 ? "MIDI Region" : "Audio Clip", clip.reduced(10), juce::Justification::centredLeft);
     }
 
     const float px = headerW + (float) playheadSeconds * 80.0f;
@@ -201,6 +198,32 @@ void MainComponent::openAudioSettings()
     audioSettingsWindow->toFront(true);
 }
 
+void MainComponent::openAudioFile()
+{
+    audioFileChooser = std::make_unique<juce::FileChooser>("Import audio file", juce::File{}, "*.wav;*.aif;*.aiff");
+    audioFileChooser->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this](const juce::FileChooser& chooser)
+        {
+            const auto file = chooser.getResult();
+            if (!file.existsAsFile())
+                return;
+
+            juce::String error;
+            if (!audioEngine.loadAudioFile(file, error))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "BSM DAW — Audio Import",
+                                                       error);
+                return;
+            }
+
+            isPlaying = false;
+            playheadSeconds = 0.0;
+            repaint();
+        });
+}
+
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     if (event.y >= 38 && event.y <= 66 && event.x >= 215 && event.x <= 271)
@@ -226,18 +249,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         openAudioSettings();
         return;
     }
+
+    if (event.x >= 1055 && event.x <= 1175 && event.y >= 10 && event.y <= 34)
+    {
+        openAudioFile();
+        return;
+    }
 }
 
 void MainComponent::timerCallback()
 {
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
-
-    // Keep the demo timeline bounded until real project/region transport is introduced.
-    if (playheadSeconds > 14.0)
-    {
-        audioEngine.resetTransport();
-        playheadSeconds = 0.0;
-    }
-
+    isPlaying = audioEngine.isPlaying();
     repaint();
 }
