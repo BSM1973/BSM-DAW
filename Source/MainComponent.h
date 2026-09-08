@@ -22,6 +22,7 @@ public:
         draggingClip = false;
         draggedTrack = -1;
     }
+    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     class AudioSettingsWindow;
@@ -50,6 +51,7 @@ private:
     float dragStartMouseX = 0.0f;
     double dragStartSeconds = 0.0;
     int mixerDragMode = 0;
+    bool keyboardFocusEnabled = (setWantsKeyboardFocus(true), true);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
