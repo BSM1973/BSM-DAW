@@ -2,6 +2,7 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <atomic>
+#include <cstdint>
 
 class AudioEngine final : private juce::AudioIODeviceCallback
 {
@@ -21,7 +22,10 @@ public:
     int getOutputChannels() const noexcept { return outputChannels.load(); }
     juce::String getLastError() const;
 
-    void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay); }
+    void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay, std::memory_order_relaxed); }
+    bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    void resetTransport() noexcept { transportSamples.store(0, std::memory_order_relaxed); }
+    double getCurrentTimeSeconds() const noexcept;
 
 private:
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -39,6 +43,7 @@ private:
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
+    std::atomic<std::int64_t> transportSamples { 0 };
     double phase = 0.0;
     double phaseIncrement = 0.0;
     mutable juce::CriticalSection stateLock;
