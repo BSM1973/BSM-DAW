@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "AudioEngine.h"
+#include <array>
 #include <vector>
 
 class MainComponent final : public juce::Component,
@@ -26,14 +27,15 @@ private:
     void drawMixer(juce::Graphics& g, juce::Rectangle<int> area);
     void openAudioSettings();
     void openAudioFile();
-    void rebuildWaveformCache();
+    void rebuildWaveformCache(int trackIndex);
     bool handleMixerMouse(const juce::MouseEvent& event);
 
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
     std::unique_ptr<juce::FileChooser> audioFileChooser;
-    std::vector<float> waveformMin;
-    std::vector<float> waveformMax;
+    std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMin;
+    std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMax;
+    int selectedTrack = 0;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
 
