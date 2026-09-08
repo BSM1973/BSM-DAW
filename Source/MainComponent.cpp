@@ -6,7 +6,7 @@ class MainComponent::AudioSettingsWindow final : public juce::DocumentWindow
 {
 public:
     explicit AudioSettingsWindow(AudioEngine& engine)
-        : DocumentWindow("BSM DAW - Audio Settings", juce::Colour(0xff15181d), DocumentWindow::closeButton)
+        : DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff15181d), DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar(true);
         setContentOwned(new juce::AudioDeviceSelectorComponent(engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false), true);
@@ -41,12 +41,38 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    // BSM DAW UI rule: every control and every text element gets its own explicit,
+    // LIBERTY UI RULE: every control and every text element gets its own explicit,
     // non-overlapping rectangle. Never paint text underneath an interactive control.
     g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
     g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(24.0f, juce::Font::bold));
-    g.drawText("BSM DAW", 22, 10, 170, 28, juce::Justification::left);
+
+    // Liberty logo: compact modern emblem + elegant handwritten wordmark.
+    const auto logoArea = juce::Rectangle<int>(16, 7, 166, 42);
+    g.setColour(juce::Colour(0xff69c9e8));
+    juce::Path emblem;
+    emblem.addEllipse(18.0f, 11.0f, 30.0f, 30.0f);
+    g.strokePath(emblem, juce::PathStrokeType(1.6f));
+    juce::Path wing;
+    wing.startNewSubPath(22.0f, 34.0f);
+    wing.cubicTo(27.0f, 28.0f, 29.0f, 18.0f, 34.0f, 13.0f);
+    wing.cubicTo(35.0f, 22.0f, 38.0f, 27.0f, 44.0f, 29.0f);
+    g.strokePath(wing, juce::PathStrokeType(2.0f));
+    juce::Path wave;
+    wave.startNewSubPath(21.0f, 31.0f);
+    wave.cubicTo(26.0f, 35.0f, 31.0f, 35.0f, 35.0f, 31.0f);
+    wave.cubicTo(38.0f, 28.0f, 41.0f, 27.0f, 45.0f, 28.0f);
+    g.strokePath(wave, juce::PathStrokeType(1.5f));
+    g.fillRoundedRectangle(24.0f, 21.0f, 2.5f, 9.0f, 1.0f);
+    g.fillRoundedRectangle(28.0f, 18.0f, 2.5f, 12.0f, 1.0f);
+    g.fillRoundedRectangle(32.0f, 16.0f, 2.5f, 14.0f, 1.0f);
+    g.fillRoundedRectangle(36.0f, 20.0f, 2.5f, 10.0f, 1.0f);
+
+    auto libertyFont = juce::Font("Brush Script MT", 30.0f, juce::Font::plain);
+    libertyFont.setPreferredFallbackFamilies({ "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Cursive" });
+    g.setColour(juce::Colours::white);
+    g.setFont(libertyFont);
+    g.drawText("Liberty", 53, 5, 125, 40, juce::Justification::left);
+
     const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
     for (int i = 0; i < 5; ++i)
     {
@@ -73,7 +99,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     for (auto r : { settingsButton, importButton }) { g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f); }
     g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred); g.drawText("IMPORT TO TRACK", importButton, juce::Justification::centred);
-    g.setFont(juce::Font(12.0f)); g.drawText("PROJECT  •  Untitled", getWidth() - 230, 40, 205, 24, juce::Justification::right);
 }
 
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
@@ -180,7 +205,7 @@ void MainComponent::openAudioFile()
         {
             const auto file = chooser.getResult(); if (!file.existsAsFile()) return;
             juce::String error;
-            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "BSM DAW - Audio Import", error, "OK"); return; }
+            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Audio Import", error, "OK"); return; }
             selectedTrack = trackToLoad; isPlaying = false; playheadSeconds = 0.0; rebuildWaveformCache(trackToLoad); repaint();
         });
 }
