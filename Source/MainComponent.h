@@ -15,6 +15,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
 
 private:
     class AudioSettingsWindow;
@@ -26,6 +27,7 @@ private:
     void openAudioSettings();
     void openAudioFile();
     void rebuildWaveformCache();
+    bool handleMixerMouse(const juce::MouseEvent& event);
 
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
