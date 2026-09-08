@@ -22,41 +22,62 @@ bool AudioEngine::initialise()
 
 void AudioEngine::shutdown()
 {
+    playing.store(false);
     if (initialised.exchange(false)) deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
-    sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0);
-    transportSamples.store(0, std::memory_order_relaxed);
-    audioFileLoaded.store(false, std::memory_order_relaxed);
-    audioFileLengthSeconds.store(0.0, std::memory_order_relaxed);
-    audioBuffer.reset(); audioFileNumSamples = 0;
+    sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0); transportSamples.store(0);
+    for (auto& track : tracks)
+    {
+        track.loaded.store(false, std::memory_order_release);
+        track.lengthSeconds.store(0.0);
+        track.buffer.reset(); track.numSamples = 0; track.fileName.clear();
+    }
 }
 
 juce::String AudioEngine::getDeviceName() const { const juce::ScopedLock lock(stateLock); return deviceName; }
 juce::String AudioEngine::getLastError() const { const juce::ScopedLock lock(stateLock); return lastError; }
 
+std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
+{
+    std::int64_t length = 0;
+    for (const auto& track : tracks) length = juce::jmax(length, track.numSamples);
+    return length;
+}
+
 void AudioEngine::setCurrentTimeSeconds(double seconds) noexcept
 {
-    const auto rate = sampleRate.load(std::memory_order_relaxed);
+    const auto rate = sampleRate.load();
     if (rate <= 0.0) return;
     const auto requested = static_cast<std::int64_t>(std::llround(juce::jmax(0.0, seconds) * rate));
-    const auto clamped = audioFileNumSamples > 0 ? juce::jlimit<std::int64_t>(0, audioFileNumSamples, requested) : juce::jmax<std::int64_t>(0, requested);
-    transportSamples.store(clamped, std::memory_order_relaxed);
+    const auto projectLength = getProjectLengthSamples();
+    transportSamples.store(projectLength > 0 ? juce::jlimit<std::int64_t>(0, projectLength, requested) : juce::jmax<std::int64_t>(0, requested));
 }
 
 double AudioEngine::getCurrentTimeSeconds() const noexcept
 {
-    const auto rate = sampleRate.load(std::memory_order_relaxed);
-    return rate > 0.0 ? static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate : 0.0;
+    const auto rate = sampleRate.load();
+    return rate > 0.0 ? static_cast<double>(transportSamples.load()) / rate : 0.0;
 }
 
-bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
+void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
+float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].gain.load() : 0.0f; }
+void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
+float AudioEngine::getTrackPan(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].pan.load() : 0.0f; }
+void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].muted.store(muted); }
+bool AudioEngine::isTrackMuted(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].muted.load(); }
+void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].solo.store(solo); }
+bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].solo.load(); }
+bool AudioEngine::isAnyTrackSolo() const noexcept { for (const auto& track : tracks) if (track.solo.load()) return true; return false; }
+
+bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error)
 {
     error.clear();
+    if (!isValidTrackIndex(trackIndex)) { error = "Invalid audio track."; return false; }
     if (!file.existsAsFile()) { error = "The selected audio file does not exist."; return false; }
     juce::AudioFormatManager formatManager; formatManager.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
     if (reader == nullptr) { error = "BSM DAW could not read this audio format. Use WAV, AIFF or AIF."; return false; }
-    const auto outputRate = sampleRate.load(std::memory_order_relaxed);
+    const auto outputRate = sampleRate.load();
     if (outputRate <= 0.0) { error = "No audio device is available."; return false; }
     if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) { error = "The selected audio file is too large to load into memory."; return false; }
     const auto inputSamples = static_cast<int>(reader->lengthInSamples);
@@ -75,79 +96,83 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
     if (std::abs(sourceRate - outputRate) > 0.01)
         for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.reset(); interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
     else newBuffer->makeCopyOf(*decodedBuffer);
-    playing.store(false, std::memory_order_relaxed); resetTransport();
-    if (initialised.load(std::memory_order_relaxed)) deviceManager.removeAudioCallback(this);
-    audioBuffer = std::move(newBuffer); audioFileNumSamples = outputSamples;
-    { const juce::ScopedLock lock(stateLock); audioFileName = file.getFileName(); lastError.clear(); }
-    audioFileLengthSeconds.store(static_cast<double>(audioFileNumSamples) / outputRate, std::memory_order_relaxed);
-    audioFileLoaded.store(true, std::memory_order_release);
-    if (initialised.load(std::memory_order_relaxed)) deviceManager.addAudioCallback(this);
+
+    const bool wasInitialised = initialised.load();
+    playing.store(false); resetTransport();
+    if (wasInitialised) deviceManager.removeAudioCallback(this);
+    auto& track = tracks[(size_t)trackIndex];
+    track.loaded.store(false, std::memory_order_release);
+    track.buffer = std::move(newBuffer);
+    track.numSamples = outputSamples;
+    track.fileName = file.getFileName();
+    track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate);
+    track.loaded.store(true, std::memory_order_release);
+    { const juce::ScopedLock lock(stateLock); lastError.clear(); }
+    if (wasInitialised) deviceManager.addAudioCallback(this);
     return true;
 }
 
-void AudioEngine::clearAudioFile()
+void AudioEngine::clearAudioTrack(int trackIndex)
 {
-    playing.store(false, std::memory_order_relaxed); resetTransport();
-    if (initialised.load(std::memory_order_relaxed)) deviceManager.removeAudioCallback(this);
-    audioFileLoaded.store(false, std::memory_order_release); audioFileLengthSeconds.store(0.0, std::memory_order_relaxed);
-    audioBuffer.reset(); audioFileNumSamples = 0;
-    { const juce::ScopedLock lock(stateLock); audioFileName.clear(); }
-    if (initialised.load(std::memory_order_relaxed)) deviceManager.addAudioCallback(this);
+    if (!isValidTrackIndex(trackIndex)) return;
+    const bool wasInitialised = initialised.load();
+    playing.store(false); resetTransport();
+    if (wasInitialised) deviceManager.removeAudioCallback(this);
+    auto& track = tracks[(size_t)trackIndex];
+    track.loaded.store(false, std::memory_order_release);
+    track.buffer.reset(); track.numSamples = 0; track.lengthSeconds.store(0.0); track.fileName.clear();
+    if (wasInitialised) deviceManager.addAudioCallback(this);
 }
 
-juce::String AudioEngine::getAudioFileName() const { const juce::ScopedLock lock(stateLock); return audioFileName; }
+bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].loaded.load(std::memory_order_acquire); }
+juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].fileName : juce::String{}; }
+double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].lengthSeconds.load() : 0.0; }
+const juce::AudioBuffer<float>* AudioEngine::getAudioBuffer(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].buffer.get() : nullptr; }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device == nullptr) return;
-    sampleRate.store(device->getCurrentSampleRate()); bufferSize.store(device->getCurrentBufferSizeSamples());
-    outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
-    const auto rate = device->getCurrentSampleRate(); phase = 0.0;
-    phaseIncrement = rate > 0.0 ? (440.0 * juce::MathConstants<double>::twoPi / rate) : 0.0;
+    sampleRate.store(device->getCurrentSampleRate()); bufferSize.store(device->getCurrentBufferSizeSamples()); outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
+    const auto rate = device->getCurrentSampleRate(); phase = 0.0; phaseIncrement = rate > 0.0 ? (440.0 * juce::MathConstants<double>::twoPi / rate) : 0.0;
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    const bool shouldPlay = playing.load(std::memory_order_relaxed);
-    if (!shouldPlay) { for (int ch = 0; ch < numOutputChannels; ++ch) if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples); return; }
+    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+    if (!playing.load()) return;
 
-    if (audioFileLoaded.load(std::memory_order_acquire) && audioBuffer != nullptr)
+    const auto position = transportSamples.load();
+    const auto projectLength = getProjectLengthSamples();
+    if (projectLength > 0)
     {
-        const auto position = transportSamples.load(std::memory_order_relaxed);
-        const auto available = juce::jmax<std::int64_t>(0, audioFileNumSamples - position);
-        const auto samplesToCopy = static_cast<int>(juce::jmin<std::int64_t>(numSamples, available));
-        const auto sourceChannels = audioBuffer->getNumChannels();
-        const auto muted = trackMuted.load(std::memory_order_relaxed);
-        const auto track = muted ? 0.0f : trackGain.load(std::memory_order_relaxed);
-        const auto master = masterGain.load(std::memory_order_relaxed);
-        const auto pan = trackPan.load(std::memory_order_relaxed);
-        const auto leftGain = track * master * (pan > 0.0f ? 1.0f - pan : 1.0f);
-        const auto rightGain = track * master * (pan < 0.0f ? 1.0f + pan : 1.0f);
-
-        for (int channel = 0; channel < numOutputChannels; ++channel)
+        const bool anySolo = isAnyTrackSolo();
+        for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
         {
-            auto* output = outputChannelData[channel]; if (output == nullptr) continue;
-            if (channel < 2 && sourceChannels > 0 && samplesToCopy > 0)
-            {
-                const auto sourceChannel = sourceChannels == 1 ? 0 : channel;
-                juce::FloatVectorOperations::copy(output, audioBuffer->getReadPointer(sourceChannel) + static_cast<int>(position), samplesToCopy);
-                juce::FloatVectorOperations::multiply(output, channel == 0 ? leftGain : rightGain, samplesToCopy);
-            }
-            else juce::FloatVectorOperations::clear(output, samplesToCopy);
-            if (samplesToCopy < numSamples) juce::FloatVectorOperations::clear(output + samplesToCopy, numSamples - samplesToCopy);
+            auto& track = tracks[(size_t)trackIndex];
+            if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load() || (anySolo && !track.solo.load()) || position >= track.numSamples) continue;
+            const auto samplesToMix = static_cast<int>(juce::jmin<std::int64_t>(numSamples, track.numSamples - position));
+            if (samplesToMix <= 0) continue;
+            const auto gain = track.gain.load(); const auto pan = track.pan.load();
+            const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+            const auto sourceChannels = track.buffer->getNumChannels(); const auto sourceOffset = static_cast<int>(position);
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0], track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1], track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
         }
-        if (samplesToCopy > 0) transportSamples.fetch_add(samplesToCopy, std::memory_order_relaxed);
-        if (samplesToCopy < numSamples) playing.store(false, std::memory_order_relaxed);
+        const auto master = masterGain.load();
+        for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
+        const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
+        if (advance > 0) transportSamples.fetch_add(advance);
+        if (position + advance >= projectLength) playing.store(false);
         return;
     }
 
-    const auto master = masterGain.load(std::memory_order_relaxed);
+    const auto master = masterGain.load();
     for (int channel = 0; channel < numOutputChannels; ++channel)
     {
         auto* output = outputChannelData[channel]; if (output == nullptr) continue;
         for (int sample = 0; sample < numSamples; ++sample) { output[sample] = static_cast<float>(0.05 * master * std::sin(phase)); phase += phaseIncrement; if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi; }
     }
-    transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    transportSamples.fetch_add(numSamples);
 }
 
-void AudioEngine::audioDeviceStopped() { playing.store(false, std::memory_order_relaxed); }
+void AudioEngine::audioDeviceStopped() { playing.store(false); }
