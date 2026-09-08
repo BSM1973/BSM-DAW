@@ -105,7 +105,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         {
             const auto desiredWidth = static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)) + 8;
             clip.setWidth(juce::jlimit(242, 1100, desiredWidth));
-            g.setColour(juce::Colour(0xff31506a)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+            clip.setX(headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond)) + 20);
+            g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
             g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
             if (!waveformMin[(size_t)i].empty())
             {
@@ -125,6 +126,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 waveform.closeSubPath(); g.setColour(juce::Colour(0xff9fc7e8)); g.fillPath(waveform);
             }
             g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
+            if (i == selectedTrack) { g.setColour(juce::Colour(0xffb9d9f0)); g.setFont(juce::Font(9.0f)); g.drawText("DRAG TO MOVE", clip.getX() + 8, clip.getBottom() - 16, 90, 12, juce::Justification::left); }
         }
         else
         {
@@ -182,73 +184,116 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { repaint(); }
+void MainComponent::resized() {}
+
+void MainComponent::timerCallback()
+{
+    playheadSeconds = audioEngine.getCurrentTimeSeconds();
+    isPlaying = audioEngine.isPlaying();
+    repaint();
+}
+
+void MainComponent::openAudioSettings()
+{
+    if (!audioSettingsWindow) audioSettingsWindow = std::make_unique<AudioSettingsWindow>(audioEngine);
+    audioSettingsWindow->setVisible(true);
+    audioSettingsWindow->toFront(true);
+}
 
 void MainComponent::rebuildWaveformCache(int trackIndex)
 {
     if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks) return;
     waveformMin[(size_t)trackIndex].clear(); waveformMax[(size_t)trackIndex].clear();
     const auto* buffer = audioEngine.getAudioBuffer(trackIndex);
-    if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
-    constexpr int numPoints = 1200;
-    auto& minCache = waveformMin[(size_t)trackIndex]; auto& maxCache = waveformMax[(size_t)trackIndex];
-    minCache.resize(numPoints, 0.0f); maxCache.resize(numPoints, 0.0f);
-    const auto totalSamples = buffer->getNumSamples(); const auto channels = buffer->getNumChannels();
-    for (int point = 0; point < numPoints; ++point)
+    if (buffer == nullptr || buffer->getNumSamples() <= 0) return;
+    constexpr int points = 900;
+    waveformMin[(size_t)trackIndex].resize(points);
+    waveformMax[(size_t)trackIndex].resize(points);
+    const auto* left = buffer->getReadPointer(0);
+    const int samples = buffer->getNumSamples();
+    for (int p = 0; p < points; ++p)
     {
-        const auto start = static_cast<int>((static_cast<std::int64_t>(point) * totalSamples) / numPoints);
-        const auto end = static_cast<int>((static_cast<std::int64_t>(point + 1) * totalSamples) / numPoints);
-        const auto safeEnd = juce::jmax(start + 1, end); float minValue = 0.0f, maxValue = 0.0f;
-        for (int sample = start; sample < safeEnd && sample < totalSamples; ++sample)
-            for (int channel = 0; channel < channels; ++channel) { const auto value = buffer->getSample(channel, sample); minValue = std::min(minValue, value); maxValue = std::max(maxValue, value); }
-        minCache[(size_t)point] = juce::jlimit(-1.0f, 1.0f, minValue); maxCache[(size_t)point] = juce::jlimit(-1.0f, 1.0f, maxValue);
+        const int start = (p * samples) / points;
+        const int end = juce::jmax(start + 1, ((p + 1) * samples) / points);
+        float mn = 0.0f, mx = 0.0f;
+        for (int s = start; s < juce::jmin(end, samples); ++s) { mn = juce::jmin(mn, left[s]); mx = juce::jmax(mx, left[s]); }
+        waveformMin[(size_t)trackIndex][(size_t)p] = mn;
+        waveformMax[(size_t)trackIndex][(size_t)p] = mx;
     }
-}
-
-void MainComponent::openAudioSettings()
-{
-    if (audioSettingsWindow == nullptr) audioSettingsWindow = std::make_unique<AudioSettingsWindow>(audioEngine);
-    audioSettingsWindow->centreWithSize(620, 500); audioSettingsWindow->setVisible(true); audioSettingsWindow->toFront(true);
 }
 
 void MainComponent::openAudioFile()
 {
     const int trackToLoad = selectedTrack;
-    audioFileChooser = std::make_unique<juce::FileChooser>("Import audio into Audio " + juce::String(trackToLoad + 1), juce::File{}, "*.wav;*.aif;*.aiff");
+    audioFileChooser = std::make_unique<juce::FileChooser>("Import audio file", juce::File{}, "*.wav;*.aif;*.aiff");
     audioFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this, trackToLoad](const juce::FileChooser& chooser)
         {
-            const auto file = chooser.getResult(); if (!file.existsAsFile()) return;
+            const auto file = chooser.getResult();
+            if (!file.existsAsFile()) return;
             juce::String error;
-            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "BSM DAW - Audio Import", error); return; }
-            isPlaying = false; playheadSeconds = 0.0; rebuildWaveformCache(trackToLoad); repaint();
+            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "BSM DAW - Audio Import", error, "OK");
+                return;
+            }
+            rebuildWaveformCache(trackToLoad);
+            selectedTrack = trackToLoad;
+            repaint();
         });
+}
+
+int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
+{
+    constexpr int rulerH = 32, rowH = 70;
+    const int y = position.y - 76 - rulerH;
+    if (y < 0) return -1;
+    const int track = y / rowH;
+    return track >= 0 && track < AudioEngine::maxAudioTracks ? track : -1;
+}
+
+bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const
+{
+    if (trackIndex < 0 || !audioEngine.hasAudioFile(trackIndex)) return false;
+    constexpr int headerW = 210, rulerH = 32, rowH = 70;
+    constexpr float pixelsPerSecond = 80.0f;
+    const int rowY = 76 + rulerH + trackIndex * rowH;
+    const int x = headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond)) + 20;
+    const int width = juce::jlimit(242, 1100, static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)) + 8);
+    return juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(position);
 }
 
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
     const int mixerTop = getHeight() - 210;
-    if (event.y < mixerTop + 12 || event.y > getHeight() - 10) return false;
+    if (event.y < mixerTop) return false;
     for (int i = 0; i < AudioEngine::maxAudioTracks + 1; ++i)
     {
-        const int x = 220 + i * 125; const int y = mixerTop + 12;
-        if (event.x < x || event.x > x + 116) continue;
-        const bool master = i == AudioEngine::maxAudioTracks;
-        if (!master)
+        auto c = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
+        if (!c.contains(event.getPosition())) continue;
+        if (i < AudioEngine::maxAudioTracks)
         {
-            if (event.y >= y + 32 && event.y <= y + 52 && event.x >= x + 8 && event.x <= x + 52) { audioEngine.setTrackMuted(i, !audioEngine.isTrackMuted(i)); repaint(); return true; }
-            if (event.y >= y + 32 && event.y <= y + 52 && event.x >= x + 58 && event.x <= x + 102) { audioEngine.setTrackSolo(i, !audioEngine.isTrackSolo(i)); repaint(); return true; }
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            if (event.mouseDownPosition.getDistanceFromOrigin() <= 100000.0f)
+            {
+                if (mute.contains(event.getPosition()) && event.mouseDownPosition == event.getPosition()) { audioEngine.setTrackMuted(i, !audioEngine.isTrackMuted(i)); repaint(); return true; }
+                if (solo.contains(event.getPosition()) && event.mouseDownPosition == event.getPosition()) { audioEngine.setTrackSolo(i, !audioEngine.isTrackSolo(i)); repaint(); return true; }
+            }
         }
-        const int faderTop = y + 58; const int faderBottom = getHeight() - 67;
-        if (event.y >= faderTop && event.y <= faderBottom)
+        const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
+        if (event.getY() >= faderTop && event.getY() <= faderBottom)
         {
-            const auto normalized = juce::jlimit(0.0f, 1.0f, 1.0f - (float)(event.y - faderTop) / (float)juce::jmax(1, faderBottom - faderTop));
-            if (master) audioEngine.setMasterGain(normalized * 2.0f); else audioEngine.setTrackGain(i, normalized * 2.0f);
+            const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.y) / (float)(faderBottom - faderTop));
+            const float gain = n * 2.0f;
+            if (i == AudioEngine::maxAudioTracks) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(i, gain);
             repaint(); return true;
         }
-        if (!master && event.y >= getHeight() - 55 && event.y <= getHeight() - 28)
+        if (event.getY() >= c.getBottom() - 28)
         {
-            audioEngine.setTrackPan(i, juce::jlimit(-1.0f, 1.0f, ((float)event.x - (float)(x + 58)) / 58.0f)); repaint(); return true;
+            const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.x - (float)c.getCentreX()) / 45.0f);
+            if (i < AudioEngine::maxAudioTracks) audioEngine.setTrackPan(i, pan);
+            repaint(); return true;
         }
     }
     return false;
@@ -256,29 +301,40 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
-    if (event.y >= 38 && event.y <= 66 && event.x >= 215 && event.x <= 271) { isPlaying = false; audioEngine.setPlaying(false); audioEngine.resetTransport(); playheadSeconds = 0.0; repaint(); return; }
-    if (event.y >= 38 && event.y <= 66 && event.x >= 339 && event.x <= 395) { isPlaying = !isPlaying; audioEngine.setPlaying(isPlaying); repaint(); return; }
-    if (event.x >= 925 && event.x <= 1045 && event.y >= 10 && event.y <= 34) { openAudioSettings(); return; }
-    if (event.x >= 1055 && event.x <= 1175 && event.y >= 10 && event.y <= 34) { openAudioFile(); return; }
-
+    const auto p = event.getPosition();
     if (handleMixerMouse(event)) return;
+    if (juce::Rectangle<int>(215, 38, 56, 28).contains(p)) { audioEngine.resetTransport(); playheadSeconds = 0.0; isPlaying = false; audioEngine.setPlaying(false); repaint(); return; }
+    if (juce::Rectangle<int>(339, 38, 56, 28).contains(p)) { isPlaying = !isPlaying; audioEngine.setPlaying(isPlaying); repaint(); return; }
+    if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
+    if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
 
-    constexpr int headerW = 210, rulerH = 32, rowH = 70;
-    if (event.y >= 76 + rulerH && event.y < 76 + rulerH + rowH * AudioEngine::maxAudioTracks && event.x < headerW)
+    const int track = getAudioTrackAtPosition(p);
+    if (track >= 0)
     {
-        const int track = (event.y - (76 + rulerH)) / rowH;
-        if (track >= 0 && track < AudioEngine::maxAudioTracks) { selectedTrack = track; repaint(); return; }
+        selectedTrack = track;
+        if (isPointInsideAudioClip(track, p))
+        {
+            draggingClip = true; draggedTrack = track; dragStartMouseX = (float)p.x; dragStartSeconds = audioEngine.getTrackStartSeconds(track);
+        }
+        repaint(); return;
     }
-    if (event.x >= headerW && event.y >= 76 && event.y < 76 + rulerH + rowH * AudioEngine::maxAudioTracks)
+
+    constexpr int headerW = 210, rulerH = 32;
+    if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
     {
-        audioEngine.setCurrentTimeSeconds(juce::jmax(0.0, (double)(event.x - headerW) / 80.0));
-        playheadSeconds = audioEngine.getCurrentTimeSeconds(); repaint();
+        const double seconds = juce::jmax(0.0, (p.x - headerW) / 80.0);
+        audioEngine.setCurrentTimeSeconds(seconds); playheadSeconds = audioEngine.getCurrentTimeSeconds(); repaint();
     }
 }
 
-void MainComponent::mouseDrag(const juce::MouseEvent& event) { handleMixerMouse(event); }
-
-void MainComponent::timerCallback()
+void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
-    playheadSeconds = audioEngine.getCurrentTimeSeconds(); isPlaying = audioEngine.isPlaying(); repaint();
+    if (draggingClip && draggedTrack >= 0)
+    {
+        constexpr float pixelsPerSecond = 80.0f;
+        const double deltaSeconds = ((double)event.position.x - (double)dragStartMouseX) / pixelsPerSecond;
+        audioEngine.setTrackStartSeconds(draggedTrack, juce::jmax(0.0, dragStartSeconds + deltaSeconds));
+        repaint(); return;
+    }
+    handleMixerMouse(event);
 }
