@@ -225,8 +225,66 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
     if (handleMixerMouse(event)) return;
-    if (juce::Rectangle<int>(215, 38, 56, 28).contains(p)) { audioEngine.resetTransport(); audioEngine.setPlaying(false); playheadSeconds = 0.0; isPlaying = false; repaint(); return; }
-    if (juce::Rectangle<int>(339, 38, 56, 28).contains(p)) { isPlaying = !isPlaying; audioEngine.setPlaying(isPlaying); repaint(); return; }
+
+    // |< : return to project start.
+    if (juce::Rectangle<int>(215, 38, 56, 28).contains(p))
+    {
+        audioEngine.resetTransport();
+        audioEngine.setPlaying(false);
+        playheadSeconds = 0.0;
+        isPlaying = false;
+        repaint();
+        return;
+    }
+
+    // < : move playhead backward by one second.
+    if (juce::Rectangle<int>(277, 38, 56, 28).contains(p))
+    {
+        const double newTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds() - 1.0);
+        audioEngine.setCurrentTimeSeconds(newTime);
+        playheadSeconds = newTime;
+        repaint();
+        return;
+    }
+
+    // PLAY / STOP.
+    if (juce::Rectangle<int>(339, 38, 56, 28).contains(p))
+    {
+        isPlaying = !isPlaying;
+        audioEngine.setPlaying(isPlaying);
+        repaint();
+        return;
+    }
+
+    // > : move playhead forward by one second, without exceeding project end.
+    if (juce::Rectangle<int>(401, 38, 56, 28).contains(p))
+    {
+        double projectEnd = 0.0;
+        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+            if (audioEngine.hasAudioFile(i))
+                projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
+        const double newTime = juce::jmin(projectEnd, audioEngine.getCurrentTimeSeconds() + 1.0);
+        audioEngine.setCurrentTimeSeconds(newTime);
+        playheadSeconds = newTime;
+        repaint();
+        return;
+    }
+
+    // |> : jump to the end of the project.
+    if (juce::Rectangle<int>(463, 38, 56, 28).contains(p))
+    {
+        double projectEnd = 0.0;
+        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+            if (audioEngine.hasAudioFile(i))
+                projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
+        audioEngine.setPlaying(false);
+        isPlaying = false;
+        audioEngine.setCurrentTimeSeconds(projectEnd);
+        playheadSeconds = projectEnd;
+        repaint();
+        return;
+    }
+
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
     if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
     const int track = getAudioTrackAtPosition(p);
