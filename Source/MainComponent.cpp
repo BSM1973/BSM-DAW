@@ -140,8 +140,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         auto clip = row.withTrimmedLeft(20).reduced(4);
         if (audioEngine.hasAudioFile(i))
         {
-            const auto desiredWidth = static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)) + 8;
-            clip.setWidth(juce::jlimit(242, 1100, desiredWidth));
+            const auto desiredWidth = juce::jmax(32, static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)) + 8);
+            clip.setWidth(desiredWidth);
             clip.setX(headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond)) + 20);
 
             g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459));
@@ -175,7 +175,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(11.0f));
             g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
-            if (i == selectedTrack)
+            if (i == selectedTrack && clip.getWidth() >= 110)
             {
                 g.setColour(juce::Colour(0xffb9d9f0));
                 g.setFont(juce::Font(9.0f));
@@ -373,7 +373,7 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
     constexpr float pixelsPerSecond = 80.0f;
     const int rowY = 76 + rulerH + trackIndex * rowH;
     const int x = headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond)) + 20;
-    const int width = juce::jlimit(242, 1100, static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)) + 8);
+    const int width = juce::jmax(32, static_cast<int>(std::ceil(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)) + 8);
     return juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(position);
 }
 
