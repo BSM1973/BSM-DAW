@@ -73,6 +73,21 @@ juce::String AudioEngine::getLastError() const
     return lastError;
 }
 
+void AudioEngine::setCurrentTimeSeconds(double seconds) noexcept
+{
+    const auto rate = sampleRate.load(std::memory_order_relaxed);
+    if (rate <= 0.0)
+        return;
+
+    const auto requestedSamples = static_cast<std::int64_t>(std::llround(juce::jmax(0.0, seconds) * rate));
+    const auto maxSamples = audioFileNumSamples;
+    const auto clampedSamples = maxSamples > 0
+        ? juce::jlimit<std::int64_t>(0, maxSamples, requestedSamples)
+        : juce::jmax<std::int64_t>(0, requestedSamples);
+
+    transportSamples.store(clampedSamples, std::memory_order_relaxed);
+}
+
 double AudioEngine::getCurrentTimeSeconds() const noexcept
 {
     const auto rate = sampleRate.load(std::memory_order_relaxed);
@@ -126,8 +141,6 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
         return false;
     }
 
-    // The hardware runs at the device sample rate. Imported files are converted
-    // offline before they reach the real-time audio callback.
     const auto sourceRate = reader->sampleRate;
     const auto sampleRateRatio = sourceRate / outputRate;
 
@@ -137,7 +150,6 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
         return false;
     }
 
-    // Floor guarantees that the interpolator never reads beyond the decoded input.
     const auto outputSamples64 = static_cast<std::int64_t>(
         std::floor(static_cast<double>(inputSamples) / sampleRateRatio));
 
