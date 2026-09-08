@@ -39,6 +39,8 @@ MainComponent::MainComponent()
     startTimerHz(30);
 }
 
+MainComponent::~MainComponent() = default;
+
 void MainComponent::paint(juce::Graphics& g)
 {
     auto b = getLocalBounds();
