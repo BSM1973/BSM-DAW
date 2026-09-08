@@ -46,32 +46,32 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
     g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
 
-    // Liberty logo: compact modern emblem + elegant handwritten wordmark.
-    const auto logoArea = juce::Rectangle<int>(16, 7, 166, 42);
+    // Liberty branding occupies the complete 182 x 66 header cell.
+    const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
     g.setColour(juce::Colour(0xff69c9e8));
     juce::Path emblem;
-    emblem.addEllipse(18.0f, 11.0f, 30.0f, 30.0f);
-    g.strokePath(emblem, juce::PathStrokeType(1.6f));
+    emblem.addEllipse(10.0f, 10.0f, 44.0f, 44.0f);
+    g.strokePath(emblem, juce::PathStrokeType(2.0f));
     juce::Path wing;
-    wing.startNewSubPath(22.0f, 34.0f);
-    wing.cubicTo(27.0f, 28.0f, 29.0f, 18.0f, 34.0f, 13.0f);
-    wing.cubicTo(35.0f, 22.0f, 38.0f, 27.0f, 44.0f, 29.0f);
-    g.strokePath(wing, juce::PathStrokeType(2.0f));
+    wing.startNewSubPath(16.0f, 43.0f);
+    wing.cubicTo(23.0f, 34.0f, 27.0f, 20.0f, 34.0f, 14.0f);
+    wing.cubicTo(36.0f, 27.0f, 41.0f, 35.0f, 50.0f, 38.0f);
+    g.strokePath(wing, juce::PathStrokeType(2.6f));
     juce::Path wave;
-    wave.startNewSubPath(21.0f, 31.0f);
-    wave.cubicTo(26.0f, 35.0f, 31.0f, 35.0f, 35.0f, 31.0f);
-    wave.cubicTo(38.0f, 28.0f, 41.0f, 27.0f, 45.0f, 28.0f);
-    g.strokePath(wave, juce::PathStrokeType(1.5f));
-    g.fillRoundedRectangle(24.0f, 21.0f, 2.5f, 9.0f, 1.0f);
-    g.fillRoundedRectangle(28.0f, 18.0f, 2.5f, 12.0f, 1.0f);
-    g.fillRoundedRectangle(32.0f, 16.0f, 2.5f, 14.0f, 1.0f);
-    g.fillRoundedRectangle(36.0f, 20.0f, 2.5f, 10.0f, 1.0f);
+    wave.startNewSubPath(14.0f, 39.0f);
+    wave.cubicTo(21.0f, 45.0f, 29.0f, 45.0f, 36.0f, 39.0f);
+    wave.cubicTo(41.0f, 34.0f, 47.0f, 33.0f, 52.0f, 35.0f);
+    g.strokePath(wave, juce::PathStrokeType(2.0f));
+    g.fillRoundedRectangle(18.0f, 25.0f, 3.5f, 14.0f, 1.5f);
+    g.fillRoundedRectangle(24.0f, 21.0f, 3.5f, 18.0f, 1.5f);
+    g.fillRoundedRectangle(30.0f, 18.0f, 3.5f, 21.0f, 1.5f);
+    g.fillRoundedRectangle(36.0f, 23.0f, 3.5f, 16.0f, 1.5f);
 
-    auto libertyFont = juce::Font("Brush Script MT", 30.0f, juce::Font::plain);
+    auto libertyFont = juce::Font("Brush Script MT", 43.0f, juce::Font::plain);
     libertyFont.setPreferredFallbackFamilies({ "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Cursive" });
     g.setColour(juce::Colours::white);
     g.setFont(libertyFont);
-    g.drawText("Liberty", 53, 5, 125, 40, juce::Justification::left);
+    g.drawText("Liberty", 61, 9, 115, 50, juce::Justification::left);
 
     const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
     for (int i = 0; i < 5; ++i)
