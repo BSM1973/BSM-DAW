@@ -59,17 +59,20 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Tempo and time-signature are interactive child controls supplied by TempoControls.
     // Do not draw duplicate BPM / meter text here.
+    const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+    const double beatsPerMeasure = (double) juce::jmax(1, timeSignatureNumerator);
+    const double secondsPerMeasure = secondsPerBeat * beatsPerMeasure;
+    const auto safeTime = juce::jmax(0.0, playheadSeconds);
+    const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
+    const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
     g.setFont(juce::Font(14.0f)); g.setColour(juce::Colour(0xffc9cdd3));
-    g.drawText(juce::String(playheadSeconds, 3) + " s", 750, 40, 160, 24, juce::Justification::centred);
+    g.drawText(juce::String(measure) + ":" + juce::String(beat), 750, 40, 160, 24, juce::Justification::centred);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
     for (auto r : { settingsButton, importButton }) { g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f); }
     g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred); g.drawText("IMPORT TO TRACK", importButton, juce::Justification::centred);
-    g.setFont(juce::Font(10.0f)); const auto deviceStatus = audioEngine.isInitialised() ? audioEngine.getDeviceName() : "AUDIO NOT AVAILABLE";
-    g.setColour(audioEngine.isInitialised() ? juce::Colour(0xff72c58e) : juce::Colour(0xffd06b6b)); g.drawText(deviceStatus, 925, 39, 300, 16, juce::Justification::left, true);
-    g.setColour(juce::Colour(0xff858c96)); g.drawText(juce::String(audioEngine.getSampleRate(), 0) + " Hz  •  " + juce::String(audioEngine.getBufferSize()) + " samples", 925, 55, 250, 16, juce::Justification::left);
     g.setFont(juce::Font(12.0f)); g.drawText("PROJECT  •  Untitled", getWidth() - 230, 40, 205, 24, juce::Justification::right);
 }
 
