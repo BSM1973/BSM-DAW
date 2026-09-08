@@ -23,9 +23,11 @@ private:
     void drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area);
     void drawMixer(juce::Graphics& g, juce::Rectangle<int> area);
     void openAudioSettings();
+    void openAudioFile();
 
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
+    std::unique_ptr<juce::FileChooser> audioFileChooser;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
 
