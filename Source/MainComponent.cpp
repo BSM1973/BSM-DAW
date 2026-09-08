@@ -329,6 +329,22 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
     if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
 
+    // LIBERTY TRANSPORT SNAP: by default, timeline positioning is magnetised to whole measures.
+    // The snap is based on the current BPM and time signature, so every bar remains musical.
+    constexpr int headerW = 210, rulerH = 32;
+    if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
+    {
+        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
+                                     * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+        const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
+        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
+        const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
+        audioEngine.setCurrentTimeSeconds(snappedTime);
+        playheadSeconds = snappedTime;
+        repaint();
+        return;
+    }
+
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
@@ -344,11 +360,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    constexpr int headerW = 210;
     if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
     {
-        audioEngine.setCurrentTimeSeconds(juce::jmax(0.0, (double)(p.x - headerW) / 80.0));
-        playheadSeconds = audioEngine.getCurrentTimeSeconds();
+        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
+                                     * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+        const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
+        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
+        const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
+        audioEngine.setCurrentTimeSeconds(snappedTime);
+        playheadSeconds = snappedTime;
         repaint();
     }
 }
