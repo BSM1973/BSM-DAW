@@ -124,7 +124,7 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
     }
 
     const auto numSamples = static_cast<int>(reader->lengthInSamples);
-    const auto numChannels = juce::jmax(1, juce::jmin(2, reader->numChannels));
+    const auto numChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
     auto newBuffer = std::make_unique<juce::AudioBuffer<float>>(numChannels, numSamples);
     newBuffer->clear();
 
