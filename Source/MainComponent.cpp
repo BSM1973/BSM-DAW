@@ -41,6 +41,8 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
+    // BSM DAW UI rule: every control and every text element gets its own explicit,
+    // non-overlapping rectangle. Never paint text underneath an interactive control.
     g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
     g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
     g.setColour(juce::Colours::white); g.setFont(juce::Font(24.0f, juce::Font::bold));
@@ -54,10 +56,12 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
+
+    // Tempo and time-signature are interactive child controls supplied by TempoControls.
+    // Do not draw duplicate BPM / meter text here.
     g.setFont(juce::Font(14.0f)); g.setColour(juce::Colour(0xffc9cdd3));
-    g.drawText("120.00 BPM", 560, 40, 110, 24, juce::Justification::centred);
-    g.drawText("4/4", 680, 40, 50, 24, juce::Justification::centred);
     g.drawText(juce::String(playheadSeconds, 3) + " s", 750, 40, 160, 24, juce::Justification::centred);
+
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
     for (auto r : { settingsButton, importButton }) { g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f); }
