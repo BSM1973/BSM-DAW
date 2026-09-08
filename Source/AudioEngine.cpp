@@ -132,6 +132,58 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.addAudioCallback(this);
 }
 
+bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error)
+{
+    error.clear();
+    newTrackIndex = -1;
+    if (!isValidTrackIndex(trackIndex) || !hasAudioFile(trackIndex)) { error = "Select a loaded audio clip first."; return false; }
+    const auto rate = sampleRate.load();
+    if (rate <= 0.0) { error = "No audio device is available."; return false; }
+    auto& source = tracks[(size_t)trackIndex];
+    const auto startSeconds = source.startSeconds.load();
+    const auto lengthSeconds = source.lengthSeconds.load();
+    const auto splitOffsetSeconds = splitProjectSeconds - startSeconds;
+    if (splitOffsetSeconds <= 0.01 || splitOffsetSeconds >= lengthSeconds - 0.01) { error = "Place the playhead inside the audio clip to split it."; return false; }
+    for (int i = 0; i < maxAudioTracks; ++i)
+        if (i != trackIndex && !tracks[(size_t)i].loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
+    if (newTrackIndex < 0) { error = "No empty audio track is available for the second clip segment."; return false; }
+
+    const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
+    if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
+    const auto rightSamples = source.numSamples - splitSample;
+    const auto channels = source.buffer->getNumChannels();
+    auto rightBuffer = std::make_unique<juce::AudioBuffer<float>>(channels, rightSamples);
+    rightBuffer->clear();
+    for (int channel = 0; channel < channels; ++channel)
+        rightBuffer->copyFrom(channel, 0, *source.buffer, channel, splitSample, rightSamples);
+
+    const bool wasInitialised = initialised.load();
+    const auto savedPlaying = playing.load();
+    if (wasInitialised) deviceManager.removeAudioCallback(this);
+    playing.store(false);
+
+    source.buffer->setSize(channels, splitSample, true, false, false);
+    source.numSamples = splitSample;
+    source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
+
+    auto& right = tracks[(size_t)newTrackIndex];
+    right.loaded.store(false, std::memory_order_release);
+    right.buffer = std::move(rightBuffer);
+    right.numSamples = rightSamples;
+    right.fileName = source.fileName + " - Split";
+    right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
+    right.startSeconds.store(startSeconds + splitOffsetSeconds);
+    right.gain.store(source.gain.load());
+    right.pan.store(source.pan.load());
+    right.muted.store(source.muted.load());
+    right.solo.store(source.solo.load());
+    right.loaded.store(true, std::memory_order_release);
+
+    if (wasInitialised) deviceManager.addAudioCallback(this);
+    if (savedPlaying) playing.store(true);
+    return true;
+}
+
 bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].loaded.load(std::memory_order_acquire); }
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].fileName : juce::String{}; }
 double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].lengthSeconds.load() : 0.0; }
