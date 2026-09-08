@@ -28,6 +28,7 @@ public:
     void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay, std::memory_order_relaxed); }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
     void resetTransport() noexcept { transportSamples.store(0, std::memory_order_relaxed); }
+    void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
 
     bool loadAudioFile(const juce::File& file, juce::String& error);
@@ -35,6 +36,7 @@ public:
     bool hasAudioFile() const noexcept { return audioFileLoaded.load(std::memory_order_relaxed); }
     juce::String getAudioFileName() const;
     double getAudioFileLengthSeconds() const noexcept { return audioFileLengthSeconds.load(std::memory_order_relaxed); }
+    const juce::AudioBuffer<float>* getAudioBuffer() const noexcept { return audioBuffer.get(); }
 
 private:
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
