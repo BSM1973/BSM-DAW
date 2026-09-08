@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(BSM_DAW VERSION 0.1.0 LANGUAGES CXX)
+project(BSM_DAW VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,6 +22,8 @@ juce_add_gui_app(BSM_DAW
     COMPANY_NAME "BSM / Bijou Studio Music"
     VERSION "0.1.0"
     BUNDLE_ID "com.bsm.bsm-daw"
+    NEEDS_CURL FALSE
+    NEEDS_WEB_BROWSER FALSE
 )
 
 target_sources(BSM_DAW PRIVATE
@@ -34,6 +36,11 @@ target_include_directories(BSM_DAW PRIVATE
 )
 
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
+
+target_compile_definitions(BSM_DAW PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
 
 target_link_libraries(BSM_DAW PRIVATE
     juce::juce_audio_basics
