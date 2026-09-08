@@ -203,6 +203,16 @@ void MainComponent::openAudioSettings()
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
+    if (event.y >= 38 && event.y <= 66 && event.x >= 215 && event.x <= 271)
+    {
+        isPlaying = false;
+        audioEngine.setPlaying(false);
+        audioEngine.resetTransport();
+        playheadSeconds = 0.0;
+        repaint();
+        return;
+    }
+
     if (event.y >= 38 && event.y <= 66 && event.x >= 339 && event.x <= 395)
     {
         isPlaying = !isPlaying;
@@ -220,11 +230,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::timerCallback()
 {
-    if (isPlaying)
+    playheadSeconds = audioEngine.getCurrentTimeSeconds();
+
+    // Keep the demo timeline bounded until real project/region transport is introduced.
+    if (playheadSeconds > 14.0)
     {
-        playheadSeconds += 1.0 / 30.0;
-        if (playheadSeconds > 14.0)
-            playheadSeconds = 0.0;
+        audioEngine.resetTransport();
+        playheadSeconds = 0.0;
     }
 
     repaint();
