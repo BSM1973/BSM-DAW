@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -10,19 +11,21 @@
 class AudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
+    static constexpr int maxAudioTracks = 4;
+
     AudioEngine();
     ~AudioEngine() override;
 
     bool initialise();
     void shutdown();
 
-    bool isInitialised() const noexcept { return initialised.load(); }
+    bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
     const juce::AudioDeviceManager& getDeviceManager() const noexcept { return deviceManager; }
     juce::String getDeviceName() const;
-    double getSampleRate() const noexcept { return sampleRate.load(); }
-    int getBufferSize() const noexcept { return bufferSize.load(); }
-    int getOutputChannels() const noexcept { return outputChannels.load(); }
+    double getSampleRate() const noexcept { return sampleRate.load(std::memory_order_relaxed); }
+    int getBufferSize() const noexcept { return bufferSize.load(std::memory_order_relaxed); }
+    int getOutputChannels() const noexcept { return outputChannels.load(std::memory_order_relaxed); }
     juce::String getLastError() const;
 
     void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay, std::memory_order_relaxed); }
@@ -31,23 +34,54 @@ public:
     void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
 
-    void setTrackGain(float gain) noexcept { trackGain.store(juce::jlimit(0.0f, 2.0f, gain), std::memory_order_relaxed); }
-    float getTrackGain() const noexcept { return trackGain.load(std::memory_order_relaxed); }
-    void setTrackPan(float pan) noexcept { trackPan.store(juce::jlimit(-1.0f, 1.0f, pan), std::memory_order_relaxed); }
-    float getTrackPan() const noexcept { return trackPan.load(std::memory_order_relaxed); }
-    void setTrackMuted(bool muted) noexcept { trackMuted.store(muted, std::memory_order_relaxed); }
-    bool isTrackMuted() const noexcept { return trackMuted.load(std::memory_order_relaxed); }
+    void setTrackGain(int trackIndex, float gain) noexcept;
+    float getTrackGain(int trackIndex) const noexcept;
+    void setTrackPan(int trackIndex, float pan) noexcept;
+    float getTrackPan(int trackIndex) const noexcept;
+    void setTrackMuted(int trackIndex, bool muted) noexcept;
+    bool isTrackMuted(int trackIndex) const noexcept;
+    void setTrackSolo(int trackIndex, bool solo) noexcept;
+    bool isTrackSolo(int trackIndex) const noexcept;
+    bool isAnyTrackSolo() const noexcept;
+
+    bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
+    void clearAudioTrack(int trackIndex);
+    bool hasAudioFile(int trackIndex) const noexcept;
+    juce::String getAudioFileName(int trackIndex) const;
+    double getAudioFileLengthSeconds(int trackIndex) const noexcept;
+    const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
+
     void setMasterGain(float gain) noexcept { masterGain.store(juce::jlimit(0.0f, 2.0f, gain), std::memory_order_relaxed); }
     float getMasterGain() const noexcept { return masterGain.load(std::memory_order_relaxed); }
 
-    bool loadAudioFile(const juce::File& file, juce::String& error);
-    void clearAudioFile();
-    bool hasAudioFile() const noexcept { return audioFileLoaded.load(std::memory_order_relaxed); }
-    juce::String getAudioFileName() const;
-    double getAudioFileLengthSeconds() const noexcept { return audioFileLengthSeconds.load(std::memory_order_relaxed); }
-    const juce::AudioBuffer<float>* getAudioBuffer() const noexcept { return audioBuffer.get(); }
+    // Compatibility helpers: Audio 1 is track 0.
+    void setTrackGain(float gain) noexcept { setTrackGain(0, gain); }
+    float getTrackGain() const noexcept { return getTrackGain(0); }
+    void setTrackPan(float pan) noexcept { setTrackPan(0, pan); }
+    float getTrackPan() const noexcept { return getTrackPan(0); }
+    void setTrackMuted(bool muted) noexcept { setTrackMuted(0, muted); }
+    bool isTrackMuted() const noexcept { return isTrackMuted(0); }
+    bool loadAudioFile(const juce::File& file, juce::String& error) { return loadAudioFileIntoTrack(0, file, error); }
+    void clearAudioFile() { clearAudioTrack(0); }
+    bool hasAudioFile() const noexcept { return hasAudioFile(0); }
+    juce::String getAudioFileName() const { return getAudioFileName(0); }
+    double getAudioFileLengthSeconds() const noexcept { return getAudioFileLengthSeconds(0); }
+    const juce::AudioBuffer<float>* getAudioBuffer() const noexcept { return getAudioBuffer(0); }
 
 private:
+    struct AudioTrackState
+    {
+        std::atomic<float> gain { 1.0f };
+        std::atomic<float> pan { 0.0f };
+        std::atomic<bool> muted { false };
+        std::atomic<bool> solo { false };
+        std::atomic<bool> loaded { false };
+        std::atomic<double> lengthSeconds { 0.0 };
+        std::unique_ptr<juce::AudioBuffer<float>> buffer;
+        std::int64_t numSamples = 0;
+        juce::String fileName;
+    };
+
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                            int numInputChannels,
                                            float* const* outputChannelData,
@@ -57,27 +91,23 @@ private:
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
 
+    bool isValidTrackIndex(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
+    std::int64_t getProjectLengthSamples() const noexcept;
+
     juce::AudioDeviceManager deviceManager;
+    std::array<AudioTrackState, maxAudioTracks> tracks;
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
-    std::atomic<bool> audioFileLoaded { false };
-    std::atomic<bool> trackMuted { false };
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
     std::atomic<std::int64_t> transportSamples { 0 };
-    std::atomic<double> audioFileLengthSeconds { 0.0 };
-    std::atomic<float> trackGain { 1.0f };
-    std::atomic<float> trackPan { 0.0f };
     std::atomic<float> masterGain { 1.0f };
     double phase = 0.0;
     double phaseIncrement = 0.0;
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;
     juce::String lastError;
-    juce::String audioFileName;
-    std::unique_ptr<juce::AudioBuffer<float>> audioBuffer;
-    std::int64_t audioFileNumSamples = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };
