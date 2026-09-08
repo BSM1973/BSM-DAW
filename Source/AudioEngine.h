@@ -13,6 +13,8 @@ public:
     void shutdown();
 
     bool isInitialised() const noexcept { return initialised.load(); }
+    juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
+    const juce::AudioDeviceManager& getDeviceManager() const noexcept { return deviceManager; }
     juce::String getDeviceName() const;
     double getSampleRate() const noexcept { return sampleRate.load(); }
     int getBufferSize() const noexcept { return bufferSize.load(); }
