@@ -1,14 +1,14 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MainComponent.h"
 
-class BSMDawApplication final : public juce::JUCEApplication
+class LibertyApplication final : public juce::JUCEApplication
 {
 public:
-    BSMDawApplication() = default;
+    LibertyApplication() = default;
 
     const juce::String getApplicationName() override
     {
-        return "BSM DAW";
+        return "Liberty";
     }
 
     const juce::String getApplicationVersion() override
@@ -65,4 +65,4 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-START_JUCE_APPLICATION(BSMDawApplication)
+START_JUCE_APPLICATION(LibertyApplication)
