@@ -150,23 +150,25 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
             g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred);
         }
-        auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)c.getY() + 58.0f, 14.0f, 90.0f);
+        const int faderTop = c.getY() + 58;
+        const int faderBottom = c.getBottom() - 45;
+        auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
         g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
-        float normalized = 0.5f;
-        if (i == 0) normalized = audioEngine.getTrackGain() * 0.5f;
-        if (i == 4) normalized = audioEngine.getMasterGain() * 0.5f;
-        normalized = juce::jlimit(0.0f, 1.0f, normalized);
+        float gain = 0.5f;
+        if (i == 0) gain = audioEngine.getTrackGain();
+        if (i == 4) gain = audioEngine.getMasterGain();
+        const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
         const auto knobY = fader.getBottom() - normalized * fader.getHeight();
         g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
+        const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
         g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f));
-        if (i == 0) g.drawText(juce::String(20.0f * std::log10(juce::jmax(0.0001f, audioEngine.getTrackGain())), 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
-        else if (i == 4) g.drawText(juce::String(20.0f * std::log10(juce::jmax(0.0001f, audioEngine.getMasterGain())), 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
+        if (i == 0 || i == 4) g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
         else g.drawText("-6.0 dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
         g.drawText(i == 0 ? ("PAN " + juce::String(audioEngine.getTrackPan(), 2)) : "PAN 0.00", c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
 }
 
-void MainComponent::resized() {}
+void MainComponent::resized() { repaint(); }
 
 void MainComponent::rebuildWaveformCache()
 {
@@ -206,6 +208,37 @@ void MainComponent::openAudioFile()
         });
 }
 
+bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
+{
+    const int mixerTop = getHeight() - 210;
+    if (event.y < mixerTop + 12 || event.y > getHeight() - 10) return false;
+    for (int i = 0; i < 5; ++i)
+    {
+        const int x = 220 + i * 125;
+        const int y = mixerTop + 12;
+        if (event.x < x || event.x > x + 116) continue;
+        const int faderTop = y + 58;
+        const int faderBottom = getHeight() - 67;
+        if ((i == 0 || i == 4) && event.y >= faderTop && event.y <= faderBottom)
+        {
+            const auto normalized = juce::jlimit(0.0f, 1.0f, 1.0f - (float)(event.y - faderTop) / (float)juce::jmax(1, faderBottom - faderTop));
+            if (i == 0) audioEngine.setTrackGain(normalized * 2.0f); else audioEngine.setMasterGain(normalized * 2.0f);
+            repaint(); return true;
+        }
+        if (i == 0)
+        {
+            const int panTop = getHeight() - 55;
+            const int panBottom = getHeight() - 28;
+            if (event.y >= panTop && event.y <= panBottom)
+            {
+                audioEngine.setTrackPan(juce::jlimit(-1.0f, 1.0f, ((float)event.x - (float)(x + 58)) / 58.0f));
+                repaint(); return true;
+            }
+        }
+    }
+    return false;
+}
+
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     if (event.y >= 38 && event.y <= 66 && event.x >= 215 && event.x <= 271) { isPlaying = false; audioEngine.setPlaying(false); audioEngine.resetTransport(); playheadSeconds = 0.0; repaint(); return; }
@@ -213,31 +246,26 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (event.x >= 925 && event.x <= 1045 && event.y >= 10 && event.y <= 34) { openAudioSettings(); return; }
     if (event.x >= 1055 && event.x <= 1175 && event.y >= 10 && event.y <= 34) { openAudioFile(); return; }
 
-    constexpr int headerW = 210; constexpr int mixerTop = 610;
+    const int mixerTop = getHeight() - 210;
+    const int audio1X = 220;
+    const int audio1Y = mixerTop + 12;
+    if (event.x >= audio1X && event.x <= audio1X + 116 && event.y >= audio1Y + 32 && event.y <= audio1Y + 52)
+    {
+        audioEngine.setTrackMuted(!audioEngine.isTrackMuted()); repaint(); return;
+    }
+    if (handleMixerMouse(event)) return;
+
+    constexpr int headerW = 210;
     if (audioEngine.hasAudioFile() && event.x >= headerW && event.y >= 76 && event.y < 186)
     {
         audioEngine.setCurrentTimeSeconds(juce::jmax(0.0, (double)(event.x - headerW) / 80.0));
-        playheadSeconds = audioEngine.getCurrentTimeSeconds(); repaint(); return;
+        playheadSeconds = audioEngine.getCurrentTimeSeconds(); repaint();
     }
-    if (event.y >= mixerTop + 12 && event.y <= getHeight() - 10)
-    {
-        for (int i = 0; i < 5; ++i)
-        {
-            const int x = 220 + i * 125; const int y = mixerTop + 12;
-            if (event.x < x || event.x > x + 116) continue;
-            if (i == 0 && event.y >= y + 32 && event.y <= y + 52) { audioEngine.setTrackMuted(!audioEngine.isTrackMuted()); repaint(); return; }
-            if ((i == 0 || i == 4) && event.y >= y + 58 && event.y <= y + 148)
-            {
-                const auto normalized = juce::jlimit(0.0f, 1.0f, 1.0f - (float)(event.y - (y + 58)) / 90.0f);
-                if (i == 0) audioEngine.setTrackGain(normalized * 2.0f); else audioEngine.setMasterGain(normalized * 2.0f);
-                repaint(); return;
-            }
-            if (i == 0 && event.y >= y + 148 && event.y <= y + 174)
-            {
-                audioEngine.setTrackPan(juce::jlimit(-1.0f, 1.0f, ((float)event.x - (x + 58.0f)) / 58.0f)); repaint(); return;
-            }
-        }
-    }
+}
+
+void MainComponent::mouseDrag(const juce::MouseEvent& event)
+{
+    handleMixerMouse(event);
 }
 
 void MainComponent::timerCallback()
