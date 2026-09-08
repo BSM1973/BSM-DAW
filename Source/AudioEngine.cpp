@@ -109,29 +109,64 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
         return false;
     }
 
-    if (std::abs(reader->sampleRate - outputRate) > 0.01)
-    {
-        error = "This audio file uses " + juce::String(reader->sampleRate, 0)
-              + " Hz, while the current device uses " + juce::String(outputRate, 0)
-              + " Hz. Sample-rate conversion will be added to the audio import engine.";
-        return false;
-    }
-
     if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max())
     {
         error = "The selected audio file is too large to load into memory.";
         return false;
     }
 
-    const auto numSamples = static_cast<int>(reader->lengthInSamples);
-    const auto numChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
-    auto newBuffer = std::make_unique<juce::AudioBuffer<float>>(numChannels, numSamples);
-    newBuffer->clear();
+    const auto inputSamples = static_cast<int>(reader->lengthInSamples);
+    const auto inputChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
+    auto decodedBuffer = std::make_unique<juce::AudioBuffer<float>>(inputChannels, inputSamples);
+    decodedBuffer->clear();
 
-    if (!reader->read(newBuffer.get(), 0, numSamples, 0, true, true))
+    if (!reader->read(decodedBuffer.get(), 0, inputSamples, 0, true, true))
     {
         error = "Failed to decode the selected audio file.";
         return false;
+    }
+
+    // The hardware runs at the device sample rate. Imported files are converted
+    // offline before they reach the real-time audio callback.
+    const auto sourceRate = reader->sampleRate;
+    const auto sampleRateRatio = sourceRate / outputRate;
+
+    if (sampleRateRatio <= 0.0)
+    {
+        error = "The selected audio file has an invalid sample rate.";
+        return false;
+    }
+
+    const auto outputSamples64 = static_cast<std::int64_t>(
+        std::ceil(static_cast<double>(inputSamples) / sampleRateRatio));
+
+    if (outputSamples64 <= 0 || outputSamples64 > std::numeric_limits<int>::max())
+    {
+        error = "The resampled audio file is too large to load into memory.";
+        return false;
+    }
+
+    const auto outputSamples = static_cast<int>(outputSamples64);
+    auto newBuffer = std::make_unique<juce::AudioBuffer<float>>(inputChannels, outputSamples);
+    newBuffer->clear();
+
+    if (std::abs(sourceRate - outputRate) > 0.01)
+    {
+        for (int channel = 0; channel < inputChannels; ++channel)
+        {
+            juce::LagrangeInterpolator interpolator;
+            interpolator.reset();
+            interpolator.process(sampleRateRatio,
+                                 decodedBuffer->getReadPointer(channel),
+                                 newBuffer->getWritePointer(channel),
+                                 outputSamples,
+                                 inputSamples,
+                                 0);
+        }
+    }
+    else
+    {
+        newBuffer->makeCopyOf(*decodedBuffer);
     }
 
     playing.store(false, std::memory_order_relaxed);
@@ -141,7 +176,7 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
         deviceManager.removeAudioCallback(this);
 
     audioBuffer = std::move(newBuffer);
-    audioFileNumSamples = reader->lengthInSamples;
+    audioFileNumSamples = outputSamples;
 
     {
         const juce::ScopedLock lock(stateLock);
