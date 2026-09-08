@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "AudioEngine.h"
 
 class MainComponent final : public juce::Component,
                             private juce::Timer
@@ -19,6 +20,7 @@ private:
     void drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area);
     void drawMixer(juce::Graphics& g, juce::Rectangle<int> area);
 
+    AudioEngine audioEngine;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
 
