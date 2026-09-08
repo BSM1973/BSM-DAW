@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <cmath>
 
 AudioEngine::AudioEngine() = default;
 
