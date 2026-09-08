@@ -1,4 +1,4 @@
-name: BSM DAW Build
+name: Liberty Build
 
 on:
   push:
@@ -19,48 +19,48 @@ jobs:
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
-      - name: Build BSM DAW
+      - name: Build Liberty
         run: cmake --build build --config Release --parallel
 
       - name: Verify application bundle
         run: |
-          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          APP="build/BSM_DAW_artefacts/Release/Liberty.app"
           test -d "$APP"
           test -d "$APP/Contents/MacOS"
-          test -f "$APP/Contents/MacOS/BSM DAW"
+          test -f "$APP/Contents/MacOS/Liberty"
 
       - name: Sign application for local macOS execution
         run: |
-          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          APP="build/BSM_DAW_artefacts/Release/Liberty.app"
           xattr -cr "$APP"
           codesign --force --deep --verbose --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          file "$APP/Contents/MacOS/BSM DAW"
-          lipo -info "$APP/Contents/MacOS/BSM DAW"
+          file "$APP/Contents/MacOS/Liberty"
+          lipo -info "$APP/Contents/MacOS/Liberty"
 
       - name: Package macOS application
         run: |
-          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          APP="build/BSM_DAW_artefacts/Release/Liberty.app"
           rm -rf dist
           mkdir -p dist
 
           ditto -c -k --sequesterRsrc --keepParent \
             "$APP" \
-            "dist/BSM-DAW-macOS.zip"
+            "dist/Liberty-macOS.zip"
 
           hdiutil create \
-            -volname "BSM DAW" \
+            -volname "Liberty" \
             -srcfolder "$APP" \
             -ov \
             -format UDZO \
-            "dist/BSM-DAW-macOS.dmg"
+            "dist/Liberty-macOS.dmg"
 
-          unzip -l "dist/BSM-DAW-macOS.zip"
-          hdiutil imageinfo "dist/BSM-DAW-macOS.dmg"
+          unzip -l "dist/Liberty-macOS.zip"
+          hdiutil imageinfo "dist/Liberty-macOS.dmg"
 
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:
-          name: BSM-DAW-macOS-Universal-Installer
+          name: Liberty-macOS-Universal-Installer
           path: dist/*
           if-no-files-found: error
