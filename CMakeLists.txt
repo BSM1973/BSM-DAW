@@ -30,6 +30,7 @@ target_sources(BSM_DAW PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
+    Source/Editing.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
