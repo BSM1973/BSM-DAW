@@ -46,6 +46,7 @@ public:
 
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
+    bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error);
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
