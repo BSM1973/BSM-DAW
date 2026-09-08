@@ -18,10 +18,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_gui_app(BSM_DAW
-    PRODUCT_NAME "BSM DAW"
+    PRODUCT_NAME "Liberty"
     COMPANY_NAME "BSM / Bijou Studio Music"
     VERSION "0.1.0"
-    BUNDLE_ID "com.bsm.bsm-daw"
+    BUNDLE_ID "com.bsm.liberty"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE
 )
@@ -39,7 +39,6 @@ target_include_directories(BSM_DAW PRIVATE
 )
 
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
-
 target_compile_definitions(BSM_DAW PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
