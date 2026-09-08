@@ -23,6 +23,7 @@ MainComponent::MainComponent()
 {
     setSize(1440, 820);
     audioEngine.initialise();
+    setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 MainComponent::~MainComponent() = default;
@@ -226,8 +227,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const auto p = event.getPosition();
     if (handleMixerMouse(event)) return;
 
-    // |< : return to project start.
-    if (juce::Rectangle<int>(215, 38, 56, 28).contains(p))
+    // Transport: all five controls are real actions, using the exact rectangles drawn above.
+    const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
+    const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
+    const auto playButton = juce::Rectangle<int>(339, 38, 56, 28);
+    const auto nextButton = juce::Rectangle<int>(401, 38, 56, 28);
+    const auto forwardButton = juce::Rectangle<int>(463, 38, 56, 28);
+
+    if (rewindButton.contains(p))
     {
         audioEngine.resetTransport();
         audioEngine.setPlaying(false);
@@ -237,8 +244,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // < : move playhead backward by one second.
-    if (juce::Rectangle<int>(277, 38, 56, 28).contains(p))
+    if (previousButton.contains(p))
     {
         const double newTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds() - 1.0);
         audioEngine.setCurrentTimeSeconds(newTime);
@@ -247,8 +253,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // PLAY / STOP.
-    if (juce::Rectangle<int>(339, 38, 56, 28).contains(p))
+    if (playButton.contains(p))
     {
         isPlaying = !isPlaying;
         audioEngine.setPlaying(isPlaying);
@@ -256,46 +261,54 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // > : move playhead forward by one second, without exceeding project end.
-    if (juce::Rectangle<int>(401, 38, 56, 28).contains(p))
+    if (nextButton.contains(p))
     {
-        double projectEnd = 0.0;
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
-            if (audioEngine.hasAudioFile(i))
-                projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
-        const double newTime = juce::jmin(projectEnd, audioEngine.getCurrentTimeSeconds() + 1.0);
+        const double newTime = audioEngine.getCurrentTimeSeconds() + 1.0;
         audioEngine.setCurrentTimeSeconds(newTime);
         playheadSeconds = newTime;
         repaint();
         return;
     }
 
-    // |> : jump to the end of the project.
-    if (juce::Rectangle<int>(463, 38, 56, 28).contains(p))
+    if (forwardButton.contains(p))
     {
         double projectEnd = 0.0;
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
             if (audioEngine.hasAudioFile(i))
                 projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
-        audioEngine.setPlaying(false);
-        isPlaying = false;
         audioEngine.setCurrentTimeSeconds(projectEnd);
         playheadSeconds = projectEnd;
+        audioEngine.setPlaying(false);
+        isPlaying = false;
         repaint();
         return;
     }
 
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
     if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
+
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
         selectedTrack = track;
-        if (isPointInsideAudioClip(track, p)) { draggingClip = true; draggedTrack = track; dragStartMouseX = (float)p.x; dragStartSeconds = audioEngine.getTrackStartSeconds(track); }
-        repaint(); return;
+        if (isPointInsideAudioClip(track, p))
+        {
+            draggingClip = true;
+            draggedTrack = track;
+            dragStartMouseX = (float)p.x;
+            dragStartSeconds = audioEngine.getTrackStartSeconds(track);
+        }
+        repaint();
+        return;
     }
+
     constexpr int headerW = 210;
-    if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW) { audioEngine.setCurrentTimeSeconds(juce::jmax(0.0, (double)(p.x - headerW) / 80.0)); playheadSeconds = audioEngine.getCurrentTimeSeconds(); repaint(); }
+    if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
+    {
+        audioEngine.setCurrentTimeSeconds(juce::jmax(0.0, (double)(p.x - headerW) / 80.0));
+        playheadSeconds = audioEngine.getCurrentTimeSeconds();
+        repaint();
+    }
 }
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
