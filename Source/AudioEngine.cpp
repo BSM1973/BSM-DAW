@@ -137,8 +137,9 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
         return false;
     }
 
+    // Floor guarantees that the interpolator never reads beyond the decoded input.
     const auto outputSamples64 = static_cast<std::int64_t>(
-        std::ceil(static_cast<double>(inputSamples) / sampleRateRatio));
+        std::floor(static_cast<double>(inputSamples) / sampleRateRatio));
 
     if (outputSamples64 <= 0 || outputSamples64 > std::numeric_limits<int>::max())
     {
@@ -159,9 +160,7 @@ bool AudioEngine::loadAudioFile(const juce::File& file, juce::String& error)
             interpolator.process(sampleRateRatio,
                                  decodedBuffer->getReadPointer(channel),
                                  newBuffer->getWritePointer(channel),
-                                 outputSamples,
-                                 inputSamples,
-                                 0);
+                                 outputSamples);
         }
     }
     else
