@@ -48,7 +48,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Liberty branding occupies the complete 182 x 66 header cell.
     const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
-    g.setColour(juce::Colour(0xff69c9e8));
+
+    // Main Liberty mark: pure white for the emblem, wing and waveform.
+    g.setColour(juce::Colours::white);
     juce::Path emblem;
     emblem.addEllipse(10.0f, 10.0f, 44.0f, 44.0f);
     g.strokePath(emblem, juce::PathStrokeType(2.0f));
@@ -62,6 +64,13 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     wave.cubicTo(21.0f, 45.0f, 29.0f, 45.0f, 36.0f, 39.0f);
     wave.cubicTo(41.0f, 34.0f, 47.0f, 33.0f, 52.0f, 35.0f);
     g.strokePath(wave, juce::PathStrokeType(2.0f));
+
+    // The four vertical bars represent audio level and are deliberately differentiated
+    // with a restrained cyan-to-blue gradient while the rest of the mark stays white.
+    const juce::ColourGradient audioBarsGradient(
+        juce::Colour(0xff72d8f5), 18.0f, 18.0f,
+        juce::Colour(0xff4f82ff), 40.0f, 40.0f, false);
+    g.setGradientFill(audioBarsGradient);
     g.fillRoundedRectangle(18.0f, 25.0f, 3.5f, 14.0f, 1.5f);
     g.fillRoundedRectangle(24.0f, 21.0f, 3.5f, 18.0f, 1.5f);
     g.fillRoundedRectangle(30.0f, 18.0f, 3.5f, 21.0f, 1.5f);
