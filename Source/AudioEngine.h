@@ -49,12 +49,13 @@ public:
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
+    double getTrackStartSeconds(int trackIndex) const noexcept;
+    void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
 
     void setMasterGain(float gain) noexcept { masterGain.store(juce::jlimit(0.0f, 2.0f, gain), std::memory_order_relaxed); }
     float getMasterGain() const noexcept { return masterGain.load(std::memory_order_relaxed); }
 
-    // Compatibility helpers: Audio 1 is track 0.
     void setTrackGain(float gain) noexcept { setTrackGain(0, gain); }
     float getTrackGain() const noexcept { return getTrackGain(0); }
     void setTrackPan(float pan) noexcept { setTrackPan(0, pan); }
@@ -77,6 +78,7 @@ private:
         std::atomic<bool> solo { false };
         std::atomic<bool> loaded { false };
         std::atomic<double> lengthSeconds { 0.0 };
+        std::atomic<double> startSeconds { 0.0 };
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         juce::String fileName;
