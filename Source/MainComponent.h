@@ -17,7 +17,11 @@ public:
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
-    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        draggingClip = false;
+        draggedTrack = -1;
+    }
 
 private:
     class AudioSettingsWindow;
