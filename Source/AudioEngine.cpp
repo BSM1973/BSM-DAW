@@ -53,6 +53,7 @@ void AudioEngine::shutdown()
     sampleRate.store(0.0);
     bufferSize.store(0);
     outputChannels.store(0);
+    transportSamples.store(0, std::memory_order_relaxed);
 }
 
 juce::String AudioEngine::getDeviceName() const
@@ -65,6 +66,15 @@ juce::String AudioEngine::getLastError() const
 {
     const juce::ScopedLock lock(stateLock);
     return lastError;
+}
+
+double AudioEngine::getCurrentTimeSeconds() const noexcept
+{
+    const auto rate = sampleRate.load(std::memory_order_relaxed);
+    if (rate <= 0.0)
+        return 0.0;
+
+    return static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
@@ -89,6 +99,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*,
                                                     const juce::AudioIODeviceCallbackContext&)
 {
     // Real-time safe first audio path: generate a quiet 440 Hz test tone while playing.
+    // The transport clock advances from the actual audio callback, not from the GUI timer.
     // No allocation, locks, file I/O or GUI work occurs in the callback.
     const bool shouldPlay = playing.load(std::memory_order_relaxed);
 
@@ -113,6 +124,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*,
                 phase -= juce::MathConstants<double>::twoPi;
         }
     }
+
+    if (shouldPlay)
+        transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
 }
 
 void AudioEngine::audioDeviceStopped()
