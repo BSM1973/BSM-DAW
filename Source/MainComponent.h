@@ -33,6 +33,8 @@ private:
     void drawMixer(juce::Graphics& g, juce::Rectangle<int> area);
     void openAudioSettings();
     void openAudioFile();
+    void editTempo();
+    void editTimeSignature();
     void rebuildWaveformCache(int trackIndex);
     bool handleMixerMouse(const juce::MouseEvent& event);
     int getAudioTrackAtPosition(juce::Point<int> position) const;
@@ -46,12 +48,14 @@ private:
     int selectedTrack = 0;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
+    double tempoBpm = 120.0;
+    int timeSignatureNumerator = 4;
+    int timeSignatureDenominator = 4;
     bool draggingClip = false;
     int draggedTrack = -1;
     float dragStartMouseX = 0.0f;
     double dragStartSeconds = 0.0;
     int mixerDragMode = 0;
-    bool keyboardFocusEnabled = (setWantsKeyboardFocus(true), true);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
