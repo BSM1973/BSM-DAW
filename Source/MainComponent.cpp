@@ -76,11 +76,12 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(30.0f, 18.0f, 3.5f, 21.0f, 1.5f);
     g.fillRoundedRectangle(36.0f, 23.0f, 3.5f, 16.0f, 1.5f);
 
-    auto libertyFont = juce::Font("Brush Script MT", 43.0f, juce::Font::plain);
+    // Larger Liberty wordmark, kept inside its dedicated logo cell.
+    auto libertyFont = juce::Font("Brush Script MT", 50.0f, juce::Font::plain);
     libertyFont.setPreferredFallbackFamilies({ "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Cursive" });
     g.setColour(juce::Colours::white);
     g.setFont(libertyFont);
-    g.drawText("Liberty", 61, 9, 115, 50, juce::Justification::left);
+    g.drawText("Liberty", 58, 5, 120, 56, juce::Justification::left);
 
     const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
     for (int i = 0; i < 5; ++i)
