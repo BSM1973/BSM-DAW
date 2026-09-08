@@ -9,7 +9,7 @@ class MainComponent final : public juce::Component,
 {
 public:
     MainComponent();
-    ~MainComponent() override = default;
+    ~MainComponent() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
