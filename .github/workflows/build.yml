@@ -25,9 +25,16 @@ jobs:
       - name: Verify application bundle
         run: test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app"
 
-      - name: Upload build artifact
+      - name: Prepare application artifact
+        run: |
+          mkdir -p artifact
+          cp -R "build/BSM_DAW_artefacts/Release/BSM DAW.app" artifact/
+          test -d "artifact/BSM DAW.app/Contents/MacOS"
+          test -f "artifact/BSM DAW.app/Contents/MacOS/BSM DAW"
+
+      - name: Upload macOS application
         uses: actions/upload-artifact@v4
         with:
           name: BSM-DAW-macOS
-          path: build/BSM_DAW_artefacts/Release/BSM DAW.app
+          path: artifact/BSM DAW.app
           if-no-files-found: error
