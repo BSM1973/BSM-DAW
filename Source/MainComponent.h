@@ -29,6 +29,8 @@ private:
     void openAudioFile();
     void rebuildWaveformCache(int trackIndex);
     bool handleMixerMouse(const juce::MouseEvent& event);
+    int getAudioTrackAtPosition(juce::Point<int> position) const;
+    bool isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const;
 
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
@@ -38,6 +40,11 @@ private:
     int selectedTrack = 0;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
+    bool draggingClip = false;
+    int draggedTrack = -1;
+    float dragStartMouseX = 0.0f;
+    double dragStartSeconds = 0.0;
+    int mixerDragMode = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
