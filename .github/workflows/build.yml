@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-macos:
-    name: Build macOS
+    name: Build macOS Universal
     runs-on: macos-latest
 
     steps:
@@ -17,36 +17,50 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure CMake
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build BSM DAW
         run: cmake --build build --config Release --parallel
 
       - name: Verify application bundle
         run: |
-          test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app"
-          test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app/Contents/MacOS"
-          test -f "build/BSM_DAW_artefacts/Release/BSM DAW.app/Contents/MacOS/BSM DAW"
+          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          test -d "$APP"
+          test -d "$APP/Contents/MacOS"
+          test -f "$APP/Contents/MacOS/BSM DAW"
+
+      - name: Sign application for local macOS execution
+        run: |
+          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
+          xattr -cr "$APP"
+          codesign --force --deep --verbose --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          file "$APP/Contents/MacOS/BSM DAW"
+          lipo -info "$APP/Contents/MacOS/BSM DAW"
 
       - name: Package macOS application
         run: |
+          APP="build/BSM_DAW_artefacts/Release/BSM DAW.app"
           rm -rf dist
           mkdir -p dist
+
           ditto -c -k --sequesterRsrc --keepParent \
-            "build/BSM_DAW_artefacts/Release/BSM DAW.app" \
+            "$APP" \
             "dist/BSM-DAW-macOS.zip"
+
           hdiutil create \
             -volname "BSM DAW" \
-            -srcfolder "build/BSM_DAW_artefacts/Release/BSM DAW.app" \
+            -srcfolder "$APP" \
             -ov \
             -format UDZO \
             "dist/BSM-DAW-macOS.dmg"
+
           unzip -l "dist/BSM-DAW-macOS.zip"
           hdiutil imageinfo "dist/BSM-DAW-macOS.dmg"
 
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
         with:
-          name: BSM-DAW-macOS-Installer
+          name: BSM-DAW-macOS-Universal-Installer
           path: dist/*
           if-no-files-found: error
