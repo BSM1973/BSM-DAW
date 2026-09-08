@@ -22,9 +22,12 @@ jobs:
       - name: Build BSM DAW
         run: cmake --build build --config Release --parallel
 
+      - name: Verify application bundle
+        run: test -d "build/BSM_DAW_artefacts/Release/BSM DAW.app"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: BSM-DAW-macOS
-          path: build/BSM_DAW_artefacts/Release/
-          if-no-files-found: warn
+          path: build/BSM_DAW_artefacts/Release/BSM DAW.app
+          if-no-files-found: error
