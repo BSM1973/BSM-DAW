@@ -29,6 +29,7 @@ juce_add_gui_app(BSM_DAW
 target_sources(BSM_DAW PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
+    Source/AudioEngine.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
