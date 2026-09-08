@@ -1,5 +1,37 @@
 #include "MainComponent.h"
 
+class MainComponent::AudioSettingsWindow final : public juce::DocumentWindow
+{
+public:
+    explicit AudioSettingsWindow(AudioEngine& engine)
+        : DocumentWindow("BSM DAW — Audio Settings",
+                         juce::Colour(0xff15181d),
+                         DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new juce::AudioDeviceSelectorComponent(
+                            engine.getDeviceManager(),
+                            0, 2,
+                            1, 2,
+                            false,
+                            true,
+                            true,
+                            false),
+                        true);
+        setResizable(true, true);
+        centreWithSize(620, 500);
+        setVisible(false);
+    }
+
+    void closeButtonPressed() override
+    {
+        setVisible(false);
+    }
+
+private:
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsWindow)
+};
+
 MainComponent::MainComponent()
 {
     setSize(1440, 820);
@@ -48,12 +80,26 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> a)
     g.drawText("4/4", 680, 40, 50, 24, juce::Justification::centred);
     g.drawText(juce::String(playheadSeconds, 3) + " s", 750, 40, 160, 24, juce::Justification::centred);
 
-    g.setFont(juce::Font(11.0f));
+    auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
+    g.setColour(juce::Colour(0xff252a31));
+    g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff454b54));
+    g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
+
+    g.setFont(juce::Font(10.0f));
     const auto deviceStatus = audioEngine.isInitialised()
-        ? "AUDIO  " + audioEngine.getDeviceName()
-        : "AUDIO  NOT AVAILABLE";
+        ? audioEngine.getDeviceName()
+        : "AUDIO NOT AVAILABLE";
     g.setColour(audioEngine.isInitialised() ? juce::Colour(0xff72c58e) : juce::Colour(0xffd06b6b));
-    g.drawText(deviceStatus, 925, 40, getWidth() - 1170, 24, juce::Justification::left, true);
+    g.drawText(deviceStatus, 925, 39, 300, 16, juce::Justification::left, true);
+
+    g.setColour(juce::Colour(0xff858c96));
+    const auto format = juce::String(audioEngine.getSampleRate(), 0) + " Hz  •  "
+                      + juce::String(audioEngine.getBufferSize()) + " samples";
+    g.drawText(format, 925, 55, 250, 16, juce::Justification::left);
 
     g.setFont(juce::Font(12.0f));
     g.setColour(juce::Colour(0xff858c96));
@@ -143,6 +189,16 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 
 void MainComponent::resized() {}
 
+void MainComponent::openAudioSettings()
+{
+    if (audioSettingsWindow == nullptr)
+        audioSettingsWindow = std::make_unique<AudioSettingsWindow>(audioEngine);
+
+    audioSettingsWindow->centreWithSize(620, 500);
+    audioSettingsWindow->setVisible(true);
+    audioSettingsWindow->toFront(true);
+}
+
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     if (event.y >= 38 && event.y <= 66 && event.x >= 339 && event.x <= 395)
@@ -150,6 +206,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         isPlaying = !isPlaying;
         audioEngine.setPlaying(isPlaying);
         repaint();
+        return;
+    }
+
+    if (event.x >= 925 && event.x <= 1045 && event.y >= 10 && event.y <= 34)
+    {
+        openAudioSettings();
+        return;
     }
 }
 
@@ -160,6 +223,7 @@ void MainComponent::timerCallback()
         playheadSeconds += 1.0 / 30.0;
         if (playheadSeconds > 14.0)
             playheadSeconds = 0.0;
-        repaint();
     }
+
+    repaint();
 }
