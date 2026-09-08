@@ -6,17 +6,44 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# JUCE will be added as the dependency in the next foundation milestone.
-# Keeping the first build dependency-free gives us a clean repository baseline.
+include(FetchContent)
 
-add_executable(BSM_DAW
+FetchContent_Declare(
+    JUCE
+    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+    GIT_TAG 8.0.10
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE)
+
+juce_add_gui_app(BSM_DAW
+    PRODUCT_NAME "BSM DAW"
+    COMPANY_NAME "BSM / Bijou Studio Music"
+    VERSION "0.1.0"
+    BUNDLE_ID "com.bsm.bsm-daw"
+)
+
+target_sources(BSM_DAW PRIVATE
     Source/Main.cpp
+    Source/MainComponent.cpp
+)
+
+target_include_directories(BSM_DAW PRIVATE
+    Source
 )
 
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 
-if(APPLE)
-    target_link_libraries(BSM_DAW PRIVATE
-        "-framework Cocoa"
-    )
-endif()
+target_link_libraries(BSM_DAW PRIVATE
+    juce::juce_audio_basics
+    juce::juce_audio_devices
+    juce::juce_core
+    juce::juce_data_structures
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+)
+
+juce_generate_juce_header(BSM_DAW)
