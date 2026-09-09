@@ -32,6 +32,40 @@ public:
     bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
 
+    void updateMidiClipTiming() noexcept
+    {
+        const auto notes = midiEngine.getNotesCopy();
+        if (notes.empty())
+        {
+            audioEngine.setProjectExtraLengthSeconds(0.0);
+            return;
+        }
+
+        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
+                                    * (4.0 / static_cast<double>(juce::jmax(1, timeSignatureDenominator)));
+        const double secondsPerMeasure = secondsPerBeat * static_cast<double>(juce::jmax(1, timeSignatureNumerator));
+        double noteEndSeconds = 0.0;
+        for (const auto& note : notes)
+            noteEndSeconds = juce::jmax(noteEndSeconds,
+                                        MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, tempoBpm));
+
+        if (!midiClipLengthUserDefined)
+        {
+            const auto requiredMeasures = std::ceil(juce::jmax(secondsPerMeasure, noteEndSeconds) / secondsPerMeasure);
+            const auto requiredLength = juce::jmax(secondsPerMeasure, requiredMeasures * secondsPerMeasure);
+            if (requiredLength > midiClipLengthSeconds + 0.000001)
+                midiClipLengthSeconds = requiredLength;
+        }
+
+        audioEngine.setProjectExtraLengthSeconds(midiClipStartSeconds + midiClipLengthSeconds);
+    }
+
+    void setMidiClipLengthFromProject(double lengthSeconds) noexcept
+    {
+        midiClipLengthSeconds = juce::jmax(0.0, lengthSeconds);
+        midiClipLengthUserDefined = true;
+    }
+
 private:
     class AudioSettingsWindow final : public juce::DocumentWindow
     {
@@ -130,22 +164,14 @@ private:
                 g.fillRoundedRectangle(clip.getRight() - 3.0f, clip.getY() + 2.0f, 3.0f, clip.getHeight() - 4.0f, 1.5f);
             }
         }
-        void mouseMove(const juce::MouseEvent& event) override
-        {
-            updateCursor(event.position.x);
-        }
-        void mouseExit(const juce::MouseEvent&) override
-        {
-            setMouseCursor(juce::MouseCursor::NormalCursor);
-        }
+        void mouseMove(const juce::MouseEvent& event) override { updateCursor(event.position.x); }
+        void mouseExit(const juce::MouseEvent&) override { setMouseCursor(juce::MouseCursor::NormalCursor); }
         void mouseDown(const juce::MouseEvent& event) override
         {
             const auto notes = owner->midiEngine.getNotesCopy();
             if (notes.empty()) return;
-            constexpr float pixelsPerSecond = 80.0f;
             const auto clip = getClipRectangle();
             if (!clip.contains(event.position)) return;
-
             owner->selectMidiTrack();
             const auto side = getResizeSide(event.position.x, clip);
             if (side != ResizeSide::none)
@@ -155,9 +181,9 @@ private:
                 dragStartX = event.position.x;
                 dragStartSeconds = owner->midiClipStartSeconds;
                 dragStartLengthSeconds = owner->midiClipLengthSeconds;
+                owner->midiClipLengthUserDefined = true;
                 return;
             }
-
             dragging = true;
             dragStartX = event.position.x;
             dragStartSeconds = owner->midiClipStartSeconds;
@@ -167,7 +193,6 @@ private:
             constexpr float pixelsPerSecond = 80.0f;
             const auto delta = (static_cast<double>(event.position.x) - static_cast<double>(dragStartX)) / pixelsPerSecond;
             const auto secondsPerMeasure = getSecondsPerMeasure();
-
             if (resizing)
             {
                 if (resizeSide == ResizeSide::right)
@@ -188,7 +213,6 @@ private:
                 owner->repaint();
                 return;
             }
-
             if (dragging)
             {
                 owner->midiClipStartSeconds = juce::jmax(0.0, std::round((dragStartSeconds + delta) / secondsPerMeasure) * secondsPerMeasure);
@@ -205,7 +229,6 @@ private:
     private:
         enum class ResizeSide { none, left, right };
         static constexpr float resizeZone = 14.0f;
-
         juce::Rectangle<float> getClipRectangle() const
         {
             constexpr float pixelsPerSecond = 80.0f;
@@ -213,41 +236,26 @@ private:
                                           juce::jmax(80.0f, static_cast<float>(owner->midiClipLengthSeconds * pixelsPerSecond)),
                                           static_cast<float>(getHeight() - 8));
         }
-
         double getSecondsPerMeasure() const
         {
             const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner->tempoBpm)
                                          * (4.0 / static_cast<double>(juce::jmax(1, owner->timeSignatureDenominator)));
             return secondsPerBeat * static_cast<double>(juce::jmax(1, owner->timeSignatureNumerator));
         }
-
-        double getMinimumLengthSeconds() const
-        {
-            return getSecondsPerMeasure();
-        }
-
+        double getMinimumLengthSeconds() const { return getSecondsPerMeasure(); }
         ResizeSide getResizeSide(float x, const juce::Rectangle<float>& clip) const
         {
             if (x <= clip.getX() + resizeZone) return ResizeSide::left;
             if (x >= clip.getRight() - resizeZone) return ResizeSide::right;
             return ResizeSide::none;
         }
-
         void updateCursor(float x)
         {
             const auto clip = getClipRectangle();
-            if (!clip.contains(x, static_cast<float>(getHeight() / 2)))
-            {
-                setMouseCursor(juce::MouseCursor::NormalCursor);
-                return;
-            }
+            if (!clip.contains(x, static_cast<float>(getHeight() / 2))) { setMouseCursor(juce::MouseCursor::NormalCursor); return; }
             const auto side = getResizeSide(x, clip);
-            if (side != ResizeSide::none)
-                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            else
-                setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            setMouseCursor(side != ResizeSide::none ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::DraggingHandCursor);
         }
-
         void timerCallback() override
         {
             const auto rowY = 76 + 32 + (4 * 70);
@@ -263,6 +271,6 @@ private:
         double dragStartLengthSeconds = 0.0;
     };
     void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void openAudioFile(); void editTempo(); void editTimeSignature(); void rebuildWaveformCache(int); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&); void resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
-    AudioEngine audioEngine; MidiEngine midiEngine; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> audioFileChooser; std::unique_ptr<juce::FileChooser> projectFileChooser; std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMin; std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMax; std::array<juce::File, AudioEngine::maxAudioTracks> trackSourceFiles; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; TempoControls tempoControls { this }; ProjectButton projectButton { this }; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
+    AudioEngine audioEngine; MidiEngine midiEngine; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> audioFileChooser; std::unique_ptr<juce::FileChooser> projectFileChooser; std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMin; std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMax; std::array<juce::File, AudioEngine::maxAudioTracks> trackSourceFiles; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; ProjectButton projectButton { this }; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
