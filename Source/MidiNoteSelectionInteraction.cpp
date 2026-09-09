@@ -19,8 +19,8 @@ class MidiSelectionOverlay final : public juce::Component,
 public:
     explicit MidiSelectionOverlay(MainComponent& o) : owner(o)
     {
-        // This component is visual-only. The PianoRoll must receive clicks in
-        // empty grid areas so a new MIDI note can still be created there.
+        // Visual-only overlay: never block PianoRoll mouse input. Empty grid
+        // clicks must continue to create new MIDI notes.
         setInterceptsMouseClicks(false, false);
         setOpaque(false);
         startTimerHz(30);
@@ -77,7 +77,8 @@ private:
     MainComponent& owner;
 };
 
-class MidiNoteSelectionInteraction final : public juce::MouseListener
+class MidiNoteSelectionInteraction final : public juce::KeyListener,
+                                           public juce::MouseListener
 {
 public:
     MidiNoteSelectionInteraction() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
@@ -88,10 +89,17 @@ public:
         detachFromWindows();
         if (registered)
         {
-            if (auto* desktop = juce::Desktop::getInstanceWithoutCreating())
-                desktop->removeGlobalMouseListener(this);
+            // JUCE 8.0.10 has no getInstanceWithoutCreating(). Shutdown is
+            // called while the application Desktop is still alive, so the
+            // normal singleton accessor is the correct API here.
+            juce::Desktop::getInstance().removeGlobalMouseListener(this);
             registered = false;
         }
+    }
+
+    bool keyPressed(const juce::KeyPress& key, juce::Component*) override
+    {
+        return handleKeyPress(key);
     }
 
     bool handleKeyPress(const juce::KeyPress& key)
@@ -100,7 +108,8 @@ public:
         if (main == nullptr)
             return false;
 
-        // Only consume these shortcuts when the MIDI editor is the active window.
+        // Only consume these shortcuts when the MIDI editor is the active
+        // focus owner. MainWindow also routes here, matching Save/Open logic.
         if (!isMidiEditorFocused())
             return false;
 
@@ -215,6 +224,7 @@ private:
             {
                 detachFromWindows();
                 attachedContent = content;
+                content->addKeyListener(this);
                 if (auto* main = findMainComponent())
                 {
                     selectionOverlay = std::make_unique<MidiSelectionOverlay>(*main);
@@ -261,14 +271,14 @@ private:
             }
         }
 
-        // Empty grid clicks intentionally clear selection, but are not intercepted:
-        // PianoRoll receives the same click and creates the new note.
         main->getMidiEngine().clearNoteSelection();
         if (selectionOverlay != nullptr) selectionOverlay->repaint();
     }
 
     void detachFromWindows()
     {
+        if (attachedContent != nullptr)
+            attachedContent->removeKeyListener(this);
         selectionOverlay.reset();
         attachedContent = nullptr;
     }
