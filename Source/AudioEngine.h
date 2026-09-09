@@ -3,10 +3,12 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include "MidiEngine.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 class AudioEngine final : private juce::AudioIODeviceCallback
 {
@@ -36,6 +38,11 @@ public:
 
     void setProjectExtraLengthSeconds(double seconds) noexcept { projectExtraLengthSeconds.store(juce::jmax(0.0, seconds), std::memory_order_relaxed); }
     double getProjectExtraLengthSeconds() const noexcept { return projectExtraLengthSeconds.load(std::memory_order_relaxed); }
+
+    void setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
+                      double clipStartSeconds,
+                      double clipLengthSeconds,
+                      double tempoBpm) noexcept;
 
     void setTrackGain(int trackIndex, float gain) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
@@ -88,6 +95,15 @@ private:
         juce::String fileName;
     };
 
+    static constexpr std::size_t maxMidiPlaybackNotes = 256;
+    struct MidiPlaybackNote
+    {
+        std::atomic<double> startSeconds { 0.0 };
+        std::atomic<double> endSeconds { 0.0 };
+        std::atomic<double> frequency { 440.0 };
+        std::atomic<float> amplitude { 0.0f };
+    };
+
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                            int numInputChannels,
                                            float* const* outputChannelData,
@@ -102,6 +118,11 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     std::array<AudioTrackState, maxAudioTracks> tracks;
+    std::array<MidiPlaybackNote, maxMidiPlaybackNotes> midiPlaybackNotes;
+    std::atomic<std::size_t> midiPlaybackNoteCount { 0 };
+    std::atomic<double> midiClipStartSeconds { 0.0 };
+    std::atomic<double> midiClipLengthSeconds { 0.0 };
+    std::atomic<double> midiTempoBpm { 120.0 };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
     std::atomic<double> sampleRate { 0.0 };
@@ -110,8 +131,6 @@ private:
     std::atomic<std::int64_t> transportSamples { 0 };
     std::atomic<double> projectExtraLengthSeconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
-    double phase = 0.0;
-    double phaseIncrement = 0.0;
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;
     juce::String lastError;
