@@ -34,6 +34,9 @@ public:
     void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
 
+    void setProjectExtraLengthSeconds(double seconds) noexcept { projectExtraLengthSeconds.store(juce::jmax(0.0, seconds), std::memory_order_relaxed); }
+    double getProjectExtraLengthSeconds() const noexcept { return projectExtraLengthSeconds.load(std::memory_order_relaxed); }
+
     void setTrackGain(int trackIndex, float gain) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
     void setTrackPan(int trackIndex, float pan) noexcept;
@@ -105,6 +108,7 @@ private:
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
     std::atomic<std::int64_t> transportSamples { 0 };
+    std::atomic<double> projectExtraLengthSeconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
     double phase = 0.0;
     double phaseIncrement = 0.0;
