@@ -202,10 +202,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
 
     const auto position = transportSamples.load();
     const auto projectLength = getProjectLengthSamples();
-    if (projectLength <= 0) return;
-
+    const bool hasBoundedAudioProject = projectLength > 0;
     const bool anySolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
+
     for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
     {
         auto& track = tracks[(size_t)trackIndex];
@@ -226,8 +226,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
         if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
     }
+
     const auto master = masterGain.load();
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
+
+    if (!hasBoundedAudioProject)
+    {
+        transportSamples.fetch_add(numSamples);
+        return;
+    }
+
     const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
     if (advance > 0) transportSamples.fetch_add(advance);
     if (position + advance >= projectLength) playing.store(false);
