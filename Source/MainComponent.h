@@ -8,7 +8,8 @@
 #include <functional>
 
 class MainComponent final : public juce::Component,
-                            private juce::Timer
+                            private juce::Timer,
+                            private juce::KeyListener
 {
 public:
     MainComponent();
@@ -24,6 +25,11 @@ public:
         draggedTrack = -1;
     }
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
+    void keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override
+    {
+        juce::ignoreUnused(isKeyDown, originatingComponent);
+    }
 
     bool hasUnsavedChanges() const;
     void requestClose(std::function<void(bool)> completion);
