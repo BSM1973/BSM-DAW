@@ -30,6 +30,8 @@ public:
     bool addNote(std::int64_t startTick, std::int64_t lengthTicks, int pitch,
                  int velocity = 100, int channel = 1);
     bool removeNoteAt(std::int64_t startTick, int pitch, int channel = 1);
+    bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
+                  std::int64_t newStartTick, int newPitch);
     std::size_t getNumNotes() const noexcept { return notes.size(); }
     std::vector<NoteEvent> getNotesCopy() const;
     std::int64_t getLengthTicks() const noexcept;
