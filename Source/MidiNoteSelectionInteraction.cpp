@@ -18,8 +18,6 @@ class MidiSelectionOverlay final : public juce::Component,
 public:
     explicit MidiSelectionOverlay(MainComponent& o) : owner(o)
     {
-        // Only empty Piano Roll grid areas are intercepted. Notes and the
-        // velocity lane remain owned by their dedicated editors.
         setInterceptsMouseClicks(true, true);
         setOpaque(false);
         startTimerHz(30);
@@ -140,14 +138,63 @@ public:
 
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override
     {
-        if (!isDeleteKey(key))
-            return false;
-
         auto* main = findMainComponent();
         if (main == nullptr)
             return false;
 
         auto& midi = main->getMidiEngine();
+        const auto modifiers = key.getModifiers();
+        const bool command = modifiers.isCommandDown();
+
+        if (command && key.getKeyCode() == 'c')
+        {
+            if (!midi.hasSelectedNote())
+                return false;
+            clipboardNote = midi.getSelectedNote();
+            return true;
+        }
+
+        if (command && key.getKeyCode() == 'v')
+        {
+            if (!clipboardNote.has_value())
+                return false;
+
+            auto pasted = *clipboardNote;
+            const auto pasteStart = midi.hasSelectedNote()
+                ? midi.getSelectedNote().startTick + midi.getSelectedNote().lengthTicks
+                : pasted.startTick;
+            pasted.startTick = MidiEngine::quantizeTick(pasteStart, MidiEngine::ticksPerQuarterNote / 4);
+
+            if (!midi.addNote(pasted.startTick, pasted.lengthTicks, pasted.pitch, pasted.velocity, pasted.channel))
+                return false;
+
+            main->updateMidiClipTiming();
+            main->repaint();
+            if (selectionOverlay != nullptr)
+                selectionOverlay->repaint();
+            return true;
+        }
+
+        if (command && key.getKeyCode() == 'd')
+        {
+            if (!midi.hasSelectedNote())
+                return false;
+
+            const auto source = midi.getSelectedNote();
+            const auto duplicateStart = source.startTick + source.lengthTicks;
+            if (!midi.addNote(duplicateStart, source.lengthTicks, source.pitch, source.velocity, source.channel))
+                return false;
+
+            main->updateMidiClipTiming();
+            main->repaint();
+            if (selectionOverlay != nullptr)
+                selectionOverlay->repaint();
+            return true;
+        }
+
+        if (!isDeleteKey(key))
+            return false;
+
         if (!midi.deleteSelectedNote())
             return false;
 
@@ -290,6 +337,7 @@ private:
     bool registered = true;
     juce::Component* attachedContent = nullptr;
     std::unique_ptr<MidiSelectionOverlay> selectionOverlay;
+    std::optional<MidiEngine::NoteEvent> clipboardNote;
 };
 
 MidiNoteSelectionInteraction midiNoteSelectionInteraction;
