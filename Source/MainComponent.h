@@ -27,6 +27,8 @@ public:
     double getTempoBpm() const noexcept { return tempoBpm; }
     int getTimeSignatureNumerator() const noexcept { return timeSignatureNumerator; }
     int getTimeSignatureDenominator() const noexcept { return timeSignatureDenominator; }
+    double getAudioCurrentTimeSeconds() const noexcept { return audioEngine.getCurrentTimeSeconds(); }
+    bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
 
 private:
