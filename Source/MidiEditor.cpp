@@ -152,8 +152,7 @@ public:
             const auto newLength = juce::jmax(gridTicks, mouseTick - dragStartTick);
             if (newLength != originalLengthTicks)
             {
-                if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel,
-                                                    dragStartTick, dragPitch, dragChannel, newLength))
+                if (owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))
                 {
                     originalLengthTicks = newLength;
                     dragMoved = true;
