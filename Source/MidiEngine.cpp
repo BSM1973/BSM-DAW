@@ -101,6 +101,27 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
     return addNote(newStartTick, length, newPitch, velocity, channel);
 }
 
+bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel,
+                               std::int64_t newLengthTicks)
+{
+    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote
+        || channel < 1 || channel > 16 || newLengthTicks <= 0)
+        return false;
+
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == startTick
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+
+    if (it == notes.end())
+        return false;
+
+    it->lengthTicks = newLengthTicks;
+    return true;
+}
+
 std::vector<MidiEngine::NoteEvent> MidiEngine::getNotesCopy() const
 {
     return notes;
