@@ -95,8 +95,17 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto safeTime = juce::jmax(0.0, playheadSeconds);
     const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
-    g.setFont(juce::Font(14.0f)); g.setColour(juce::Colour(0xffc9cdd3));
-    g.drawText(juce::String(measure) + ":" + juce::String(beat), 750, 40, 160, 24, juce::Justification::centred);
+
+    // Musical position has its own dedicated framed rectangle immediately to the right
+    // of the 4/4 control, matching its visual treatment and never overlapping another control.
+    const auto positionBox = juce::Rectangle<int>(728, 34, 90, 36);
+    g.setColour(juce::Colour(0xff252a31));
+    g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff454b54));
+    g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xffc9cdd3));
+    g.setFont(juce::Font(14.0f));
+    g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
@@ -146,8 +155,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const auto desiredWidth = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
             clip.setWidth(desiredWidth);
             clip.setX(headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond)));
-            g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-            g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
+            g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
             if (!waveformMin[(size_t)i].empty())
             {
                 const auto centreY = clip.getCentreY(); const auto amplitude = juce::jmax(1.0f, clip.getHeight() * 0.42f); const auto points = static_cast<int>(waveformMin[(size_t)i].size()); juce::Path waveform; waveform.preallocateSpace(points * 4);
