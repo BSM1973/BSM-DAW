@@ -10,7 +10,15 @@ public:
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
-    void shutdown() override { shutdownLibertyMidiEditor(); mainWindow.reset(); }
+    void shutdown() override
+    {
+        // Global MIDI listeners may own components attached to the MIDI editor.
+        // Detach them before destroying the editor and main window to avoid
+        // dangling Component/KeyListener references during application exit.
+        shutdownLibertyMidiNoteSelectionInteraction();
+        shutdownLibertyMidiEditor();
+        mainWindow.reset();
+    }
     void systemRequestedQuit() override { if (mainWindow != nullptr) mainWindow->requestClose(); else quit(); }
     void anotherInstanceStarted(const juce::String&) override {}
 private:
