@@ -26,9 +26,10 @@ public:
     }
     bool keyPressed(const juce::KeyPress& key) override;
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
-    void keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override
+    bool keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override
     {
         juce::ignoreUnused(isKeyDown, originatingComponent);
+        return false;
     }
 
     bool hasUnsavedChanges() const;
