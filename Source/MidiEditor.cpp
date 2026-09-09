@@ -13,7 +13,6 @@ constexpr int keyHeight = 20;
 constexpr int visibleKeys = 40;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 constexpr double pixelsPerTick = 0.12;
-constexpr double playheadPixelsPerSecond = static_cast<double>(MidiEngine::ticksPerQuarterNote) * pixelsPerTick * 120.0 / 60.0;
 
 const char* noteName(int n)
 {
@@ -22,6 +21,17 @@ const char* noteName(int n)
 }
 
 bool isBlackKey(int n) { return n % 12 == 1 || n % 12 == 3 || n % 12 == 6 || n % 12 == 8 || n % 12 == 10; }
+
+MainComponent* findMainComponent(juce::Component* component) noexcept
+{
+    while (component != nullptr)
+    {
+        if (auto* main = dynamic_cast<MainComponent*>(component))
+            return main;
+        component = component->getParentComponent();
+    }
+    return nullptr;
+}
 
 class PianoRoll final : public juce::Component, private juce::Timer
 {
@@ -127,11 +137,19 @@ public:
     ~MidiEditorMouseListener() override { shutdown(); }
     void mouseDown(const juce::MouseEvent& e) override
     {
-        auto* main = dynamic_cast<MainComponent*>(e.eventComponent); if (main == nullptr) return; const auto p = e.getEventRelativeTo(main).getPosition(); constexpr int top = 76 + 32 + 4 * 70, height = 70; if (p.y >= top && p.y < top + height) main->selectMidiTrack();
+        auto* main = findMainComponent(e.eventComponent);
+        if (main == nullptr) return;
+        const auto p = e.getEventRelativeTo(main).getPosition();
+        constexpr int top = 76 + 32 + 4 * 70, height = 70;
+        if (p.y >= top && p.y < top + height) main->selectMidiTrack();
     }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
-        auto* main = dynamic_cast<MainComponent*>(e.eventComponent); if (main == nullptr) return; const auto p = e.getEventRelativeTo(main).getPosition(); constexpr int top = 76 + 32 + 4 * 70, height = 70; if (p.y >= top && p.y < top + height) { main->selectMidiTrack(); openLibertyMidiEditor(*main); }
+        auto* main = findMainComponent(e.eventComponent);
+        if (main == nullptr) return;
+        const auto p = e.getEventRelativeTo(main).getPosition();
+        constexpr int top = 76 + 32 + 4 * 70, height = 70;
+        if (p.y >= top && p.y < top + height) { main->selectMidiTrack(); openLibertyMidiEditor(*main); }
     }
 private: bool registered = true;
 };
