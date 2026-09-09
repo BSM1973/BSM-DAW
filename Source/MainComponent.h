@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "AudioEngine.h"
+#include "MidiEngine.h"
 #include <array>
 #include <vector>
 #include <functional>
@@ -136,6 +137,7 @@ private:
     void confirmBeforeProjectAction(std::function<void()> action);
 
     AudioEngine audioEngine;
+    MidiEngine midiEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
     std::unique_ptr<juce::FileChooser> audioFileChooser;
     std::unique_ptr<juce::FileChooser> projectFileChooser;
