@@ -46,12 +46,9 @@ public:
 
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
-    bool trimAudioTrackToRange(int trackIndex, double sourceOffsetSeconds, double lengthSeconds, juce::String& error);
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error);
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
-    juce::String getAudioFilePath(int trackIndex) const;
-    double getAudioSourceOffsetSeconds(int trackIndex) const noexcept;
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
@@ -83,11 +80,9 @@ private:
         std::atomic<bool> loaded { false };
         std::atomic<double> lengthSeconds { 0.0 };
         std::atomic<double> startSeconds { 0.0 };
-        std::atomic<double> sourceOffsetSeconds { 0.0 };
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         juce::String fileName;
-        juce::String filePath;
     };
 
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
