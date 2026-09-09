@@ -1,23 +1,40 @@
 #include "MainComponent.h"
-#include <algorithm>
-#include <cmath>
 
-class MainComponent::AudioSettingsWindow final : public juce::DocumentWindow
+namespace
 {
-public:
-    explicit AudioSettingsWindow(AudioEngine& engine)
-        : DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff15181d), DocumentWindow::closeButton)
-    {
-        setUsingNativeTitleBar(true);
-        setContentOwned(new juce::AudioDeviceSelectorComponent(engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false), true);
-        setResizable(true, true);
-        centreWithSize(620, 500);
-        setVisible(false);
-    }
-    void closeButtonPressed() override { setVisible(false); }
-private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsWindow)
-};
+constexpr int menuNew = 1;
+constexpr int menuOpen = 2;
+constexpr int menuSave = 3;
+constexpr int menuSaveAs = 4;
+
+bool exportTrackToProjectMedia(const juce::File& projectFile,
+                               int trackIndex,
+                               const juce::AudioBuffer<float>* buffer,
+                               double sampleRate,
+                               juce::File& exportedFile)
+{
+    if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0 || sampleRate <= 0.0)
+        return false;
+
+    auto mediaFolder = projectFile.getSiblingFile(projectFile.getFileNameWithoutExtension() + "_Media");
+    if (!mediaFolder.createDirectory().wasOk() && !mediaFolder.isDirectory())
+        return false;
+
+    exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
+    juce::WavAudioFormat wavFormat;
+    std::unique_ptr<juce::FileOutputStream> outputStream(exportedFile.createOutputStream());
+    if (outputStream == nullptr)
+        return false;
+
+    std::unique_ptr<juce::AudioFormatWriter> writer(wavFormat.createWriterFor(outputStream.get(), sampleRate,
+                                                                                static_cast<unsigned int>(buffer->getNumChannels()),
+                                                                                24, {}, 0));
+    if (writer == nullptr)
+        return false;
+    outputStream.release();
+    return writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples());
+}
+}
 
 MainComponent::MainComponent()
 {
@@ -26,6 +43,7 @@ MainComponent::MainComponent()
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
+
 MainComponent::~MainComponent() = default;
 
 void MainComponent::paint(juce::Graphics& g)
@@ -96,8 +114,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
 
-    // Musical position has its own dedicated framed rectangle immediately to the right
-    // of the 4/4 control, matching its visual treatment and never overlapping another control.
     const auto positionBox = juce::Rectangle<int>(728, 34, 90, 36);
     g.setColour(juce::Colour(0xff252a31));
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
@@ -125,8 +141,6 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     auto ruler = area.removeFromTop(rulerH); auto rows = area;
     g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler); g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW)); g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
 
-    // LIBERTY TIMELINE RULE: ruler measures and playhead use the exact same time-to-pixel mapping.
-    // This prevents any visual offset between the musical grid and the transport position.
     g.setColour(juce::Colour(0xff353b44));
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
@@ -171,11 +185,29 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.setColour(juce::Colour(0xff242a31)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff505862)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f); g.setColour(juce::Colour(0xff707780)); g.setFont(juce::Font(11.0f)); g.drawText("Select this track, then IMPORT AUDIO", clip, juce::Justification::centred);
         }
     }
-    auto midiRow = rows.removeFromTop(rowH); auto instrumentRow = rows.removeFromTop(rowH); for (auto row : { midiRow, instrumentRow }) { g.setColour(juce::Colour(0xff14171c)); g.fillRect(row); }
-    g.setColour(juce::Colour(0xff1e232a)); g.fillRect(midiRow.removeFromLeft(headerW)); g.fillRect(instrumentRow.removeFromLeft(headerW));
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold)); g.drawText("MIDI 1", 14, midiRow.getY() + 8, 150, 22, juce::Justification::left); g.drawText("Instrument 1", 14, instrumentRow.getY() + 8, 150, 22, juce::Justification::left);
-    g.setColour(juce::Colour(0xff747b85)); g.setFont(juce::Font(10.0f)); g.drawText("MIDI", 14, midiRow.getY() + 36, 150, 16, juce::Justification::left); g.drawText("INSTRUMENT", 14, instrumentRow.getY() + 36, 150, 16, juce::Justification::left);
-    const float playheadX = headerW + (float)playheadSeconds * pixelsPerSecond; if (playheadX >= headerW && playheadX <= (float)getWidth()) { g.setColour(juce::Colours::white); g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f); }
+
+    auto midiRow = rows.removeFromTop(rowH);
+    auto instrumentRow = rows.removeFromTop(rowH);
+    for (auto row : { midiRow, instrumentRow }) { g.setColour(juce::Colour(0xff14171c)); g.fillRect(row); }
+
+    const bool midiSelected = selectedTrack < 0;
+    auto midiHeader = midiRow.removeFromLeft(headerW);
+    auto instrumentHeader = instrumentRow.removeFromLeft(headerW);
+    g.setColour(midiSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
+    g.fillRect(midiHeader);
+    g.setColour(juce::Colour(0xff1e232a));
+    g.fillRect(instrumentHeader);
+
+    g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
+    g.drawText("MIDI 1", midiHeader.getX() + 14, midiHeader.getY() + 8, 150, 22, juce::Justification::left);
+    g.drawText("Instrument 1", instrumentHeader.getX() + 14, instrumentHeader.getY() + 8, 150, 22, juce::Justification::left);
+    g.setColour(midiSelected ? juce::Colour(0xff9fc7e8) : juce::Colour(0xff747b85)); g.setFont(juce::Font(10.0f));
+    g.drawText("MIDI", midiHeader.getX() + 14, midiHeader.getY() + 36, 150, 16, juce::Justification::left);
+    g.setColour(juce::Colour(0xff747b85));
+    g.drawText("INSTRUMENT", instrumentHeader.getX() + 14, instrumentHeader.getY() + 36, 150, 16, juce::Justification::left);
+
+    const float playheadX = headerW + (float)playheadSeconds * pixelsPerSecond;
+    if (playheadX >= headerW && playheadX <= (float)getWidth()) { g.setColour(juce::Colours::white); g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f); }
 }
 
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
