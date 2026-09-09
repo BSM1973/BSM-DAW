@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -26,6 +27,9 @@ void AudioEngine::shutdown()
     if (initialised.exchange(false)) deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
     sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0); transportSamples.store(0); projectExtraLengthSeconds.store(0.0);
+    midiPlaybackNoteCount.store(0, std::memory_order_release);
+    midiClipStartSeconds.store(0.0, std::memory_order_relaxed);
+    midiClipLengthSeconds.store(0.0, std::memory_order_relaxed);
     for (auto& track : tracks)
     {
         track.loaded.store(false, std::memory_order_release);
@@ -66,6 +70,36 @@ double AudioEngine::getCurrentTimeSeconds() const noexcept
 {
     const auto rate = sampleRate.load();
     return rate > 0.0 ? static_cast<double>(transportSamples.load()) / rate : 0.0;
+}
+
+void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
+                               double clipStartSeconds,
+                               double clipLengthSeconds,
+                               double tempoBpm) noexcept
+{
+    const auto rate = juce::jmax(1.0, tempoBpm);
+    const auto start = juce::jmax(0.0, clipStartSeconds);
+    const auto length = juce::jmax(0.0, clipLengthSeconds);
+    const auto count = std::min(notes.size(), maxMidiPlaybackNotes);
+
+    midiClipStartSeconds.store(start, std::memory_order_relaxed);
+    midiClipLengthSeconds.store(length, std::memory_order_relaxed);
+    midiTempoBpm.store(rate, std::memory_order_relaxed);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const auto& note = notes[i];
+        const auto noteStart = MidiEngine::tickToSeconds(note.startTick, rate);
+        const auto noteEnd = MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate);
+        const auto frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
+        const auto amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
+        midiPlaybackNotes[i].startSeconds.store(noteStart, std::memory_order_relaxed);
+        midiPlaybackNotes[i].endSeconds.store(noteEnd, std::memory_order_relaxed);
+        midiPlaybackNotes[i].frequency.store(frequency, std::memory_order_relaxed);
+        midiPlaybackNotes[i].amplitude.store(amplitude, std::memory_order_relaxed);
+    }
+
+    midiPlaybackNoteCount.store(count, std::memory_order_release);
 }
 
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
@@ -227,6 +261,50 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         const auto sourceChannels = track.buffer->getNumChannels();
         if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
         if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+    }
+
+    // Instrument 1: lightweight polyphonic sine synth driven directly by the MIDI clip.
+    // All state is preallocated; the real-time callback performs no heap allocation or locking.
+    const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
+    const auto midiStart = midiClipStartSeconds.load(std::memory_order_relaxed);
+    const auto midiLength = midiClipLengthSeconds.load(std::memory_order_relaxed);
+    if (midiCount > 0 && midiLength > 0.0 && rate > 0.0)
+    {
+        constexpr double twoPi = 6.28318530717958647692;
+        constexpr double attackSeconds = 0.005;
+        constexpr double releaseSeconds = 0.010;
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const double projectTime = static_cast<double>(position + sample) / rate;
+            const double localTime = projectTime - midiStart;
+            if (localTime < 0.0 || localTime >= midiLength) continue;
+
+            float sampleValue = 0.0f;
+            for (std::size_t noteIndex = 0; noteIndex < midiCount; ++noteIndex)
+            {
+                const auto noteStart = midiPlaybackNotes[noteIndex].startSeconds.load(std::memory_order_relaxed);
+                const auto noteEnd = midiPlaybackNotes[noteIndex].endSeconds.load(std::memory_order_relaxed);
+                const auto noteTime = localTime - noteStart;
+                const auto noteDuration = noteEnd - noteStart;
+                if (noteTime < 0.0 || noteTime >= noteDuration) continue;
+
+                float envelope = 1.0f;
+                if (noteTime < attackSeconds)
+                    envelope = static_cast<float>(noteTime / attackSeconds);
+                const auto remaining = noteDuration - noteTime;
+                if (remaining < releaseSeconds)
+                    envelope = juce::jmin(envelope, static_cast<float>(remaining / releaseSeconds));
+
+                const auto frequency = midiPlaybackNotes[noteIndex].frequency.load(std::memory_order_relaxed);
+                const auto amplitude = midiPlaybackNotes[noteIndex].amplitude.load(std::memory_order_relaxed);
+                sampleValue += static_cast<float>(std::sin(twoPi * frequency * noteTime) * static_cast<double>(amplitude * envelope));
+            }
+
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
+                outputChannelData[0][sample] += sampleValue;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+                outputChannelData[1][sample] += sampleValue;
+        }
     }
 
     const auto master = masterGain.load();
