@@ -10,15 +10,16 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     const bool commandOrControl = modifiers.isCtrlDown();
    #endif
 
-    // LIBERTY WORKFLOW: use the physical JUCE key code for shortcuts.
-    // On macOS, the key code can arrive as either lower- or upper-case ASCII,
-    // including with AZERTY layouts, while getTextCharacter() may be null.
-    const auto keyCode = static_cast<juce_wchar>(key.getKeyCode());
-    const auto normalizedKey = juce::CharacterFunctions::toLowerCase(keyCode);
+    // LIBERTY WORKFLOW: use JUCE key codes directly. Do not convert through
+    // juce_wchar/CharacterFunctions: JUCE key codes are integer values.
+    const int keyCode = key.getKeyCode();
+    const bool isS = (keyCode == 's' || keyCode == 'S');
+    const bool isO = (keyCode == 'o' || keyCode == 'O');
+    const bool isN = (keyCode == 'n' || keyCode == 'N');
 
     if (commandOrControl)
     {
-        if (normalizedKey == 's')
+        if (isS)
         {
             if (modifiers.isShiftDown())
                 saveProjectAs();
@@ -27,20 +28,20 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return true;
         }
 
-        if (normalizedKey == 'o' && !modifiers.isShiftDown())
+        if (isO && !modifiers.isShiftDown())
         {
             openProject();
             return true;
         }
 
-        if (normalizedKey == 'n' && !modifiers.isShiftDown())
+        if (isN && !modifiers.isShiftDown())
         {
             newProject();
             return true;
         }
     }
 
-    if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey)
+    if (keyCode == juce::KeyPress::deleteKey || keyCode == juce::KeyPress::backspaceKey)
     {
         if (!audioEngine.hasAudioFile(selectedTrack))
             return true;
@@ -55,7 +56,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
-    if (normalizedKey == 's' && !modifiers.isAnyModifierKeyDown())
+    if (isS && !modifiers.isAnyModifierKeyDown())
     {
         if (!audioEngine.hasAudioFile(selectedTrack))
             return true;
