@@ -84,9 +84,6 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
 
     pendingProjectAction = std::move(action);
 
-    // Use JUCE's supported three-button asynchronous dialog instead of manually
-    // managing an AlertWindow lifetime. This is reliable on macOS and keeps the
-    // SAVE / DON'T SAVE / CANCEL result mapping explicit.
     juce::AlertWindow::showYesNoCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
@@ -124,7 +121,6 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
             }
             else
             {
-                // Save As will continue pendingProjectAction after a successful save.
                 saveProjectAs();
             }
         }));
@@ -164,7 +160,6 @@ void MainComponent::requestClose(std::function<void(bool)> completion)
             }
             else
             {
-                // Save As must complete before Liberty closes.
                 pendingProjectAction = [completion = std::move(completion)]() mutable
                 {
                     completion(true);
@@ -300,7 +295,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 1);
+    project.setAttribute("version", 2);
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -316,21 +311,15 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const auto* buffer = audioEngine.getAudioBuffer(i);
-        if (audioEngine.hasAudioFile(i) && sourceFile.existsAsFile() && buffer != nullptr)
-        {
-            juce::AudioFormatManager formats;
-            formats.registerBasicFormats();
-            std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(sourceFile));
-            const auto sourceLength = reader != nullptr && reader->sampleRate > 0.0
-                ? static_cast<double>(reader->lengthInSamples) / reader->sampleRate
-                : audioEngine.getAudioFileLengthSeconds(i);
 
-            if (std::abs(sourceLength - audioEngine.getAudioFileLengthSeconds(i)) > 0.001)
-            {
-                juce::File exportedFile;
-                if (exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
-                    sourceFile = exportedFile;
-            }
+        // Every saved project gets its own media copy. This makes the project
+        // reopenable even when the original source file is moved or changed,
+        // and also preserves edited/split clip buffers.
+        if (audioEngine.hasAudioFile(i) && buffer != nullptr)
+        {
+            juce::File exportedFile;
+            if (exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
+                sourceFile = exportedFile;
         }
 
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
@@ -353,8 +342,18 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         return false;
     }
 
-    output->writeText(project.toString(), false, false, "UTF-8");
+    const auto xmlText = project.toString();
+    if (!output->writeText(xmlText, false, false, "UTF-8"))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Save",
+                                               "Could not write the Liberty project data.",
+                                               "OK");
+        return false;
+    }
+
     output->flush();
+    currentProjectFile = file;
     markProjectClean();
     return true;
 }
@@ -389,7 +388,21 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (!track->getBoolAttribute("loaded", false)) continue;
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
-        const juce::File sourceFile(sourcePath);
+        juce::File sourceFile(sourcePath);
+
+        // Version 2 stores project media beside the .bsmproj. Keep backwards
+        // compatibility with older projects that stored the original absolute path.
+        if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty() && !sourceFile.isAbsolute())
+            sourceFile = file.getParentDirectory().getChildFile(sourcePath);
+
+        if (!sourceFile.existsAsFile())
+        {
+            const auto projectMediaFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_Media")
+                                              .getChildFile("Audio_" + juce::String(index + 1) + ".wav");
+            if (projectMediaFile.existsAsFile())
+                sourceFile = projectMediaFile;
+        }
+
         if (!sourceFile.existsAsFile())
         {
             missingFiles << "Audio " << (index + 1) << ": " << sourcePath << "\n";
