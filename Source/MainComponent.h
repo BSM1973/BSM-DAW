@@ -84,7 +84,8 @@ private:
 
             // LIBERTY UI ALIGNMENT RULE: PROJECT shares the exact left edge of the
             // first transport control (|<), while remaining on its own row.
-            setBounds(190, 10, 90, 24);
+            // The transport starts at x=215, so this value is intentionally identical.
+            setBounds(215, 10, 90, 24);
             owner->addAndMakeVisible(this);
         }
 
