@@ -13,6 +13,7 @@ constexpr int keyHeight = 20;
 constexpr int visibleKeys = 40;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 constexpr double pixelsPerTick = 0.12;
+constexpr int resizeEdgePixels = 12;
 
 const char* noteName(int n)
 {
@@ -108,6 +109,32 @@ public:
         }
     }
 
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        if (draggingNote) return;
+
+        const auto side = findResizeSide(e.position);
+        if (side != ResizeSide::none)
+        {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+
+        if (findNoteAt(e.position) != nullptr)
+        {
+            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+            return;
+        }
+
+        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    }
+
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        if (!draggingNote)
+            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    }
+
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (e.mods.isRightButtonDown() || e.y < rulerHeight || e.x < pianoKeyWidth) return;
@@ -116,6 +143,7 @@ public:
         auto& midi = owner.getMidiEngine();
         for (const auto& n : midi.getNotesCopy())
         {
+            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
@@ -125,12 +153,15 @@ public:
             {
                 draggingNote = true;
                 dragMoved = false;
-                resizingNote = e.position.x >= noteRect.getRight() - 7;
+                resizeSide = findResizeSide(e.position);
                 dragStartTick = n.startTick;
+                dragEndTick = n.startTick + n.lengthTicks;
                 dragPitch = n.pitch;
                 dragChannel = n.channel;
                 originalLengthTicks = n.lengthTicks;
-                setMouseCursor(resizingNote ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::DraggingHandCursor);
+                setMouseCursor(resizeSide == ResizeSide::none
+                                   ? juce::MouseCursor::DraggingHandCursor
+                                   : juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
         }
@@ -146,14 +177,37 @@ public:
     {
         if (!draggingNote) return;
 
-        if (resizingNote)
+        const auto mouseTick = tickFromX(e.x);
+
+        if (resizeSide == ResizeSide::right)
         {
-            const auto mouseTick = tickFromX(e.x);
             const auto newLength = juce::jmax(gridTicks, mouseTick - dragStartTick);
             if (newLength != originalLengthTicks)
             {
                 if (owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))
                 {
+                    originalLengthTicks = newLength;
+                    dragEndTick = dragStartTick + newLength;
+                    dragMoved = true;
+                    repaint();
+                    owner.repaint();
+                }
+            }
+            return;
+        }
+
+        if (resizeSide == ResizeSide::left)
+        {
+            const auto maxStart = juce::jmax<std::int64_t>(0, dragEndTick - gridTicks);
+            const auto newStart = juce::jlimit<std::int64_t>(0, maxStart, mouseTick);
+            const auto newLength = dragEndTick - newStart;
+
+            if (newStart != dragStartTick && newLength >= gridTicks)
+            {
+                if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch)
+                    && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength))
+                {
+                    dragStartTick = newStart;
                     originalLengthTicks = newLength;
                     dragMoved = true;
                     repaint();
@@ -163,13 +217,14 @@ public:
             return;
         }
 
-        const auto newTick = tickFromX(e.x);
+        const auto newTick = mouseTick;
         const int newPitch = pitchFromY(e.y);
         if (newTick == dragStartTick && newPitch == dragPitch) return;
         if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch))
         {
             dragStartTick = newTick;
             dragPitch = newPitch;
+            dragEndTick = newTick + originalLengthTicks;
             dragMoved = true;
             repaint();
             owner.repaint();
@@ -179,18 +234,78 @@ public:
     void mouseUp(const juce::MouseEvent&) override
     {
         if (!draggingNote) return;
-        if (!dragMoved)
+
+        if (!dragMoved && resizeSide == ResizeSide::none)
             owner.getMidiEngine().removeNoteAt(dragStartTick, dragPitch, dragChannel);
+
         draggingNote = false;
         dragMoved = false;
-        resizingNote = false;
+        resizeSide = ResizeSide::none;
         originalLengthTicks = 0;
+        dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
         repaint();
         owner.repaint();
     }
 
 private:
+    enum class ResizeSide
+    {
+        none,
+        left,
+        right
+    };
+
+    const MidiEngine::NoteEvent* findNoteAt(juce::Point<float> position) const
+    {
+        for (const auto& n : owner.getMidiEngine().getNotesCopy())
+        {
+            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
+            const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
+            if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y))
+                return &n;
+        }
+        return nullptr;
+    }
+
+    ResizeSide findResizeSide(juce::Point<float> position) const
+    {
+        if (position.y < rulerHeight || position.x < pianoKeyWidth)
+            return ResizeSide::none;
+
+        ResizeSide bestSide = ResizeSide::none;
+        float bestDistance = (float)resizeEdgePixels + 1.0f;
+
+        for (const auto& n : owner.getMidiEngine().getNotesCopy())
+        {
+            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
+            const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
+            if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y))
+                continue;
+
+            const float leftDistance = std::abs(position.x - (float)noteRect.getX());
+            const float rightDistance = std::abs(position.x - (float)noteRect.getRight());
+            if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance)
+            {
+                bestDistance = leftDistance;
+                bestSide = ResizeSide::left;
+            }
+            if (rightDistance <= (float)resizeEdgePixels && rightDistance < bestDistance)
+            {
+                bestDistance = rightDistance;
+                bestSide = ResizeSide::right;
+            }
+        }
+
+        return bestSide;
+    }
+
     void timerCallback() override
     {
         auto& midi = owner.getMidiEngine();
@@ -214,8 +329,9 @@ private:
     MainComponent& owner;
     bool draggingNote = false;
     bool dragMoved = false;
-    bool resizingNote = false;
+    ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0;
+    std::int64_t dragEndTick = 0;
     std::int64_t originalLengthTicks = 0;
     int dragPitch = 60;
     int dragChannel = 1;
