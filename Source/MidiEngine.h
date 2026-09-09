@@ -30,6 +30,11 @@ public:
     bool addNote(std::int64_t startTick, std::int64_t lengthTicks, int pitch,
                  int velocity = 100, int channel = 1);
     bool removeNoteAt(std::int64_t startTick, int pitch, int channel = 1);
+    bool deleteSelectedNote();
+    bool selectNoteAt(std::int64_t startTick, int pitch, int channel = 1) noexcept;
+    void clearNoteSelection() noexcept;
+    bool hasSelectedNote() const noexcept { return selectedNoteValid; }
+    NoteEvent getSelectedNote() const noexcept { return selectedNote; }
     bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
                   std::int64_t newStartTick, int newPitch);
     bool setNoteLength(std::int64_t startTick, int pitch, int channel,
@@ -52,6 +57,8 @@ public:
 
 private:
     std::vector<NoteEvent> notes;
+    NoteEvent selectedNote;
+    bool selectedNoteValid = false;
     std::atomic<double> playbackPositionSeconds { 0.0 };
     std::atomic<bool> playing { false };
 };
