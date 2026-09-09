@@ -51,6 +51,7 @@ private:
                 button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff252a31));
                 button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
                 button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+                button->setMouseClickGrabsKeyboardFocus(false);
                 addAndMakeVisible(button);
             }
 
@@ -90,6 +91,7 @@ private:
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff303640));
             button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            button.setMouseClickGrabsKeyboardFocus(false);
             button.onClick = [this] { owner->showProjectMenu(); };
             addAndMakeVisible(button);
 
