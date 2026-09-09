@@ -65,7 +65,13 @@ public:
     }
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override
+    {
+        if (auto* parent = getParentComponent())
+            setBounds(parent->getLocalBounds());
+        repaint();
+    }
+
     MainComponent& owner;
 };
 
@@ -164,9 +170,12 @@ private:
                 detachFromWindows();
                 attachedContent = content;
                 content->addKeyListener(this);
-                selectionOverlay = std::make_unique<MidiSelectionOverlay>(*findMainComponent());
-                content->addAndMakeVisible(selectionOverlay.get());
-                selectionOverlay->setBounds(content->getLocalBounds());
+                if (auto* main = findMainComponent())
+                {
+                    selectionOverlay = std::make_unique<MidiSelectionOverlay>(*main);
+                    content->addAndMakeVisible(selectionOverlay.get());
+                    selectionOverlay->setBounds(content->getLocalBounds());
+                }
             }
             content->grabKeyboardFocus();
         }
