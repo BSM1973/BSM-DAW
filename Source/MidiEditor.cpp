@@ -13,6 +13,7 @@ constexpr int keyHeight = 20;
 constexpr int visibleKeys = 40;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 constexpr double pixelsPerTick = 0.12;
+constexpr double playheadPixelsPerSecond = static_cast<double>(MidiEngine::ticksPerQuarterNote) * pixelsPerTick * 120.0 / 60.0;
 
 const char* noteName(int n)
 {
@@ -22,10 +23,16 @@ const char* noteName(int n)
 
 bool isBlackKey(int n) { return n % 12 == 1 || n % 12 == 3 || n % 12 == 6 || n % 12 == 8 || n % 12 == 10; }
 
-class PianoRoll final : public juce::Component
+class PianoRoll final : public juce::Component, private juce::Timer
 {
 public:
-    explicit PianoRoll(MainComponent& o) : owner(o) { setWantsKeyboardFocus(true); setMouseCursor(juce::MouseCursor::CrosshairCursor); }
+    explicit PianoRoll(MainComponent& o) : owner(o)
+    {
+        setWantsKeyboardFocus(true);
+        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        startTimerHz(30);
+    }
+
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff0b0d10)); const auto b = getLocalBounds();
@@ -50,14 +57,24 @@ public:
             g.setColour(black ? juce::Colour(0xff171a1f) : juce::Colour(0xffd6d9de)); g.fillRect(key); g.setColour(black ? juce::Colour(0xff303640) : juce::Colour(0xff777d86)); g.drawRect(key, 1);
             if (!black) { g.setColour(juce::Colour(0xff2b3037)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
         }
+        const auto playbackTick = MidiEngine::secondsToTick(owner.getMidiEngine().getPlaybackPositionSeconds(), owner.getTempoBpm());
+        const int playheadX = grid.getX() + (int)std::llround((double)playbackTick * pixelsPerTick);
+        if (playheadX >= grid.getX() && playheadX <= grid.getRight())
+        {
+            g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xfff3f6fa) : juce::Colour(0xff8b929b));
+            g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)b.getBottom(), 2.0f);
+        }
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
             if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2; const int x = grid.getX() + (int)std::llround((double)n.startTick * pixelsPerTick); const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
             const auto r = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4); if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
-            g.setColour(juce::Colour(0xff4f82ff)); g.fillRoundedRectangle(r.toFloat(), 3.0f); g.setColour(juce::Colour(0xff9fd8f5)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
+            const auto noteEnd = n.startTick + n.lengthTicks;
+            const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
+            g.setColour(active ? juce::Colour(0xff72d8f5) : juce::Colour(0xff4f82ff)); g.fillRoundedRectangle(r.toFloat(), 3.0f); g.setColour(active ? juce::Colours::white : juce::Colour(0xff9fd8f5)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
         }
     }
+
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (e.mods.isRightButtonDown() || e.y < rulerHeight || e.x < pianoKeyWidth) return; const int pitch = pitchFromY(e.y); auto& midi = owner.getMidiEngine();
@@ -68,16 +85,27 @@ public:
         }
         if (midi.addNote(tickFromX(e.x), MidiEngine::ticksPerQuarterNote, pitch, 100, 1)) { repaint(); owner.repaint(); }
     }
+
     void mouseDrag(const juce::MouseEvent& e) override
     {
         if (!draggingNote) return; const auto newTick = tickFromX(e.x); const int newPitch = pitchFromY(e.y); if (newTick == dragStartTick && newPitch == dragPitch) return;
         if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragMoved = true; repaint(); owner.repaint(); }
     }
+
     void mouseUp(const juce::MouseEvent&) override
     {
         if (!draggingNote) return; if (!dragMoved) owner.getMidiEngine().removeNoteAt(dragStartTick, dragPitch, dragChannel); draggingNote = false; dragMoved = false; repaint(); owner.repaint();
     }
+
 private:
+    void timerCallback() override
+    {
+        auto& midi = owner.getMidiEngine();
+        midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds());
+        midi.setPlaying(owner.isAudioPlaying());
+        repaint();
+    }
+
     int pitchFromY(int y) const noexcept { const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / keyHeight); return lowestKey + visibleKeys - 1 - row; }
     std::int64_t tickFromX(int x) const noexcept { const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / pixelsPerTick); return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks); }
     MainComponent& owner; bool draggingNote = false, dragMoved = false; std::int64_t dragStartTick = 0; int dragPitch = 60, dragChannel = 1;
