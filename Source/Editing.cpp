@@ -8,7 +8,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return true;
 
         audioEngine.clearAudioTrack(selectedTrack);
-        trackSourceFiles[(size_t)selectedTrack] = {};
+        trackSourceFiles[(size_t)selectedTrack] = juce::File{};
         waveformMin[(size_t)selectedTrack].clear();
         waveformMax[(size_t)selectedTrack].clear();
         playheadSeconds = 0.0;
