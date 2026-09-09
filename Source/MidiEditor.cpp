@@ -1,6 +1,8 @@
 #include "MidiEditor.h"
 #include "MainComponent.h"
 #include <cmath>
+#include <cstdlib>
+#include <limits>
 #include <memory>
 #include <vector>
 
