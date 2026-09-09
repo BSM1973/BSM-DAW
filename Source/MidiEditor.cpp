@@ -138,7 +138,7 @@ public:
     MidiEditorMouseListener() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
     ~MidiEditorMouseListener() override
     {
-        if (auto* desktop = juce::Desktop::getInstanceWithoutCreating()) desktop->removeGlobalMouseListener(this);
+        juce::Desktop::getInstance().removeGlobalMouseListener(this);
     }
     void mouseDoubleClick(const juce::MouseEvent& event) override
     {
