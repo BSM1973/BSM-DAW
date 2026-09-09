@@ -196,6 +196,7 @@ void MainComponent::resetProjectState()
 {
     audioEngine.setPlaying(false);
     audioEngine.resetTransport();
+    audioEngine.setProjectExtraLengthSeconds(0.0);
     isPlaying = false;
     playheadSeconds = 0.0;
     tempoBpm = 120.0;
@@ -204,6 +205,7 @@ void MainComponent::resetProjectState()
     selectedTrack = 0;
     midiClipStartSeconds = 0.0;
     midiClipLengthSeconds = 2.0;
+    midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
     midiEngine.clear();
 
@@ -394,7 +396,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
     audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
     midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
-    midiClipLengthSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
+    setMidiClipLengthFromProject(project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
 
     if (auto* midi = project->getChildByName("MIDI"))
     {
@@ -455,6 +457,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         rebuildWaveformCache(index);
     }
 
+    updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
     isPlaying = false;
