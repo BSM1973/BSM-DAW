@@ -8,35 +8,47 @@ namespace
 constexpr int rulerHeight = 30;
 constexpr int pianoKeyWidth = 72;
 constexpr int velocityLaneHeight = 92;
-constexpr int velocityHitTolerance = 24;
-constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
 class VelocityMouseListener final : public juce::MouseListener
 {
 public:
-    VelocityMouseListener() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
-    ~VelocityMouseListener() override { juce::Desktop::getInstance().removeGlobalMouseListener(this); }
+    VelocityMouseListener()
+    {
+        juce::Desktop::getInstance().addGlobalMouseListener(this);
+    }
+
+    ~VelocityMouseListener() override
+    {
+        juce::Desktop::getInstance().removeGlobalMouseListener(this);
+    }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        auto* piano = getPianoRoll(e);
-        auto* main = findMainComponent(piano);
-        if (piano == nullptr || main == nullptr) return;
+        if (e.mods.isRightButtonDown())
+            return;
+
+        auto* piano = getPianoRoll(e.getScreenPosition());
+        auto* main = findMainComponent();
+        if (piano == nullptr || main == nullptr)
+            return;
 
         const auto p = piano->getLocalPoint(nullptr, e.getScreenPosition());
-        if (p.x < pianoKeyWidth || !inVelocityLane(*piano, p.y) || e.mods.isRightButtonDown()) return;
+        if (!inVelocityLane(*piano, p.y) || p.x < pianoKeyWidth)
+            return;
 
-        if (selectNote(*main, *piano, p.x))
+        if (selectNearestNote(*main, *piano, p.x))
             updateVelocity(*main, *piano, p.y);
     }
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
-        if (!editing) return;
+        if (!editing)
+            return;
 
-        auto* piano = getPianoRoll(e);
-        auto* main = findMainComponent(piano);
-        if (piano == nullptr || main == nullptr) return;
+        auto* piano = getPianoRoll(e.getScreenPosition());
+        auto* main = findMainComponent();
+        if (piano == nullptr || main == nullptr)
+            return;
 
         const auto p = piano->getLocalPoint(nullptr, e.getScreenPosition());
         updateVelocity(*main, *piano, p.y);
@@ -48,35 +60,47 @@ public:
     }
 
 private:
-    static juce::Component* getPianoRoll(const juce::MouseEvent& e) noexcept
+    static juce::Component* getPianoRoll(juce::Point<int> screenPosition) noexcept
     {
-        auto* component = e.eventComponent;
+        auto* component = juce::Desktop::getInstance().findComponentAt(screenPosition);
         while (component != nullptr)
         {
-            if (component->getName() == "Liberty - MIDI 1")
+            if (auto* window = dynamic_cast<juce::DocumentWindow*>(component))
             {
-                if (auto* window = dynamic_cast<juce::DocumentWindow*>(component))
+                if (window->getName() == "Liberty - MIDI 1")
                     return window->getContentComponent();
             }
             component = component->getParentComponent();
         }
 
-        auto* top = e.eventComponent != nullptr ? e.eventComponent->getTopLevelComponent() : nullptr;
-        if (auto* window = dynamic_cast<juce::DocumentWindow*>(top))
-            if (window->getName() == "Liberty - MIDI 1")
-                return window->getContentComponent();
-
         return nullptr;
     }
 
-    static MainComponent* findMainComponent(juce::Component* component) noexcept
+    static MainComponent* findMainComponent() noexcept
     {
-        while (component != nullptr)
+        auto& desktop = juce::Desktop::getInstance();
+        for (int i = 0; i < desktop.getNumComponents(); ++i)
         {
-            if (auto* main = dynamic_cast<MainComponent*>(component))
+            if (auto* main = findMainInTree(desktop.getComponent(i)))
                 return main;
-            component = component->getParentComponent();
         }
+        return nullptr;
+    }
+
+    static MainComponent* findMainInTree(juce::Component* component) noexcept
+    {
+        if (component == nullptr)
+            return nullptr;
+
+        if (auto* main = dynamic_cast<MainComponent*>(component))
+            return main;
+
+        for (int i = 0; i < component->getNumChildComponents(); ++i)
+        {
+            if (auto* main = findMainInTree(component->getChildComponent(i)))
+                return main;
+        }
+
         return nullptr;
     }
 
@@ -97,20 +121,17 @@ private:
             / static_cast<double>(clipTicks);
     }
 
-    static bool selectNote(MainComponent& main, const juce::Component& piano, int x)
+    static bool selectNearestNote(MainComponent& main, const juce::Component& piano, int x)
     {
         const auto ppt = pixelsPerTick(main, piano);
-        if (ppt <= 0.0) return false;
+        if (ppt <= 0.0)
+            return false;
 
         const auto clipTicks = MidiEngine::secondsToTick(
             main.getMidiClipLengthSeconds(), main.getTempoBpm());
 
-        const auto clickTick = MidiEngine::quantizeTick(
-            juce::jmax<std::int64_t>(0, static_cast<std::int64_t>(std::llround(
-                (x - pianoKeyWidth) / ppt))), gridTicks);
-
         const MidiEngine::NoteEvent* best = nullptr;
-        double bestDistance = static_cast<double>(velocityHitTolerance + 1);
+        double bestDistance = std::numeric_limits<double>::max();
 
         for (const auto& n : main.getMidiEngine().getNotesCopy())
         {
@@ -122,16 +143,12 @@ private:
             const double barWidth = static_cast<double>(juce::jmax(
                 4, juce::jmin(18, static_cast<int>(std::llround(
                     static_cast<double>(n.lengthTicks) * ppt)))));
+            const double centerX = barX + barWidth * 0.5;
+            const double distance = std::abs(static_cast<double>(x) - centerX);
 
-            const double clickDistance = std::abs(
-                static_cast<double>(x) - (barX + barWidth * 0.5));
-            const auto tickDistance = std::llabs(clickTick - n.startTick);
-
-            if (clickDistance <= velocityHitTolerance
-                && tickDistance <= MidiEngine::ticksPerQuarterNote
-                && clickDistance < bestDistance)
+            if (distance < bestDistance)
             {
-                bestDistance = clickDistance;
+                bestDistance = distance;
                 best = &n;
             }
         }
