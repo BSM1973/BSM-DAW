@@ -49,7 +49,7 @@ public:
     {
         g.fillAll(juce::Colour(0xff15181d));
         g.setColour(juce::Colour(0xff3a414a));
-        g.drawHorizontalLine(0, (float) getWidth());
+        g.drawHorizontalLine(0, 0.0f, (float) getWidth());
 
         g.setColour(juce::Colour(0xff8b929b));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
@@ -372,7 +372,6 @@ private:
         }
         return bestSide;
     }
-
     void timerCallback() override { auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying()); repaint(); }
     int pitchFromY(int y) const noexcept { const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / keyHeight); return lowestKey + visibleKeys - 1 - row; }
     std::int64_t tickFromX(int x) const noexcept { const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick()); return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks); }
