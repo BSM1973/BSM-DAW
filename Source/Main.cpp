@@ -2,6 +2,11 @@
 #include "MainComponent.h"
 #include "MidiEditor.h"
 
+// MIDI note editing shortcuts are routed through MainWindow, just like the
+// existing project Save/Open shortcuts. This avoids relying on focus delivery
+// to a child editor component on macOS.
+bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
+
 class LibertyApplication final : public juce::JUCEApplication
 {
 public:
@@ -33,11 +38,13 @@ private:
         ~MainWindow() override { removeKeyListener(this); }
         bool keyPressed(const juce::KeyPress& key, juce::Component*) override
         {
+            if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
             return true;
         }
         bool keyPressed(const juce::KeyPress& key) override
         {
+            if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
             return DocumentWindow::keyPressed(key);
         }
