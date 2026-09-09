@@ -112,33 +112,20 @@ public:
     void mouseMove(const juce::MouseEvent& e) override
     {
         if (draggingNote) return;
-
         const auto side = findResizeSide(e.position);
-        if (side != ResizeSide::none)
-        {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            return;
-        }
-
-        if (findNoteAt(e.position) != nullptr)
-        {
-            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-            return;
-        }
-
+        if (side != ResizeSide::none) { setMouseCursor(juce::MouseCursor::LeftRightResizeCursor); return; }
+        if (findNoteAt(e.position) != nullptr) { setMouseCursor(juce::MouseCursor::DraggingHandCursor); return; }
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
     }
 
     void mouseExit(const juce::MouseEvent&) override
     {
-        if (!draggingNote)
-            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        if (!draggingNote) setMouseCursor(juce::MouseCursor::CrosshairCursor);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (e.mods.isRightButtonDown() || e.y < rulerHeight || e.x < pianoKeyWidth) return;
-
         const int pitch = pitchFromY(e.y);
         auto& midi = owner.getMidiEngine();
         for (const auto& n : midi.getNotesCopy())
@@ -148,7 +135,6 @@ public:
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
             {
                 draggingNote = true;
@@ -159,15 +145,13 @@ public:
                 dragPitch = n.pitch;
                 dragChannel = n.channel;
                 originalLengthTicks = n.lengthTicks;
-                setMouseCursor(resizeSide == ResizeSide::none
-                                   ? juce::MouseCursor::DraggingHandCursor
-                                   : juce::MouseCursor::LeftRightResizeCursor);
+                setMouseCursor(resizeSide == ResizeSide::none ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
         }
-
         if (midi.addNote(tickFromX(e.x), MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
         {
+            owner.updateMidiClipTiming();
             repaint();
             owner.repaint();
         }
@@ -176,47 +160,37 @@ public:
     void mouseDrag(const juce::MouseEvent& e) override
     {
         if (!draggingNote) return;
-
         const auto mouseTick = tickFromX(e.x);
-
         if (resizeSide == ResizeSide::right)
         {
             const auto newLength = juce::jmax(gridTicks, mouseTick - dragStartTick);
-            if (newLength != originalLengthTicks)
+            if (newLength != originalLengthTicks && owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))
             {
-                if (owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))
-                {
-                    originalLengthTicks = newLength;
-                    dragEndTick = dragStartTick + newLength;
-                    dragMoved = true;
-                    repaint();
-                    owner.repaint();
-                }
+                originalLengthTicks = newLength;
+                dragEndTick = dragStartTick + newLength;
+                dragMoved = true;
+                owner.updateMidiClipTiming();
+                repaint(); owner.repaint();
             }
             return;
         }
-
         if (resizeSide == ResizeSide::left)
         {
             const auto maxStart = juce::jmax<std::int64_t>(0, dragEndTick - gridTicks);
             const auto newStart = juce::jlimit<std::int64_t>(0, maxStart, mouseTick);
             const auto newLength = dragEndTick - newStart;
-
-            if (newStart != dragStartTick && newLength >= gridTicks)
+            if (newStart != dragStartTick && newLength >= gridTicks
+                && owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch)
+                && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength))
             {
-                if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch)
-                    && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength))
-                {
-                    dragStartTick = newStart;
-                    originalLengthTicks = newLength;
-                    dragMoved = true;
-                    repaint();
-                    owner.repaint();
-                }
+                dragStartTick = newStart;
+                originalLengthTicks = newLength;
+                dragMoved = true;
+                owner.updateMidiClipTiming();
+                repaint(); owner.repaint();
             }
             return;
         }
-
         const auto newTick = mouseTick;
         const int newPitch = pitchFromY(e.y);
         if (newTick == dragStartTick && newPitch == dragPitch) return;
@@ -226,35 +200,28 @@ public:
             dragPitch = newPitch;
             dragEndTick = newTick + originalLengthTicks;
             dragMoved = true;
-            repaint();
-            owner.repaint();
+            owner.updateMidiClipTiming();
+            repaint(); owner.repaint();
         }
     }
 
     void mouseUp(const juce::MouseEvent&) override
     {
         if (!draggingNote) return;
-
         if (!dragMoved && resizeSide == ResizeSide::none)
             owner.getMidiEngine().removeNoteAt(dragStartTick, dragPitch, dragChannel);
-
+        owner.updateMidiClipTiming();
         draggingNote = false;
         dragMoved = false;
         resizeSide = ResizeSide::none;
         originalLengthTicks = 0;
         dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
-        repaint();
-        owner.repaint();
+        repaint(); owner.repaint();
     }
 
 private:
-    enum class ResizeSide
-    {
-        none,
-        left,
-        right
-    };
+    enum class ResizeSide { none, left, right };
 
     const MidiEngine::NoteEvent* findNoteAt(juce::Point<float> position) const
     {
@@ -265,20 +232,16 @@ private:
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-            if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y))
-                return &n;
+            if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y)) return &n;
         }
         return nullptr;
     }
 
     ResizeSide findResizeSide(juce::Point<float> position) const
     {
-        if (position.y < rulerHeight || position.x < pianoKeyWidth)
-            return ResizeSide::none;
-
+        if (position.y < rulerHeight || position.x < pianoKeyWidth) return ResizeSide::none;
         ResizeSide bestSide = ResizeSide::none;
         float bestDistance = (float)resizeEdgePixels + 1.0f;
-
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
             if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
@@ -286,23 +249,12 @@ private:
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-            if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y))
-                continue;
-
+            if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y)) continue;
             const float leftDistance = std::abs(position.x - (float)noteRect.getX());
             const float rightDistance = std::abs(position.x - (float)noteRect.getRight());
-            if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance)
-            {
-                bestDistance = leftDistance;
-                bestSide = ResizeSide::left;
-            }
-            if (rightDistance <= (float)resizeEdgePixels && rightDistance < bestDistance)
-            {
-                bestDistance = rightDistance;
-                bestSide = ResizeSide::right;
-            }
+            if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance) { bestDistance = leftDistance; bestSide = ResizeSide::left; }
+            if (rightDistance <= (float)resizeEdgePixels && rightDistance < bestDistance) { bestDistance = rightDistance; bestSide = ResizeSide::right; }
         }
-
         return bestSide;
     }
 
@@ -351,7 +303,6 @@ public:
         setVisible(true);
         toFront(true);
     }
-
     void closeButtonPressed() override { setVisible(false); }
 };
 
@@ -361,7 +312,6 @@ public:
     MidiEditorMouseListener() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
     void shutdown() { if (registered) { juce::Desktop::getInstance().removeGlobalMouseListener(this); registered = false; } }
     ~MidiEditorMouseListener() override { shutdown(); }
-
     void mouseDown(const juce::MouseEvent& e) override
     {
         auto* main = findMainComponent(e.eventComponent);
@@ -370,20 +320,14 @@ public:
         constexpr int top = 76 + 32 + 4 * 70, height = 70;
         if (p.y >= top && p.y < top + height) main->selectMidiTrack();
     }
-
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         auto* main = findMainComponent(e.eventComponent);
         if (main == nullptr) return;
         const auto p = e.getEventRelativeTo(main).getPosition();
         constexpr int top = 76 + 32 + 4 * 70, height = 70;
-        if (p.y >= top && p.y < top + height)
-        {
-            main->selectMidiTrack();
-            openLibertyMidiEditor(*main);
-        }
+        if (p.y >= top && p.y < top + height) { main->selectMidiTrack(); openLibertyMidiEditor(*main); }
     }
-
 private:
     bool registered = true;
 };
@@ -395,11 +339,7 @@ std::vector<std::unique_ptr<MidiEditorWindow>> midiEditorWindows;
 void openLibertyMidiEditor(MainComponent& owner)
 {
     for (auto& w : midiEditorWindows)
-        if (w != nullptr && w->isVisible())
-        {
-            w->toFront(true);
-            return;
-        }
+        if (w != nullptr && w->isVisible()) { w->toFront(true); return; }
     midiEditorWindows.push_back(std::make_unique<MidiEditorWindow>(owner));
 }
 
