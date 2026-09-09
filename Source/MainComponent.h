@@ -8,8 +8,7 @@
 #include <functional>
 
 class MainComponent final : public juce::Component,
-                            private juce::Timer,
-                            private juce::KeyListener
+                            private juce::Timer
 {
 public:
     MainComponent();
@@ -25,12 +24,6 @@ public:
         draggedTrack = -1;
     }
     bool keyPressed(const juce::KeyPress& key) override;
-    bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
-    bool keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override
-    {
-        juce::ignoreUnused(isKeyDown, originatingComponent);
-        return false;
-    }
 
     bool hasUnsavedChanges() const;
     void requestClose(std::function<void(bool)> completion);
@@ -96,8 +89,6 @@ private:
             button.onClick = [this] { owner->showProjectMenu(); };
             addAndMakeVisible(button);
 
-            // LIBERTY UI ALIGNMENT RULE: PROJECT shares the exact left edge of the
-            // first transport control (|<), while remaining on its own row.
             setBounds(215, 10, 90, 24);
             owner->addAndMakeVisible(this);
             owner->initializeProjectTracking();
