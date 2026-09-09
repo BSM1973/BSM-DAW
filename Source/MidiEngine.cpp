@@ -5,6 +5,7 @@
 void MidiEngine::clear()
 {
     notes.clear();
+    clearNoteSelection();
     setPlaybackPositionSeconds(0.0);
     setPlaying(false);
 }
@@ -48,10 +49,12 @@ bool MidiEngine::addNote(std::int64_t startTick,
         });
 
     notes.insert(insertionPoint, note);
+    selectedNote = note;
+    selectedNoteValid = true;
     return true;
 }
 
-bool MidiEngine::removeNoteAt(std::int64_t startTick, int pitch, int channel)
+bool MidiEngine::selectNoteAt(std::int64_t startTick, int pitch, int channel) noexcept
 {
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     {
@@ -63,7 +66,44 @@ bool MidiEngine::removeNoteAt(std::int64_t startTick, int pitch, int channel)
     if (it == notes.end())
         return false;
 
+    selectedNote = *it;
+    selectedNoteValid = true;
+    return true;
+}
+
+void MidiEngine::clearNoteSelection() noexcept
+{
+    selectedNoteValid = false;
+    selectedNote = {};
+}
+
+bool MidiEngine::removeNoteAt(std::int64_t startTick, int pitch, int channel)
+{
+    // A click on a note is now a selection operation. Destructive deletion is
+    // performed explicitly through deleteSelectedNote(), matching DAW editing UX.
+    return selectNoteAt(startTick, pitch, channel);
+}
+
+bool MidiEngine::deleteSelectedNote()
+{
+    if (!selectedNoteValid)
+        return false;
+
+    const auto it = std::find_if(notes.begin(), notes.end(), [this](const NoteEvent& note)
+    {
+        return note.startTick == selectedNote.startTick
+            && note.pitch == selectedNote.pitch
+            && note.channel == selectedNote.channel;
+    });
+
+    if (it == notes.end())
+    {
+        clearNoteSelection();
+        return false;
+    }
+
     notes.erase(it);
+    clearNoteSelection();
     return true;
 }
 
@@ -98,7 +138,10 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
     const auto length = it->lengthTicks;
     const auto velocity = it->velocity;
     notes.erase(it);
-    return addNote(newStartTick, length, newPitch, velocity, channel);
+    const auto moved = addNote(newStartTick, length, newPitch, velocity, channel);
+    if (!moved)
+        return false;
+    return true;
 }
 
 bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel,
@@ -119,6 +162,8 @@ bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel,
         return false;
 
     it->lengthTicks = newLengthTicks;
+    selectNoteAt(startTick, pitch, channel);
+    selectedNote.lengthTicks = newLengthTicks;
     return true;
 }
 
@@ -140,6 +185,8 @@ bool MidiEngine::setNoteVelocity(std::int64_t startTick, int pitch, int channel,
         return false;
 
     it->velocity = static_cast<std::uint8_t>(newVelocity);
+    selectNoteAt(startTick, pitch, channel);
+    selectedNote.velocity = static_cast<std::uint8_t>(newVelocity);
     return true;
 }
 
@@ -167,7 +214,6 @@ std::int64_t MidiEngine::secondsToTick(double seconds, double tempoBpm) noexcept
 {
     if (seconds <= 0.0 || tempoBpm <= 0.0)
         return 0;
-
     const auto ticks = seconds * tempoBpm / 60.0 * static_cast<double>(ticksPerQuarterNote);
     return static_cast<std::int64_t>(std::llround(ticks));
 }
@@ -176,16 +222,13 @@ std::int64_t MidiEngine::quantizeTick(std::int64_t tick, std::int64_t gridTicks)
 {
     if (tick <= 0 || gridTicks <= 0)
         return std::max<std::int64_t>(0, tick);
-
-    return static_cast<std::int64_t>(std::llround(
-        static_cast<double>(tick) / static_cast<double>(gridTicks))) * gridTicks;
+    return static_cast<std::int64_t>(std::llround(static_cast<double>(tick) / static_cast<double>(gridTicks))) * gridTicks;
 }
 
 std::int64_t MidiEngine::ticksPerMeasure(int numerator, int denominator) noexcept
 {
     if (numerator <= 0 || denominator <= 0)
         return 0;
-
     return static_cast<std::int64_t>(numerator) * ticksPerQuarterNote * 4 / denominator;
 }
 
