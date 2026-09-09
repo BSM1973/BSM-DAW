@@ -392,7 +392,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
         // Version 2 stores project media beside the .bsmproj. Keep backwards
         // compatibility with older projects that stored the original absolute path.
-        if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty() && !sourceFile.isAbsolute())
+        if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty())
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
 
         if (!sourceFile.existsAsFile())
