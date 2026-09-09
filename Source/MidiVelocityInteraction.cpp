@@ -11,6 +11,15 @@ constexpr int velocityLaneHeight = 92;
 constexpr int velocityHitTolerance = 16;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
+MainComponent* findMainRecursive(juce::Component* c) noexcept
+{
+    if (c == nullptr) return nullptr;
+    if (auto* main = dynamic_cast<MainComponent*>(c)) return main;
+    for (int i = 0; i < c->getNumChildComponents(); ++i)
+        if (auto* main = findMainRecursive(c->getChildComponent(i))) return main;
+    return nullptr;
+}
+
 class VelocityMouseListener final : public juce::MouseListener
 {
 public:
@@ -52,7 +61,7 @@ private:
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-            if (auto* main = dynamic_cast<MainComponent*>(desktop.getComponent(i))) return main;
+            if (auto* main = findMainRecursive(desktop.getComponent(i))) return main;
         return nullptr;
     }
 
