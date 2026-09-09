@@ -8,6 +8,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return true;
 
         audioEngine.clearAudioTrack(selectedTrack);
+        trackSourceFiles[(size_t)selectedTrack] = {};
         waveformMin[(size_t)selectedTrack].clear();
         waveformMax[(size_t)selectedTrack].clear();
         playheadSeconds = 0.0;
@@ -25,6 +26,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         juce::String error;
         if (audioEngine.splitAudioTrack(selectedTrack, playheadSeconds, newTrack, error))
         {
+            trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)selectedTrack];
             rebuildWaveformCache(selectedTrack);
             rebuildWaveformCache(newTrack);
             selectedTrack = newTrack;
@@ -33,7 +35,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         else
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "BSM DAW - Split",
+                                                   "Liberty - Split",
                                                    error,
                                                    "OK");
         }
