@@ -41,6 +41,9 @@ public:
     std::vector<NoteEvent> getSelectedNotesCopy() const;
     void setSelectedNotes(const std::vector<NoteEvent>& selection) noexcept;
     std::size_t getNumSelectedNotes() const noexcept { return selectedNotes.size(); }
+    bool moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch);
+    bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
+    bool deleteSelectedNotes();
 
     bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
                   std::int64_t newStartTick, int newPitch);
