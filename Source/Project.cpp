@@ -128,12 +128,9 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
 
 void MainComponent::requestClose(std::function<void(bool)> completion)
 {
-    if (!hasUnsavedChanges())
-    {
-        completion(true);
-        return;
-    }
-
+    // Liberty must always ask before quitting, even when the current project
+    // is already saved. This restores the explicit SAVE / DON'T SAVE / CANCEL
+    // close workflow requested for the application.
     juce::AlertWindow::showYesNoCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
