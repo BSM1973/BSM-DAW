@@ -56,6 +56,10 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0);
     }
 
+    signature << "|midi=";
+    for (const auto& note : midiEngine.getNotesCopy())
+        signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ';';
+
     return signature;
 }
 
@@ -200,6 +204,7 @@ void MainComponent::resetProjectState()
     timeSignatureDenominator = 4;
     selectedTrack = 0;
     audioEngine.setMasterGain(1.0f);
+    midiEngine.clear();
 
     for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
     {
@@ -292,13 +297,26 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 2);
+    project.setAttribute("version", 3);
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
     project.setAttribute("selectedTrack", selectedTrack);
     project.setAttribute("playheadSeconds", playheadSeconds);
     project.setAttribute("masterGain", (double)audioEngine.getMasterGain());
+
+    auto* midi = project.createNewChildElement("MIDI");
+    midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
+    midi->setAttribute("track", 0);
+    for (const auto& note : midiEngine.getNotesCopy())
+    {
+        auto* noteElement = midi->createNewChildElement("Note");
+        noteElement->setAttribute("startTick", (juce::int64)note.startTick);
+        noteElement->setAttribute("lengthTicks", (juce::int64)note.lengthTicks);
+        noteElement->setAttribute("pitch", (int)note.pitch);
+        noteElement->setAttribute("velocity", (int)note.velocity);
+        noteElement->setAttribute("channel", (int)note.channel);
+    }
 
     for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
     {
@@ -375,6 +393,21 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     selectedTrack = juce::jlimit(0, AudioEngine::maxAudioTracks - 1, project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
     audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
+
+    if (auto* midi = project->getChildByName("MIDI"))
+    {
+        midiEngine.clear();
+        for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
+        {
+            if (noteElement->getTagName() != "Note") continue;
+            midiEngine.addNote(
+                noteElement->getInt64Attribute("startTick", 0),
+                noteElement->getInt64Attribute("lengthTicks", MidiEngine::ticksPerQuarterNote),
+                noteElement->getIntAttribute("pitch", 60),
+                noteElement->getIntAttribute("velocity", 100),
+                noteElement->getIntAttribute("channel", 1));
+        }
+    }
 
     juce::String missingFiles;
     for (auto* track = project->getFirstChildElement(); track != nullptr; track = track->getNextElement())
