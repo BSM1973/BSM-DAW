@@ -67,6 +67,40 @@ bool MidiEngine::removeNoteAt(std::int64_t startTick, int pitch, int channel)
     return true;
 }
 
+bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
+                          std::int64_t newStartTick, int newPitch)
+{
+    if (newStartTick < 0 || newPitch < minMidiNote || newPitch > maxMidiNote
+        || channel < 1 || channel > 16)
+        return false;
+
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == oldStartTick
+            && note.pitch == static_cast<std::uint8_t>(oldPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+
+    if (it == notes.end())
+        return false;
+
+    const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return &note != &(*it)
+            && note.startTick == newStartTick
+            && note.pitch == static_cast<std::uint8_t>(newPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+
+    if (duplicate != notes.end())
+        return false;
+
+    const auto length = it->lengthTicks;
+    const auto velocity = it->velocity;
+    notes.erase(it);
+    return addNote(newStartTick, length, newPitch, velocity, channel);
+}
+
 std::vector<MidiEngine::NoteEvent> MidiEngine::getNotesCopy() const
 {
     return notes;
