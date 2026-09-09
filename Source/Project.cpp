@@ -40,7 +40,8 @@ juce::String MainComponent::getProjectStateSignature() const
     juce::String signature;
     signature << "tempo=" << juce::String(tempoBpm, 6)
               << ";meter=" << timeSignatureNumerator << "/" << timeSignatureDenominator
-              << ";master=" << juce::String(audioEngine.getMasterGain(), 6);
+              << ";master=" << juce::String(audioEngine.getMasterGain(), 6)
+              << ";midiClipStart=" << juce::String(midiClipStartSeconds, 6);
 
     for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
     {
@@ -200,6 +201,7 @@ void MainComponent::resetProjectState()
     timeSignatureNumerator = 4;
     timeSignatureDenominator = 4;
     selectedTrack = 0;
+    midiClipStartSeconds = 0.0;
     audioEngine.setMasterGain(1.0f);
     midiEngine.clear();
 
@@ -294,13 +296,14 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 3);
+    project.setAttribute("version", 4);
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
     project.setAttribute("selectedTrack", selectedTrack);
     project.setAttribute("playheadSeconds", playheadSeconds);
     project.setAttribute("masterGain", (double)audioEngine.getMasterGain());
+    project.setAttribute("midiClipStartSeconds", midiClipStartSeconds);
 
     auto* midi = project.createNewChildElement("MIDI");
     midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
@@ -387,6 +390,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     selectedTrack = juce::jlimit(0, AudioEngine::maxAudioTracks - 1, project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
     audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
+    midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
 
     if (auto* midi = project->getChildByName("MIDI"))
     {
