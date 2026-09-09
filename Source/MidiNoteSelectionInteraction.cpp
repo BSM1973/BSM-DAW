@@ -166,8 +166,37 @@ public:
     void mouseDown(const juce::MouseEvent& e) override
     {
         attachToMidiWindow(e.getScreenPosition());
-        if (e.mods.isCommandDown()) selectNoteFromScreenPosition(e.getScreenPosition(), true);
-        else selectNoteFromScreenPosition(e.getScreenPosition(), false);
+        if (e.mods.isCommandDown())
+        {
+            auto* main = findMainComponent();
+            if (main != nullptr)
+            {
+                if (!pendingAdditiveSelectionActive)
+                    pendingAdditiveSelection = main->getMidiEngine().getSelectedNotesCopy();
+                const auto before = pendingAdditiveSelection.size();
+                selectNoteFromScreenPosition(e.getScreenPosition(), true, &pendingAdditiveSelection);
+                pendingAdditiveSelectionActive = true;
+                if (pendingAdditiveSelection.size() != before || !pendingAdditiveSelection.empty())
+                {
+                    juce::Timer::callAfterDelay(100, [this]
+                    {
+                        if (!pendingAdditiveSelectionActive) return;
+                        if (auto* currentMain = findMainComponent())
+                        {
+                            currentMain->getMidiEngine().setSelectedNotes(pendingAdditiveSelection);
+                            currentMain->repaint();
+                            if (selectionOverlay != nullptr) selectionOverlay->repaint();
+                        }
+                        pendingAdditiveSelection.clear();
+                        pendingAdditiveSelectionActive = false;
+                    });
+                }
+            }
+            return;
+        }
+        pendingAdditiveSelection.clear();
+        pendingAdditiveSelectionActive = false;
+        selectNoteFromScreenPosition(e.getScreenPosition(), false);
     }
 private:
     static bool isDeleteKey(const juce::KeyPress& key) noexcept { return key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey; }
@@ -198,7 +227,7 @@ private:
             content->grabKeyboardFocus();
         }
     }
-    void selectNoteFromScreenPosition(juce::Point<int> screenPosition, bool additive)
+    void selectNoteFromScreenPosition(juce::Point<int> screenPosition, bool additive, std::vector<MidiEngine::NoteEvent>* selectionOverride = nullptr)
     {
         auto* window = findMidiWindow(screenPosition); if (window == nullptr) return;
         auto* content = window->getContentComponent(); auto* main = findMainComponent(); if (content == nullptr || main == nullptr) return;
@@ -218,12 +247,22 @@ private:
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p.x, p.y))
             {
+                if (selectionOverride != nullptr)
+                {
+                    const auto it = std::find_if(selectionOverride->begin(), selectionOverride->end(), [&](const MidiEngine::NoteEvent& selected)
+                    { return selected.startTick == note.startTick && selected.pitch == note.pitch && selected.channel == note.channel; });
+                    if (it != selectionOverride->end()) selectionOverride->erase(it); else selectionOverride->push_back(note);
+                    return;
+                }
                 if (additive) main->getMidiEngine().toggleNoteSelectionAt(note.startTick, note.pitch, note.channel);
                 else main->getMidiEngine().selectNoteAt(note.startTick, note.pitch, note.channel);
                 if (selectionOverlay != nullptr) selectionOverlay->repaint(); main->repaint(); return;
             }
         }
-        main->getMidiEngine().clearNoteSelection(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); main->repaint();
+        if (selectionOverride == nullptr)
+        {
+            main->getMidiEngine().clearNoteSelection(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); main->repaint();
+        }
     }
     void detachFromWindows()
     {
@@ -233,6 +272,8 @@ private:
     juce::Component* attachedContent = nullptr;
     std::unique_ptr<MidiSelectionOverlay> selectionOverlay;
     std::vector<MidiEngine::NoteEvent> clipboardNotes;
+    std::vector<MidiEngine::NoteEvent> pendingAdditiveSelection;
+    bool pendingAdditiveSelectionActive = false;
 };
 
 MidiNoteSelectionInteraction midiNoteSelectionInteraction;
