@@ -211,7 +211,7 @@ private:
     bool beginVelocityEdit(int x)
     {
         const auto tick = tickFromX(x);
-        const auto clipLengthTicks = juce::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm());
+        const auto clipLengthTicks = MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm());
         const MidiEngine::NoteEvent* best = nullptr;
         std::int64_t bestDistance = std::numeric_limits<std::int64_t>::max();
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
