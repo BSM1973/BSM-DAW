@@ -46,10 +46,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
     g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
 
-    // Liberty branding occupies the complete 182 x 66 header cell.
     const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
+    juce::ignoreUnused(logoArea);
 
-    // Main Liberty mark: pure white for the emblem, wing and waveform.
     g.setColour(juce::Colours::white);
     juce::Path emblem;
     emblem.addEllipse(10.0f, 10.0f, 44.0f, 44.0f);
@@ -65,8 +64,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     wave.cubicTo(41.0f, 34.0f, 47.0f, 33.0f, 52.0f, 35.0f);
     g.strokePath(wave, juce::PathStrokeType(2.0f));
 
-    // The four vertical bars represent audio level and are deliberately differentiated
-    // with a restrained cyan-to-blue gradient while the rest of the mark stays white.
     const juce::ColourGradient audioBarsGradient(
         juce::Colour(0xff72d8f5), 18.0f, 18.0f,
         juce::Colour(0xff4f82ff), 40.0f, 40.0f, false);
@@ -76,7 +73,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(30.0f, 18.0f, 3.5f, 21.0f, 1.5f);
     g.fillRoundedRectangle(36.0f, 23.0f, 3.5f, 16.0f, 1.5f);
 
-    // Larger Liberty wordmark, kept inside its dedicated logo cell.
     auto libertyFont = juce::Font("Brush Script MT", 50.0f, juce::Font::plain);
     libertyFont.setPreferredFallbackFamilies({ "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Cursive" });
     g.setColour(juce::Colours::white);
@@ -93,8 +89,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
 
-    // Tempo and time-signature are interactive child controls supplied by TempoControls.
-    // Do not draw duplicate BPM / meter text here.
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
     const double beatsPerMeasure = (double) juce::jmax(1, timeSignatureNumerator);
     const double secondsPerMeasure = secondsPerBeat * beatsPerMeasure;
@@ -113,11 +107,33 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    constexpr int headerW = 210, rulerH = 32, rowH = 70; constexpr float pixelsPerSecond = 80.0f;
+    constexpr int headerW = 210, rulerH = 32, rowH = 70;
+    constexpr float pixelsPerSecond = 80.0f;
+    const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+    const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
+    const float pixelsPerMeasure = static_cast<float>(secondsPerMeasure * pixelsPerSecond);
+
     auto ruler = area.removeFromTop(rulerH); auto rows = area;
     g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler); g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW)); g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
-    g.setColour(juce::Colour(0xff353b44)); for (int x = headerW; x < getWidth(); x += 120) g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
-    g.setColour(juce::Colour(0xff777f89)); g.setFont(juce::Font(11.0f)); for (int i = 0; i < 12; ++i) g.drawText(juce::String(i + 1), headerW + i * 120 + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
+
+    // LIBERTY TIMELINE RULE: ruler measures and playhead use the exact same time-to-pixel mapping.
+    // This prevents any visual offset between the musical grid and the transport position.
+    g.setColour(juce::Colour(0xff353b44));
+    for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
+    {
+        const int x = headerW + static_cast<int>(std::round(measureIndex * pixelsPerMeasure));
+        if (x >= getWidth()) break;
+        g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
+    }
+
+    g.setColour(juce::Colour(0xff777f89)); g.setFont(juce::Font(11.0f));
+    for (int i = 0; i < 100; ++i)
+    {
+        const int x = headerW + static_cast<int>(std::round(i * pixelsPerMeasure));
+        if (x >= getWidth()) break;
+        g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
+    }
+
     for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
     {
         auto row = rows.removeFromTop(rowH); g.setColour(i % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
@@ -269,12 +285,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const auto p = event.getPosition();
     if (handleMixerMouse(event)) return;
 
-    // Transport: all five controls are real actions, using the exact rectangles drawn above.
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
     const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
     const auto playButton = juce::Rectangle<int>(339, 38, 56, 28);
     const auto nextButton = juce::Rectangle<int>(401, 38, 56, 28);
     const auto forwardButton = juce::Rectangle<int>(463, 38, 56, 28);
+
+    const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+    const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
 
     if (rewindButton.contains(p))
     {
@@ -288,7 +306,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     if (previousButton.contains(p))
     {
-        const double newTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds() - 1.0);
+        const double currentTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds());
+        const double newTime = juce::jmax(0.0, std::ceil((currentTime - 0.000001) / secondsPerMeasure - 1.0e-9) * secondsPerMeasure - secondsPerMeasure);
         audioEngine.setCurrentTimeSeconds(newTime);
         playheadSeconds = newTime;
         repaint();
@@ -305,9 +324,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     if (nextButton.contains(p))
     {
-        const double newTime = audioEngine.getCurrentTimeSeconds() + 1.0;
-        audioEngine.setCurrentTimeSeconds(newTime);
-        playheadSeconds = newTime;
+        const double currentTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds());
+        const double nextMeasure = (std::floor(currentTime / secondsPerMeasure + 1.0e-9) + 1.0) * secondsPerMeasure;
+        audioEngine.setCurrentTimeSeconds(nextMeasure);
+        playheadSeconds = nextMeasure;
         repaint();
         return;
     }
@@ -318,8 +338,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
             if (audioEngine.hasAudioFile(i))
                 projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
-        audioEngine.setCurrentTimeSeconds(projectEnd);
-        playheadSeconds = projectEnd;
+        const double snappedEnd = std::ceil(projectEnd / secondsPerMeasure - 1.0e-9) * secondsPerMeasure;
+        audioEngine.setCurrentTimeSeconds(snappedEnd);
+        playheadSeconds = snappedEnd;
         audioEngine.setPlaying(false);
         isPlaying = false;
         repaint();
@@ -329,14 +350,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
     if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
 
-    // LIBERTY TRANSPORT SNAP: by default, timeline positioning is magnetised to whole measures.
-    // The snap is based on the current BPM and time signature, so every bar remains musical.
     constexpr int headerW = 210, rulerH = 32;
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
     {
-        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
-                                     * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
-        const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
         const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
         const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
         audioEngine.setCurrentTimeSeconds(snappedTime);
@@ -362,9 +378,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
     {
-        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
-                                     * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
-        const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
         const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
         const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
         audioEngine.setCurrentTimeSeconds(snappedTime);
