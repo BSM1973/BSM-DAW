@@ -18,9 +18,48 @@ class MidiSelectionOverlay final : public juce::Component,
 public:
     explicit MidiSelectionOverlay(MainComponent& o) : owner(o)
     {
-        setInterceptsMouseClicks(false, false);
+        // Only empty Piano Roll grid areas are intercepted. Notes and the
+        // velocity lane remain owned by their dedicated editors.
+        setInterceptsMouseClicks(true, true);
         setOpaque(false);
         startTimerHz(30);
+    }
+
+    bool hitTest(int x, int y) override
+    {
+        if (x < pianoKeyWidth || y < rulerHeight
+            || y >= getHeight() - velocityLaneHeight)
+            return false;
+
+        const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
+        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(
+            juce::jmax<std::int64_t>(1, ticksPerMeasure),
+            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        const int pitch = juce::jlimit(0, 127, lowestKey + visibleKeys - 1 - ((y - rulerHeight) / keyHeight));
+
+        for (const auto& note : owner.getMidiEngine().getNotesCopy())
+        {
+            if (note.pitch != pitch || note.startTick < 0 || note.startTick >= clipLengthTicks)
+                continue;
+            const auto visibleLengthTicks = juce::jmin(note.lengthTicks, clipLengthTicks - note.startTick);
+            const int noteX = pianoKeyWidth + (int) std::llround((double) note.startTick * pixelsPerTick);
+            const int noteY = rulerHeight + (visibleKeys - 1 - ((int) note.pitch - lowestKey)) * keyHeight + 2;
+            const int noteW = juce::jmax(8, (int) std::llround((double) visibleLengthTicks * pixelsPerTick));
+            const auto rect = juce::Rectangle<int>(noteX + 1, noteY, noteW - 2, keyHeight - 4);
+            if (rect.contains(x, y))
+                return false;
+        }
+
+        return true;
+    }
+
+    void mouseDown(const juce::MouseEvent&) override
+    {
+        owner.getMidiEngine().clearNoteSelection();
+        owner.repaint();
+        repaint();
     }
 
     void paint(juce::Graphics& g) override
@@ -86,8 +125,17 @@ public:
 
     ~MidiNoteSelectionInteraction() override
     {
+        shutdown();
+    }
+
+    void shutdown() noexcept
+    {
         detachFromWindows();
-        juce::Desktop::getInstance().removeGlobalMouseListener(this);
+        if (registered)
+        {
+            juce::Desktop::getInstance().removeGlobalMouseListener(this);
+            registered = false;
+        }
     }
 
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override
@@ -239,9 +287,15 @@ private:
         attachedContent = nullptr;
     }
 
+    bool registered = true;
     juce::Component* attachedContent = nullptr;
     std::unique_ptr<MidiSelectionOverlay> selectionOverlay;
 };
 
 MidiNoteSelectionInteraction midiNoteSelectionInteraction;
+}
+
+void shutdownLibertyMidiNoteSelectionInteraction()
+{
+    midiNoteSelectionInteraction.shutdown();
 }
