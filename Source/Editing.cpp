@@ -3,14 +3,19 @@
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
     const auto modifiers = key.getModifiers();
-    const bool commandOrControl = modifiers.isCommandDown();
 
-    // LIBERTY WORKFLOW: standard project shortcuts must work on macOS and Windows.
+   #if JUCE_MAC
+    const bool commandOrControl = modifiers.isCommandDown();
+   #else
+    const bool commandOrControl = modifiers.isCtrlDown();
+   #endif
+
+    // LIBERTY WORKFLOW: standard project shortcuts must use the physical key code,
+    // not getTextCharacter(). On macOS, Command-modified keys can have a null
+    // text character even though the key code is valid.
     if (commandOrControl)
     {
-        const auto character = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
-
-        if (character == 's')
+        if (key.isKeyCode('s'))
         {
             if (modifiers.isShiftDown())
                 saveProjectAs();
@@ -19,13 +24,13 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return true;
         }
 
-        if (character == 'o' && !modifiers.isShiftDown())
+        if (key.isKeyCode('o') && !modifiers.isShiftDown())
         {
             openProject();
             return true;
         }
 
-        if (character == 'n' && !modifiers.isShiftDown())
+        if (key.isKeyCode('n') && !modifiers.isShiftDown())
         {
             newProject();
             return true;
@@ -47,7 +52,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
-    if (key.getTextCharacter() == 's' || key.getTextCharacter() == 'S')
+    if (key.isKeyCode('s') && !key.getModifiers().isAnyModifierKeyDown())
     {
         if (!audioEngine.hasAudioFile(selectedTrack))
             return true;
