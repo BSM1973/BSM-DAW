@@ -69,6 +69,29 @@ private:
         juce::TextButton meterButton;
     };
 
+    class ProjectButton final : public juce::Component
+    {
+    public:
+        explicit ProjectButton(MainComponent* ownerIn) : owner(ownerIn)
+        {
+            button.setButtonText("PROJECT");
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff303640));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            button.onClick = [this] { owner->showProjectMenu(); };
+            addAndMakeVisible(button);
+            setBounds(825, 10, 90, 24);
+            owner->addAndMakeVisible(this);
+        }
+
+        void resized() override { button.setBounds(getLocalBounds()); }
+
+    private:
+        MainComponent* owner;
+        juce::TextButton button;
+    };
+
     void timerCallback() override;
     void drawTransport(juce::Graphics& g, juce::Rectangle<int> area);
     void drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area);
@@ -82,11 +105,23 @@ private:
     int getAudioTrackAtPosition(juce::Point<int> position) const;
     bool isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const;
 
+    void showProjectMenu();
+    void newProject();
+    void openProject();
+    void saveProject();
+    void saveProjectAs();
+    bool saveProjectToFile(const juce::File& file);
+    bool loadProjectFromFile(const juce::File& file);
+    void resetProjectState();
+
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
     std::unique_ptr<juce::FileChooser> audioFileChooser;
+    std::unique_ptr<juce::FileChooser> projectFileChooser;
     std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMin;
     std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMax;
+    std::array<juce::File, AudioEngine::maxAudioTracks> trackSourceFiles;
+    juce::File currentProjectFile;
     int selectedTrack = 0;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
@@ -94,6 +129,7 @@ private:
     int timeSignatureNumerator = 4;
     int timeSignatureDenominator = 4;
     TempoControls tempoControls { this };
+    ProjectButton projectButton { this };
     bool draggingClip = false;
     int draggedTrack = -1;
     float dragStartMouseX = 0.0f;
