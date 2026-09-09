@@ -31,6 +31,7 @@ target_sources(BSM_DAW PRIVATE
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
     Source/MidiEngine.cpp
+    Source/MidiEditor.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
