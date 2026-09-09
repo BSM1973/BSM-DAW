@@ -132,9 +132,6 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
 
 void MainComponent::requestClose(std::function<void(bool)> completion)
 {
-    // Liberty must always ask before quitting, even when the current project
-    // is already saved. This restores the explicit SAVE / DON'T SAVE / CANCEL
-    // close workflow requested for the application.
     juce::AlertWindow::showYesNoCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
@@ -311,8 +308,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     for (const auto& note : midiEngine.getNotesCopy())
     {
         auto* noteElement = midi->createNewChildElement("Note");
-        noteElement->setAttribute("startTick", (juce::int64)note.startTick);
-        noteElement->setAttribute("lengthTicks", (juce::int64)note.lengthTicks);
+        noteElement->setAttribute("startTick", (double)note.startTick);
+        noteElement->setAttribute("lengthTicks", (double)note.lengthTicks);
         noteElement->setAttribute("pitch", (int)note.pitch);
         noteElement->setAttribute("velocity", (int)note.velocity);
         noteElement->setAttribute("channel", (int)note.channel);
@@ -327,9 +324,6 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const auto* buffer = audioEngine.getAudioBuffer(i);
 
-        // Every saved project gets its own media copy. This makes the project
-        // reopenable even when the original source file is moved or changed,
-        // and also preserves edited/split clip buffers.
         if (audioEngine.hasAudioFile(i) && buffer != nullptr)
         {
             juce::File exportedFile;
@@ -401,8 +395,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         {
             if (noteElement->getTagName() != "Note") continue;
             midiEngine.addNote(
-                noteElement->getInt64Attribute("startTick", 0),
-                noteElement->getInt64Attribute("lengthTicks", MidiEngine::ticksPerQuarterNote),
+                (std::int64_t)std::llround(noteElement->getDoubleAttribute("startTick", 0.0)),
+                (std::int64_t)std::llround(noteElement->getDoubleAttribute("lengthTicks", (double)MidiEngine::ticksPerQuarterNote)),
                 noteElement->getIntAttribute("pitch", 60),
                 noteElement->getIntAttribute("velocity", 100),
                 noteElement->getIntAttribute("channel", 1));
@@ -420,8 +414,6 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
 
-        // Version 2 stores project media beside the .bsmproj. Keep backwards
-        // compatibility with older projects that stored the original absolute path.
         if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty())
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
 
