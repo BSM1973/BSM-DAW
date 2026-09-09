@@ -240,6 +240,7 @@ void MainComponent::openAudioFile()
             const auto file = chooser.getResult(); if (!file.existsAsFile()) return;
             juce::String error;
             if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Audio Import", error, "OK"); return; }
+            trackSourceFiles[(size_t)trackToLoad] = file;
             selectedTrack = trackToLoad; isPlaying = false; playheadSeconds = 0.0; rebuildWaveformCache(trackToLoad); repaint();
         });
 }
