@@ -35,6 +35,13 @@ public:
     void clearNoteSelection() noexcept;
     bool hasSelectedNote() const noexcept { return selectedNoteValid; }
     NoteEvent getSelectedNote() const noexcept { return selectedNote; }
+
+    bool toggleNoteSelectionAt(std::int64_t startTick, int pitch, int channel = 1) noexcept;
+    bool isNoteSelected(const NoteEvent& note) const noexcept;
+    std::vector<NoteEvent> getSelectedNotesCopy() const;
+    void setSelectedNotes(const std::vector<NoteEvent>& selection) noexcept;
+    std::size_t getNumSelectedNotes() const noexcept { return selectedNotes.size(); }
+
     bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
                   std::int64_t newStartTick, int newPitch);
     bool setNoteLength(std::int64_t startTick, int pitch, int channel,
@@ -59,6 +66,7 @@ private:
     std::vector<NoteEvent> notes;
     NoteEvent selectedNote;
     bool selectedNoteValid = false;
+    std::vector<NoteEvent> selectedNotes;
     std::atomic<double> playbackPositionSeconds { 0.0 };
     std::atomic<bool> playing { false };
 };
