@@ -6,6 +6,33 @@ constexpr int menuNew = 1;
 constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
+
+bool exportTrackToProjectMedia(const juce::File& projectFile,
+                               int trackIndex,
+                               const juce::AudioBuffer<float>* buffer,
+                               double sampleRate,
+                               juce::File& exportedFile)
+{
+    if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0 || sampleRate <= 0.0)
+        return false;
+
+    auto mediaFolder = projectFile.getSiblingFile(projectFile.getFileNameWithoutExtension() + "_Media");
+    if (!mediaFolder.createDirectory().wasOk() && !mediaFolder.isDirectory())
+        return false;
+
+    exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
+    auto output = exportedFile.createOutputStream();
+    if (output == nullptr)
+        return false;
+
+    juce::WavAudioFormat wav;
+    auto writer = std::unique_ptr<juce::AudioFormatWriter>(
+        wav.createWriterFor(output.release(), sampleRate, (unsigned int)buffer->getNumChannels(), 24, {}, 0));
+    if (writer == nullptr)
+        return false;
+
+    return writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples());
+}
 }
 
 void MainComponent::showProjectMenu()
@@ -127,7 +154,29 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
         track->setAttribute("loaded", audioEngine.hasAudioFile(i));
-        track->setAttribute("sourceFile", trackSourceFiles[(size_t)i].getFullPathName());
+
+        juce::File sourceFile = trackSourceFiles[(size_t)i];
+        const auto* buffer = audioEngine.getAudioBuffer(i);
+        if (audioEngine.hasAudioFile(i) && sourceFile.existsAsFile() && buffer != nullptr)
+        {
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(sourceFile));
+            const auto sourceLength = reader != nullptr && reader->sampleRate > 0.0
+                ? static_cast<double>(reader->lengthInSamples) / reader->sampleRate
+                : audioEngine.getAudioFileLengthSeconds(i);
+
+            // Edited/split clips are exported into a project-owned media folder so their
+            // exact current audio survives reopening without touching the original source.
+            if (std::abs(sourceLength - audioEngine.getAudioFileLengthSeconds(i)) > 0.001)
+            {
+                juce::File exportedFile;
+                if (exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
+                    sourceFile = exportedFile;
+            }
+        }
+
+        track->setAttribute("sourceFile", sourceFile.getFullPathName());
         track->setAttribute("fileName", audioEngine.getAudioFileName(i));
         track->setAttribute("startSeconds", audioEngine.getTrackStartSeconds(i));
         track->setAttribute("lengthSeconds", audioEngine.getAudioFileLengthSeconds(i));
