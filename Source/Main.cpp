@@ -33,7 +33,10 @@ public:
 
     void systemRequestedQuit() override
     {
-        quit();
+        if (mainWindow != nullptr)
+            mainWindow->requestClose();
+        else
+            quit();
     }
 
     void anotherInstanceStarted(const juce::String&) override
@@ -56,9 +59,25 @@ private:
             setVisible(true);
         }
 
+        void requestClose()
+        {
+            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
+            {
+                content->requestClose([this](bool canClose)
+                {
+                    if (canClose)
+                        juce::JUCEApplication::getInstance()->quit();
+                });
+            }
+            else
+            {
+                juce::JUCEApplication::getInstance()->quit();
+            }
+        }
+
         void closeButtonPressed() override
         {
-            juce::JUCEApplication::getInstance()->systemRequestedQuit();
+            requestClose();
         }
     };
 
