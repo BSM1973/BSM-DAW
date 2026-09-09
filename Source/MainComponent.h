@@ -33,7 +33,22 @@ public:
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
 
 private:
-    class AudioSettingsWindow;
+    class AudioSettingsWindow final : public juce::DocumentWindow
+    {
+    public:
+        explicit AudioSettingsWindow(AudioEngine& engine)
+            : juce::DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff15181d), juce::DocumentWindow::closeButton)
+        {
+            setUsingNativeTitleBar(true);
+            setContentOwned(new juce::AudioDeviceSelectorComponent(engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false), true);
+            setResizable(true, true);
+            centreWithSize(620, 500);
+            setVisible(false);
+        }
+        void closeButtonPressed() override { setVisible(false); }
+    private:
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsWindow)
+    };
     class TempoControls final : public juce::Component
     {
     public:
