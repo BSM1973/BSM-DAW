@@ -82,49 +82,52 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
         return;
     }
 
-    auto* alert = new juce::AlertWindow(
+    pendingProjectAction = std::move(action);
+
+    // Use JUCE's supported three-button asynchronous dialog instead of manually
+    // managing an AlertWindow lifetime. This is reliable on macOS and keeps the
+    // SAVE / DON'T SAVE / CANCEL result mapping explicit.
+    juce::AlertWindow::showYesNoCancelBox(
+        juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
         "The current project has unsaved changes.",
-        juce::MessageBoxIconType::WarningIcon);
-    alert->addButton("SAVE", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    alert->addButton("DON'T SAVE", 2, juce::KeyPress());
-    alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        "SAVE",
+        "DON'T SAVE",
+        "CANCEL",
+        this,
+        juce::ModalCallbackFunction::create([this](int result)
+        {
+            if (result == 0)
+            {
+                pendingProjectAction = {};
+                return;
+            }
 
-    pendingProjectAction = std::move(action);
-    alert->enterModalState(true,
-                           juce::ModalCallbackFunction::create([this, alert](int result)
-                           {
-                               if (result == 0)
-                               {
-                                   pendingProjectAction = {};
-                               }
-                               else if (result == 2)
-                               {
-                                   auto next = std::move(pendingProjectAction);
-                                   pendingProjectAction = {};
-                                   if (next)
-                                       next();
-                               }
-                               else
-                               {
-                                   if (currentProjectFile.existsAsFile())
-                                   {
-                                       if (saveProjectToFile(currentProjectFile))
-                                       {
-                                           auto next = std::move(pendingProjectAction);
-                                           pendingProjectAction = {};
-                                           if (next)
-                                               next();
-                                       }
-                                   }
-                                   else
-                                   {
-                                       saveProjectAs();
-                                   }
-                               }
-                               delete alert;
-                           }),
-                           true);
+            if (result == 2)
+            {
+                auto next = std::move(pendingProjectAction);
+                pendingProjectAction = {};
+                if (next)
+                    next();
+                return;
+            }
+
+            if (currentProjectFile.existsAsFile())
+            {
+                if (saveProjectToFile(currentProjectFile))
+                {
+                    auto next = std::move(pendingProjectAction);
+                    pendingProjectAction = {};
+                    if (next)
+                        next();
+                }
+            }
+            else
+            {
+                // Save As will continue pendingProjectAction after a successful save.
+                saveProjectAs();
+            }
+        }));
 }
 
 void MainComponent::requestClose(std::function<void(bool)> completion)
@@ -135,53 +138,40 @@ void MainComponent::requestClose(std::function<void(bool)> completion)
         return;
     }
 
-    auto* alert = new juce::AlertWindow(
+    juce::AlertWindow::showYesNoCancelBox(
+        juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
         "The current project has unsaved changes.",
-        juce::MessageBoxIconType::WarningIcon);
-    alert->addButton("SAVE", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    alert->addButton("DON'T SAVE", 2, juce::KeyPress());
-    alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        "SAVE",
+        "DON'T SAVE",
+        "CANCEL",
+        this,
+        juce::ModalCallbackFunction::create([this, completion = std::move(completion)](int result) mutable
+        {
+            if (result == 0)
+                return;
 
-    pendingProjectAction = [completion = std::move(completion)]
-    {
-        completion(true);
-    };
+            if (result == 2)
+            {
+                completion(true);
+                return;
+            }
 
-    alert->enterModalState(true,
-                           juce::ModalCallbackFunction::create([this, alert](int result)
-                           {
-                               if (result == 0)
-                               {
-                                   pendingProjectAction = {};
-                               }
-                               else if (result == 2)
-                               {
-                                   auto next = std::move(pendingProjectAction);
-                                   pendingProjectAction = {};
-                                   if (next)
-                                       next();
-                               }
-                               else
-                               {
-                                   if (currentProjectFile.existsAsFile())
-                                   {
-                                       if (saveProjectToFile(currentProjectFile))
-                                       {
-                                           auto next = std::move(pendingProjectAction);
-                                           pendingProjectAction = {};
-                                           if (next)
-                                               next();
-                                       }
-                                   }
-                                   else
-                                   {
-                                       saveProjectAs();
-                                   }
-                               }
-                               delete alert;
-                           }),
-                           true);
+            if (currentProjectFile.existsAsFile())
+            {
+                if (saveProjectToFile(currentProjectFile))
+                    completion(true);
+            }
+            else
+            {
+                // Save As must complete before Liberty closes.
+                pendingProjectAction = [completion = std::move(completion)]() mutable
+                {
+                    completion(true);
+                };
+                saveProjectAs();
+            }
+        }));
 }
 
 void MainComponent::showProjectMenu()
