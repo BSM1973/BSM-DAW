@@ -40,15 +40,11 @@ public:
             audioEngine.setProjectExtraLengthSeconds(0.0);
             return;
         }
-
-        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm)
-                                    * (4.0 / static_cast<double>(juce::jmax(1, timeSignatureDenominator)));
+        const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / static_cast<double>(juce::jmax(1, timeSignatureDenominator)));
         const double secondsPerMeasure = secondsPerBeat * static_cast<double>(juce::jmax(1, timeSignatureNumerator));
         double noteEndSeconds = 0.0;
         for (const auto& note : notes)
-            noteEndSeconds = juce::jmax(noteEndSeconds,
-                                        MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, tempoBpm));
-
+            noteEndSeconds = juce::jmax(noteEndSeconds, MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, tempoBpm));
         if (!midiClipLengthUserDefined)
         {
             const auto requiredMeasures = std::ceil(juce::jmax(secondsPerMeasure, noteEndSeconds) / secondsPerMeasure);
@@ -56,7 +52,6 @@ public:
             if (requiredLength > midiClipLengthSeconds + 0.000001)
                 midiClipLengthSeconds = requiredLength;
         }
-
         audioEngine.setProjectExtraLengthSeconds(midiClipStartSeconds + midiClipLengthSeconds);
     }
 
@@ -137,10 +132,8 @@ private:
                                                 static_cast<float>(getHeight() - 8));
             g.setColour(owner->selectedTrack < 0 ? juce::Colour(0xff245b70) : juce::Colour(0xff204756));
             g.fillRoundedRectangle(clip, 5.0f);
-            g.setColour(juce::Colour(0xff63c7e8));
-            g.drawRoundedRectangle(clip, 5.0f, 1.0f);
-            g.saveState();
-            g.reduceClipRegion(clip.toNearestInt());
+            g.setColour(juce::Colour(0xff63c7e8)); g.drawRoundedRectangle(clip, 5.0f, 1.0f);
+            g.saveState(); g.reduceClipRegion(clip.toNearestInt());
             for (const auto& note : notes)
             {
                 const auto x = clip.getX() + static_cast<float>(MidiEngine::tickToSeconds(note.startTick, owner->tempoBpm) * pixelsPerSecond);
@@ -149,14 +142,10 @@ private:
                 const auto noteRight = juce::jmin(clip.getRight(), x + w);
                 if (noteRight <= clip.getX() || x >= clip.getRight()) continue;
                 g.setColour(juce::Colour(0xffd8f5ff));
-                g.fillRoundedRectangle(juce::Rectangle<float>(juce::jmax(clip.getX(), x), juce::jlimit(clip.getY() + 3.0f, clip.getBottom() - 7.0f, y),
-                                                               juce::jmax(2.0f, noteRight - juce::jmax(clip.getX(), x)), 4.0f), 2.0f);
+                g.fillRoundedRectangle(juce::Rectangle<float>(juce::jmax(clip.getX(), x), juce::jlimit(clip.getY() + 3.0f, clip.getBottom() - 7.0f, y), juce::jmax(2.0f, noteRight - juce::jmax(clip.getX(), x)), 4.0f), 2.0f);
             }
             g.restoreState();
-            g.setColour(juce::Colour(0xffd8f5ff));
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("MIDI CLIP", clip.reduced(8.0f, 4.0f), juce::Justification::topLeft, true);
-
+            g.setColour(juce::Colour(0xffd8f5ff)); g.setFont(juce::Font(10.0f, juce::Font::bold)); g.drawText("MIDI CLIP", clip.reduced(8.0f, 4.0f), juce::Justification::topLeft, true);
             if (owner->selectedTrack < 0)
             {
                 g.setColour(juce::Colour(0xffaee8fa));
@@ -209,23 +198,15 @@ private:
                     owner->midiClipStartSeconds = juce::jmin(snappedStart, originalRight - getMinimumLengthSeconds());
                     owner->midiClipLengthSeconds = juce::jmax(getMinimumLengthSeconds(), originalRight - owner->midiClipStartSeconds);
                 }
-                repaint();
-                owner->repaint();
-                return;
+                repaint(); owner->repaint(); return;
             }
             if (dragging)
             {
                 owner->midiClipStartSeconds = juce::jmax(0.0, std::round((dragStartSeconds + delta) / secondsPerMeasure) * secondsPerMeasure);
-                repaint();
-                owner->repaint();
+                repaint(); owner->repaint();
             }
         }
-        void mouseUp(const juce::MouseEvent&) override
-        {
-            dragging = false;
-            resizing = false;
-            resizeSide = ResizeSide::none;
-        }
+        void mouseUp(const juce::MouseEvent&) override { dragging = false; resizing = false; resizeSide = ResizeSide::none; }
     private:
         enum class ResizeSide { none, left, right };
         static constexpr float resizeZone = 14.0f;
@@ -238,8 +219,7 @@ private:
         }
         double getSecondsPerMeasure() const
         {
-            const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner->tempoBpm)
-                                         * (4.0 / static_cast<double>(juce::jmax(1, owner->timeSignatureDenominator)));
+            const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner->tempoBpm) * (4.0 / static_cast<double>(juce::jmax(1, owner->timeSignatureDenominator)));
             return secondsPerBeat * static_cast<double>(juce::jmax(1, owner->timeSignatureNumerator));
         }
         double getMinimumLengthSeconds() const { return getSecondsPerMeasure(); }
@@ -258,6 +238,7 @@ private:
         }
         void timerCallback() override
         {
+            owner->updateMidiClipTiming();
             const auto rowY = 76 + 32 + (4 * 70);
             setBounds(210, rowY, juce::jmax(1, owner->getWidth() - 210), 70);
             repaint();
