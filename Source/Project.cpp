@@ -127,6 +127,63 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
                            true);
 }
 
+void MainComponent::requestClose(std::function<void(bool)> completion)
+{
+    if (!hasUnsavedChanges())
+    {
+        completion(true);
+        return;
+    }
+
+    auto* alert = new juce::AlertWindow(
+        "Liberty - Unsaved Changes",
+        "The current project has unsaved changes.",
+        juce::MessageBoxIconType::WarningIcon);
+    alert->addButton("SAVE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("DON'T SAVE", 2, juce::KeyPress());
+    alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    pendingProjectAction = [completion = std::move(completion)]
+    {
+        completion(true);
+    };
+
+    alert->enterModalState(true,
+                           juce::ModalCallbackFunction::create([this, alert](int result)
+                           {
+                               if (result == 0)
+                               {
+                                   pendingProjectAction = {};
+                               }
+                               else if (result == 2)
+                               {
+                                   auto next = std::move(pendingProjectAction);
+                                   pendingProjectAction = {};
+                                   if (next)
+                                       next();
+                               }
+                               else
+                               {
+                                   if (currentProjectFile.existsAsFile())
+                                   {
+                                       if (saveProjectToFile(currentProjectFile))
+                                       {
+                                           auto next = std::move(pendingProjectAction);
+                                           pendingProjectAction = {};
+                                           if (next)
+                                               next();
+                                       }
+                                   }
+                                   else
+                                   {
+                                       saveProjectAs();
+                                   }
+                               }
+                               delete alert;
+                           }),
+                           true);
+}
+
 void MainComponent::showProjectMenu()
 {
     juce::PopupMenu menu;
@@ -228,7 +285,11 @@ void MainComponent::saveProjectAs()
         [this](const juce::FileChooser& chooser)
         {
             auto file = chooser.getResult();
-            if (file == juce::File{}) return;
+            if (file == juce::File{})
+            {
+                pendingProjectAction = {};
+                return;
+            }
             if (file.getFileExtension().isEmpty())
                 file = file.withFileExtension("bsmproj");
             if (saveProjectToFile(file))
