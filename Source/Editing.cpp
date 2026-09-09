@@ -2,6 +2,36 @@
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    const auto modifiers = key.getModifiers();
+    const bool commandOrControl = modifiers.isCommandDown();
+
+    // LIBERTY WORKFLOW: standard project shortcuts must work on macOS and Windows.
+    if (commandOrControl)
+    {
+        const auto character = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+
+        if (character == 's')
+        {
+            if (modifiers.isShiftDown())
+                saveProjectAs();
+            else
+                saveProject();
+            return true;
+        }
+
+        if (character == 'o' && !modifiers.isShiftDown())
+        {
+            openProject();
+            return true;
+        }
+
+        if (character == 'n' && !modifiers.isShiftDown())
+        {
+            newProject();
+            return true;
+        }
+    }
+
     if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey)
     {
         if (!audioEngine.hasAudioFile(selectedTrack))
