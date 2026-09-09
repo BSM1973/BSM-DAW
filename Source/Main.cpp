@@ -58,10 +58,23 @@ private:
             setResizable(true, true);
             setVisible(true);
 
-            // LIBERTY KEYBOARD FOCUS: give the main editor keyboard focus as soon
-            // as the native window is visible, so shortcuts work immediately.
+            // LIBERTY KEYBOARD FOCUS: keep the editor ready for keyboard commands
+            // immediately after the native window becomes visible.
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
                 content->grabKeyboardFocus();
+        }
+
+        // LIBERTY GLOBAL SHORTCUTS: key events can originate from the native
+        // window or one of its child controls. Forward unhandled keys to the
+        // main editor so project/editing shortcuts do not depend on which UI
+        // element currently owns keyboard focus.
+        bool keyPressed(const juce::KeyPress& key) override
+        {
+            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
+                if (content->keyPressed(key))
+                    return true;
+
+            return DocumentWindow::keyPressed(key);
         }
 
         void requestClose()
