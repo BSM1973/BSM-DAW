@@ -5,6 +5,7 @@
 #include "AudioEngine.h"
 #include <array>
 #include <vector>
+#include <functional>
 
 class MainComponent final : public juce::Component,
                             private juce::Timer
@@ -23,6 +24,9 @@ public:
         draggedTrack = -1;
     }
     bool keyPressed(const juce::KeyPress& key) override;
+
+    bool hasUnsavedChanges() const;
+    void requestClose(std::function<void(bool)> completion);
 
 private:
     class AudioSettingsWindow;
@@ -69,7 +73,8 @@ private:
         juce::TextButton meterButton;
     };
 
-    class ProjectButton final : public juce::Component
+    class ProjectButton final : public juce::Component,
+                                private juce::Timer
     {
     public:
         explicit ProjectButton(MainComponent* ownerIn) : owner(ownerIn)
@@ -84,14 +89,22 @@ private:
 
             // LIBERTY UI ALIGNMENT RULE: PROJECT shares the exact left edge of the
             // first transport control (|<), while remaining on its own row.
-            // The transport starts at x=215, so this value is intentionally identical.
             setBounds(215, 10, 90, 24);
             owner->addAndMakeVisible(this);
+            owner->initializeProjectTracking();
+            startTimerHz(5);
         }
 
         void resized() override { button.setBounds(getLocalBounds()); }
 
     private:
+        void timerCallback() override
+        {
+            const auto label = owner->hasUnsavedChanges() ? "PROJECT *" : "PROJECT";
+            if (button.getButtonText() != label)
+                button.setButtonText(label);
+        }
+
         MainComponent* owner;
         juce::TextButton button;
     };
@@ -117,6 +130,10 @@ private:
     bool saveProjectToFile(const juce::File& file);
     bool loadProjectFromFile(const juce::File& file);
     void resetProjectState();
+    void initializeProjectTracking();
+    juce::String getProjectStateSignature() const;
+    void markProjectClean();
+    void confirmBeforeProjectAction(std::function<void()> action);
 
     AudioEngine audioEngine;
     std::unique_ptr<AudioSettingsWindow> audioSettingsWindow;
@@ -126,6 +143,8 @@ private:
     std::array<std::vector<float>, AudioEngine::maxAudioTracks> waveformMax;
     std::array<juce::File, AudioEngine::maxAudioTracks> trackSourceFiles;
     juce::File currentProjectFile;
+    juce::String savedProjectStateSignature;
+    std::function<void()> pendingProjectAction;
     int selectedTrack = 0;
     bool isPlaying = false;
     double playheadSeconds = 0.0;
