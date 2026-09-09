@@ -193,7 +193,6 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device == nullptr) return;
     sampleRate.store(device->getCurrentSampleRate()); bufferSize.store(device->getCurrentBufferSizeSamples()); outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
-    const auto rate = device->getCurrentSampleRate(); phase = 0.0; phaseIncrement = rate > 0.0 ? (440.0 * juce::MathConstants<double>::twoPi / rate) : 0.0;
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
@@ -203,45 +202,35 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
 
     const auto position = transportSamples.load();
     const auto projectLength = getProjectLengthSamples();
-    if (projectLength > 0)
-    {
-        const bool anySolo = isAnyTrackSolo();
-        const auto rate = sampleRate.load();
-        for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
-        {
-            auto& track = tracks[(size_t)trackIndex];
-            if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
-            const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-            const auto clipEnd = startSample + track.numSamples;
-            const auto blockEnd = position + numSamples;
-            if (blockEnd <= startSample || position >= clipEnd) continue;
-            const auto mixStart = juce::jmax(position, startSample);
-            const auto mixEnd = juce::jmin(blockEnd, clipEnd);
-            const auto samplesToMix = static_cast<int>(juce::jmax<std::int64_t>(0, mixEnd - mixStart));
-            if (samplesToMix <= 0) continue;
-            const auto outputOffset = static_cast<int>(mixStart - position);
-            const auto sourceOffset = static_cast<int>(mixStart - startSample);
-            const auto gain = track.gain.load(); const auto pan = track.pan.load();
-            const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
-            const auto sourceChannels = track.buffer->getNumChannels();
-            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
-            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
-        }
-        const auto master = masterGain.load();
-        for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
-        const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
-        if (advance > 0) transportSamples.fetch_add(advance);
-        if (position + advance >= projectLength) playing.store(false);
-        return;
-    }
+    if (projectLength <= 0) return;
 
-    const auto master = masterGain.load();
-    for (int channel = 0; channel < numOutputChannels; ++channel)
+    const bool anySolo = isAnyTrackSolo();
+    const auto rate = sampleRate.load();
+    for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
     {
-        auto* output = outputChannelData[channel]; if (output == nullptr) continue;
-        for (int sample = 0; sample < numSamples; ++sample) { output[sample] = static_cast<float>(0.05 * master * std::sin(phase)); phase += phaseIncrement; if (phase >= juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi; }
+        auto& track = tracks[(size_t)trackIndex];
+        if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
+        const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
+        const auto clipEnd = startSample + track.numSamples;
+        const auto blockEnd = position + numSamples;
+        if (blockEnd <= startSample || position >= clipEnd) continue;
+        const auto mixStart = juce::jmax(position, startSample);
+        const auto mixEnd = juce::jmin(blockEnd, clipEnd);
+        const auto samplesToMix = static_cast<int>(juce::jmax<std::int64_t>(0, mixEnd - mixStart));
+        if (samplesToMix <= 0) continue;
+        const auto outputOffset = static_cast<int>(mixStart - position);
+        const auto sourceOffset = static_cast<int>(mixStart - startSample);
+        const auto gain = track.gain.load(); const auto pan = track.pan.load();
+        const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+        const auto sourceChannels = track.buffer->getNumChannels();
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
     }
-    transportSamples.fetch_add(numSamples);
+    const auto master = masterGain.load();
+    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
+    const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
+    if (advance > 0) transportSamples.fetch_add(advance);
+    if (position + advance >= projectLength) playing.store(false);
 }
 
 void AudioEngine::audioDeviceStopped() { playing.store(false); }
