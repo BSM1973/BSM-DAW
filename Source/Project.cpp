@@ -77,7 +77,7 @@ void MainComponent::resetProjectState()
         audioEngine.setTrackPan(i, 0.0f);
         audioEngine.setTrackMuted(i, false);
         audioEngine.setTrackSolo(i, false);
-        trackSourceFiles[(size_t)i] = {};
+        trackSourceFiles[(size_t)i] = juce::File{};
         waveformMin[(size_t)i].clear();
         waveformMax[(size_t)i].clear();
     }
@@ -89,7 +89,7 @@ void MainComponent::resetProjectState()
 void MainComponent::newProject()
 {
     resetProjectState();
-    currentProjectFile = {};
+    currentProjectFile = juce::File{};
 }
 
 void MainComponent::openProject()
@@ -166,8 +166,6 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
                 ? static_cast<double>(reader->lengthInSamples) / reader->sampleRate
                 : audioEngine.getAudioFileLengthSeconds(i);
 
-            // Edited/split clips are exported into a project-owned media folder so their
-            // exact current audio survives reopening without touching the original source.
             if (std::abs(sourceLength - audioEngine.getAudioFileLengthSeconds(i)) > 0.001)
             {
                 juce::File exportedFile;
