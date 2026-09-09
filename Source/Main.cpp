@@ -44,7 +44,8 @@ public:
     }
 
 private:
-    class MainWindow final : public juce::DocumentWindow
+    class MainWindow final : public juce::DocumentWindow,
+                             private juce::KeyListener
     {
     public:
         explicit MainWindow(juce::String name)
@@ -56,18 +57,37 @@ private:
             setContentOwned(new MainComponent(), true);
             centreWithSize(getWidth(), getHeight());
             setResizable(true, true);
+
+            // LIBERTY KEYBOARD ROUTING: listen at the top-level native window.
+            // This keeps shortcuts independent from the focused child control
+            // and is especially important for macOS/AZERTY keyboard layouts.
+            addKeyListener(this);
             setVisible(true);
 
-            // LIBERTY KEYBOARD FOCUS: keep the editor ready for keyboard commands
-            // immediately after the native window becomes visible.
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
                 content->grabKeyboardFocus();
         }
 
-        // LIBERTY GLOBAL SHORTCUTS: key events can originate from the native
-        // window or one of its child controls. Forward unhandled keys to the
-        // main editor so project/editing shortcuts do not depend on which UI
-        // element currently owns keyboard focus.
+        ~MainWindow() override
+        {
+            removeKeyListener(this);
+        }
+
+        // JUCE KeyListener receives key events from the focused component tree.
+        // Forward them directly to Liberty's editor instead of depending on
+        // Component::keyPressed focus propagation.
+        bool keyPressed(const juce::KeyPress& key,
+                        juce::Component*) override
+        {
+            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
+                if (content->keyPressed(key))
+                    return true;
+
+            // Consume otherwise-unhandled keys at the top level so macOS does
+            // not emit the system beep for ordinary keys in the main editor.
+            return true;
+        }
+
         bool keyPressed(const juce::KeyPress& key) override
         {
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
