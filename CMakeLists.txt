@@ -33,6 +33,7 @@ target_sources(BSM_DAW PRIVATE
     Source/MidiEngine.cpp
     Source/MidiEditor.cpp
     Source/MidiVelocityInteraction.cpp
+    Source/MidiNoteSelectionInteraction.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
