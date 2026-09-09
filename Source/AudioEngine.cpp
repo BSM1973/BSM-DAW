@@ -25,7 +25,7 @@ void AudioEngine::shutdown()
     playing.store(false);
     if (initialised.exchange(false)) deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
-    sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0); transportSamples.store(0);
+    sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0); transportSamples.store(0); projectExtraLengthSeconds.store(0.0);
     for (auto& track : tracks)
     {
         track.loaded.store(false, std::memory_order_release);
@@ -48,6 +48,8 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
         const auto start = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         length = juce::jmax(length, start + track.numSamples);
     }
+    const auto extraLength = static_cast<std::int64_t>(std::llround(projectExtraLengthSeconds.load(std::memory_order_relaxed) * rate));
+    length = juce::jmax(length, extraLength);
     return length;
 }
 
