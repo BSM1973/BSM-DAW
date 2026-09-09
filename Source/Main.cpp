@@ -57,6 +57,11 @@ private:
             centreWithSize(getWidth(), getHeight());
             setResizable(true, true);
             setVisible(true);
+
+            // LIBERTY KEYBOARD FOCUS: give the main editor keyboard focus as soon
+            // as the native window is visible, so shortcuts work immediately.
+            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
+                content->grabKeyboardFocus();
         }
 
         void requestClose()
