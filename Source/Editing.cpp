@@ -43,7 +43,23 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 
     if (keyCode == juce::KeyPress::deleteKey || keyCode == juce::KeyPress::backspaceKey)
     {
-        if (!audioEngine.hasAudioFile(selectedTrack))
+        // MIDI 1 is represented by selectedTrack == -1. Delete the complete
+        // MIDI clip without touching any audio track.
+        if (selectedTrack < 0)
+        {
+            if (midiEngine.getNumNotes() == 0)
+                return true;
+
+            midiEngine.clear();
+            midiClipStartSeconds = 0.0;
+            playheadSeconds = 0.0;
+            isPlaying = false;
+            audioEngine.setPlaying(false);
+            repaint();
+            return true;
+        }
+
+        if (selectedTrack >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(selectedTrack))
             return true;
 
         audioEngine.clearAudioTrack(selectedTrack);
@@ -52,13 +68,18 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         waveformMax[(size_t)selectedTrack].clear();
         playheadSeconds = 0.0;
         isPlaying = false;
+        audioEngine.setPlaying(false);
         repaint();
         return true;
     }
 
     if (isS && !modifiers.isAnyModifierKeyDown())
     {
-        if (!audioEngine.hasAudioFile(selectedTrack))
+        // MIDI 1 has its own editor and must not be treated as an audio split target.
+        if (selectedTrack < 0)
+            return true;
+
+        if (selectedTrack >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(selectedTrack))
             return true;
 
         int newTrack = -1;
