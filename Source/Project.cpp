@@ -35,6 +35,98 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
 }
 }
 
+juce::String MainComponent::getProjectStateSignature() const
+{
+    juce::String signature;
+    signature << "tempo=" << juce::String(tempoBpm, 6)
+              << ";meter=" << timeSignatureNumerator << "/" << timeSignatureDenominator
+              << ";master=" << juce::String(audioEngine.getMasterGain(), 6);
+
+    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    {
+        signature << "|track=" << i
+                  << ";loaded=" << (audioEngine.hasAudioFile(i) ? 1 : 0)
+                  << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
+                  << ";name=" << audioEngine.getAudioFileName(i)
+                  << ";length=" << juce::String(audioEngine.getAudioFileLengthSeconds(i), 6)
+                  << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
+                  << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
+                  << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
+                  << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
+                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0);
+    }
+
+    return signature;
+}
+
+void MainComponent::initializeProjectTracking()
+{
+    savedProjectStateSignature = getProjectStateSignature();
+}
+
+void MainComponent::markProjectClean()
+{
+    savedProjectStateSignature = getProjectStateSignature();
+}
+
+bool MainComponent::hasUnsavedChanges() const
+{
+    return getProjectStateSignature() != savedProjectStateSignature;
+}
+
+void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
+{
+    if (!hasUnsavedChanges())
+    {
+        action();
+        return;
+    }
+
+    auto* alert = new juce::AlertWindow(
+        "Liberty - Unsaved Changes",
+        "The current project has unsaved changes.",
+        juce::MessageBoxIconType::WarningIcon);
+    alert->addButton("SAVE", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("DON'T SAVE", 2, juce::KeyPress());
+    alert->addButton("CANCEL", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    pendingProjectAction = std::move(action);
+    alert->enterModalState(true,
+                           juce::ModalCallbackFunction::create([this, alert](int result)
+                           {
+                               if (result == 0)
+                               {
+                                   pendingProjectAction = {};
+                               }
+                               else if (result == 2)
+                               {
+                                   auto next = std::move(pendingProjectAction);
+                                   pendingProjectAction = {};
+                                   if (next)
+                                       next();
+                               }
+                               else
+                               {
+                                   if (currentProjectFile.existsAsFile())
+                                   {
+                                       if (saveProjectToFile(currentProjectFile))
+                                       {
+                                           auto next = std::move(pendingProjectAction);
+                                           pendingProjectAction = {};
+                                           if (next)
+                                               next();
+                                       }
+                                   }
+                                   else
+                                   {
+                                       saveProjectAs();
+                                   }
+                               }
+                               delete alert;
+                           }),
+                           true);
+}
+
 void MainComponent::showProjectMenu()
 {
     juce::PopupMenu menu;
@@ -88,8 +180,12 @@ void MainComponent::resetProjectState()
 
 void MainComponent::newProject()
 {
-    resetProjectState();
-    currentProjectFile = juce::File{};
+    confirmBeforeProjectAction([this]
+    {
+        resetProjectState();
+        currentProjectFile = juce::File{};
+        markProjectClean();
+    });
 }
 
 void MainComponent::openProject()
@@ -103,7 +199,11 @@ void MainComponent::openProject()
         {
             const auto file = chooser.getResult();
             if (!file.existsAsFile()) return;
-            loadProjectFromFile(file);
+
+            confirmBeforeProjectAction([this, file]
+            {
+                loadProjectFromFile(file);
+            });
         });
 }
 
@@ -132,7 +232,15 @@ void MainComponent::saveProjectAs()
             if (file.getFileExtension().isEmpty())
                 file = file.withFileExtension("bsmproj");
             if (saveProjectToFile(file))
+            {
                 currentProjectFile = file;
+                markProjectClean();
+
+                auto next = std::move(pendingProjectAction);
+                pendingProjectAction = {};
+                if (next)
+                    next();
+            }
         });
 }
 
@@ -196,6 +304,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     output->writeText(project.toString(), false, false, "UTF-8");
     output->flush();
+    markProjectClean();
     return true;
 }
 
@@ -258,6 +367,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     audioEngine.setPlaying(false);
     currentProjectFile = file;
     tempoControls.refresh();
+    markProjectClean();
     repaint();
 
     if (missingFiles.isNotEmpty())
