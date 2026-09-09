@@ -20,8 +20,6 @@ class MidiSelectionOverlay final : public juce::Component,
 public:
     explicit MidiSelectionOverlay(MainComponent& o) : owner(o)
     {
-        // The overlay owns only EMPTY grid areas. Existing notes remain
-        // fully interactive in PianoRoll (move/resize/select).
         setInterceptsMouseClicks(true, false);
         setOpaque(false);
         startTimerHz(30);
@@ -69,11 +67,8 @@ public:
 
     bool hitTest(int x, int y) override
     {
-        // Never intercept ruler, piano keys, velocity lane, or an existing
-        // note. Only empty MIDI grid cells belong to this overlay.
         if (x < pianoKeyWidth || y < rulerHeight || y >= getHeight() - velocityLaneHeight)
             return false;
-
         return !pointHitsExistingNote(x, y);
     }
 
@@ -128,7 +123,6 @@ private:
             if (juce::Rectangle<int>(noteX + 1, noteY, noteW - 2, keyHeight - 4).contains(x, y))
                 return true;
         }
-
         return false;
     }
 
@@ -172,9 +166,6 @@ public:
         detachFromWindows();
         if (registered)
         {
-            // JUCE 8.0.10 compatibility: use the normal Desktop singleton
-            // while shutdownLibertyMidiNoteSelectionInteraction() is called
-            // before Liberty destroys its windows.
             juce::Desktop::getInstance().removeGlobalMouseListener(this);
             registered = false;
         }
@@ -191,26 +182,29 @@ public:
         if (main == nullptr || attachedContent == nullptr)
             return false;
 
-        // This listener is installed only on the MIDI editor content. Using
-        // the actual JUCE focus state is more reliable than comparing focus
-        // pointers after the Piano Roll has been brought to the front.
-        if (!attachedContent->hasKeyboardFocus(true))
-            return false;
-
-        auto& midi = main->getMidiEngine();
+        // The listener is attached directly to the MIDI editor content, so
+        // requiring a second focus check here can reject valid macOS key events
+        // when focus is reported on the native DocumentWindow. The listener's
+        // attachment itself is the scope check.
         const auto modifiers = key.getModifiers();
         const bool command = modifiers.isCommandDown();
-
-        if (command && key.isKeyCode('c'))
+        const int keyCode = key.getKeyCode();
+        const auto isKey = [keyCode](int lower, int upper) noexcept
         {
-            if (!midi.hasSelectedNote()) return false;
-            clipboardNote = midi.getSelectedNote();
+            return keyCode == lower || keyCode == upper;
+        };
+
+        if (command && isKey('c', 'C'))
+        {
+            if (!midiHasSelectedNote(*main)) return false;
+            clipboardNote = main->getMidiEngine().getSelectedNote();
             return true;
         }
 
-        if (command && key.isKeyCode('v'))
+        if (command && isKey('v', 'V'))
         {
             if (!clipboardNote.has_value()) return false;
+            auto& midi = main->getMidiEngine();
             auto pasted = *clipboardNote;
             const auto pasteStart = midi.hasSelectedNote()
                 ? midi.getSelectedNote().startTick + midi.getSelectedNote().lengthTicks
@@ -223,8 +217,9 @@ public:
             return true;
         }
 
-        if (command && key.isKeyCode('d'))
+        if (command && isKey('d', 'D'))
         {
+            auto& midi = main->getMidiEngine();
             if (!midi.hasSelectedNote()) return false;
             const auto source = midi.getSelectedNote();
             if (!midi.addNote(source.startTick + source.lengthTicks, source.lengthTicks, source.pitch, source.velocity, source.channel)) return false;
@@ -236,6 +231,7 @@ public:
 
         if (isDeleteKey(key))
         {
+            auto& midi = main->getMidiEngine();
             if (!midi.deleteSelectedNote()) return false;
             main->updateMidiClipTiming();
             main->repaint();
@@ -249,13 +245,15 @@ public:
     void mouseDown(const juce::MouseEvent& e) override
     {
         attachToMidiWindow(e.getScreenPosition());
-        // Selection of existing notes is performed here as a global safety
-        // net; empty cells are owned by MidiSelectionOverlay and do not create
-        // notes on a single click anymore.
         selectNoteFromScreenPosition(e.getScreenPosition());
     }
 
 private:
+    static bool midiHasSelectedNote(MainComponent& main) noexcept
+    {
+        return main.getMidiEngine().hasSelectedNote();
+    }
+
     static bool isDeleteKey(const juce::KeyPress& key) noexcept
     {
         return key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey;
@@ -348,8 +346,6 @@ private:
             }
         }
 
-        // Empty grid clicks are handled by MidiSelectionOverlay. This global
-        // listener only clears the selection here; it never creates notes.
         main->getMidiEngine().clearNoteSelection();
         if (selectionOverlay != nullptr) selectionOverlay->repaint();
     }
