@@ -34,6 +34,8 @@ public:
                   std::int64_t newStartTick, int newPitch);
     bool setNoteLength(std::int64_t startTick, int pitch, int channel,
                        std::int64_t newLengthTicks);
+    bool setNoteVelocity(std::int64_t startTick, int pitch, int channel,
+                         int newVelocity);
     std::size_t getNumNotes() const noexcept { return notes.size(); }
     std::vector<NoteEvent> getNotesCopy() const;
     std::int64_t getLengthTicks() const noexcept;
