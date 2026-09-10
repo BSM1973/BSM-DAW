@@ -111,16 +111,25 @@ public:
         auto& midi = main->getMidiEngine();
         const auto modifiers = key.getModifiers();
         const bool command = modifiers.isCommandDown();
+        const bool shift = modifiers.isShiftDown();
         const int keyCode = key.getKeyCode();
         const auto isKey = [keyCode](int lower, int upper) noexcept { return keyCode == lower || keyCode == upper; };
         bool changed = false;
 
-        if (command && isKey('c', 'C'))
+        if (command && isKey('z', 'Z'))
+        {
+            changed = shift ? midi.redo() : midi.undo();
+        }
+        else if (command && isKey('y', 'Y'))
+        {
+            changed = midi.redo();
+        }
+        else if (command && isKey('c', 'C'))
         {
             clipboardNotes = midi.getSelectedNotesCopy();
             return !clipboardNotes.empty();
         }
-        if (command && isKey('v', 'V'))
+        else if (command && isKey('v', 'V'))
         {
             if (clipboardNotes.empty()) return false;
             const auto selected = midi.getSelectedNotesCopy();
