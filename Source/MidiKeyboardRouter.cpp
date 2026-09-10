@@ -10,7 +10,13 @@ class MidiKeyboardRouter final : private juce::Timer, private juce::KeyListener
 {
 public:
     MidiKeyboardRouter() { startTimerHz(30); }
-    ~MidiKeyboardRouter() override { detach(); }
+    ~MidiKeyboardRouter() override { shutdown(); }
+
+    void shutdown()
+    {
+        stopTimer();
+        detach();
+    }
 
 private:
     void timerCallback() override
@@ -50,3 +56,8 @@ private:
 };
 
 MidiKeyboardRouter globalMidiKeyboardRouter;
+
+void shutdownLibertyMidiKeyboardRouter()
+{
+    globalMidiKeyboardRouter.shutdown();
+}

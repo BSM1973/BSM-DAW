@@ -7,6 +7,7 @@
 // to a child editor component on macOS.
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
+void shutdownLibertyMidiKeyboardRouter();
 void shutdownLibertyMidiGroupDragInteraction();
 
 class LibertyApplication final : public juce::JUCEApplication
@@ -19,6 +20,7 @@ public:
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
     void shutdown() override
     {
+        shutdownLibertyMidiKeyboardRouter();
         shutdownLibertyMidiGroupDragInteraction();
         shutdownLibertyMidiNoteSelectionInteraction();
         shutdownLibertyMidiEditor();

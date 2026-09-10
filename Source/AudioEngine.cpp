@@ -27,6 +27,8 @@ void AudioEngine::shutdown()
     if (initialised.exchange(false)) deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
     sampleRate.store(0.0); bufferSize.store(0); outputChannels.store(0); transportSamples.store(0); projectExtraLengthSeconds.store(0.0);
+    playbackClockBaseSeconds.store(0.0, std::memory_order_relaxed);
+    playbackClockStartMilliseconds.store(0.0, std::memory_order_relaxed);
     midiPlaybackNoteCount.store(0, std::memory_order_release);
     midiClipStartSeconds.store(0.0, std::memory_order_relaxed);
     midiClipLengthSeconds.store(0.0, std::memory_order_relaxed);
@@ -63,13 +65,33 @@ void AudioEngine::setCurrentTimeSeconds(double seconds) noexcept
     if (rate <= 0.0) return;
     const auto requested = static_cast<std::int64_t>(std::llround(juce::jmax(0.0, seconds) * rate));
     const auto projectLength = getProjectLengthSamples();
-    transportSamples.store(projectLength > 0 ? juce::jlimit<std::int64_t>(0, projectLength, requested) : juce::jmax<std::int64_t>(0, requested));
+    const auto clamped = projectLength > 0
+        ? juce::jlimit<std::int64_t>(0, projectLength, requested)
+        : juce::jmax<std::int64_t>(0, requested);
+    transportSamples.store(clamped, std::memory_order_relaxed);
+    if (playing.load(std::memory_order_relaxed))
+    {
+        playbackClockBaseSeconds.store(static_cast<double>(clamped) / rate, std::memory_order_relaxed);
+        playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+    }
 }
 
 double AudioEngine::getCurrentTimeSeconds() const noexcept
 {
     const auto rate = sampleRate.load();
-    return rate > 0.0 ? static_cast<double>(transportSamples.load()) / rate : 0.0;
+    if (rate <= 0.0) return 0.0;
+
+    const auto transportSeconds = static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate;
+    if (!playing.load(std::memory_order_relaxed))
+        return transportSeconds;
+
+    const auto elapsedSeconds = juce::jmax(0.0,
+        (juce::Time::getMillisecondCounterHiRes() - playbackClockStartMilliseconds.load(std::memory_order_relaxed)) / 1000.0);
+    const auto clockSeconds = playbackClockBaseSeconds.load(std::memory_order_relaxed) + elapsedSeconds;
+    const auto projectLength = getProjectLengthSamples();
+    if (projectLength > 0)
+        return juce::jmin(static_cast<double>(projectLength) / rate, juce::jmax(transportSeconds, clockSeconds));
+    return juce::jmax(transportSeconds, clockSeconds);
 }
 
 void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,

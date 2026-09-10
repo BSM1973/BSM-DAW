@@ -30,9 +30,32 @@ public:
     int getOutputChannels() const noexcept { return outputChannels.load(std::memory_order_relaxed); }
     juce::String getLastError() const;
 
-    void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay, std::memory_order_relaxed); }
+    void setPlaying(bool shouldPlay) noexcept
+    {
+        const auto rate = sampleRate.load(std::memory_order_relaxed);
+        if (shouldPlay)
+        {
+            const auto current = rate > 0.0
+                ? static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate
+                : 0.0;
+            playbackClockBaseSeconds.store(current, std::memory_order_relaxed);
+            playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+        }
+        else if (playing.load(std::memory_order_relaxed) && rate > 0.0)
+        {
+            const auto current = getCurrentTimeSeconds();
+            transportSamples.store(static_cast<std::int64_t>(std::llround(current * rate)), std::memory_order_relaxed);
+            playbackClockBaseSeconds.store(current, std::memory_order_relaxed);
+        }
+        playing.store(shouldPlay, std::memory_order_relaxed);
+    }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
-    void resetTransport() noexcept { transportSamples.store(0, std::memory_order_relaxed); }
+    void resetTransport() noexcept
+    {
+        transportSamples.store(0, std::memory_order_relaxed);
+        playbackClockBaseSeconds.store(0.0, std::memory_order_relaxed);
+        playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+    }
     void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
 
@@ -130,6 +153,8 @@ private:
     std::atomic<int> outputChannels { 0 };
     std::atomic<std::int64_t> transportSamples { 0 };
     std::atomic<double> projectExtraLengthSeconds { 0.0 };
+    std::atomic<double> playbackClockBaseSeconds { 0.0 };
+    std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;
