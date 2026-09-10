@@ -45,6 +45,12 @@ public:
     bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
     bool deleteSelectedNotes();
 
+    bool undo();
+    bool redo();
+    bool canUndo() const noexcept { return !undoHistory.empty(); }
+    bool canRedo() const noexcept { return !redoHistory.empty(); }
+    void clearUndoHistory() noexcept;
+
     bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
                   std::int64_t newStartTick, int newPitch);
     bool setNoteLength(std::int64_t startTick, int pitch, int channel,
@@ -66,10 +72,22 @@ public:
     bool isPlaying() const noexcept;
 
 private:
+    struct HistoryState
+    {
+        std::vector<NoteEvent> notes;
+        std::vector<NoteEvent> selectedNotes;
+    };
+
+    HistoryState makeHistoryState() const;
+    void restoreHistoryState(const HistoryState& state) noexcept;
+    void pushUndoState();
+
     std::vector<NoteEvent> notes;
     NoteEvent selectedNote;
     bool selectedNoteValid = false;
     std::vector<NoteEvent> selectedNotes;
+    std::vector<HistoryState> undoHistory;
+    std::vector<HistoryState> redoHistory;
     std::atomic<double> playbackPositionSeconds { 0.0 };
     std::atomic<bool> playing { false };
 };
