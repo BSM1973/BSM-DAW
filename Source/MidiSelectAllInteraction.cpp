@@ -20,21 +20,58 @@ public:
 
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override
     {
-        if (!(key.getModifiers().isCommandDown() || key.getModifiers().isCtrlDown())
-            || key.getKeyCode() != 'A')
-            return false;
-
         auto* main = findMainComponent();
         if (main == nullptr)
             return false;
 
-        auto notes = main->getMidiEngine().getNotesCopy();
-        if (notes.empty())
+        const auto modifiers = key.getModifiers();
+        const bool commandOrCtrl = modifiers.isCommandDown() || modifiers.isCtrlDown();
+
+        if (commandOrCtrl && key.getKeyCode() == 'A')
+        {
+            auto notes = main->getMidiEngine().getNotesCopy();
+            if (notes.empty())
+                return false;
+
+            main->getMidiEngine().setSelectedNotes(notes);
+            main->repaint();
+            return true;
+        }
+
+        if (key.getKeyCode() == juce::KeyPress::escapeKey)
+        {
+            if (main->getMidiEngine().getNumSelectedNotes() == 0)
+                return false;
+
+            main->getMidiEngine().clearNoteSelection();
+            main->repaint();
+            return true;
+        }
+
+        if (main->getMidiEngine().getNumSelectedNotes() == 0)
             return false;
 
-        main->getMidiEngine().setSelectedNotes(notes);
-        main->repaint();
-        return true;
+        constexpr std::int64_t grid = MidiEngine::ticksPerQuarterNote / 4;
+        std::int64_t deltaTicks = 0;
+        int deltaPitch = 0;
+
+        switch (key.getKeyCode())
+        {
+            case juce::KeyPress::leftKey:  deltaTicks = -grid; break;
+            case juce::KeyPress::rightKey: deltaTicks = grid; break;
+            case juce::KeyPress::upKey:    deltaPitch = 1; break;
+            case juce::KeyPress::downKey:  deltaPitch = -1; break;
+            default: return false;
+        }
+
+        if (main->getMidiEngine().moveSelectedNotesBy(deltaTicks, deltaPitch))
+        {
+            main->updateMidiClipTiming();
+            main->repaint();
+            return true;
+        }
+
+        return false;
     }
 
     bool keyStateChanged(bool, juce::Component*) override { return false; }
