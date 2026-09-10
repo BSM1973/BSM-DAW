@@ -4,6 +4,7 @@
 
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
+bool handleLibertyMidiUndoRedoKeyPress(const juce::KeyPress& key);
 
 class MidiKeyboardRouter final : private juce::Timer, private juce::KeyListener
 {
@@ -39,6 +40,7 @@ private:
 
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override
     {
+        if (handleLibertyMidiUndoRedoKeyPress(key)) return true;
         if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
         if (handleLibertyMidiQuantizeKeyPress(key)) return true;
         return false;
