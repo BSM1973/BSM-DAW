@@ -2,6 +2,7 @@
 #include "MidiEngine.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -16,10 +17,7 @@ constexpr int lowestKey = 21;
 constexpr int marqueeThreshold = 4;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
-static bool isAdditiveModifier(const juce::ModifierKeys& mods) noexcept
-{
-    return mods.isCommandDown() || mods.isCtrlDown();
-}
+static bool isAdditiveModifier(const juce::ModifierKeys& mods) noexcept { return mods.isCommandDown() || mods.isCtrlDown(); }
 
 class MidiSelectionOverlay final : public juce::Component, private juce::Timer
 {
@@ -28,33 +26,25 @@ public:
     void paint(juce::Graphics& g) override
     {
         const auto selectedNotes = owner.getMidiEngine().getSelectedNotesCopy();
-        if (!selectedNotes.empty())
+        const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
+        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        for (const auto& note : selectedNotes)
         {
-            const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
-            const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
-            const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-            const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
-            for (const auto& note : selectedNotes)
-            {
-                if (note.pitch < lowestKey || note.pitch >= lowestKey + visibleKeys || note.startTick < 0 || note.startTick >= clipLengthTicks) continue;
-                const auto visibleLengthTicks = juce::jmin(note.lengthTicks, clipLengthTicks - note.startTick);
-                const int x = pianoKeyWidth + (int)std::llround((double)note.startTick * pixelsPerTick);
-                const int y = rulerHeight + (visibleKeys - 1 - ((int)note.pitch - lowestKey)) * keyHeight + 2;
-                const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-                auto r = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-                r = r.getIntersection(juce::Rectangle<int>(pianoKeyWidth, rulerHeight, juce::jmax(1, getWidth() - pianoKeyWidth), juce::jmax(1, getHeight() - rulerHeight - velocityLaneHeight)));
-                if (r.isEmpty()) continue;
-                g.setColour(juce::Colour(0xfff4f7fb)); g.drawRoundedRectangle(r.toFloat().expanded(1.0f), 3.0f, 2.0f);
-                const int hw = juce::jmin(5, r.getWidth()), hh = juce::jmin(5, r.getHeight());
-                g.fillRect(r.getX(), r.getY(), hw, hh); g.fillRect(r.getRight() - hw, r.getY(), hw, hh);
-                g.fillRect(r.getX(), r.getBottom() - hh, hw, hh); g.fillRect(r.getRight() - hw, r.getBottom() - hh, hw, hh);
-            }
+            if (note.pitch < lowestKey || note.pitch >= lowestKey + visibleKeys || note.startTick < 0 || note.startTick >= clipLengthTicks) continue;
+            const auto visibleLengthTicks = juce::jmin(note.lengthTicks, clipLengthTicks - note.startTick);
+            const int x = pianoKeyWidth + (int)std::llround((double)note.startTick * pixelsPerTick);
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)note.pitch - lowestKey)) * keyHeight + 2;
+            const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
+            auto r = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
+            r = r.getIntersection(juce::Rectangle<int>(pianoKeyWidth, rulerHeight, juce::jmax(1, getWidth() - pianoKeyWidth), juce::jmax(1, getHeight() - rulerHeight - velocityLaneHeight)));
+            if (r.isEmpty()) continue;
+            g.setColour(juce::Colour(0xfff4f7fb)); g.drawRoundedRectangle(r.toFloat().expanded(1.0f), 3.0f, 2.0f);
+            const int hw = juce::jmin(5, r.getWidth()), hh = juce::jmin(5, r.getHeight());
+            g.fillRect(r.getX(), r.getY(), hw, hh); g.fillRect(r.getRight() - hw, r.getY(), hw, hh); g.fillRect(r.getX(), r.getBottom() - hh, hw, hh); g.fillRect(r.getRight() - hw, r.getBottom() - hh, hw, hh);
         }
-        if (marqueeActive)
-        {
-            g.setColour(juce::Colour(0x332f80ed)); g.fillRect(marqueeRect);
-            g.setColour(juce::Colour(0xff8fb7ff)); g.drawRect(marqueeRect, 1);
-        }
+        if (marqueeActive) { g.setColour(juce::Colour(0x332f80ed)); g.fillRect(marqueeRect); g.setColour(juce::Colour(0xff8fb7ff)); g.drawRect(marqueeRect, 1); }
     }
     bool hitTest(int x, int y) override
     {
@@ -65,40 +55,29 @@ public:
     {
         if (!e.mods.isLeftButtonDown()) return;
         if (auto* parent = getParentComponent()) parent->grabKeyboardFocus();
-        marqueeActive = false;
-        marqueeStart = e.getPosition();
-        marqueeCurrent = marqueeStart;
+        marqueeActive = false; marqueeStart = e.getPosition(); marqueeCurrent = marqueeStart;
         marqueeBaseSelection = isAdditiveModifier(e.mods) ? owner.getMidiEngine().getSelectedNotesCopy() : std::vector<MidiEngine::NoteEvent>{};
         marqueeAdditive = isAdditiveModifier(e.mods);
         owner.getMidiEngine().clearNoteSelection(); repaint(); owner.repaint();
     }
     void mouseDrag(const juce::MouseEvent& e) override
     {
-        // Do not test the current modifier state here: JUCE can report a
-        // different button/modifier mask during a drag than on mouseDown.
-        if (!marqueeStart.isFinite()) return;
+        if (marqueeStart.x == std::numeric_limits<int>::min()) return;
         marqueeCurrent = e.getPosition();
         if (!marqueeActive && marqueeStart.getDistanceFrom(marqueeCurrent) >= marqueeThreshold) marqueeActive = true;
         if (marqueeActive) { marqueeRect = makeMarqueeRect(); repaint(); }
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        if (!marqueeStart.isFinite()) return;
+        if (marqueeStart.x == std::numeric_limits<int>::min()) return;
         marqueeCurrent = e.getPosition();
-        if (marqueeActive)
-        {
-            applyMarqueeSelection();
-            marqueeActive = false;
-            marqueeBaseSelection.clear();
-            marqueeRect = {};
-            repaint(); owner.repaint();
-        }
-        marqueeStart = { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() };
+        if (marqueeActive) { applyMarqueeSelection(); marqueeActive = false; marqueeBaseSelection.clear(); marqueeRect = {}; repaint(); owner.repaint(); }
+        marqueeStart = { std::numeric_limits<int>::min(), std::numeric_limits<int>::min() };
     }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown()) return;
-        marqueeActive = false; marqueeBaseSelection.clear(); marqueeStart = { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() };
+        marqueeActive = false; marqueeBaseSelection.clear(); marqueeStart = { std::numeric_limits<int>::min(), std::numeric_limits<int>::min() };
         const int pitch = pitchFromY(e.y); const auto tick = tickFromX(e.x);
         if (owner.getMidiEngine().addNote(tick, MidiEngine::ticksPerQuarterNote, pitch, 100, 1)) { owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
     }
@@ -123,8 +102,7 @@ private:
             const int y = rulerHeight + (visibleKeys - 1 - ((int)note.pitch - lowestKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-            if (!r.intersects(noteRect)) continue;
-            if (std::find_if(selected.begin(), selected.end(), [&](const auto& existing) { return sameNote(existing, note); }) == selected.end()) selected.push_back(note);
+            if (r.intersects(noteRect) && std::find_if(selected.begin(), selected.end(), [&](const auto& existing) { return sameNote(existing, note); }) == selected.end()) selected.push_back(note);
         }
         owner.getMidiEngine().setSelectedNotes(selected);
     }
@@ -149,20 +127,12 @@ private:
     int pitchFromY(int y) const noexcept { const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / keyHeight); return lowestKey + visibleKeys - 1 - row; }
     std::int64_t tickFromX(int x) const noexcept
     {
-        const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
-        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
-        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth); const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()); const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm())); const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
         return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, (std::int64_t)std::llround((x - pianoKeyWidth) / pixelsPerTick)), gridTicks);
     }
-    void timerCallback() override
-    {
-        if (auto* parent = getParentComponent()) setBounds(parent->getLocalBounds());
-        if (marqueeActive) marqueeRect = makeMarqueeRect();
-        repaint();
-    }
+    void timerCallback() override { if (auto* parent = getParentComponent()) setBounds(parent->getLocalBounds()); if (marqueeActive) marqueeRect = makeMarqueeRect(); repaint(); }
     MainComponent& owner;
-    juce::Point<int> marqueeStart { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() }, marqueeCurrent;
+    juce::Point<int> marqueeStart { std::numeric_limits<int>::min(), std::numeric_limits<int>::min() }, marqueeCurrent;
     juce::Rectangle<int> marqueeRect;
     std::vector<MidiEngine::NoteEvent> marqueeBaseSelection;
     bool marqueeActive = false;
@@ -174,12 +144,7 @@ class MidiNoteSelectionInteraction final : public juce::KeyListener, public juce
 public:
     MidiNoteSelectionInteraction() { juce::Desktop::getInstance().addGlobalMouseListener(this); startTimerHz(10); }
     ~MidiNoteSelectionInteraction() override { shutdown(); }
-    void shutdown() noexcept
-    {
-        stopTimer();
-        detachFromWindows();
-        if (registered) { juce::Desktop::getInstance().removeGlobalMouseListener(this); registered = false; }
-    }
+    void shutdown() noexcept { stopTimer(); detachFromWindows(); if (registered) { juce::Desktop::getInstance().removeGlobalMouseListener(this); registered = false; } }
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override { return handleKeyPress(key); }
     bool handleKeyPress(const juce::KeyPress& key)
     {
@@ -202,8 +167,7 @@ public:
         {
             const auto deltaTicks = keyCode == juce::KeyPress::leftKey ? -gridTicks : keyCode == juce::KeyPress::rightKey ? gridTicks : 0; const int deltaPitch = keyCode == juce::KeyPress::upKey ? 1 : keyCode == juce::KeyPress::downKey ? -1 : 0; changed = midi.moveSelectedNotesBy(deltaTicks, deltaPitch);
         }
-        if (changed) { main->updateMidiClipTiming(); main->repaint(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); return true; }
-        return false;
+        if (changed) { main->updateMidiClipTiming(); main->repaint(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); return true; } return false;
     }
     void mouseMove(const juce::MouseEvent& e) override { attachToMidiWindow(e.getScreenPosition()); }
     void mouseDown(const juce::MouseEvent& e) override
@@ -226,21 +190,11 @@ public:
 private:
     void timerCallback() override
     {
-        auto* main = findMainComponent();
-        if (main == nullptr) return;
-        auto* window = findMidiWindow(juce::Desktop::getInstance().getMousePosition());
-        if (window == nullptr) return;
-        if (auto* content = window->getContentComponent())
+        auto* main = findMainComponent(); if (main == nullptr) return;
+        auto* window = findMidiWindow(juce::Desktop::getInstance().getMousePosition()); if (window == nullptr) return;
+        if (auto* content = window->getContentComponent()) if (attachedContent != content)
         {
-            if (attachedContent != content)
-            {
-                detachFromWindows();
-                attachedContent = content;
-                content->addKeyListener(this);
-                selectionOverlay = std::make_unique<MidiSelectionOverlay>(*main);
-                content->addAndMakeVisible(selectionOverlay.get());
-                selectionOverlay->setBounds(content->getLocalBounds());
-            }
+            detachFromWindows(); attachedContent = content; content->addKeyListener(this); selectionOverlay = std::make_unique<MidiSelectionOverlay>(*main); content->addAndMakeVisible(selectionOverlay.get()); selectionOverlay->setBounds(content->getLocalBounds());
         }
     }
     static bool isDeleteKey(const juce::KeyPress& key) noexcept { return key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey; }
