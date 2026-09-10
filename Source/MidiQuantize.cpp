@@ -26,7 +26,6 @@ bool MidiEngine::quantizeSelectedNotes(std::int64_t gridTicks)
         result.push_back(quantized);
     }
 
-    // A quantized note may not collide with an unselected note.
     for (const auto& quantized : result)
     {
         const bool collision = std::any_of(notes.begin(), notes.end(), [&quantized, this](const NoteEvent& other)
@@ -40,7 +39,6 @@ bool MidiEngine::quantizeSelectedNotes(std::int64_t gridTicks)
             return false;
     }
 
-    // Selected notes must also remain unique after quantization.
     for (std::size_t i = 0; i < result.size(); ++i)
         for (std::size_t j = i + 1; j < result.size(); ++j)
             if (result[i].startTick == result[j].startTick
@@ -58,8 +56,9 @@ bool MidiEngine::quantizeSelectedNotes(std::int64_t gridTicks)
     // One complete quantization action = one undo step.
     pushUndoState();
 
-    for (const auto& sourceNote : source)
+    for (std::size_t i = 0; i < source.size(); ++i)
     {
+        const auto& sourceNote = source[i];
         const auto it = std::find_if(notes.begin(), notes.end(), [&sourceNote](const NoteEvent& note)
         {
             return note.startTick == sourceNote.startTick
@@ -67,17 +66,7 @@ bool MidiEngine::quantizeSelectedNotes(std::int64_t gridTicks)
                 && note.channel == sourceNote.channel;
         });
         if (it != notes.end())
-        {
-            const auto resultIt = std::find_if(result.begin(), result.end(), [&sourceNote](const NoteEvent& note)
-            {
-                return note.pitch == sourceNote.pitch
-                    && note.channel == sourceNote.channel
-                    && note.lengthTicks == sourceNote.lengthTicks
-                    && note.velocity == sourceNote.velocity;
-            });
-            if (resultIt != result.end())
-                it->startTick = resultIt->startTick;
-        }
+            it->startTick = result[i].startTick;
     }
 
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
