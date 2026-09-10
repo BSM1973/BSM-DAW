@@ -35,6 +35,8 @@ target_sources(BSM_DAW PRIVATE
     Source/MidiVelocityInteraction.cpp
     Source/MidiNoteSelectionInteraction.cpp
     Source/MidiGroupDragInteraction.cpp
+    Source/MidiMarqueeOverlay.cpp
+    Source/MidiMarqueeManager.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
