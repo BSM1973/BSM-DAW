@@ -6,6 +6,7 @@
 // existing project Save/Open shortcuts. This avoids relying on focus delivery
 // to a child editor component on macOS.
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
+void shutdownLibertyMidiGroupDragInteraction();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -17,9 +18,7 @@ public:
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
     void shutdown() override
     {
-        // Global MIDI listeners may own components attached to the MIDI editor.
-        // Detach them before destroying the editor and main window to avoid
-        // dangling Component/KeyListener references during application exit.
+        shutdownLibertyMidiGroupDragInteraction();
         shutdownLibertyMidiNoteSelectionInteraction();
         shutdownLibertyMidiEditor();
         mainWindow.reset();
