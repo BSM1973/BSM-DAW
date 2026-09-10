@@ -43,15 +43,18 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 
     if (keyCode == juce::KeyPress::deleteKey || keyCode == juce::KeyPress::backspaceKey)
     {
-        // MIDI 1 is represented by selectedTrack == -1. Delete the complete
-        // MIDI clip without touching any audio track.
+        // MIDI 1 is a real timeline clip. Delete removes the complete clip
+        // (notes + timeline placement/length), without touching any audio track.
         if (selectedTrack < 0)
         {
-            if (midiEngine.getNumNotes() == 0)
+            if (midiEngine.getNumNotes() == 0 && midiClipLengthSeconds <= 0.0)
                 return true;
 
             midiEngine.clear();
             midiClipStartSeconds = 0.0;
+            midiClipLengthSeconds = 0.0;
+            midiClipLengthUserDefined = false;
+            updateMidiClipTiming();
             playheadSeconds = 0.0;
             isPlaying = false;
             audioEngine.setPlaying(false);
