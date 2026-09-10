@@ -42,6 +42,7 @@ public:
     void setSelectedNotes(const std::vector<NoteEvent>& selection) noexcept;
     std::size_t getNumSelectedNotes() const noexcept { return selectedNotes.size(); }
     bool moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch);
+    bool resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge);
     bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
     bool deleteSelectedNotes();
 
