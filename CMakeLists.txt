@@ -30,6 +30,7 @@ target_sources(BSM_DAW PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
+    Source/AudioRecordingIntegration.cpp
     Source/MidiEngine.cpp
     Source/MidiQuantize.cpp
     Source/MidiEditor.cpp
