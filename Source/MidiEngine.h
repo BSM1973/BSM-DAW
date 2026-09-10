@@ -45,6 +45,7 @@ public:
     bool resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge);
     bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
     bool deleteSelectedNotes();
+    bool quantizeSelectedNotes(std::int64_t gridTicks);
 
     bool undo();
     bool redo();
