@@ -76,8 +76,7 @@ public:
     {
         if (!e.mods.isLeftButtonDown()) return;
         marqueeCurrent = e.getPosition();
-        if (!marqueeActive && marqueeStart.getDistanceFrom(marqueeCurrent) >= marqueeThreshold)
-            marqueeActive = true;
+        if (!marqueeActive && marqueeStart.getDistanceFrom(marqueeCurrent) >= marqueeThreshold) marqueeActive = true;
         if (marqueeActive) { marqueeRect = makeMarqueeRect(); repaint(); }
     }
     void mouseUp(const juce::MouseEvent& e) override
@@ -122,8 +121,7 @@ private:
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
             if (!r.intersects(noteRect)) continue;
-            const auto it = std::find_if(selected.begin(), selected.end(), [&](const auto& existing) { return sameNote(existing, note); });
-            if (it == selected.end()) selected.push_back(note);
+            if (std::find_if(selected.begin(), selected.end(), [&](const auto& existing) { return sameNote(existing, note); }) == selected.end()) selected.push_back(note);
         }
         owner.getMidiEngine().setSelectedNotes(selected);
     }
@@ -168,13 +166,14 @@ private:
     bool marqueeAdditive = false;
 };
 
-class MidiNoteSelectionInteraction final : public juce::KeyListener, public juce::MouseListener
+class MidiNoteSelectionInteraction final : public juce::KeyListener, public juce::MouseListener, private juce::Timer
 {
 public:
-    MidiNoteSelectionInteraction() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
+    MidiNoteSelectionInteraction() { juce::Desktop::getInstance().addGlobalMouseListener(this); startTimerHz(10); }
     ~MidiNoteSelectionInteraction() override { shutdown(); }
     void shutdown() noexcept
     {
+        stopTimer();
         detachFromWindows();
         if (registered) { juce::Desktop::getInstance().removeGlobalMouseListener(this); registered = false; }
     }
@@ -203,10 +202,7 @@ public:
         if (changed) { main->updateMidiClipTiming(); main->repaint(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); return true; }
         return false;
     }
-    void mouseMove(const juce::MouseEvent& e) override
-    {
-        attachToMidiWindow(e.getScreenPosition());
-    }
+    void mouseMove(const juce::MouseEvent& e) override { attachToMidiWindow(e.getScreenPosition()); }
     void mouseDown(const juce::MouseEvent& e) override
     {
         attachToMidiWindow(e.getScreenPosition());
@@ -225,6 +221,25 @@ public:
         selectNoteFromScreenPosition(e.getScreenPosition(), false);
     }
 private:
+    void timerCallback() override
+    {
+        auto* main = findMainComponent();
+        if (main == nullptr) return;
+        auto* window = findMidiWindow(juce::Desktop::getInstance().getMousePosition());
+        if (window == nullptr) return;
+        if (auto* content = window->getContentComponent())
+        {
+            if (attachedContent != content)
+            {
+                detachFromWindows();
+                attachedContent = content;
+                content->addKeyListener(this);
+                selectionOverlay = std::make_unique<MidiSelectionOverlay>(*main);
+                content->addAndMakeVisible(selectionOverlay.get());
+                selectionOverlay->setBounds(content->getLocalBounds());
+            }
+        }
+    }
     static bool isDeleteKey(const juce::KeyPress& key) noexcept { return key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey; }
     static MainComponent* findMainInTree(juce::Component* c) noexcept { if (c == nullptr) return nullptr; if (auto* main = dynamic_cast<MainComponent*>(c)) return main; for (int i = 0; i < c->getNumChildComponents(); ++i) if (auto* main = findMainInTree(c->getChildComponent(i))) return main; return nullptr; }
     static MainComponent* findMainComponent() noexcept { auto& desktop = juce::Desktop::getInstance(); for (int i = 0; i < desktop.getNumComponents(); ++i) if (auto* main = findMainInTree(desktop.getComponent(i))) return main; return nullptr; }
