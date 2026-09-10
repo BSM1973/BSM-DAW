@@ -6,6 +6,7 @@
 // existing project Save/Open shortcuts. This avoids relying on focus delivery
 // to a child editor component on macOS.
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
+bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
 void shutdownLibertyMidiGroupDragInteraction();
 
 class LibertyApplication final : public juce::JUCEApplication
@@ -38,12 +39,14 @@ private:
         bool keyPressed(const juce::KeyPress& key, juce::Component*) override
         {
             if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
+            if (handleLibertyMidiQuantizeKeyPress(key)) return true;
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
             return true;
         }
         bool keyPressed(const juce::KeyPress& key) override
         {
             if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
+            if (handleLibertyMidiQuantizeKeyPress(key)) return true;
             if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
             return DocumentWindow::keyPressed(key);
         }
