@@ -45,7 +45,6 @@ public:
         const auto* note = findSelectedNoteAt(e.getPosition());
         if (note == nullptr || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return;
-
         if (lastSelection.size() > 1)
             owner.getMidiEngine().setSelectedNotes(lastSelection);
         selectionBeforeDrag = owner.getMidiEngine().getSelectedNotesCopy();
@@ -60,17 +59,13 @@ public:
     void mouseDrag(const juce::MouseEvent& e) override
     {
         if (!dragging) return;
-
         const auto targetTick = tickFromX(e.x);
         const int targetPitch = pitchFromY(e.y);
         const auto requestedTickDelta = targetTick - dragStartTick;
         const int requestedPitchDelta = targetPitch - dragStartPitch;
         const auto stepTickDelta = requestedTickDelta - appliedTickDelta;
         const int stepPitchDelta = requestedPitchDelta - appliedPitchDelta;
-
-        if (stepTickDelta == 0 && stepPitchDelta == 0)
-            return;
-
+        if (stepTickDelta == 0 && stepPitchDelta == 0) return;
         if (owner.getMidiEngine().moveSelectedNotesBy(stepTickDelta, stepPitchDelta))
         {
             appliedTickDelta = requestedTickDelta;
@@ -103,20 +98,16 @@ private:
         const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
         const auto pixelsPerTick = getPixelsPerTick();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
-        const auto clipLengthTicks = juce::jmax<std::int64_t>(
-            juce::jmax<std::int64_t>(1, ticksPerMeasure),
-            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         for (const auto& n : selected)
         {
             if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick < 0 || n.startTick >= clipLengthTicks)
                 continue;
-            const int x = pianoKeyWidth + (int) std::llround((double) n.startTick * pixelsPerTick);
-            const int y = rulerHeight + (visibleKeys - 1 - ((int) n.pitch - lowestKey)) * keyHeight + 2;
+            const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
-            const int w = juce::jmax(8, (int) std::llround((double) visibleLengthTicks * pixelsPerTick));
-            const auto rect = juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4);
-            if (rect.contains(p)) return &n;
+            const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
+            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p)) return &n;
         }
         return nullptr;
     }
@@ -124,8 +115,8 @@ private:
     bool isNearResizeEdge(const MidiEngine::NoteEvent& note, int x) const
     {
         const auto pixelsPerTick = getPixelsPerTick();
-        const int left = pianoKeyWidth + (int) std::llround((double) note.startTick * pixelsPerTick) + 1;
-        const int width = juce::jmax(8, (int) std::llround((double) note.lengthTicks * pixelsPerTick)) - 2;
+        const int left = pianoKeyWidth + (int)std::llround((double)note.startTick * pixelsPerTick) + 1;
+        const int width = juce::jmax(8, (int)std::llround((double)note.lengthTicks * pixelsPerTick)) - 2;
         const int right = left + width;
         return std::abs(x - left) <= resizeEdgePixels || std::abs(x - right) <= resizeEdgePixels;
     }
@@ -134,9 +125,7 @@ private:
     {
         const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
-        const auto clipLengthTicks = juce::jmax<std::int64_t>(
-            juce::jmax<std::int64_t>(1, ticksPerMeasure),
-            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         return static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
     }
 
@@ -148,7 +137,7 @@ private:
 
     std::int64_t tickFromX(int x) const noexcept
     {
-        const auto raw = (std::int64_t) std::llround((x - pianoKeyWidth) / getPixelsPerTick());
+        const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick());
         return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks);
     }
 
@@ -166,7 +155,18 @@ class MidiGroupDragManager final : private juce::Timer
 {
 public:
     MidiGroupDragManager() { startTimerHz(10); }
-    ~MidiGroupDragManager() override { detach(); }
+    ~MidiGroupDragManager() override { shutdown(); }
+
+    void shutdown() noexcept
+    {
+        stopTimer();
+        if (overlay != nullptr)
+        {
+            overlay->setVisible(false);
+            overlay.reset();
+        }
+        attachedContent = nullptr;
+    }
 
 private:
     void timerCallback() override
@@ -226,4 +226,9 @@ private:
 };
 
 MidiGroupDragManager groupDragManager;
+}
+
+void shutdownLibertyMidiGroupDragInteraction()
+{
+    groupDragManager.shutdown();
 }
