@@ -31,6 +31,7 @@ target_sources(BSM_DAW PRIVATE
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
     Source/MidiEngine.cpp
+    Source/MidiQuantize.cpp
     Source/MidiEditor.cpp
     Source/MidiVelocityInteraction.cpp
     Source/MidiNoteSelectionInteraction.cpp
@@ -38,6 +39,7 @@ target_sources(BSM_DAW PRIVATE
     Source/MidiMarqueeOverlay.cpp
     Source/MidiMarqueeManager.cpp
     Source/MidiSelectAllInteraction.cpp
+    Source/MidiQuantizeInteraction.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
