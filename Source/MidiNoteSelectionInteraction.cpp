@@ -205,6 +205,15 @@ public:
         }
         pendingAdditiveSelection.clear();
         pendingAdditiveSelectionActive = false;
+
+        // Keep an existing multi-selection intact when the user begins a mouse drag
+        // on one of the selected notes. This lets the dedicated group-drag layer
+        // take over without collapsing the selection first.
+        auto* main = findMainComponent();
+        if (main != nullptr && main->getMidiEngine().getNumSelectedNotes() > 1
+            && pointHitsSelectedNote(e.getScreenPosition(), *main))
+            return;
+
         selectNoteFromScreenPosition(e.getScreenPosition(), false);
     }
 private:
@@ -222,6 +231,28 @@ private:
     {
         auto* c = juce::Desktop::getInstance().findComponentAt(p); while (c != nullptr)
         { if (auto* window = dynamic_cast<juce::DocumentWindow*>(c)) if (window->getName() == "Liberty - MIDI 1") return window; c = c->getParentComponent(); } return nullptr;
+    }
+    static bool pointHitsSelectedNote(juce::Point<int> screenPosition, MainComponent& main)
+    {
+        auto* window = findMidiWindow(screenPosition); if (window == nullptr) return false;
+        auto* content = window->getContentComponent(); if (content == nullptr) return false;
+        const auto p = screenPosition - content->getScreenPosition();
+        if (p.x < pianoKeyWidth || p.y < rulerHeight || p.y >= content->getHeight() - velocityLaneHeight) return false;
+        const auto gridWidth = juce::jmax(1, content->getWidth() - pianoKeyWidth);
+        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(main.getTimeSignatureNumerator(), main.getTimeSignatureDenominator());
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(main.getMidiClipLengthSeconds(), main.getTempoBpm()));
+        const auto pixelsPerTick = static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        const int pitch = juce::jlimit(0, 127, lowestKey + visibleKeys - 1 - ((p.y - rulerHeight) / keyHeight));
+        for (const auto& selected : main.getMidiEngine().getSelectedNotesCopy())
+        {
+            if (selected.pitch != pitch || selected.startTick < 0 || selected.startTick >= clipLengthTicks) continue;
+            const auto visibleLengthTicks = juce::jmin(selected.lengthTicks, clipLengthTicks - selected.startTick);
+            const int x = pianoKeyWidth + (int)std::llround((double)selected.startTick * pixelsPerTick);
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)selected.pitch - lowestKey)) * keyHeight + 2;
+            const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
+            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p.x, p.y)) return true;
+        }
+        return false;
     }
     void attachToMidiWindow(juce::Point<int> p)
     {
