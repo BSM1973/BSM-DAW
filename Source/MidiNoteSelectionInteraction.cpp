@@ -16,6 +16,11 @@ constexpr int lowestKey = 21;
 constexpr int marqueeThreshold = 4;
 constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
+static bool isAdditiveModifier(const juce::ModifierKeys& mods) noexcept
+{
+    return mods.isCommandDown() || mods.isCtrlDown();
+}
+
 class MidiSelectionOverlay final : public juce::Component, private juce::Timer
 {
 public:
@@ -63,8 +68,8 @@ public:
         marqueeActive = false;
         marqueeStart = e.getPosition();
         marqueeCurrent = marqueeStart;
-        marqueeBaseSelection = e.mods.isCommandDown() ? owner.getMidiEngine().getSelectedNotesCopy() : std::vector<MidiEngine::NoteEvent>{};
-        marqueeAdditive = e.mods.isCommandDown();
+        marqueeBaseSelection = isAdditiveModifier(e.mods) ? owner.getMidiEngine().getSelectedNotesCopy() : std::vector<MidiEngine::NoteEvent>{};
+        marqueeAdditive = isAdditiveModifier(e.mods);
         owner.getMidiEngine().clearNoteSelection(); repaint(); owner.repaint();
     }
     void mouseDrag(const juce::MouseEvent& e) override
@@ -73,7 +78,7 @@ public:
         marqueeCurrent = e.getPosition();
         if (!marqueeActive && marqueeStart.getDistanceFrom(marqueeCurrent) >= marqueeThreshold)
             marqueeActive = true;
-        if (marqueeActive) repaint();
+        if (marqueeActive) { marqueeRect = makeMarqueeRect(); repaint(); }
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
@@ -152,7 +157,7 @@ private:
     void timerCallback() override
     {
         if (auto* parent = getParentComponent()) setBounds(parent->getLocalBounds());
-        if (marqueeActive) { marqueeRect = makeMarqueeRect(); }
+        if (marqueeActive) marqueeRect = makeMarqueeRect();
         repaint();
     }
     MainComponent& owner;
@@ -198,10 +203,14 @@ public:
         if (changed) { main->updateMidiClipTiming(); main->repaint(); if (selectionOverlay != nullptr) selectionOverlay->repaint(); return true; }
         return false;
     }
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        attachToMidiWindow(e.getScreenPosition());
+    }
     void mouseDown(const juce::MouseEvent& e) override
     {
         attachToMidiWindow(e.getScreenPosition());
-        if (e.mods.isCommandDown())
+        if (isAdditiveModifier(e.mods))
         {
             auto* main = findMainComponent(); if (main != nullptr)
             {
