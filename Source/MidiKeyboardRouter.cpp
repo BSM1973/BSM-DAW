@@ -1,89 +1,50 @@
+#include "MainComponent.h"
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <set>
 
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
 
-namespace
-{
-class MidiKeyboardRouter final : public juce::KeyListener, private juce::Timer
+class MidiKeyboardRouter final : private juce::Timer, private juce::KeyListener
 {
 public:
-    MidiKeyboardRouter()
-    {
-        startTimerHz(10);
-    }
-
-    ~MidiKeyboardRouter() override
-    {
-        detach();
-    }
-
-    bool keyPressed(const juce::KeyPress& key, juce::Component*) override
-    {
-        if (handleLibertyMidiNoteSelectionKeyPress(key))
-            return true;
-        if (handleLibertyMidiQuantizeKeyPress(key))
-            return true;
-        return false;
-    }
+    MidiKeyboardRouter() { startTimerHz(30); }
+    ~MidiKeyboardRouter() override { detach(); }
 
 private:
-    static juce::DocumentWindow* findMidiWindow() noexcept
+    void timerCallback() override
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-        {
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (window->getName() == "Liberty - MIDI 1")
-                    return window;
-        }
-        return nullptr;
+                    attachRecursive(window->getContentComponent());
     }
 
-    void attach(juce::DocumentWindow* window)
+    void attachRecursive(juce::Component* component)
     {
-        if (window == attachedWindow)
-        {
-            if (window != nullptr && window->isActiveWindow())
-                if (auto* content = window->getContentComponent())
-                    content->grabKeyboardFocus();
-            return;
-        }
-
-        detach();
-        if (window == nullptr)
-            return;
-
-        attachedWindow = window;
-        attachedWindow->addKeyListener(this);
-        attachedContent = attachedWindow->getContentComponent();
-        if (attachedContent != nullptr)
-        {
-            attachedContent->addKeyListener(this);
-            attachedContent->setWantsKeyboardFocus(true);
-            if (attachedWindow->isActiveWindow())
-                attachedContent->grabKeyboardFocus();
-        }
+        if (component == nullptr) return;
+        if (attached.insert(component).second)
+            component->addKeyListener(this);
+        for (int i = 0; i < component->getNumChildComponents(); ++i)
+            attachRecursive(component->getChildComponent(i));
     }
 
     void detach()
     {
-        if (attachedContent != nullptr)
-            attachedContent->removeKeyListener(this);
-        if (attachedWindow != nullptr)
-            attachedWindow->removeKeyListener(this);
-        attachedContent = nullptr;
-        attachedWindow = nullptr;
+        for (auto* component : attached)
+            if (component != nullptr) component->removeKeyListener(this);
+        attached.clear();
     }
 
-    void timerCallback() override
+    bool keyPressed(const juce::KeyPress& key, juce::Component*) override
     {
-        attach(findMidiWindow());
+        if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
+        if (handleLibertyMidiQuantizeKeyPress(key)) return true;
+        return false;
     }
 
-    juce::DocumentWindow* attachedWindow = nullptr;
-    juce::Component* attachedContent = nullptr;
+    std::set<juce::Component*> attached;
 };
 
-MidiKeyboardRouter midiKeyboardRouter;
-}
+MidiKeyboardRouter globalMidiKeyboardRouter;
