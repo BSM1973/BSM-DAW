@@ -74,14 +74,16 @@ public:
     }
     void mouseDrag(const juce::MouseEvent& e) override
     {
-        if (!e.mods.isLeftButtonDown()) return;
+        // Do not test the current modifier state here: JUCE can report a
+        // different button/modifier mask during a drag than on mouseDown.
+        if (!marqueeStart.isFinite()) return;
         marqueeCurrent = e.getPosition();
         if (!marqueeActive && marqueeStart.getDistanceFrom(marqueeCurrent) >= marqueeThreshold) marqueeActive = true;
         if (marqueeActive) { marqueeRect = makeMarqueeRect(); repaint(); }
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        if (!e.mods.isLeftButtonDown() && !marqueeActive) return;
+        if (!marqueeStart.isFinite()) return;
         marqueeCurrent = e.getPosition();
         if (marqueeActive)
         {
@@ -91,11 +93,12 @@ public:
             marqueeRect = {};
             repaint(); owner.repaint();
         }
+        marqueeStart = { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() };
     }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown()) return;
-        marqueeActive = false; marqueeBaseSelection.clear();
+        marqueeActive = false; marqueeBaseSelection.clear(); marqueeStart = { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() };
         const int pitch = pitchFromY(e.y); const auto tick = tickFromX(e.x);
         if (owner.getMidiEngine().addNote(tick, MidiEngine::ticksPerQuarterNote, pitch, 100, 1)) { owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
     }
@@ -159,7 +162,7 @@ private:
         repaint();
     }
     MainComponent& owner;
-    juce::Point<int> marqueeStart, marqueeCurrent;
+    juce::Point<int> marqueeStart { juce::numeric_limits<int>::min(), juce::numeric_limits<int>::min() }, marqueeCurrent;
     juce::Rectangle<int> marqueeRect;
     std::vector<MidiEngine::NoteEvent> marqueeBaseSelection;
     bool marqueeActive = false;
