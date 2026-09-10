@@ -40,6 +40,7 @@ target_sources(BSM_DAW PRIVATE
     Source/MidiMarqueeManager.cpp
     Source/MidiSelectAllInteraction.cpp
     Source/MidiQuantizeInteraction.cpp
+    Source/MidiKeyboardRouter.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
