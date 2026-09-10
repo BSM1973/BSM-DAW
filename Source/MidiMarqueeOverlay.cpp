@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace
 {
@@ -13,6 +14,8 @@ constexpr int visibleKeys = 40;
 constexpr int velocityLaneHeight = 92;
 constexpr int lowestKey = 21;
 constexpr int marqueeThreshold = 4;
+constexpr int resizeEdgePixels = 12;
+constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 }
 
 MidiMarqueeOverlay::MidiMarqueeOverlay(MainComponent& o) : owner(o)
@@ -44,32 +47,68 @@ void MidiMarqueeOverlay::paint(juce::Graphics& g)
 
 bool MidiMarqueeOverlay::hitTest(int x, int y)
 {
-    const auto mods = juce::ModifierKeys::getCurrentModifiers();
-    if (!mods.isCommandDown() && !mods.isCtrlDown())
-        return false;
-
     const juce::Point<int> p(x, y);
     if (!isInPianoRollGrid(p))
         return false;
 
-    return !pointHitsAnyNote(p);
+    const auto mods = juce::ModifierKeys::getCurrentModifiers();
+    if (mods.isCommandDown() || mods.isCtrlDown())
+        return !pointHitsAnyNote(p);
+
+    ResizeSide side = ResizeSide::none;
+    return owner.getMidiEngine().getNumSelectedNotes() > 1
+        && findSelectedResizeSide(p, side);
 }
 
 void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
 {
-    if (!e.mods.isLeftButtonDown() || (!e.mods.isCommandDown() && !e.mods.isCtrlDown()))
+    if (!e.mods.isLeftButtonDown())
         return;
 
-    dragStart = e.getPosition();
-    dragCurrent = dragStart;
-    dragging = true;
-    marqueeActive = false;
-    baseSelection = owner.getMidiEngine().getSelectedNotesCopy();
-    repaint();
+    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+    {
+        dragStart = e.getPosition();
+        dragCurrent = dragStart;
+        dragging = true;
+        marqueeActive = false;
+        resizeActive = false;
+        resizeSide = ResizeSide::none;
+        baseSelection = owner.getMidiEngine().getSelectedNotesCopy();
+        repaint();
+        return;
+    }
+
+    ResizeSide side = ResizeSide::none;
+    if (owner.getMidiEngine().getNumSelectedNotes() > 1
+        && findSelectedResizeSide(e.getPosition(), side))
+    {
+        resizeActive = true;
+        resizeSide = side;
+        lastResizeTick = tickFromX(e.x);
+        dragging = false;
+        marqueeActive = false;
+        return;
+    }
 }
 
 void MidiMarqueeOverlay::mouseDrag(const juce::MouseEvent& e)
 {
+    if (resizeActive)
+    {
+        const auto currentTick = tickFromX(e.x);
+        const auto deltaTicks = currentTick - lastResizeTick;
+        if (deltaTicks != 0)
+        {
+            if (owner.getMidiEngine().resizeSelectedNotesBy(deltaTicks, resizeSide == ResizeSide::left))
+            {
+                lastResizeTick = currentTick;
+                owner.updateMidiClipTiming();
+                owner.repaint();
+            }
+        }
+        return;
+    }
+
     if (!dragging)
         return;
 
@@ -83,6 +122,17 @@ void MidiMarqueeOverlay::mouseDrag(const juce::MouseEvent& e)
 
 void MidiMarqueeOverlay::mouseUp(const juce::MouseEvent& e)
 {
+    if (resizeActive)
+    {
+        resizeActive = false;
+        resizeSide = ResizeSide::none;
+        lastResizeTick = 0;
+        owner.updateMidiClipTiming();
+        owner.repaint();
+        repaint();
+        return;
+    }
+
     if (!dragging)
         return;
 
@@ -135,6 +185,53 @@ bool MidiMarqueeOverlay::pointHitsAnyNote(juce::Point<int> p) const
     }
 
     return false;
+}
+
+bool MidiMarqueeOverlay::findSelectedResizeSide(juce::Point<int> p, ResizeSide& side) const
+{
+    side = ResizeSide::none;
+    float bestDistance = static_cast<float>(resizeEdgePixels + 1);
+
+    for (const auto& note : owner.getMidiEngine().getSelectedNotesCopy())
+    {
+        if (note.pitch < lowestKey || note.pitch >= lowestKey + visibleKeys)
+            continue;
+
+        const auto rect = noteRectangle(p, note.startTick, note.lengthTicks, note.pitch);
+        if (!rect.contains(p))
+            continue;
+
+        const auto leftDistance = std::abs(static_cast<float>(p.x - rect.getX()));
+        const auto rightDistance = std::abs(static_cast<float>(p.x - rect.getRight()));
+
+        if (leftDistance <= static_cast<float>(resizeEdgePixels) && leftDistance <= bestDistance)
+        {
+            bestDistance = leftDistance;
+            side = ResizeSide::left;
+        }
+
+        if (rightDistance <= static_cast<float>(resizeEdgePixels) && rightDistance < bestDistance)
+        {
+            bestDistance = rightDistance;
+            side = ResizeSide::right;
+        }
+    }
+
+    return side != ResizeSide::none;
+}
+
+std::int64_t MidiMarqueeOverlay::tickFromX(int x) const noexcept
+{
+    const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
+    const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(),
+                                                             owner.getTimeSignatureDenominator());
+    const auto clipLengthTicks = juce::jmax<std::int64_t>(
+        juce::jmax<std::int64_t>(1, ticksPerMeasure),
+        MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+    const auto pixelsPerTick = static_cast<double>(juce::jmax(1, gridWidth - 2))
+                               / static_cast<double>(clipLengthTicks);
+    const auto rawTick = static_cast<std::int64_t>(std::llround((x - pianoKeyWidth) / pixelsPerTick));
+    return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, rawTick), gridTicks);
 }
 
 void MidiMarqueeOverlay::applySelection()
