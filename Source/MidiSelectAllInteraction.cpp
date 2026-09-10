@@ -7,62 +7,46 @@ namespace
 class MidiSelectAllKeyListener final : private juce::Timer, public juce::KeyListener
 {
 public:
-    MidiSelectAllKeyListener()
-    {
-        startTimerHz(10);
-    }
-
-    ~MidiSelectAllKeyListener() override
-    {
-        stopTimer();
-        detachFromContent();
-    }
+    MidiSelectAllKeyListener() { startTimerHz(10); }
+    ~MidiSelectAllKeyListener() override { stopTimer(); detachFromContent(); }
 
     bool keyPressed(const juce::KeyPress& key, juce::Component*) override
     {
         auto* main = findMainComponent();
-        if (main == nullptr)
-            return false;
+        if (main == nullptr) return false;
 
         const auto modifiers = key.getModifiers();
         const bool commandOrCtrl = modifiers.isCommandDown() || modifiers.isCtrlDown();
+        const int keyCode = key.getKeyCode();
 
-        if (commandOrCtrl && key.getKeyCode() == 'A')
+        if (commandOrCtrl && keyCode == 'A')
         {
             auto notes = main->getMidiEngine().getNotesCopy();
-            if (notes.empty())
-                return false;
-
+            if (notes.empty()) return false;
             main->getMidiEngine().setSelectedNotes(notes);
             main->repaint();
             return true;
         }
 
-        if (key.getKeyCode() == juce::KeyPress::escapeKey)
+        if (keyCode == juce::KeyPress::escapeKey)
         {
-            if (main->getMidiEngine().getNumSelectedNotes() == 0)
-                return false;
-
+            if (main->getMidiEngine().getNumSelectedNotes() == 0) return false;
             main->getMidiEngine().clearNoteSelection();
             main->repaint();
             return true;
         }
 
-        if (main->getMidiEngine().getNumSelectedNotes() == 0)
-            return false;
+        if (main->getMidiEngine().getNumSelectedNotes() == 0) return false;
 
         constexpr std::int64_t grid = MidiEngine::ticksPerQuarterNote / 4;
         std::int64_t deltaTicks = 0;
         int deltaPitch = 0;
 
-        switch (key.getKeyCode())
-        {
-            case juce::KeyPress::leftKey:  deltaTicks = -grid; break;
-            case juce::KeyPress::rightKey: deltaTicks = grid; break;
-            case juce::KeyPress::upKey:    deltaPitch = 1; break;
-            case juce::KeyPress::downKey:  deltaPitch = -1; break;
-            default: return false;
-        }
+        if (keyCode == juce::KeyPress::leftKey) deltaTicks = -grid;
+        else if (keyCode == juce::KeyPress::rightKey) deltaTicks = grid;
+        else if (keyCode == juce::KeyPress::upKey) deltaPitch = 1;
+        else if (keyCode == juce::KeyPress::downKey) deltaPitch = -1;
+        else return false;
 
         if (main->getMidiEngine().moveSelectedNotesBy(deltaTicks, deltaPitch))
         {
@@ -70,7 +54,6 @@ public:
             main->repaint();
             return true;
         }
-
         return false;
     }
 
@@ -79,13 +62,10 @@ public:
 private:
     static MainComponent* findMainInTree(juce::Component* component) noexcept
     {
-        if (component == nullptr)
-            return nullptr;
-        if (auto* main = dynamic_cast<MainComponent*>(component))
-            return main;
+        if (component == nullptr) return nullptr;
+        if (auto* main = dynamic_cast<MainComponent*>(component)) return main;
         for (int i = 0; i < component->getNumChildComponents(); ++i)
-            if (auto* main = findMainInTree(component->getChildComponent(i)))
-                return main;
+            if (auto* main = findMainInTree(component->getChildComponent(i))) return main;
         return nullptr;
     }
 
@@ -93,8 +73,7 @@ private:
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-            if (auto* main = findMainInTree(desktop.getComponent(i)))
-                return main;
+            if (auto* main = findMainInTree(desktop.getComponent(i))) return main;
         return nullptr;
     }
 
@@ -102,11 +81,8 @@ private:
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-        {
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
-                if (window->getName() == "Liberty - MIDI 1")
-                    return window;
-        }
+                if (window->getName() == "Liberty - MIDI 1") return window;
         return nullptr;
     }
 
@@ -114,9 +90,7 @@ private:
     {
         auto* window = findMidiWindow();
         auto* content = window != nullptr ? window->getContentComponent() : nullptr;
-        if (content == attachedContent)
-            return;
-
+        if (content == attachedContent) return;
         detachFromContent();
         if (content != nullptr)
         {
