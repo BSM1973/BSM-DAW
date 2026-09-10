@@ -16,7 +16,7 @@ void MidiEngine::pushUndoState()
         undoHistory.erase(undoHistory.begin());
 }
 
-void MidiEngine::restoreHistoryState(const HistoryState& state) noexcept
+void MidiEngine::restoreHistoryState(const HistoryState& state)
 {
     notes = state.notes;
     selectedNotes = state.selectedNotes;
@@ -34,7 +34,7 @@ bool MidiEngine::undo()
 {
     if (undoHistory.empty()) return false;
     redoHistory.push_back(makeHistoryState());
-    const auto state = std::move(undoHistory.back());
+    auto state = std::move(undoHistory.back());
     undoHistory.pop_back();
     restoreHistoryState(state);
     return true;
@@ -44,7 +44,7 @@ bool MidiEngine::redo()
 {
     if (redoHistory.empty()) return false;
     undoHistory.push_back(makeHistoryState());
-    const auto state = std::move(redoHistory.back());
+    auto state = std::move(redoHistory.back());
     redoHistory.pop_back();
     restoreHistoryState(state);
     return true;
