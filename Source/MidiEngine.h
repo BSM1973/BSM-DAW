@@ -79,7 +79,7 @@ private:
     };
 
     HistoryState makeHistoryState() const;
-    void restoreHistoryState(const HistoryState& state) noexcept;
+    void restoreHistoryState(const HistoryState& state);
     void pushUndoState();
 
     std::vector<NoteEvent> notes;
