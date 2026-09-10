@@ -96,9 +96,22 @@ private:
 };
 class Bootstrap final : private juce::Timer
 {
-public: Bootstrap() { startTimerHz(20); }
-private: void timerCallback() override { auto& desktop = juce::Desktop::getInstance(); for (int i = 0; i < desktop.getNumComponents(); ++i) { auto* w = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)); if (w == nullptr) continue; auto* m = dynamic_cast<MainComponent*>(w->getContentComponent()); if (m == nullptr) continue; if (controllers.find(m) == controllers.end()) controllers.emplace(m, std::make_unique<RecordingController>(*m)); } }
+public:
+    Bootstrap() { startTimerHz(20); }
+    ~Bootstrap() override { shutdown(); }
+    void shutdown()
+    {
+        stopTimer();
+        controllers.clear();
+    }
+private:
+    void timerCallback() override { auto& desktop = juce::Desktop::getInstance(); for (int i = 0; i < desktop.getNumComponents(); ++i) { auto* w = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)); if (w == nullptr) continue; auto* m = dynamic_cast<MainComponent*>(w->getContentComponent()); if (m == nullptr) continue; if (controllers.find(m) == controllers.end()) controllers.emplace(m, std::make_unique<RecordingController>(*m)); } }
     std::map<MainComponent*, std::unique_ptr<RecordingController>> controllers;
 };
 Bootstrap bootstrap;
+}
+
+void shutdownLibertyAudioRecordingIntegration()
+{
+    bootstrap.shutdown();
 }
