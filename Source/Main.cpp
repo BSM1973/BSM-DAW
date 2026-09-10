@@ -9,7 +9,6 @@ bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
 void shutdownLibertyMidiKeyboardRouter();
 void shutdownLibertyMidiGroupDragInteraction();
-void shutdownLibertyAudioRecordingIntegration();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -21,7 +20,6 @@ public:
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
     void shutdown() override
     {
-        shutdownLibertyAudioRecordingIntegration();
         shutdownLibertyMidiKeyboardRouter();
         shutdownLibertyMidiGroupDragInteraction();
         shutdownLibertyMidiNoteSelectionInteraction();
