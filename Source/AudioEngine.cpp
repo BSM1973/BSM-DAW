@@ -8,8 +8,6 @@ AudioEngine::~AudioEngine() { shutdown(); }
 
 bool AudioEngine::initialise()
 {
-    // Liberty must open real hardware inputs from the start.  Recording cannot
-    // enable channels later if the AudioDeviceManager was initialised with 0 inputs.
     const auto error = deviceManager.initialiseWithDefaultDevices(8, 2);
     if (error.isNotEmpty()) { const juce::ScopedLock lock(stateLock); lastError = error; initialised.store(false); return false; }
     auto* device = deviceManager.getCurrentAudioDevice();
@@ -34,6 +32,10 @@ void AudioEngine::shutdown()
     midiPlaybackNoteCount.store(0, std::memory_order_release);
     midiClipStartSeconds.store(0.0, std::memory_order_relaxed);
     midiClipLengthSeconds.store(0.0, std::memory_order_relaxed);
+    midiTrackMuted.store(false, std::memory_order_relaxed);
+    midiTrackSolo.store(false, std::memory_order_relaxed);
+    instrumentTrackMuted.store(false, std::memory_order_relaxed);
+    instrumentTrackSolo.store(false, std::memory_order_relaxed);
     for (auto& track : tracks)
     {
         track.loaded.store(false, std::memory_order_release);
@@ -82,11 +84,8 @@ double AudioEngine::getCurrentTimeSeconds() const noexcept
 {
     const auto rate = sampleRate.load();
     if (rate <= 0.0) return 0.0;
-
     const auto transportSeconds = static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate;
-    if (!playing.load(std::memory_order_relaxed))
-        return transportSeconds;
-
+    if (!playing.load(std::memory_order_relaxed)) return transportSeconds;
     const auto elapsedSeconds = juce::jmax(0.0,
         (juce::Time::getMillisecondCounterHiRes() - playbackClockStartMilliseconds.load(std::memory_order_relaxed)) / 1000.0);
     const auto clockSeconds = playbackClockBaseSeconds.load(std::memory_order_relaxed) + elapsedSeconds;
@@ -105,11 +104,9 @@ void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
     const auto start = juce::jmax(0.0, clipStartSeconds);
     const auto length = juce::jmax(0.0, clipLengthSeconds);
     const auto count = std::min(notes.size(), maxMidiPlaybackNotes);
-
     midiClipStartSeconds.store(start, std::memory_order_relaxed);
     midiClipLengthSeconds.store(length, std::memory_order_relaxed);
     midiTempoBpm.store(rate, std::memory_order_relaxed);
-
     for (std::size_t i = 0; i < count; ++i)
     {
         const auto& note = notes[i];
@@ -122,7 +119,6 @@ void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
         midiPlaybackNotes[i].frequency.store(frequency, std::memory_order_relaxed);
         midiPlaybackNotes[i].amplitude.store(amplitude, std::memory_order_relaxed);
     }
-
     midiPlaybackNoteCount.store(count, std::memory_order_release);
 }
 
@@ -134,7 +130,11 @@ void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isVal
 bool AudioEngine::isTrackMuted(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].muted.load(); }
 void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].solo.store(solo); }
 bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].solo.load(); }
-bool AudioEngine::isAnyTrackSolo() const noexcept { for (const auto& track : tracks) if (track.solo.load()) return true; return false; }
+bool AudioEngine::isAnyTrackSolo() const noexcept
+{
+    for (const auto& track : tracks) if (track.solo.load()) return true;
+    return midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+}
 
 double AudioEngine::getTrackStartSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].startSeconds.load() : 0.0; }
 void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].startSeconds.store(juce::jmax(0.0, seconds)); }
@@ -207,7 +207,6 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     for (int i = 0; i < maxAudioTracks; ++i)
         if (i != trackIndex && !tracks[(size_t)i].loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
     if (newTrackIndex < 0) { error = "No empty audio track is available for the second clip segment."; return false; }
-
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
     if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
     const auto rightSamples = source.numSamples - splitSample;
@@ -216,16 +215,13 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     rightBuffer->clear();
     for (int channel = 0; channel < channels; ++channel)
         rightBuffer->copyFrom(channel, 0, *source.buffer, channel, splitSample, rightSamples);
-
     const bool wasInitialised = initialised.load();
     const auto savedPlaying = playing.load();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     playing.store(false);
-
     source.buffer->setSize(channels, splitSample, true, false, false);
     source.numSamples = splitSample;
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
-
     auto& right = tracks[(size_t)newTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     right.buffer = std::move(rightBuffer);
@@ -238,7 +234,6 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.muted.store(source.muted.load());
     right.solo.store(source.solo.load());
     right.loaded.store(true, std::memory_order_release);
-
     if (wasInitialised) deviceManager.addAudioCallback(this);
     if (savedPlaying) playing.store(true);
     return true;
@@ -290,7 +285,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
     const auto midiStart = midiClipStartSeconds.load(std::memory_order_relaxed);
     const auto midiLength = midiClipLengthSeconds.load(std::memory_order_relaxed);
-    if (midiCount > 0 && midiLength > 0.0 && rate > 0.0)
+    const bool synthMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
+    const bool synthSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+    if (!synthMuted && (!anySolo || synthSolo) && midiCount > 0 && midiLength > 0.0 && rate > 0.0)
     {
         constexpr double twoPi = 6.28318530717958647692;
         constexpr double attackSeconds = 0.005;
