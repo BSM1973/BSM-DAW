@@ -7,6 +7,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -25,6 +26,19 @@ public:
             armButtons[(size_t)i].setMouseClickGrabsKeyboardFocus(false);
             armButtons[(size_t)i].onClick = [this, i] { armTrack(i); };
             owner.addAndMakeVisible(armButtons[(size_t)i]);
+
+            monitorButtons[(size_t)i].setButtonText("MON OFF");
+            monitorButtons[(size_t)i].setClickingTogglesState(true);
+            monitorButtons[(size_t)i].setMouseClickGrabsKeyboardFocus(false);
+            monitorButtons[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            monitorButtons[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
+            monitorButtons[(size_t)i].onClick = [this, i]
+            {
+                const bool enabled = monitorButtons[(size_t)i].getToggleState();
+                monitoringEnabled[(size_t)i].store(enabled, std::memory_order_relaxed);
+                monitorButtons[(size_t)i].setButtonText(enabled ? "MON ON" : "MON OFF");
+            };
+            owner.addAndMakeVisible(monitorButtons[(size_t)i]);
         }
 
         recButton.setButtonText("REC");
@@ -41,17 +55,21 @@ public:
         stopTimer();
         for (auto& button : armButtons)
             button.setVisible(false);
+        for (auto& button : monitorButtons)
+            button.setVisible(false);
         recButton.setVisible(false);
     }
 
     void resized() override
     {
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
-            armButtons[(size_t)i].setBounds(150, 76 + 32 + i * 70 + 8, 48, 22);
+        {
+            const int y = 76 + 32 + i * 70 + 8;
+            armButtons[(size_t)i].setBounds(108, y, 46, 22);
+            monitorButtons[(size_t)i].setBounds(158, y, 48, 22);
+        }
 
-        // Immediately after the last transport button (|>) and before the
-        // tempo controls at x=550. This rectangle does not overlap either one.
-        recButton.setBounds(521, 38, 28, 28);
+        recButton.setBounds(525, 38, 70, 28);
     }
 
 private:
@@ -339,9 +357,13 @@ private:
 
         threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
 
-        // Direct software monitoring during recording. Select the two input
-        // channels carrying the most energy in the current block, so interfaces
-        // with multiple USB pairs (including Axe-Fx III) monitor the actual signal.
+        const bool monitorThisTrack = armedTrack >= 0
+            && armedTrack < AudioEngine::maxAudioTracks
+            && monitoringEnabled[(size_t)armedTrack].load(std::memory_order_relaxed);
+
+        if (!monitorThisTrack)
+            return;
+
         int strongest = -1;
         int secondStrongest = -1;
         double strongestEnergy = -1.0;
@@ -395,6 +417,8 @@ private:
 
     MainComponent& owner;
     std::array<juce::TextButton, AudioEngine::maxAudioTracks> armButtons;
+    std::array<juce::TextButton, AudioEngine::maxAudioTracks> monitorButtons;
+    std::array<std::atomic<bool>, AudioEngine::maxAudioTracks> monitoringEnabled {};
     juce::TextButton recButton;
     std::vector<int> inputIndices;
     std::unique_ptr<juce::TimeSliceThread> recordingThread;
