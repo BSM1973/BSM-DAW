@@ -69,7 +69,7 @@ public:
 
             const int x = pianoKeyWidth + (int) std::llround((double) note.startTick * pixelsPerTick);
             const int nextX = pianoKeyWidth + (int) std::llround((double) (note.startTick + note.lengthTicks) * pixelsPerTick);
-            const int barWidth = juce::jmax(4, juce::jmin(18, nextX - x));
+            const int barWidth = juce::jmax(4, juce::jmin(18, nextX - noteX));
             const int usableHeight = juce::jmax(1, getHeight() - 28);
             const int barHeight = juce::jlimit(2, usableHeight,
                                                 (int) std::llround((double) note.velocity / 127.0 * usableHeight));
@@ -398,8 +398,24 @@ public:
     MidiEditorMouseListener() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
     void shutdown() { if (registered) { juce::Desktop::getInstance().removeGlobalMouseListener(this); registered = false; } }
     ~MidiEditorMouseListener() override { shutdown(); }
-    void mouseDown(const juce::MouseEvent& e) override { auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return; const auto p = e.getEventRelativeTo(main).getPosition(); constexpr int top = 76 + 32 + 4 * 70, height = 70; if (p.y >= top && p.y < top + height) main->selectMidiTrack(); }
-    void mouseDoubleClick(const juce::MouseEvent& e) override { auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return; const auto p = e.getEventRelativeTo(main).getPosition(); constexpr int top = 76 + 32 + 4 * 70, height = 70; if (p.y >= top && p.y < top + height) { main->selectMidiTrack(); openLibertyMidiEditor(*main); } }
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return;
+        const auto p = e.getEventRelativeTo(main).getPosition();
+        constexpr int top = 76 + 32 + 4 * 70, height = 70;
+        if (p.y >= top && p.y < top + height) main->selectMidiTrack();
+    }
+    void mouseDoubleClick(const juce::MouseEvent& e) override
+    {
+        auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return;
+        const auto p = e.getEventRelativeTo(main).getPosition();
+        constexpr int top = 76 + 32 + 4 * 70, height = 70, headerWidth = 210;
+        if (p.x >= headerWidth && p.y >= top && p.y < top + height)
+        {
+            main->selectMidiTrack();
+            openLibertyMidiEditor(*main);
+        }
+    }
 private: bool registered = true;
 };
 
