@@ -96,10 +96,10 @@ private:
                 button->setMouseClickGrabsKeyboardFocus(false); addAndMakeVisible(button);
             }
             tempoButton.onClick = [this] { owner->editTempo(); }; meterButton.onClick = [this] { owner->editTimeSignature(); };
-            setBounds(550, 34, 190, 36); owner->addAndMakeVisible(this);
+            setBounds(605, 34, 120, 36); owner->addAndMakeVisible(this);
         }
         void refresh() { tempoButton.setButtonText(juce::String(owner->tempoBpm, 2) + " BPM"); meterButton.setButtonText(juce::String(owner->timeSignatureNumerator) + "/" + juce::String(owner->timeSignatureDenominator)); repaint(); }
-        void resized() override { tempoButton.setBounds(0, 0, 120, 36); meterButton.setBounds(120, 0, 50, 36); }
+        void resized() override { tempoButton.setBounds(0, 0, 80, 36); meterButton.setBounds(80, 0, 40, 36); }
     private: MainComponent* owner; juce::TextButton tempoButton; juce::TextButton meterButton;
     };
     class ProjectButton final : public juce::Component, private juce::Timer
