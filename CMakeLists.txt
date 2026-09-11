@@ -47,6 +47,7 @@ target_sources(BSM_DAW PRIVATE
     Source/Project.cpp
     Source/TransportSettings.cpp
     Source/AudioRecordingController.cpp
+    Source/TrackColourInteraction.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
