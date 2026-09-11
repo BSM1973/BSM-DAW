@@ -68,27 +68,27 @@ private:
         const int available = device->getInputChannelNames().size();
         if (available <= 0) return false;
 
-        if (setup.inputChannels.countNumberOfSetBits() == 0)
-        {
-            const int wanted = juce::jmin(2, available);
-            setup.inputChannels.clear();
-            for (int i = 0; i < wanted; ++i)
-                setup.inputChannels.setBit(i);
-            setup.useDefaultInputChannels = false;
+        // Always explicitly open the first available stereo input pair.
+        // This also fixes stale settings left by a previous audio interface
+        // when useDefaultInputChannels was still enabled.
+        const int wanted = juce::jmin(2, available);
+        setup.inputChannels.clear();
+        for (int i = 0; i < wanted; ++i)
+            setup.inputChannels.setBit(i);
+        setup.useDefaultInputChannels = false;
 
-            if (manager.setAudioDeviceSetup(setup, true).isNotEmpty())
-                return false;
+        if (manager.setAudioDeviceSetup(setup, true).isNotEmpty())
+            return false;
 
-            device = manager.getCurrentAudioDevice();
-            if (device == nullptr) return false;
-        }
+        device = manager.getCurrentAudioDevice();
+        if (device == nullptr) return false;
 
         inputIndices.clear();
         const auto active = device->getActiveInputChannels();
-        for (int i = 0; i < available && (int)inputIndices.size() < 2; ++i)
+        for (int i = 0; i < available && (int)inputIndices.size() < wanted; ++i)
             if (active[i]) inputIndices.push_back(i);
 
-        return !inputIndices.empty();
+        return (int)inputIndices.size() == wanted;
     }
 
     void startRecording()
@@ -103,7 +103,7 @@ private:
         if (!configureInput())
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                "Liberty - Recording", "No active input is available on the selected audio device.", "OK");
+                "Liberty - Recording", "Liberty could not activate the input channels on the selected audio device.", "OK");
             return;
         }
 
