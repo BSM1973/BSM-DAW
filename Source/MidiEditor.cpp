@@ -69,7 +69,7 @@ public:
 
             const int x = pianoKeyWidth + (int) std::llround((double) note.startTick * pixelsPerTick);
             const int nextX = pianoKeyWidth + (int) std::llround((double) (note.startTick + note.lengthTicks) * pixelsPerTick);
-            const int barWidth = juce::jmax(4, juce::jmin(18, nextX - noteX));
+            const int barWidth = juce::jmax(4, juce::jmin(18, nextX - x));
             const int usableHeight = juce::jmax(1, getHeight() - 28);
             const int barHeight = juce::jlimit(2, usableHeight,
                                                 (int) std::llround((double) note.velocity / 127.0 * usableHeight));
