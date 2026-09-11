@@ -1,5 +1,9 @@
 #include "MainComponent.h"
 
+int getLibertyTrackColourId(int track);
+void setLibertyTrackColourId(int track, int colourId);
+void resetLibertyTrackColours();
+
 namespace
 {
 constexpr int menuNew = 1;
@@ -55,7 +59,8 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
-                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0);
+                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
+                  << ";colour=" << getLibertyTrackColourId(i);
     }
 
     signature << "|midi=";
@@ -214,6 +219,7 @@ void MainComponent::resetProjectState()
     midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
     midiEngine.clear();
+    resetLibertyTrackColours();
 
     for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
     {
@@ -306,7 +312,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 5);
+    project.setAttribute("version", 6);
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -334,6 +340,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
         track->setAttribute("loaded", audioEngine.hasAudioFile(i));
+        track->setAttribute("colourId", getLibertyTrackColourId(i));
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const auto* buffer = audioEngine.getAudioBuffer(i);
@@ -425,6 +432,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
         if (index < 0 || index >= AudioEngine::maxAudioTracks) continue;
+        setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
         if (!track->getBoolAttribute("loaded", false)) continue;
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
