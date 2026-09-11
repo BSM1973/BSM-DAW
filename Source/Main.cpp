@@ -11,6 +11,7 @@ void shutdownLibertyMidiKeyboardRouter();
 void shutdownLibertyMidiGroupDragInteraction();
 void shutdownLibertyAudioRecordingController();
 void shutdownLibertyTrackColourInteraction();
+void shutdownLibertyMultiMidiClipController();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -22,6 +23,7 @@ public:
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
     void shutdown() override
     {
+        shutdownLibertyMultiMidiClipController();
         shutdownLibertyTrackColourInteraction();
         shutdownLibertyAudioRecordingController();
         shutdownLibertyMidiKeyboardRouter();
