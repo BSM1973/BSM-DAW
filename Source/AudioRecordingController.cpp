@@ -26,6 +26,7 @@ public:
             armButtons[(size_t)i].onClick = [this, i] { armTrack(i); };
             owner.addAndMakeVisible(armButtons[(size_t)i]);
         }
+
         recButton.setButtonText("REC");
         recButton.setClickingTogglesState(false);
         recButton.setMouseClickGrabsKeyboardFocus(false);
@@ -38,7 +39,8 @@ public:
     {
         stopRecording(false);
         stopTimer();
-        for (auto& button : armButtons) button.setVisible(false);
+        for (auto& button : armButtons)
+            button.setVisible(false);
         recButton.setVisible(false);
     }
 
@@ -46,31 +48,42 @@ public:
     {
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
             armButtons[(size_t)i].setBounds(150, 76 + 32 + i * 70 + 8, 48, 22);
-        recButton.setBounds(1185, 10, 70, 24);
+
+        // Immediately after the last transport button (|>) and before the
+        // tempo controls at x=550. This rectangle does not overlap either one.
+        recButton.setBounds(521, 38, 28, 28);
     }
 
 private:
     void armTrack(int track)
     {
-        if (recording) return;
+        if (recording)
+            return;
+
         armedTrack = track;
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
             armButtons[(size_t)i].setButtonText(i == armedTrack ? "ARMED" : "ARM");
+
         owner.selectedTrack = track;
         owner.repaint();
     }
 
-    void toggleRecording() { recording ? stopRecording(true) : startRecording(); }
+    void toggleRecording()
+    {
+        recording ? stopRecording(true) : startRecording();
+    }
 
     bool configureInput()
     {
         auto& manager = owner.audioEngine.getDeviceManager();
         auto* device = manager.getCurrentAudioDevice();
-        if (device == nullptr) return false;
+        if (device == nullptr)
+            return false;
 
         auto setup = manager.getAudioDeviceSetup();
         const int available = device->getInputChannelNames().size();
-        if (available <= 0) return false;
+        if (available <= 0)
+            return false;
 
         setup.inputChannels.clear();
         for (int i = 0; i < available; ++i)
@@ -81,12 +94,14 @@ private:
             return false;
 
         device = manager.getCurrentAudioDevice();
-        if (device == nullptr) return false;
+        if (device == nullptr)
+            return false;
 
         inputIndices.clear();
         const auto active = device->getActiveInputChannels();
         for (int i = 0; i < available; ++i)
-            if (active[i]) inputIndices.push_back(i);
+            if (active[i])
+                inputIndices.push_back(i);
 
         return !inputIndices.empty();
     }
@@ -95,7 +110,9 @@ private:
     {
         juce::WavAudioFormat wav;
         auto inputStream = recordingFile.createInputStream();
-        if (inputStream == nullptr) return false;
+        if (inputStream == nullptr)
+            return false;
+
         std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(inputStream.release(), true));
         if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels <= 0)
             return false;
@@ -111,7 +128,9 @@ private:
         {
             const int samples = static_cast<int>(juce::jmin<std::int64_t>(chunkSize, reader->lengthInSamples - position));
             chunk.clear();
-            if (!reader->read(&chunk, 0, samples, position, true, true)) return false;
+            if (!reader->read(&chunk, 0, samples, position, true, true))
+                return false;
+
             for (int ch = 0; ch < channels; ++ch)
             {
                 const float* data = chunk.getReadPointer(ch);
@@ -125,44 +144,61 @@ private:
         }
 
         std::vector<int> order((size_t)channels);
-        for (int i = 0; i < channels; ++i) order[(size_t)i] = i;
-        std::sort(order.begin(), order.end(), [&energy](int a, int b) { return energy[(size_t)a] > energy[(size_t)b]; });
+        for (int i = 0; i < channels; ++i)
+            order[(size_t)i] = i;
+
+        std::sort(order.begin(), order.end(), [&energy](int a, int b)
+        {
+            return energy[(size_t)a] > energy[(size_t)b];
+        });
 
         const double bestRms = counts[(size_t)order[0]] > 0
             ? std::sqrt(energy[(size_t)order[0]] / static_cast<double>(counts[(size_t)order[0]]))
             : 0.0;
+
         if (bestRms < 0.00001)
             return false;
 
         const int leftChannel = order[0];
         const int rightChannel = channels > 1 ? order[1] : order[0];
+
         stereoFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getNonexistentChildFile("Liberty_Recording_Stereo", ".wav", false);
         auto output = stereoFile.createOutputStream();
-        if (output == nullptr) return false;
+        if (output == nullptr)
+            return false;
 
         auto writer = std::unique_ptr<juce::AudioFormatWriter>(wav.createWriterFor(
             output.release(), reader->sampleRate, 2, 24, {}, 0));
-        if (writer == nullptr) return false;
+        if (writer == nullptr)
+            return false;
 
         reader.reset();
         inputStream = recordingFile.createInputStream();
-        if (inputStream == nullptr) return false;
+        if (inputStream == nullptr)
+            return false;
+
         reader.reset(wav.createReaderFor(inputStream.release(), true));
-        if (reader == nullptr) return false;
+        if (reader == nullptr)
+            return false;
+
         juce::AudioBuffer<float> source(channels, chunkSize);
         juce::AudioBuffer<float> stereo(2, chunkSize);
         position = 0;
+
         while (position < reader->lengthInSamples)
         {
             const int samples = static_cast<int>(juce::jmin<std::int64_t>(chunkSize, reader->lengthInSamples - position));
             source.clear();
-            if (!reader->read(&source, 0, samples, position, true, true)) return false;
+            if (!reader->read(&source, 0, samples, position, true, true))
+                return false;
+
             stereo.copyFrom(0, 0, source, leftChannel, 0, samples);
             stereo.copyFrom(1, 0, source, rightChannel, 0, samples);
             writer->writeFromAudioSampleBuffer(stereo, 0, samples);
             position += samples;
         }
+
         writer.reset();
         return stereoFile.existsAsFile() && stereoFile.getSize() > 44;
     }
@@ -185,19 +221,22 @@ private:
 
         auto& manager = owner.audioEngine.getDeviceManager();
         auto* device = manager.getCurrentAudioDevice();
-        if (device == nullptr || device->getCurrentSampleRate() <= 0.0) return;
+        if (device == nullptr || device->getCurrentSampleRate() <= 0.0)
+            return;
 
         recordingFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
                             .getNonexistentChildFile("Liberty_Recording", ".wav", false);
 
         juce::WavAudioFormat wav;
         auto output = recordingFile.createOutputStream();
-        if (output == nullptr) return;
+        if (output == nullptr)
+            return;
 
         auto writer = std::unique_ptr<juce::AudioFormatWriter>(wav.createWriterFor(
             output.release(), device->getCurrentSampleRate(),
             (unsigned int)inputIndices.size(), 24, {}, 0));
-        if (writer == nullptr) return;
+        if (writer == nullptr)
+            return;
 
         recordingThread = std::make_unique<juce::TimeSliceThread>("Liberty Recording Writer");
         recordingThread->startThread();
@@ -211,9 +250,6 @@ private:
         recordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
         recording = true;
 
-        // AudioDeviceManager calls callbacks in registration order. Put the
-        // recorder first so it receives the untouched hardware input buffers,
-        // then immediately restore AudioEngine for normal output/transport.
         manager.removeAudioCallback(&owner.audioEngine);
         manager.addAudioCallback(this);
         manager.addAudioCallback(&owner.audioEngine);
@@ -225,7 +261,8 @@ private:
 
     void stopRecording(bool createClip)
     {
-        if (!recording && threadedWriter == nullptr) return;
+        if (!recording && threadedWriter == nullptr)
+            return;
 
         recording = false;
         owner.audioEngine.setPlaying(false);
@@ -301,6 +338,48 @@ private:
         }
 
         threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
+
+        // Direct software monitoring during recording. Select the two input
+        // channels carrying the most energy in the current block, so interfaces
+        // with multiple USB pairs (including Axe-Fx III) monitor the actual signal.
+        int strongest = -1;
+        int secondStrongest = -1;
+        double strongestEnergy = -1.0;
+        double secondEnergy = -1.0;
+
+        for (int channel = 0; channel < numInputChannels; ++channel)
+        {
+            if (inputChannelData[channel] == nullptr)
+                continue;
+
+            double energy = 0.0;
+            const float* data = inputChannelData[channel];
+            for (int sample = 0; sample < numSamples; ++sample)
+                energy += static_cast<double>(data[sample]) * static_cast<double>(data[sample]);
+
+            if (energy > strongestEnergy)
+            {
+                secondEnergy = strongestEnergy;
+                secondStrongest = strongest;
+                strongestEnergy = energy;
+                strongest = channel;
+            }
+            else if (energy > secondEnergy)
+            {
+                secondEnergy = energy;
+                secondStrongest = channel;
+            }
+        }
+
+        if (strongest >= 0)
+        {
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
+                juce::FloatVectorOperations::copy(outputChannelData[0], inputChannelData[strongest], numSamples);
+
+            const int rightSource = secondStrongest >= 0 ? secondStrongest : strongest;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+                juce::FloatVectorOperations::copy(outputChannelData[1], inputChannelData[rightSource], numSamples);
+        }
     }
 
     void timerCallback() override
@@ -332,7 +411,12 @@ class LibertyAudioRecordingBootstrap final : private juce::Timer
 public:
     LibertyAudioRecordingBootstrap() { startTimerHz(10); }
     ~LibertyAudioRecordingBootstrap() override { shutdown(); }
-    void shutdown() { stopTimer(); controllers.clear(); }
+
+    void shutdown()
+    {
+        stopTimer();
+        controllers.clear();
+    }
 
 private:
     void timerCallback() override
@@ -349,4 +433,8 @@ private:
 };
 
 static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
-void shutdownLibertyAudioRecordingController() { libertyAudioRecordingBootstrap.shutdown(); }
+
+void shutdownLibertyAudioRecordingController()
+{
+    libertyAudioRecordingBootstrap.shutdown();
+}
