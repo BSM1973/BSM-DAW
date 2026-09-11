@@ -114,7 +114,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
 
-    const auto positionBox = juce::Rectangle<int>(728, 34, 90, 36);
+    const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
     g.setColour(juce::Colour(0xff252a31));
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
     g.setColour(juce::Colour(0xff454b54));
