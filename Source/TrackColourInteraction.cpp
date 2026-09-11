@@ -44,22 +44,19 @@ juce::Colour colourForId(int id)
 }
 
 class TrackColourController final : public juce::Component,
-                                    private juce::MouseListener,
                                     private juce::Timer
 {
 public:
     explicit TrackColourController(MainComponent& ownerIn) : owner(ownerIn)
     {
-        setInterceptsMouseClicks(false, false);
+        setInterceptsMouseClicks(true, false);
         owner.addAndMakeVisible(this);
-        owner.addMouseListener(this, true);
         startTimerHz(10);
     }
 
     ~TrackColourController() override
     {
         stopTimer();
-        owner.removeMouseListener(this);
         setVisible(false);
     }
 
@@ -107,14 +104,20 @@ public:
         }
     }
 
-private:
+    bool hitTest(int x, int y) override
+    {
+        if (x < 0 || x >= 210)
+            return false;
+        const int trackY = y - 76 - 32;
+        return trackY >= 0 && trackY < AudioEngine::maxAudioTracks * 70;
+    }
+
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!event.mods.isPopupMenu())
             return;
 
-        const auto e = event.getEventRelativeTo(&owner);
-        const int y = e.getPosition().y - 76 - 32;
+        const int y = event.getPosition().y - 76 - 32;
         if (y < 0)
             return;
 
@@ -141,6 +144,7 @@ private:
             });
     }
 
+private:
     void timerCallback() override
     {
         setBounds(owner.getLocalBounds());
