@@ -5,9 +5,11 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <algorithm>
 #include <array>
 #include <memory>
 #include <map>
+#include <vector>
 
 class LibertyAudioRecordingController final : public juce::Component, private juce::AudioIODeviceCallback, private juce::Timer
 {
@@ -68,12 +70,11 @@ private:
         const int available = device->getInputChannelNames().size();
         if (available <= 0) return false;
 
-        // Always explicitly open the first available stereo input pair.
-        // This also fixes stale settings left by a previous audio interface
-        // when useDefaultInputChannels was still enabled.
-        const int wanted = juce::jmin(2, available);
+        // Open every hardware input exposed by the selected device. The Axe-Fx III
+        // exposes multiple USB input pairs and the actual guitar path depends on
+        // the preset routing, so hard-coding inputs 1+2 is not reliable.
         setup.inputChannels.clear();
-        for (int i = 0; i < wanted; ++i)
+        for (int i = 0; i < available; ++i)
             setup.inputChannels.setBit(i);
         setup.useDefaultInputChannels = false;
 
@@ -85,10 +86,81 @@ private:
 
         inputIndices.clear();
         const auto active = device->getActiveInputChannels();
-        for (int i = 0; i < available && (int)inputIndices.size() < wanted; ++i)
+        for (int i = 0; i < available; ++i)
             if (active[i]) inputIndices.push_back(i);
 
-        return (int)inputIndices.size() == wanted;
+        return !inputIndices.empty();
+    }
+
+    bool createStereoRecordingFromActiveChannels(juce::File& stereoFile)
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(recordingFile.createInputStream(), true));
+        if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels <= 0)
+            return false;
+
+        const int channels = static_cast<int>(reader->numChannels);
+        const int chunkSize = 8192;
+        juce::AudioBuffer<float> chunk(channels, chunkSize);
+        std::vector<double> energy((size_t)channels, 0.0);
+        std::vector<std::int64_t> counts((size_t)channels, 0);
+
+        std::int64_t position = 0;
+        while (position < reader->lengthInSamples)
+        {
+            const int samples = static_cast<int>(juce::jmin<std::int64_t>(chunkSize, reader->lengthInSamples - position));
+            chunk.clear();
+            if (!reader->read(&chunk, 0, samples, position, true, true)) return false;
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                const float* data = chunk.getReadPointer(ch);
+                double sum = 0.0;
+                for (int n = 0; n < samples; ++n)
+                    sum += static_cast<double>(data[n]) * static_cast<double>(data[n]);
+                energy[(size_t)ch] += sum;
+                counts[(size_t)ch] += samples;
+            }
+            position += samples;
+        }
+
+        std::vector<int> order((size_t)channels);
+        for (int i = 0; i < channels; ++i) order[(size_t)i] = i;
+        std::sort(order.begin(), order.end(), [&energy](int a, int b) { return energy[(size_t)a] > energy[(size_t)b]; });
+
+        const double bestRms = counts[(size_t)order[0]] > 0
+            ? std::sqrt(energy[(size_t)order[0]] / static_cast<double>(counts[(size_t)order[0]]))
+            : 0.0;
+        if (bestRms < 0.00001)
+            return false;
+
+        const int leftChannel = order[0];
+        const int rightChannel = channels > 1 ? order[1] : order[0];
+        stereoFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getNonexistentChildFile("Liberty_Recording_Stereo", ".wav", false);
+        auto output = stereoFile.createOutputStream();
+        if (output == nullptr) return false;
+
+        auto writer = std::unique_ptr<juce::AudioFormatWriter>(wav.createWriterFor(
+            output.release(), reader->sampleRate, 2, 24, {}, 0));
+        if (writer == nullptr) return false;
+
+        reader.reset(wav.createReaderFor(recordingFile.createInputStream(), true));
+        if (reader == nullptr) return false;
+        juce::AudioBuffer<float> source(channels, chunkSize);
+        juce::AudioBuffer<float> stereo(2, chunkSize);
+        position = 0;
+        while (position < reader->lengthInSamples)
+        {
+            const int samples = static_cast<int>(juce::jmin<std::int64_t>(chunkSize, reader->lengthInSamples - position));
+            source.clear();
+            if (!reader->read(&source, 0, samples, position, true, true)) return false;
+            stereo.copyFrom(0, 0, source, leftChannel, 0, samples);
+            stereo.copyFrom(1, 0, source, rightChannel, 0, samples);
+            writer->writeFromAudioSampleBuffer(stereo, 0, samples);
+            position += samples;
+        }
+        writer.reset();
+        return stereoFile.existsAsFile() && stereoFile.getSize() > 44;
     }
 
     void startRecording()
@@ -148,7 +220,6 @@ private:
         owner.audioEngine.setPlaying(false);
         owner.audioEngine.getDeviceManager().removeAudioCallback(this);
 
-        // Destroy the writer first so all queued audio is flushed to disk.
         threadedWriter.reset();
         if (recordingThread != nullptr)
         {
@@ -160,10 +231,19 @@ private:
 
         if (createClip && armedTrack >= 0 && recordingFile.existsAsFile() && recordingFile.getSize() > 44)
         {
-            juce::String error;
-            if (owner.audioEngine.loadAudioFileIntoTrack(armedTrack, recordingFile, error))
+            juce::File stereoFile;
+            if (!createStereoRecordingFromActiveChannels(stereoFile))
             {
-                owner.trackSourceFiles[(size_t)armedTrack] = recordingFile;
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Liberty - Recording", "Aucun signal audio détectable sur les entrées du périphérique sélectionné.", "OK");
+                owner.repaint();
+                return;
+            }
+
+            juce::String error;
+            if (owner.audioEngine.loadAudioFileIntoTrack(armedTrack, stereoFile, error))
+            {
+                owner.trackSourceFiles[(size_t)armedTrack] = stereoFile;
                 owner.audioEngine.setTrackStartSeconds(armedTrack, recordStartSeconds);
                 owner.rebuildWaveformCache(armedTrack);
                 owner.selectedTrack = armedTrack;
@@ -176,7 +256,6 @@ private:
             }
         }
 
-        // Keep the file alive: trackSourceFiles must remain valid after recording.
         owner.repaint();
     }
 
@@ -190,8 +269,6 @@ private:
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override
     {
-        // This callback is registered alongside AudioEngine. JUCE sums the outputs
-        // of all callbacks, so this callback must explicitly contribute silence.
         for (int channel = 0; channel < numOutputChannels; ++channel)
             if (outputChannelData != nullptr && outputChannelData[channel] != nullptr)
                 juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
@@ -257,7 +334,7 @@ private:
                         controllers.emplace(main, std::make_unique<LibertyAudioRecordingController>(*main));
     }
 
-    std::map<MainComponent*, std::unique_ptr<LibertyAudioRecordingController>> controllers;
+    std::map<MainComponent*, std::unique_ptr<MainComponent*>> dummy;
 };
 
 static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
