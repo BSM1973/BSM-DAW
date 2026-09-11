@@ -15,15 +15,6 @@ class AudioEngine final : private juce::AudioIODeviceCallback
 public:
     static constexpr int maxAudioTracks = 4;
 
-    class InputRecorder
-    {
-    public:
-        virtual ~InputRecorder() = default;
-        virtual void processInputBlock(const float* const* inputChannelData,
-                                       int numInputChannels,
-                                       int numSamples) noexcept = 0;
-    };
-
     AudioEngine();
     ~AudioEngine() override;
 
@@ -38,11 +29,6 @@ public:
     int getBufferSize() const noexcept { return bufferSize.load(std::memory_order_relaxed); }
     int getOutputChannels() const noexcept { return outputChannels.load(std::memory_order_relaxed); }
     juce::String getLastError() const;
-
-    void setInputRecorder(InputRecorder* recorder) noexcept
-    {
-        inputRecorder.store(recorder, std::memory_order_release);
-    }
 
     void setPlaying(bool shouldPlay) noexcept
     {
@@ -170,7 +156,6 @@ private:
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
-    std::atomic<InputRecorder*> inputRecorder { nullptr };
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;
     juce::String lastError;
