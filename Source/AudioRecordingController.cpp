@@ -334,7 +334,7 @@ private:
                         controllers.emplace(main, std::make_unique<LibertyAudioRecordingController>(*main));
     }
 
-    std::map<MainComponent*, std::unique_ptr<MainComponent*>> dummy;
+    std::map<MainComponent*, std::unique_ptr<LibertyAudioRecordingController>> controllers;
 };
 
 static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
