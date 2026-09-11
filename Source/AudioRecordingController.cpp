@@ -37,6 +37,7 @@ public:
                 const bool enabled = monitorButtons[(size_t)i].getToggleState();
                 monitoringEnabled[(size_t)i].store(enabled, std::memory_order_relaxed);
                 monitorButtons[(size_t)i].setButtonText(enabled ? "MON ON" : "MON OFF");
+                updateMonitoringCallback();
             };
             owner.addAndMakeVisible(monitorButtons[(size_t)i]);
         }
@@ -51,8 +52,13 @@ public:
 
     ~LibertyAudioRecordingController() override
     {
+        for (auto& state : monitoringEnabled)
+            state.store(false, std::memory_order_relaxed);
+
         stopRecording(false);
+        detachAudioCallback();
         stopTimer();
+
         for (auto& button : armButtons)
             button.setVisible(false);
         for (auto& button : monitorButtons)
@@ -73,6 +79,53 @@ public:
     }
 
 private:
+    bool isArmedTrackMonitoring() const noexcept
+    {
+        return armedTrack >= 0
+            && armedTrack < AudioEngine::maxAudioTracks
+            && monitoringEnabled[(size_t)armedTrack].load(std::memory_order_relaxed);
+    }
+
+    void attachAudioCallback()
+    {
+        if (callbackRegistered)
+            return;
+
+        auto& manager = owner.audioEngine.getDeviceManager();
+        manager.removeAudioCallback(&owner.audioEngine);
+        manager.addAudioCallback(this);
+        manager.addAudioCallback(&owner.audioEngine);
+        callbackRegistered = true;
+    }
+
+    void detachAudioCallback()
+    {
+        if (!callbackRegistered)
+            return;
+
+        owner.audioEngine.getDeviceManager().removeAudioCallback(this);
+        callbackRegistered = false;
+    }
+
+    void updateMonitoringCallback()
+    {
+        if (recording)
+        {
+            attachAudioCallback();
+            return;
+        }
+
+        if (isArmedTrackMonitoring())
+        {
+            if (configureInput())
+                attachAudioCallback();
+        }
+        else
+        {
+            detachAudioCallback();
+        }
+    }
+
     void armTrack(int track)
     {
         if (recording)
@@ -83,6 +136,7 @@ private:
             armButtons[(size_t)i].setButtonText(i == armedTrack ? "ARMED" : "ARM");
 
         owner.selectedTrack = track;
+        updateMonitoringCallback();
         owner.repaint();
     }
 
@@ -267,10 +321,7 @@ private:
 
         recordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
         recording = true;
-
-        manager.removeAudioCallback(&owner.audioEngine);
-        manager.addAudioCallback(this);
-        manager.addAudioCallback(&owner.audioEngine);
+        attachAudioCallback();
 
         owner.audioEngine.setPlaying(true);
         recButton.setButtonText("STOP");
@@ -280,11 +331,13 @@ private:
     void stopRecording(bool createClip)
     {
         if (!recording && threadedWriter == nullptr)
+        {
+            updateMonitoringCallback();
             return;
+        }
 
         recording = false;
         owner.audioEngine.setPlaying(false);
-        owner.audioEngine.getDeviceManager().removeAudioCallback(this);
 
         threadedWriter.reset();
         if (recordingThread != nullptr)
@@ -294,6 +347,7 @@ private:
         }
 
         recButton.setButtonText("REC");
+        updateMonitoringCallback();
 
         if (createClip && armedTrack >= 0 && recordingFile.existsAsFile() && recordingFile.getSize() > 44)
         {
@@ -339,29 +393,28 @@ private:
             if (outputChannelData != nullptr && outputChannelData[channel] != nullptr)
                 juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
 
-        if (!recording || threadedWriter == nullptr || inputChannelData == nullptr)
+        if (inputChannelData == nullptr)
             return;
 
-        const int channels = (int)inputIndices.size();
-        if (recordingBuffer.getNumSamples() < numSamples || recordingBuffer.getNumChannels() != channels)
-            return;
-
-        for (int channel = 0; channel < channels; ++channel)
+        if (recording && threadedWriter != nullptr)
         {
-            const int source = inputIndices[(size_t)channel];
-            if (source < 0 || source >= numInputChannels || inputChannelData[source] == nullptr)
-                recordingBuffer.clear(channel, 0, numSamples);
-            else
-                recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
+            const int channels = (int)inputIndices.size();
+            if (recordingBuffer.getNumSamples() >= numSamples && recordingBuffer.getNumChannels() == channels)
+            {
+                for (int channel = 0; channel < channels; ++channel)
+                {
+                    const int source = inputIndices[(size_t)channel];
+                    if (source < 0 || source >= numInputChannels || inputChannelData[source] == nullptr)
+                        recordingBuffer.clear(channel, 0, numSamples);
+                    else
+                        recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
+                }
+
+                threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
+            }
         }
 
-        threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
-
-        const bool monitorThisTrack = armedTrack >= 0
-            && armedTrack < AudioEngine::maxAudioTracks
-            && monitoringEnabled[(size_t)armedTrack].load(std::memory_order_relaxed);
-
-        if (!monitorThisTrack)
+        if (!isArmedTrackMonitoring())
             return;
 
         int strongest = -1;
@@ -428,6 +481,7 @@ private:
     double recordStartSeconds = 0.0;
     int armedTrack = -1;
     bool recording = false;
+    bool callbackRegistered = false;
 };
 
 class LibertyAudioRecordingBootstrap final : private juce::Timer
