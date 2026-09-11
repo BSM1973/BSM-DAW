@@ -8,7 +8,9 @@ AudioEngine::~AudioEngine() { shutdown(); }
 
 bool AudioEngine::initialise()
 {
-    const auto error = deviceManager.initialiseWithDefaultDevices(0, 2);
+    // Liberty must open real hardware inputs from the start.  Recording cannot
+    // enable channels later if the AudioDeviceManager was initialised with 0 inputs.
+    const auto error = deviceManager.initialiseWithDefaultDevices(8, 2);
     if (error.isNotEmpty()) { const juce::ScopedLock lock(stateLock); lastError = error; initialised.store(false); return false; }
     auto* device = deviceManager.getCurrentAudioDevice();
     if (device == nullptr) { const juce::ScopedLock lock(stateLock); lastError = "No audio output device is available."; initialised.store(false); return false; }
@@ -285,8 +287,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
     }
 
-    // Instrument 1: lightweight polyphonic sine synth driven directly by the MIDI clip.
-    // All state is preallocated; the real-time callback performs no heap allocation or locking.
     const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
     const auto midiStart = midiClipStartSeconds.load(std::memory_order_relaxed);
     const auto midiLength = midiClipLengthSeconds.load(std::memory_order_relaxed);
@@ -300,7 +300,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
             const double projectTime = static_cast<double>(position + sample) / rate;
             const double localTime = projectTime - midiStart;
             if (localTime < 0.0 || localTime >= midiLength) continue;
-
             float sampleValue = 0.0f;
             for (std::size_t noteIndex = 0; noteIndex < midiCount; ++noteIndex)
             {
@@ -309,35 +308,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
                 const auto noteTime = localTime - noteStart;
                 const auto noteDuration = noteEnd - noteStart;
                 if (noteTime < 0.0 || noteTime >= noteDuration) continue;
-
                 float envelope = 1.0f;
-                if (noteTime < attackSeconds)
-                    envelope = static_cast<float>(noteTime / attackSeconds);
+                if (noteTime < attackSeconds) envelope = static_cast<float>(noteTime / attackSeconds);
                 const auto remaining = noteDuration - noteTime;
-                if (remaining < releaseSeconds)
-                    envelope = juce::jmin(envelope, static_cast<float>(remaining / releaseSeconds));
-
+                if (remaining < releaseSeconds) envelope = juce::jmin(envelope, static_cast<float>(remaining / releaseSeconds));
                 const auto frequency = midiPlaybackNotes[noteIndex].frequency.load(std::memory_order_relaxed);
                 const auto amplitude = midiPlaybackNotes[noteIndex].amplitude.load(std::memory_order_relaxed);
                 sampleValue += static_cast<float>(std::sin(twoPi * frequency * noteTime) * static_cast<double>(amplitude * envelope));
             }
-
-            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-                outputChannelData[0][sample] += sampleValue;
-            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-                outputChannelData[1][sample] += sampleValue;
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr) outputChannelData[0][sample] += sampleValue;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr) outputChannelData[1][sample] += sampleValue;
         }
     }
 
     const auto master = masterGain.load();
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
-
     if (!hasBoundedAudioProject)
     {
         transportSamples.fetch_add(numSamples);
         return;
     }
-
     const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
     if (advance > 0) transportSamples.fetch_add(advance);
     if (position + advance >= projectLength) playing.store(false);
