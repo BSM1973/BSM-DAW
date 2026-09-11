@@ -7,6 +7,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <memory>
 #include <map>
 #include <vector>
@@ -70,9 +72,6 @@ private:
         const int available = device->getInputChannelNames().size();
         if (available <= 0) return false;
 
-        // Open every hardware input exposed by the selected device. The Axe-Fx III
-        // exposes multiple USB input pairs and the actual guitar path depends on
-        // the preset routing, so hard-coding inputs 1+2 is not reliable.
         setup.inputChannels.clear();
         for (int i = 0; i < available; ++i)
             setup.inputChannels.setBit(i);
@@ -95,7 +94,9 @@ private:
     bool createStereoRecordingFromActiveChannels(juce::File& stereoFile)
     {
         juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(recordingFile.createInputStream(), true));
+        auto inputStream = recordingFile.createInputStream();
+        if (inputStream == nullptr) return false;
+        std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(inputStream.release(), true));
         if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels <= 0)
             return false;
 
@@ -144,7 +145,10 @@ private:
             output.release(), reader->sampleRate, 2, 24, {}, 0));
         if (writer == nullptr) return false;
 
-        reader.reset(wav.createReaderFor(recordingFile.createInputStream(), true));
+        reader.reset();
+        inputStream = recordingFile.createInputStream();
+        if (inputStream == nullptr) return false;
+        reader.reset(wav.createReaderFor(inputStream.release(), true));
         if (reader == nullptr) return false;
         juce::AudioBuffer<float> source(channels, chunkSize);
         juce::AudioBuffer<float> stereo(2, chunkSize);
