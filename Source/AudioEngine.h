@@ -77,6 +77,15 @@ public:
     bool isTrackSolo(int trackIndex) const noexcept;
     bool isAnyTrackSolo() const noexcept;
 
+    void setMidiTrackMuted(bool muted) noexcept { midiTrackMuted.store(muted, std::memory_order_relaxed); }
+    bool isMidiTrackMuted() const noexcept { return midiTrackMuted.load(std::memory_order_relaxed); }
+    void setMidiTrackSolo(bool solo) noexcept { midiTrackSolo.store(solo, std::memory_order_relaxed); }
+    bool isMidiTrackSolo() const noexcept { return midiTrackSolo.load(std::memory_order_relaxed); }
+    void setInstrumentTrackMuted(bool muted) noexcept { instrumentTrackMuted.store(muted, std::memory_order_relaxed); }
+    bool isInstrumentTrackMuted() const noexcept { return instrumentTrackMuted.load(std::memory_order_relaxed); }
+    void setInstrumentTrackSolo(bool solo) noexcept { instrumentTrackSolo.store(solo, std::memory_order_relaxed); }
+    bool isInstrumentTrackSolo() const noexcept { return instrumentTrackSolo.load(std::memory_order_relaxed); }
+
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error);
@@ -146,6 +155,10 @@ private:
     std::atomic<double> midiClipStartSeconds { 0.0 };
     std::atomic<double> midiClipLengthSeconds { 0.0 };
     std::atomic<double> midiTempoBpm { 120.0 };
+    std::atomic<bool> midiTrackMuted { false };
+    std::atomic<bool> midiTrackSolo { false };
+    std::atomic<bool> instrumentTrackMuted { false };
+    std::atomic<bool> instrumentTrackSolo { false };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
     std::atomic<double> sampleRate { 0.0 };
