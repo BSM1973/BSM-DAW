@@ -24,6 +24,8 @@ juce_add_gui_app(BSM_DAW
     BUNDLE_ID "com.bsm.liberty"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording."
 )
 
 target_sources(BSM_DAW PRIVATE
