@@ -210,7 +210,14 @@ private:
 
         recordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
         recording = true;
+
+        // AudioDeviceManager calls callbacks in registration order. Put the
+        // recorder first so it receives the untouched hardware input buffers,
+        // then immediately restore AudioEngine for normal output/transport.
+        manager.removeAudioCallback(&owner.audioEngine);
         manager.addAudioCallback(this);
+        manager.addAudioCallback(&owner.audioEngine);
+
         owner.audioEngine.setPlaying(true);
         recButton.setButtonText("STOP");
         owner.repaint();
