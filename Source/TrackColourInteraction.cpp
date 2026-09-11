@@ -10,6 +10,9 @@
 namespace
 {
 constexpr int colourDefault = 0;
+constexpr int totalTracks = AudioEngine::maxAudioTracks + 2;
+constexpr int midiTrackIndex = AudioEngine::maxAudioTracks;
+constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
 constexpr std::array<juce::uint32, 9> palette {
     0xff31506a,
     0xff3b82f6,
@@ -23,7 +26,7 @@ constexpr std::array<juce::uint32, 9> palette {
 };
 
 constexpr const char* names[] = {
-    "Défaut",
+    "Defaut",
     "Bleu",
     "Vert",
     "Jaune",
@@ -34,7 +37,7 @@ constexpr const char* names[] = {
     "Turquoise"
 };
 
-std::array<int, AudioEngine::maxAudioTracks> colourIds {};
+std::array<int, totalTracks> colourIds {};
 
 juce::Colour colourForId(int id)
 {
@@ -47,16 +50,36 @@ class TrackColourController final : public juce::Component,
                                     private juce::Timer
 {
 public:
-    explicit TrackColourController(MainComponent& ownerIn) : owner(ownerIn)
+    explicit TrackColourController(MainComponent& ownerIn)
+        : owner(ownerIn), popupListener(*this)
     {
-        setInterceptsMouseClicks(true, false);
+        setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
+        owner.addMouseListener(&popupListener, true);
+
+        for (int i = 0; i < totalTracks; ++i)
+        {
+            auto& mute = muteButtons[(size_t)i];
+            auto& solo = soloButtons[(size_t)i];
+            mute.setButtonText("M");
+            solo.setButtonText("S");
+            mute.setClickingTogglesState(false);
+            solo.setClickingTogglesState(false);
+            mute.setMouseClickGrabsKeyboardFocus(false);
+            solo.setMouseClickGrabsKeyboardFocus(false);
+            mute.onClick = [this, i] { toggleMute(i); };
+            solo.onClick = [this, i] { toggleSolo(i); };
+            addAndMakeVisible(mute);
+            addAndMakeVisible(solo);
+        }
+
         startTimerHz(10);
     }
 
     ~TrackColourController() override
     {
         stopTimer();
+        owner.removeMouseListener(&popupListener);
         setVisible(false);
     }
 
@@ -67,7 +90,7 @@ public:
         constexpr int rowH = 70;
         constexpr float pixelsPerSecond = 80.0f;
 
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        for (int i = 0; i < totalTracks; ++i)
         {
             const int id = colourIds[(size_t)i];
             if (id == colourDefault)
@@ -83,7 +106,7 @@ public:
             g.fillRect(header.getX(), header.getY(), 5, header.getHeight());
             g.fillRect(header.getX(), header.getY(), header.getWidth(), 3);
 
-            if (owner.audioEngine.hasAudioFile(i))
+            if (i < AudioEngine::maxAudioTracks && owner.audioEngine.hasAudioFile(i))
             {
                 const int clipX = headerW + static_cast<int>(std::round(owner.audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
                 const int clipW = juce::jmax(1, static_cast<int>(std::round(owner.audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
@@ -93,39 +116,105 @@ public:
                 g.setColour(colour.withAlpha(0.95f));
                 g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
             }
+            else if (i == midiTrackIndex && !owner.midiEngine.getNotesCopy().empty())
+            {
+                const int clipX = headerW + static_cast<int>(std::round(owner.midiClipStartSeconds * pixelsPerSecond));
+                const int clipW = juce::jmax(80, static_cast<int>(std::round(owner.midiClipLengthSeconds * pixelsPerSecond)));
+                auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
+                g.setColour(colour.withAlpha(0.18f));
+                g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(colour.withAlpha(0.95f));
+                g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
+            }
 
-            const int mixerTop = owner.getHeight() - 210;
-            auto strip = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
-            g.setColour(colour.withAlpha(0.12f));
-            g.fillRoundedRectangle(strip.toFloat(), 5.0f);
-            g.setColour(colour.withAlpha(0.95f));
-            g.fillRoundedRectangle((float)strip.getX(), (float)strip.getY(), (float)strip.getWidth(), 5.0f, 2.0f);
-            g.drawRoundedRectangle(strip.toFloat(), 5.0f, 1.5f);
+            if (i < AudioEngine::maxAudioTracks)
+            {
+                const int mixerTop = owner.getHeight() - 210;
+                auto strip = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
+                g.setColour(colour.withAlpha(0.12f));
+                g.fillRoundedRectangle(strip.toFloat(), 5.0f);
+                g.setColour(colour.withAlpha(0.95f));
+                g.fillRoundedRectangle((float)strip.getX(), (float)strip.getY(), (float)strip.getWidth(), 5.0f, 2.0f);
+                g.drawRoundedRectangle(strip.toFloat(), 5.0f, 1.5f);
+            }
         }
     }
 
-    bool hitTest(int x, int y) override
+private:
+    class PopupListener final : public juce::MouseListener
     {
-        if (x < 0 || x >= 210)
-            return false;
-        const int trackY = y - 76 - 32;
-        return trackY >= 0 && trackY < AudioEngine::maxAudioTracks * 70;
+    public:
+        explicit PopupListener(TrackColourController& controllerIn) : controller(controllerIn) {}
+        void mouseDown(const juce::MouseEvent& event) override
+        {
+            if (!event.mods.isPopupMenu())
+                return;
+            controller.showColourMenu(event.getEventRelativeTo(&controller.owner));
+        }
+    private:
+        TrackColourController& controller;
+    };
+
+    bool getMute(int track) const
+    {
+        if (track < AudioEngine::maxAudioTracks) return owner.audioEngine.isTrackMuted(track);
+        if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackMuted();
+        return owner.audioEngine.isInstrumentTrackMuted();
     }
 
-    void mouseDown(const juce::MouseEvent& event) override
+    bool getSolo(int track) const
     {
-        if (!event.mods.isPopupMenu())
+        if (track < AudioEngine::maxAudioTracks) return owner.audioEngine.isTrackSolo(track);
+        if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackSolo();
+        return owner.audioEngine.isInstrumentTrackSolo();
+    }
+
+    void setMute(int track, bool value)
+    {
+        if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackMuted(track, value);
+        else if (track == midiTrackIndex) owner.audioEngine.setMidiTrackMuted(value);
+        else owner.audioEngine.setInstrumentTrackMuted(value);
+    }
+
+    void setSolo(int track, bool value)
+    {
+        if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackSolo(track, value);
+        else if (track == midiTrackIndex) owner.audioEngine.setMidiTrackSolo(value);
+        else owner.audioEngine.setInstrumentTrackSolo(value);
+    }
+
+    void toggleMute(int track)
+    {
+        setMute(track, !getMute(track));
+        syncButtons();
+        owner.repaint();
+    }
+
+    void toggleSolo(int track)
+    {
+        setSolo(track, !getSolo(track));
+        syncButtons();
+        owner.repaint();
+    }
+
+    void showColourMenu(const juce::MouseEvent& event)
+    {
+        const auto p = event.getPosition();
+        if (p.x < 0 || p.x >= 210)
             return;
 
-        const int y = event.getPosition().y - 76 - 32;
+        const int y = p.y - 76 - 32;
         if (y < 0)
             return;
 
         const int track = y / 70;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks)
+        if (track < 0 || track >= totalTracks)
             return;
 
-        owner.selectedTrack = track;
+        if (track < AudioEngine::maxAudioTracks)
+            owner.selectedTrack = track;
+        else if (track == midiTrackIndex)
+            owner.selectMidiTrack();
         owner.repaint();
 
         juce::PopupMenu menu;
@@ -144,15 +233,47 @@ public:
             });
     }
 
-private:
+    void syncButtons()
+    {
+        for (int i = 0; i < totalTracks; ++i)
+        {
+            auto& mute = muteButtons[(size_t)i];
+            auto& solo = soloButtons[(size_t)i];
+            const bool muted = getMute(i);
+            const bool soloed = getSolo(i);
+            mute.setColour(juce::TextButton::buttonColourId, muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
+            solo.setColour(juce::TextButton::buttonColourId, soloed ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31));
+            mute.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            solo.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+    }
+
+    void resized() override
+    {
+        constexpr int rulerH = 32;
+        constexpr int rowH = 70;
+        for (int i = 0; i < totalTracks; ++i)
+        {
+            const int rowY = 76 + rulerH + i * rowH;
+            const int buttonY = i < AudioEngine::maxAudioTracks ? rowY + 40 : rowY + 8;
+            muteButtons[(size_t)i].setBounds(160, buttonY, 21, 20);
+            soloButtons[(size_t)i].setBounds(184, buttonY, 21, 20);
+        }
+    }
+
     void timerCallback() override
     {
         setBounds(owner.getLocalBounds());
+        resized();
+        syncButtons();
         toFront(false);
         repaint();
     }
 
     MainComponent& owner;
+    PopupListener popupListener;
+    std::array<juce::TextButton, totalTracks> muteButtons;
+    std::array<juce::TextButton, totalTracks> soloButtons;
 };
 
 class TrackColourBootstrap final : private juce::Timer
@@ -180,14 +301,14 @@ TrackColourBootstrap trackColourBootstrap;
 
 int getLibertyTrackColourId(int track)
 {
-    if (track < 0 || track >= AudioEngine::maxAudioTracks)
+    if (track < 0 || track >= totalTracks)
         return 0;
     return colourIds[(size_t)track];
 }
 
 void setLibertyTrackColourId(int track, int colourId)
 {
-    if (track < 0 || track >= AudioEngine::maxAudioTracks)
+    if (track < 0 || track >= totalTracks)
         return;
     colourIds[(size_t)track] = juce::jlimit(0, static_cast<int>(palette.size()) - 1, colourId);
 }
