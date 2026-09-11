@@ -7,6 +7,12 @@ constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
 
+bool isSupportedAudioFile(const juce::String& path)
+{
+    const auto extension = juce::File(path).getFileExtension().toLowerCase();
+    return extension == ".wav" || extension == ".aif" || extension == ".aiff";
+}
+
 bool exportTrackToProjectMedia(const juce::File& projectFile,
                                int trackIndex,
                                const juce::AudioBuffer<float>* buffer,
@@ -124,10 +130,10 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
-    auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
-    for (auto r : { settingsButton, importButton }) { g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f); }
+    g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
     g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
-    g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred); g.drawText("IMPORT TO TRACK", importButton, juce::Justification::centred);
+    g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 }
 
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
@@ -179,10 +185,6 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             }
             g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             if (i == selectedTrack && clip.getWidth() >= 110) { g.setColour(juce::Colour(0xffb9d9f0)); g.setFont(juce::Font(9.0f)); g.drawText("DRAG TO MOVE", clip.getX() + 8, clip.getBottom() - 16, 90, 12, juce::Justification::left); }
-        }
-        else
-        {
-            g.setColour(juce::Colour(0xff242a31)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff505862)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f); g.setColour(juce::Colour(0xff707780)); g.setFont(juce::Font(11.0f)); g.drawText("Select this track, then IMPORT AUDIO", clip, juce::Justification::centred);
         }
     }
 
@@ -262,19 +264,54 @@ void MainComponent::rebuildWaveformCache(int trackIndex)
     }
 }
 
-void MainComponent::openAudioFile()
+bool MainComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
-    const int trackToLoad = selectedTrack;
-    audioFileChooser = std::make_unique<juce::FileChooser>("Import audio into Audio " + juce::String(trackToLoad + 1), juce::File{}, "*.wav;*.aif;*.aiff");
-    audioFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this, trackToLoad](const juce::FileChooser& chooser)
+    for (const auto& path : files)
+        if (isSupportedAudioFile(path))
+            return true;
+    return false;
+}
+
+void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    const int trackToLoad = getAudioTrackAtPosition({ x, y });
+    if (trackToLoad < 0)
+        return;
+
+    juce::File file;
+    for (const auto& path : files)
+    {
+        if (isSupportedAudioFile(path))
         {
-            const auto file = chooser.getResult(); if (!file.existsAsFile()) return;
-            juce::String error;
-            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Audio Import", error, "OK"); return; }
-            trackSourceFiles[(size_t)trackToLoad] = file;
-            selectedTrack = trackToLoad; isPlaying = false; playheadSeconds = 0.0; rebuildWaveformCache(trackToLoad); repaint();
-        });
+            file = juce::File(path);
+            break;
+        }
+    }
+
+    if (!file.existsAsFile())
+        return;
+
+    juce::String error;
+    if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Audio Import",
+                                               error,
+                                               "OK");
+        return;
+    }
+
+    constexpr int headerW = 210;
+    constexpr double pixelsPerSecond = 80.0;
+    const double dropStartSeconds = x >= headerW ? juce::jmax(0.0, (x - headerW) / pixelsPerSecond) : 0.0;
+
+    trackSourceFiles[(size_t)trackToLoad] = file;
+    audioEngine.setTrackStartSeconds(trackToLoad, dropStartSeconds);
+    audioEngine.setPlaying(false);
+    selectedTrack = trackToLoad;
+    isPlaying = false;
+    rebuildWaveformCache(trackToLoad);
+    repaint();
 }
 
 int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
@@ -389,7 +426,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
 
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
-    if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
 
     constexpr int headerW = 210, rulerH = 32;
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
