@@ -14,6 +14,8 @@
 #include <map>
 #include <vector>
 
+int getLibertyTrackRowHeight() noexcept;
+
 class LibertyAudioRecordingController final : public juce::Component, private juce::AudioIODeviceCallback, private juce::Timer
 {
 public:
@@ -68,9 +70,10 @@ public:
 
     void resized() override
     {
+        const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
         {
-            const int y = 76 + 32 + i * 70 + 8;
+            const int y = 76 + 32 + i * rowH + 7;
             armButtons[(size_t)i].setBounds(108, y, 46, 22);
             monitorButtons[(size_t)i].setBounds(158, y, 48, 22);
         }
