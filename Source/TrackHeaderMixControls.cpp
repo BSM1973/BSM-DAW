@@ -69,7 +69,7 @@ public:
         }
 
         owner.addAndMakeVisible(this);
-        startTimerHz(20);
+        startTimerHz(12);
     }
 
     ~TrackHeaderMixControls() override { shutdown(); }
@@ -90,8 +90,8 @@ public:
         {
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
-            g.drawText("VOL", 8, y + 34, 22, 12, juce::Justification::centredLeft);
-            g.drawText("PAN", 126, y + 34, 25, 12, juce::Justification::centred);
+            g.drawText("VOL", 8, y + 42, 22, 12, juce::Justification::centredLeft);
+            g.drawText("PAN", 111, y + 42, 28, 12, juce::Justification::centred);
         }
     }
 
@@ -101,8 +101,10 @@ public:
         {
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
-            volumeSliders[(size_t)i].setBounds(30, y + 33, 92, 18);
-            panKnobs[(size_t)i].setBounds(150, y + 30, 32, 32);
+
+            // Ligne 2 de l'en-tête : VOL | PAN | M | S
+            volumeSliders[(size_t)i].setBounds(30, y + 39, 76, 20);
+            panKnobs[(size_t)i].setBounds(112, y + 37, 26, 26);
         }
     }
 
@@ -129,9 +131,7 @@ private:
         }
         syncing = false;
 
-        // Stay above the track painting, but do not continuously reorder unless needed.
-        if (getParentComponent() == &owner)
-            toFront(false);
+        // Aucun toFront() périodique : le z-order reste stable et ne clignote plus.
     }
 
     MainComponent& owner;
