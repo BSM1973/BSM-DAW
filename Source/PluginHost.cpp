@@ -281,11 +281,24 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
     lock.exit();
 }
 
-bool LibertyPluginHost::processInstrument(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi)
+bool LibertyPluginHost::processInstrument(float* const* outputChannelData,
+                                          int numOutputChannels,
+                                          int numSamples,
+                                          juce::MidiBuffer& midi)
 {
+    if (numSamples <= 0 || numOutputChannels <= 0) return false;
     if (!lock.tryEnter()) return false;
     if (!instrument.processor) { lock.exit(); return false; }
-    instrument.processor->processBlock(output, midi);
+
+    const int channels = juce::jlimit(1, 2, numOutputChannels);
+    instrument.work.setSize(juce::jmax(2, channels), numSamples, false, false, true);
+    instrument.work.clear();
+    instrument.processor->processBlock(instrument.work, midi);
+
+    for (int ch = 0; ch < channels; ++ch)
+        if (outputChannelData[ch] != nullptr)
+            juce::FloatVectorOperations::add(outputChannelData[ch], instrument.work.getReadPointer(ch), numSamples);
+
     lock.exit();
     return true;
 }
