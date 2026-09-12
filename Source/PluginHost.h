@@ -17,6 +17,11 @@ public:
 
     static LibertyPluginHost& instance();
 
+    // Used only by the hidden Liberty child process launched by the parent
+    // scanner. It scans exactly one VST3 and writes its PluginDescription XML.
+    static bool runSingleVST3ScanHelper(const juce::String& pluginIdentifier,
+                                        const juce::File& resultFile);
+
     void initialise(double sampleRate, int blockSize);
     void shutdown();
 
@@ -70,6 +75,9 @@ private:
     void recoverCrashedPluginsFromDeadMansPedal();
     void loadPersistentBlacklist();
     void savePersistentBlacklist();
+    bool scanVST3OutOfProcess(const juce::String& identifier,
+                              const juce::String& displayName);
+    void blacklistPluginIdentifier(const juce::String& identifier);
     bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
 
     juce::AudioPluginFormatManager formatManager;
