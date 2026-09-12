@@ -5,6 +5,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <algorithm>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -86,7 +87,7 @@ public:
         pluginList.setModel(this);
         pluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff111419));
         pluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff3b424c));
-        pluginList.setRowHeight(38);
+        pluginList.setRowHeight(44);
         pluginList.setOutlineThickness(1);
         addAndMakeVisible(pluginList);
 
@@ -156,7 +157,7 @@ public:
         {
             g.setColour(juce::Colour(0xff72d8f5));
             g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("AUDIO UNIT (.component) + VST3 (.vst3)", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
+            g.drawText("PLUGINS CLASSÉS PAR ÉDITEUR", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
         }
 
         g.setColour(juce::Colour(0xff20252c));
@@ -192,6 +193,12 @@ public:
 private:
     enum class Category { files, audio, midi, presets, plugins };
 
+    static juce::String manufacturerFor(const juce::PluginDescription& description)
+    {
+        const auto name = description.manufacturerName.trim();
+        return name.isNotEmpty() ? name : juce::String("AUTRE");
+    }
+
     void selectionChanged() override {}
     void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
     void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
@@ -203,19 +210,40 @@ private:
     {
         if (rowNumber < 0 || rowNumber >= pluginDescriptions.size()) return;
         const auto& d = pluginDescriptions.getReference(rowNumber);
+        const auto manufacturer = manufacturerFor(d);
+        const bool newManufacturer = rowNumber == 0
+            || manufacturer.compareIgnoreCase(manufacturerFor(pluginDescriptions.getReference(rowNumber - 1))) != 0;
+
         if (rowIsSelected)
         {
             g.setColour(juce::Colour(0xff244f63));
             g.fillRect(0, 0, width, height);
         }
+        else if (newManufacturer)
+        {
+            g.setColour(juce::Colour(0xff151b22));
+            g.fillRect(0, 0, width, height);
+        }
+
+        if (newManufacturer)
+        {
+            g.setColour(juce::Colour(0xff72d8f5));
+            g.fillRect(0, 0, width, 2);
+        }
+
+        g.setColour(juce::Colour(0xff72d8f5));
+        g.setFont(juce::Font(9.0f, juce::Font::bold));
+        g.drawText(manufacturer.toUpperCase(), 8, 3, width - 16, 13, juce::Justification::centredLeft, true);
+
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(d.name, 8, 3, width - 16, 17, juce::Justification::centredLeft, true);
+        g.drawText(d.name, 8, 16, width - 16, 16, juce::Justification::centredLeft, true);
+
         g.setColour(juce::Colour(0xff8f98a3));
-        g.setFont(juce::Font(9.0f));
+        g.setFont(juce::Font(8.5f));
         const auto kind = d.isInstrument ? "INSTRUMENT" : "FX";
-        g.drawText(d.pluginFormatName + " • " + kind + " • " + d.manufacturerName,
-                   8, 20, width - 16, 14, juce::Justification::centredLeft, true);
+        g.drawText(d.pluginFormatName + " • " + kind,
+                   8, 31, width - 16, 11, juce::Justification::centredLeft, true);
     }
 
     void selectedRowsChanged(int) override { if (!scanning.load()) refreshPluginStatus(); }
@@ -310,7 +338,7 @@ private:
             case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
-            case Category::plugins: return "Crash au scan → blacklist automatique au prochain lancement";
+            case Category::plugins: return "Classés par éditeur • scroll indépendant du zoom Liberty";
             default: return "Navigation fichiers et dossiers";
         }
     }
@@ -341,6 +369,18 @@ private:
     void refreshPlugins()
     {
         pluginDescriptions = LibertyPluginHost::instance().getPluginDescriptions();
+        std::stable_sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const juce::PluginDescription& a, const juce::PluginDescription& b)
+        {
+            const auto manufacturerA = manufacturerFor(a);
+            const auto manufacturerB = manufacturerFor(b);
+            const int manufacturerCompare = manufacturerA.compareNatural(manufacturerB, false);
+            if (manufacturerCompare != 0) return manufacturerCompare < 0;
+
+            const int nameCompare = a.name.compareNatural(b.name, false);
+            if (nameCompare != 0) return nameCompare < 0;
+
+            return a.pluginFormatName.compareIgnoreCase(b.pluginFormatName) < 0;
+        });
         pluginList.updateContent();
         refreshPluginStatus();
     }
