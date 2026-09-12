@@ -55,7 +55,7 @@ public:
             pan.setDoubleClickReturnValue(true, 0.0);
             pan.setMouseClickGrabsKeyboardFocus(false);
             pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff72d8f5));
-            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff59616d));
+            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff0b0f14));
             pan.setColour(juce::Slider::thumbColourId, juce::Colours::white);
             pan.onValueChange = [this, i]
             {
@@ -66,6 +66,35 @@ public:
                 owner.repaint();
             };
             addAndMakeVisible(pan);
+
+            auto& mute = muteButtons[(size_t)i];
+            auto& solo = soloButtons[(size_t)i];
+            mute.setButtonText("M");
+            solo.setButtonText("S");
+            mute.setMouseClickGrabsKeyboardFocus(false);
+            solo.setMouseClickGrabsKeyboardFocus(false);
+            mute.onClick = [this, i]
+            {
+                const int track = controlTrack(i);
+                if (track < AudioEngine::maxAudioTracks)
+                    owner.audioEngine.setTrackMuted(track, !owner.audioEngine.isTrackMuted(track));
+                else
+                    owner.audioEngine.setInstrumentTrackMuted(!owner.audioEngine.isInstrumentTrackMuted());
+                syncButtons();
+                owner.repaint();
+            };
+            solo.onClick = [this, i]
+            {
+                const int track = controlTrack(i);
+                if (track < AudioEngine::maxAudioTracks)
+                    owner.audioEngine.setTrackSolo(track, !owner.audioEngine.isTrackSolo(track));
+                else
+                    owner.audioEngine.setInstrumentTrackSolo(!owner.audioEngine.isInstrumentTrackSolo());
+                syncButtons();
+                owner.repaint();
+            };
+            addAndMakeVisible(mute);
+            addAndMakeVisible(solo);
         }
 
         owner.addAndMakeVisible(this);
@@ -88,17 +117,22 @@ public:
 
         for (int i = 0; i < controlledTracks; ++i)
         {
-            const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
+            const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
             const int controlY = y + rowH - 29;
 
-            // Règle UI Liberty : aucun texte sous un contrôle.
             g.setColour(juce::Colour(0xff1e232a));
             g.fillRect(6, controlY - 2, 200, 29);
 
             g.setColour(juce::Colour(0xffc5cbd3));
             g.drawText("VOL", 8, controlY + 6, 22, 12, juce::Justification::centredLeft);
             g.drawText("PAN", 106, controlY + 6, 25, 12, juce::Justification::centredLeft);
+
+            const auto panPlate = juce::Rectangle<float>(129.0f, (float)controlY - 2.0f, 30.0f, 28.0f);
+            g.setColour(juce::Colour(0xff0b1118));
+            g.fillRoundedRectangle(panPlate, 6.0f);
+            g.setColour(juce::Colour(0xff72d8f5));
+            g.drawRoundedRectangle(panPlate, 6.0f, 1.5f);
         }
     }
 
@@ -107,17 +141,44 @@ public:
         const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < controlledTracks; ++i)
         {
-            const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
+            const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
             const int controlY = y + rowH - 29;
 
-            // Ligne 2 sans chevauchement : VOL | PAN | M | S
             volumeSliders[(size_t)i].setBounds(30, controlY + 2, 72, 20);
             panKnobs[(size_t)i].setBounds(132, controlY, 24, 24);
+            muteButtons[(size_t)i].setBounds(160, controlY + 2, 21, 20);
+            soloButtons[(size_t)i].setBounds(184, controlY + 2, 21, 20);
         }
     }
 
 private:
+    static int controlTrack(int control) noexcept
+    {
+        return control < AudioEngine::maxAudioTracks ? control : instrumentTrack;
+    }
+
+    void syncButtons()
+    {
+        for (int i = 0; i < controlledTracks; ++i)
+        {
+            const int track = controlTrack(i);
+            const bool muted = track < AudioEngine::maxAudioTracks
+                ? owner.audioEngine.isTrackMuted(track)
+                : owner.audioEngine.isInstrumentTrackMuted();
+            const bool solo = track < AudioEngine::maxAudioTracks
+                ? owner.audioEngine.isTrackSolo(track)
+                : owner.audioEngine.isInstrumentTrackSolo();
+
+            muteButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
+                muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
+            soloButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
+                solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31));
+            muteButtons[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            soloButtons[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+    }
+
     void timerCallback() override
     {
         if (stopped.load()) return;
@@ -141,11 +202,14 @@ private:
             panKnobs[(size_t)i].setValue(pan, juce::dontSendNotification);
         }
         syncing = false;
+        syncButtons();
     }
 
     MainComponent& owner;
     std::array<juce::Slider, controlledTracks> volumeSliders;
     std::array<juce::Slider, controlledTracks> panKnobs;
+    std::array<juce::TextButton, controlledTracks> muteButtons;
+    std::array<juce::TextButton, controlledTracks> soloButtons;
     std::atomic<bool> stopped { false };
     bool syncing = false;
 };
