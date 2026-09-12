@@ -80,13 +80,10 @@ public:
         renameEditor.onFocusLost = [this] { if (editingTrack >= 0) finishRename(true); };
         addAndMakeVisible(renameEditor);
         renameEditor.setVisible(false);
-        startTimerHz(10);
+        startTimerHz(8);
     }
 
-    ~TrackColourController() override
-    {
-        shutdown();
-    }
+    ~TrackColourController() override { shutdown(); }
 
     void shutdown()
     {
@@ -187,18 +184,21 @@ private:
         if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackMuted();
         return owner.audioEngine.isInstrumentTrackMuted();
     }
+
     bool getSolo(int track) const
     {
         if (track < AudioEngine::maxAudioTracks) return owner.audioEngine.isTrackSolo(track);
         if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackSolo();
         return owner.audioEngine.isInstrumentTrackSolo();
     }
+
     void setMute(int track, bool value)
     {
         if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackMuted(track, value);
         else if (track == midiTrackIndex) owner.audioEngine.setMidiTrackMuted(value);
         else owner.audioEngine.setInstrumentTrackMuted(value);
     }
+
     void setSolo(int track, bool value)
     {
         if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackSolo(track, value);
@@ -286,20 +286,30 @@ private:
         for (int i = 0; i < totalTracks; ++i)
         {
             const int rowY = 76 + rulerH + i * rowH;
-            const int buttonY = i < AudioEngine::maxAudioTracks ? rowY + 40 : rowY + 8;
-            muteButtons[(size_t)i].setBounds(160, buttonY, 21, 20);
-            soloButtons[(size_t)i].setBounds(184, buttonY, 21, 20);
+            const int buttonY = rowY + 40;
+
+            // Ligne 2 stable : VOL | PAN | M | S
+            muteButtons[(size_t)i].setBounds(144, buttonY, 22, 20);
+            soloButtons[(size_t)i].setBounds(170, buttonY, 22, 20);
         }
-        if (editingTrack >= 0) renameEditor.setBounds(8, 76 + rulerH + editingTrack * rowH + 6, 96, 24);
+        if (editingTrack >= 0)
+            renameEditor.setBounds(8, 76 + rulerH + editingTrack * rowH + 6, 96, 24);
     }
 
     void timerCallback() override
     {
         if (shutDown) return;
-        setBounds(owner.getLocalBounds());
-        resized(); syncButtons(); toFront(false);
-        if (editingTrack >= 0) renameEditor.toFront(true);
-        repaint();
+
+        const auto wantedBounds = owner.getLocalBounds();
+        if (getBounds() != wantedBounds)
+            setBounds(wantedBounds);
+
+        syncButtons();
+
+        // Aucun toFront()/repaint() périodique : évite les conflits de z-order
+        // avec ARM/MON et VOL/PAN. Le repaint se fait uniquement sur changement réel.
+        if (editingTrack >= 0)
+            renameEditor.toFront(true);
     }
 
     MainComponent& owner;
@@ -347,14 +357,17 @@ int getLibertyTrackColourId(int track)
     if (track < 0 || track >= totalTracks) return 0;
     return colourIds[(size_t)track];
 }
+
 void setLibertyTrackColourId(int track, int colourId)
 {
     if (track < 0 || track >= totalTracks) return;
     colourIds[(size_t)track] = juce::jlimit(0, (int)palette.size() - 1, colourId);
 }
+
 void resetLibertyTrackColours() { colourIds.fill(0); }
 
 juce::String getLibertyTrackName(int track) { return effectiveTrackName(track); }
+
 void setLibertyTrackName(int track, const juce::String& name)
 {
     if (track < 0 || track >= totalTracks) return;
@@ -362,7 +375,11 @@ void setLibertyTrackName(int track, const juce::String& name)
     if (clean.length() > 32) clean = clean.substring(0, 32);
     trackNames[(size_t)track] = clean;
 }
-void resetLibertyTrackNames() { for (auto& name : trackNames) name.clear(); }
+
+void resetLibertyTrackNames()
+{
+    for (auto& name : trackNames) name.clear();
+}
 
 void shutdownLibertyTrackColourInteraction()
 {
