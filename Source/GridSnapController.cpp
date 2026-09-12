@@ -8,14 +8,15 @@
 #include <map>
 #include <memory>
 
+double getLibertyTimelinePixelsPerSecond() noexcept;
+int getLibertyTrackRowHeight() noexcept;
+
 namespace
 {
 constexpr int headerWidth = 210;
 constexpr int transportHeight = 76;
 constexpr int rulerHeight = 32;
-constexpr int rowHeight = 70;
 constexpr int totalTrackRows = AudioEngine::maxAudioTracks + 2;
-constexpr double pixelsPerSecond = 80.0;
 
 std::atomic<int> snapIndex { 3 };
 
@@ -115,6 +116,7 @@ public:
     void mouseDrag(const juce::MouseEvent& e) override
     {
         if (!draggingAudio || draggedTrack < 0) return;
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const double delta = ((double)e.position.x - (double)dragMouseX) / pixelsPerSecond;
         owner.audioEngine.setTrackStartSeconds(draggedTrack, snapTime(owner, dragStartSeconds + delta));
         repaint();
@@ -133,6 +135,8 @@ private:
     juce::Rectangle<int> audioClipBounds(int track) const
     {
         if (track < 0 || track >= AudioEngine::maxAudioTracks || !owner.audioEngine.hasAudioFile(track)) return {};
+        const int rowHeight = getLibertyTrackRowHeight();
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int y = transportHeight + rulerHeight + track * rowHeight + 4;
         const int x = headerWidth + (int)std::round(owner.audioEngine.getTrackStartSeconds(track) * pixelsPerSecond);
         const int w = juce::jmax(1, (int)std::round(owner.audioEngine.getAudioFileLengthSeconds(track) * pixelsPerSecond));
@@ -141,6 +145,7 @@ private:
 
     int audioTrackAt(juce::Point<int> p) const
     {
+        const int rowHeight = getLibertyTrackRowHeight();
         const int relativeY = p.y - transportHeight - rulerHeight;
         if (relativeY < 0) return -1;
         const int track = relativeY / rowHeight;
@@ -149,6 +154,8 @@ private:
 
     void drawGrid(juce::Graphics& g)
     {
+        const int rowHeight = getLibertyTrackRowHeight();
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int top = transportHeight + rulerHeight;
         const int bottom = juce::jmin(owner.getHeight() - 210, top + totalTrackRows * rowHeight);
         if (bottom <= top) return;
