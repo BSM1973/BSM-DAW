@@ -9,6 +9,8 @@
 #include <functional>
 #include <cmath>
 
+int getLibertyTrackRowHeight() noexcept;
+
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
                             private juce::Timer
@@ -245,8 +247,9 @@ private:
         void timerCallback() override
         {
             owner->updateMidiClipTiming();
-            const auto rowY = 76 + 32 + (4 * 70);
-            setBounds(210, rowY, juce::jmax(1, owner->getWidth() - 210), 70);
+            const int rowH = getLibertyTrackRowHeight();
+            const auto rowY = 76 + 32 + (AudioEngine::maxAudioTracks * rowH);
+            setBounds(210, rowY, juce::jmax(1, owner->getWidth() - 210), rowH);
             repaint();
         }
         MainComponent* owner;
