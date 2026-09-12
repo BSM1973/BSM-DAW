@@ -4,21 +4,28 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <functional>
 #include <memory>
 
 class LibertyPluginHost final
 {
 public:
     static constexpr int maxAudioTracks = 4;
+    using ScanProgressCallback = std::function<void(const juce::String& formatName,
+                                                    const juce::String& pluginName,
+                                                    float progress)>;
 
     static LibertyPluginHost& instance();
 
     void initialise(double sampleRate, int blockSize);
     void shutdown();
 
-    void scanInstalledPlugins();
+    void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});
     const juce::KnownPluginList& getKnownPluginList() const noexcept { return knownPlugins; }
     juce::Array<juce::PluginDescription> getPluginDescriptions() const;
+    juce::StringArray getBlacklistedPlugins() const;
+    void clearBlacklist();
+    juce::File getBlacklistFolder() const;
 
     bool loadEffectForTrack(int trackIndex, const juce::PluginDescription& description, juce::String& error);
     bool loadInstrument(const juce::PluginDescription& description, juce::String& error);
@@ -56,8 +63,13 @@ private:
     void showEditor(Slot& slot, const juce::String& title);
     juce::File pluginListFile() const;
     juce::File deadMansPedalFile() const;
+    juce::File blacklistFolder() const;
+    juce::File blacklistTextFile() const;
     void loadCachedPluginList();
     void saveCachedPluginList();
+    void recoverCrashedPluginsFromDeadMansPedal();
+    void loadPersistentBlacklist();
+    void savePersistentBlacklist();
     bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
 
     juce::AudioPluginFormatManager formatManager;
