@@ -503,71 +503,44 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
     const auto midiStart = midiClipStartSeconds.load(std::memory_order_relaxed);
     const auto midiLength = midiClipLengthSeconds.load(std::memory_order_relaxed);
-    const bool synthMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
-    const bool synthSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
-    if (!synthMuted && (!anySolo || synthSolo) && midiCount > 0 && midiLength > 0.0 && rate > 0.0)
+    const bool instrumentMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
+    const bool instrumentSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+
+    // There is intentionally no internal synth fallback anymore. MIDI produces audio
+    // only through an explicitly loaded AU/VST3 instrument.
+    if (pluginHost.hasInstrument()
+        && !instrumentMuted
+        && (!anySolo || instrumentSolo)
+        && midiCount > 0
+        && midiLength > 0.0
+        && rate > 0.0)
     {
-        bool hostedInstrumentProcessed = false;
-        if (pluginHost.hasInstrument())
+        juce::MidiBuffer midi;
+        const double blockStart = static_cast<double>(position) / rate;
+        const double blockEnd = static_cast<double>(position + numSamples) / rate;
+        for (std::size_t noteIndex = 0; noteIndex < midiCount; ++noteIndex)
         {
-            juce::MidiBuffer midi;
-            const double blockStart = static_cast<double>(position) / rate;
-            const double blockEnd = static_cast<double>(position + numSamples) / rate;
-            for (std::size_t noteIndex = 0; noteIndex < midiCount; ++noteIndex)
-            {
-                const auto localStart = midiPlaybackNotes[noteIndex].startSeconds.load(std::memory_order_relaxed);
-                const auto localEnd = midiPlaybackNotes[noteIndex].endSeconds.load(std::memory_order_relaxed);
-                const auto absoluteStart = midiStart + localStart;
-                const auto absoluteEnd = midiStart + localEnd;
-                const auto frequency = midiPlaybackNotes[noteIndex].frequency.load(std::memory_order_relaxed);
-                const auto amplitude = midiPlaybackNotes[noteIndex].amplitude.load(std::memory_order_relaxed);
-                const int pitch = juce::jlimit(0, 127, static_cast<int>(std::llround(69.0 + 12.0 * std::log2(juce::jmax(0.0001, frequency / 440.0)))));
-                const float velocity = juce::jlimit(0.0f, 1.0f, amplitude / 0.045f);
+            const auto localStart = midiPlaybackNotes[noteIndex].startSeconds.load(std::memory_order_relaxed);
+            const auto localEnd = midiPlaybackNotes[noteIndex].endSeconds.load(std::memory_order_relaxed);
+            const auto absoluteStart = midiStart + localStart;
+            const auto absoluteEnd = midiStart + localEnd;
+            const auto frequency = midiPlaybackNotes[noteIndex].frequency.load(std::memory_order_relaxed);
+            const auto amplitude = midiPlaybackNotes[noteIndex].amplitude.load(std::memory_order_relaxed);
+            const int pitch = juce::jlimit(0, 127, static_cast<int>(std::llround(69.0 + 12.0 * std::log2(juce::jmax(0.0001, frequency / 440.0)))));
+            const float velocity = juce::jlimit(0.0f, 1.0f, amplitude / 0.045f);
 
-                if (absoluteStart >= blockStart && absoluteStart < blockEnd)
-                {
-                    const int offset = juce::jlimit(0, numSamples - 1, static_cast<int>(std::llround((absoluteStart - blockStart) * rate)));
-                    midi.addEvent(juce::MidiMessage::noteOn(1, pitch, velocity), offset);
-                }
-                if (absoluteEnd >= blockStart && absoluteEnd < blockEnd)
-                {
-                    const int offset = juce::jlimit(0, numSamples - 1, static_cast<int>(std::llround((absoluteEnd - blockStart) * rate)));
-                    midi.addEvent(juce::MidiMessage::noteOff(1, pitch), offset);
-                }
+            if (absoluteStart >= blockStart && absoluteStart < blockEnd)
+            {
+                const int offset = juce::jlimit(0, numSamples - 1, static_cast<int>(std::llround((absoluteStart - blockStart) * rate)));
+                midi.addEvent(juce::MidiMessage::noteOn(1, pitch, velocity), offset);
             }
-            hostedInstrumentProcessed = pluginHost.processInstrument(outputChannelData, numOutputChannels, numSamples, midi);
-        }
-
-        if (!hostedInstrumentProcessed)
-        {
-            constexpr double twoPi = 6.28318530717958647692;
-            constexpr double attackSeconds = 0.005;
-            constexpr double releaseSeconds = 0.010;
-            for (int sample = 0; sample < numSamples; ++sample)
+            if (absoluteEnd >= blockStart && absoluteEnd < blockEnd)
             {
-                const double projectTime = static_cast<double>(position + sample) / rate;
-                const double localTime = projectTime - midiStart;
-                if (localTime < 0.0 || localTime >= midiLength) continue;
-                float sampleValue = 0.0f;
-                for (std::size_t noteIndex = 0; noteIndex < midiCount; ++noteIndex)
-                {
-                    const auto noteStart = midiPlaybackNotes[noteIndex].startSeconds.load(std::memory_order_relaxed);
-                    const auto noteEnd = midiPlaybackNotes[noteIndex].endSeconds.load(std::memory_order_relaxed);
-                    const auto noteTime = localTime - noteStart;
-                    const auto noteDuration = noteEnd - noteStart;
-                    if (noteTime < 0.0 || noteTime >= noteDuration) continue;
-                    float envelope = 1.0f;
-                    if (noteTime < attackSeconds) envelope = static_cast<float>(noteTime / attackSeconds);
-                    const auto remaining = noteDuration - noteTime;
-                    if (remaining < releaseSeconds) envelope = juce::jmin(envelope, static_cast<float>(remaining / releaseSeconds));
-                    const auto frequency = midiPlaybackNotes[noteIndex].frequency.load(std::memory_order_relaxed);
-                    const auto amplitude = midiPlaybackNotes[noteIndex].amplitude.load(std::memory_order_relaxed);
-                    sampleValue += static_cast<float>(std::sin(twoPi * frequency * noteTime) * static_cast<double>(amplitude * envelope));
-                }
-                if (numOutputChannels > 0 && outputChannelData[0] != nullptr) outputChannelData[0][sample] += sampleValue;
-                if (numOutputChannels > 1 && outputChannelData[1] != nullptr) outputChannelData[1][sample] += sampleValue;
+                const int offset = juce::jlimit(0, numSamples - 1, static_cast<int>(std::llround((absoluteEnd - blockStart) * rate)));
+                midi.addEvent(juce::MidiMessage::noteOff(1, pitch), offset);
             }
         }
+        pluginHost.processInstrument(outputChannelData, numOutputChannels, numSamples, midi);
     }
 
     const auto master = masterGain.load();
