@@ -32,7 +32,7 @@ public:
 
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
-    bool processInstrument(juce::AudioBuffer<float>& output, juce::MidiBuffer& midi);
+    bool processInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
 
     void showEditorForTrack(int trackIndex);
     void showInstrumentEditor();
