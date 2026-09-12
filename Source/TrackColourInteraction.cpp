@@ -7,6 +7,9 @@
 #include <map>
 #include <memory>
 
+double getLibertyTimelinePixelsPerSecond() noexcept;
+int getLibertyTrackRowHeight() noexcept;
+
 namespace
 {
 constexpr int colourDefault = 0;
@@ -15,7 +18,6 @@ constexpr int midiTrackIndex = AudioEngine::maxAudioTracks;
 constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
 constexpr int headerW = 210;
 constexpr int rulerH = 32;
-constexpr int rowH = 70;
 constexpr std::array<juce::uint32, 9> palette {
     0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
     0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
@@ -99,7 +101,8 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        constexpr float pixelsPerSecond = 80.0f;
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+        const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < totalTracks; ++i)
         {
             const int id = colourIds[(size_t)i];
@@ -209,6 +212,7 @@ private:
     void beginRename(juce::Point<int> point)
     {
         if (point.x < 8 || point.x > 104) return;
+        const int rowH = getLibertyTrackRowHeight();
         const int y = point.y - 76 - rulerH;
         if (y < 0) return;
         const int track = y / rowH;
@@ -247,6 +251,7 @@ private:
     {
         const auto p = event.getPosition();
         if (p.x < 0 || p.x >= headerW) return;
+        const int rowH = getLibertyTrackRowHeight();
         const int y = p.y - 76 - rulerH;
         if (y < 0) return;
         const int track = y / rowH;
@@ -283,14 +288,13 @@ private:
 
     void resized() override
     {
+        const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < totalTracks; ++i)
         {
             const int rowY = 76 + rulerH + i * rowH;
-            const int buttonY = rowY + 40;
-
-            // Ligne 2 stable : VOL | PAN | M | S
-            muteButtons[(size_t)i].setBounds(144, buttonY, 22, 20);
-            soloButtons[(size_t)i].setBounds(170, buttonY, 22, 20);
+            const int buttonY = rowY + rowH - 29;
+            muteButtons[(size_t)i].setBounds(160, buttonY + 2, 21, 20);
+            soloButtons[(size_t)i].setBounds(184, buttonY + 2, 21, 20);
         }
         if (editingTrack >= 0)
             renameEditor.setBounds(8, 76 + rulerH + editingTrack * rowH + 6, 96, 24);
@@ -303,11 +307,10 @@ private:
         const auto wantedBounds = owner.getLocalBounds();
         if (getBounds() != wantedBounds)
             setBounds(wantedBounds);
+        else
+            resized();
 
         syncButtons();
-
-        // Aucun toFront()/repaint() périodique : évite les conflits de z-order
-        // avec ARM/MON et VOL/PAN. Le repaint se fait uniquement sur changement réel.
         if (editingTrack >= 0)
             renameEditor.toFront(true);
     }
