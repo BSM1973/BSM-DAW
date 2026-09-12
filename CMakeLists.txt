@@ -49,6 +49,7 @@ target_sources(BSM_DAW PRIVATE
     Source/AudioRecordingController.cpp
     Source/TrackColourInteraction.cpp
     Source/MultiMidiClipController.cpp
+    Source/GridSnapController.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
