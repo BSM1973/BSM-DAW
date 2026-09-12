@@ -1,6 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "MainComponent.h"
 #include "MidiEditor.h"
+#include "PluginHost.h"
 
 // MIDI note editing shortcuts are routed through MainWindow, just like the
 // existing project Save/Open shortcuts. This avoids relying on focus delivery
@@ -30,6 +31,7 @@ public:
     void shutdown() override
     {
         shutdownLibertyBrowserController();
+        LibertyPluginHost::instance().shutdown();
         shutdownLibertyMetronomeController();
         shutdownLibertyAudioClipWarpView();
         shutdownLibertyZoomController();
