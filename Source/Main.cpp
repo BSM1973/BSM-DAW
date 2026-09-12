@@ -15,6 +15,7 @@ void shutdownLibertyMultiMidiClipController();
 void shutdownLibertyGridSnapController();
 void shutdownLibertyTrackHeaderMixControls();
 void shutdownLibertyZoomController();
+void shutdownLibertyAudioClipWarpView();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -26,6 +27,7 @@ public:
     void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
     void shutdown() override
     {
+        shutdownLibertyAudioClipWarpView();
         shutdownLibertyZoomController();
         shutdownLibertyTrackHeaderMixControls();
         shutdownLibertyGridSnapController();
