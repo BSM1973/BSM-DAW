@@ -54,8 +54,9 @@ public:
             pan.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
             pan.setDoubleClickReturnValue(true, 0.0);
             pan.setMouseClickGrabsKeyboardFocus(false);
-            pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff72d8f5));
-            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff0b0f14));
+            // The PAN knob itself is deliberately bright. No external outline/plate is used.
+            pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffffa640));
+            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff59616b));
             pan.setColour(juce::Slider::thumbColourId, juce::Colours::white);
             pan.onValueChange = [this, i]
             {
@@ -127,12 +128,6 @@ public:
             g.setColour(juce::Colour(0xffc5cbd3));
             g.drawText("VOL", 8, controlY + 6, 22, 12, juce::Justification::centredLeft);
             g.drawText("PAN", 106, controlY + 6, 25, 12, juce::Justification::centredLeft);
-
-            const auto panPlate = juce::Rectangle<float>(129.0f, (float)controlY - 2.0f, 30.0f, 28.0f);
-            g.setColour(juce::Colour(0xff0b1118));
-            g.fillRoundedRectangle(panPlate, 6.0f);
-            g.setColour(juce::Colour(0xff72d8f5));
-            g.drawRoundedRectangle(panPlate, 6.0f, 1.5f);
         }
     }
 
