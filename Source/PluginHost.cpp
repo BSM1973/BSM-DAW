@@ -67,6 +67,9 @@ LibertyPluginHost::~LibertyPluginHost()
 
 void LibertyPluginHost::initialise(double sampleRate, int blockSize)
 {
+    if (shutdownCompleted.load(std::memory_order_acquire))
+        return;
+
     const juce::ScopedLock scoped(lock);
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 48000.0;
     currentBlockSize = juce::jmax(16, blockSize);
@@ -76,16 +79,23 @@ void LibertyPluginHost::initialise(double sampleRate, int blockSize)
 
 void LibertyPluginHost::shutdown()
 {
+    // shutdown() is called explicitly by Liberty and again by the static
+    // singleton destructor. Hosted plugins must only be released once.
+    if (shutdownCompleted.exchange(true, std::memory_order_acq_rel))
+        return;
+
     const juce::ScopedLock scoped(lock);
     for (auto& slot : trackEffects)
     {
         closeEditor(slot);
         if (slot.processor) slot.processor->releaseResources();
         slot.processor.reset();
+        slot.description = {};
     }
     closeEditor(instrument);
     if (instrument.processor) instrument.processor->releaseResources();
     instrument.processor.reset();
+    instrument.description = {};
 }
 
 juce::File LibertyPluginHost::pluginListFile() const
@@ -267,8 +277,6 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
 {
     const juce::ScopedLock scoped(lock);
 
-    // Keep all previously validated plugins. Unchanged known plugins are skipped,
-    // so a scan resumes instead of starting from zero after a crash.
     loadPersistentBlacklist();
 
     for (int formatIndex = 0; formatIndex < formatManager.getNumFormats(); ++formatIndex)
@@ -302,9 +310,6 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
                 if (knownPlugins.isListingUpToDate(identifier, *format))
                     continue;
 
-                // Every unvalidated VST3 is scanned in a fresh Liberty child process.
-                // A plugin crash therefore kills only that child; the parent survives,
-                // blacklists the identifier, and immediately proceeds to the next VST3.
                 scanVST3OutOfProcess(identifier, pluginName);
             }
 
@@ -313,8 +318,6 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
             continue;
         }
 
-        // Audio Units are stable on the user's system, so retain JUCE's normal
-        // in-process scanner and its Dead Man's Pedal behaviour.
         juce::PluginDirectoryScanner scanner(knownPlugins,
                                              *format,
                                              locations,
