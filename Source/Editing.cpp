@@ -1,4 +1,53 @@
 #include "MainComponent.h"
+#include <set>
+
+namespace
+{
+MainComponent* findMidiMainComponent() noexcept
+{
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+    {
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
+            if (window->getName() == "Liberty - MIDI 1")
+                if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                    return main;
+    }
+    return nullptr;
+}
+}
+
+bool handleLibertyMidiUndoRedoKeyPress(const juce::KeyPress& key)
+{
+    const auto modifiers = key.getModifiers();
+   #if JUCE_MAC
+    const bool commandOrControl = modifiers.isCommandDown();
+   #else
+    const bool commandOrControl = modifiers.isCtrlDown();
+   #endif
+
+    if (!commandOrControl || modifiers.isAltDown())
+        return false;
+
+    const int keyCode = key.getKeyCode();
+    const bool isZ = (keyCode == 'z' || keyCode == 'Z');
+    const bool isY = (keyCode == 'y' || keyCode == 'Y');
+    if (!isZ && !isY)
+        return false;
+
+    auto* main = findMidiMainComponent();
+    if (main == nullptr || main->getMidiEngine().getNumNotes() == 0)
+        return false;
+
+    const bool redo = isY || (isZ && modifiers.isShiftDown());
+    const bool changed = redo ? main->getMidiEngine().redo() : main->getMidiEngine().undo();
+    if (!changed)
+        return true;
+
+    main->updateMidiClipTiming();
+    main->repaint();
+    return true;
+}
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
@@ -39,19 +88,42 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             newProject();
             return true;
         }
+
+        if ((keyCode == 'z' || keyCode == 'Z' || keyCode == 'y' || keyCode == 'Y') && selectedTrack < 0)
+        {
+            const bool redo = (keyCode == 'y' || keyCode == 'Y') || modifiers.isShiftDown();
+            const bool changed = redo ? midiEngine.redo() : midiEngine.undo();
+            if (changed)
+            {
+                updateMidiClipTiming();
+                repaint();
+            }
+            return true;
+        }
+    }
+
+    if (keyCode == ' ' && !modifiers.isAnyModifierKeyDown())
+    {
+        isPlaying = !audioEngine.isPlaying();
+        audioEngine.setPlaying(isPlaying);
+        repaint();
+        return true;
     }
 
     if (keyCode == juce::KeyPress::deleteKey || keyCode == juce::KeyPress::backspaceKey)
     {
-        // MIDI 1 is represented by selectedTrack == -1. Delete the complete
-        // MIDI clip without touching any audio track.
+        // MIDI 1 is a real timeline clip. Delete removes the complete clip
+        // (notes + timeline placement/length), without touching any audio track.
         if (selectedTrack < 0)
         {
-            if (midiEngine.getNumNotes() == 0)
+            if (midiEngine.getNumNotes() == 0 && midiClipLengthSeconds <= 0.0)
                 return true;
 
             midiEngine.clear();
             midiClipStartSeconds = 0.0;
+            midiClipLengthSeconds = 0.0;
+            midiClipLengthUserDefined = false;
+            updateMidiClipTiming();
             playheadSeconds = 0.0;
             isPlaying = false;
             audioEngine.setPlaying(false);

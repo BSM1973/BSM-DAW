@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.24)
 
 project(BSM_DAW VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -15,7 +15,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(JUCE)
+FetchContent_Declare(
+    signalsmith-stretch
+    GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+    GIT_TAG main
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE signalsmith-stretch)
 
 juce_add_gui_app(BSM_DAW
     PRODUCT_NAME "Liberty"
@@ -24,6 +31,8 @@ juce_add_gui_app(BSM_DAW
     BUNDLE_ID "com.bsm.liberty"
     NEEDS_CURL FALSE
     NEEDS_WEB_BROWSER FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording."
 )
 
 target_sources(BSM_DAW PRIVATE
@@ -31,13 +40,32 @@ target_sources(BSM_DAW PRIVATE
     Source/MainComponent.cpp
     Source/AudioEngine.cpp
     Source/MidiEngine.cpp
+    Source/MidiQuantize.cpp
     Source/MidiEditor.cpp
     Source/MidiVelocityInteraction.cpp
     Source/MidiNoteSelectionInteraction.cpp
     Source/MidiGroupDragInteraction.cpp
+    Source/MidiMarqueeOverlay.cpp
+    Source/MidiMarqueeManager.cpp
+    Source/MidiSelectAllInteraction.cpp
+    Source/MidiQuantizeInteraction.cpp
+    Source/MidiKeyboardRouter.cpp
     Source/Editing.cpp
     Source/Project.cpp
     Source/TransportSettings.cpp
+    Source/AudioRecordingController.cpp
+    Source/TrackColourInteraction.cpp
+    Source/MultiMidiClipController.cpp
+    Source/GridSnapController.cpp
+    Source/TrackHeaderMixControls.cpp
+    Source/TrackPluginInsertControls.cpp
+    Source/ZoomController.cpp
+    Source/AudioClipWarpView.cpp
+    Source/AudioClipResizeEngine.cpp
+    Source/AudioClipResizeInteraction.cpp
+    Source/MetronomeController.cpp
+    Source/BrowserController.cpp
+    Source/PluginHost.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
@@ -48,12 +76,16 @@ target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 target_compile_definitions(BSM_DAW PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_VST3=1
+    SIGNALSMITH_USE_ACCELERATE=1
 )
 
 target_link_libraries(BSM_DAW PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
+    juce::juce_audio_processors
     juce::juce_audio_utils
     juce::juce_core
     juce::juce_data_structures
@@ -61,6 +93,7 @@ target_link_libraries(BSM_DAW PRIVATE
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+    signalsmith-stretch
 )
 
 juce_generate_juce_header(BSM_DAW)
