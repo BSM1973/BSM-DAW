@@ -235,6 +235,32 @@ private:
         g.drawText("Clic droit : supprimer", 10, 193, 148, 14, juce::Justification::centredLeft);
     }
 
+    double sourceTimeForTarget(double targetSeconds) const
+    {
+        const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
+        targetSeconds = juce::jlimit(0.0, length, targetSeconds);
+
+        if (!owner.audioEngine.isTrackWarpEnabled(selectedTrack)) return targetSeconds;
+
+        const int count = owner.audioEngine.getTrackWarpMarkerCount(selectedTrack);
+        if (count < 2) return targetSeconds;
+
+        for (int marker = 0; marker < count - 1; ++marker)
+        {
+            const double ta = owner.audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, marker);
+            const double tb = owner.audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, marker + 1);
+            if (targetSeconds < ta || targetSeconds > tb) continue;
+
+            const double sa = owner.audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, marker);
+            const double sb = owner.audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, marker + 1);
+            const double span = juce::jmax(0.000001, tb - ta);
+            const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
+            return sa + (sb - sa) * alpha;
+        }
+
+        return targetSeconds;
+    }
+
     void drawWaveform(juce::Graphics& g)
     {
         const auto area = waveformBounds();
@@ -251,22 +277,32 @@ private:
         const int width = juce::jmax(1, area.getWidth() - 8);
         const int samples = buffer->getNumSamples();
         const int channels = buffer->getNumChannels();
+        const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
+        const double samplesPerSecond = (double)samples / length;
 
         juce::Path upper, lower;
         bool first = true;
         for (int px = 0; px < width; ++px)
         {
-            const int start = (int)((std::int64_t)px * samples / width);
-            const int end = juce::jmax(start + 1, (int)((std::int64_t)(px + 1) * samples / width));
+            const double targetA = ((double)px / (double)width) * length;
+            const double targetB = ((double)(px + 1) / (double)width) * length;
+            double sourceA = sourceTimeForTarget(targetA);
+            double sourceB = sourceTimeForTarget(targetB);
+            if (sourceB < sourceA) std::swap(sourceA, sourceB);
+
+            int start = juce::jlimit(0, samples - 1, (int)std::floor(sourceA * samplesPerSecond));
+            int end = juce::jlimit(start + 1, samples, (int)std::ceil(sourceB * samplesPerSecond));
             const int step = juce::jmax(1, (end - start) / 48);
+
             float lo = 0.0f, hi = 0.0f;
-            for (int s = start; s < end && s < samples; s += step)
+            for (int s = start; s < end; s += step)
                 for (int ch = 0; ch < channels; ++ch)
                 {
                     const float v = buffer->getSample(ch, s);
                     lo = juce::jmin(lo, v);
                     hi = juce::jmax(hi, v);
                 }
+
             const float x = (float)area.getX() + 4.0f + (float)px;
             const float yTop = (float)centreY - hi * amplitude;
             const float yBottom = (float)centreY - lo * amplitude;
@@ -283,9 +319,11 @@ private:
             }
         }
 
-        g.setColour(juce::Colour(0xff78bfe8));
-        g.strokePath(upper, juce::PathStrokeType(1.0f));
-        g.strokePath(lower, juce::PathStrokeType(1.0f));
+        g.setColour(owner.audioEngine.isTrackWarpEnabled(selectedTrack)
+            ? juce::Colour(0xff69d4ff)
+            : juce::Colour(0xff78bfe8));
+        g.strokePath(upper, juce::PathStrokeType(1.2f));
+        g.strokePath(lower, juce::PathStrokeType(1.2f));
         g.setColour(juce::Colour(0xff2d3540));
         g.drawHorizontalLine(centreY, (float)area.getX() + 4.0f, (float)area.getRight() - 4.0f);
 
@@ -308,7 +346,6 @@ private:
         }
 
         const double localPlayhead = owner.audioEngine.getCurrentTimeSeconds() - owner.audioEngine.getTrackStartSeconds(selectedTrack);
-        const double length = owner.audioEngine.getAudioFileLengthSeconds(selectedTrack);
         if (localPlayhead >= 0.0 && localPlayhead <= length)
         {
             const int x = xForTime(localPlayhead);
