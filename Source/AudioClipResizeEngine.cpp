@@ -2,7 +2,7 @@
 #include "MainComponent.h"
 #undef private
 
-#include <signalsmith-stretch.h>
+#include <signalsmith-stretch/signalsmith-stretch.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <map>
 #include <memory>
@@ -157,9 +157,11 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
         {
             newStart = juce::jlimit(0.0, oldRight - minLength, newStart);
             newLength = oldRight - newStart;
-            const double ratio = juce::jlimit(0.0, 1.0, newLength / oldLength);
+            const double ratio = juce::jmax(0.0, newLength / oldLength);
             const int desiredSpan = juce::jmax(1, (int)std::llround((double)sourceSpan * ratio));
             sourceStart = juce::jmax(0, sourceEnd - desiredSpan);
+            newLength = oldLength * ((double)(sourceEnd - sourceStart) / (double)sourceSpan);
+            newStart = oldRight - newLength;
         }
         else
         {
