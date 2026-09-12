@@ -12,11 +12,11 @@ float getLibertyInstrumentGain() noexcept;
 void setLibertyInstrumentGain(float value) noexcept;
 float getLibertyInstrumentPan() noexcept;
 void setLibertyInstrumentPan(float value) noexcept;
+int getLibertyTrackRowHeight() noexcept;
 
 namespace
 {
 constexpr int rulerH = 32;
-constexpr int rowH = 70;
 constexpr int instrumentTrack = AudioEngine::maxAudioTracks + 1;
 constexpr int controlledTracks = AudioEngine::maxAudioTracks + 1;
 
@@ -54,8 +54,8 @@ public:
             pan.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
             pan.setDoubleClickReturnValue(true, 0.0);
             pan.setMouseClickGrabsKeyboardFocus(false);
-            pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff4f82a7));
-            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff252a31));
+            pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff72d8f5));
+            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff59616d));
             pan.setColour(juce::Slider::thumbColourId, juce::Colours::white);
             pan.onValueChange = [this, i]
             {
@@ -84,34 +84,36 @@ public:
     void paint(juce::Graphics& g) override
     {
         g.setFont(juce::Font(8.0f, juce::Font::bold));
+        const int rowH = getLibertyTrackRowHeight();
 
         for (int i = 0; i < controlledTracks; ++i)
         {
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
+            const int controlY = y + rowH - 29;
 
             // Règle UI Liberty : aucun texte sous un contrôle.
-            // Cette zone masque les anciens libellés EMPTY AUDIO TRACK / INSTRUMENT
-            // peints par le composant principal, puis accueille uniquement VOL/PAN/M/S.
             g.setColour(juce::Colour(0xff1e232a));
-            g.fillRect(6, y + 32, 200, 34);
+            g.fillRect(6, controlY - 2, 200, 29);
 
-            g.setColour(juce::Colour(0xffaeb6c0));
-            g.drawText("VOL", 8, y + 44, 22, 12, juce::Justification::centredLeft);
-            g.drawText("PAN", 108, y + 44, 26, 12, juce::Justification::centredRight);
+            g.setColour(juce::Colour(0xffc5cbd3));
+            g.drawText("VOL", 8, controlY + 6, 22, 12, juce::Justification::centredLeft);
+            g.drawText("PAN", 106, controlY + 6, 25, 12, juce::Justification::centredLeft);
         }
     }
 
     void resized() override
     {
+        const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < controlledTracks; ++i)
         {
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
+            const int controlY = y + rowH - 29;
 
-            // Ligne 2 sans aucun chevauchement : VOL | PAN | M | S
-            volumeSliders[(size_t)i].setBounds(30, y + 40, 74, 20);
-            panKnobs[(size_t)i].setBounds(136, y + 39, 22, 22);
+            // Ligne 2 sans chevauchement : VOL | PAN | M | S
+            volumeSliders[(size_t)i].setBounds(30, controlY + 2, 72, 20);
+            panKnobs[(size_t)i].setBounds(132, controlY, 24, 24);
         }
     }
 
@@ -123,6 +125,8 @@ private:
         const auto wantedBounds = owner.getLocalBounds();
         if (getBounds() != wantedBounds)
             setBounds(wantedBounds);
+        else
+            resized();
 
         syncing = true;
         for (int i = 0; i < controlledTracks; ++i)
