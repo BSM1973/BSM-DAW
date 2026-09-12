@@ -67,7 +67,7 @@ public:
         else
         {
             if (vertical)
-                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.85f, 1.25f));
+                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.85f, 1.17f));
             else
                 timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.40f, 5.0f));
         }
@@ -93,7 +93,7 @@ float getLibertyTimelineVerticalZoom() noexcept
 
 int getLibertyTrackRowHeight() noexcept
 {
-    return juce::jlimit(60, 88, (int) std::lround(70.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    return juce::jlimit(60, 82, (int) std::lround(70.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
 }
 
 float getLibertyPianoHorizontalZoom() noexcept
