@@ -14,8 +14,7 @@ constexpr int browserWidth = 320;
 constexpr int topBarHeight = 76;
 
 class BrowserPanel final : public juce::Component,
-                           private juce::Timer,
-                           private juce::MouseListener
+                           private juce::Timer
 {
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
@@ -50,7 +49,7 @@ public:
         fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff111419));
         fileTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff3b424c));
         fileTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
-        fileTree.addMouseListener(this, true);
+        fileTree.onDoubleClick = [this](const juce::File& file) { openFileOrDirectory(file); };
         addAndMakeVisible(fileTree);
 
         filesButton.setButtonText("FILES");
@@ -90,7 +89,7 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
-        fileTree.removeMouseListener(this);
+        fileTree.onDoubleClick = nullptr;
         thread.stopThread(1500);
         setVisible(false);
         toggleButton.setVisible(false);
@@ -101,23 +100,17 @@ public:
         g.fillAll(juce::Colour(0xff101318));
         g.setColour(juce::Colour(0xff3b424c));
         g.drawVerticalLine(0, 0.0f, (float)getHeight());
-
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
-
         g.setColour(juce::Colour(0xff858c96));
         g.setFont(juce::Font(9.5f));
-        g.drawText(rootDirectory.getFullPathName(), 14, 78, getWidth() - 28, 18,
-                   juce::Justification::centredLeft, true);
-
+        g.drawText(rootDirectory.getFullPathName(), 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
         g.setColour(juce::Colour(0xff20252c));
         g.fillRect(0, 100, getWidth(), 1);
-
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(9.0f));
-        g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18,
-                   juce::Justification::centredLeft, true);
+        g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18, juce::Justification::centredLeft, true);
     }
 
     void resized() override
@@ -148,7 +141,6 @@ private:
     {
         auto* window = owner.findParentComponentOfClass<juce::DocumentWindow>();
         if (window == nullptr) return;
-
         auto bounds = window->getBounds();
         if (opening)
         {
@@ -160,21 +152,16 @@ private:
                 const auto usable = display->userArea;
                 int wantedRight = bounds.getRight() + browserWidth;
                 int newX = bounds.getX();
-                if (wantedRight > usable.getRight())
-                    newX = juce::jmax(usable.getX(), bounds.getX() - (wantedRight - usable.getRight()));
+                if (wantedRight > usable.getRight()) newX = juce::jmax(usable.getX(), bounds.getX() - (wantedRight - usable.getRight()));
                 const int newWidth = juce::jmin(usable.getWidth(), bounds.getWidth() + browserWidth);
                 window->setBounds(newX, bounds.getY(), newWidth, bounds.getHeight());
             }
-            else
-            {
-                window->setSize(bounds.getWidth() + browserWidth, bounds.getHeight());
-            }
+            else window->setSize(bounds.getWidth() + browserWidth, bounds.getHeight());
             hostExpanded = true;
         }
         else if (hostExpanded)
         {
-            if (!originalWindowBounds.isEmpty())
-                window->setBounds(originalWindowBounds);
+            if (!originalWindowBounds.isEmpty()) window->setBounds(originalWindowBounds);
             hostExpanded = false;
         }
     }
@@ -202,10 +189,8 @@ private:
     {
         if (file.isDirectory() || category == Category::files) return true;
         const auto ext = file.getFileExtension().toLowerCase();
-        if (category == Category::audio)
-            return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
-        if (category == Category::midi)
-            return ext == ".mid" || ext == ".midi";
+        if (category == Category::audio) return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
+        if (category == Category::midi) return ext == ".mid" || ext == ".midi";
         return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
     }
 
@@ -220,37 +205,22 @@ private:
         }
     }
 
-    void mouseDoubleClick(const juce::MouseEvent&) override
+    void openFileOrDirectory(const juce::File& file)
     {
-        const auto file = fileTree.getSelectedFile();
         if (file == juce::File{} || !file.exists()) return;
-
-        if (file.isDirectory())
-        {
-            setRoot(file);
-            return;
-        }
-
+        if (file.isDirectory()) { setRoot(file); return; }
         if (!fileMatchesCategory(file)) return;
-
         const auto ext = file.getFileExtension().toLowerCase();
         const bool audio = ext == ".wav" || ext == ".aif" || ext == ".aiff";
         if (!audio) return;
-
         int track = owner.selectedTrack;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks)
-            track = 0;
-
+        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String error;
         if (!owner.audioEngine.loadAudioFileIntoTrack(track, file, error))
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "Liberty - Browser",
-                                                   error,
-                                                   "OK");
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Browser", error, "OK");
             return;
         }
-
         owner.trackSourceFiles[(size_t)track] = file;
         owner.audioEngine.setTrackStartSeconds(track, juce::jmax(0.0, owner.playheadSeconds));
         owner.selectedTrack = track;
@@ -261,24 +231,17 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
-
         const int panelX = juce::jmax(0, owner.getWidth() - browserWidth);
         if (browserOpen)
         {
-            const auto wanted = juce::Rectangle<int>(panelX, topBarHeight,
-                                                     juce::jmin(browserWidth, owner.getWidth()),
-                                                     juce::jmax(1, owner.getHeight() - topBarHeight));
+            const auto wanted = juce::Rectangle<int>(panelX, topBarHeight, juce::jmin(browserWidth, owner.getWidth()), juce::jmax(1, owner.getHeight() - topBarHeight));
             if (getBounds() != wanted) setBounds(wanted);
             if (!isVisible()) setVisible(true);
             toFront(false);
         }
-
-        const int buttonX = browserOpen
-            ? juce::jmax(8, panelX - 104)
-            : juce::jmax(8, owner.getWidth() - 112);
+        const int buttonX = browserOpen ? juce::jmax(8, panelX - 104) : juce::jmax(8, owner.getWidth() - 112);
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
-        if (toggleButton.getBounds() != buttonBounds)
-            toggleButton.setBounds(buttonBounds);
+        if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
         toggleButton.toFront(false);
     }
 
@@ -287,37 +250,21 @@ private:
     juce::WildcardFileFilter filter;
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
-    juce::TextButton toggleButton;
-    juce::TextButton closeButton;
-    juce::TextButton filesButton;
-    juce::TextButton audioButton;
-    juce::TextButton midiButton;
-    juce::TextButton presetsButton;
-    juce::TextButton homeButton;
+    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, homeButton;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false };
-    bool browserOpen = false;
-    bool hostExpanded = false;
+    bool browserOpen = false, hostExpanded = false;
     juce::Rectangle<int> originalWindowBounds;
 };
 
 std::map<MainComponent*, std::unique_ptr<BrowserPanel>> browsers;
-
 class Bootstrap final : private juce::Timer
 {
 public:
     Bootstrap() { startTimerHz(10); }
     ~Bootstrap() override { shutdown(); }
-
-    void shutdown()
-    {
-        stopTimer();
-        for (auto& item : browsers)
-            if (item.second) item.second->shutdown();
-        browsers.clear();
-    }
-
+    void shutdown() { stopTimer(); for (auto& item : browsers) if (item.second) item.second->shutdown(); browsers.clear(); }
 private:
     void timerCallback() override
     {
@@ -325,15 +272,10 @@ private:
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (browsers.find(main) == browsers.end())
-                        browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
+                    if (browsers.find(main) == browsers.end()) browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
     }
 };
-
 Bootstrap bootstrap;
 }
 
-void shutdownLibertyBrowserController()
-{
-    bootstrap.shutdown();
-}
+void shutdownLibertyBrowserController() { bootstrap.shutdown(); }
