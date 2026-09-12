@@ -19,6 +19,7 @@ void shutdownLibertyZoomController();
 void shutdownLibertyAudioClipWarpView();
 void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
+void shutdownLibertyTrackPluginInsertControls();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -52,8 +53,9 @@ public:
         // browser/controllers, so only tear the full app down when it exists.
         if (mainWindow != nullptr)
         {
+            // First stop every UI/controller object which holds a MainComponent reference.
             shutdownLibertyBrowserController();
-            LibertyPluginHost::instance().shutdown();
+            shutdownLibertyTrackPluginInsertControls();
             shutdownLibertyMetronomeController();
             shutdownLibertyAudioClipWarpView();
             shutdownLibertyZoomController();
@@ -66,7 +68,14 @@ public:
             shutdownLibertyMidiGroupDragInteraction();
             shutdownLibertyMidiNoteSelectionInteraction();
             shutdownLibertyMidiEditor();
+
+            // Destroy MainComponent next. This stops AudioEngine and its realtime callback
+            // before any hosted AU/VST3 instance is released. Some plugins crash if their
+            // releaseResources/destructor runs while the host audio callback is still alive.
             mainWindow.reset();
+
+            // Hosted plugin editors/processors are now destroyed with no audio callback racing them.
+            LibertyPluginHost::instance().shutdown();
         }
     }
 
