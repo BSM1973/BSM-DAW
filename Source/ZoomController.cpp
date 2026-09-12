@@ -32,8 +32,6 @@ bool isInsideScrollableBrowserContent(juce::Component* component)
 {
     while (component != nullptr)
     {
-        // Browser plugin lists and file trees own their mouse wheel: scrolling them
-        // must never leak into Liberty's global arrangement zoom controller.
         if (dynamic_cast<juce::ListBox*>(component) != nullptr
             || dynamic_cast<juce::TreeView*>(component) != nullptr)
             return true;
@@ -85,7 +83,7 @@ public:
         else
         {
             if (vertical)
-                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.85f, 1.17f));
+                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 1.0f, 1.17f));
             else
                 timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.08f, 5.0f));
         }
@@ -111,7 +109,9 @@ float getLibertyTimelineVerticalZoom() noexcept
 
 int getLibertyTrackRowHeight() noexcept
 {
-    return juce::jlimit(60, 82, (int) std::lround(70.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    // 70 px is the hard minimum required by the title/recording row,
+    // dedicated insert row and mix row. UI overlap is forbidden.
+    return juce::jlimit(70, 82, (int) std::lround(70.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
 }
 
 float getLibertyPianoHorizontalZoom() noexcept
