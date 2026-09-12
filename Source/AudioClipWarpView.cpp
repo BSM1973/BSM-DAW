@@ -70,7 +70,7 @@ public:
 
     void mouseMove(const juce::MouseEvent& e) override
     {
-        if (waveformBounds().contains(e.getPosition()))
+        if (waveformPlotBounds().contains(e.getPosition()))
         {
             const int marker = markerAtX(e.x);
             setMouseCursor(marker > 0 && marker < owner.audioEngine.getTrackWarpMarkerCount(selectedTrack) - 1
@@ -115,7 +115,7 @@ public:
             return;
         }
 
-        if (!waveformBounds().contains(e.getPosition())) return;
+        if (!waveformPlotBounds().contains(e.getPosition())) return;
 
         const int marker = markerAtX(e.x);
         if (e.mods.isRightButtonDown())
@@ -135,7 +135,7 @@ public:
 
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
-        if (!waveformBounds().contains(e.getPosition()) || selectedTrack < 0) return;
+        if (!waveformPlotBounds().contains(e.getPosition()) || selectedTrack < 0) return;
         const double time = timeForX(e.x);
         if (owner.audioEngine.addTrackWarpMarker(selectedTrack, time, time))
         {
@@ -191,6 +191,8 @@ private:
     juce::Rectangle<int> modeButton() const { return { 10, 44, 148, 27 }; }
     juce::Rectangle<int> resetButton() const { return { 10, 79, 148, 24 }; }
     juce::Rectangle<int> waveformBounds() const { return { 174, 12, juce::jmax(1, getWidth() - 188), juce::jmax(1, getHeight() - 24) }; }
+    juce::Rectangle<int> timelineBounds() const { return waveformBounds().withHeight(24); }
+    juce::Rectangle<int> waveformPlotBounds() const { return waveformBounds().withTrimmedTop(24); }
 
     static juce::String modeName(int mode)
     {
@@ -261,13 +263,57 @@ private:
         return targetSeconds;
     }
 
+    void drawTimeline(juce::Graphics& g)
+    {
+        const auto r = timelineBounds();
+        g.setColour(juce::Colour(0xff10151b));
+        g.fillRect(r);
+        g.setColour(juce::Colour(0xff38414b));
+        g.drawHorizontalLine(r.getBottom() - 1, (float)r.getX(), (float)r.getRight());
+
+        const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
+        const double clipStart = owner.audioEngine.getTrackStartSeconds(selectedTrack);
+        const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner.tempoBpm)
+            * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
+        const double secondsPerMeasure = secondsPerBeat * (double)juce::jmax(1, owner.timeSignatureNumerator);
+        const double startProject = clipStart;
+        const double endProject = clipStart + length;
+
+        const long long firstMeasure = juce::jmax<long long>(0, (long long)std::floor(startProject / secondsPerMeasure));
+        const long long lastMeasure = (long long)std::ceil(endProject / secondsPerMeasure) + 1;
+
+        for (long long m = firstMeasure; m <= lastMeasure; ++m)
+        {
+            const double projectTime = (double)m * secondsPerMeasure;
+            const double localTime = projectTime - clipStart;
+            if (localTime < -0.000001 || localTime > length + 0.000001) continue;
+            const int x = xForTime(localTime);
+            g.setColour(juce::Colour(0xff798491));
+            g.drawVerticalLine(x, (float)r.getY() + 3.0f, (float)r.getBottom());
+            g.setColour(juce::Colour(0xffd7dde5));
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+            g.drawText(juce::String(m + 1), x + 4, r.getY() + 2, 38, 13, juce::Justification::left);
+
+            for (int beat = 1; beat < owner.timeSignatureNumerator; ++beat)
+            {
+                const double beatLocal = localTime + beat * secondsPerBeat;
+                if (beatLocal <= 0.0 || beatLocal >= length) continue;
+                const int bx = xForTime(beatLocal);
+                g.setColour(juce::Colour(0xff46505b));
+                g.drawVerticalLine(bx, (float)r.getBottom() - 7.0f, (float)r.getBottom());
+            }
+        }
+    }
+
     void drawWaveform(juce::Graphics& g)
     {
-        const auto area = waveformBounds();
+        const auto outer = waveformBounds();
+        const auto area = waveformPlotBounds();
         g.setColour(juce::Colour(0xff14181e));
-        g.fillRoundedRectangle(area.toFloat(), 5.0f);
+        g.fillRoundedRectangle(outer.toFloat(), 5.0f);
         g.setColour(juce::Colour(0xff3b424c));
-        g.drawRoundedRectangle(area.toFloat(), 5.0f, 1.0f);
+        g.drawRoundedRectangle(outer.toFloat(), 5.0f, 1.0f);
+        drawTimeline(g);
 
         const auto* buffer = owner.audioEngine.getAudioBuffer(selectedTrack);
         if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
@@ -350,13 +396,13 @@ private:
         {
             const int x = xForTime(localPlayhead);
             g.setColour(juce::Colours::white.withAlpha(0.9f));
-            g.drawVerticalLine(x, (float)area.getY(), (float)area.getBottom());
+            g.drawVerticalLine(x, (float)timelineBounds().getY(), (float)area.getBottom());
         }
     }
 
     int xForTime(double seconds) const
     {
-        const auto area = waveformBounds();
+        const auto area = waveformPlotBounds();
         const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
         const double n = juce::jlimit(0.0, 1.0, seconds / length);
         return area.getX() + 4 + (int)std::llround(n * (double)juce::jmax(1, area.getWidth() - 8));
@@ -364,7 +410,7 @@ private:
 
     double timeForX(int x) const
     {
-        const auto area = waveformBounds();
+        const auto area = waveformPlotBounds();
         const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
         const double n = juce::jlimit(0.0, 1.0,
             ((double)x - (double)area.getX() - 4.0) / (double)juce::jmax(1, area.getWidth() - 8));
