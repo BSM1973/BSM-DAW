@@ -38,18 +38,18 @@ public:
         g.fillEllipse(bounds);
 
         g.setColour(juce::Colour(0xff5b2b00));
-        g.fillEllipse(bounds.reduced(4.0f));
+        g.fillEllipse(bounds.reduced(3.0f));
 
         juce::Path pointer;
         const float pointerLength = radius * 0.72f;
-        const float pointerThickness = 2.6f;
+        const float pointerThickness = 2.2f;
         pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength,
                                     pointerThickness, pointerLength, 1.0f);
         g.setColour(juce::Colours::white);
         g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(cx, cy));
 
         g.setColour(juce::Colour(0xffffc66d));
-        g.fillEllipse(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f);
+        g.fillEllipse(cx - 1.8f, cy - 1.8f, 3.6f, 3.6f);
     }
 };
 
@@ -147,22 +147,22 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.setFont(juce::Font(8.0f, juce::Font::bold));
+        g.setFont(juce::Font(7.5f, juce::Font::bold));
         const int rowH = getLibertyTrackRowHeight();
 
         for (int i = 0; i < controlledTracks; ++i)
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int controlY = y + rowH - 29;
+            const int controlY = y + rowH - 23;
 
             g.setColour(juce::Colour(0xff1e232a));
-            g.fillRect(6, controlY - 2, 200, 29);
+            g.fillRect(6, controlY, 200, 23);
 
             g.setColour(juce::Colour(0xffc5cbd3));
-            g.drawText("VOL", 8, controlY + 6, 22, 12, juce::Justification::centredLeft);
+            g.drawText("VOL", 8, controlY + 5, 20, 11, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xffffb04d));
-            g.drawText("PAN", 104, controlY + 6, 27, 12, juce::Justification::centredLeft);
+            g.drawText("PAN", 92, controlY + 5, 24, 11, juce::Justification::centredLeft);
         }
     }
 
@@ -173,12 +173,12 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int controlY = y + rowH - 29;
+            const int controlY = y + rowH - 23;
 
-            volumeSliders[(size_t)i].setBounds(30, controlY + 2, 72, 20);
-            panKnobs[(size_t)i].setBounds(130, controlY - 1, 28, 28);
-            muteButtons[(size_t)i].setBounds(160, controlY + 2, 21, 20);
-            soloButtons[(size_t)i].setBounds(184, controlY + 2, 21, 20);
+            volumeSliders[(size_t)i].setBounds(28, controlY + 2, 62, 18);
+            panKnobs[(size_t)i].setBounds(116, controlY, 22, 22);
+            muteButtons[(size_t)i].setBounds(142, controlY + 2, 18, 18);
+            soloButtons[(size_t)i].setBounds(164, controlY + 2, 18, 18);
         }
     }
 
