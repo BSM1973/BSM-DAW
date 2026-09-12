@@ -40,6 +40,9 @@ void AudioEngine::shutdown()
     {
         track.loaded.store(false, std::memory_order_release);
         track.lengthSeconds.store(0.0); track.startSeconds.store(0.0);
+        track.warpEnabled.store(false, std::memory_order_relaxed);
+        track.warpMode.store(0, std::memory_order_relaxed);
+        track.warpMarkerCount.store(0, std::memory_order_relaxed);
         track.buffer.reset(); track.numSamples = 0; track.fileName.clear();
     }
 }
@@ -139,6 +142,123 @@ bool AudioEngine::isAnyTrackSolo() const noexcept
 double AudioEngine::getTrackStartSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].startSeconds.load() : 0.0; }
 void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].startSeconds.store(juce::jmax(0.0, seconds)); }
 
+void AudioEngine::setTrackWarpEnabled(int trackIndex, bool enabled) noexcept
+{
+    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].warpEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].warpEnabled.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
+{
+    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].warpMode.store(juce::jlimit(0, 4, mode), std::memory_order_relaxed);
+}
+
+int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].warpMode.load(std::memory_order_relaxed) : 0;
+}
+
+void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return;
+    auto& track = tracks[(size_t)trackIndex];
+    const double length = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
+    if (length <= 0.0)
+    {
+        track.warpMarkerCount.store(0, std::memory_order_release);
+        return;
+    }
+    track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpSourceSeconds[1].store(length, std::memory_order_relaxed);
+    track.warpTargetSeconds[1].store(length, std::memory_order_relaxed);
+    track.warpMarkerCount.store(2, std::memory_order_release);
+}
+
+bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return false;
+    auto& track = tracks[(size_t)trackIndex];
+    int count = track.warpMarkerCount.load(std::memory_order_acquire);
+    if (count < 2) { resetTrackWarpMarkers(trackIndex); count = track.warpMarkerCount.load(std::memory_order_acquire); }
+    if (count < 2 || count >= maxWarpMarkers) return false;
+
+    const double length = track.lengthSeconds.load(std::memory_order_relaxed);
+    sourceSeconds = juce::jlimit(0.001, juce::jmax(0.001, length - 0.001), sourceSeconds);
+    int insertAt = 1;
+    while (insertAt < count && track.warpSourceSeconds[(size_t)insertAt].load(std::memory_order_relaxed) < sourceSeconds) ++insertAt;
+    if (insertAt <= 0 || insertAt >= count) return false;
+
+    const double prevSource = track.warpSourceSeconds[(size_t)(insertAt - 1)].load(std::memory_order_relaxed);
+    const double nextSource = track.warpSourceSeconds[(size_t)insertAt].load(std::memory_order_relaxed);
+    if (sourceSeconds - prevSource < 0.001 || nextSource - sourceSeconds < 0.001) return false;
+
+    const double prevTarget = track.warpTargetSeconds[(size_t)(insertAt - 1)].load(std::memory_order_relaxed);
+    const double nextTarget = track.warpTargetSeconds[(size_t)insertAt].load(std::memory_order_relaxed);
+    targetSeconds = juce::jlimit(prevTarget + 0.001, nextTarget - 0.001, targetSeconds);
+
+    for (int i = count; i > insertAt; --i)
+    {
+        track.warpSourceSeconds[(size_t)i].store(track.warpSourceSeconds[(size_t)(i - 1)].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        track.warpTargetSeconds[(size_t)i].store(track.warpTargetSeconds[(size_t)(i - 1)].load(std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+    track.warpSourceSeconds[(size_t)insertAt].store(sourceSeconds, std::memory_order_relaxed);
+    track.warpTargetSeconds[(size_t)insertAt].store(targetSeconds, std::memory_order_relaxed);
+    track.warpMarkerCount.store(count + 1, std::memory_order_release);
+    return true;
+}
+
+bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double targetSeconds) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return false;
+    auto& track = tracks[(size_t)trackIndex];
+    const int count = track.warpMarkerCount.load(std::memory_order_acquire);
+    if (markerIndex <= 0 || markerIndex >= count - 1) return false;
+    const double prev = track.warpTargetSeconds[(size_t)(markerIndex - 1)].load(std::memory_order_relaxed);
+    const double next = track.warpTargetSeconds[(size_t)(markerIndex + 1)].load(std::memory_order_relaxed);
+    if (next - prev <= 0.002) return false;
+    track.warpTargetSeconds[(size_t)markerIndex].store(juce::jlimit(prev + 0.001, next - 0.001, targetSeconds), std::memory_order_relaxed);
+    return true;
+}
+
+bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return false;
+    auto& track = tracks[(size_t)trackIndex];
+    const int count = track.warpMarkerCount.load(std::memory_order_acquire);
+    if (markerIndex <= 0 || markerIndex >= count - 1) return false;
+    for (int i = markerIndex; i < count - 1; ++i)
+    {
+        track.warpSourceSeconds[(size_t)i].store(track.warpSourceSeconds[(size_t)(i + 1)].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        track.warpTargetSeconds[(size_t)i].store(track.warpTargetSeconds[(size_t)(i + 1)].load(std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+    track.warpMarkerCount.store(count - 1, std::memory_order_release);
+    return true;
+}
+
+int AudioEngine::getTrackWarpMarkerCount(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire) : 0;
+}
+
+double AudioEngine::getTrackWarpMarkerSourceSeconds(int trackIndex, int markerIndex) const noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return 0.0;
+    const int count = tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire);
+    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex].warpSourceSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+}
+
+double AudioEngine::getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIndex) const noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return 0.0;
+    const int count = tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire);
+    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex].warpTargetSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+}
+
 bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error)
 {
     error.clear();
@@ -174,7 +294,10 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.loaded.store(false, std::memory_order_release);
     track.buffer = std::move(newBuffer); track.numSamples = outputSamples;
     track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
+    track.warpEnabled.store(false, std::memory_order_relaxed);
+    track.warpMode.store(0, std::memory_order_relaxed);
     track.loaded.store(true, std::memory_order_release);
+    resetTrackWarpMarkers(trackIndex);
     { const juce::ScopedLock lock(stateLock); lastError.clear(); }
     if (wasInitialised) deviceManager.addAudioCallback(this);
     return true;
@@ -189,6 +312,8 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     auto& track = tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
     track.buffer.reset(); track.numSamples = 0; track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
+    track.warpEnabled.store(false, std::memory_order_relaxed);
+    track.warpMarkerCount.store(0, std::memory_order_release);
     if (wasInitialised) deviceManager.addAudioCallback(this);
 }
 
@@ -233,7 +358,11 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.pan.store(source.pan.load());
     right.muted.store(source.muted.load());
     right.solo.store(source.solo.load());
+    right.warpEnabled.store(false, std::memory_order_relaxed);
+    right.warpMode.store(source.warpMode.load(std::memory_order_relaxed), std::memory_order_relaxed);
     right.loaded.store(true, std::memory_order_release);
+    resetTrackWarpMarkers(trackIndex);
+    resetTrackWarpMarkers(newTrackIndex);
     if (wasInitialised) deviceManager.addAudioCallback(this);
     if (savedPlaying) playing.store(true);
     return true;
@@ -278,8 +407,75 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         const auto gain = track.gain.load(); const auto pan = track.pan.load();
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = track.buffer->getNumChannels();
-        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
-        if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0) juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+
+        if (!track.warpEnabled.load(std::memory_order_relaxed) || track.warpMarkerCount.load(std::memory_order_acquire) < 2)
+        {
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+            continue;
+        }
+
+        const int markerCount = juce::jlimit(2, maxWarpMarkers, track.warpMarkerCount.load(std::memory_order_acquire));
+        const int mode = track.warpMode.load(std::memory_order_relaxed);
+        const int lastSample = juce::jmax(0, track.buffer->getNumSamples() - 1);
+
+        auto readWarpedSample = [&](int channel, double samplePosition) -> float
+        {
+            const float* data = track.buffer->getReadPointer(juce::jlimit(0, sourceChannels - 1, channel));
+            samplePosition = juce::jlimit(0.0, (double)lastSample, samplePosition);
+            if (mode == 0)
+                return data[juce::jlimit(0, lastSample, (int)std::llround(samplePosition))];
+
+            const int i1 = juce::jlimit(0, lastSample, (int)std::floor(samplePosition));
+            const int i2 = juce::jmin(lastSample, i1 + 1);
+            const float frac = (float)(samplePosition - (double)i1);
+            const float linear = data[i1] + (data[i2] - data[i1]) * frac;
+
+            if (mode == 2)
+            {
+                const int ip = juce::jmax(0, i1 - 1);
+                const int in = juce::jmin(lastSample, i2 + 1);
+                return 0.25f * data[ip] + 0.5f * linear + 0.25f * data[in];
+            }
+            if (mode == 4)
+            {
+                const int i0 = juce::jmax(0, i1 - 1);
+                const int i3 = juce::jmin(lastSample, i2 + 1);
+                const float p0 = data[i0], p1 = data[i1], p2 = data[i2], p3 = data[i3];
+                const float f2 = frac * frac, f3 = f2 * frac;
+                return 0.5f * ((2.0f * p1) + (-p0 + p2) * frac
+                    + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * f2
+                    + (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * f3);
+            }
+            return linear;
+        };
+
+        for (int s = 0; s < samplesToMix; ++s)
+        {
+            const double targetSeconds = (double)(mixStart - startSample + s) / rate;
+            double sourceSeconds = targetSeconds;
+
+            for (int marker = 0; marker < markerCount - 1; ++marker)
+            {
+                const double ta = track.warpTargetSeconds[(size_t)marker].load(std::memory_order_relaxed);
+                const double tb = track.warpTargetSeconds[(size_t)(marker + 1)].load(std::memory_order_relaxed);
+                if (targetSeconds < ta || targetSeconds > tb) continue;
+                const double sa = track.warpSourceSeconds[(size_t)marker].load(std::memory_order_relaxed);
+                const double sb = track.warpSourceSeconds[(size_t)(marker + 1)].load(std::memory_order_relaxed);
+                const double span = juce::jmax(0.000001, tb - ta);
+                const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
+                sourceSeconds = sa + (sb - sa) * alpha;
+                break;
+            }
+
+            const double sourceSamplePosition = sourceSeconds * rate;
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+                outputChannelData[0][outputOffset + s] += readWarpedSample(0, sourceSamplePosition) * leftGain;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+                outputChannelData[1][outputOffset + s] += readWarpedSample(sourceChannels == 1 ? 0 : 1, sourceSamplePosition) * rightGain;
+        }
     }
 
     const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
