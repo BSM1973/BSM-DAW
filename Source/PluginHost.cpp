@@ -168,9 +168,9 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
 {
     const juce::ScopedLock scoped(lock);
 
-    // Clear discovered plugin types, but deliberately preserve the blacklist.
-    // KnownPluginList::clear() only clears plugin descriptions.
-    knownPlugins.clear();
+    // IMPORTANT: keep every plugin that has already been successfully validated.
+    // scanNextFile(true, ...) will skip these entries without loading them again.
+    // This makes a new scan resumable after a crash instead of starting from zero.
     loadPersistentBlacklist();
 
     for (int formatIndex = 0; formatIndex < formatManager.getNumFormats(); ++formatIndex)
@@ -198,8 +198,19 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
             if (progressCallback)
                 progressCallback(formatName, pluginName, scanner.getProgress());
 
+            const int knownBefore = knownPlugins.getNumTypes();
             juce::String scannedName;
             const bool more = scanner.scanNextFile(true, scannedName);
+
+            // Persist progress immediately after each successfully-returned scan step.
+            // If the next plugin crashes Liberty, everything before it is already saved
+            // and therefore skipped on the following launch.
+            if (knownPlugins.getNumTypes() != knownBefore)
+                saveCachedPluginList();
+
+            // Persist blacklist changes as they happen too.
+            savePersistentBlacklist();
+
             if (!more) break;
         }
     }
