@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.24)
 
 project(BSM_DAW VERSION 0.1.0 LANGUAGES C CXX)
 
@@ -15,7 +15,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
-FetchContent_MakeAvailable(JUCE)
+FetchContent_Declare(
+    signalsmith-stretch
+    GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+    GIT_TAG main
+    GIT_SHALLOW TRUE
+)
+
+FetchContent_MakeAvailable(JUCE signalsmith-stretch)
 
 juce_add_gui_app(BSM_DAW
     PRODUCT_NAME "Liberty"
@@ -53,6 +60,8 @@ target_sources(BSM_DAW PRIVATE
     Source/TrackHeaderMixControls.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
+    Source/AudioClipResizeEngine.cpp
+    Source/AudioClipResizeInteraction.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
@@ -63,6 +72,7 @@ target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 target_compile_definitions(BSM_DAW PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    SIGNALSMITH_USE_ACCELERATE=1
 )
 
 target_link_libraries(BSM_DAW PRIVATE
@@ -76,6 +86,7 @@ target_link_libraries(BSM_DAW PRIVATE
     juce::juce_graphics
     juce::juce_gui_basics
     juce::juce_gui_extra
+    signalsmith-stretch
 )
 
 juce_generate_juce_header(BSM_DAW)
