@@ -27,27 +27,52 @@ public:
     const juce::String getApplicationName() override { return "Liberty"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
     bool moreThanOneInstanceAllowed() override { return true; }
-    void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
+
+    void initialise(const juce::String& commandLine) override
+    {
+        juce::StringArray args;
+        args.addTokens(commandLine, true);
+        args.removeEmptyStrings();
+
+        if (args.size() >= 3 && args[0] == "--liberty-scan-vst3")
+        {
+            const juce::File resultFile(args[2]);
+            const bool ok = LibertyPluginHost::runSingleVST3ScanHelper(args[1], resultFile);
+            setApplicationReturnValue(ok ? 0 : 2);
+            quit();
+            return;
+        }
+
+        mainWindow = std::make_unique<MainWindow>(getApplicationName());
+    }
+
     void shutdown() override
     {
-        shutdownLibertyBrowserController();
-        LibertyPluginHost::instance().shutdown();
-        shutdownLibertyMetronomeController();
-        shutdownLibertyAudioClipWarpView();
-        shutdownLibertyZoomController();
-        shutdownLibertyTrackHeaderMixControls();
-        shutdownLibertyGridSnapController();
-        shutdownLibertyMultiMidiClipController();
-        shutdownLibertyTrackColourInteraction();
-        shutdownLibertyAudioRecordingController();
-        shutdownLibertyMidiKeyboardRouter();
-        shutdownLibertyMidiGroupDragInteraction();
-        shutdownLibertyMidiNoteSelectionInteraction();
-        shutdownLibertyMidiEditor();
-        mainWindow.reset();
+        // A hidden VST3 scanner child never creates the main window or the
+        // browser/controllers, so only tear the full app down when it exists.
+        if (mainWindow != nullptr)
+        {
+            shutdownLibertyBrowserController();
+            LibertyPluginHost::instance().shutdown();
+            shutdownLibertyMetronomeController();
+            shutdownLibertyAudioClipWarpView();
+            shutdownLibertyZoomController();
+            shutdownLibertyTrackHeaderMixControls();
+            shutdownLibertyGridSnapController();
+            shutdownLibertyMultiMidiClipController();
+            shutdownLibertyTrackColourInteraction();
+            shutdownLibertyAudioRecordingController();
+            shutdownLibertyMidiKeyboardRouter();
+            shutdownLibertyMidiGroupDragInteraction();
+            shutdownLibertyMidiNoteSelectionInteraction();
+            shutdownLibertyMidiEditor();
+            mainWindow.reset();
+        }
     }
+
     void systemRequestedQuit() override { if (mainWindow != nullptr) mainWindow->requestClose(); else quit(); }
     void anotherInstanceStarted(const juce::String&) override {}
+
 private:
     class MainWindow final : public juce::DocumentWindow, private juce::KeyListener
     {
