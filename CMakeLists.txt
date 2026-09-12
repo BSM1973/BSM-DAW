@@ -52,6 +52,7 @@ target_sources(BSM_DAW PRIVATE
     Source/GridSnapController.cpp
     Source/TrackHeaderMixControls.cpp
     Source/ZoomController.cpp
+    Source/AudioClipWarpView.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
