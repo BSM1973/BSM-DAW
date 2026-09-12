@@ -83,15 +83,22 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.setColour(juce::Colour(0xffaeb6c0));
         g.setFont(juce::Font(8.0f, juce::Font::bold));
 
         for (int i = 0; i < controlledTracks; ++i)
         {
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
-            g.drawText("VOL", 8, y + 42, 22, 12, juce::Justification::centredLeft);
-            g.drawText("PAN", 111, y + 42, 28, 12, juce::Justification::centred);
+
+            // Règle UI Liberty : aucun texte sous un contrôle.
+            // Cette zone masque les anciens libellés EMPTY AUDIO TRACK / INSTRUMENT
+            // peints par le composant principal, puis accueille uniquement VOL/PAN/M/S.
+            g.setColour(juce::Colour(0xff1e232a));
+            g.fillRect(6, y + 32, 200, 34);
+
+            g.setColour(juce::Colour(0xffaeb6c0));
+            g.drawText("VOL", 8, y + 44, 22, 12, juce::Justification::centredLeft);
+            g.drawText("PAN", 108, y + 44, 26, 12, juce::Justification::centredRight);
         }
     }
 
@@ -102,9 +109,9 @@ public:
             const int row = (i < AudioEngine::maxAudioTracks) ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
 
-            // Ligne 2 de l'en-tête : VOL | PAN | M | S
-            volumeSliders[(size_t)i].setBounds(30, y + 39, 76, 20);
-            panKnobs[(size_t)i].setBounds(112, y + 37, 26, 26);
+            // Ligne 2 sans aucun chevauchement : VOL | PAN | M | S
+            volumeSliders[(size_t)i].setBounds(30, y + 40, 74, 20);
+            panKnobs[(size_t)i].setBounds(136, y + 39, 22, 22);
         }
     }
 
@@ -130,8 +137,6 @@ private:
             panKnobs[(size_t)i].setValue(pan, juce::dontSendNotification);
         }
         syncing = false;
-
-        // Aucun toFront() périodique : le z-order reste stable et ne clignote plus.
     }
 
     MainComponent& owner;
