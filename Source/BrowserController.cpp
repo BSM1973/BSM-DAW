@@ -16,10 +16,84 @@ namespace
 constexpr int browserWidth = 320;
 constexpr int topBarHeight = 76;
 
+class PluginTreeItem final : public juce::TreeViewItem
+{
+public:
+    enum class Kind { root, manufacturer, plugin };
+
+    PluginTreeItem(Kind kindIn,
+                   juce::String labelIn,
+                   const juce::PluginDescription* descriptionIn = nullptr,
+                   std::function<void(const juce::PluginDescription&)> activateIn = {})
+        : kind(kindIn), label(std::move(labelIn)), activate(std::move(activateIn))
+    {
+        if (descriptionIn != nullptr)
+            description = *descriptionIn;
+    }
+
+    bool mightContainSubItems() override { return kind != Kind::plugin; }
+    bool canBeSelected() const override { return kind == Kind::plugin; }
+    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? 38 : 20); }
+    juce::String getUniqueName() const override { return label; }
+
+    void paintItem(juce::Graphics& g, int width, int height) override
+    {
+        if (kind == Kind::root) return;
+
+        if (kind == Kind::manufacturer)
+        {
+            g.setColour(juce::Colour(0xff1b222a));
+            g.fillRect(0, 0, width, height);
+            g.setColour(juce::Colour(0xff72d8f5));
+            g.setFont(juce::Font(11.0f, juce::Font::bold));
+            g.drawText(label, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+            return;
+        }
+
+        if (isSelected())
+        {
+            g.setColour(juce::Colour(0xff244f63));
+            g.fillRect(0, 0, width, height);
+        }
+
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
+
+        g.setColour(juce::Colour(0xff8f98a3));
+        g.setFont(juce::Font(9.0f));
+        const auto kindText = description.isInstrument ? "INSTRUMENT" : "FX";
+        g.drawText(description.pluginFormatName + " • " + kindText,
+                   4, 20, width - 8, 14, juce::Justification::centredLeft, true);
+    }
+
+    void itemDoubleClicked(const juce::MouseEvent&) override
+    {
+        if (kind == Kind::manufacturer)
+        {
+            setOpen(!isOpen());
+            return;
+        }
+
+        if (kind == Kind::plugin && activate)
+            activate(description);
+    }
+
+    const juce::PluginDescription* getPluginDescription() const noexcept
+    {
+        return kind == Kind::plugin ? &description : nullptr;
+    }
+
+private:
+    Kind kind;
+    juce::String label;
+    juce::PluginDescription description;
+    std::function<void(const juce::PluginDescription&)> activate;
+};
+
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
-                           private juce::FileBrowserListener,
-                           private juce::ListBoxModel
+                           private juce::FileBrowserListener
 {
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
@@ -57,6 +131,13 @@ public:
         fileTree.addListener(this);
         addAndMakeVisible(fileTree);
 
+        pluginTree.setRootItemVisible(false);
+        pluginTree.setMultiSelectEnabled(false);
+        pluginTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff111419));
+        pluginTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff303842));
+        pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
+        addAndMakeVisible(pluginTree);
+
         filesButton.setButtonText("FILES");
         audioButton.setButtonText("AUDIO");
         midiButton.setButtonText("MIDI");
@@ -84,13 +165,6 @@ public:
         homeButton.onClick = [this] { setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory)); };
         addAndMakeVisible(homeButton);
 
-        pluginList.setModel(this);
-        pluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff111419));
-        pluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff3b424c));
-        pluginList.setRowHeight(44);
-        pluginList.setOutlineThickness(1);
-        addAndMakeVisible(pluginList);
-
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
         clearBlacklistButton.setButtonText("CLEAR BL");
@@ -104,6 +178,7 @@ public:
             b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             addAndMakeVisible(*b);
         }
+
         scanPluginsButton.onClick = [this] { scanPlugins(); };
         blacklistButton.onClick = [this] { showBlacklist(); };
         clearBlacklistButton.onClick = [this] { clearBlacklist(); };
@@ -131,7 +206,8 @@ public:
         if (stopped.exchange(true)) return;
         stopTimer();
         if (scanThread.joinable()) scanThread.join();
-        pluginList.setModel(nullptr);
+        pluginTree.setRootItem(nullptr);
+        pluginRoot.reset();
         fileTree.removeListener(this);
         thread.stopThread(1500);
         setVisible(false);
@@ -157,7 +233,7 @@ public:
         {
             g.setColour(juce::Colour(0xff72d8f5));
             g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("PLUGINS CLASSÉS PAR ÉDITEUR", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
+            g.drawText("PLUGINS PAR FABRICANT", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
         }
 
         g.setColour(juce::Colour(0xff20252c));
@@ -182,7 +258,7 @@ public:
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         blacklistButton.setBounds(10, 140, 145, 26);
         clearBlacklistButton.setBounds(159, 140, 151, 26);
-        pluginList.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
+        pluginTree.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
         const int controlsY = getHeight() - 94;
         loadPluginButton.setBounds(10, controlsY, 72, 28);
         openPluginButton.setBounds(86, controlsY, 72, 28);
@@ -193,61 +269,10 @@ public:
 private:
     enum class Category { files, audio, midi, presets, plugins };
 
-    static juce::String manufacturerFor(const juce::PluginDescription& description)
-    {
-        const auto name = description.manufacturerName.trim();
-        return name.isNotEmpty() ? name : juce::String("AUTRE");
-    }
-
     void selectionChanged() override {}
     void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
     void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
     void browserRootChanged(const juce::File&) override {}
-
-    int getNumRows() override { return pluginDescriptions.size(); }
-
-    void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override
-    {
-        if (rowNumber < 0 || rowNumber >= pluginDescriptions.size()) return;
-        const auto& d = pluginDescriptions.getReference(rowNumber);
-        const auto manufacturer = manufacturerFor(d);
-        const bool newManufacturer = rowNumber == 0
-            || manufacturer.compareIgnoreCase(manufacturerFor(pluginDescriptions.getReference(rowNumber - 1))) != 0;
-
-        if (rowIsSelected)
-        {
-            g.setColour(juce::Colour(0xff244f63));
-            g.fillRect(0, 0, width, height);
-        }
-        else if (newManufacturer)
-        {
-            g.setColour(juce::Colour(0xff151b22));
-            g.fillRect(0, 0, width, height);
-        }
-
-        if (newManufacturer)
-        {
-            g.setColour(juce::Colour(0xff72d8f5));
-            g.fillRect(0, 0, width, 2);
-        }
-
-        g.setColour(juce::Colour(0xff72d8f5));
-        g.setFont(juce::Font(9.0f, juce::Font::bold));
-        g.drawText(manufacturer.toUpperCase(), 8, 3, width - 16, 13, juce::Justification::centredLeft, true);
-
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(d.name, 8, 16, width - 16, 16, juce::Justification::centredLeft, true);
-
-        g.setColour(juce::Colour(0xff8f98a3));
-        g.setFont(juce::Font(8.5f));
-        const auto kind = d.isInstrument ? "INSTRUMENT" : "FX";
-        g.drawText(d.pluginFormatName + " • " + kind,
-                   8, 31, width - 16, 11, juce::Justification::centredLeft, true);
-    }
-
-    void selectedRowsChanged(int) override { if (!scanning.load()) refreshPluginStatus(); }
-    void listBoxItemDoubleClicked(int, const juce::MouseEvent&) override { if (!scanning.load()) loadSelectedPlugin(); }
 
     void setBrowserOpen(bool shouldOpen)
     {
@@ -309,7 +334,7 @@ private:
         const bool pluginMode = category == Category::plugins;
         fileTree.setVisible(!pluginMode);
         homeButton.setVisible(!pluginMode);
-        pluginList.setVisible(pluginMode);
+        pluginTree.setVisible(pluginMode);
         scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode);
         clearBlacklistButton.setVisible(pluginMode);
@@ -338,7 +363,7 @@ private:
             case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
-            case Category::plugins: return "Classés par éditeur • scroll indépendant du zoom Liberty";
+            case Category::plugins: return "Ouvre un dossier fabricant puis double-clique un plugin";
             default: return "Navigation fichiers et dossiers";
         }
     }
@@ -366,23 +391,66 @@ private:
         owner.repaint();
     }
 
+    void rebuildPluginTree()
+    {
+        pluginTree.setRootItem(nullptr);
+        pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
+
+        std::sort(pluginDescriptions.begin(), pluginDescriptions.end(),
+                  [](const juce::PluginDescription& a, const juce::PluginDescription& b)
+                  {
+                      auto am = a.manufacturerName.trim();
+                      auto bm = b.manufacturerName.trim();
+                      if (am.isEmpty()) am = "Other";
+                      if (bm.isEmpty()) bm = "Other";
+                      const int manufacturerCompare = am.compareNatural(bm, false);
+                      if (manufacturerCompare != 0) return manufacturerCompare < 0;
+                      return a.name.compareNatural(b.name, false) < 0;
+                  });
+
+        juce::String currentManufacturer;
+        PluginTreeItem* manufacturerItem = nullptr;
+
+        for (const auto& description : pluginDescriptions)
+        {
+            auto manufacturer = description.manufacturerName.trim();
+            if (manufacturer.isEmpty()) manufacturer = "Other";
+
+            if (manufacturer != currentManufacturer)
+            {
+                currentManufacturer = manufacturer;
+                manufacturerItem = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
+                pluginRoot->addSubItem(manufacturerItem);
+            }
+
+            if (manufacturerItem != nullptr)
+            {
+                manufacturerItem->addSubItem(new PluginTreeItem(
+                    PluginTreeItem::Kind::plugin,
+                    description.name,
+                    &description,
+                    [this](const juce::PluginDescription& d) { loadPluginDescription(d); }));
+            }
+        }
+
+        pluginTree.setRootItem(pluginRoot.get());
+        pluginRoot->setOpen(true);
+        pluginTree.repaint();
+    }
+
     void refreshPlugins()
     {
         pluginDescriptions = LibertyPluginHost::instance().getPluginDescriptions();
-        std::stable_sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const juce::PluginDescription& a, const juce::PluginDescription& b)
-        {
-            const auto manufacturerA = manufacturerFor(a);
-            const auto manufacturerB = manufacturerFor(b);
-            const int manufacturerCompare = manufacturerA.compareNatural(manufacturerB, false);
-            if (manufacturerCompare != 0) return manufacturerCompare < 0;
-
-            const int nameCompare = a.name.compareNatural(b.name, false);
-            if (nameCompare != 0) return nameCompare < 0;
-
-            return a.pluginFormatName.compareIgnoreCase(b.pluginFormatName) < 0;
-        });
-        pluginList.updateContent();
+        rebuildPluginTree();
         refreshPluginStatus();
+    }
+
+    const juce::PluginDescription* selectedPluginDescription() const
+    {
+        if (auto* selected = pluginTree.getSelectedItem(0))
+            if (auto* pluginItem = dynamic_cast<PluginTreeItem*>(selected))
+                return pluginItem->getPluginDescription();
+        return nullptr;
     }
 
     void setScanStatus(const juce::String& text)
@@ -459,14 +527,9 @@ private:
         pluginStatus.setText("Blacklist vidée. Relance SCAN pour retester.", juce::dontSendNotification);
     }
 
-    int selectedPluginRow() const { return pluginList.getSelectedRow(); }
-
-    void loadSelectedPlugin()
+    void loadPluginDescription(const juce::PluginDescription& description)
     {
         if (scanning.load()) return;
-        const int row = selectedPluginRow();
-        if (row < 0 || row >= pluginDescriptions.size()) return;
-        const auto description = pluginDescriptions.getReference(row);
         auto& host = LibertyPluginHost::instance();
         juce::String error;
         bool ok = false;
@@ -487,17 +550,27 @@ private:
         if (!ok)
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
         refreshPluginStatus();
+        owner.repaint();
+    }
+
+    void loadSelectedPlugin()
+    {
+        if (const auto* description = selectedPluginDescription())
+            loadPluginDescription(*description);
     }
 
     void openLoadedPluginEditor()
     {
         if (scanning.load()) return;
-        const int row = selectedPluginRow();
-        if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
+        if (const auto* description = selectedPluginDescription())
         {
-            LibertyPluginHost::instance().showInstrumentEditor();
-            return;
+            if (description->isInstrument)
+            {
+                LibertyPluginHost::instance().showInstrumentEditor();
+                return;
+            }
         }
+
         int track = owner.selectedTrack;
         if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         LibertyPluginHost::instance().showEditorForTrack(track);
@@ -506,16 +579,22 @@ private:
     void unloadPlugin()
     {
         if (scanning.load()) return;
-        const int row = selectedPluginRow();
-        if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
-            LibertyPluginHost::instance().unloadInstrument();
-        else
+        if (const auto* description = selectedPluginDescription())
         {
-            int track = owner.selectedTrack;
-            if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
-            LibertyPluginHost::instance().unloadEffectForTrack(track);
+            if (description->isInstrument)
+            {
+                LibertyPluginHost::instance().unloadInstrument();
+                refreshPluginStatus();
+                owner.repaint();
+                return;
+            }
         }
+
+        int track = owner.selectedTrack;
+        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        LibertyPluginHost::instance().unloadEffectForTrack(track);
         refreshPluginStatus();
+        owner.repaint();
     }
 
     void refreshPluginStatus()
@@ -525,6 +604,7 @@ private:
             pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
             return;
         }
+
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack;
         if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
@@ -548,6 +628,7 @@ private:
             if (!isVisible()) setVisible(true);
             toFront(false);
         }
+
         const int buttonX = browserOpen ? juce::jmax(8, panelX - 104) : juce::jmax(8, owner.getWidth() - 112);
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
@@ -585,7 +666,8 @@ private:
     juce::WildcardFileFilter filter;
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
-    juce::ListBox pluginList;
+    juce::TreeView pluginTree;
+    std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, loadPluginButton, openPluginButton, unloadPluginButton;
@@ -603,12 +685,21 @@ private:
 };
 
 std::map<MainComponent*, std::unique_ptr<BrowserPanel>> browsers;
+
 class Bootstrap final : private juce::Timer
 {
 public:
     Bootstrap() { startTimerHz(10); }
     ~Bootstrap() override { shutdown(); }
-    void shutdown() { stopTimer(); for (auto& item : browsers) if (item.second) item.second->shutdown(); browsers.clear(); }
+
+    void shutdown()
+    {
+        stopTimer();
+        for (auto& item : browsers)
+            if (item.second) item.second->shutdown();
+        browsers.clear();
+    }
+
 private:
     void timerCallback() override
     {
@@ -616,10 +707,15 @@ private:
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (browsers.find(main) == browsers.end()) browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
+                    if (browsers.find(main) == browsers.end())
+                        browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
     }
 };
+
 Bootstrap bootstrap;
 }
 
-void shutdownLibertyBrowserController() { bootstrap.shutdown(); }
+void shutdownLibertyBrowserController()
+{
+    bootstrap.shutdown();
+}
