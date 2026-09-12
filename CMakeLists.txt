@@ -50,6 +50,7 @@ target_sources(BSM_DAW PRIVATE
     Source/TrackColourInteraction.cpp
     Source/MultiMidiClipController.cpp
     Source/GridSnapController.cpp
+    Source/TrackHeaderMixControls.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
