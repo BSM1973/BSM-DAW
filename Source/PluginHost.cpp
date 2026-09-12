@@ -29,6 +29,8 @@ LibertyPluginHost::LibertyPluginHost()
 {
     formatManager.addDefaultFormats();
     loadCachedPluginList();
+    recoverCrashedPluginsFromDeadMansPedal();
+    loadPersistentBlacklist();
 }
 
 LibertyPluginHost::~LibertyPluginHost()
@@ -75,6 +77,24 @@ juce::File LibertyPluginHost::deadMansPedalFile() const
     return dir.getChildFile("PluginScanDeadMansPedal.txt");
 }
 
+juce::File LibertyPluginHost::blacklistFolder() const
+{
+    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                   .getChildFile("BSM").getChildFile("Liberty").getChildFile("Blacklist");
+    dir.createDirectory();
+    return dir;
+}
+
+juce::File LibertyPluginHost::blacklistTextFile() const
+{
+    return blacklistFolder().getChildFile("BlacklistedPlugins.txt");
+}
+
+juce::File LibertyPluginHost::getBlacklistFolder() const
+{
+    return blacklistFolder();
+}
+
 void LibertyPluginHost::loadCachedPluginList()
 {
     const auto file = pluginListFile();
@@ -87,29 +107,107 @@ void LibertyPluginHost::saveCachedPluginList()
     if (auto xml = knownPlugins.createXml()) pluginListFile().replaceWithText(xml->toString());
 }
 
-void LibertyPluginHost::scanInstalledPlugins()
+void LibertyPluginHost::loadPersistentBlacklist()
+{
+    juce::StringArray lines;
+    blacklistTextFile().readLines(lines);
+    lines.removeEmptyStrings();
+    lines.removeDuplicates(false);
+    for (const auto& pluginID : lines)
+        knownPlugins.addToBlacklist(pluginID);
+}
+
+void LibertyPluginHost::savePersistentBlacklist()
+{
+    auto entries = knownPlugins.getBlacklistedFiles();
+    entries.removeEmptyStrings();
+    entries.removeDuplicates(false);
+    blacklistTextFile().replaceWithText(entries.joinIntoString("\n"), true, true);
+}
+
+void LibertyPluginHost::recoverCrashedPluginsFromDeadMansPedal()
+{
+    const auto deadFile = deadMansPedalFile();
+    juce::StringArray crashed;
+    deadFile.readLines(crashed);
+    crashed.removeEmptyStrings();
+    crashed.removeDuplicates(false);
+    if (crashed.isEmpty()) return;
+
+    juce::StringArray persistent;
+    blacklistTextFile().readLines(persistent);
+    persistent.removeEmptyStrings();
+
+    for (const auto& pluginID : crashed)
+    {
+        knownPlugins.addToBlacklist(pluginID);
+        if (!persistent.contains(pluginID)) persistent.add(pluginID);
+    }
+
+    blacklistTextFile().replaceWithText(persistent.joinIntoString("\n"), true, true);
+    saveCachedPluginList();
+    deadFile.deleteFile();
+}
+
+juce::StringArray LibertyPluginHost::getBlacklistedPlugins() const
 {
     const juce::ScopedLock scoped(lock);
+    return knownPlugins.getBlacklistedFiles();
+}
+
+void LibertyPluginHost::clearBlacklist()
+{
+    const juce::ScopedLock scoped(lock);
+    knownPlugins.clearBlacklistedFiles();
+    blacklistTextFile().deleteFile();
+    deadMansPedalFile().deleteFile();
+    saveCachedPluginList();
+}
+
+void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progressCallback)
+{
+    const juce::ScopedLock scoped(lock);
+
+    // Clear discovered plugin types, but deliberately preserve the blacklist.
+    // KnownPluginList::clear() only clears plugin descriptions.
     knownPlugins.clear();
+    loadPersistentBlacklist();
 
     for (int formatIndex = 0; formatIndex < formatManager.getNumFormats(); ++formatIndex)
     {
         auto* format = formatManager.getFormat(formatIndex);
         if (format == nullptr) continue;
-        const auto name = format->getName();
-        if (name != "AudioUnit" && name != "VST3") continue;
+        const auto formatName = format->getName();
+        if (formatName != "AudioUnit" && formatName != "VST3") continue;
+
+        const auto locations = format->getDefaultLocationsToSearch();
+        const auto candidates = format->searchPathsForPlugins(locations, true, false);
+        if (candidates.isEmpty()) continue;
 
         juce::PluginDirectoryScanner scanner(knownPlugins,
                                              *format,
-                                             format->getDefaultLocationsToSearch(),
+                                             locations,
                                              true,
                                              deadMansPedalFile(),
                                              false);
-        juce::String pluginBeingScanned;
-        while (scanner.scanNextFile(true, pluginBeingScanned)) {}
+        scanner.setFilesOrIdentifiersToScan(candidates);
+
+        for (int candidate = 0; candidate < candidates.size(); ++candidate)
+        {
+            const auto pluginName = scanner.getNextPluginFileThatWillBeScanned();
+            if (progressCallback)
+                progressCallback(formatName, pluginName, scanner.getProgress());
+
+            juce::String scannedName;
+            const bool more = scanner.scanNextFile(true, scannedName);
+            if (!more) break;
+        }
     }
 
+    savePersistentBlacklist();
     saveCachedPluginList();
+    deadMansPedalFile().deleteFile();
+    if (progressCallback) progressCallback({}, {}, 1.0f);
 }
 
 juce::Array<juce::PluginDescription> LibertyPluginHost::getPluginDescriptions() const
