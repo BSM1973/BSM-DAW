@@ -1,6 +1,7 @@
 #define private public
 #include "MainComponent.h"
 #undef private
+#include "PluginHost.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -15,7 +16,8 @@ constexpr int topBarHeight = 76;
 
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
-                           private juce::FileBrowserListener
+                           private juce::FileBrowserListener,
+                           private juce::ListBoxModel
 {
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
@@ -57,12 +59,14 @@ public:
         audioButton.setButtonText("AUDIO");
         midiButton.setButtonText("MIDI");
         presetsButton.setButtonText("PRESETS");
-        for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton })
+        pluginsButton.setButtonText("PLUGINS");
+        for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2027));
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
             b->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            b->setClickingTogglesState(false);
             addAndMakeVisible(*b);
         }
 
@@ -70,6 +74,7 @@ public:
         audioButton.onClick = [this] { setCategory(Category::audio); };
         midiButton.onClick = [this] { setCategory(Category::midi); };
         presetsButton.onClick = [this] { setCategory(Category::presets); };
+        pluginsButton.onClick = [this] { setCategory(Category::plugins); };
 
         homeButton.setButtonText("HOME");
         homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
@@ -77,9 +82,38 @@ public:
         homeButton.onClick = [this] { setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory)); };
         addAndMakeVisible(homeButton);
 
+        pluginList.setModel(this);
+        pluginList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff111419));
+        pluginList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff3b424c));
+        pluginList.setRowHeight(38);
+        pluginList.setOutlineThickness(1);
+        addAndMakeVisible(pluginList);
+
+        scanPluginsButton.setButtonText("SCAN AU + VST3");
+        loadPluginButton.setButtonText("LOAD");
+        openPluginButton.setButtonText("OPEN UI");
+        unloadPluginButton.setButtonText("UNLOAD");
+        for (auto* b : { &scanPluginsButton, &loadPluginButton, &openPluginButton, &unloadPluginButton })
+        {
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            addAndMakeVisible(*b);
+        }
+        scanPluginsButton.onClick = [this] { scanPlugins(); };
+        loadPluginButton.onClick = [this] { loadSelectedPlugin(); };
+        openPluginButton.onClick = [this] { openLoadedPluginEditor(); };
+        unloadPluginButton.onClick = [this] { unloadPlugin(); };
+
+        pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffaab2bc));
+        pluginStatus.setFont(juce::Font(10.0f));
+        pluginStatus.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(pluginStatus);
+
         setVisible(false);
         owner.addAndMakeVisible(this);
         setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        refreshPlugins();
         setCategory(Category::files);
         startTimerHz(20);
     }
@@ -90,6 +124,7 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
+        pluginList.setModel(nullptr);
         fileTree.removeListener(this);
         thread.stopThread(1500);
         setVisible(false);
@@ -104,9 +139,20 @@ public:
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff858c96));
-        g.setFont(juce::Font(9.5f));
-        g.drawText(rootDirectory.getFullPathName(), 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
+
+        if (category != Category::plugins)
+        {
+            g.setColour(juce::Colour(0xff858c96));
+            g.setFont(juce::Font(9.5f));
+            g.drawText(rootDirectory.getFullPathName(), 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
+        }
+        else
+        {
+            g.setColour(juce::Colour(0xff72d8f5));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("AUDIO UNIT (.component) + VST3 (.vst3)", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
+        }
+
         g.setColour(juce::Colour(0xff20252c));
         g.fillRect(0, 100, getWidth(), 1);
         g.setColour(juce::Colour(0xff8f98a3));
@@ -117,21 +163,55 @@ public:
     void resized() override
     {
         closeButton.setBounds(getWidth() - 38, 8, 28, 26);
-        filesButton.setBounds(12, 42, 66, 26);
-        audioButton.setBounds(82, 42, 66, 26);
-        midiButton.setBounds(152, 42, 66, 26);
-        presetsButton.setBounds(222, 42, 82, 26);
+        filesButton.setBounds(8, 42, 52, 26);
+        audioButton.setBounds(62, 42, 52, 26);
+        midiButton.setBounds(116, 42, 46, 26);
+        presetsButton.setBounds(164, 42, 66, 26);
+        pluginsButton.setBounds(232, 42, 80, 26);
+
         homeButton.setBounds(12, 105, 70, 24);
         fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 174));
+
+        scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
+        pluginList.setBounds(10, 144, getWidth() - 20, juce::jmax(40, getHeight() - 246));
+        const int controlsY = getHeight() - 94;
+        loadPluginButton.setBounds(10, controlsY, 72, 28);
+        openPluginButton.setBounds(86, controlsY, 72, 28);
+        unloadPluginButton.setBounds(162, controlsY, 76, 28);
+        pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
     }
 
 private:
-    enum class Category { files, audio, midi, presets };
+    enum class Category { files, audio, midi, presets, plugins };
 
     void selectionChanged() override {}
     void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
     void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
     void browserRootChanged(const juce::File&) override {}
+
+    int getNumRows() override { return pluginDescriptions.size(); }
+
+    void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override
+    {
+        if (rowNumber < 0 || rowNumber >= pluginDescriptions.size()) return;
+        const auto& d = pluginDescriptions.getReference(rowNumber);
+        if (rowIsSelected)
+        {
+            g.setColour(juce::Colour(0xff244f63));
+            g.fillRect(0, 0, width, height);
+        }
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.drawText(d.name, 8, 3, width - 16, 17, juce::Justification::centredLeft, true);
+        g.setColour(juce::Colour(0xff8f98a3));
+        g.setFont(juce::Font(9.0f));
+        const auto kind = d.isInstrument ? "INSTRUMENT" : "FX";
+        g.drawText(d.pluginFormatName + " • " + kind + " • " + d.manufacturerName,
+                   8, 20, width - 16, 14, juce::Justification::centredLeft, true);
+    }
+
+    void selectedRowsChanged(int) override { refreshPluginStatus(); }
+    void listBoxItemDoubleClicked(int, const juce::MouseEvent&) override { loadSelectedPlugin(); }
 
     void setBrowserOpen(bool shouldOpen)
     {
@@ -188,6 +268,18 @@ private:
         audioButton.setToggleState(category == Category::audio, juce::dontSendNotification);
         midiButton.setToggleState(category == Category::midi, juce::dontSendNotification);
         presetsButton.setToggleState(category == Category::presets, juce::dontSendNotification);
+        pluginsButton.setToggleState(category == Category::plugins, juce::dontSendNotification);
+
+        const bool pluginMode = category == Category::plugins;
+        fileTree.setVisible(!pluginMode);
+        homeButton.setVisible(!pluginMode);
+        pluginList.setVisible(pluginMode);
+        scanPluginsButton.setVisible(pluginMode);
+        loadPluginButton.setVisible(pluginMode);
+        openPluginButton.setVisible(pluginMode);
+        unloadPluginButton.setVisible(pluginMode);
+        pluginStatus.setVisible(pluginMode);
+        if (pluginMode) refreshPlugins();
         repaint();
     }
 
@@ -197,7 +289,8 @@ private:
         const auto ext = file.getFileExtension().toLowerCase();
         if (category == Category::audio) return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
         if (category == Category::midi) return ext == ".mid" || ext == ".midi";
-        return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
+        if (category == Category::presets) return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
+        return false;
     }
 
     juce::String categoryHint() const
@@ -207,6 +300,7 @@ private:
             case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
+            case Category::plugins: return "FX → piste Audio sélectionnée • Instrument → piste Instrument";
             default: return "Navigation fichiers et dossiers";
         }
     }
@@ -234,6 +328,90 @@ private:
         owner.repaint();
     }
 
+    void refreshPlugins()
+    {
+        pluginDescriptions = LibertyPluginHost::instance().getPluginDescriptions();
+        pluginList.updateContent();
+        refreshPluginStatus();
+    }
+
+    void scanPlugins()
+    {
+        pluginStatus.setText("Scan AU + VST3 en cours…", juce::dontSendNotification);
+        repaint();
+        LibertyPluginHost::instance().scanInstalledPlugins();
+        refreshPlugins();
+        pluginStatus.setText(juce::String(pluginDescriptions.size()) + " plugins trouvés", juce::dontSendNotification);
+    }
+
+    int selectedPluginRow() const { return pluginList.getSelectedRow(); }
+
+    void loadSelectedPlugin()
+    {
+        const int row = selectedPluginRow();
+        if (row < 0 || row >= pluginDescriptions.size()) return;
+        const auto description = pluginDescriptions.getReference(row);
+        auto& host = LibertyPluginHost::instance();
+        juce::String error;
+        bool ok = false;
+
+        if (description.isInstrument)
+        {
+            ok = host.loadInstrument(description, error);
+            if (ok) host.showInstrumentEditor();
+        }
+        else
+        {
+            int track = owner.selectedTrack;
+            if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+            ok = host.loadEffectForTrack(track, description, error);
+            if (ok) host.showEditorForTrack(track);
+        }
+
+        if (!ok)
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
+        refreshPluginStatus();
+    }
+
+    void openLoadedPluginEditor()
+    {
+        const int row = selectedPluginRow();
+        if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
+        {
+            LibertyPluginHost::instance().showInstrumentEditor();
+            return;
+        }
+        int track = owner.selectedTrack;
+        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        LibertyPluginHost::instance().showEditorForTrack(track);
+    }
+
+    void unloadPlugin()
+    {
+        const int row = selectedPluginRow();
+        if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
+            LibertyPluginHost::instance().unloadInstrument();
+        else
+        {
+            int track = owner.selectedTrack;
+            if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+            LibertyPluginHost::instance().unloadEffectForTrack(track);
+        }
+        refreshPluginStatus();
+    }
+
+    void refreshPluginStatus()
+    {
+        auto& host = LibertyPluginHost::instance();
+        int track = owner.selectedTrack;
+        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        juce::String text;
+        if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
+        if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
+        if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins disponibles";
+        pluginStatus.setText(text, juce::dontSendNotification);
+    }
+
     void timerCallback() override
     {
         if (stopped.load()) return;
@@ -249,6 +427,7 @@ private:
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
         toggleButton.toFront(false);
+        if (category == Category::plugins) refreshPluginStatus();
     }
 
     MainComponent& owner;
@@ -256,7 +435,11 @@ private:
     juce::WildcardFileFilter filter;
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
-    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, homeButton;
+    juce::ListBox pluginList;
+    juce::Array<juce::PluginDescription> pluginDescriptions;
+    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
+    juce::TextButton scanPluginsButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false };
