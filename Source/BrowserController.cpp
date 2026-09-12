@@ -14,7 +14,8 @@ constexpr int browserWidth = 320;
 constexpr int topBarHeight = 76;
 
 class BrowserPanel final : public juce::Component,
-                           private juce::Timer
+                           private juce::Timer,
+                           private juce::FileBrowserListener
 {
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
@@ -49,7 +50,7 @@ public:
         fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff111419));
         fileTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff3b424c));
         fileTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
-        fileTree.onDoubleClick = [this](const juce::File& file) { openFileOrDirectory(file); };
+        fileTree.addListener(this);
         addAndMakeVisible(fileTree);
 
         filesButton.setButtonText("FILES");
@@ -89,7 +90,7 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
-        fileTree.onDoubleClick = nullptr;
+        fileTree.removeListener(this);
         thread.stopThread(1500);
         setVisible(false);
         toggleButton.setVisible(false);
@@ -126,6 +127,11 @@ public:
 
 private:
     enum class Category { files, audio, midi, presets };
+
+    void selectionChanged() override {}
+    void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
+    void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
+    void browserRootChanged(const juce::File&) override {}
 
     void setBrowserOpen(bool shouldOpen)
     {
