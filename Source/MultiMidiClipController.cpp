@@ -16,6 +16,8 @@ int getLibertyTrackColourId(int track);
 juce::String getLibertyTrackName(int track);
 bool isLibertySnapEnabled() noexcept;
 double getLibertySnapSeconds(double tempoBpm) noexcept;
+double getLibertyTimelinePixelsPerSecond() noexcept;
+int getLibertyTrackRowHeight() noexcept;
 
 namespace
 {
@@ -23,10 +25,8 @@ constexpr int midiTrackIndex = AudioEngine::maxAudioTracks;
 constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
 constexpr int headerWidth = 210;
 constexpr int rulerHeight = 32;
-constexpr int rowHeight = 70;
 constexpr int midiRow = AudioEngine::maxAudioTracks;
 constexpr int instrumentRow = AudioEngine::maxAudioTracks + 1;
-constexpr float pixelsPerSecond = 80.0f;
 constexpr float resizeZone = 12.0f;
 
 struct Clip
@@ -44,7 +44,7 @@ juce::Colour trackColour(int id)
         0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
         0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
     };
-    return juce::Colour(p[(size_t) juce::jlimit(0, 8, id)]);
+    return juce::Colour(p[(size_t)juce::jlimit(0, 8, id)]);
 }
 
 class MultiMidiClipController;
@@ -84,6 +84,7 @@ public:
 
     bool hitTest(int x, int y) override
     {
+        const int rowHeight = getLibertyTrackRowHeight();
         const int mt = 76 + rulerHeight + midiRow * rowHeight;
         const int it = 76 + rulerHeight + instrumentRow * rowHeight;
         const int mix = owner.getHeight() - 210;
@@ -112,6 +113,7 @@ public:
             setMouseCursor(juce::MouseCursor::CrosshairCursor);
             return;
         }
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const auto& c = (ins ? instrumentClips : midiClips)[(size_t)i];
         const float l = headerWidth + (float)(c.startSeconds * pixelsPerSecond);
         const float r = l + (float)(c.lengthSeconds * pixelsPerSecond);
@@ -141,6 +143,7 @@ public:
         dragStartX = (float)e.x;
         dragStartSeconds = c.startSeconds;
         dragStartLength = c.lengthSeconds;
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const float l = headerWidth + (float)(c.startSeconds * pixelsPerSecond);
         const float r = l + (float)(c.lengthSeconds * pixelsPerSecond);
         dragMode = (float)e.x <= l + resizeZone ? 2 : ((float)e.x >= r - resizeZone ? 3 : 1);
@@ -159,7 +162,7 @@ public:
             Clip c;
             c.id = nextClipId++;
             const auto m = secondsPerMeasure();
-            const auto raw = juce::jmax(0.0, ((double)e.x - headerWidth) / pixelsPerSecond);
+            const auto raw = juce::jmax(0.0, ((double)e.x - headerWidth) / getLibertyTimelinePixelsPerSecond());
             c.startSeconds = snapPosition(raw);
             c.lengthSeconds = m;
             v.push_back(std::move(c));
@@ -185,7 +188,7 @@ public:
         auto& c = v[(size_t)dragIndex];
         const auto step = getLibertySnapSeconds(owner.tempoBpm);
         const auto minLen = step > 0.0 ? step : 0.01;
-        const auto d = ((double)e.x - dragStartX) / pixelsPerSecond;
+        const auto d = ((double)e.x - dragStartX) / getLibertyTimelinePixelsPerSecond();
         if (dragMode == 1)
             c.startSeconds = snapPosition(dragStartSeconds + d);
         else if (dragMode == 2)
@@ -249,6 +252,7 @@ private:
 
     bool isPointInTrackRow(juce::Point<int> p, bool ins) const
     {
+        const int rowHeight = getLibertyTrackRowHeight();
         const int row = ins ? instrumentRow : midiRow;
         const int top = 76 + rulerHeight + row * rowHeight;
         return p.y >= top && p.y < top + rowHeight;
@@ -256,6 +260,8 @@ private:
 
     int findClipAt(juce::Point<int> p, bool& ins) const
     {
+        const int rowHeight = getLibertyTrackRowHeight();
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         for (int pass = 0; pass < 2; ++pass)
         {
             ins = pass == 1;
@@ -375,6 +381,8 @@ private:
 
     void drawClips(juce::Graphics& g, bool ins, const std::vector<Clip>& v, int row, int colourIndex)
     {
+        const int rowHeight = getLibertyTrackRowHeight();
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int y = 76 + rulerHeight + row * rowHeight;
         const auto colour = trackColour(getLibertyTrackColourId(colourIndex));
         for (int i = 0; i < (int)v.size(); ++i)
@@ -532,8 +540,8 @@ private:
     {
         if (stopped.load()) return;
         owner.midiClipOverlay.setVisible(false);
-        setBounds(owner.getLocalBounds());
-        toFront(false);
+        const auto bounds = owner.getLocalBounds();
+        if (getBounds() != bounds) setBounds(bounds);
         handleProjectPersistence();
         syncPlayback();
         repaint();
