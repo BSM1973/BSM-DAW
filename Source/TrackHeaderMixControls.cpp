@@ -20,6 +20,39 @@ constexpr int rulerH = 32;
 constexpr int instrumentTrack = AudioEngine::maxAudioTracks + 1;
 constexpr int controlledTracks = AudioEngine::maxAudioTracks + 1;
 
+class PanLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPosProportional, float rotaryStartAngle,
+                          float rotaryEndAngle, juce::Slider&) override
+    {
+        const auto size = (float)juce::jmin(width, height) - 2.0f;
+        const auto cx = (float)x + (float)width * 0.5f;
+        const auto cy = (float)y + (float)height * 0.5f;
+        const auto radius = size * 0.5f;
+        const auto bounds = juce::Rectangle<float>(cx - radius, cy - radius, size, size);
+        const float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+        g.setColour(juce::Colour(0xffff9a24));
+        g.fillEllipse(bounds);
+
+        g.setColour(juce::Colour(0xff5b2b00));
+        g.fillEllipse(bounds.reduced(4.0f));
+
+        juce::Path pointer;
+        const float pointerLength = radius * 0.72f;
+        const float pointerThickness = 2.6f;
+        pointer.addRoundedRectangle(-pointerThickness * 0.5f, -pointerLength,
+                                    pointerThickness, pointerLength, 1.0f);
+        g.setColour(juce::Colours::white);
+        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(cx, cy));
+
+        g.setColour(juce::Colour(0xffffc66d));
+        g.fillEllipse(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f);
+    }
+};
+
 class TrackHeaderMixControls final : public juce::Component,
                                      private juce::Timer
 {
@@ -54,10 +87,7 @@ public:
             pan.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
             pan.setDoubleClickReturnValue(true, 0.0);
             pan.setMouseClickGrabsKeyboardFocus(false);
-            // The PAN knob itself is deliberately bright. No external outline/plate is used.
-            pan.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffffa640));
-            pan.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff59616b));
-            pan.setColour(juce::Slider::thumbColourId, juce::Colours::white);
+            pan.setLookAndFeel(&panLookAndFeel);
             pan.onValueChange = [this, i]
             {
                 if (syncing) return;
@@ -102,7 +132,11 @@ public:
         startTimerHz(12);
     }
 
-    ~TrackHeaderMixControls() override { shutdown(); }
+    ~TrackHeaderMixControls() override
+    {
+        shutdown();
+        for (auto& pan : panKnobs) pan.setLookAndFeel(nullptr);
+    }
 
     void shutdown()
     {
@@ -127,7 +161,8 @@ public:
 
             g.setColour(juce::Colour(0xffc5cbd3));
             g.drawText("VOL", 8, controlY + 6, 22, 12, juce::Justification::centredLeft);
-            g.drawText("PAN", 106, controlY + 6, 25, 12, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xffffb04d));
+            g.drawText("PAN", 104, controlY + 6, 27, 12, juce::Justification::centredLeft);
         }
     }
 
@@ -141,7 +176,7 @@ public:
             const int controlY = y + rowH - 29;
 
             volumeSliders[(size_t)i].setBounds(30, controlY + 2, 72, 20);
-            panKnobs[(size_t)i].setBounds(132, controlY, 24, 24);
+            panKnobs[(size_t)i].setBounds(130, controlY - 1, 28, 28);
             muteButtons[(size_t)i].setBounds(160, controlY + 2, 21, 20);
             soloButtons[(size_t)i].setBounds(184, controlY + 2, 21, 20);
         }
@@ -201,6 +236,7 @@ private:
     }
 
     MainComponent& owner;
+    PanLookAndFeel panLookAndFeel;
     std::array<juce::Slider, controlledTracks> volumeSliders;
     std::array<juce::Slider, controlledTracks> panKnobs;
     std::array<juce::TextButton, controlledTracks> muteButtons;
