@@ -62,6 +62,7 @@ target_sources(BSM_DAW PRIVATE
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
     Source/AudioClipResizeInteraction.cpp
+    Source/MetronomeController.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
