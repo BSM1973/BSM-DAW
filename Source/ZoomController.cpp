@@ -69,7 +69,7 @@ public:
             if (vertical)
                 timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.85f, 1.17f));
             else
-                timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.40f, 5.0f));
+                timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.08f, 5.0f));
         }
         repaintRelevantWindows();
     }
