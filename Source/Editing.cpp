@@ -102,6 +102,14 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         }
     }
 
+    if (keyCode == ' ' && !modifiers.isAnyModifierKeyDown())
+    {
+        isPlaying = !audioEngine.isPlaying();
+        audioEngine.setPlaying(isPlaying);
+        repaint();
+        return true;
+    }
+
     if (keyCode == juce::KeyPress::deleteKey || keyCode == juce::KeyPress::backspaceKey)
     {
         // MIDI 1 is a real timeline clip. Delete removes the complete clip
