@@ -109,9 +109,9 @@ float getLibertyTimelineVerticalZoom() noexcept
 
 int getLibertyTrackRowHeight() noexcept
 {
-    // 70 px is the hard minimum required by the title/recording row,
-    // dedicated insert row and mix row. UI overlap is forbidden.
-    return juce::jlimit(70, 82, (int) std::lround(70.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    // Hard minimum: title/recording row + insert row + mix row, all separated.
+    // No UI element is allowed to share the same vertical pixels.
+    return juce::jlimit(96, 112, (int) std::lround(96.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
 }
 
 float getLibertyPianoHorizontalZoom() noexcept
