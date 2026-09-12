@@ -25,6 +25,33 @@ LibertyPluginHost& LibertyPluginHost::instance()
     return host;
 }
 
+bool LibertyPluginHost::runSingleVST3ScanHelper(const juce::String& pluginIdentifier,
+                                                const juce::File& resultFile)
+{
+    juce::AudioPluginFormatManager helperFormats;
+    helperFormats.addDefaultFormats();
+
+    for (int i = 0; i < helperFormats.getNumFormats(); ++i)
+    {
+        auto* format = helperFormats.getFormat(i);
+        if (format == nullptr || format->getName() != "VST3")
+            continue;
+
+        juce::KnownPluginList resultList;
+        juce::OwnedArray<juce::PluginDescription> found;
+        resultList.scanAndAddFile(pluginIdentifier, false, found, *format);
+        if (found.isEmpty())
+            return false;
+
+        if (auto xml = resultList.createXml())
+            return resultFile.replaceWithText(xml->toString(), true, true);
+
+        return false;
+    }
+
+    return false;
+}
+
 LibertyPluginHost::LibertyPluginHost()
 {
     formatManager.addDefaultFormats();
@@ -164,13 +191,84 @@ void LibertyPluginHost::clearBlacklist()
     saveCachedPluginList();
 }
 
+void LibertyPluginHost::blacklistPluginIdentifier(const juce::String& identifier)
+{
+    if (identifier.isEmpty()) return;
+    knownPlugins.addToBlacklist(identifier);
+    savePersistentBlacklist();
+    saveCachedPluginList();
+}
+
+bool LibertyPluginHost::scanVST3OutOfProcess(const juce::String& identifier,
+                                             const juce::String&)
+{
+    auto tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory);
+    const auto unique = juce::String::toHexString((juce::int64)juce::Time::getHighResolutionTicks())
+                      + "_" + juce::String(juce::Random::getSystemRandom().nextInt());
+    const auto resultFile = tempDir.getChildFile("LibertyVST3Scan_" + unique + ".xml");
+    resultFile.deleteFile();
+
+    const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+    juce::StringArray arguments;
+    arguments.add(executable.getFullPathName());
+    arguments.add("--liberty-scan-vst3");
+    arguments.add(identifier);
+    arguments.add(resultFile.getFullPathName());
+
+    juce::ChildProcess child;
+    if (!child.start(arguments, 0))
+    {
+        blacklistPluginIdentifier(identifier);
+        return false;
+    }
+
+    constexpr int maximumScanTimeMs = 45000;
+    if (!child.waitForProcessToFinish(maximumScanTimeMs))
+    {
+        child.kill();
+        blacklistPluginIdentifier(identifier);
+        resultFile.deleteFile();
+        return false;
+    }
+
+    const auto exitCode = child.getExitCode();
+    if (exitCode != 0 || !resultFile.existsAsFile())
+    {
+        blacklistPluginIdentifier(identifier);
+        resultFile.deleteFile();
+        return false;
+    }
+
+    auto xml = juce::XmlDocument::parse(resultFile);
+    resultFile.deleteFile();
+    if (xml == nullptr)
+    {
+        blacklistPluginIdentifier(identifier);
+        return false;
+    }
+
+    juce::KnownPluginList isolatedResult;
+    isolatedResult.recreateFromXml(*xml);
+    const auto discovered = isolatedResult.getTypes();
+    if (discovered.isEmpty())
+    {
+        blacklistPluginIdentifier(identifier);
+        return false;
+    }
+
+    for (const auto& description : discovered)
+        knownPlugins.addType(description);
+
+    saveCachedPluginList();
+    return true;
+}
+
 void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progressCallback)
 {
     const juce::ScopedLock scoped(lock);
 
-    // IMPORTANT: keep every plugin that has already been successfully validated.
-    // scanNextFile(true, ...) will skip these entries without loading them again.
-    // This makes a new scan resumable after a crash instead of starting from zero.
+    // Keep all previously validated plugins. Unchanged known plugins are skipped,
+    // so a scan resumes instead of starting from zero after a crash.
     loadPersistentBlacklist();
 
     for (int formatIndex = 0; formatIndex < formatManager.getNumFormats(); ++formatIndex)
@@ -184,6 +282,39 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
         const auto candidates = format->searchPathsForPlugins(locations, true, false);
         if (candidates.isEmpty()) continue;
 
+        if (formatName == "VST3")
+        {
+            const auto blacklist = knownPlugins.getBlacklistedFiles();
+            for (int candidateIndex = 0; candidateIndex < candidates.size(); ++candidateIndex)
+            {
+                const auto& identifier = candidates.getReference(candidateIndex);
+                const float progress = candidates.size() > 0
+                    ? static_cast<float>(candidateIndex) / static_cast<float>(candidates.size())
+                    : 1.0f;
+                const auto pluginName = format->getNameOfPluginFromIdentifier(identifier);
+
+                if (progressCallback)
+                    progressCallback(formatName, pluginName, progress);
+
+                if (blacklist.contains(identifier))
+                    continue;
+
+                if (knownPlugins.isListingUpToDate(identifier, *format))
+                    continue;
+
+                // Every unvalidated VST3 is scanned in a fresh Liberty child process.
+                // A plugin crash therefore kills only that child; the parent survives,
+                // blacklists the identifier, and immediately proceeds to the next VST3.
+                scanVST3OutOfProcess(identifier, pluginName);
+            }
+
+            savePersistentBlacklist();
+            saveCachedPluginList();
+            continue;
+        }
+
+        // Audio Units are stable on the user's system, so retain JUCE's normal
+        // in-process scanner and its Dead Man's Pedal behaviour.
         juce::PluginDirectoryScanner scanner(knownPlugins,
                                              *format,
                                              locations,
@@ -202,15 +333,10 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
             juce::String scannedName;
             const bool more = scanner.scanNextFile(true, scannedName);
 
-            // Persist progress immediately after each successfully-returned scan step.
-            // If the next plugin crashes Liberty, everything before it is already saved
-            // and therefore skipped on the following launch.
             if (knownPlugins.getNumTypes() != knownBefore)
                 saveCachedPluginList();
 
-            // Persist blacklist changes as they happen too.
             savePersistentBlacklist();
-
             if (!more) break;
         }
     }
