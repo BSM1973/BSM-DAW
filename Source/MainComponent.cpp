@@ -47,7 +47,9 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
 
 MainComponent::MainComponent()
 {
-    setSize(1440, 820);
+    // Extra height is intentional: six 96+ px track rows plus the mixer must fit
+    // without controls colliding or being pushed under the mixer.
+    setSize(1440, 980);
     audioEngine.initialise();
     setWantsKeyboardFocus(true);
     startTimerHz(30);
@@ -68,8 +70,6 @@ void MainComponent::paint(juce::Graphics& g)
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    // LIBERTY UI RULE: every control and every text element gets its own explicit,
-    // non-overlapping rectangle. Never paint text underneath an interactive control.
     g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
     g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
 
@@ -142,6 +142,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 {
     constexpr int headerW = 210, rulerH = 32;
+    constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
@@ -171,7 +172,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     {
         auto row = rows.removeFromTop(rowH); g.setColour(i % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
         auto header = row.removeFromLeft(headerW); g.setColour(i == selectedTrack ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold)); g.drawText("Audio " + juce::String(i + 1), header.getX() + 14, header.getY() + 8, 150, 22, juce::Justification::left);
+        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        // The recording controls start at x=108, so the title owns x=14..102 only.
+        g.drawText("Audio " + juce::String(i + 1), header.getX() + 14, header.getY() + 8, 88, 22, juce::Justification::left);
         auto clip = row.withTrimmedLeft(20).reduced(4);
         if (audioEngine.hasAudioFile(i))
         {
@@ -196,11 +199,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     for (auto row : { midiRow, instrumentRow }) { g.setColour(juce::Colour(0xff14171c)); g.fillRect(row); }
 
     const bool midiSelected = selectedTrack < 0;
+    const bool instrumentSelected = selectedTrack == instrumentTrackIndex;
     auto midiHeader = midiRow.removeFromLeft(headerW);
     auto instrumentHeader = instrumentRow.removeFromLeft(headerW);
     g.setColour(midiSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
     g.fillRect(midiHeader);
-    g.setColour(juce::Colour(0xff1e232a));
+    g.setColour(instrumentSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
     g.fillRect(instrumentHeader);
 
     g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
@@ -430,6 +434,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
 
     constexpr int headerW = 210, rulerH = 32;
+    constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
+    const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
     {
@@ -454,6 +460,25 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         repaint();
         return;
+    }
+
+    // MIDI and Instrument rows now select exactly like Audio rows.
+    const int rowOffset = p.y - 76 - rulerH;
+    if (rowOffset >= 0)
+    {
+        const int rowIndex = rowOffset / rowH;
+        if (rowIndex == AudioEngine::maxAudioTracks)
+        {
+            selectedTrack = -1;
+            repaint();
+            return;
+        }
+        if (rowIndex == instrumentTrackIndex)
+        {
+            selectedTrack = instrumentTrackIndex;
+            repaint();
+            return;
+        }
     }
 
     if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
