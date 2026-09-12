@@ -8,6 +8,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <thread>
 
 namespace
 {
@@ -90,10 +91,12 @@ public:
         addAndMakeVisible(pluginList);
 
         scanPluginsButton.setButtonText("SCAN AU + VST3");
+        blacklistButton.setButtonText("BLACKLIST");
+        clearBlacklistButton.setButtonText("CLEAR BL");
         loadPluginButton.setButtonText("LOAD");
         openPluginButton.setButtonText("OPEN UI");
         unloadPluginButton.setButtonText("UNLOAD");
-        for (auto* b : { &scanPluginsButton, &loadPluginButton, &openPluginButton, &unloadPluginButton })
+        for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &loadPluginButton, &openPluginButton, &unloadPluginButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
@@ -101,6 +104,8 @@ public:
             addAndMakeVisible(*b);
         }
         scanPluginsButton.onClick = [this] { scanPlugins(); };
+        blacklistButton.onClick = [this] { showBlacklist(); };
+        clearBlacklistButton.onClick = [this] { clearBlacklist(); };
         loadPluginButton.onClick = [this] { loadSelectedPlugin(); };
         openPluginButton.onClick = [this] { openLoadedPluginEditor(); };
         unloadPluginButton.onClick = [this] { unloadPlugin(); };
@@ -124,6 +129,7 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
+        if (scanThread.joinable()) scanThread.join();
         pluginList.setModel(nullptr);
         fileTree.removeListener(this);
         thread.stopThread(1500);
@@ -173,7 +179,9 @@ public:
         fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 174));
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
-        pluginList.setBounds(10, 144, getWidth() - 20, juce::jmax(40, getHeight() - 246));
+        blacklistButton.setBounds(10, 140, 145, 26);
+        clearBlacklistButton.setBounds(159, 140, 151, 26);
+        pluginList.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
         const int controlsY = getHeight() - 94;
         loadPluginButton.setBounds(10, controlsY, 72, 28);
         openPluginButton.setBounds(86, controlsY, 72, 28);
@@ -210,8 +218,8 @@ private:
                    8, 20, width - 16, 14, juce::Justification::centredLeft, true);
     }
 
-    void selectedRowsChanged(int) override { refreshPluginStatus(); }
-    void listBoxItemDoubleClicked(int, const juce::MouseEvent&) override { loadSelectedPlugin(); }
+    void selectedRowsChanged(int) override { if (!scanning.load()) refreshPluginStatus(); }
+    void listBoxItemDoubleClicked(int, const juce::MouseEvent&) override { if (!scanning.load()) loadSelectedPlugin(); }
 
     void setBrowserOpen(bool shouldOpen)
     {
@@ -275,11 +283,13 @@ private:
         homeButton.setVisible(!pluginMode);
         pluginList.setVisible(pluginMode);
         scanPluginsButton.setVisible(pluginMode);
+        blacklistButton.setVisible(pluginMode);
+        clearBlacklistButton.setVisible(pluginMode);
         loadPluginButton.setVisible(pluginMode);
         openPluginButton.setVisible(pluginMode);
         unloadPluginButton.setVisible(pluginMode);
         pluginStatus.setVisible(pluginMode);
-        if (pluginMode) refreshPlugins();
+        if (pluginMode && !scanning.load()) refreshPlugins();
         repaint();
     }
 
@@ -300,7 +310,7 @@ private:
             case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
-            case Category::plugins: return "FX → piste Audio sélectionnée • Instrument → piste Instrument";
+            case Category::plugins: return "Crash au scan → blacklist automatique au prochain lancement";
             default: return "Navigation fichiers et dossiers";
         }
     }
@@ -335,19 +345,85 @@ private:
         refreshPluginStatus();
     }
 
+    void setScanStatus(const juce::String& text)
+    {
+        const juce::ScopedLock scoped(scanStatusLock);
+        scanStatusText = text;
+    }
+
+    juce::String getScanStatus() const
+    {
+        const juce::ScopedLock scoped(scanStatusLock);
+        return scanStatusText;
+    }
+
     void scanPlugins()
     {
-        pluginStatus.setText("Scan AU + VST3 en cours…", juce::dontSendNotification);
-        repaint();
-        LibertyPluginHost::instance().scanInstalledPlugins();
-        refreshPlugins();
-        pluginStatus.setText(juce::String(pluginDescriptions.size()) + " plugins trouvés", juce::dontSendNotification);
+        if (scanning.exchange(true)) return;
+        if (scanThread.joinable()) scanThread.join();
+
+        scanFinishedPending.store(false);
+        scanPluginsButton.setEnabled(false);
+        loadPluginButton.setEnabled(false);
+        openPluginButton.setEnabled(false);
+        unloadPluginButton.setEnabled(false);
+        blacklistButton.setEnabled(false);
+        clearBlacklistButton.setEnabled(false);
+        setScanStatus("Préparation du scan AU + VST3…");
+        pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
+
+        scanThread = std::thread([this]
+        {
+            auto& host = LibertyPluginHost::instance();
+            host.scanInstalledPlugins([this](const juce::String& formatName,
+                                             const juce::String& pluginName,
+                                             float progress)
+            {
+                if (stopped.load()) return;
+                if (pluginName.isEmpty())
+                {
+                    setScanStatus("Finalisation du scan…");
+                    return;
+                }
+                const int percent = juce::jlimit(0, 100, juce::roundToInt(progress * 100.0f));
+                setScanStatus("SCAN " + formatName + "  " + juce::String(percent) + "%  •  " + pluginName);
+            });
+
+            if (!stopped.load())
+            {
+                scanning.store(false);
+                scanFinishedPending.store(true);
+            }
+        });
+    }
+
+    void showBlacklist()
+    {
+        auto& host = LibertyPluginHost::instance();
+        const auto entries = host.getBlacklistedPlugins();
+        juce::String message;
+        message << "Dossier :\n" << host.getBlacklistFolder().getFullPathName() << "\n\n";
+        if (entries.isEmpty())
+            message << "Aucun plugin blacklisté.";
+        else
+        {
+            message << juce::String(entries.size()) << " plugin(s) blacklisté(s) :\n\n";
+            for (const auto& entry : entries) message << entry << "\n";
+        }
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist plugins", message, "OK");
+    }
+
+    void clearBlacklist()
+    {
+        LibertyPluginHost::instance().clearBlacklist();
+        pluginStatus.setText("Blacklist vidée. Relance SCAN pour retester.", juce::dontSendNotification);
     }
 
     int selectedPluginRow() const { return pluginList.getSelectedRow(); }
 
     void loadSelectedPlugin()
     {
+        if (scanning.load()) return;
         const int row = selectedPluginRow();
         if (row < 0 || row >= pluginDescriptions.size()) return;
         const auto description = pluginDescriptions.getReference(row);
@@ -375,6 +451,7 @@ private:
 
     void openLoadedPluginEditor()
     {
+        if (scanning.load()) return;
         const int row = selectedPluginRow();
         if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
         {
@@ -388,6 +465,7 @@ private:
 
     void unloadPlugin()
     {
+        if (scanning.load()) return;
         const int row = selectedPluginRow();
         if (row >= 0 && row < pluginDescriptions.size() && pluginDescriptions.getReference(row).isInstrument)
             LibertyPluginHost::instance().unloadInstrument();
@@ -402,13 +480,20 @@ private:
 
     void refreshPluginStatus()
     {
+        if (scanning.load())
+        {
+            pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
+            return;
+        }
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack;
         if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
         if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
-        if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins disponibles";
+        if (text.isEmpty())
+            text = juce::String(pluginDescriptions.size()) + " plugins • "
+                 + juce::String(host.getBlacklistedPlugins().size()) + " blacklistés";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
 
@@ -427,7 +512,32 @@ private:
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
         toggleButton.toFront(false);
-        if (category == Category::plugins) refreshPluginStatus();
+
+        if (category == Category::plugins)
+        {
+            if (scanning.load())
+            {
+                pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
+            }
+            else if (scanFinishedPending.exchange(false))
+            {
+                if (scanThread.joinable()) scanThread.join();
+                refreshPlugins();
+                scanPluginsButton.setEnabled(true);
+                loadPluginButton.setEnabled(true);
+                openPluginButton.setEnabled(true);
+                unloadPluginButton.setEnabled(true);
+                blacklistButton.setEnabled(true);
+                clearBlacklistButton.setEnabled(true);
+                pluginStatus.setText(juce::String(pluginDescriptions.size()) + " plugins trouvés • "
+                                     + juce::String(LibertyPluginHost::instance().getBlacklistedPlugins().size())
+                                     + " blacklistés", juce::dontSendNotification);
+            }
+            else
+            {
+                refreshPluginStatus();
+            }
+        }
     }
 
     MainComponent& owner;
@@ -438,11 +548,16 @@ private:
     juce::ListBox pluginList;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
-    juce::TextButton scanPluginsButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false };
+    std::atomic<bool> scanning { false };
+    std::atomic<bool> scanFinishedPending { false };
+    mutable juce::CriticalSection scanStatusLock;
+    juce::String scanStatusText;
+    std::thread scanThread;
     bool browserOpen = false, hostExpanded = false;
     juce::Rectangle<int> originalWindowBounds;
 };
