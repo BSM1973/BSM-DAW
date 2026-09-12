@@ -64,6 +64,7 @@ target_sources(BSM_DAW PRIVATE
     Source/AudioClipResizeInteraction.cpp
     Source/MetronomeController.cpp
     Source/BrowserController.cpp
+    Source/PluginHost.cpp
 )
 
 target_include_directories(BSM_DAW PRIVATE
@@ -74,6 +75,8 @@ target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 target_compile_definitions(BSM_DAW PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_VST3=1
     SIGNALSMITH_USE_ACCELERATE=1
 )
 
@@ -81,6 +84,7 @@ target_link_libraries(BSM_DAW PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
+    juce::juce_audio_processors
     juce::juce_audio_utils
     juce::juce_core
     juce::juce_data_structures
