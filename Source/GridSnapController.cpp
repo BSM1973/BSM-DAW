@@ -17,7 +17,7 @@ constexpr int rowHeight = 70;
 constexpr int totalTrackRows = AudioEngine::maxAudioTracks + 2;
 constexpr double pixelsPerSecond = 80.0;
 
-std::atomic<int> snapIndex { 3 }; // 1/16 by default
+std::atomic<int> snapIndex { 3 };
 
 juce::String snapLabel(int index)
 {
@@ -37,9 +37,7 @@ juce::String snapLabel(int index)
 double snapSecondsFor(const MainComponent& owner)
 {
     const auto index = snapIndex.load(std::memory_order_relaxed);
-    if (index == 0)
-        return 0.0;
-
+    if (index == 0) return 0.0;
     const double quarter = 60.0 / juce::jmax(1.0, owner.tempoBpm);
     switch (index)
     {
@@ -57,44 +55,34 @@ double snapTime(const MainComponent& owner, double seconds)
 {
     seconds = juce::jmax(0.0, seconds);
     const auto step = snapSecondsFor(owner);
-    if (step <= 0.0)
-        return seconds;
-    return std::round(seconds / step) * step;
+    return step > 0.0 ? std::round(seconds / step) * step : seconds;
 }
 
-class GridSnapController final : public juce::Component,
-                                 private juce::Timer
+class GridSnapController final : public juce::Component, private juce::Timer
 {
 public:
     explicit GridSnapController(MainComponent& ownerIn) : owner(ownerIn)
     {
         setInterceptsMouseClicks(true, false);
         owner.addAndMakeVisible(this);
-        startTimerHz(20);
+        startTimerHz(5);
     }
 
     ~GridSnapController() override { shutdown(); }
 
     void shutdown()
     {
-        if (stopped.exchange(true))
-            return;
+        if (stopped.exchange(true)) return;
         stopTimer();
         setVisible(false);
     }
 
     bool hitTest(int x, int y) override
     {
-        if (snapButton().contains(x, y))
-            return true;
-
-        if (snapIndex.load(std::memory_order_relaxed) == 0)
-            return false;
-
+        if (snapButton().contains(x, y)) return true;
+        if (snapIndex.load(std::memory_order_relaxed) == 0) return false;
         for (int track = 0; track < AudioEngine::maxAudioTracks; ++track)
-            if (audioClipBounds(track).contains(x, y))
-                return true;
-
+            if (audioClipBounds(track).contains(x, y)) return true;
         return false;
     }
 
@@ -126,8 +114,7 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
-        if (!draggingAudio || draggedTrack < 0)
-            return;
+        if (!draggingAudio || draggedTrack < 0) return;
         const double delta = ((double)e.position.x - (double)dragMouseX) / pixelsPerSecond;
         owner.audioEngine.setTrackStartSeconds(draggedTrack, snapTime(owner, dragStartSeconds + delta));
         repaint();
@@ -141,15 +128,11 @@ public:
     }
 
 private:
-    juce::Rectangle<int> snapButton() const
-    {
-        return { 1055, 10, 128, 24 };
-    }
+    juce::Rectangle<int> snapButton() const { return { 1055, 10, 128, 24 }; }
 
     juce::Rectangle<int> audioClipBounds(int track) const
     {
-        if (track < 0 || track >= AudioEngine::maxAudioTracks || !owner.audioEngine.hasAudioFile(track))
-            return {};
+        if (track < 0 || track >= AudioEngine::maxAudioTracks || !owner.audioEngine.hasAudioFile(track)) return {};
         const int y = transportHeight + rulerHeight + track * rowHeight + 4;
         const int x = headerWidth + (int)std::round(owner.audioEngine.getTrackStartSeconds(track) * pixelsPerSecond);
         const int w = juce::jmax(1, (int)std::round(owner.audioEngine.getAudioFileLengthSeconds(track) * pixelsPerSecond));
@@ -159,8 +142,7 @@ private:
     int audioTrackAt(juce::Point<int> p) const
     {
         const int relativeY = p.y - transportHeight - rulerHeight;
-        if (relativeY < 0)
-            return -1;
+        if (relativeY < 0) return -1;
         const int track = relativeY / rowHeight;
         return track >= 0 && track < AudioEngine::maxAudioTracks ? track : -1;
     }
@@ -169,10 +151,8 @@ private:
     {
         const int top = transportHeight + rulerHeight;
         const int bottom = juce::jmin(owner.getHeight() - 210, top + totalTrackRows * rowHeight);
-        if (bottom <= top)
-            return;
+        if (bottom <= top) return;
 
-        // Horizontal lines: boundaries + centre line on every Audio/MIDI/Instrument row.
         for (int row = 0; row <= totalTrackRows; ++row)
         {
             const int y = top + row * rowHeight;
@@ -186,11 +166,7 @@ private:
         }
 
         auto step = snapSecondsFor(owner);
-        if (step <= 0.0)
-        {
-            const double quarter = 60.0 / juce::jmax(1.0, owner.tempoBpm);
-            step = quarter;
-        }
+        if (step <= 0.0) step = 60.0 / juce::jmax(1.0, owner.tempoBpm);
 
         const double measureSeconds = (60.0 / juce::jmax(1.0, owner.tempoBpm))
             * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator))
@@ -200,8 +176,7 @@ private:
         {
             const double seconds = n * step;
             const int x = headerWidth + (int)std::round(seconds * pixelsPerSecond);
-            if (x > owner.getWidth())
-                break;
+            if (x > owner.getWidth()) break;
             const bool major = measureSeconds > 0.0 && std::abs(std::fmod(seconds, measureSeconds)) < step * 0.15;
             g.setColour(major ? juce::Colour(0xff59616d).withAlpha(0.90f)
                               : juce::Colour(0xff343b45).withAlpha(0.62f));
@@ -227,13 +202,12 @@ private:
         juce::PopupMenu menu;
         const int current = snapIndex.load(std::memory_order_relaxed);
         const juce::StringArray labels { "OFF", "1/4", "1/8", "1/16", "1/32", "1/8T", "1/16T" };
-        for (int i = 0; i < labels.size(); ++i)
-            menu.addItem(i + 1, labels[i], true, current == i);
+        for (int i = 0; i < labels.size(); ++i) menu.addItem(i + 1, labels[i], true, current == i);
 
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [this](int result)
+        const auto target = owner.localAreaToGlobal(snapButton());
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target), [this](int result)
         {
-            if (result <= 0)
-                return;
+            if (result <= 0) return;
             snapIndex.store(result - 1, std::memory_order_relaxed);
             repaint();
             owner.repaint();
@@ -242,10 +216,9 @@ private:
 
     void timerCallback() override
     {
-        if (stopped.load())
-            return;
-        setBounds(owner.getLocalBounds());
-        toFront(false);
+        if (stopped.load()) return;
+        const auto bounds = owner.getLocalBounds();
+        if (getBounds() != bounds) setBounds(bounds);
         repaint();
     }
 
@@ -264,15 +237,12 @@ class Bootstrap final : private juce::Timer
 public:
     Bootstrap() { startTimerHz(10); }
     ~Bootstrap() override { shutdown(); }
-
     void shutdown()
     {
         stopTimer();
-        for (auto& pair : controllers)
-            if (pair.second) pair.second->shutdown();
+        for (auto& pair : controllers) if (pair.second) pair.second->shutdown();
         controllers.clear();
     }
-
 private:
     void timerCallback() override
     {
