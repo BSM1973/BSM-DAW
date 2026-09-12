@@ -14,6 +14,7 @@ class AudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
     static constexpr int maxAudioTracks = 4;
+    static constexpr int maxWarpMarkers = 32;
 
     AudioEngine();
     ~AudioEngine() override;
@@ -96,6 +97,18 @@ public:
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
 
+    void setTrackWarpEnabled(int trackIndex, bool enabled) noexcept;
+    bool isTrackWarpEnabled(int trackIndex) const noexcept;
+    void setTrackWarpMode(int trackIndex, int mode) noexcept;
+    int getTrackWarpMode(int trackIndex) const noexcept;
+    void resetTrackWarpMarkers(int trackIndex) noexcept;
+    bool addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept;
+    bool moveTrackWarpMarker(int trackIndex, int markerIndex, double targetSeconds) noexcept;
+    bool removeTrackWarpMarker(int trackIndex, int markerIndex) noexcept;
+    int getTrackWarpMarkerCount(int trackIndex) const noexcept;
+    double getTrackWarpMarkerSourceSeconds(int trackIndex, int markerIndex) const noexcept;
+    double getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIndex) const noexcept;
+
     void setMasterGain(float gain) noexcept { masterGain.store(juce::jlimit(0.0f, 2.0f, gain), std::memory_order_relaxed); }
     float getMasterGain() const noexcept { return masterGain.load(std::memory_order_relaxed); }
 
@@ -122,6 +135,11 @@ private:
         std::atomic<bool> loaded { false };
         std::atomic<double> lengthSeconds { 0.0 };
         std::atomic<double> startSeconds { 0.0 };
+        std::atomic<bool> warpEnabled { false };
+        std::atomic<int> warpMode { 0 };
+        std::atomic<int> warpMarkerCount { 0 };
+        std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
+        std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         juce::String fileName;
