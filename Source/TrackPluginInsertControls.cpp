@@ -87,8 +87,11 @@ public:
         {
             const int row = i < AudioEngine::maxAudioTracks ? i : instrumentTrack;
             const int y = 76 + rulerH + row * rowH;
-            insertButtons[(size_t)i].setBounds(108, y + 5, 78, 22);
-            removeButtons[(size_t)i].setBounds(188, y + 5, 17, 22);
+
+            // Dedicated insert strip between the title/ARM/MON row and the mix row.
+            // No control is allowed to share these pixels.
+            insertButtons[(size_t)i].setBounds(8, y + 31, 178, 14);
+            removeButtons[(size_t)i].setBounds(188, y + 31, 17, 14);
         }
     }
 
@@ -99,21 +102,39 @@ private:
         for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
         {
             const bool loaded = host.hasEffectForTrack(i);
-            auto name = loaded ? host.getEffectName(i) : juce::String("+ FX");
-            if (name.length() > 12) name = name.substring(0, 11) + "…";
-            insertButtons[(size_t)i].setButtonText(loaded ? "FX " + name : name);
+            auto name = loaded ? host.getEffectName(i) : juce::String("+ FX INSERT");
+            if (name.length() > 24) name = name.substring(0, 23) + "…";
+            insertButtons[(size_t)i].setButtonText(loaded ? "FX  " + name : name);
             insertButtons[(size_t)i].setTooltip(loaded ? host.getEffectName(i)
                                                        : "Charge un effet depuis Browser > Plugins");
             removeButtons[(size_t)i].setVisible(loaded);
         }
 
         const bool instrumentLoaded = host.hasInstrument();
-        auto instrumentName = instrumentLoaded ? host.getInstrumentName() : juce::String("+ INST");
-        if (instrumentName.length() > 10) instrumentName = instrumentName.substring(0, 9) + "…";
+        auto instrumentName = instrumentLoaded ? host.getInstrumentName() : juce::String("+ INSTRUMENT INSERT");
+        if (instrumentName.length() > 22) instrumentName = instrumentName.substring(0, 21) + "…";
         insertButtons[(size_t)AudioEngine::maxAudioTracks].setButtonText(instrumentName);
         insertButtons[(size_t)AudioEngine::maxAudioTracks].setTooltip(
             instrumentLoaded ? host.getInstrumentName() : "Charge un instrument depuis Browser > Plugins");
         removeButtons[(size_t)AudioEngine::maxAudioTracks].setVisible(instrumentLoaded);
+
+        // The original internal sine synth was only a development test.
+        // While no hosted instrument is loaded, keep the MIDI playback count at zero
+        // so the legacy fallback synth can never sound. The latest MIDI count is cached
+        // and restored immediately when an actual AU/VST3 instrument is inserted.
+        auto& engine = owner.audioEngine;
+        const auto currentCount = engine.midiPlaybackNoteCount.load(std::memory_order_acquire);
+        if (!instrumentLoaded)
+        {
+            if (currentCount > 0)
+                cachedMidiPlaybackCount = currentCount;
+            engine.midiPlaybackNoteCount.store(0, std::memory_order_release);
+        }
+        else if (!instrumentWasLoaded && currentCount == 0 && cachedMidiPlaybackCount > 0)
+        {
+            engine.midiPlaybackNoteCount.store(cachedMidiPlaybackCount, std::memory_order_release);
+        }
+        instrumentWasLoaded = instrumentLoaded;
     }
 
     void timerCallback() override
@@ -130,6 +151,8 @@ private:
     std::array<juce::TextButton, visibleInsertRows> insertButtons;
     std::array<juce::TextButton, visibleInsertRows> removeButtons;
     std::atomic<bool> stopped { false };
+    std::size_t cachedMidiPlaybackCount = 0;
+    bool instrumentWasLoaded = false;
 };
 
 std::map<MainComponent*, std::unique_ptr<TrackPluginInsertControls>> controllers;
