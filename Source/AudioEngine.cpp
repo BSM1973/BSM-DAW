@@ -209,6 +209,7 @@ bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, doubl
     track.warpSourceSeconds[(size_t)insertAt].store(sourceSeconds, std::memory_order_relaxed);
     track.warpTargetSeconds[(size_t)insertAt].store(targetSeconds, std::memory_order_relaxed);
     track.warpMarkerCount.store(count + 1, std::memory_order_release);
+    track.warpEnabled.store(true, std::memory_order_release);
     return true;
 }
 
@@ -221,7 +222,9 @@ bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double ta
     const double prev = track.warpTargetSeconds[(size_t)(markerIndex - 1)].load(std::memory_order_relaxed);
     const double next = track.warpTargetSeconds[(size_t)(markerIndex + 1)].load(std::memory_order_relaxed);
     if (next - prev <= 0.002) return false;
-    track.warpTargetSeconds[(size_t)markerIndex].store(juce::jlimit(prev + 0.001, next - 0.001, targetSeconds), std::memory_order_relaxed);
+    const double clamped = juce::jlimit(prev + 0.001, next - 0.001, targetSeconds);
+    track.warpTargetSeconds[(size_t)markerIndex].store(clamped, std::memory_order_release);
+    track.warpEnabled.store(true, std::memory_order_release);
     return true;
 }
 
@@ -408,7 +411,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = track.buffer->getNumChannels();
 
-        if (!track.warpEnabled.load(std::memory_order_relaxed) || track.warpMarkerCount.load(std::memory_order_acquire) < 2)
+        const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
+        const int rawMarkerCount = track.warpMarkerCount.load(std::memory_order_acquire);
+        if (!warpActive || rawMarkerCount < 2)
         {
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
@@ -417,7 +422,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
             continue;
         }
 
-        const int markerCount = juce::jlimit(2, maxWarpMarkers, track.warpMarkerCount.load(std::memory_order_acquire));
+        const int markerCount = juce::jlimit(2, maxWarpMarkers, rawMarkerCount);
+        std::array<double, maxWarpMarkers> sourceMarkers {};
+        std::array<double, maxWarpMarkers> targetMarkers {};
+        for (int marker = 0; marker < markerCount; ++marker)
+        {
+            sourceMarkers[(size_t)marker] = track.warpSourceSeconds[(size_t)marker].load(std::memory_order_acquire);
+            targetMarkers[(size_t)marker] = track.warpTargetSeconds[(size_t)marker].load(std::memory_order_acquire);
+        }
+
         const int mode = track.warpMode.load(std::memory_order_relaxed);
         const int lastSample = juce::jmax(0, track.buffer->getNumSamples() - 1);
 
@@ -452,23 +465,21 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
             return linear;
         };
 
+        int currentSegment = 0;
         for (int s = 0; s < samplesToMix; ++s)
         {
             const double targetSeconds = (double)(mixStart - startSample + s) / rate;
-            double sourceSeconds = targetSeconds;
 
-            for (int marker = 0; marker < markerCount - 1; ++marker)
-            {
-                const double ta = track.warpTargetSeconds[(size_t)marker].load(std::memory_order_relaxed);
-                const double tb = track.warpTargetSeconds[(size_t)(marker + 1)].load(std::memory_order_relaxed);
-                if (targetSeconds < ta || targetSeconds > tb) continue;
-                const double sa = track.warpSourceSeconds[(size_t)marker].load(std::memory_order_relaxed);
-                const double sb = track.warpSourceSeconds[(size_t)(marker + 1)].load(std::memory_order_relaxed);
-                const double span = juce::jmax(0.000001, tb - ta);
-                const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
-                sourceSeconds = sa + (sb - sa) * alpha;
-                break;
-            }
+            while (currentSegment < markerCount - 2 && targetSeconds > targetMarkers[(size_t)(currentSegment + 1)])
+                ++currentSegment;
+
+            const double ta = targetMarkers[(size_t)currentSegment];
+            const double tb = targetMarkers[(size_t)(currentSegment + 1)];
+            const double sa = sourceMarkers[(size_t)currentSegment];
+            const double sb = sourceMarkers[(size_t)(currentSegment + 1)];
+            const double span = juce::jmax(0.000001, tb - ta);
+            const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
+            const double sourceSeconds = sa + (sb - sa) * alpha;
 
             const double sourceSamplePosition = sourceSeconds * rate;
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
