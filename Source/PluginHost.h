@@ -4,6 +4,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <atomic>
 #include <functional>
 #include <memory>
 
@@ -87,6 +88,7 @@ private:
     double currentSampleRate = 48000.0;
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
+    std::atomic<bool> shutdownCompleted { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibertyPluginHost)
 };
