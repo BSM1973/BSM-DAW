@@ -28,6 +28,21 @@ bool isInsideMidiEditor(juce::Component* component)
     return false;
 }
 
+bool isInsideScrollableBrowserContent(juce::Component* component)
+{
+    while (component != nullptr)
+    {
+        // Browser plugin lists and file trees own their mouse wheel: scrolling them
+        // must never leak into Liberty's global arrangement zoom controller.
+        if (dynamic_cast<juce::ListBox*>(component) != nullptr
+            || dynamic_cast<juce::TreeView*>(component) != nullptr)
+            return true;
+
+        component = component->getParentComponent();
+    }
+    return false;
+}
+
 void repaintRelevantWindows()
 {
     auto& desktop = juce::Desktop::getInstance();
@@ -52,6 +67,9 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
+        if (isInsideScrollableBrowserContent(event.eventComponent))
+            return;
+
         const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
         if (std::abs(delta) < 0.0001f)
             return;
