@@ -47,6 +47,8 @@ public:
         setOpaque(true);
         setInterceptsMouseClicks(true, true);
         setAlwaysOnTop(true);
+        activeTrackScene.fill(-1);
+        suppressArrangeSceneOne.fill(false);
 
         for (int track = 0; track < performTracks; ++track)
         {
@@ -60,7 +62,6 @@ public:
                 activeTrackScene[(size_t)track] = -1;
                 if (!anyClipActive()) owner.audioEngine.setPlaying(false);
                 refreshClipLabels();
-                repaint();
             };
             addAndMakeVisible(stop);
 
@@ -68,7 +69,6 @@ public:
             {
                 auto& cell = clipButtons[(size_t)track][(size_t)scene];
                 cell.setMouseClickGrabsKeyboardFocus(false);
-                cell.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a1f25));
                 cell.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb8c0c9));
                 cell.onClick = [this, track, scene] { launchClip(track, scene); };
                 addAndMakeVisible(cell);
@@ -95,11 +95,9 @@ public:
             activeTrackScene.fill(-1);
             owner.audioEngine.setPlaying(false);
             refreshClipLabels();
-            repaint();
         };
         addAndMakeVisible(stopAllButton);
 
-        activeTrackScene.fill(-1);
         setVisible(false);
         owner.addAndMakeVisible(this);
         startTimerHz(20);
@@ -115,8 +113,8 @@ public:
         if (shouldShow)
         {
             setBounds(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
-            refreshClipLabels();
             resized();
+            refreshClipLabels();
             toFront(false);
             repaint();
         }
@@ -132,15 +130,8 @@ public:
         return false;
     }
 
-    void fileDragEnter(const juce::StringArray&, int x, int y) override
-    {
-        updateDropTarget({ x, y });
-    }
-
-    void fileDragMove(const juce::StringArray&, int x, int y) override
-    {
-        updateDropTarget({ x, y });
-    }
+    void fileDragEnter(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
+    void fileDragMove(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
 
     void fileDragExit(const juce::StringArray&) override
     {
@@ -152,7 +143,10 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override
     {
         updateDropTarget({ x, y });
-        if (dragTrack < 0 || dragTrack >= audioTracks || dragScene < 0 || dragScene >= sceneCount)
+        const int targetTrack = dragTrack;
+        const int targetScene = dragScene;
+
+        if (targetTrack < 0 || targetTrack >= audioTracks || targetScene < 0 || targetScene >= sceneCount)
         {
             dragTrack = dragScene = -1;
             refreshClipLabels();
@@ -168,8 +162,16 @@ public:
         }
         if (!selected.existsAsFile()) return;
 
-        performAudioFiles[(size_t)dragTrack][(size_t)dragScene] = selected;
-        activeTrackScene[(size_t)dragTrack] = -1;
+        // A PERFORM drop belongs to one exact slot only. Once a track has an
+        // explicit PERFORM assignment outside scene 1, scene 1 must not mirror
+        // the AudioEngine/ARRANGE track merely because that engine buffer exists.
+        performAudioFiles[(size_t)targetTrack][(size_t)targetScene] = selected;
+        if (targetScene != 0)
+            suppressArrangeSceneOne[(size_t)targetTrack] = true;
+        else
+            suppressArrangeSceneOne[(size_t)targetTrack] = false;
+
+        activeTrackScene[(size_t)targetTrack] = -1;
         dragTrack = dragScene = -1;
         refreshClipLabels();
         repaint();
@@ -229,21 +231,19 @@ public:
     {
         const int leftMargin = 18;
         const int sceneLaunchW = 92;
-        const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
         const int gap = 6;
-        const int available = juce::jmax(performTracks * 110, gridRight - gridLeft);
+        const int available = juce::jmax(performTracks * 110, gridRight - leftMargin);
         const int columnW = juce::jlimit(110, 220, (available - (performTracks - 1) * gap) / performTracks);
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
-        const int footerH = 54;
-        const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - footerH - 16);
+        const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - 70);
         const int rowH = juce::jlimit(44, 86, rowsAvailable / sceneCount);
 
         for (int track = 0; track < performTracks; ++track)
         {
-            const int x = gridLeft + track * (columnW + gap);
+            const int x = leftMargin + track * (columnW + gap);
             trackHeaders[(size_t)track] = { x, headerTop, columnW, headerH };
             stopTrackButtons[(size_t)track].setBounds(x + 8, headerTop + 40, columnW - 16, 18);
             for (int scene = 0; scene < sceneCount; ++scene)
@@ -291,7 +291,12 @@ private:
     bool slotHasClip(int track, int scene) const
     {
         if (track < audioTracks)
-            return hasDroppedAudio(track, scene) || (scene == 0 && owner.audioEngine.hasAudioFile(track));
+        {
+            if (hasDroppedAudio(track, scene)) return true;
+            if (scene == 0 && !suppressArrangeSceneOne[(size_t)track])
+                return owner.audioEngine.hasAudioFile(track);
+            return false;
+        }
         if (scene != 0) return false;
         return !owner.midiEngine.getNotesCopy().empty();
     }
@@ -348,7 +353,7 @@ private:
                 const bool active = activeTrackScene[(size_t)track] == scene;
                 const bool target = dragTrack == track && dragScene == scene;
                 button.setButtonText(target ? "DROP AUDIO" : slotName(track, scene));
-                button.setEnabled(hasClip || (track < audioTracks));
+                button.setEnabled(hasClip || track < audioTracks);
                 button.setColour(juce::TextButton::buttonColourId,
                                  target ? juce::Colour(0xff245b70)
                                         : (active ? colour.brighter(0.25f)
@@ -361,8 +366,7 @@ private:
 
     void updateDropTarget(juce::Point<int> point)
     {
-        int nextTrack = -1;
-        int nextScene = -1;
+        int nextTrack = -1, nextScene = -1;
         for (int track = 0; track < audioTracks; ++track)
         {
             for (int scene = 0; scene < sceneCount; ++scene)
@@ -419,7 +423,6 @@ private:
             activeTrackScene[(size_t)track] = scene;
         }
         if (!found) return;
-
         owner.playheadSeconds = earliest;
         owner.audioEngine.setCurrentTimeSeconds(earliest);
         owner.audioEngine.setPlaying(true);
@@ -454,6 +457,7 @@ private:
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::array<int, performTracks> activeTrackScene;
     std::array<std::array<juce::File, sceneCount>, audioTracks> performAudioFiles;
+    std::array<bool, audioTracks> suppressArrangeSceneOne {};
     int dragTrack = -1;
     int dragScene = -1;
     bool performVisible = false;
@@ -470,15 +474,11 @@ public:
         performButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         performButton.onClick = [this]
         {
-            const bool next = !performVisible;
-            if (next) setLibertyMixConsoleVisible(&owner, false);
-            setPerformVisible(next);
+            if (!performVisible) setLibertyMixConsoleVisible(&owner, false);
+            setPerformVisible(true);
         };
         owner.addAndMakeVisible(performButton);
 
-        // While PERFORM is active these two buttons deliberately cover the page
-        // buttons owned by MixConsoleController. This prevents ARRANGE from being
-        // painted as active while PERFORM is the current workspace.
         arrangeOverlay.setButtonText("ARRANGE");
         mixOverlay.setButtonText("MIXCONSOLE");
         for (auto* b : { &arrangeOverlay, &mixOverlay })
@@ -499,7 +499,6 @@ public:
             setPerformVisible(false);
             setLibertyMixConsoleVisible(&owner, true);
         };
-
         startTimerHz(30);
     }
 
