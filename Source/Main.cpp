@@ -23,6 +23,8 @@ void shutdownLibertyBrowserController();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
 void shutdownLibertyMixConsoleController();
+void shutdownLibertyPerformController();
+void shutdownLibertyPageNavigationBridge();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -55,10 +57,12 @@ public:
         if (mainWindow != nullptr)
         {
             // Global listeners must be detached while JUCE Desktop still exists.
+            shutdownLibertyPageNavigationBridge();
             shutdownLibertyPluginDragDropController();
 
             // Stop every UI/controller object which holds a MainComponent reference.
             shutdownLibertyBrowserController();
+            shutdownLibertyPerformController();
             shutdownLibertyMixConsoleController();
             shutdownLibertyTrackPluginInsertControls();
             shutdownLibertyMetronomeController();
