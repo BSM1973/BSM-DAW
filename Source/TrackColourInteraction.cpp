@@ -58,18 +58,6 @@ public:
         owner.addAndMakeVisible(this);
         owner.addMouseListener(&listener, true);
 
-        for (int i = 0; i < totalTracks; ++i)
-        {
-            auto& mute = muteButtons[(size_t)i];
-            auto& solo = soloButtons[(size_t)i];
-            mute.setButtonText("M"); solo.setButtonText("S");
-            mute.setClickingTogglesState(false); solo.setClickingTogglesState(false);
-            mute.setMouseClickGrabsKeyboardFocus(false); solo.setMouseClickGrabsKeyboardFocus(false);
-            mute.onClick = [this, i] { setMute(i, !getMute(i)); syncButtons(); owner.repaint(); };
-            solo.onClick = [this, i] { setSolo(i, !getSolo(i)); syncButtons(); owner.repaint(); };
-            addAndMakeVisible(mute); addAndMakeVisible(solo);
-        }
-
         renameEditor.setVisible(false);
         renameEditor.setSelectAllWhenFocused(true);
         renameEditor.setReturnKeyStartsNewLine(false);
@@ -103,6 +91,7 @@ public:
     {
         const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
+
         for (int i = 0; i < totalTracks; ++i)
         {
             const int id = colourIds[(size_t)i];
@@ -112,7 +101,8 @@ public:
 
             if (id != colourDefault)
             {
-                g.setColour(colour.withAlpha(0.24f)); g.fillRect(header);
+                g.setColour(colour.withAlpha(0.24f));
+                g.fillRect(header);
                 g.setColour(colour.withAlpha(0.95f));
                 g.fillRect(header.getX(), header.getY(), 5, header.getHeight());
                 g.fillRect(header.getX(), header.getY(), header.getWidth(), 3);
@@ -121,24 +111,29 @@ public:
                 {
                     const int clipX = headerW + (int)std::round(owner.audioEngine.getTrackStartSeconds(i) * pixelsPerSecond);
                     const int clipW = juce::jmax(1, (int)std::round(owner.audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond));
-                    auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
-                    g.setColour(colour.withAlpha(0.20f)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                    g.setColour(colour.withAlpha(0.95f)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
+                    const auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
+                    g.setColour(colour.withAlpha(0.20f));
+                    g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                    g.setColour(colour.withAlpha(0.95f));
+                    g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
                 }
                 else if (i == midiTrackIndex && !owner.midiEngine.getNotesCopy().empty())
                 {
                     const int clipX = headerW + (int)std::round(owner.midiClipStartSeconds * pixelsPerSecond);
                     const int clipW = juce::jmax(80, (int)std::round(owner.midiClipLengthSeconds * pixelsPerSecond));
-                    auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
-                    g.setColour(colour.withAlpha(0.18f)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                    g.setColour(colour.withAlpha(0.95f)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
+                    const auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
+                    g.setColour(colour.withAlpha(0.18f));
+                    g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                    g.setColour(colour.withAlpha(0.95f));
+                    g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
                 }
 
                 if (i < AudioEngine::maxAudioTracks)
                 {
                     const int mixerTop = owner.getHeight() - 210;
-                    auto strip = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
-                    g.setColour(colour.withAlpha(0.12f)); g.fillRoundedRectangle(strip.toFloat(), 5.0f);
+                    const auto strip = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
+                    g.setColour(colour.withAlpha(0.12f));
+                    g.fillRoundedRectangle(strip.toFloat(), 5.0f);
                     g.setColour(colour.withAlpha(0.95f));
                     g.fillRoundedRectangle((float)strip.getX(), (float)strip.getY(), (float)strip.getWidth(), 5.0f, 2.0f);
                     g.drawRoundedRectangle(strip.toFloat(), 5.0f, 1.5f);
@@ -147,20 +142,32 @@ public:
 
             if (editingTrack != i)
             {
-                auto titleArea = juce::Rectangle<int>(8, rowY + 6, 96, 24);
-                g.setColour(juce::Colour(0xff1e232a)); g.fillRect(titleArea);
-                if (id != colourDefault) { g.setColour(colour.withAlpha(0.20f)); g.fillRect(titleArea); }
-                g.setColour(juce::Colours::white); g.setFont(juce::Font(13.0f, juce::Font::bold));
+                const auto titleArea = juce::Rectangle<int>(8, rowY + 6, 96, 24);
+                g.setColour(juce::Colour(0xff1e232a));
+                g.fillRect(titleArea);
+                if (id != colourDefault)
+                {
+                    g.setColour(colour.withAlpha(0.20f));
+                    g.fillRect(titleArea);
+                }
+                g.setColour(juce::Colours::white);
+                g.setFont(juce::Font(13.0f, juce::Font::bold));
                 g.drawText(effectiveTrackName(i), titleArea.reduced(4, 0), juce::Justification::centredLeft, true);
             }
 
             if (i < AudioEngine::maxAudioTracks)
             {
                 const int mixerTop = owner.getHeight() - 210;
-                auto mixerTitle = juce::Rectangle<int>(224 + i * 125, mixerTop + 18, 108, 20);
-                g.setColour(juce::Colour(0xff171b20)); g.fillRect(mixerTitle);
-                if (id != colourDefault) { g.setColour(colour.withAlpha(0.16f)); g.fillRect(mixerTitle); }
-                g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+                const auto mixerTitle = juce::Rectangle<int>(224 + i * 125, mixerTop + 18, 108, 20);
+                g.setColour(juce::Colour(0xff171b20));
+                g.fillRect(mixerTitle);
+                if (id != colourDefault)
+                {
+                    g.setColour(colour.withAlpha(0.16f));
+                    g.fillRect(mixerTitle);
+                }
+                g.setColour(juce::Colours::white);
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
                 g.drawText(effectiveTrackName(i), mixerTitle, juce::Justification::centred, true);
             }
         }
@@ -174,40 +181,17 @@ private:
         void mouseDown(const juce::MouseEvent& event) override
         {
             const auto relative = event.getEventRelativeTo(&controller.owner);
-            if (event.mods.isPopupMenu()) { controller.showColourMenu(relative); return; }
-            if (event.getNumberOfClicks() >= 2) controller.beginRename(relative.getPosition());
+            if (event.mods.isPopupMenu())
+            {
+                controller.showColourMenu(relative);
+                return;
+            }
+            if (event.getNumberOfClicks() >= 2)
+                controller.beginRename(relative.getPosition());
         }
     private:
         TrackColourController& controller;
     };
-
-    bool getMute(int track) const
-    {
-        if (track < AudioEngine::maxAudioTracks) return owner.audioEngine.isTrackMuted(track);
-        if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackMuted();
-        return owner.audioEngine.isInstrumentTrackMuted();
-    }
-
-    bool getSolo(int track) const
-    {
-        if (track < AudioEngine::maxAudioTracks) return owner.audioEngine.isTrackSolo(track);
-        if (track == midiTrackIndex) return owner.audioEngine.isMidiTrackSolo();
-        return owner.audioEngine.isInstrumentTrackSolo();
-    }
-
-    void setMute(int track, bool value)
-    {
-        if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackMuted(track, value);
-        else if (track == midiTrackIndex) owner.audioEngine.setMidiTrackMuted(value);
-        else owner.audioEngine.setInstrumentTrackMuted(value);
-    }
-
-    void setSolo(int track, bool value)
-    {
-        if (track < AudioEngine::maxAudioTracks) owner.audioEngine.setTrackSolo(track, value);
-        else if (track == midiTrackIndex) owner.audioEngine.setMidiTrackSolo(value);
-        else owner.audioEngine.setInstrumentTrackSolo(value);
-    }
 
     void beginRename(juce::Point<int> point)
     {
@@ -244,7 +228,8 @@ private:
         }
         renameEditor.setVisible(false);
         owner.grabKeyboardFocus();
-        repaint(); owner.repaint();
+        repaint();
+        owner.repaint();
     }
 
     void showColourMenu(const juce::MouseEvent& event)
@@ -259,70 +244,50 @@ private:
 
         if (track < AudioEngine::maxAudioTracks) owner.selectedTrack = track;
         else if (track == midiTrackIndex) owner.selectMidiTrack();
+        else owner.selectedTrack = instrumentTrackIndex;
         owner.repaint();
 
         juce::PopupMenu menu;
         for (int id = 0; id < (int)palette.size(); ++id)
             menu.addItem(id + 1, colourNames[id], true, colourIds[(size_t)track] == id);
 
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(event.getScreenPosition(), { 1, 1 })),
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(event.getScreenPosition(), { 1, 1 })),
             [this, track](int result)
             {
                 if (result <= 0 || shutDown) return;
                 colourIds[(size_t)track] = result - 1;
-                repaint(); owner.repaint();
+                repaint();
+                owner.repaint();
             });
-    }
-
-    void syncButtons()
-    {
-        for (int i = 0; i < totalTracks; ++i)
-        {
-            auto& mute = muteButtons[(size_t)i]; auto& solo = soloButtons[(size_t)i];
-            mute.setColour(juce::TextButton::buttonColourId, getMute(i) ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
-            solo.setColour(juce::TextButton::buttonColourId, getSolo(i) ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31));
-            mute.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            solo.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        }
     }
 
     void resized() override
     {
-        const int rowH = getLibertyTrackRowHeight();
-        for (int i = 0; i < totalTracks; ++i)
-        {
-            const int rowY = 76 + rulerH + i * rowH;
-            const int buttonY = rowY + rowH - 29;
-            muteButtons[(size_t)i].setBounds(160, buttonY + 2, 21, 20);
-            soloButtons[(size_t)i].setBounds(184, buttonY + 2, 21, 20);
-        }
         if (editingTrack >= 0)
-            renameEditor.setBounds(8, 76 + rulerH + editingTrack * rowH + 6, 96, 24);
+            renameEditor.setBounds(8, 76 + rulerH + editingTrack * getLibertyTrackRowHeight() + 6, 96, 24);
     }
 
     void timerCallback() override
     {
         if (shutDown) return;
-
         const auto wantedBounds = owner.getLocalBounds();
         if (getBounds() != wantedBounds)
             setBounds(wantedBounds);
         else
             resized();
-
-        syncButtons();
         if (editingTrack >= 0)
             renameEditor.toFront(true);
     }
 
     MainComponent& owner;
     OwnerMouseListener listener;
-    std::array<juce::TextButton, totalTracks> muteButtons;
-    std::array<juce::TextButton, totalTracks> soloButtons;
     juce::TextEditor renameEditor;
     int editingTrack = -1;
     bool shutDown = false;
 };
+
+std::map<MainComponent*, std::unique_ptr<TrackColourController>> controllers;
 
 class TrackColourBootstrap final : private juce::Timer
 {
@@ -348,8 +313,6 @@ private:
                     if (controllers.find(main) == controllers.end())
                         controllers.emplace(main, std::make_unique<TrackColourController>(*main));
     }
-
-    std::map<MainComponent*, std::unique_ptr<TrackColourController>> controllers;
 };
 
 TrackColourBootstrap trackColourBootstrap;
