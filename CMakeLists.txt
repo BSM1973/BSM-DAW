@@ -60,6 +60,7 @@ target_sources(BSM_DAW PRIVATE
     Source/TrackHeaderMixControls.cpp
     Source/TrackPluginInsertControls.cpp
     Source/PluginDragDropController.cpp
+    Source/MixConsoleController.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
