@@ -30,7 +30,7 @@ juce_add_gui_app(BSM_DAW
     VERSION "0.1.0"
     BUNDLE_ID "com.bsm.liberty"
     NEEDS_CURL FALSE
-    NEEDS_WEB_BROWSER FALSE
+    NEEDS_WEB_BROWSER TRUE
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording."
 )
@@ -64,6 +64,7 @@ target_sources(BSM_DAW PRIVATE
     Source/PerformController.cpp
     Source/PageModeCoordinator.cpp
     Source/UISymbolCleaner.cpp
+    Source/SpliceBrowserController.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
@@ -79,7 +80,7 @@ target_include_directories(BSM_DAW PRIVATE
 
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 target_compile_definitions(BSM_DAW PRIVATE
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
     JUCE_USE_CURL=0
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
