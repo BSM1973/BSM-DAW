@@ -24,8 +24,11 @@ public:
     PluginTreeItem(Kind kindIn,
                    juce::String labelIn,
                    const juce::PluginDescription* descriptionIn = nullptr,
-                   std::function<void(const juce::PluginDescription&)> activateIn = {})
-        : kind(kindIn), label(std::move(labelIn)), activate(std::move(activateIn))
+                   std::function<void(const juce::PluginDescription&)> activateIn = {},
+                   std::function<bool(const juce::PluginDescription&)> isFavouriteIn = {},
+                   std::function<void(const juce::PluginDescription&)> toggleFavouriteIn = {})
+        : kind(kindIn), label(std::move(labelIn)), activate(std::move(activateIn)),
+          isFavourite(std::move(isFavouriteIn)), toggleFavourite(std::move(toggleFavouriteIn))
     {
         if (descriptionIn != nullptr)
             description = *descriptionIn;
@@ -34,7 +37,10 @@ public:
     bool mightContainSubItems() override { return kind != Kind::plugin; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
     int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? 38 : 20); }
-    juce::String getUniqueName() const override { return label; }
+    juce::String getUniqueName() const override
+    {
+        return kind == Kind::plugin ? description.createIdentifierString() : label;
+    }
 
     void paintItem(juce::Graphics& g, int width, int height) override
     {
@@ -42,9 +48,9 @@ public:
 
         if (kind == Kind::manufacturer)
         {
-            g.setColour(juce::Colour(0xff1b222a));
+            g.setColour(label == "★ FAVORIS" ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b222a));
             g.fillRect(0, 0, width, height);
-            g.setColour(juce::Colour(0xff72d8f5));
+            g.setColour(label == "★ FAVORIS" ? juce::Colour(0xffffc857) : juce::Colour(0xff72d8f5));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText(label, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
             return;
@@ -56,15 +62,32 @@ public:
             g.fillRect(0, 0, width, height);
         }
 
+        const bool favourite = isFavourite && isFavourite(description);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
+        g.drawText(description.name, 4, 3, width - 32, 17, juce::Justification::centredLeft, true);
+
+        if (favourite)
+        {
+            g.setColour(juce::Colour(0xffffc857));
+            g.setFont(juce::Font(14.0f, juce::Font::bold));
+            g.drawText("★", width - 27, 2, 22, 19, juce::Justification::centred);
+        }
 
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(9.0f));
         const auto kindText = description.isInstrument ? "INSTRUMENT" : "FX";
         g.drawText(description.pluginFormatName + " • " + kindText,
                    4, 20, width - 8, 14, juce::Justification::centredLeft, true);
+    }
+
+    void itemClicked(const juce::MouseEvent& event) override
+    {
+        if (kind == Kind::plugin && event.mods.isRightButtonDown() && toggleFavourite)
+        {
+            toggleFavourite(description);
+            return;
+        }
     }
 
     void itemDoubleClicked(const juce::MouseEvent&) override
@@ -89,6 +112,8 @@ private:
     juce::String label;
     juce::PluginDescription description;
     std::function<void(const juce::PluginDescription&)> activate;
+    std::function<bool(const juce::PluginDescription&)> isFavourite;
+    std::function<void(const juce::PluginDescription&)> toggleFavourite;
 };
 
 class BrowserPanel final : public juce::Component,
@@ -103,6 +128,7 @@ public:
           fileTree(directoryList)
     {
         thread.startThread();
+        loadFavourites();
 
         toggleButton.setButtonText("BROWSER");
         toggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
@@ -168,20 +194,24 @@ public:
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
         clearBlacklistButton.setButtonText("CLEAR BL");
+        favouritePluginButton.setButtonText("★ FAV");
         loadPluginButton.setButtonText("LOAD");
         openPluginButton.setButtonText("OPEN UI");
         unloadPluginButton.setButtonText("UNLOAD");
-        for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &loadPluginButton, &openPluginButton, &unloadPluginButton })
+        for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
+                         &loadPluginButton, &openPluginButton, &unloadPluginButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
             b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             addAndMakeVisible(*b);
         }
+        favouritePluginButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffc857));
 
         scanPluginsButton.onClick = [this] { scanPlugins(); };
         blacklistButton.onClick = [this] { showBlacklist(); };
         clearBlacklistButton.onClick = [this] { clearBlacklist(); };
+        favouritePluginButton.onClick = [this] { toggleSelectedFavourite(); };
         loadPluginButton.onClick = [this] { loadSelectedPlugin(); };
         openPluginButton.onClick = [this] { openLoadedPluginEditor(); };
         unloadPluginButton.onClick = [this] { unloadPlugin(); };
@@ -260,14 +290,69 @@ public:
         clearBlacklistButton.setBounds(159, 140, 151, 26);
         pluginTree.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
         const int controlsY = getHeight() - 94;
-        loadPluginButton.setBounds(10, controlsY, 72, 28);
-        openPluginButton.setBounds(86, controlsY, 72, 28);
-        unloadPluginButton.setBounds(162, controlsY, 76, 28);
+        favouritePluginButton.setBounds(10, controlsY, 66, 28);
+        loadPluginButton.setBounds(80, controlsY, 54, 28);
+        openPluginButton.setBounds(138, controlsY, 76, 28);
+        unloadPluginButton.setBounds(218, controlsY, 92, 28);
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
     }
 
 private:
     enum class Category { files, audio, midi, presets, plugins };
+
+    static juce::File favouritesFile()
+    {
+        auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                          .getChildFile("BSM").getChildFile("Liberty");
+        folder.createDirectory();
+        return folder.getChildFile("PluginFavorites.txt");
+    }
+
+    static juce::String favouriteKey(const juce::PluginDescription& description)
+    {
+        auto id = description.createIdentifierString();
+        if (id.isEmpty())
+            id = description.pluginFormatName + "|" + description.manufacturerName + "|" + description.name;
+        return id;
+    }
+
+    void loadFavourites()
+    {
+        favouriteKeys.clear();
+        const auto file = favouritesFile();
+        if (!file.existsAsFile()) return;
+        file.readLines(favouriteKeys);
+        favouriteKeys.trim();
+        favouriteKeys.removeEmptyStrings();
+        favouriteKeys.removeDuplicates(false);
+    }
+
+    void saveFavourites()
+    {
+        favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n") + (favouriteKeys.isEmpty() ? "" : "\n"));
+    }
+
+    bool isFavouritePlugin(const juce::PluginDescription& description) const
+    {
+        return favouriteKeys.contains(favouriteKey(description));
+    }
+
+    void toggleFavourite(const juce::PluginDescription& description)
+    {
+        const auto key = favouriteKey(description);
+        const int index = favouriteKeys.indexOf(key);
+        if (index >= 0) favouriteKeys.remove(index);
+        else favouriteKeys.add(key);
+        saveFavourites();
+        rebuildPluginTree();
+        pluginStatus.setText(index >= 0 ? "Retiré des favoris" : "Ajouté aux favoris", juce::dontSendNotification);
+    }
+
+    void toggleSelectedFavourite()
+    {
+        if (const auto* description = selectedPluginDescription())
+            toggleFavourite(*description);
+    }
 
     void selectionChanged() override {}
     void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
@@ -338,6 +423,7 @@ private:
         scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode);
         clearBlacklistButton.setVisible(pluginMode);
+        favouritePluginButton.setVisible(pluginMode);
         loadPluginButton.setVisible(pluginMode);
         openPluginButton.setVisible(pluginMode);
         unloadPluginButton.setVisible(pluginMode);
@@ -363,7 +449,7 @@ private:
             case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
-            case Category::plugins: return "Ouvre un dossier fabricant puis double-clique un plugin";
+            case Category::plugins: return "★ FAV ou clic droit • glisser-déposer vers une piste";
             default: return "Navigation fichiers et dossiers";
         }
     }
@@ -391,6 +477,17 @@ private:
         owner.repaint();
     }
 
+    PluginTreeItem* makePluginItem(const juce::PluginDescription& description)
+    {
+        return new PluginTreeItem(
+            PluginTreeItem::Kind::plugin,
+            description.name,
+            &description,
+            [this](const juce::PluginDescription& d) { loadPluginDescription(d); },
+            [this](const juce::PluginDescription& d) { return isFavouritePlugin(d); },
+            [this](const juce::PluginDescription& d) { toggleFavourite(d); });
+    }
+
     void rebuildPluginTree()
     {
         pluginTree.setRootItem(nullptr);
@@ -408,6 +505,12 @@ private:
                       return a.name.compareNatural(b.name, false) < 0;
                   });
 
+        auto* favouritesFolder = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "★ FAVORIS");
+        pluginRoot->addSubItem(favouritesFolder);
+        for (const auto& description : pluginDescriptions)
+            if (isFavouritePlugin(description))
+                favouritesFolder->addSubItem(makePluginItem(description));
+
         juce::String currentManufacturer;
         PluginTreeItem* manufacturerItem = nullptr;
 
@@ -424,17 +527,12 @@ private:
             }
 
             if (manufacturerItem != nullptr)
-            {
-                manufacturerItem->addSubItem(new PluginTreeItem(
-                    PluginTreeItem::Kind::plugin,
-                    description.name,
-                    &description,
-                    [this](const juce::PluginDescription& d) { loadPluginDescription(d); }));
-            }
+                manufacturerItem->addSubItem(makePluginItem(description));
         }
 
         pluginTree.setRootItem(pluginRoot.get());
         pluginRoot->setOpen(true);
+        favouritesFolder->setOpen(true);
         pluginTree.repaint();
     }
 
@@ -472,6 +570,7 @@ private:
 
         scanFinishedPending.store(false);
         scanPluginsButton.setEnabled(false);
+        favouritePluginButton.setEnabled(false);
         loadPluginButton.setEnabled(false);
         openPluginButton.setEnabled(false);
         unloadPluginButton.setEnabled(false);
@@ -613,6 +712,7 @@ private:
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
         if (text.isEmpty())
             text = juce::String(pluginDescriptions.size()) + " plugins • "
+                 + juce::String(favouriteKeys.size()) + " favoris • "
                  + juce::String(host.getBlacklistedPlugins().size()) + " blacklistés";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
@@ -645,12 +745,14 @@ private:
                 if (scanThread.joinable()) scanThread.join();
                 refreshPlugins();
                 scanPluginsButton.setEnabled(true);
+                favouritePluginButton.setEnabled(true);
                 loadPluginButton.setEnabled(true);
                 openPluginButton.setEnabled(true);
                 unloadPluginButton.setEnabled(true);
                 blacklistButton.setEnabled(true);
                 clearBlacklistButton.setEnabled(true);
                 pluginStatus.setText(juce::String(pluginDescriptions.size()) + " plugins trouvés • "
+                                     + juce::String(favouriteKeys.size()) + " favoris • "
                                      + juce::String(LibertyPluginHost::instance().getBlacklistedPlugins().size())
                                      + " blacklistés", juce::dontSendNotification);
             }
@@ -669,8 +771,9 @@ private:
     juce::TreeView pluginTree;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
+    juce::StringArray favouriteKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
-    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
