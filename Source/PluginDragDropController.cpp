@@ -25,22 +25,20 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
         return std::nullopt;
 
     auto* item = tree->getSelectedItem(0);
-    if (item == nullptr || item->getParentItem() == nullptr)
+    if (item == nullptr)
         return std::nullopt;
 
-    const auto pluginName = item->getUniqueName();
-    const auto manufacturerName = item->getParentItem()->getUniqueName();
-    if (pluginName.isEmpty() || manufacturerName.isEmpty())
+    // PluginTreeItem now exposes PluginDescription::createIdentifierString()
+    // as its unique name. This makes drag/drop unambiguous even when the same
+    // plugin is displayed a second time inside the FAVORIS folder.
+    const auto identifier = item->getUniqueName();
+    if (identifier.isEmpty())
         return std::nullopt;
 
     const auto descriptions = LibertyPluginHost::instance().getPluginDescriptions();
     for (const auto& description : descriptions)
-    {
-        auto manufacturer = description.manufacturerName.trim();
-        if (manufacturer.isEmpty()) manufacturer = "Other";
-        if (description.name == pluginName && manufacturer == manufacturerName)
+        if (description.createIdentifierString() == identifier)
             return description;
-    }
 
     return std::nullopt;
 }
