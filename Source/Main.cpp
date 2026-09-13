@@ -26,6 +26,7 @@ void shutdownLibertyMixConsoleController();
 void shutdownLibertyPerformController();
 void shutdownLibertyPageModeCoordinator();
 void shutdownLibertyUISymbolCleaner();
+void shutdownLibertySpliceBrowserController();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -58,6 +59,7 @@ public:
         if (mainWindow != nullptr)
         {
             // Global listeners/timers must be detached while JUCE Desktop still exists.
+            shutdownLibertySpliceBrowserController();
             shutdownLibertyUISymbolCleaner();
             shutdownLibertyPageModeCoordinator();
             shutdownLibertyPluginDragDropController();
