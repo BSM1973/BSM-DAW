@@ -154,15 +154,20 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int controlY = y + rowH - 23;
+            const int mixY = y + rowH - 25;
+            const int msY = y + 39;
 
+            // M/S owns its own row. ARM/MON remain in the top row and VOL/PAN
+            // remain in the bottom row. No rectangles overlap.
+            g.setColour(juce::Colour(0xff1b2027));
+            g.fillRect(6, msY, 62, 23);
             g.setColour(juce::Colour(0xff1e232a));
-            g.fillRect(6, controlY, 200, 23);
+            g.fillRect(6, mixY, 200, 25);
 
             g.setColour(juce::Colour(0xffc5cbd3));
-            g.drawText("VOL", 8, controlY + 5, 20, 11, juce::Justification::centredLeft);
+            g.drawText("VOL", 8, mixY + 6, 20, 11, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xffffb04d));
-            g.drawText("PAN", 92, controlY + 5, 24, 11, juce::Justification::centredLeft);
+            g.drawText("PAN", 98, mixY + 6, 24, 11, juce::Justification::centredLeft);
         }
     }
 
@@ -173,12 +178,15 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int controlY = y + rowH - 23;
+            const int mixY = y + rowH - 25;
+            const int msY = y + 40;
 
-            volumeSliders[(size_t)i].setBounds(28, controlY + 2, 62, 18);
-            panKnobs[(size_t)i].setBounds(116, controlY, 22, 22);
-            muteButtons[(size_t)i].setBounds(142, controlY + 2, 18, 18);
-            soloButtons[(size_t)i].setBounds(164, controlY + 2, 18, 18);
+            // Dedicated M/S row: deliberately nowhere near ARM/MON or VOL/PAN.
+            muteButtons[(size_t)i].setBounds(8, msY, 26, 20);
+            soloButtons[(size_t)i].setBounds(38, msY, 26, 20);
+
+            volumeSliders[(size_t)i].setBounds(28, mixY + 3, 66, 18);
+            panKnobs[(size_t)i].setBounds(126, mixY + 1, 22, 22);
         }
     }
 
