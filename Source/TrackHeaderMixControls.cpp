@@ -13,6 +13,7 @@ void setLibertyInstrumentGain(float value) noexcept;
 float getLibertyInstrumentPan() noexcept;
 void setLibertyInstrumentPan(float value) noexcept;
 int getLibertyTrackRowHeight() noexcept;
+bool isLibertyMixConsoleVisible(MainComponent* owner);
 
 namespace
 {
@@ -130,9 +131,6 @@ public:
             addAndMakeVisible(mute);
             addAndMakeVisible(solo);
 
-            // Older colour/rename controller versions still own obsolete M/S
-            // controls at the far right of the bottom strip. This child consumes
-            // mouse hits in that exact legacy zone while paint() completely covers it.
             legacyMasks[(size_t)i].setInterceptsMouseClicks(true, false);
             addAndMakeVisible(legacyMasks[(size_t)i]);
         }
@@ -197,9 +195,6 @@ public:
 
             g.setColour(juce::Colour(0xff171b20));
             g.fillRoundedRectangle(8.0f, (float)msY, 68.0f, 24.0f, 4.0f);
-
-            // Opaque bottom strip starts high enough to erase every pixel left
-            // by the obsolete M/S controls from the legacy track-colour layer.
             g.setColour(juce::Colour(0xff1e232a));
             g.fillRect(6, mixY, 200, 30);
 
@@ -222,13 +217,9 @@ public:
 
             muteButtons[(size_t)i].setBounds(10, msY, 30, 20);
             soloButtons[(size_t)i].setBounds(44, msY, 30, 20);
-
             volumeSliders[(size_t)i].setBounds(28, mixY + 6, 66, 18);
             panKnobs[(size_t)i].setBounds(126, mixY + 4, 22, 22);
-
-            // Exact obsolete control zone: fully hidden and no longer clickable.
             legacyMasks[(size_t)i].setBounds(154, mixY, 54, 30);
-
             muteButtons[(size_t)i].toFront(false);
             soloButtons[(size_t)i].toFront(false);
         }
@@ -269,6 +260,13 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
+
+        if (isLibertyMixConsoleVisible(&owner))
+        {
+            if (isVisible()) setVisible(false);
+            return;
+        }
+        if (!isVisible()) setVisible(true);
 
         const auto wantedBounds = owner.getLocalBounds();
         if (getBounds() != wantedBounds)
