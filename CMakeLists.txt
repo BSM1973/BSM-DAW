@@ -62,7 +62,8 @@ target_sources(BSM_DAW PRIVATE
     Source/PluginDragDropController.cpp
     Source/MixConsoleController.cpp
     Source/PerformController.cpp
-    Source/PageNavigationBridge.cpp
+    Source/PageModeCoordinator.cpp
+    Source/UISymbolCleaner.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
