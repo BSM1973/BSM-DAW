@@ -197,3 +197,8 @@ private:
 
 PluginDragDropController controller;
 }
+
+void shutdownLibertyPluginDragDropController()
+{
+    controller.shutdown();
+}
