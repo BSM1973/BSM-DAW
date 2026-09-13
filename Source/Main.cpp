@@ -20,6 +20,7 @@ void shutdownLibertyAudioClipWarpView();
 void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
 void shutdownLibertyTrackPluginInsertControls();
+void shutdownLibertyPluginDragDropController();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -49,11 +50,14 @@ public:
 
     void shutdown() override
     {
-        // A hidden VST3 scanner child never creates the main window or the
-        // browser/controllers, so only tear the full app down when it exists.
         if (mainWindow != nullptr)
         {
-            // First stop every UI/controller object which holds a MainComponent reference.
+            // Global listeners must be detached while JUCE Desktop still exists.
+            // Leaving a global mouse listener alive until static destruction can crash
+            // the app after the main window has already disappeared.
+            shutdownLibertyPluginDragDropController();
+
+            // Stop every UI/controller object which holds a MainComponent reference.
             shutdownLibertyBrowserController();
             shutdownLibertyTrackPluginInsertControls();
             shutdownLibertyMetronomeController();
@@ -69,12 +73,10 @@ public:
             shutdownLibertyMidiNoteSelectionInteraction();
             shutdownLibertyMidiEditor();
 
-            // Destroy MainComponent next. This stops AudioEngine and its realtime callback
-            // before any hosted AU/VST3 instance is released. Some plugins crash if their
-            // releaseResources/destructor runs while the host audio callback is still alive.
+            // Destroy MainComponent next so AudioEngine removes its realtime callback.
             mainWindow.reset();
 
-            // Hosted plugin editors/processors are now destroyed with no audio callback racing them.
+            // Only then release AU/VST3 instances and their editor windows.
             LibertyPluginHost::instance().shutdown();
         }
     }
