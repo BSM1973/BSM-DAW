@@ -129,7 +129,42 @@ public:
             };
             addAndMakeVisible(mute);
             addAndMakeVisible(solo);
+
+            // Older colour/rename controller versions still own obsolete M/S
+            // controls at the far right of the bottom strip. This child consumes
+            // mouse hits in that exact legacy zone while paint() completely covers it.
+            legacyMasks[(size_t)i].setInterceptsMouseClicks(true, false);
+            addAndMakeVisible(legacyMasks[(size_t)i]);
         }
+
+        instrumentArmButton.setButtonText("ARM");
+        instrumentMonitorButton.setButtonText("MON OFF");
+        for (auto* button : { &instrumentArmButton, &instrumentMonitorButton })
+        {
+            button->setMouseClickGrabsKeyboardFocus(false);
+            button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            button->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        }
+        instrumentArmButton.onClick = [this]
+        {
+            instrumentArmed = !instrumentArmed;
+            instrumentArmButton.setButtonText(instrumentArmed ? "ARMED" : "ARM");
+            instrumentArmButton.setColour(juce::TextButton::buttonColourId,
+                                          instrumentArmed ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
+            owner.selectedTrack = instrumentTrack;
+            owner.repaint();
+        };
+        instrumentMonitorButton.onClick = [this]
+        {
+            instrumentMonitoring = !instrumentMonitoring;
+            instrumentMonitorButton.setButtonText(instrumentMonitoring ? "MON ON" : "MON OFF");
+            instrumentMonitorButton.setColour(juce::TextButton::buttonColourId,
+                                              instrumentMonitoring ? juce::Colour(0xff2d6f8f) : juce::Colour(0xff252a31));
+            owner.selectedTrack = instrumentTrack;
+            owner.repaint();
+        };
+        addAndMakeVisible(instrumentArmButton);
+        addAndMakeVisible(instrumentMonitorButton);
 
         owner.addAndMakeVisible(this);
         startTimerHz(12);
@@ -157,20 +192,21 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int mixY = y + rowH - 26;
+            const int mixY = y + rowH - 30;
             const int msY = y + 37;
 
-            // Three independent horizontal bands in the header:
-            // top = title/ARM/MON, middle = M/S, bottom = VOL/PAN.
             g.setColour(juce::Colour(0xff171b20));
             g.fillRoundedRectangle(8.0f, (float)msY, 68.0f, 24.0f, 4.0f);
+
+            // Opaque bottom strip starts high enough to erase every pixel left
+            // by the obsolete M/S controls from the legacy track-colour layer.
             g.setColour(juce::Colour(0xff1e232a));
-            g.fillRect(6, mixY, 198, 26);
+            g.fillRect(6, mixY, 200, 30);
 
             g.setColour(juce::Colour(0xffc5cbd3));
-            g.drawText("VOL", 8, mixY + 7, 20, 11, juce::Justification::centredLeft);
+            g.drawText("VOL", 8, mixY + 9, 20, 11, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xffffb04d));
-            g.drawText("PAN", 99, mixY + 7, 24, 11, juce::Justification::centredLeft);
+            g.drawText("PAN", 99, mixY + 9, 24, 11, juce::Justification::centredLeft);
         }
     }
 
@@ -181,20 +217,28 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int mixY = y + rowH - 26;
+            const int mixY = y + rowH - 30;
             const int msY = y + 39;
 
-            // M/S are deliberately isolated in the middle band.
             muteButtons[(size_t)i].setBounds(10, msY, 30, 20);
             soloButtons[(size_t)i].setBounds(44, msY, 30, 20);
 
-            volumeSliders[(size_t)i].setBounds(28, mixY + 4, 66, 18);
-            panKnobs[(size_t)i].setBounds(126, mixY + 2, 22, 22);
+            volumeSliders[(size_t)i].setBounds(28, mixY + 6, 66, 18);
+            panKnobs[(size_t)i].setBounds(126, mixY + 4, 22, 22);
 
-            // Keep the actual buttons above any later transparent overlay controller.
+            // Exact obsolete control zone: fully hidden and no longer clickable.
+            legacyMasks[(size_t)i].setBounds(154, mixY, 54, 30);
+
             muteButtons[(size_t)i].toFront(false);
             soloButtons[(size_t)i].toFront(false);
         }
+
+        const int instrumentY = 76 + rulerH + instrumentTrack * rowH;
+        const int instrumentMiddleY = instrumentY + 39;
+        instrumentArmButton.setBounds(82, instrumentMiddleY, 50, 20);
+        instrumentMonitorButton.setBounds(136, instrumentMiddleY, 70, 20);
+        instrumentArmButton.toFront(false);
+        instrumentMonitorButton.toFront(false);
     }
 
 private:
@@ -232,9 +276,6 @@ private:
         else
             resized();
 
-        // The component is transparent outside its controls, so keeping it at the
-        // front does not cover ARM/MON or the arranger. It only guarantees M/S,
-        // VOL and PAN are not hidden by another full-size overlay component.
         toFront(false);
 
         syncing = true;
@@ -259,6 +300,10 @@ private:
     std::array<juce::Slider, controlledTracks> panKnobs;
     std::array<juce::TextButton, controlledTracks> muteButtons;
     std::array<juce::TextButton, controlledTracks> soloButtons;
+    std::array<juce::Component, controlledTracks> legacyMasks;
+    juce::TextButton instrumentArmButton, instrumentMonitorButton;
+    bool instrumentArmed = false;
+    bool instrumentMonitoring = false;
     std::atomic<bool> stopped { false };
     bool syncing = false;
 };
