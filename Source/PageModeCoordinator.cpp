@@ -20,14 +20,15 @@ class PageModeCoordinator final : private juce::Timer
 public:
     explicit PageModeCoordinator(MainComponent& ownerIn) : owner(ownerIn)
     {
-        captureLegacyButtons();
-
         configureButton(arrangeButton, "ARRANGE");
         configureButton(mixButton, "MIXCONSOLE");
         configureButton(performButton, "PERFORM");
 
+        captureLegacyButtons();
+
         arrangeButton.onClick = [this]
         {
+            captureLegacyButtons();
             setLibertyPerformVisible(&owner, false);
             if (legacyArrange != nullptr) legacyArrange->triggerClick();
             refresh();
@@ -35,6 +36,7 @@ public:
 
         mixButton.onClick = [this]
         {
+            captureLegacyButtons();
             setLibertyPerformVisible(&owner, false);
             if (legacyMix != nullptr) legacyMix->triggerClick();
             refresh();
@@ -42,6 +44,7 @@ public:
 
         performButton.onClick = [this]
         {
+            captureLegacyButtons();
             if (isLibertyMixConsoleVisible(&owner) && legacyArrange != nullptr)
                 legacyArrange->triggerClick();
             setLibertyPerformVisible(&owner, true);
@@ -67,6 +70,7 @@ public:
 
     void setMixVisible(bool shouldShow)
     {
+        captureLegacyButtons();
         if (shouldShow)
         {
             setLibertyPerformVisible(&owner, false);
@@ -95,6 +99,8 @@ private:
         {
             auto* button = dynamic_cast<juce::TextButton*>(owner.getChildComponent(i));
             if (button == nullptr) continue;
+            if (button == &arrangeButton || button == &mixButton || button == &performButton) continue;
+
             const auto text = button->getButtonText();
             if (text == "ARRANGE" && legacyArrange == nullptr) legacyArrange = button;
             else if (text == "MIXCONSOLE" && legacyMix == nullptr) legacyMix = button;
@@ -117,6 +123,8 @@ private:
 
     void refresh()
     {
+        captureLegacyButtons();
+
         const bool perform = isLibertyPerformVisible(&owner);
         const bool mix = !perform && isLibertyMixConsoleVisible(&owner);
         const bool arrange = !perform && !mix;
