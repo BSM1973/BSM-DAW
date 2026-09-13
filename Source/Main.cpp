@@ -1,4 +1,5 @@
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <cstdlib>
 #include "MainComponent.h"
 #include "MidiEditor.h"
 #include "PluginHost.h"
@@ -53,8 +54,6 @@ public:
         if (mainWindow != nullptr)
         {
             // Global listeners must be detached while JUCE Desktop still exists.
-            // Leaving a global mouse listener alive until static destruction can crash
-            // the app after the main window has already disappeared.
             shutdownLibertyPluginDragDropController();
 
             // Stop every UI/controller object which holds a MainComponent reference.
@@ -73,11 +72,18 @@ public:
             shutdownLibertyMidiNoteSelectionInteraction();
             shutdownLibertyMidiEditor();
 
-            // Destroy MainComponent next so AudioEngine removes its realtime callback.
+            // Destroy MainComponent so AudioEngine removes its realtime callback.
             mainWindow.reset();
 
-            // Only then release AU/VST3 instances and their editor windows.
+            // Release every hosted AU/VST3 and editor explicitly while JUCE is alive.
             LibertyPluginHost::instance().shutdown();
+
+            // Liberty owns several process-lifetime JUCE controller singletons. Their
+            // late C++ static destructors run after JUCE's Desktop/MessageManager teardown
+            // and have been the remaining source of the macOS quit crash. Everything
+            // meaningful is already explicitly stopped/released above, so terminate now
+            // without executing that unsafe late static-destruction phase.
+            std::_Exit(0);
         }
     }
 
