@@ -36,7 +36,6 @@ public:
 
         g.setColour(juce::Colour(0xffff9a24));
         g.fillEllipse(bounds);
-
         g.setColour(juce::Colour(0xff5b2b00));
         g.fillEllipse(bounds.reduced(3.0f));
 
@@ -102,8 +101,12 @@ public:
             auto& solo = soloButtons[(size_t)i];
             mute.setButtonText("M");
             solo.setButtonText("S");
-            mute.setMouseClickGrabsKeyboardFocus(false);
-            solo.setMouseClickGrabsKeyboardFocus(false);
+            for (auto* button : { &mute, &solo })
+            {
+                button->setMouseClickGrabsKeyboardFocus(false);
+                button->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+                button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            }
             mute.onClick = [this, i]
             {
                 const int track = controlTrack(i);
@@ -154,20 +157,20 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int mixY = y + rowH - 25;
-            const int msY = y + 39;
+            const int mixY = y + rowH - 26;
+            const int msY = y + 37;
 
-            // M/S owns its own row. ARM/MON remain in the top row and VOL/PAN
-            // remain in the bottom row. No rectangles overlap.
-            g.setColour(juce::Colour(0xff1b2027));
-            g.fillRect(6, msY, 62, 23);
+            // Three independent horizontal bands in the header:
+            // top = title/ARM/MON, middle = M/S, bottom = VOL/PAN.
+            g.setColour(juce::Colour(0xff171b20));
+            g.fillRoundedRectangle(8.0f, (float)msY, 68.0f, 24.0f, 4.0f);
             g.setColour(juce::Colour(0xff1e232a));
-            g.fillRect(6, mixY, 200, 25);
+            g.fillRect(6, mixY, 198, 26);
 
             g.setColour(juce::Colour(0xffc5cbd3));
-            g.drawText("VOL", 8, mixY + 6, 20, 11, juce::Justification::centredLeft);
+            g.drawText("VOL", 8, mixY + 7, 20, 11, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xffffb04d));
-            g.drawText("PAN", 98, mixY + 6, 24, 11, juce::Justification::centredLeft);
+            g.drawText("PAN", 99, mixY + 7, 24, 11, juce::Justification::centredLeft);
         }
     }
 
@@ -178,15 +181,19 @@ public:
         {
             const int row = controlTrack(i);
             const int y = 76 + rulerH + row * rowH;
-            const int mixY = y + rowH - 25;
-            const int msY = y + 40;
+            const int mixY = y + rowH - 26;
+            const int msY = y + 39;
 
-            // Dedicated M/S row: deliberately nowhere near ARM/MON or VOL/PAN.
-            muteButtons[(size_t)i].setBounds(8, msY, 26, 20);
-            soloButtons[(size_t)i].setBounds(38, msY, 26, 20);
+            // M/S are deliberately isolated in the middle band.
+            muteButtons[(size_t)i].setBounds(10, msY, 30, 20);
+            soloButtons[(size_t)i].setBounds(44, msY, 30, 20);
 
-            volumeSliders[(size_t)i].setBounds(28, mixY + 3, 66, 18);
-            panKnobs[(size_t)i].setBounds(126, mixY + 1, 22, 22);
+            volumeSliders[(size_t)i].setBounds(28, mixY + 4, 66, 18);
+            panKnobs[(size_t)i].setBounds(126, mixY + 2, 22, 22);
+
+            // Keep the actual buttons above any later transparent overlay controller.
+            muteButtons[(size_t)i].toFront(false);
+            soloButtons[(size_t)i].toFront(false);
         }
     }
 
@@ -209,11 +216,9 @@ private:
                 : owner.audioEngine.isInstrumentTrackSolo();
 
             muteButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
-                muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
+                muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff31363e));
             soloButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
-                solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31));
-            muteButtons[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            soloButtons[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+                solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff31363e));
         }
     }
 
@@ -226,6 +231,11 @@ private:
             setBounds(wantedBounds);
         else
             resized();
+
+        // The component is transparent outside its controls, so keeping it at the
+        // front does not cover ARM/MON or the arranger. It only guarantees M/S,
+        // VOL and PAN are not hidden by another full-size overlay component.
+        toFront(false);
 
         syncing = true;
         for (int i = 0; i < controlledTracks; ++i)
