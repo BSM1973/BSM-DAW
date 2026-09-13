@@ -2,6 +2,8 @@
 #include "MainComponent.h"
 #undef private
 
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <atomic>
@@ -37,18 +39,296 @@ bool isSupportedAudioFile(const juce::File& file)
     return ext == ".wav" || ext == ".aif" || ext == ".aiff";
 }
 
+class PerformAudioPlayer final : private juce::AudioIODeviceCallback
+{
+public:
+    explicit PerformAudioPlayer(MainComponent& ownerIn) : owner(ownerIn)
+    {
+        formats.registerBasicFormats();
+        owner.audioEngine.getDeviceManager().addAudioCallback(this);
+        callbackAttached = true;
+    }
+
+    ~PerformAudioPlayer() override
+    {
+        stopCaptureInternal();
+        if (callbackAttached)
+            owner.audioEngine.getDeviceManager().removeAudioCallback(this);
+    }
+
+    void setEnabled(bool shouldEnable)
+    {
+        const juce::ScopedLock sl(lock);
+        enabled = shouldEnable;
+        if (!enabled)
+            for (auto& track : tracks) { track.playing = false; track.position = 0; }
+    }
+
+    bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
+    {
+        if (trackIndex < 0 || trackIndex >= audioTracks || !file.existsAsFile())
+        {
+            error = "Invalid PERFORM clip.";
+            return false;
+        }
+
+        std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+        if (reader == nullptr)
+        {
+            error = "This audio file cannot be opened.";
+            return false;
+        }
+
+        const int sourceChannels = juce::jlimit(1, 2, (int)reader->numChannels);
+        const int sourceSamples = (int)juce::jmin<juce::int64>(reader->lengthInSamples, (juce::int64)0x7fffffff);
+        if (sourceSamples <= 0)
+        {
+            error = "The audio file is empty.";
+            return false;
+        }
+
+        juce::AudioBuffer<float> source(sourceChannels, sourceSamples);
+        source.clear();
+        if (!reader->read(&source, 0, sourceSamples, 0, true, true))
+        {
+            error = "The audio file could not be decoded.";
+            return false;
+        }
+
+        const double deviceRate = juce::jmax(1.0, owner.audioEngine.getSampleRate());
+        const double sourceRate = juce::jmax(1.0, reader->sampleRate);
+        std::unique_ptr<juce::AudioBuffer<float>> finalBuffer;
+
+        if (std::abs(deviceRate - sourceRate) < 0.5)
+        {
+            finalBuffer = std::make_unique<juce::AudioBuffer<float>>(sourceChannels, sourceSamples);
+            for (int ch = 0; ch < sourceChannels; ++ch)
+                finalBuffer->copyFrom(ch, 0, source, ch, 0, sourceSamples);
+        }
+        else
+        {
+            const int targetSamples = juce::jmax(1, (int)std::llround((double)sourceSamples * deviceRate / sourceRate));
+            finalBuffer = std::make_unique<juce::AudioBuffer<float>>(sourceChannels, targetSamples);
+            finalBuffer->clear();
+            const double speedRatio = sourceRate / deviceRate;
+            for (int ch = 0; ch < sourceChannels; ++ch)
+            {
+                juce::LagrangeInterpolator interpolator;
+                interpolator.process(speedRatio,
+                                     source.getReadPointer(ch),
+                                     finalBuffer->getWritePointer(ch),
+                                     targetSamples);
+            }
+        }
+
+        {
+            const juce::ScopedLock sl(lock);
+            auto& track = tracks[(size_t)trackIndex];
+            track.buffer = std::move(finalBuffer);
+            track.file = file;
+            track.position = 0;
+            track.playing = true;
+            enabled = true;
+        }
+        return true;
+    }
+
+    void stopTrack(int trackIndex)
+    {
+        if (trackIndex < 0 || trackIndex >= audioTracks) return;
+        const juce::ScopedLock sl(lock);
+        tracks[(size_t)trackIndex].playing = false;
+        tracks[(size_t)trackIndex].position = 0;
+    }
+
+    void stopAll()
+    {
+        const juce::ScopedLock sl(lock);
+        for (auto& track : tracks) { track.playing = false; track.position = 0; }
+    }
+
+    bool isTrackPlaying(int trackIndex) const
+    {
+        if (trackIndex < 0 || trackIndex >= audioTracks) return false;
+        const juce::ScopedLock sl(lock);
+        return tracks[(size_t)trackIndex].playing;
+    }
+
+    bool startCapture(juce::String& error)
+    {
+        const juce::ScopedLock sl(lock);
+        if (captureActive) return true;
+
+        const double rate = owner.audioEngine.getSampleRate();
+        if (rate <= 0.0)
+        {
+            error = "No audio device is available.";
+            return false;
+        }
+
+        auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                          .getChildFile("BSM").getChildFile("Liberty").getChildFile("Perform Captures");
+        if (!folder.createDirectory().wasOk() && !folder.isDirectory())
+        {
+            error = "The PERFORM capture folder could not be created.";
+            return false;
+        }
+
+        captureFile = folder.getNonexistentChildFile("Perform Capture " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H-%M-%S"), ".wav", false);
+        std::unique_ptr<juce::FileOutputStream> stream(captureFile.createOutputStream());
+        if (stream == nullptr)
+        {
+            error = "The PERFORM capture file could not be created.";
+            return false;
+        }
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            wav.createWriterFor(stream.get(), rate, 2, 24, {}, 0));
+        if (writer == nullptr)
+        {
+            error = "The PERFORM capture writer could not be created.";
+            return false;
+        }
+        stream.release();
+
+        captureThread = std::make_unique<juce::TimeSliceThread>("Liberty PERFORM Capture");
+        captureThread->startThread();
+        captureWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(writer.release(), *captureThread, 65536);
+        captureActive = true;
+        return true;
+    }
+
+    juce::File stopCapture()
+    {
+        const juce::ScopedLock sl(lock);
+        return stopCaptureInternal();
+    }
+
+    bool isCapturing() const noexcept { return captureActive.load(std::memory_order_relaxed); }
+
+private:
+    struct TrackState
+    {
+        std::unique_ptr<juce::AudioBuffer<float>> buffer;
+        juce::File file;
+        juce::int64 position = 0;
+        bool playing = false;
+    };
+
+    juce::File stopCaptureInternal()
+    {
+        captureActive.store(false, std::memory_order_relaxed);
+        captureWriter.reset();
+        if (captureThread != nullptr)
+        {
+            captureThread->stopThread(2000);
+            captureThread.reset();
+        }
+        return captureFile;
+    }
+
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override
+    {
+        const int block = device != nullptr ? juce::jmax(32, device->getCurrentBufferSizeSamples()) : 512;
+        captureMix.setSize(2, block, false, false, true);
+    }
+
+    void audioDeviceStopped() override
+    {
+        const juce::ScopedLock sl(lock);
+        for (auto& track : tracks) track.playing = false;
+    }
+
+    void audioDeviceIOCallbackWithContext(const float* const*, int,
+                                          float* const* outputChannelData, int numOutputChannels,
+                                          int numSamples,
+                                          const juce::AudioIODeviceCallbackContext&) override
+    {
+        if (!enabled.load(std::memory_order_relaxed)) return;
+        if (!lock.tryEnter()) return;
+
+        const int captureSamples = juce::jmin(numSamples, captureMix.getNumSamples());
+        if (captureSamples > 0) captureMix.clear(0, captureSamples);
+
+        for (int trackIndex = 0; trackIndex < audioTracks; ++trackIndex)
+        {
+            auto& state = tracks[(size_t)trackIndex];
+            if (!state.playing || state.buffer == nullptr || state.position >= state.buffer->getNumSamples())
+                continue;
+
+            const int remaining = (int)juce::jmin<juce::int64>((juce::int64)numSamples,
+                                                                (juce::int64)state.buffer->getNumSamples() - state.position);
+            if (remaining <= 0)
+            {
+                state.playing = false;
+                continue;
+            }
+
+            const float gain = owner.audioEngine.getTrackGain(trackIndex);
+            const float pan = owner.audioEngine.getTrackPan(trackIndex);
+            const float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
+            const float rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+            const int sourceChannels = state.buffer->getNumChannels();
+
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[0],
+                    state.buffer->getReadPointer(0) + state.position, leftGain, remaining);
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[1],
+                    state.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + state.position, rightGain, remaining);
+
+            if (captureActive.load(std::memory_order_relaxed) && captureSamples > 0)
+            {
+                const int n = juce::jmin(remaining, captureSamples);
+                juce::FloatVectorOperations::addWithMultiply(captureMix.getWritePointer(0),
+                    state.buffer->getReadPointer(0) + state.position, leftGain, n);
+                juce::FloatVectorOperations::addWithMultiply(captureMix.getWritePointer(1),
+                    state.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + state.position, rightGain, n);
+            }
+
+            state.position += remaining;
+            if (state.position >= state.buffer->getNumSamples())
+            {
+                state.playing = false;
+                state.position = 0;
+            }
+        }
+
+        if (captureActive.load(std::memory_order_relaxed) && captureWriter != nullptr && captureSamples > 0)
+        {
+            const float master = owner.audioEngine.getMasterGain();
+            captureMix.applyGain(0, captureSamples, master);
+            captureWriter->write(captureMix.getArrayOfReadPointers(), captureSamples);
+        }
+
+        lock.exit();
+    }
+
+    MainComponent& owner;
+    juce::AudioFormatManager formats;
+    std::array<TrackState, audioTracks> tracks;
+    mutable juce::CriticalSection lock;
+    std::atomic<bool> enabled { false };
+    bool callbackAttached = false;
+    juce::AudioBuffer<float> captureMix;
+    std::unique_ptr<juce::TimeSliceThread> captureThread;
+    std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> captureWriter;
+    juce::File captureFile;
+    std::atomic<bool> captureActive { false };
+};
+
 class PerformView final : public juce::Component,
                           public juce::FileDragAndDropTarget,
                           private juce::Timer
 {
 public:
-    explicit PerformView(MainComponent& ownerIn) : owner(ownerIn)
+    explicit PerformView(MainComponent& ownerIn)
+        : owner(ownerIn), player(ownerIn)
     {
         setOpaque(true);
         setInterceptsMouseClicks(true, true);
         setAlwaysOnTop(true);
-        activeTrackScene.fill(-1);
-        suppressArrangeSceneOne.fill(false);
 
         for (int track = 0; track < performTracks; ++track)
         {
@@ -59,9 +339,10 @@ public:
             stop.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             stop.onClick = [this, track]
             {
+                if (track < audioTracks) player.stopTrack(track);
                 activeTrackScene[(size_t)track] = -1;
-                if (!anyClipActive()) owner.audioEngine.setPlaying(false);
                 refreshClipLabels();
+                repaint();
             };
             addAndMakeVisible(stop);
 
@@ -69,7 +350,6 @@ public:
             {
                 auto& cell = clipButtons[(size_t)track][(size_t)scene];
                 cell.setMouseClickGrabsKeyboardFocus(false);
-                cell.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb8c0c9));
                 cell.onClick = [this, track, scene] { launchClip(track, scene); };
                 addAndMakeVisible(cell);
             }
@@ -92,31 +372,56 @@ public:
         stopAllButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         stopAllButton.onClick = [this]
         {
+            player.stopAll();
             activeTrackScene.fill(-1);
-            owner.audioEngine.setPlaying(false);
             refreshClipLabels();
+            repaint();
         };
         addAndMakeVisible(stopAllButton);
 
+        recordArrangeButton.setButtonText("RECORD TO ARRANGE");
+        recordArrangeButton.setMouseClickGrabsKeyboardFocus(false);
+        recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff31404d));
+        recordArrangeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        recordArrangeButton.onClick = [this] { toggleCaptureToArrange(); };
+        addAndMakeVisible(recordArrangeButton);
+
+        activeTrackScene.fill(-1);
         setVisible(false);
         owner.addAndMakeVisible(this);
         startTimerHz(20);
     }
 
-    ~PerformView() override { stopTimer(); }
+    ~PerformView() override
+    {
+        if (player.isCapturing()) player.stopCapture();
+        player.setEnabled(false);
+        stopTimer();
+    }
 
     void setPerformVisible(bool shouldShow)
     {
         performVisible = shouldShow;
         dragTrack = dragScene = -1;
         setVisible(shouldShow);
+        player.setEnabled(shouldShow);
+
         if (shouldShow)
         {
+            // ARRANGE transport is deliberately stopped. PERFORM owns independent audio.
+            owner.audioEngine.setPlaying(false);
+            owner.isPlaying = false;
             setBounds(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
             resized();
             refreshClipLabels();
             toFront(false);
             repaint();
+        }
+        else
+        {
+            player.stopAll();
+            activeTrackScene.fill(-1);
+            if (player.isCapturing()) finishCaptureToArrange();
         }
     }
 
@@ -132,7 +437,6 @@ public:
 
     void fileDragEnter(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
     void fileDragMove(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
-
     void fileDragExit(const juce::StringArray&) override
     {
         dragTrack = dragScene = -1;
@@ -143,10 +447,7 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override
     {
         updateDropTarget({ x, y });
-        const int targetTrack = dragTrack;
-        const int targetScene = dragScene;
-
-        if (targetTrack < 0 || targetTrack >= audioTracks || targetScene < 0 || targetScene >= sceneCount)
+        if (dragTrack < 0 || dragTrack >= audioTracks || dragScene < 0 || dragScene >= sceneCount)
         {
             dragTrack = dragScene = -1;
             refreshClipLabels();
@@ -162,16 +463,9 @@ public:
         }
         if (!selected.existsAsFile()) return;
 
-        // A PERFORM drop belongs to one exact slot only. Once a track has an
-        // explicit PERFORM assignment outside scene 1, scene 1 must not mirror
-        // the AudioEngine/ARRANGE track merely because that engine buffer exists.
-        performAudioFiles[(size_t)targetTrack][(size_t)targetScene] = selected;
-        if (targetScene != 0)
-            suppressArrangeSceneOne[(size_t)targetTrack] = true;
-        else
-            suppressArrangeSceneOne[(size_t)targetTrack] = false;
-
-        activeTrackScene[(size_t)targetTrack] = -1;
+        performAudioFiles[(size_t)dragTrack][(size_t)dragScene] = selected;
+        performTrackOwnsSlots[(size_t)dragTrack] = true;
+        activeTrackScene[(size_t)dragTrack] = -1;
         dragTrack = dragScene = -1;
         refreshClipLabels();
         repaint();
@@ -190,7 +484,7 @@ public:
         g.drawText("PERFORM", 22, 10, 150, 28, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(10.0f));
-        g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 320, 18, juce::Justification::centredLeft);
+        g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 330, 18, juce::Justification::centredLeft);
 
         for (int track = 0; track < performTracks; ++track)
         {
@@ -231,19 +525,21 @@ public:
     {
         const int leftMargin = 18;
         const int sceneLaunchW = 92;
+        const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
         const int gap = 6;
-        const int available = juce::jmax(performTracks * 110, gridRight - leftMargin);
+        const int available = juce::jmax(performTracks * 110, gridRight - gridLeft);
         const int columnW = juce::jlimit(110, 220, (available - (performTracks - 1) * gap) / performTracks);
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
-        const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - 70);
+        const int footerH = 54;
+        const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - footerH - 16);
         const int rowH = juce::jlimit(44, 86, rowsAvailable / sceneCount);
 
         for (int track = 0; track < performTracks; ++track)
         {
-            const int x = leftMargin + track * (columnW + gap);
+            const int x = gridLeft + track * (columnW + gap);
             trackHeaders[(size_t)track] = { x, headerTop, columnW, headerH };
             stopTrackButtons[(size_t)track].setBounds(x + 8, headerTop + 40, columnW - 16, 18);
             for (int scene = 0; scene < sceneCount; ++scene)
@@ -259,15 +555,16 @@ public:
             sceneRows[(size_t)scene] = { 0, y, getWidth(), rowH };
             sceneButtons[(size_t)scene].setBounds(getWidth() - sceneLaunchW - 18, y + 4, sceneLaunchW, rowH - 8);
         }
+        recordArrangeButton.setBounds(18, getHeight() - 44, 170, 30);
         stopAllButton.setBounds(getWidth() - 140, getHeight() - 44, 122, 30);
     }
 
 private:
     juce::String trackName(int track) const
     {
-        if (track < audioTracks) return getLibertyTrackName(track);
-        if (track == midiTrack) return getLibertyTrackName(midiTrack);
-        return getLibertyTrackName(instrumentTrack);
+        if (track < audioTracks) return "Audio " + juce::String(track + 1);
+        if (track == midiTrack) return "MIDI 1";
+        return "Instrument 1";
     }
 
     juce::String trackType(int track) const
@@ -291,54 +588,19 @@ private:
     bool slotHasClip(int track, int scene) const
     {
         if (track < audioTracks)
-        {
-            if (hasDroppedAudio(track, scene)) return true;
-            if (scene == 0 && !suppressArrangeSceneOne[(size_t)track])
-                return owner.audioEngine.hasAudioFile(track);
-            return false;
-        }
-        if (scene != 0) return false;
-        return !owner.midiEngine.getNotesCopy().empty();
+            return hasDroppedAudio(track, scene);
+
+        // MIDI and virtual-instrument Session clips will get their own independent
+        // clip engine later. They deliberately do not inherit ARRANGE data.
+        return false;
     }
 
     juce::String slotName(int track, int scene) const
     {
         if (!slotHasClip(track, scene)) return "EMPTY";
-        if (track < audioTracks)
-        {
-            juce::String name = hasDroppedAudio(track, scene)
-                ? performAudioFiles[(size_t)track][(size_t)scene].getFileName()
-                : owner.audioEngine.getAudioFileName(track);
-            if (name.length() > 22) name = name.substring(0, 19) + "...";
-            return name;
-        }
-        if (track == midiTrack) return "MIDI CLIP";
-        return "INSTRUMENT CLIP";
-    }
-
-    double slotStartSeconds(int track, int scene)
-    {
-        if (track < audioTracks)
-        {
-            if (hasDroppedAudio(track, scene))
-            {
-                juce::String error;
-                if (!owner.audioEngine.loadAudioFileIntoTrack(track, performAudioFiles[(size_t)track][(size_t)scene], error))
-                {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                           "Liberty - PERFORM",
-                                                           error.isNotEmpty() ? error : "Audio file could not be loaded.",
-                                                           "OK");
-                    return -1.0;
-                }
-                owner.audioEngine.setTrackStartSeconds(track, 0.0);
-                owner.rebuildWaveformCache(track);
-                owner.trackSourceFiles[(size_t)track] = performAudioFiles[(size_t)track][(size_t)scene];
-                return 0.0;
-            }
-            return owner.audioEngine.getTrackStartSeconds(track);
-        }
-        return owner.midiClipStartSeconds;
+        auto name = performAudioFiles[(size_t)track][(size_t)scene].getFileName();
+        if (name.length() > 22) name = name.substring(0, 19) + "...";
+        return name;
     }
 
     void refreshClipLabels()
@@ -350,10 +612,11 @@ private:
             {
                 auto& button = clipButtons[(size_t)track][(size_t)scene];
                 const bool hasClip = slotHasClip(track, scene);
-                const bool active = activeTrackScene[(size_t)track] == scene;
+                const bool active = activeTrackScene[(size_t)track] == scene
+                                 && track < audioTracks && player.isTrackPlaying(track);
                 const bool target = dragTrack == track && dragScene == scene;
                 button.setButtonText(target ? "DROP AUDIO" : slotName(track, scene));
-                button.setEnabled(hasClip || track < audioTracks);
+                button.setEnabled(track < audioTracks);
                 button.setColour(juce::TextButton::buttonColourId,
                                  target ? juce::Colour(0xff245b70)
                                         : (active ? colour.brighter(0.25f)
@@ -366,7 +629,8 @@ private:
 
     void updateDropTarget(juce::Point<int> point)
     {
-        int nextTrack = -1, nextScene = -1;
+        int nextTrack = -1;
+        int nextScene = -1;
         for (int track = 0; track < audioTracks; ++track)
         {
             for (int scene = 0; scene < sceneCount; ++scene)
@@ -391,51 +655,77 @@ private:
 
     void launchClip(int track, int scene)
     {
-        if (!slotHasClip(track, scene)) return;
-        const double start = slotStartSeconds(track, scene);
-        if (start < 0.0) return;
-
+        if (track < 0 || track >= audioTracks || !slotHasClip(track, scene)) return;
+        juce::String error;
+        if (!player.loadAndLaunch(track, performAudioFiles[(size_t)track][(size_t)scene], error))
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - PERFORM", error, "OK");
+            return;
+        }
         activeTrackScene[(size_t)track] = scene;
-        if (track < audioTracks) owner.selectedTrack = track;
-        else if (track == midiTrack) owner.selectMidiTrack();
-        else owner.selectedTrack = instrumentTrack;
-
-        owner.playheadSeconds = start;
-        owner.audioEngine.setCurrentTimeSeconds(start);
-        owner.audioEngine.setPlaying(true);
-        owner.isPlaying = true;
         refreshClipLabels();
         repaint();
-        owner.repaint();
     }
 
     void launchScene(int scene)
     {
-        bool found = false;
-        double earliest = 0.0;
-        for (int track = 0; track < performTracks; ++track)
-        {
-            if (!slotHasClip(track, scene)) continue;
-            const double start = slotStartSeconds(track, scene);
-            if (start < 0.0) continue;
-            if (!found || start < earliest) earliest = start;
-            found = true;
-            activeTrackScene[(size_t)track] = scene;
-        }
-        if (!found) return;
-        owner.playheadSeconds = earliest;
-        owner.audioEngine.setCurrentTimeSeconds(earliest);
-        owner.audioEngine.setPlaying(true);
-        owner.isPlaying = true;
-        refreshClipLabels();
-        repaint();
-        owner.repaint();
+        for (int track = 0; track < audioTracks; ++track)
+            if (slotHasClip(track, scene)) launchClip(track, scene);
     }
 
-    bool anyClipActive() const
+    void toggleCaptureToArrange()
     {
-        for (const auto scene : activeTrackScene) if (scene >= 0) return true;
-        return false;
+        if (!player.isCapturing())
+        {
+            juce::String error;
+            if (!player.startCapture(error))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Liberty - PERFORM", error, "OK");
+                return;
+            }
+            recordArrangeButton.setButtonText("STOP RECORDING");
+            recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff9b4545));
+        }
+        else
+        {
+            finishCaptureToArrange();
+        }
+    }
+
+    void finishCaptureToArrange()
+    {
+        const auto capture = player.stopCapture();
+        recordArrangeButton.setButtonText("RECORD TO ARRANGE");
+        recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff31404d));
+        if (!capture.existsAsFile()) return;
+
+        int targetTrack = -1;
+        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+            if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
+
+        if (targetTrack < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                "Liberty - PERFORM",
+                "PERFORM capture was saved, but ARRANGE has no empty Audio track.\n\n" + capture.getFullPathName(),
+                "OK");
+            return;
+        }
+
+        juce::String error;
+        if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, capture, error))
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - PERFORM", error, "OK");
+            return;
+        }
+        owner.audioEngine.setTrackStartSeconds(targetTrack, 0.0);
+        owner.trackSourceFiles[(size_t)targetTrack] = capture;
+        owner.rebuildWaveformCache(targetTrack);
+        owner.selectedTrack = targetTrack;
+        owner.repaint();
     }
 
     void timerCallback() override
@@ -449,15 +739,16 @@ private:
     }
 
     MainComponent& owner;
+    PerformAudioPlayer player;
     std::array<std::array<juce::TextButton, sceneCount>, performTracks> clipButtons;
     std::array<juce::TextButton, sceneCount> sceneButtons;
     std::array<juce::TextButton, performTracks> stopTrackButtons;
-    juce::TextButton stopAllButton;
+    juce::TextButton stopAllButton, recordArrangeButton;
     std::array<juce::Rectangle<int>, performTracks> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::array<int, performTracks> activeTrackScene;
     std::array<std::array<juce::File, sceneCount>, audioTracks> performAudioFiles;
-    std::array<bool, audioTracks> suppressArrangeSceneOne {};
+    std::array<bool, audioTracks> performTrackOwnsSlots {};
     int dragTrack = -1;
     int dragScene = -1;
     bool performVisible = false;
@@ -499,6 +790,7 @@ public:
             setPerformVisible(false);
             setLibertyMixConsoleVisible(&owner, true);
         };
+
         startTimerHz(30);
     }
 
@@ -520,7 +812,8 @@ public:
         view.setPerformVisible(shouldShow);
         arrangeOverlay.setVisible(shouldShow);
         mixOverlay.setVisible(shouldShow);
-        refreshButtons();
+        performButton.setColour(juce::TextButton::buttonColourId,
+                                shouldShow ? juce::Colour(0xff315f7a) : juce::Colour(0xff252a31));
         if (shouldShow) view.toFront(false);
         arrangeOverlay.toFront(false);
         mixOverlay.toFront(false);
@@ -531,21 +824,12 @@ public:
     bool isVisible() const noexcept { return performVisible; }
 
 private:
-    void refreshButtons()
-    {
-        performButton.setColour(juce::TextButton::buttonColourId,
-                                performVisible ? juce::Colour(0xff315f7a) : juce::Colour(0xff252a31));
-        arrangeOverlay.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-        mixOverlay.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-    }
-
     void timerCallback() override
     {
         if (stopped.load()) return;
         arrangeOverlay.setBounds(1055, 8, 88, 26);
         mixOverlay.setBounds(1147, 8, 112, 26);
         performButton.setBounds(1263, 8, 94, 26);
-        refreshButtons();
         if (performVisible)
         {
             arrangeOverlay.toFront(false);
