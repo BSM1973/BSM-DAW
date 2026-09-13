@@ -22,6 +22,7 @@ void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
+void shutdownLibertyMixConsoleController();
 
 class LibertyApplication final : public juce::JUCEApplication
 {
@@ -58,6 +59,7 @@ public:
 
             // Stop every UI/controller object which holds a MainComponent reference.
             shutdownLibertyBrowserController();
+            shutdownLibertyMixConsoleController();
             shutdownLibertyTrackPluginInsertControls();
             shutdownLibertyMetronomeController();
             shutdownLibertyAudioClipWarpView();
