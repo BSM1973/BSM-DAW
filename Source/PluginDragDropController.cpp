@@ -6,6 +6,11 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <optional>
 
+bool isLibertyMixConsoleVisible(MainComponent* owner);
+int getLibertyMixConsolePluginDropTrack(MainComponent* owner,
+                                        juce::Point<int> ownerPoint,
+                                        bool instrumentPlugin);
+
 namespace
 {
 constexpr int transportHeight = 76;
@@ -28,9 +33,6 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
     if (item == nullptr)
         return std::nullopt;
 
-    // PluginTreeItem now exposes PluginDescription::createIdentifierString()
-    // as its unique name. This makes drag/drop unambiguous even when the same
-    // plugin is displayed a second time inside the FAVORIS folder.
     const auto identifier = item->getUniqueName();
     if (identifier.isEmpty())
         return std::nullopt;
@@ -56,6 +58,25 @@ MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
             return main;
     }
     return nullptr;
+}
+
+int arrangerDropTrack(MainComponent& main, juce::Point<int> local, bool instrumentPlugin)
+{
+    const int rowH = getLibertyTrackRowHeight();
+    const int relativeY = local.y - transportHeight - rulerHeight;
+    if (relativeY < 0) return -1;
+    const int row = relativeY / juce::jmax(1, rowH);
+
+    if (instrumentPlugin)
+        return row == instrumentTrackIndex ? instrumentTrackIndex : -1;
+    return row >= 0 && row < AudioEngine::maxAudioTracks ? row : -1;
+}
+
+int pluginDropTrack(MainComponent& main, juce::Point<int> local, bool instrumentPlugin)
+{
+    if (isLibertyMixConsoleVisible(&main))
+        return getLibertyMixConsolePluginDropTrack(&main, local, instrumentPlugin);
+    return arrangerDropTrack(main, local, instrumentPlugin);
 }
 
 class PluginDragDropController final : private juce::MouseListener
@@ -107,17 +128,9 @@ private:
         if (auto* main = findMainComponentAtScreenPoint(event.getScreenPosition()))
         {
             const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
-            const int rowH = getLibertyTrackRowHeight();
-            const int row = (local.y - transportHeight - rulerHeight) / juce::jmax(1, rowH);
-
-            const bool validAudioTarget = !candidate->isInstrument
-                && row >= 0 && row < AudioEngine::maxAudioTracks;
-            const bool validInstrumentTarget = candidate->isInstrument
-                && row == instrumentTrackIndex;
-
-            main->setMouseCursor((validAudioTarget || validInstrumentTarget)
-                ? juce::MouseCursor::DraggingHandCursor
-                : juce::MouseCursor::NoCursor);
+            const int target = pluginDropTrack(*main, local, candidate->isInstrument);
+            main->setMouseCursor(target >= 0 ? juce::MouseCursor::DraggingHandCursor
+                                             : juce::MouseCursor::NoCursor);
         }
     }
 
@@ -138,10 +151,19 @@ private:
         main->setMouseCursor(juce::MouseCursor::NormalCursor);
 
         const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
-        const int rowH = getLibertyTrackRowHeight();
-        const int relativeY = local.y - transportHeight - rulerHeight;
-        if (relativeY < 0) return;
-        const int row = relativeY / juce::jmax(1, rowH);
+        const int target = pluginDropTrack(*main, local, plugin->isInstrument);
+
+        if (target < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,
+                plugin->isInstrument ? "Liberty - Instrument" : "Liberty - Effet",
+                plugin->isInstrument
+                    ? "Dépose l'instrument sur la piste Instrument ou sa tranche MIXCONSOLE."
+                    : "Dépose l'effet sur une piste Audio 1 à 4 ou sa tranche MIXCONSOLE.",
+                "OK");
+            return;
+        }
 
         auto& host = LibertyPluginHost::instance();
         juce::String error;
@@ -149,33 +171,15 @@ private:
 
         if (plugin->isInstrument)
         {
-            if (row != instrumentTrackIndex)
-            {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                       "Liberty - Instrument",
-                                                       "Dépose l'instrument sur la piste Instrument 1.",
-                                                       "OK");
-                return;
-            }
-
             main->selectedTrack = instrumentTrackIndex;
             loaded = host.loadInstrument(*plugin, error);
             if (loaded) host.showInstrumentEditor();
         }
         else
         {
-            if (row < 0 || row >= AudioEngine::maxAudioTracks)
-            {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                       "Liberty - Effet",
-                                                       "Dépose l'effet sur une piste Audio 1 à 4.",
-                                                       "OK");
-                return;
-            }
-
-            main->selectedTrack = row;
-            loaded = host.loadEffectForTrack(row, *plugin, error);
-            if (loaded) host.showEditorForTrack(row);
+            main->selectedTrack = target;
+            loaded = host.loadEffectForTrack(target, *plugin, error);
+            if (loaded) host.showEditorForTrack(target);
         }
 
         if (!loaded)
