@@ -4,7 +4,6 @@
 #include "MidiEditor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_audio_devices/juce_audio_devices.h>
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -51,8 +50,7 @@ class MultiMidiClipController;
 MultiMidiClipController* activeController = nullptr;
 
 class MultiMidiClipController final : public juce::Component,
-                                      private juce::Timer,
-                                      private juce::AudioIODeviceCallback
+                                      private juce::Timer
 {
 public:
     explicit MultiMidiClipController(MainComponent& o) : owner(o)
@@ -61,7 +59,6 @@ public:
         owner.addAndMakeVisible(this);
         owner.midiClipOverlay.setVisible(false);
         migrateLegacyClip();
-        owner.audioEngine.getDeviceManager().addAudioCallback(this);
         activeController = this;
         startTimerHz(30);
     }
@@ -72,7 +69,6 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
-        owner.audioEngine.getDeviceManager().removeAudioCallback(this);
         if (activeController == this) activeController = nullptr;
         setVisible(false);
     }
@@ -227,15 +223,6 @@ public:
     }
 
 private:
-    struct PlaybackNote
-    {
-        std::atomic<double> start { 0.0 };
-        std::atomic<double> end { 0.0 };
-        std::atomic<double> frequency { 440.0 };
-        std::atomic<float> amplitude { 0.0f };
-    };
-    static constexpr size_t maxInstrumentNotes = 512;
-
     double secondsPerMeasure() const
     {
         const double beat = 60.0 / juce::jmax(1.0, owner.tempoBpm)
@@ -357,26 +344,18 @@ private:
     void syncPlayback()
     {
         syncActiveClip();
-        std::vector<MidiEngine::NoteEvent> mn;
-        flattenClips(midiClips, mn);
+
+        // Instrument-track clips are now the only MIDI source sent to the hosted
+        // AU/VST3 instrument. The old internal sine generator has been removed.
+        std::vector<MidiEngine::NoteEvent> instrumentNotes;
+        flattenClips(instrumentClips, instrumentNotes);
+
         double end = 0.0;
         for (const auto& c : midiClips) end = juce::jmax(end, c.startSeconds + c.lengthSeconds);
         for (const auto& c : instrumentClips) end = juce::jmax(end, c.startSeconds + c.lengthSeconds);
-        owner.audioEngine.setMidiNotes(mn, 0.0, end, owner.tempoBpm);
-        owner.audioEngine.setProjectExtraLengthSeconds(end);
 
-        std::vector<MidiEngine::NoteEvent> in;
-        flattenClips(instrumentClips, in);
-        const auto count = juce::jmin((size_t)maxInstrumentNotes, in.size());
-        for (size_t i = 0; i < count; ++i)
-        {
-            const auto& n = in[i];
-            instrumentPlayback[i].start.store(MidiEngine::tickToSeconds(n.startTick, owner.tempoBpm));
-            instrumentPlayback[i].end.store(MidiEngine::tickToSeconds(n.startTick + n.lengthTicks, owner.tempoBpm));
-            instrumentPlayback[i].frequency.store(440.0 * std::pow(2.0, (static_cast<int>(n.pitch) - 69) / 12.0));
-            instrumentPlayback[i].amplitude.store(0.045f * ((float)n.velocity / 127.0f));
-        }
-        instrumentNoteCount.store(count, std::memory_order_release);
+        owner.audioEngine.setMidiNotes(instrumentNotes, 0.0, end, owner.tempoBpm);
+        owner.audioEngine.setProjectExtraLengthSeconds(end);
     }
 
     void drawClips(juce::Graphics& g, bool ins, const std::vector<Clip>& v, int row, int colourIndex)
@@ -547,51 +526,6 @@ private:
         repaint();
     }
 
-    void audioDeviceAboutToStart(juce::AudioIODevice*) override {}
-    void audioDeviceStopped() override {}
-
-    void audioDeviceIOCallbackWithContext(const float* const*, int,
-                                           float* const* outputs, int numOutputs,
-                                           int numSamples,
-                                           const juce::AudioIODeviceCallbackContext&) override
-    {
-        for (int ch = 0; ch < numOutputs; ++ch)
-            if (outputs[ch]) juce::FloatVectorOperations::clear(outputs[ch], numSamples);
-
-        if (!owner.audioEngine.isPlaying() || owner.audioEngine.isInstrumentTrackMuted()) return;
-        if (owner.audioEngine.isAnyTrackSolo() && !owner.audioEngine.isInstrumentTrackSolo()) return;
-        const auto rate = owner.audioEngine.getSampleRate();
-        if (rate <= 0.0) return;
-        const auto pos = owner.audioEngine.transportSamples.load();
-        const auto count = instrumentNoteCount.load(std::memory_order_acquire);
-        const float gain = instrumentGain.load();
-        const float pan = instrumentPan.load();
-        const float lg = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
-        const float rg = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
-        constexpr double tp = 6.28318530717958647692;
-        for (int s = 0; s < numSamples; ++s)
-        {
-            const double t = (double)(pos + s) / rate;
-            float v = 0.0f;
-            for (size_t i = 0; i < count; ++i)
-            {
-                const double st = instrumentPlayback[i].start.load();
-                const double en = instrumentPlayback[i].end.load();
-                if (t < st || t >= en) continue;
-                const double nt = t - st;
-                const double dur = en - st;
-                float env = 1.0f;
-                if (nt < 0.005) env = (float)(nt / 0.005);
-                if (dur - nt < 0.010) env = juce::jmin(env, (float)((dur - nt) / 0.010));
-                v += (float)(std::sin(tp * instrumentPlayback[i].frequency.load() * nt)
-                    * (double)(instrumentPlayback[i].amplitude.load() * env));
-            }
-            const float master = owner.audioEngine.getMasterGain();
-            if (numOutputs > 0 && outputs[0]) outputs[0][s] += v * lg * master;
-            if (numOutputs > 1 && outputs[1]) outputs[1][s] += v * rg * master;
-        }
-    }
-
     juce::String serialiseClips() const
     {
         juce::XmlElement root("MultiMidiClips");
@@ -702,8 +636,6 @@ private:
     double dragStartSeconds = 0.0, dragStartLength = 0.0;
     int mixerDragMode = 0;
     std::atomic<float> instrumentGain { 1.0f }, instrumentPan { 0.0f };
-    std::array<PlaybackNote, maxInstrumentNotes> instrumentPlayback;
-    std::atomic<size_t> instrumentNoteCount { 0 };
     std::atomic<bool> stopped { false };
     juce::String lastProjectPath;
 };
