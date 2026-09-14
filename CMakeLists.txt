@@ -67,6 +67,7 @@ target_sources(BSM_DAW PRIVATE
     Source/SpliceBrowserController.cpp
     Source/BrowserResizeController.cpp
     Source/UILayerCoordinator.cpp
+    Source/LibertyAIController.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
