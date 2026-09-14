@@ -22,6 +22,7 @@ void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
 void shutdownLibertyBrowserResizeController();
 void shutdownLibertyUILayerCoordinator();
+void shutdownLibertyAIController();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
 void shutdownLibertyMixConsoleController();
@@ -60,15 +61,13 @@ public:
     {
         if (mainWindow != nullptr)
         {
-            // Global listeners/timers must be detached while JUCE Desktop still exists.
             shutdownLibertySpliceBrowserController();
+            shutdownLibertyAIController();
             shutdownLibertyUILayerCoordinator();
             shutdownLibertyBrowserResizeController();
             shutdownLibertyUISymbolCleaner();
             shutdownLibertyPageModeCoordinator();
             shutdownLibertyPluginDragDropController();
-
-            // Stop every UI/controller object which holds a MainComponent reference.
             shutdownLibertyBrowserController();
             shutdownLibertyPerformController();
             shutdownLibertyMixConsoleController();
@@ -85,18 +84,8 @@ public:
             shutdownLibertyMidiGroupDragInteraction();
             shutdownLibertyMidiNoteSelectionInteraction();
             shutdownLibertyMidiEditor();
-
-            // Destroy MainComponent so AudioEngine removes its realtime callback.
             mainWindow.reset();
-
-            // Release every hosted AU/VST3 and editor explicitly while JUCE is alive.
             LibertyPluginHost::instance().shutdown();
-
-            // Liberty owns several process-lifetime JUCE controller singletons. Their
-            // late C++ static destructors run after JUCE's Desktop/MessageManager teardown
-            // and have been the remaining source of the macOS quit crash. Everything
-            // meaningful is already explicitly stopped/released above, so terminate now
-            // without executing that unsafe late static-destruction phase.
             std::_Exit(0);
         }
     }
