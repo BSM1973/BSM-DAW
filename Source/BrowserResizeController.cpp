@@ -12,6 +12,7 @@ namespace
 constexpr int topBarHeight = 76;
 constexpr int minBrowserWidth = 260;
 constexpr int maxBrowserWidth = 720;
+constexpr int defaultBrowserWidth = 320;
 
 juce::Component* findBrowserPanel(MainComponent& owner)
 {
@@ -66,7 +67,7 @@ public:
 
 private:
     BrowserResizeController& controller;
-    int startWidth = 320;
+    int startWidth = defaultBrowserWidth;
     int startScreenX = 0;
 };
 
@@ -78,11 +79,15 @@ public:
         : owner(ownerIn), handle(*this)
     {
         if (const auto file = widthSettingsFile(); file.existsAsFile())
-            preferredWidth = juce::jlimit(minBrowserWidth, maxBrowserWidth, file.loadFileAsString().getIntValue());
+        {
+            const int stored = file.loadFileAsString().getIntValue();
+            if (stored > 0)
+                preferredWidth = juce::jlimit(minBrowserWidth, maxBrowserWidth, stored);
+        }
 
         handle.setVisible(false);
         owner.addAndMakeVisible(handle);
-        startTimerHz(30);
+        startTimerHz(12);
     }
 
     ~BrowserResizeController() override { shutdown(); }
@@ -113,13 +118,16 @@ public:
 
 private:
     friend class ResizeHandle;
+    friend int ::getLibertyPreferredBrowserWidth(MainComponent* owner);
 
     void attachIfPossible()
     {
         if (browserPanel != nullptr) return;
         browserPanel = findBrowserPanel(owner);
         if (browserPanel == nullptr) return;
+
         browserPanel->addComponentListener(this);
+        browserPanel->setAlwaysOnTop(true);
         applyBounds();
     }
 
@@ -145,8 +153,11 @@ private:
         }
 
         handle.setBounds(wanted.getX() - 5, wanted.getY(), 10, wanted.getHeight());
-        handle.setVisible(true);
-        handle.toFront(false);
+        if (!handle.isVisible())
+        {
+            handle.setVisible(true);
+            handle.toFront(false);
+        }
     }
 
     void componentMovedOrResized(juce::Component&, bool, bool) override
@@ -163,13 +174,16 @@ private:
     {
         if (stopped.load()) return;
         attachIfPossible();
-        applyBounds();
+        if (browserPanel != nullptr && browserPanel->isVisible())
+            applyBounds();
+        else
+            handle.setVisible(false);
     }
 
     MainComponent& owner;
     ResizeHandle handle;
     juce::Component* browserPanel = nullptr;
-    int preferredWidth = 320;
+    int preferredWidth = defaultBrowserWidth;
     bool applying = false;
     std::atomic<bool> stopped { false };
 };
@@ -220,6 +234,23 @@ private:
 };
 
 Bootstrap bootstrap;
+}
+
+int getLibertyPreferredBrowserWidth(MainComponent* owner)
+{
+    if (owner == nullptr) return defaultBrowserWidth;
+    const auto it = controllers.find(owner);
+    if (it != controllers.end() && it->second)
+        return it->second->getPreferredWidth();
+
+    const auto file = widthSettingsFile();
+    if (file.existsAsFile())
+    {
+        const int stored = file.loadFileAsString().getIntValue();
+        if (stored > 0)
+            return juce::jlimit(minBrowserWidth, maxBrowserWidth, stored);
+    }
+    return defaultBrowserWidth;
 }
 
 void shutdownLibertyBrowserResizeController()
