@@ -21,6 +21,7 @@ void shutdownLibertyBrowserResizeController();
 void shutdownLibertyUILayerCoordinator();
 void shutdownLibertyAudioSettingsRelocator();
 void shutdownLibertyAIAdvancedController();
+void shutdownLibertyAINoveltyController();
 void shutdownLibertyAIController();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
@@ -62,6 +63,7 @@ public:
         {
             shutdownLibertySpliceBrowserController();
             shutdownLibertyAudioSettingsRelocator();
+            shutdownLibertyAINoveltyController();
             shutdownLibertyAIAdvancedController();
             shutdownLibertyAIController();
             shutdownLibertyUILayerCoordinator();
