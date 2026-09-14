@@ -70,6 +70,8 @@ target_sources(BSM_DAW PRIVATE
     Source/AudioSettingsRelocator.cpp
     Source/LibertyAIController.cpp
     Source/LibertyAIAdvancedController.cpp
+    Source/AIRenderController.cpp
+    Source/AINoveltyController.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
