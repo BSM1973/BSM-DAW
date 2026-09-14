@@ -21,6 +21,7 @@ void shutdownLibertyAudioClipWarpView();
 void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
 void shutdownLibertyBrowserResizeController();
+void shutdownLibertyUILayerCoordinator();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
 void shutdownLibertyMixConsoleController();
@@ -61,6 +62,7 @@ public:
         {
             // Global listeners/timers must be detached while JUCE Desktop still exists.
             shutdownLibertySpliceBrowserController();
+            shutdownLibertyUILayerCoordinator();
             shutdownLibertyBrowserResizeController();
             shutdownLibertyUISymbolCleaner();
             shutdownLibertyPageModeCoordinator();
