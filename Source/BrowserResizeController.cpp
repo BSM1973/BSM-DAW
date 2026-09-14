@@ -7,6 +7,8 @@
 #include <map>
 #include <memory>
 
+int getLibertyPreferredBrowserWidth(MainComponent* owner);
+
 namespace
 {
 constexpr int topBarHeight = 76;
