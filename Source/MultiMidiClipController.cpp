@@ -73,6 +73,41 @@ public:
         setVisible(false);
     }
 
+    bool owns(MainComponent& candidate) const noexcept { return &owner == &candidate; }
+
+    bool commitGeneratedClip(bool instrumentTrack)
+    {
+        const auto generatedNotes = owner.midiEngine.getNotesCopy();
+        if (generatedNotes.empty()) return false;
+
+        // Preserve the currently edited clip before switching to the new AI result.
+        syncActiveClip();
+
+        Clip clip;
+        clip.id = nextClipId++;
+        clip.startSeconds = juce::jmax(0.0, owner.midiClipStartSeconds);
+        clip.lengthSeconds = juce::jmax(secondsPerMeasure(), owner.midiClipLengthSeconds);
+        clip.userLength = true;
+        clip.notes = generatedNotes;
+
+        auto& destination = instrumentTrack ? instrumentClips : midiClips;
+        destination.push_back(std::move(clip));
+        activeInstrument = instrumentTrack;
+        activeIndex = (int)destination.size() - 1;
+
+        auto& active = destination[(size_t)activeIndex];
+        owner.midiClipStartSeconds = active.startSeconds;
+        owner.midiClipLengthSeconds = active.lengthSeconds;
+        owner.midiClipLengthUserDefined = true;
+        owner.selectedTrack = instrumentTrack ? -2 : -1;
+        owner.midiEngine.clearUndoHistory();
+
+        syncPlayback();
+        repaint();
+        owner.repaint();
+        return true;
+    }
+
     void setInstrumentGain(float value) noexcept { instrumentGain.store(juce::jlimit(0.0f, 2.0f, value)); }
     float getInstrumentGain() const noexcept { return instrumentGain.load(); }
     void setInstrumentPan(float value) noexcept { instrumentPan.store(juce::jlimit(-1.0f, 1.0f, value)); }
@@ -344,16 +379,11 @@ private:
     void syncPlayback()
     {
         syncActiveClip();
-
-        // Instrument-track clips are now the only MIDI source sent to the hosted
-        // AU/VST3 instrument. The old internal sine generator has been removed.
         std::vector<MidiEngine::NoteEvent> instrumentNotes;
         flattenClips(instrumentClips, instrumentNotes);
-
         double end = 0.0;
         for (const auto& c : midiClips) end = juce::jmax(end, c.startSeconds + c.lengthSeconds);
         for (const auto& c : instrumentClips) end = juce::jmax(end, c.startSeconds + c.lengthSeconds);
-
         owner.audioEngine.setMidiNotes(instrumentNotes, 0.0, end, owner.tempoBpm);
         owner.audioEngine.setProjectExtraLengthSeconds(end);
     }
@@ -421,7 +451,6 @@ private:
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(master ? "MASTER" : getLibertyTrackName(instrumentTrackIndex), c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred, true);
-
         if (!master)
         {
             const auto m = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
@@ -435,7 +464,6 @@ private:
             g.drawText("M", m, juce::Justification::centred);
             g.drawText("S", s, juce::Justification::centred);
         }
-
         const int ft = c.getY() + 58;
         const int fb = c.getBottom() - 45;
         const auto f = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)ft, 14.0f, (float)(fb - ft));
@@ -463,37 +491,12 @@ private:
         {
             const auto m = juce::Rectangle<int>(inst.getX() + 8, inst.getY() + 32, 44, 20);
             const auto s = juce::Rectangle<int>(inst.getX() + 58, inst.getY() + 32, 44, 20);
-            if (m.contains(p))
-            {
-                owner.audioEngine.setInstrumentTrackMuted(!owner.audioEngine.isInstrumentTrackMuted());
-                repaint();
-                return true;
-            }
-            if (s.contains(p))
-            {
-                owner.audioEngine.setInstrumentTrackSolo(!owner.audioEngine.isInstrumentTrackSolo());
-                repaint();
-                return true;
-            }
-            if (p.y >= inst.getY() + 58 && p.y <= inst.getBottom() - 45)
-            {
-                mixerDragMode = 1;
-                dragMixer(p);
-                return true;
-            }
-            if (p.y >= inst.getBottom() - 28)
-            {
-                mixerDragMode = 2;
-                dragMixer(p);
-                return true;
-            }
+            if (m.contains(p)) { owner.audioEngine.setInstrumentTrackMuted(!owner.audioEngine.isInstrumentTrackMuted()); repaint(); return true; }
+            if (s.contains(p)) { owner.audioEngine.setInstrumentTrackSolo(!owner.audioEngine.isInstrumentTrackSolo()); repaint(); return true; }
+            if (p.y >= inst.getY() + 58 && p.y <= inst.getBottom() - 45) { mixerDragMode = 1; dragMixer(p); return true; }
+            if (p.y >= inst.getBottom() - 28) { mixerDragMode = 2; dragMixer(p); return true; }
         }
-        if (master.contains(p) && p.y >= master.getY() + 58 && p.y <= master.getBottom() - 45)
-        {
-            mixerDragMode = 3;
-            dragMixer(p);
-            return true;
-        }
+        if (master.contains(p) && p.y >= master.getY() + 58 && p.y <= master.getBottom() - 45) { mixerDragMode = 3; dragMixer(p); return true; }
         return true;
     }
 
@@ -665,6 +668,13 @@ private:
 };
 
 Bootstrap bootstrap;
+}
+
+bool commitLibertyAIGeneratedClip(MainComponent& owner, bool instrumentTrack)
+{
+    return activeController != nullptr && activeController->owns(owner)
+        ? activeController->commitGeneratedClip(instrumentTrack)
+        : false;
 }
 
 float getLibertyInstrumentGain() noexcept
