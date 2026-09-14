@@ -11,9 +11,10 @@
 #include <memory>
 #include <thread>
 
+int getLibertyPreferredBrowserWidth(MainComponent* owner);
+
 namespace
 {
-constexpr int browserWidth = 320;
 constexpr int topBarHeight = 76;
 
 class PluginTreeItem final : public juce::TreeViewItem
@@ -30,27 +31,23 @@ public:
         : kind(kindIn), label(std::move(labelIn)), activate(std::move(activateIn)),
           isFavourite(std::move(isFavouriteIn)), toggleFavourite(std::move(toggleFavouriteIn))
     {
-        if (descriptionIn != nullptr)
-            description = *descriptionIn;
+        if (descriptionIn != nullptr) description = *descriptionIn;
     }
 
     bool mightContainSubItems() override { return kind != Kind::plugin; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
     int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? 38 : 20); }
-    juce::String getUniqueName() const override
-    {
-        return kind == Kind::plugin ? description.createIdentifierString() : label;
-    }
+    juce::String getUniqueName() const override { return kind == Kind::plugin ? description.createIdentifierString() : label; }
 
     void paintItem(juce::Graphics& g, int width, int height) override
     {
         if (kind == Kind::root) return;
-
         if (kind == Kind::manufacturer)
         {
-            g.setColour(label == "★ FAVORIS" ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b222a));
+            const bool fav = label == "FAVORIS";
+            g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b222a));
             g.fillRect(0, 0, width, height);
-            g.setColour(label == "★ FAVORIS" ? juce::Colour(0xffffc857) : juce::Colour(0xff72d8f5));
+            g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xff72d8f5));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText(label, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
             return;
@@ -62,44 +59,25 @@ public:
             g.fillRect(0, 0, width, height);
         }
 
-        const bool favourite = isFavourite && isFavourite(description);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(description.name, 4, 3, width - 32, 17, juce::Justification::centredLeft, true);
-
-        if (favourite)
-        {
-            g.setColour(juce::Colour(0xffffc857));
-            g.setFont(juce::Font(14.0f, juce::Font::bold));
-            g.drawText("★", width - 27, 2, 22, 19, juce::Justification::centred);
-        }
-
+        g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(9.0f));
-        const auto kindText = description.isInstrument ? "INSTRUMENT" : "FX";
-        g.drawText(description.pluginFormatName + " • " + kindText,
+        g.drawText(description.pluginFormatName + "  " + (description.isInstrument ? "INSTRUMENT" : "FX"),
                    4, 20, width - 8, 14, juce::Justification::centredLeft, true);
     }
 
     void itemClicked(const juce::MouseEvent& event) override
     {
         if (kind == Kind::plugin && event.mods.isRightButtonDown() && toggleFavourite)
-        {
             toggleFavourite(description);
-            return;
-        }
     }
 
     void itemDoubleClicked(const juce::MouseEvent&) override
     {
-        if (kind == Kind::manufacturer)
-        {
-            setOpen(!isOpen());
-            return;
-        }
-
-        if (kind == Kind::plugin && activate)
-            activate(description);
+        if (kind == Kind::manufacturer) { setOpen(!isOpen()); return; }
+        if (kind == Kind::plugin && activate) activate(description);
     }
 
     const juce::PluginDescription* getPluginDescription() const noexcept
@@ -122,15 +100,14 @@ class BrowserPanel final : public juce::Component,
 {
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
-        : owner(ownerIn),
-          filter("*", "*", "All files"),
-          directoryList(&filter, thread),
-          fileTree(directoryList)
+        : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
     {
+        setAlwaysOnTop(true);
         thread.startThread();
         loadFavourites();
 
         toggleButton.setButtonText("BROWSER");
+        toggleButton.setAlwaysOnTop(true);
         toggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
         toggleButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
         toggleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -140,7 +117,7 @@ public:
         toggleButton.onClick = [this] { setBrowserOpen(toggleButton.getToggleState()); };
         owner.addAndMakeVisible(toggleButton);
 
-        closeButton.setButtonText("×");
+        closeButton.setButtonText("CLOSE");
         closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
         closeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         closeButton.onClick = [this]
@@ -194,7 +171,7 @@ public:
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
         clearBlacklistButton.setButtonText("CLEAR BL");
-        favouritePluginButton.setButtonText("★ FAV");
+        favouritePluginButton.setButtonText("FAV");
         loadPluginButton.setButtonText("LOAD");
         openPluginButton.setButtonText("OPEN UI");
         unloadPluginButton.setButtonText("UNLOAD");
@@ -202,11 +179,9 @@ public:
                          &loadPluginButton, &openPluginButton, &unloadPluginButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-            b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
             b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             addAndMakeVisible(*b);
         }
-        favouritePluginButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffc857));
 
         scanPluginsButton.onClick = [this] { scanPlugins(); };
         blacklistButton.onClick = [this] { showBlacklist(); };
@@ -226,7 +201,7 @@ public:
         setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         refreshPlugins();
         setCategory(Category::files);
-        startTimerHz(20);
+        startTimerHz(10);
     }
 
     ~BrowserPanel() override { shutdown(); }
@@ -252,20 +227,6 @@ public:
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
-
-        if (category != Category::plugins)
-        {
-            g.setColour(juce::Colour(0xff858c96));
-            g.setFont(juce::Font(9.5f));
-            g.drawText(rootDirectory.getFullPathName(), 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
-        }
-        else
-        {
-            g.setColour(juce::Colour(0xff72d8f5));
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("PLUGINS PAR FABRICANT", 14, 78, getWidth() - 28, 18, juce::Justification::centredLeft, true);
-        }
-
         g.setColour(juce::Colour(0xff20252c));
         g.fillRect(0, 100, getWidth(), 1);
         g.setColour(juce::Colour(0xff8f98a3));
@@ -275,7 +236,7 @@ public:
 
     void resized() override
     {
-        closeButton.setBounds(getWidth() - 38, 8, 28, 26);
+        closeButton.setBounds(getWidth() - 72, 8, 62, 26);
         filesButton.setBounds(8, 42, 52, 26);
         audioButton.setBounds(62, 42, 52, 26);
         midiButton.setBounds(116, 42, 46, 26);
@@ -286,14 +247,15 @@ public:
         fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 174));
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
-        blacklistButton.setBounds(10, 140, 145, 26);
-        clearBlacklistButton.setBounds(159, 140, 151, 26);
+        blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
+        clearBlacklistButton.setBounds(14 + (getWidth() - 24) / 2, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
         pluginTree.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
         const int controlsY = getHeight() - 94;
-        favouritePluginButton.setBounds(10, controlsY, 66, 28);
-        loadPluginButton.setBounds(80, controlsY, 54, 28);
-        openPluginButton.setBounds(138, controlsY, 76, 28);
-        unloadPluginButton.setBounds(218, controlsY, 92, 28);
+        const int w = juce::jmax(48, (getWidth() - 28) / 4);
+        favouritePluginButton.setBounds(10, controlsY, w, 28);
+        loadPluginButton.setBounds(14 + w, controlsY, w, 28);
+        openPluginButton.setBounds(18 + w * 2, controlsY, w, 28);
+        unloadPluginButton.setBounds(22 + w * 3, controlsY, w, 28);
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
     }
 
@@ -308,51 +270,32 @@ private:
         return folder.getChildFile("PluginFavorites.txt");
     }
 
-    static juce::String favouriteKey(const juce::PluginDescription& description)
+    static juce::String favouriteKey(const juce::PluginDescription& d)
     {
-        auto id = description.createIdentifierString();
-        if (id.isEmpty())
-            id = description.pluginFormatName + "|" + description.manufacturerName + "|" + description.name;
-        return id;
+        auto id = d.createIdentifierString();
+        return id.isNotEmpty() ? id : d.pluginFormatName + "|" + d.manufacturerName + "|" + d.name;
     }
 
     void loadFavourites()
     {
         favouriteKeys.clear();
-        const auto file = favouritesFile();
-        if (!file.existsAsFile()) return;
-        file.readLines(favouriteKeys);
-        favouriteKeys.trim();
-        favouriteKeys.removeEmptyStrings();
-        favouriteKeys.removeDuplicates(false);
+        if (auto file = favouritesFile(); file.existsAsFile()) file.readLines(favouriteKeys);
+        favouriteKeys.trim(); favouriteKeys.removeEmptyStrings(); favouriteKeys.removeDuplicates(false);
     }
 
-    void saveFavourites()
-    {
-        favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n") + (favouriteKeys.isEmpty() ? "" : "\n"));
-    }
+    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
+    bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
 
-    bool isFavouritePlugin(const juce::PluginDescription& description) const
+    void toggleFavourite(const juce::PluginDescription& d)
     {
-        return favouriteKeys.contains(favouriteKey(description));
-    }
-
-    void toggleFavourite(const juce::PluginDescription& description)
-    {
-        const auto key = favouriteKey(description);
+        const auto key = favouriteKey(d);
         const int index = favouriteKeys.indexOf(key);
-        if (index >= 0) favouriteKeys.remove(index);
-        else favouriteKeys.add(key);
-        saveFavourites();
-        rebuildPluginTree();
+        if (index >= 0) favouriteKeys.remove(index); else favouriteKeys.add(key);
+        saveFavourites(); rebuildPluginTree();
         pluginStatus.setText(index >= 0 ? "Retiré des favoris" : "Ajouté aux favoris", juce::dontSendNotification);
     }
 
-    void toggleSelectedFavourite()
-    {
-        if (const auto* description = selectedPluginDescription())
-            toggleFavourite(*description);
-    }
+    void toggleSelectedFavourite() { if (const auto* d = selectedPluginDescription()) toggleFavourite(*d); }
 
     void selectionChanged() override {}
     void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
@@ -364,7 +307,6 @@ private:
         browserOpen = shouldOpen;
         setVisible(browserOpen);
         if (browserOpen) toFront(false);
-        toggleButton.toFront(false);
         adjustHostWindow(browserOpen);
         owner.repaint();
     }
@@ -374,6 +316,7 @@ private:
         auto* window = owner.findParentComponentOfClass<juce::DocumentWindow>();
         if (window == nullptr) return;
         auto bounds = window->getBounds();
+        const int width = getLibertyPreferredBrowserWidth(&owner);
         if (opening)
         {
             if (hostExpanded) return;
@@ -382,13 +325,12 @@ private:
             if (display != nullptr)
             {
                 const auto usable = display->userArea;
-                int wantedRight = bounds.getRight() + browserWidth;
+                int wantedRight = bounds.getRight() + width;
                 int newX = bounds.getX();
                 if (wantedRight > usable.getRight()) newX = juce::jmax(usable.getX(), bounds.getX() - (wantedRight - usable.getRight()));
-                const int newWidth = juce::jmin(usable.getWidth(), bounds.getWidth() + browserWidth);
-                window->setBounds(newX, bounds.getY(), newWidth, bounds.getHeight());
+                window->setBounds(newX, bounds.getY(), juce::jmin(usable.getWidth(), bounds.getWidth() + width), bounds.getHeight());
             }
-            else window->setSize(bounds.getWidth() + browserWidth, bounds.getHeight());
+            else window->setSize(bounds.getWidth() + width, bounds.getHeight());
             hostExpanded = true;
         }
         else if (hostExpanded)
@@ -404,7 +346,6 @@ private:
         rootDirectory = directory;
         directoryList.setDirectory(rootDirectory, true, true);
         fileTree.refresh();
-        repaint();
     }
 
     void setCategory(Category newCategory)
@@ -415,21 +356,14 @@ private:
         midiButton.setToggleState(category == Category::midi, juce::dontSendNotification);
         presetsButton.setToggleState(category == Category::presets, juce::dontSendNotification);
         pluginsButton.setToggleState(category == Category::plugins, juce::dontSendNotification);
-
         const bool pluginMode = category == Category::plugins;
-        fileTree.setVisible(!pluginMode);
-        homeButton.setVisible(!pluginMode);
-        pluginTree.setVisible(pluginMode);
-        scanPluginsButton.setVisible(pluginMode);
-        blacklistButton.setVisible(pluginMode);
-        clearBlacklistButton.setVisible(pluginMode);
-        favouritePluginButton.setVisible(pluginMode);
-        loadPluginButton.setVisible(pluginMode);
-        openPluginButton.setVisible(pluginMode);
-        unloadPluginButton.setVisible(pluginMode);
+        fileTree.setVisible(!pluginMode); homeButton.setVisible(!pluginMode);
+        pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
+        blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
+        favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
+        openPluginButton.setVisible(pluginMode); unloadPluginButton.setVisible(pluginMode);
         pluginStatus.setVisible(pluginMode);
         if (pluginMode && !scanning.load()) refreshPlugins();
-        repaint();
     }
 
     bool fileMatchesCategory(const juce::File& file) const
@@ -446,11 +380,11 @@ private:
     {
         switch (category)
         {
-            case Category::audio: return "Double-clic sur WAV/AIFF pour charger sur la piste Audio sélectionnée";
+            case Category::audio: return "WAV / AIFF / MP3 / FLAC";
             case Category::midi: return "Fichiers MIDI";
-            case Category::presets: return "Presets XML / FXP / VSTPreset / AUPreset";
-            case Category::plugins: return "★ FAV ou clic droit • glisser-déposer vers une piste";
-            default: return "Navigation fichiers et dossiers";
+            case Category::presets: return "Presets";
+            case Category::plugins: return "Favoris ou clic droit - glisser-déposer vers une piste";
+            default: return rootDirectory.getFullPathName();
         }
     }
 
@@ -460,8 +394,7 @@ private:
         if (file.isDirectory()) { setRoot(file); return; }
         if (!fileMatchesCategory(file)) return;
         const auto ext = file.getFileExtension().toLowerCase();
-        const bool audio = ext == ".wav" || ext == ".aif" || ext == ".aiff";
-        if (!audio) return;
+        if (ext != ".wav" && ext != ".aif" && ext != ".aiff") return;
         int track = owner.selectedTrack;
         if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String error;
@@ -477,289 +410,164 @@ private:
         owner.repaint();
     }
 
-    PluginTreeItem* makePluginItem(const juce::PluginDescription& description)
+    PluginTreeItem* makePluginItem(const juce::PluginDescription& d)
     {
-        return new PluginTreeItem(
-            PluginTreeItem::Kind::plugin,
-            description.name,
-            &description,
-            [this](const juce::PluginDescription& d) { loadPluginDescription(d); },
-            [this](const juce::PluginDescription& d) { return isFavouritePlugin(d); },
-            [this](const juce::PluginDescription& d) { toggleFavourite(d); });
+        return new PluginTreeItem(PluginTreeItem::Kind::plugin, d.name, &d,
+            [this](const juce::PluginDescription& x) { loadPluginDescription(x); },
+            [this](const juce::PluginDescription& x) { return isFavouritePlugin(x); },
+            [this](const juce::PluginDescription& x) { toggleFavourite(x); });
     }
 
     void rebuildPluginTree()
     {
         pluginTree.setRootItem(nullptr);
         pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
-
-        std::sort(pluginDescriptions.begin(), pluginDescriptions.end(),
-                  [](const juce::PluginDescription& a, const juce::PluginDescription& b)
-                  {
-                      auto am = a.manufacturerName.trim();
-                      auto bm = b.manufacturerName.trim();
-                      if (am.isEmpty()) am = "Other";
-                      if (bm.isEmpty()) bm = "Other";
-                      const int manufacturerCompare = am.compareNatural(bm, false);
-                      if (manufacturerCompare != 0) return manufacturerCompare < 0;
-                      return a.name.compareNatural(b.name, false) < 0;
-                  });
-
-        auto* favouritesFolder = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "★ FAVORIS");
-        pluginRoot->addSubItem(favouritesFolder);
-        for (const auto& description : pluginDescriptions)
-            if (isFavouritePlugin(description))
-                favouritesFolder->addSubItem(makePluginItem(description));
-
-        juce::String currentManufacturer;
-        PluginTreeItem* manufacturerItem = nullptr;
-
-        for (const auto& description : pluginDescriptions)
+        std::sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& a, const auto& b)
         {
-            auto manufacturer = description.manufacturerName.trim();
-            if (manufacturer.isEmpty()) manufacturer = "Other";
+            auto am = a.manufacturerName.trim(); if (am.isEmpty()) am = "Other";
+            auto bm = b.manufacturerName.trim(); if (bm.isEmpty()) bm = "Other";
+            const int c = am.compareNatural(bm, false);
+            return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
+        });
 
-            if (manufacturer != currentManufacturer)
+        auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
+        pluginRoot->addSubItem(fav);
+        for (const auto& d : pluginDescriptions) if (isFavouritePlugin(d)) fav->addSubItem(makePluginItem(d));
+
+        juce::String current;
+        PluginTreeItem* group = nullptr;
+        for (const auto& d : pluginDescriptions)
+        {
+            auto m = d.manufacturerName.trim(); if (m.isEmpty()) m = "Other";
+            if (m != current)
             {
-                currentManufacturer = manufacturer;
-                manufacturerItem = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
-                pluginRoot->addSubItem(manufacturerItem);
+                current = m;
+                group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, m);
+                pluginRoot->addSubItem(group);
             }
-
-            if (manufacturerItem != nullptr)
-                manufacturerItem->addSubItem(makePluginItem(description));
+            if (group != nullptr) group->addSubItem(makePluginItem(d));
         }
-
         pluginTree.setRootItem(pluginRoot.get());
-        pluginRoot->setOpen(true);
-        favouritesFolder->setOpen(true);
-        pluginTree.repaint();
+        pluginRoot->setOpen(true); fav->setOpen(true); pluginTree.repaint();
     }
 
     void refreshPlugins()
     {
         pluginDescriptions = LibertyPluginHost::instance().getPluginDescriptions();
-        rebuildPluginTree();
-        refreshPluginStatus();
+        rebuildPluginTree(); refreshPluginStatus();
     }
 
     const juce::PluginDescription* selectedPluginDescription() const
     {
         if (auto* selected = pluginTree.getSelectedItem(0))
-            if (auto* pluginItem = dynamic_cast<PluginTreeItem*>(selected))
-                return pluginItem->getPluginDescription();
+            if (auto* item = dynamic_cast<PluginTreeItem*>(selected)) return item->getPluginDescription();
         return nullptr;
     }
 
-    void setScanStatus(const juce::String& text)
-    {
-        const juce::ScopedLock scoped(scanStatusLock);
-        scanStatusText = text;
-    }
-
-    juce::String getScanStatus() const
-    {
-        const juce::ScopedLock scoped(scanStatusLock);
-        return scanStatusText;
-    }
+    void setScanStatus(const juce::String& text) { const juce::ScopedLock lock(scanStatusLock); scanStatusText = text; }
+    juce::String getScanStatus() const { const juce::ScopedLock lock(scanStatusLock); return scanStatusText; }
 
     void scanPlugins()
     {
         if (scanning.exchange(true)) return;
         if (scanThread.joinable()) scanThread.join();
-
         scanFinishedPending.store(false);
-        scanPluginsButton.setEnabled(false);
-        favouritePluginButton.setEnabled(false);
-        loadPluginButton.setEnabled(false);
-        openPluginButton.setEnabled(false);
-        unloadPluginButton.setEnabled(false);
-        blacklistButton.setEnabled(false);
-        clearBlacklistButton.setEnabled(false);
-        setScanStatus("Préparation du scan AU + VST3…");
-        pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
-
+        for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
+                         &loadPluginButton, &openPluginButton, &unloadPluginButton }) b->setEnabled(false);
+        setScanStatus("Préparation du scan AU + VST3");
         scanThread = std::thread([this]
         {
-            auto& host = LibertyPluginHost::instance();
-            host.scanInstalledPlugins([this](const juce::String& formatName,
-                                             const juce::String& pluginName,
-                                             float progress)
+            LibertyPluginHost::instance().scanInstalledPlugins([this](const juce::String& formatName, const juce::String& pluginName, float progress)
             {
                 if (stopped.load()) return;
-                if (pluginName.isEmpty())
-                {
-                    setScanStatus("Finalisation du scan…");
-                    return;
-                }
                 const int percent = juce::jlimit(0, 100, juce::roundToInt(progress * 100.0f));
-                setScanStatus("SCAN " + formatName + "  " + juce::String(percent) + "%  •  " + pluginName);
+                setScanStatus(pluginName.isEmpty() ? "Finalisation du scan" : "SCAN " + formatName + "  " + juce::String(percent) + "%  " + pluginName);
             });
-
-            if (!stopped.load())
-            {
-                scanning.store(false);
-                scanFinishedPending.store(true);
-            }
+            if (!stopped.load()) { scanning.store(false); scanFinishedPending.store(true); }
         });
     }
 
     void showBlacklist()
     {
         auto& host = LibertyPluginHost::instance();
-        const auto entries = host.getBlacklistedPlugins();
-        juce::String message;
-        message << "Dossier :\n" << host.getBlacklistFolder().getFullPathName() << "\n\n";
-        if (entries.isEmpty())
-            message << "Aucun plugin blacklisté.";
-        else
-        {
-            message << juce::String(entries.size()) << " plugin(s) blacklisté(s) :\n\n";
-            for (const auto& entry : entries) message << entry << "\n";
-        }
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist plugins", message, "OK");
+        auto entries = host.getBlacklistedPlugins();
+        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("\n");
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist", text, "OK");
     }
 
-    void clearBlacklist()
-    {
-        LibertyPluginHost::instance().clearBlacklist();
-        pluginStatus.setText("Blacklist vidée. Relance SCAN pour retester.", juce::dontSendNotification);
-    }
+    void clearBlacklist() { LibertyPluginHost::instance().clearBlacklist(); refreshPluginStatus(); }
 
-    void loadPluginDescription(const juce::PluginDescription& description)
+    void loadPluginDescription(const juce::PluginDescription& d)
     {
         if (scanning.load()) return;
-        auto& host = LibertyPluginHost::instance();
         juce::String error;
         bool ok = false;
-
-        if (description.isInstrument)
-        {
-            ok = host.loadInstrument(description, error);
-            if (ok) host.showInstrumentEditor();
-        }
+        auto& host = LibertyPluginHost::instance();
+        if (d.isInstrument) { ok = host.loadInstrument(d, error); if (ok) host.showInstrumentEditor(); }
         else
         {
             int track = owner.selectedTrack;
             if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
-            ok = host.loadEffectForTrack(track, description, error);
+            ok = host.loadEffectForTrack(track, d, error);
             if (ok) host.showEditorForTrack(track);
         }
-
-        if (!ok)
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
-        refreshPluginStatus();
-        owner.repaint();
+        if (!ok) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
+        refreshPluginStatus(); owner.repaint();
     }
 
-    void loadSelectedPlugin()
-    {
-        if (const auto* description = selectedPluginDescription())
-            loadPluginDescription(*description);
-    }
-
+    void loadSelectedPlugin() { if (const auto* d = selectedPluginDescription()) loadPluginDescription(*d); }
     void openLoadedPluginEditor()
     {
-        if (scanning.load()) return;
-        if (const auto* description = selectedPluginDescription())
-        {
-            if (description->isInstrument)
-            {
-                LibertyPluginHost::instance().showInstrumentEditor();
-                return;
-            }
-        }
-
-        int track = owner.selectedTrack;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) { LibertyPluginHost::instance().showInstrumentEditor(); return; }
+        int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         LibertyPluginHost::instance().showEditorForTrack(track);
     }
-
     void unloadPlugin()
     {
-        if (scanning.load()) return;
-        if (const auto* description = selectedPluginDescription())
-        {
-            if (description->isInstrument)
-            {
-                LibertyPluginHost::instance().unloadInstrument();
-                refreshPluginStatus();
-                owner.repaint();
-                return;
-            }
-        }
-
-        int track = owner.selectedTrack;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
-        LibertyPluginHost::instance().unloadEffectForTrack(track);
-        refreshPluginStatus();
-        owner.repaint();
+        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) LibertyPluginHost::instance().unloadInstrument();
+        else { int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0; LibertyPluginHost::instance().unloadEffectForTrack(track); }
+        refreshPluginStatus(); owner.repaint();
     }
 
     void refreshPluginStatus()
     {
-        if (scanning.load())
-        {
-            pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
-            return;
-        }
-
+        if (scanning.load()) { pluginStatus.setText(getScanStatus(), juce::dontSendNotification); return; }
         auto& host = LibertyPluginHost::instance();
-        int track = owner.selectedTrack;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
         if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
-        if (text.isEmpty())
-            text = juce::String(pluginDescriptions.size()) + " plugins • "
-                 + juce::String(favouriteKeys.size()) + " favoris • "
-                 + juce::String(host.getBlacklistedPlugins().size()) + " blacklistés";
+        if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
 
     void timerCallback() override
     {
         if (stopped.load()) return;
-        const int panelX = juce::jmax(0, owner.getWidth() - browserWidth);
+        const int width = juce::jlimit(260, juce::jmax(260, owner.getWidth() - 220), getLibertyPreferredBrowserWidth(&owner));
+        const int panelX = juce::jmax(0, owner.getWidth() - width);
         if (browserOpen)
         {
-            const auto wanted = juce::Rectangle<int>(panelX, topBarHeight, juce::jmin(browserWidth, owner.getWidth()), juce::jmax(1, owner.getHeight() - topBarHeight));
+            const auto wanted = juce::Rectangle<int>(panelX, topBarHeight, juce::jmin(width, owner.getWidth()), juce::jmax(1, owner.getHeight() - topBarHeight));
             if (getBounds() != wanted) setBounds(wanted);
             if (!isVisible()) setVisible(true);
-            toFront(false);
         }
 
         const int buttonX = browserOpen ? juce::jmax(8, panelX - 104) : juce::jmax(8, owner.getWidth() - 112);
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
-        toggleButton.toFront(false);
 
         if (category == Category::plugins)
         {
-            if (scanning.load())
-            {
-                pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
-            }
+            if (scanning.load()) pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
             else if (scanFinishedPending.exchange(false))
             {
                 if (scanThread.joinable()) scanThread.join();
                 refreshPlugins();
-                scanPluginsButton.setEnabled(true);
-                favouritePluginButton.setEnabled(true);
-                loadPluginButton.setEnabled(true);
-                openPluginButton.setEnabled(true);
-                unloadPluginButton.setEnabled(true);
-                blacklistButton.setEnabled(true);
-                clearBlacklistButton.setEnabled(true);
-                pluginStatus.setText(juce::String(pluginDescriptions.size()) + " plugins trouvés • "
-                                     + juce::String(favouriteKeys.size()) + " favoris • "
-                                     + juce::String(LibertyPluginHost::instance().getBlacklistedPlugins().size())
-                                     + " blacklistés", juce::dontSendNotification);
+                for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
+                                 &loadPluginButton, &openPluginButton, &unloadPluginButton }) b->setEnabled(true);
             }
-            else
-            {
-                refreshPluginStatus();
-            }
+            else refreshPluginStatus();
         }
     }
 
@@ -777,9 +585,7 @@ private:
     juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
-    std::atomic<bool> stopped { false };
-    std::atomic<bool> scanning { false };
-    std::atomic<bool> scanFinishedPending { false };
+    std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
     std::thread scanThread;
@@ -794,15 +600,12 @@ class Bootstrap final : private juce::Timer
 public:
     Bootstrap() { startTimerHz(10); }
     ~Bootstrap() override { shutdown(); }
-
     void shutdown()
     {
         stopTimer();
-        for (auto& item : browsers)
-            if (item.second) item.second->shutdown();
+        for (auto& item : browsers) if (item.second) item.second->shutdown();
         browsers.clear();
     }
-
 private:
     void timerCallback() override
     {
@@ -810,8 +613,7 @@ private:
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (browsers.find(main) == browsers.end())
-                        browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
+                    if (browsers.find(main) == browsers.end()) browsers.emplace(main, std::make_unique<BrowserPanel>(*main));
     }
 };
 
