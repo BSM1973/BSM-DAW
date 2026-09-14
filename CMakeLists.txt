@@ -69,6 +69,7 @@ target_sources(BSM_DAW PRIVATE
     Source/UILayerCoordinator.cpp
     Source/AudioSettingsRelocator.cpp
     Source/LibertyAIController.cpp
+    Source/LibertyAIAdvancedController.cpp
     Source/ZoomController.cpp
     Source/AudioClipWarpView.cpp
     Source/AudioClipResizeEngine.cpp
