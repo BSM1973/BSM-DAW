@@ -10,10 +10,39 @@
 #include <memory>
 #include <random>
 
+bool commitLibertyAIGeneratedClip(MainComponent& owner, bool instrumentTrack);
+
 namespace
 {
 constexpr int panelWidth = 460;
 constexpr int topBarHeight = 76;
+
+juce::TextButton* findDirectButton(MainComponent& owner, const juce::String& text)
+{
+    for (int i = 0; i < owner.getNumChildComponents(); ++i)
+        if (auto* button = dynamic_cast<juce::TextButton*>(owner.getChildComponent(i)))
+            if (button->getButtonText() == text)
+                return button;
+    return nullptr;
+}
+
+juce::Component* findBrowserPanel(MainComponent& owner)
+{
+    for (int i = 0; i < owner.getNumChildComponents(); ++i)
+    {
+        auto* child = owner.getChildComponent(i);
+        if (child == nullptr) continue;
+        bool hasFiles = false, hasPlugins = false;
+        for (int j = 0; j < child->getNumChildComponents(); ++j)
+            if (auto* button = dynamic_cast<juce::TextButton*>(child->getChildComponent(j)))
+            {
+                hasFiles = hasFiles || button->getButtonText() == "FILES";
+                hasPlugins = hasPlugins || button->getButtonText() == "PLUGINS";
+            }
+        if (hasFiles && hasPlugins) return child;
+    }
+    return nullptr;
+}
 
 class LibertyAIPanel final : public juce::Component
 {
@@ -44,6 +73,11 @@ public:
         configureButton(clear, "CLEAR MIDI");
         configureButton(close, "CLOSE");
 
+        targetBox.addItem("INSTRUMENT", 1);
+        targetBox.addItem("MIDI", 2);
+        targetBox.setSelectedId(1, juce::dontSendNotification);
+        addAndMakeVisible(targetBox);
+
         generate.onClick = [this] { generateFromPrompt(); };
         chords.onClick = [this] { applyPromptSettings(); generateChords(); };
         drums.onClick = [this] { applyPromptSettings(); generateDrums(); };
@@ -56,7 +90,6 @@ public:
         {
             owner.midiEngine.clear();
             owner.updateMidiClipTiming();
-            owner.midiClipOverlay.setVisible(false);
             owner.repaint();
             setStatus("MIDI cleared");
         };
@@ -73,7 +106,7 @@ public:
         status.setColour(juce::Label::textColourId, juce::Colour(0xff8edcff));
         status.setFont(juce::Font(11.0f));
         status.setJustificationType(juce::Justification::topLeft);
-        status.setText("Prompt ready - generated results are editable MIDI", juce::dontSendNotification);
+        status.setText("Target: INSTRUMENT - generated clips stay in Arrange and feed the loaded AU/VST3", juce::dontSendNotification);
         addAndMakeVisible(status);
         setOpaque(true);
     }
@@ -89,7 +122,7 @@ public:
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.drawText("PROMPT", 20, 54, 100, 18, juce::Justification::centredLeft);
         g.drawText("MUSICAL CONTEXT", 20, 164, 180, 18, juce::Justification::centredLeft);
-        g.drawText("GENERATORS", 20, 270, 180, 18, juce::Justification::centredLeft);
+        g.drawText("GENERATORS", 20, 306, 180, 18, juce::Justification::centredLeft);
     }
 
     void resized() override
@@ -100,18 +133,19 @@ public:
         keyBox.setBounds(20, 186, 92, 28);
         scaleBox.setBounds(118, 186, 176, 28);
         barsBox.setBounds(300, 186, 140, 28);
-        generate.setBounds(20, 224, getWidth() - 40, 36);
+        targetBox.setBounds(20, 224, 150, 30);
+        generate.setBounds(178, 224, getWidth() - 198, 36);
 
         const int w = (getWidth() - 52) / 3;
-        chords.setBounds(20, 292, w, 32);
-        drums.setBounds(26 + w, 292, w, 32);
-        bass.setBounds(32 + w * 2, 292, w, 32);
-        riff.setBounds(20, 332, w, 32);
-        solo.setBounds(26 + w, 332, w, 32);
-        variation.setBounds(32 + w * 2, 332, w, 32);
-        humanize.setBounds(20, 372, (getWidth() - 46) / 2, 32);
-        clear.setBounds(26 + (getWidth() - 46) / 2, 372, (getWidth() - 46) / 2, 32);
-        status.setBounds(20, 416, getWidth() - 40, juce::jmax(42, getHeight() - 430));
+        chords.setBounds(20, 328, w, 32);
+        drums.setBounds(26 + w, 328, w, 32);
+        bass.setBounds(32 + w * 2, 328, w, 32);
+        riff.setBounds(20, 368, w, 32);
+        solo.setBounds(26 + w, 368, w, 32);
+        variation.setBounds(32 + w * 2, 368, w, 32);
+        humanize.setBounds(20, 408, (getWidth() - 46) / 2, 32);
+        clear.setBounds(26 + (getWidth() - 46) / 2, 408, (getWidth() - 46) / 2, 32);
+        status.setBounds(20, 452, getWidth() - 40, juce::jmax(42, getHeight() - 466));
     }
 
 private:
@@ -123,6 +157,8 @@ private:
         b.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         addAndMakeVisible(b);
     }
+
+    bool targetInstrument() const noexcept { return targetBox.getSelectedId() != 2; }
 
     juce::String normalisedPrompt() const
     {
@@ -139,7 +175,6 @@ private:
     void applyPromptSettings()
     {
         const auto text = normalisedPrompt();
-
         struct KeyToken { const char* token; int index; };
         const std::array<KeyToken, 24> keyTokens {{
             { " c# ", 1 }, { " db ", 1 }, { " d# ", 3 }, { " eb ", 3 },
@@ -153,25 +188,19 @@ private:
         }};
         for (const auto& k : keyTokens)
             if (text.contains(k.token)) { keyBox.setSelectedItemIndex(k.index, juce::dontSendNotification); break; }
-
-        if (text.contains(" a minor ") || text.contains(" a mineur ") || text.contains(" am "))
-            keyBox.setSelectedItemIndex(9, juce::dontSendNotification);
-        if (text.contains(" b minor ") || text.contains(" b mineur ") || text.contains(" bm "))
-            keyBox.setSelectedItemIndex(11, juce::dontSendNotification);
-
-        if (text.contains(" pentatonic") || text.contains(" pentatonique"))
-            scaleBox.setSelectedItemIndex(3, juce::dontSendNotification);
-        else if (text.contains(" dorian") || text.contains(" dorien"))
-            scaleBox.setSelectedItemIndex(2, juce::dontSendNotification);
-        else if (text.contains(" major") || text.contains(" majeur"))
-            scaleBox.setSelectedItemIndex(1, juce::dontSendNotification);
-        else if (text.contains(" minor") || text.contains(" mineur"))
-            scaleBox.setSelectedItemIndex(0, juce::dontSendNotification);
-
+        if (text.contains(" a minor ") || text.contains(" a mineur ") || text.contains(" am ")) keyBox.setSelectedItemIndex(9, juce::dontSendNotification);
+        if (text.contains(" b minor ") || text.contains(" b mineur ") || text.contains(" bm ")) keyBox.setSelectedItemIndex(11, juce::dontSendNotification);
+        if (text.contains(" pentatonic") || text.contains(" pentatonique")) scaleBox.setSelectedItemIndex(3, juce::dontSendNotification);
+        else if (text.contains(" dorian") || text.contains(" dorien")) scaleBox.setSelectedItemIndex(2, juce::dontSendNotification);
+        else if (text.contains(" major") || text.contains(" majeur")) scaleBox.setSelectedItemIndex(1, juce::dontSendNotification);
+        else if (text.contains(" minor") || text.contains(" mineur")) scaleBox.setSelectedItemIndex(0, juce::dontSendNotification);
         if (text.contains(" 16 bar") || text.contains(" 16 mesure")) barsBox.setSelectedItemIndex(3, juce::dontSendNotification);
         else if (text.contains(" 8 bar") || text.contains(" 8 mesure")) barsBox.setSelectedItemIndex(2, juce::dontSendNotification);
         else if (text.contains(" 4 bar") || text.contains(" 4 mesure")) barsBox.setSelectedItemIndex(1, juce::dontSendNotification);
         else if (text.contains(" 2 bar") || text.contains(" 2 mesure")) barsBox.setSelectedItemIndex(0, juce::dontSendNotification);
+        if (text.contains(" piste midi") || text.contains(" midi track")) targetBox.setSelectedId(2, juce::dontSendNotification);
+        if (text.contains(" instrument") || text.contains(" synth") || text.contains(" piano") || text.contains(" guitare") || text.contains(" guitar"))
+            targetBox.setSelectedId(1, juce::dontSendNotification);
     }
 
     int bars() const
@@ -213,7 +242,6 @@ private:
 
     void prepareMidi()
     {
-        owner.selectMidiTrack();
         owner.midiEngine.clear();
         owner.midiEngine.clearUndoHistory();
         owner.midiClipStartSeconds = juce::jmax(0.0, owner.playheadSeconds);
@@ -226,11 +254,16 @@ private:
     void finishMidi(const juce::String& message)
     {
         owner.updateMidiClipTiming();
-        owner.midiClipOverlay.setVisible(true);
-        owner.midiClipOverlay.toFront(false);
-        owner.repaint();
+        const bool instrument = targetInstrument();
         const auto count = owner.midiEngine.getNumNotes();
-        setStatus(message + " - " + juce::String((int)count) + " notes - editable MIDI");
+        const bool committed = commitLibertyAIGeneratedClip(owner, instrument);
+        if (!committed)
+        {
+            setStatus("AI generated " + juce::String((int)count) + " notes but clip commit failed");
+            return;
+        }
+        owner.repaint();
+        setStatus(message + " - " + juce::String((int)count) + " notes - target " + (instrument ? "INSTRUMENT" : "MIDI"));
     }
 
     void generateFromPrompt()
@@ -334,8 +367,7 @@ private:
             {
                 const auto start = base + (std::int64_t)beat * quarter;
                 owner.midiEngine.addNote(start, busy ? quarter / 2 : quarter, beat % 2 ? fifth : root, beat == 0 ? 110 : 94);
-                if (busy)
-                    owner.midiEngine.addNote(start + quarter / 2, quarter / 2, root, 86);
+                if (busy) owner.midiEngine.addNote(start + quarter / 2, quarter / 2, root, 86);
             }
         }
         finishMidi("AI bass line generated");
@@ -388,14 +420,16 @@ private:
     void humanizeMidi()
     {
         const auto notes = owner.midiEngine.getNotesCopy();
-        if (notes.empty()) { setStatus("No MIDI notes to humanize"); return; }
+        if (notes.empty()) { setStatus("No active clip notes to humanize"); return; }
         owner.midiEngine.clear();
         std::mt19937 rng((unsigned int)juce::Time::getMillisecondCounter());
         std::uniform_int_distribution<int> timing(-18, 18), velocity(-9, 9);
         for (const auto& n : notes)
             owner.midiEngine.addNote(juce::jmax<std::int64_t>(0, n.startTick + timing(rng)), n.lengthTicks,
                                      n.pitch, juce::jlimit(1, 127, (int)n.velocity + velocity(rng)), n.channel);
-        finishMidi("MIDI humanized");
+        owner.updateMidiClipTiming();
+        owner.repaint();
+        setStatus("Active clip humanized");
     }
 
     void createVariation()
@@ -413,7 +447,9 @@ private:
             owner.midiEngine.addNote(n.startTick, n.lengthTicks, pitch,
                                      juce::jlimit(1, 127, (int)n.velocity + (int)(rng() % 11) - 5), n.channel);
         }
-        finishMidi("AI variation created");
+        owner.updateMidiClipTiming();
+        owner.repaint();
+        setStatus("AI variation applied to active clip");
     }
 
     void setStatus(const juce::String& text) { status.setText(text, juce::dontSendNotification); }
@@ -421,7 +457,7 @@ private:
     MainComponent& owner;
     juce::Label title, status;
     juce::TextEditor prompt;
-    juce::ComboBox keyBox, scaleBox, barsBox;
+    juce::ComboBox keyBox, scaleBox, barsBox, targetBox;
     juce::TextButton generate, chords, drums, bass, riff, solo, humanize, variation, clear, close;
 };
 
@@ -452,10 +488,23 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
-        const int x = juce::jmax(8, owner.getWidth() - 79);
-        aiButton.setBounds(x, 8, 72, 26);
-        const int width = juce::jmin(panelWidth, juce::jmax(300, owner.getWidth() - 240));
-        panel.setBounds(juce::jmax(0, owner.getWidth() - width), topBarHeight, width, juce::jmax(1, owner.getHeight() - topBarHeight));
+
+        int buttonX = 975;
+        if (auto* browser = findDirectButton(owner, "BROWSER"))
+            if (browser->getWidth() > 0)
+                buttonX = juce::jmin(buttonX, browser->getX() - 82);
+        buttonX = juce::jmax(8, buttonX);
+        aiButton.setBounds(buttonX, 8, 74, 26);
+
+        int rightEdge = owner.getWidth();
+        if (auto* browserPanel = findBrowserPanel(owner))
+            if (browserPanel->isVisible() && browserPanel->getWidth() > 0)
+                rightEdge = browserPanel->getX();
+
+        const int available = juce::jmax(300, rightEdge - 220);
+        const int width = juce::jmin(panelWidth, available);
+        panel.setBounds(juce::jmax(0, rightEdge - width), topBarHeight, width, juce::jmax(1, owner.getHeight() - topBarHeight));
+
         if (panel.isVisible()) panel.toFront(false);
         aiButton.toFront(false);
     }
