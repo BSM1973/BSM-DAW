@@ -4,9 +4,6 @@
 #include "MidiEditor.h"
 #include "PluginHost.h"
 
-// MIDI note editing shortcuts are routed through MainWindow, just like the
-// existing project Save/Open shortcuts. This avoids relying on focus delivery
-// to a child editor component on macOS.
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
 void shutdownLibertyMidiKeyboardRouter();
@@ -22,6 +19,7 @@ void shutdownLibertyMetronomeController();
 void shutdownLibertyBrowserController();
 void shutdownLibertyBrowserResizeController();
 void shutdownLibertyUILayerCoordinator();
+void shutdownLibertyAudioSettingsRelocator();
 void shutdownLibertyAIController();
 void shutdownLibertyTrackPluginInsertControls();
 void shutdownLibertyPluginDragDropController();
@@ -62,6 +60,7 @@ public:
         if (mainWindow != nullptr)
         {
             shutdownLibertySpliceBrowserController();
+            shutdownLibertyAudioSettingsRelocator();
             shutdownLibertyAIController();
             shutdownLibertyUILayerCoordinator();
             shutdownLibertyBrowserResizeController();
