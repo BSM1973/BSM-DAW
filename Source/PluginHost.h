@@ -17,15 +17,11 @@ public:
                                                     float progress)>;
 
     static LibertyPluginHost& instance();
-
-    // Used only by the hidden Liberty child process launched by the parent
-    // scanner. It scans exactly one VST3 and writes its PluginDescription XML.
     static bool runSingleVST3ScanHelper(const juce::String& pluginIdentifier,
                                         const juce::File& resultFile);
 
     void initialise(double sampleRate, int blockSize);
     void shutdown();
-
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});
     const juce::KnownPluginList& getKnownPluginList() const noexcept { return knownPlugins; }
     juce::Array<juce::PluginDescription> getPluginDescriptions() const;
@@ -37,7 +33,6 @@ public:
     bool loadInstrument(const juce::PluginDescription& description, juce::String& error);
     void unloadEffectForTrack(int trackIndex);
     void unloadInstrument();
-
     bool hasEffectForTrack(int trackIndex) const;
     bool hasInstrument() const;
     juce::String getEffectName(int trackIndex) const;
@@ -46,6 +41,12 @@ public:
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     bool processInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
+
+    // Offline render is exclusive: the realtime audio callback is prevented from
+    // driving the same instrument instance while AI Render owns it.
+    bool beginOfflineInstrumentRender();
+    bool processOfflineInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
+    void endOfflineInstrumentRender();
 
     void showEditorForTrack(int trackIndex);
     void showInstrumentEditor();
@@ -76,8 +77,7 @@ private:
     void recoverCrashedPluginsFromDeadMansPedal();
     void loadPersistentBlacklist();
     void savePersistentBlacklist();
-    bool scanVST3OutOfProcess(const juce::String& identifier,
-                              const juce::String& displayName);
+    bool scanVST3OutOfProcess(const juce::String& identifier, const juce::String& displayName);
     void blacklistPluginIdentifier(const juce::String& identifier);
     bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
 
@@ -89,6 +89,7 @@ private:
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
     std::atomic<bool> shutdownCompleted { false };
+    std::atomic<bool> offlineInstrumentRender { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibertyPluginHost)
 };
