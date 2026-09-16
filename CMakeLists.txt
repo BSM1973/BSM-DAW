@@ -13,7 +13,7 @@ target_sources(BSM_DAW PRIVATE
  Source/MidiVelocityInteraction.cpp Source/MidiNoteSelectionInteraction.cpp Source/MidiGroupDragInteraction.cpp Source/MidiMarqueeOverlay.cpp Source/MidiMarqueeManager.cpp Source/MidiSelectAllInteraction.cpp Source/MidiQuantizeInteraction.cpp Source/MidiKeyboardRouter.cpp
  Source/Editing.cpp Source/Project.cpp Source/TransportSettings.cpp Source/AudioRecordingController.cpp Source/TrackColourInteraction.cpp Source/MultiMidiClipController.cpp Source/GridSnapController.cpp Source/TrackHeaderMixControls.cpp Source/TrackPluginInsertControls.cpp Source/PluginDragDropController.cpp
  Source/MixConsoleController.cpp Source/PerformController.cpp Source/PageModeCoordinator.cpp Source/UISymbolCleaner.cpp Source/SpliceBrowserController.cpp Source/BrowserResizeController.cpp Source/UILayerCoordinator.cpp Source/AudioSettingsRelocator.cpp
- Source/LibertyAIController.cpp Source/LibertyAIAdvancedController.cpp Source/AIRenderController.cpp Source/AINoveltyController.cpp Source/AIArrangerController.cpp Source/AISongIntelligenceController.cpp
+ Source/LibertyAIController.cpp Source/LibertyAIAdvancedController.cpp Source/AIRenderController.cpp Source/AINoveltyController.cpp Source/AIArrangerController.cpp Source/AISongIntelligenceController.cpp Source/AIComposer2Controller.cpp
  Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/PluginHost.cpp)
 target_include_directories(BSM_DAW PRIVATE Source)
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
