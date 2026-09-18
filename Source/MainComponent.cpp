@@ -2,6 +2,7 @@
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
+int getLibertyActiveTool();
 
 namespace
 {
@@ -453,6 +454,56 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         selectedTrack = track;
         if (isPointInsideAudioClip(track, p))
         {
+            const int tool = getLibertyActiveTool();
+            const double clickTime = juce::jmax(0.0, (double)(p.x - headerW) / pixelsPerSecond);
+
+            if (tool == 2) // SPLIT / COUPER
+            {
+                int newTrack = -1;
+                juce::String error;
+                if (audioEngine.splitAudioTrack(track, clickTime, newTrack, error))
+                {
+                    trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)track];
+                    rebuildWaveformCache(track);
+                    rebuildWaveformCache(newTrack);
+                    selectedTrack = newTrack;
+                }
+                else
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Liberty - Split", error, "OK");
+                repaint();
+                return;
+            }
+
+            if (tool == 3) // ERASE / EFFACER
+            {
+                audioEngine.clearAudioTrack(track);
+                trackSourceFiles[(size_t)track] = juce::File{};
+                waveformMin[(size_t)track].clear();
+                waveformMax[(size_t)track].clear();
+                draggingClip = false;
+                draggedTrack = -1;
+                repaint();
+                return;
+            }
+
+            if (tool == 8) // MUTE / MUET
+            {
+                audioEngine.setTrackMuted(track, !audioEngine.isTrackMuted(track));
+                repaint();
+                return;
+            }
+
+            // RESIZE and STRETCH are handled by the dedicated edge handles.
+            if (tool == 4 || tool == 5)
+            {
+                draggingClip = false;
+                draggedTrack = -1;
+                repaint();
+                return;
+            }
+
+            // SELECT keeps the validated clip move workflow unchanged.
             draggingClip = true;
             draggedTrack = track;
             dragStartMouseX = (float)p.x;
