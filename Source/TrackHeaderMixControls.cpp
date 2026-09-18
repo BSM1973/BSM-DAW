@@ -344,6 +344,6 @@ void shutdownLibertyTrackHeaderMixControls()
 
 void toggleLibertyMidiInstrumentMute(MainComponent& owner)
 {
-    owner.getAudioEngine().setInstrumentTrackMuted(!owner.getAudioEngine().isInstrumentTrackMuted());
+    owner.audioEngine.setInstrumentTrackMuted(!owner.audioEngine.isInstrumentTrackMuted());
     owner.repaint();
 }
