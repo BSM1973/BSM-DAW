@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <limits>
 
+int getLibertyActiveTool();
+
 namespace
 {
 constexpr int rulerHeight = 30;
@@ -27,7 +29,7 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.mods.isRightButtonDown()) return;
+        if (getLibertyActiveTool() != 6 || e.mods.isRightButtonDown()) return;
         auto* piano = findPianoRoll(e.getScreenPosition());
         if (piano == nullptr) return;
         auto* main = findMainComponent(piano);
