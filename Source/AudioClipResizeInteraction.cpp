@@ -21,6 +21,7 @@ double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
 bool isLibertySnapEnabled() noexcept;
 double getLibertySnapSeconds(double tempoBpm) noexcept;
+int getLibertyActiveTool();
 
 namespace
 {
@@ -140,7 +141,7 @@ private:
         owner.draggedTrack = -1;
         dragTrack = track;
         dragSide = side;
-        stretchMode = commandDown;
+        stretchMode = commandDown || getLibertyActiveTool() == 5;
         dragStartMouseX = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().x;
         dragStart = owner.audioEngine.getTrackStartSeconds(track);
         dragLength = owner.audioEngine.getAudioFileLengthSeconds(track);
@@ -214,7 +215,8 @@ private:
         const int rowH = getLibertyTrackRowHeight();
         for (int t = 0; t < AudioEngine::maxAudioTracks; ++t)
         {
-            const bool show = owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t && dragTrack < 0;
+            const int tool = getLibertyActiveTool();
+            const bool show = owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t && dragTrack < 0 && (tool == 4 || tool == 5);
             auto& left = *leftHandles[(size_t)t];
             auto& right = *rightHandles[(size_t)t];
             left.setVisible(show);
