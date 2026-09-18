@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <limits>
 
+int getLibertyActiveTool();
+
 namespace
 {
 constexpr int pianoKeyWidth = 72;
@@ -47,6 +49,8 @@ void MidiMarqueeOverlay::paint(juce::Graphics& g)
 
 bool MidiMarqueeOverlay::hitTest(int x, int y)
 {
+    if (getLibertyActiveTool() != 7)
+        return false;
     const juce::Point<int> p(x, y);
     if (!isInPianoRollGrid(p))
         return false;
@@ -62,10 +66,10 @@ bool MidiMarqueeOverlay::hitTest(int x, int y)
 
 void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
 {
-    if (!e.mods.isLeftButtonDown())
+    if (getLibertyActiveTool() != 7 || !e.mods.isLeftButtonDown())
         return;
 
-    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+    if (getLibertyActiveTool() == 7 || e.mods.isCommandDown() || e.mods.isCtrlDown())
     {
         dragStart = e.getPosition();
         dragCurrent = dragStart;
