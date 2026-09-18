@@ -55,9 +55,9 @@ bool MidiMarqueeOverlay::hitTest(int x, int y)
     if (!isInPianoRollGrid(p))
         return false;
 
-    const auto mods = juce::ModifierKeys::getCurrentModifiers();
-    if (mods.isCommandDown() || mods.isCtrlDown())
-        return !pointHitsAnyNote(p);
+    // MARQUEE tool owns empty piano-roll space directly; no Cmd/Ctrl is required.
+    if (!pointHitsAnyNote(p))
+        return true;
 
     ResizeSide side = ResizeSide::none;
     return owner.getMidiEngine().getNumSelectedNotes() > 1
