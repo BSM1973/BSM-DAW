@@ -99,6 +99,12 @@ class BrowserPanel final : public juce::Component,
                            private juce::Timer,
                            private juce::FileBrowserListener
 {
+    MainComponent& owner;
+    juce::TimeSliceThread thread { "Liberty Browser" };
+    juce::WildcardFileFilter filter;
+    juce::DirectoryContentsList directoryList;
+    juce::FileTreeComponent fileTree;
+    juce::TextButton toggleButton;
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
@@ -599,16 +605,11 @@ private:
         }
     }
 
-    MainComponent& owner;
-    juce::TimeSliceThread thread { "Liberty Browser" };
-    juce::WildcardFileFilter filter;
-    juce::DirectoryContentsList directoryList;
-    juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::StringArray favouriteKeys;
-    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
+    juce::TextButton closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::Label pluginStatus;
     juce::File rootDirectory;
