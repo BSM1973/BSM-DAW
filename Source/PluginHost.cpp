@@ -1,4 +1,4 @@
-#include "PluginHost.h"
+#include "PluginHost.h"\n#include "OneKnobEffects.h"
 
 namespace
 {
