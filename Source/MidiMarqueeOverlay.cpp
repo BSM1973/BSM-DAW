@@ -49,7 +49,9 @@ void MidiMarqueeOverlay::paint(juce::Graphics& g)
 
 bool MidiMarqueeOverlay::hitTest(int x, int y)
 {
-    if (getLibertyActiveTool() != 7)
+    const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+    const bool legacyMarquee = mods.isCommandDown() || mods.isCtrlDown();
+    if (getLibertyActiveTool() != 7 && !legacyMarquee)
         return false;
     const juce::Point<int> p(x, y);
     if (!isInPianoRollGrid(p))
@@ -66,7 +68,8 @@ bool MidiMarqueeOverlay::hitTest(int x, int y)
 
 void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
 {
-    if (getLibertyActiveTool() != 7 || !e.mods.isLeftButtonDown())
+    const bool legacyMarquee = e.mods.isCommandDown() || e.mods.isCtrlDown();
+    if ((getLibertyActiveTool() != 7 && !legacyMarquee) || !e.mods.isLeftButtonDown())
         return;
 
     if (getLibertyActiveTool() == 7 || e.mods.isCommandDown() || e.mods.isCtrlDown())
