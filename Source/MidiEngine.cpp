@@ -155,6 +155,68 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     return true;
 }
 
+bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge)
+{
+    if (selectedNotes.empty() || deltaTicks == 0)
+        return false;
+
+    constexpr std::int64_t minimumLength = ticksPerQuarterNote / 4;
+    const auto source = selectedNotes;
+
+    for (const auto& n : source)
+    {
+        if (fromLeftEdge)
+        {
+            const auto newStart = n.startTick + deltaTicks;
+            const auto newLength = n.lengthTicks - deltaTicks;
+            if (newStart < 0 || newLength < minimumLength)
+                return false;
+        }
+        else
+        {
+            if (n.lengthTicks + deltaTicks < minimumLength)
+                return false;
+        }
+    }
+
+    pushUndoState();
+    std::vector<NoteEvent> result;
+    result.reserve(source.size());
+
+    for (const auto& n : source)
+    {
+        const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
+        {
+            return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel;
+        });
+        if (it == notes.end())
+            continue;
+
+        if (fromLeftEdge)
+        {
+            it->startTick += deltaTicks;
+            it->lengthTicks -= deltaTicks;
+        }
+        else
+        {
+            it->lengthTicks += deltaTicks;
+        }
+        result.push_back(*it);
+    }
+
+    if (result.size() != source.size())
+        return false;
+
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    setSelectedNotes(result);
+    return true;
+}
+
 bool MidiEngine::duplicateSelectedNotes(std::int64_t deltaTicks)
 {
     if (selectedNotes.empty() || deltaTicks == 0) return false;
