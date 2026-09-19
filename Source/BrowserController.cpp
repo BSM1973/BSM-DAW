@@ -1,7 +1,8 @@
 #define private public
 #include "MainComponent.h"
 #undef private
-#include "PluginHost.h"\n#include "OneKnobEffects.h"
+#include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -283,7 +284,8 @@ private:
         favouriteKeys.trim(); favouriteKeys.removeEmptyStrings(); favouriteKeys.removeDuplicates(false);
     }
 
-    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
+    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("
+")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
 
     void toggleFavourite(const juce::PluginDescription& d)
@@ -515,7 +517,8 @@ private:
     {
         auto& host = LibertyPluginHost::instance();
         auto entries = host.getBlacklistedPlugins();
-        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("\n");
+        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("
+");
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist", text, "OK");
     }
 
@@ -559,7 +562,8 @@ private:
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
-        if (LibertyOneKnobManager::instance().hasEffect(track)) text << "A" << (track + 1) << ": " << LibertyOneKnobManager::instance().getName(track) << "   ";\n        else if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
+        if (LibertyOneKnobManager::instance().hasEffect(track)) text << "A" << (track + 1) << ": " << LibertyOneKnobManager::instance().getName(track) << "   ";
+        else if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
