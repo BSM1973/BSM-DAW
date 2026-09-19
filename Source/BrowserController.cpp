@@ -105,6 +105,21 @@ class BrowserPanel final : public juce::Component,
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TextButton toggleButton;
+    juce::TreeView pluginTree;
+    std::unique_ptr<PluginTreeItem> pluginRoot;
+    juce::Array<juce::PluginDescription> pluginDescriptions;
+    juce::StringArray favouriteKeys;
+    juce::TextButton closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
+    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::Label pluginStatus;
+    juce::File rootDirectory;
+    Category category = Category::files;
+    std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
+    mutable juce::CriticalSection scanStatusLock;
+    juce::String scanStatusText;
+    std::thread scanThread;
+    bool browserOpen = false, hostExpanded = false;
+    juce::Rectangle<int> originalWindowBounds;
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
@@ -605,21 +620,6 @@ private:
         }
     }
 
-    juce::TreeView pluginTree;
-    std::unique_ptr<PluginTreeItem> pluginRoot;
-    juce::Array<juce::PluginDescription> pluginDescriptions;
-    juce::StringArray favouriteKeys;
-    juce::TextButton closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
-    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
-    juce::Label pluginStatus;
-    juce::File rootDirectory;
-    Category category = Category::files;
-    std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
-    mutable juce::CriticalSection scanStatusLock;
-    juce::String scanStatusText;
-    std::thread scanThread;
-    bool browserOpen = false, hostExpanded = false;
-    juce::Rectangle<int> originalWindowBounds;
 };
 
 std::map<MainComponent*, std::unique_ptr<BrowserPanel>> browsers;
