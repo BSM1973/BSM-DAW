@@ -29,7 +29,7 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (getLibertyActiveTool() != 6 || e.mods.isRightButtonDown()) return;
+        if (e.mods.isRightButtonDown()) return; // Preserve direct editing in the velocity lane; tool 7 remains the explicit palette mode.
         auto* piano = findPianoRoll(e.getScreenPosition());
         if (piano == nullptr) return;
         auto* main = findMainComponent(piano);
