@@ -1,5 +1,5 @@
 #include "AudioEngine.h"
-#include "PluginHost.h"
+#include "PluginHost.h"\n#include "OneKnobEffects.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -18,7 +18,7 @@ bool AudioEngine::initialise()
     sampleRate.store(device->getCurrentSampleRate());
     bufferSize.store(device->getCurrentBufferSizeSamples());
     outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
-    LibertyPluginHost::instance().initialise(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+    LibertyPluginHost::instance().initialise(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());\n    LibertyOneKnobManager::instance().prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
     initialised.store(true);
     return true;
 }
