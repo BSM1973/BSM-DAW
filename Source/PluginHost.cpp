@@ -1,4 +1,5 @@
-#include "PluginHost.h"\n#include "OneKnobEffects.h"
+#include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 namespace
 {
@@ -159,7 +160,8 @@ void LibertyPluginHost::savePersistentBlacklist()
     auto entries = knownPlugins.getBlacklistedFiles();
     entries.removeEmptyStrings();
     entries.removeDuplicates(false);
-    blacklistTextFile().replaceWithText(entries.joinIntoString("\n"), true, true);
+    blacklistTextFile().replaceWithText(entries.joinIntoString("
+"), true, true);
 }
 
 void LibertyPluginHost::recoverCrashedPluginsFromDeadMansPedal()
@@ -181,7 +183,8 @@ void LibertyPluginHost::recoverCrashedPluginsFromDeadMansPedal()
         if (!persistent.contains(pluginID)) persistent.add(pluginID);
     }
 
-    blacklistTextFile().replaceWithText(persistent.joinIntoString("\n"), true, true);
+    blacklistTextFile().replaceWithText(persistent.joinIntoString("
+"), true, true);
     saveCachedPluginList();
     deadFile.deleteFile();
 }
