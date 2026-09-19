@@ -160,8 +160,7 @@ void LibertyPluginHost::savePersistentBlacklist()
     auto entries = knownPlugins.getBlacklistedFiles();
     entries.removeEmptyStrings();
     entries.removeDuplicates(false);
-    blacklistTextFile().replaceWithText(entries.joinIntoString("
-"), true, true);
+    blacklistTextFile().replaceWithText(entries.joinIntoString("\n"), true, true);
 }
 
 void LibertyPluginHost::recoverCrashedPluginsFromDeadMansPedal()
@@ -183,8 +182,7 @@ void LibertyPluginHost::recoverCrashedPluginsFromDeadMansPedal()
         if (!persistent.contains(pluginID)) persistent.add(pluginID);
     }
 
-    blacklistTextFile().replaceWithText(persistent.joinIntoString("
-"), true, true);
+    blacklistTextFile().replaceWithText(persistent.joinIntoString("\n"), true, true);
     saveCachedPluginList();
     deadFile.deleteFile();
 }
