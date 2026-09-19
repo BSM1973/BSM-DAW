@@ -95,8 +95,8 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (getLibertyActiveTool() != 6 || !e.mods.isLeftButtonDown() || e.x < pianoKeyWidth)
-            return;
+        if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth)
+            return; // Velocity lane remains directly editable in every tool, as before the palette.
 
         const auto note = findNoteForX(e.x);
         if (note == nullptr)
