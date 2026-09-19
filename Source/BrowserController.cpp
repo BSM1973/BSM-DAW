@@ -1,7 +1,7 @@
 #define private public
 #include "MainComponent.h"
 #undef private
-#include "PluginHost.h"
+#include "PluginHost.h"\n#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -430,6 +430,30 @@ private:
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
 
+        auto* oneKnob = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "LIBERTY FX - ONE KNOB");
+        pluginRoot->addSubItem(oneKnob);
+        const std::array<std::pair<juce::String, LibertyOneKnobRack::Type>, 4> internalEffects {{
+            { "One Knob Chorus", LibertyOneKnobRack::Type::chorus },
+            { "One Knob Flanger", LibertyOneKnobRack::Type::flanger },
+            { "One Knob Phaser", LibertyOneKnobRack::Type::phaser },
+            { "One Knob Tremolo", LibertyOneKnobRack::Type::tremolo }
+        }};
+        for (const auto& fx : internalEffects)
+        {
+            juce::PluginDescription d;
+            d.name = fx.first; d.manufacturerName = "Liberty FX"; d.pluginFormatName = "LIBERTY"; d.isInstrument = false;
+            oneKnob->addSubItem(new PluginTreeItem(PluginTreeItem::Kind::plugin, d.name, &d,
+                [this, type = fx.second](const juce::PluginDescription&)
+                {
+                    int track = owner.selectedTrack;
+                    if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+                    LibertyOneKnobManager::instance().setEffect(track, type);
+                    LibertyOneKnobManager::instance().showEditor(track);
+                    refreshPluginStatus(); owner.repaint();
+                }));
+        }
+        oneKnob->setOpen(true);
+
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions) if (isFavouritePlugin(d)) fav->addSubItem(makePluginItem(d));
@@ -535,7 +559,7 @@ private:
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
-        if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
+        if (LibertyOneKnobManager::instance().hasEffect(track)) text << "A" << (track + 1) << ": " << LibertyOneKnobManager::instance().getName(track) << "   ";\n        else if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
