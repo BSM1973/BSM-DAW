@@ -36,7 +36,7 @@ private:
 class LibertyOneKnobManager final
 {
 public:
-    static constexpr int maxTracks = 4;
+    static constexpr int maxTracks = 5;
     static LibertyOneKnobManager& instance();
 
     void prepare(double sampleRate, int maximumBlockSize);
@@ -50,6 +50,7 @@ public:
     void process(int trackIndex, juce::AudioBuffer<float>& buffer);
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
+    void processInstrumentBlock(float* const* outputChannelData, int numOutputChannels, int numSamples);
     void showEditor(int trackIndex);
 
 private:
