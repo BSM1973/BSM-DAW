@@ -282,6 +282,31 @@ void LibertyOneKnobManager::endAudioTrackBlock(int trackIndex,
     lock.exit();
 }
 
+void LibertyOneKnobManager::processInstrumentBlock(float* const* outputChannelData,
+                                                        int numOutputChannels,
+                                                        int numSamples)
+{
+    constexpr int instrumentSlot = maxTracks - 1;
+    if (!hasEffect(instrumentSlot) || numSamples <= 0 || numOutputChannels <= 0) return;
+    if (!lock.tryEnter()) return;
+
+    const int channels = juce::jlimit(1, 2, numOutputChannels);
+    auto& work = workBuffers[(size_t)instrumentSlot];
+    work.setSize(channels, numSamples, false, false, true);
+    work.clear();
+    for (int ch = 0; ch < channels; ++ch)
+        if (outputChannelData[ch] != nullptr)
+            work.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+
+    racks[(size_t)instrumentSlot].process(work);
+
+    for (int ch = 0; ch < channels; ++ch)
+        if (outputChannelData[ch] != nullptr)
+            juce::FloatVectorOperations::copy(outputChannelData[ch], work.getReadPointer(ch), numSamples);
+
+    lock.exit();
+}
+
 void LibertyOneKnobManager::showEditor(int trackIndex)
 {
     if (!validTrack(trackIndex) || !hasEffect(trackIndex)) return;
