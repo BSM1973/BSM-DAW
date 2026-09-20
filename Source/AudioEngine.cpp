@@ -548,6 +548,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
             }
         }
         pluginHost.processInstrument(outputChannelData, numOutputChannels, numSamples, midi);
+        oneKnob.processInstrumentBlock(outputChannelData, numOutputChannels, numSamples);
     }
 
     const auto master = masterGain.load();
