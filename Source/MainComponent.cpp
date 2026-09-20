@@ -51,6 +51,9 @@ MainComponent::MainComponent()
     // Extra height is intentional: six 96+ px track rows plus the mixer must fit
     // without controls colliding or being pushed under the mixer.
     setSize(1440, 980);
+    waveformMin.resize((size_t) audioEngine.getAudioTrackCount());
+    waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
+    trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
     audioEngine.initialise();
     setWantsKeyboardFocus(true);
     startTimerHz(30);
@@ -143,7 +146,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 {
     constexpr int headerW = 210, rulerH = 32;
-    constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
+    const int audioTrackCount = audioEngine.getAudioTrackCount();
+    const int instrumentTrackIndex = audioTrackCount + 1;
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
@@ -169,7 +173,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
     }
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < audioTrackCount; ++i)
     {
         auto row = rows.removeFromTop(rowH); g.setColour(i % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
         auto header = row.removeFromLeft(headerW); g.setColour(i == selectedTrack ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
@@ -249,7 +253,7 @@ void MainComponent::openAudioSettings()
 
 void MainComponent::rebuildWaveformCache(int trackIndex)
 {
-    if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks) return;
+    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount()) return;
     waveformMin[(size_t)trackIndex].clear(); waveformMax[(size_t)trackIndex].clear();
     const auto* buffer = audioEngine.getAudioBuffer(trackIndex);
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
@@ -323,12 +327,12 @@ int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
     constexpr int rulerH = 32;
     const int rowH = getLibertyTrackRowHeight();
     const int y = position.y - 76 - rulerH; if (y < 0) return -1;
-    const int track = y / rowH; return track >= 0 && track < AudioEngine::maxAudioTracks ? track : -1;
+    const int track = y / rowH; return track >= 0 && track < audioEngine.getAudioTrackCount() ? track : -1;
 }
 
 bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const
 {
-    if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(trackIndex)) return false;
+    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount() || !audioEngine.hasAudioFile(trackIndex)) return false;
     constexpr int headerW = 210, rulerH = 32;
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
@@ -420,7 +424,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (forwardButton.contains(p))
     {
         double projectEnd = 0.0;
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        for (int i = 0; i < audioEngine.getAudioTrackCount(); ++i)
             if (audioEngine.hasAudioFile(i))
                 projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
         const double snappedEnd = std::ceil(projectEnd / secondsPerMeasure - 1.0e-9) * secondsPerMeasure;
@@ -435,7 +439,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
 
     constexpr int headerW = 210, rulerH = 32;
-    constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
+    const int audioTrackCount = audioEngine.getAudioTrackCount();
+    const int instrumentTrackIndex = audioTrackCount + 1;
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
@@ -518,7 +523,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (rowOffset >= 0)
     {
         const int rowIndex = rowOffset / rowH;
-        if (rowIndex == AudioEngine::maxAudioTracks)
+        if (rowIndex == audioTrackCount)
         {
             selectedTrack = -1;
             repaint();
