@@ -65,6 +65,13 @@ std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventCom
         if (text == "1K WIDTH") return LibertyOneKnobRack::Type::stereoWidth;
         if (text == "1K FILTER") return LibertyOneKnobRack::Type::filter;
         if (text == "1K DOUBLER") return LibertyOneKnobRack::Type::doubler;
+        if (text == "1K EXCITER") return LibertyOneKnobRack::Type::exciter;
+        if (text == "1K DE-ESS") return LibertyOneKnobRack::Type::deEsser;
+        if (text == "1K GATE") return LibertyOneKnobRack::Type::gate;
+        if (text == "1K BASS") return LibertyOneKnobRack::Type::bassBoost;
+        if (text == "1K AIR") return LibertyOneKnobRack::Type::air;
+        if (text == "1K PUNCH") return LibertyOneKnobRack::Type::punch;
+        if (text == "1K CLIP") return LibertyOneKnobRack::Type::softClip;
         return std::nullopt;
     };
 
