@@ -382,7 +382,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     source.buffer->setSize(channels, splitSample, true, false, false);
     source.numSamples = splitSample;
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
-    auto& right = tracks[(size_t)newTrackIndex];
+    auto& right = *tracks[(size_t)newTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     right.buffer = std::move(rightBuffer);
     right.numSamples = rightSamples;
@@ -431,7 +431,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     auto& pluginHost = LibertyPluginHost::instance();
     auto& oneKnob = LibertyOneKnobManager::instance();
 
-    for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
+    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
     {
         auto& track = *tracks[(size_t)trackIndex];
         if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
