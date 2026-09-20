@@ -26,7 +26,7 @@ SourceState& ensureSourceState(AudioEngine& engine, int trackIndex)
 {
     const Key key { &engine, trackIndex };
     auto& state = sourceStates[key];
-    auto& track = engine.tracks[(size_t)trackIndex];
+    auto& track = *engine.tracks[(size_t)trackIndex];
 
     const bool needsRefresh = state.original == nullptr || state.fileName != track.fileName;
     if (needsRefresh)
@@ -96,7 +96,7 @@ bool renderRegion(AudioEngine& engine,
         engine.deviceManager.removeAudioCallback(&engine);
     engine.playing.store(false, std::memory_order_relaxed);
 
-    auto& track = engine.tracks[(size_t)trackIndex];
+    auto& track = *engine.tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
     track.buffer = std::move(rendered);
     track.numSamples = outputSamples;
@@ -123,14 +123,14 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
                                   juce::String& error)
 {
     error.clear();
-    if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks || !owner.audioEngine.hasAudioFile(trackIndex))
+    if (trackIndex < 0 || trackIndex >= engine.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(trackIndex))
     {
         error = "Invalid audio clip.";
         return false;
     }
 
     auto& engine = owner.audioEngine;
-    auto& track = engine.tracks[(size_t)trackIndex];
+    auto& track = *engine.tracks[(size_t)trackIndex];
     auto& state = ensureSourceState(engine, trackIndex);
     if (state.original == nullptr || state.original->getNumSamples() <= 0)
     {
