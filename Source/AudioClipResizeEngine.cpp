@@ -123,7 +123,7 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
                                   juce::String& error)
 {
     error.clear();
-    if (trackIndex < 0 || trackIndex >= engine.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(trackIndex))
+    if (trackIndex < 0 || trackIndex >= owner.audioEngine.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(trackIndex))
     {
         error = "Invalid audio clip.";
         return false;
