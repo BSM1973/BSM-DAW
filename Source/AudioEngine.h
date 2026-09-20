@@ -13,7 +13,9 @@
 class AudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
+    // Legacy visible-row count while the UI is migrated to dynamic tracks.
     static constexpr int maxAudioTracks = 4;
+    static constexpr int initialAudioTracks = 4;
     static constexpr int maxWarpMarkers = 32;
 
     AudioEngine();
@@ -67,6 +69,10 @@ public:
                       double clipStartSeconds,
                       double clipLengthSeconds,
                       double tempoBpm) noexcept;
+
+    int getAudioTrackCount() const noexcept;
+    int addAudioTrack();
+    bool removeAudioTrack(int trackIndex);
 
     void setTrackGain(int trackIndex, float gain) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
@@ -163,11 +169,11 @@ private:
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
 
-    bool isValidTrackIndex(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
+    bool isValidTrackIndex(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < (int) tracks.size(); }
     std::int64_t getProjectLengthSamples() const noexcept;
 
     juce::AudioDeviceManager deviceManager;
-    std::array<AudioTrackState, maxAudioTracks> tracks;
+    std::vector<std::unique_ptr<AudioTrackState>> tracks;
     std::array<MidiPlaybackNote, maxMidiPlaybackNotes> midiPlaybackNotes;
     std::atomic<std::size_t> midiPlaybackNoteCount { 0 };
     std::atomic<double> midiClipStartSeconds { 0.0 };
