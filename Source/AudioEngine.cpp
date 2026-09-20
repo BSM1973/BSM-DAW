@@ -387,6 +387,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     bufferSize.store(device->getCurrentBufferSizeSamples());
     outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
     LibertyPluginHost::instance().initialise(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+    LibertyOneKnobManager::instance().prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
@@ -400,6 +401,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     const bool anySolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
+    auto& oneKnob = LibertyOneKnobManager::instance();
 
     for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
     {
@@ -419,6 +421,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = track.buffer->getNumChannels();
 
+        oneKnob.beginAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
         pluginHost.beginAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
 
         const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
@@ -430,6 +433,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
             pluginHost.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
+            oneKnob.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
             continue;
         }
 
@@ -500,6 +504,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         }
 
         pluginHost.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
+        oneKnob.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
     }
 
     const auto midiCount = midiPlaybackNoteCount.load(std::memory_order_acquire);
