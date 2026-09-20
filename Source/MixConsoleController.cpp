@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
@@ -187,7 +188,11 @@ public:
             plugin.onClick = [this, ch]
             {
                 auto& host = LibertyPluginHost::instance();
-                if (ch < AudioEngine::maxAudioTracks && host.hasEffectForTrack(ch))
+                auto& oneKnob = LibertyOneKnobManager::instance();
+                const int oneKnobSlot = ch == instrumentChannel ? LibertyOneKnobManager::maxTracks - 1 : ch;
+                if (ch != masterChannel && oneKnob.hasEffect(oneKnobSlot))
+                    oneKnob.showEditor(oneKnobSlot);
+                else if (ch < AudioEngine::maxAudioTracks && host.hasEffectForTrack(ch))
                     host.showEditorForTrack(ch);
                 else if (ch == instrumentChannel && host.hasInstrument())
                     host.showInstrumentEditor();
@@ -202,10 +207,18 @@ public:
             unload.onClick = [this, ch]
             {
                 auto& host = LibertyPluginHost::instance();
+                auto& oneKnob = LibertyOneKnobManager::instance();
                 if (ch < AudioEngine::maxAudioTracks)
-                    host.unloadEffectForTrack(ch);
+                {
+                    if (oneKnob.hasEffect(ch)) oneKnob.clearEffect(ch);
+                    else host.unloadEffectForTrack(ch);
+                }
                 else if (ch == instrumentChannel)
-                    host.unloadInstrument();
+                {
+                    const int slot = LibertyOneKnobManager::maxTracks - 1;
+                    if (oneKnob.hasEffect(slot)) oneKnob.clearEffect(slot);
+                    else host.unloadInstrument();
+                }
                 refreshPluginLabels();
                 repaint();
             };
@@ -497,16 +510,26 @@ private:
     void refreshPluginLabels()
     {
         auto& host = LibertyPluginHost::instance();
+        auto& oneKnob = LibertyOneKnobManager::instance();
         for (int ch = 0; ch < AudioEngine::maxAudioTracks; ++ch)
         {
-            const bool loaded = host.hasEffectForTrack(ch);
-            pluginButtons[(size_t)ch].setButtonText(loaded ? host.getEffectName(ch) : "INSERT — EMPTY");
-            unloadButtons[(size_t)ch].setEnabled(loaded);
+            const bool oneKnobLoaded = oneKnob.hasEffect(ch);
+            const bool externalLoaded = host.hasEffectForTrack(ch);
+            juce::String label = "INSERT — EMPTY";
+            if (oneKnobLoaded) label = oneKnob.getName(ch);
+            else if (externalLoaded) label = host.getEffectName(ch);
+            pluginButtons[(size_t)ch].setButtonText(label);
+            unloadButtons[(size_t)ch].setEnabled(oneKnobLoaded || externalLoaded);
         }
 
+        const int instrumentOneKnobSlot = LibertyOneKnobManager::maxTracks - 1;
+        const bool instrumentFxLoaded = oneKnob.hasEffect(instrumentOneKnobSlot);
         const bool instrumentLoaded = host.hasInstrument();
-        pluginButtons[(size_t)instrumentChannel].setButtonText(instrumentLoaded ? host.getInstrumentName() : "INSTRUMENT — EMPTY");
-        unloadButtons[(size_t)instrumentChannel].setEnabled(instrumentLoaded);
+        juce::String instrumentLabel = instrumentLoaded ? host.getInstrumentName() : "INSTRUMENT — EMPTY";
+        if (instrumentFxLoaded)
+            instrumentLabel << "  +  " << oneKnob.getName(instrumentOneKnobSlot);
+        pluginButtons[(size_t)instrumentChannel].setButtonText(instrumentLabel);
+        unloadButtons[(size_t)instrumentChannel].setEnabled(instrumentFxLoaded || instrumentLoaded);
         pluginButtons[(size_t)masterChannel].setButtonText("MASTER OUTPUT");
         pluginButtons[(size_t)masterChannel].setEnabled(false);
         unloadButtons[(size_t)masterChannel].setVisible(false);
