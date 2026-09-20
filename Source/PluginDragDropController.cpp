@@ -57,6 +57,14 @@ std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventCom
         if (text == "1K FLANGER") return LibertyOneKnobRack::Type::flanger;
         if (text == "1K PHASER") return LibertyOneKnobRack::Type::phaser;
         if (text == "1K TREMOLO") return LibertyOneKnobRack::Type::tremolo;
+        if (text == "1K REVERB") return LibertyOneKnobRack::Type::reverb;
+        if (text == "1K DELAY") return LibertyOneKnobRack::Type::delay;
+        if (text == "1K DRIVE") return LibertyOneKnobRack::Type::drive;
+        if (text == "1K COMP") return LibertyOneKnobRack::Type::compressor;
+        if (text == "1K SAT") return LibertyOneKnobRack::Type::saturation;
+        if (text == "1K WIDTH") return LibertyOneKnobRack::Type::stereoWidth;
+        if (text == "1K FILTER") return LibertyOneKnobRack::Type::filter;
+        if (text == "1K DOUBLER") return LibertyOneKnobRack::Type::doubler;
         return std::nullopt;
     };
 
