@@ -5,7 +5,12 @@
 #include <cmath>
 #include <limits>
 
-AudioEngine::AudioEngine() = default;
+AudioEngine::AudioEngine()
+{
+    tracks.reserve(initialAudioTracks);
+    for (int i = 0; i < initialAudioTracks; ++i)
+        tracks.push_back(std::make_unique<AudioTrackState>());
+}
 AudioEngine::~AudioEngine() { shutdown(); }
 
 bool AudioEngine::initialise()
@@ -40,8 +45,9 @@ void AudioEngine::shutdown()
     midiTrackSolo.store(false, std::memory_order_relaxed);
     instrumentTrackMuted.store(false, std::memory_order_relaxed);
     instrumentTrackSolo.store(false, std::memory_order_relaxed);
-    for (auto& track : tracks)
+    for (auto& trackPtr : tracks)
     {
+        auto& track = *trackPtr;
         track.loaded.store(false, std::memory_order_release);
         track.lengthSeconds.store(0.0); track.startSeconds.store(0.0);
         track.warpEnabled.store(false, std::memory_order_relaxed);
@@ -59,8 +65,9 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
     const auto rate = sampleRate.load();
     if (rate <= 0.0) return 0;
     std::int64_t length = 0;
-    for (const auto& track : tracks)
+    for (const auto& trackPtr : tracks)
     {
+        const auto& track = *trackPtr;
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto start = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         length = juce::jmax(length, start + track.numSamples);
@@ -129,47 +136,68 @@ void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
     midiPlaybackNoteCount.store(count, std::memory_order_release);
 }
 
-void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
-float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].gain.load() : 0.0f; }
-void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
-float AudioEngine::getTrackPan(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].pan.load() : 0.0f; }
-void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].muted.store(muted); }
-bool AudioEngine::isTrackMuted(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].muted.load(); }
-void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].solo.store(solo); }
-bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].solo.load(); }
+int AudioEngine::getAudioTrackCount() const noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    return (int) tracks.size();
+}
+
+int AudioEngine::addAudioTrack()
+{
+    const juce::ScopedLock lock(stateLock);
+    tracks.push_back(std::make_unique<AudioTrackState>());
+    return (int) tracks.size() - 1;
+}
+
+bool AudioEngine::removeAudioTrack(int trackIndex)
+{
+    const juce::ScopedLock lock(stateLock);
+    if (!isValidTrackIndex(trackIndex)) return false;
+    tracks.erase(tracks.begin() + trackIndex);
+    return true;
+}
+
+void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
+float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
+void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
+float AudioEngine::getTrackPan(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->pan.load() : 0.0f; }
+void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->muted.store(muted); }
+bool AudioEngine::isTrackMuted(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->muted.load(); }
+void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->solo.store(solo); }
+bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->solo.load(); }
 bool AudioEngine::isAnyTrackSolo() const noexcept
 {
-    for (const auto& track : tracks) if (track.solo.load()) return true;
+    for (const auto& track : tracks) if (track && track->solo.load()) return true;
     return midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
 }
 
-double AudioEngine::getTrackStartSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].startSeconds.load() : 0.0; }
-void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].startSeconds.store(juce::jmax(0.0, seconds)); }
+double AudioEngine::getTrackStartSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->startSeconds.load() : 0.0; }
+void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->startSeconds.store(juce::jmax(0.0, seconds)); }
 
 void AudioEngine::setTrackWarpEnabled(int trackIndex, bool enabled) noexcept
 {
-    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].warpEnabled.store(enabled, std::memory_order_relaxed);
+    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->warpEnabled.store(enabled, std::memory_order_relaxed);
 }
 
 bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
 {
-    return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].warpEnabled.load(std::memory_order_relaxed);
+    return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->warpEnabled.load(std::memory_order_relaxed);
 }
 
 void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
 {
-    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex].warpMode.store(juce::jlimit(0, 4, mode), std::memory_order_relaxed);
+    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->warpMode.store(juce::jlimit(0, 4, mode), std::memory_order_relaxed);
 }
 
 int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
 {
-    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].warpMode.load(std::memory_order_relaxed) : 0;
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->warpMode.load(std::memory_order_relaxed) : 0;
 }
 
 void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     const double length = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
     if (length <= 0.0)
     {
@@ -186,7 +214,7 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
 bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return false;
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     int count = track.warpMarkerCount.load(std::memory_order_acquire);
     if (count < 2) { resetTrackWarpMarkers(trackIndex); count = track.warpMarkerCount.load(std::memory_order_acquire); }
     if (count < 2 || count >= maxWarpMarkers) return false;
@@ -220,7 +248,7 @@ bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, doubl
 bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double targetSeconds) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return false;
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     const int count = track.warpMarkerCount.load(std::memory_order_acquire);
     if (markerIndex <= 0 || markerIndex >= count - 1) return false;
     const double prev = track.warpTargetSeconds[(size_t)(markerIndex - 1)].load(std::memory_order_relaxed);
@@ -235,7 +263,7 @@ bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double ta
 bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return false;
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     const int count = track.warpMarkerCount.load(std::memory_order_acquire);
     if (markerIndex <= 0 || markerIndex >= count - 1) return false;
     for (int i = markerIndex; i < count - 1; ++i)
@@ -249,21 +277,21 @@ bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcep
 
 int AudioEngine::getTrackWarpMarkerCount(int trackIndex) const noexcept
 {
-    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire) : 0;
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire) : 0;
 }
 
 double AudioEngine::getTrackWarpMarkerSourceSeconds(int trackIndex, int markerIndex) const noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return 0.0;
-    const int count = tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire);
-    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex].warpSourceSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+    const int count = tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire);
+    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex]->warpSourceSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
 }
 
 double AudioEngine::getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIndex) const noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return 0.0;
-    const int count = tracks[(size_t)trackIndex].warpMarkerCount.load(std::memory_order_acquire);
-    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex].warpTargetSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+    const int count = tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire);
+    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex]->warpTargetSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
 }
 
 bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error)
@@ -297,7 +325,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     const bool wasInitialised = initialised.load();
     playing.store(false); resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
     track.buffer = std::move(newBuffer); track.numSamples = outputSamples;
     track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
@@ -316,7 +344,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     const bool wasInitialised = initialised.load();
     playing.store(false); resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
-    auto& track = tracks[(size_t)trackIndex];
+    auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
     track.buffer.reset(); track.numSamples = 0; track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
@@ -331,13 +359,13 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (!isValidTrackIndex(trackIndex) || !hasAudioFile(trackIndex)) { error = "Select a loaded audio clip first."; return false; }
     const auto rate = sampleRate.load();
     if (rate <= 0.0) { error = "No audio device is available."; return false; }
-    auto& source = tracks[(size_t)trackIndex];
+    auto& source = *tracks[(size_t)trackIndex];
     const auto startSeconds = source.startSeconds.load();
     const auto lengthSeconds = source.lengthSeconds.load();
     const auto splitOffsetSeconds = splitProjectSeconds - startSeconds;
     if (splitOffsetSeconds <= 0.01 || splitOffsetSeconds >= lengthSeconds - 0.01) { error = "Place the playhead inside the audio clip to split it."; return false; }
     for (int i = 0; i < maxAudioTracks; ++i)
-        if (i != trackIndex && !tracks[(size_t)i].loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
+        if (i != trackIndex && !tracks[(size_t)i]->loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
     if (newTrackIndex < 0) { error = "No empty audio track is available for the second clip segment."; return false; }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
     if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
@@ -375,10 +403,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     return true;
 }
 
-bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex].loaded.load(std::memory_order_acquire); }
-juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].fileName : juce::String{}; }
-double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].lengthSeconds.load() : 0.0; }
-const juce::AudioBuffer<float>* AudioEngine::getAudioBuffer(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex].buffer.get() : nullptr; }
+bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->loaded.load(std::memory_order_acquire); }
+juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
+double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->lengthSeconds.load() : 0.0; }
+const juce::AudioBuffer<float>* AudioEngine::getAudioBuffer(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->buffer.get() : nullptr; }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
@@ -405,7 +433,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
 
     for (int trackIndex = 0; trackIndex < maxAudioTracks; ++trackIndex)
     {
-        auto& track = tracks[(size_t)trackIndex];
+        auto& track = *tracks[(size_t)trackIndex];
         if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         const auto clipEnd = startSample + track.numSamples;
