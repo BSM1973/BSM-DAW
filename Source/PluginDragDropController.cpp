@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <optional>
@@ -45,6 +46,21 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
     return std::nullopt;
 }
 
+std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventComponent)
+{
+    for (auto* c = eventComponent; c != nullptr; c = c->getParentComponent())
+    {
+        auto* button = dynamic_cast<juce::TextButton*>(c);
+        if (button == nullptr) continue;
+        const auto text = button->getButtonText().toUpperCase();
+        if (text == "1K CHORUS") return LibertyOneKnobRack::Type::chorus;
+        if (text == "1K FLANGER") return LibertyOneKnobRack::Type::flanger;
+        if (text == "1K PHASER") return LibertyOneKnobRack::Type::phaser;
+        if (text == "1K TREMOLO") return LibertyOneKnobRack::Type::tremolo;
+    }
+    return std::nullopt;
+}
+
 MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
 {
     auto& desktop = juce::Desktop::getInstance();
@@ -79,6 +95,24 @@ int pluginDropTrack(MainComponent& main, juce::Point<int> local, bool instrument
     return arrangerDropTrack(main, local, instrumentPlugin);
 }
 
+int oneKnobDropTrack(MainComponent& main, juce::Point<int> local)
+{
+    if (isLibertyMixConsoleVisible(&main))
+    {
+        int target = getLibertyMixConsolePluginDropTrack(&main, local, false);
+        if (target >= 0 && target < AudioEngine::maxAudioTracks) return target;
+        target = getLibertyMixConsolePluginDropTrack(&main, local, true);
+        return target == instrumentTrackIndex ? instrumentTrackIndex : -1;
+    }
+
+    const int rowH = getLibertyTrackRowHeight();
+    const int relativeY = local.y - transportHeight - rulerHeight;
+    if (relativeY < 0) return -1;
+    const int row = relativeY / juce::jmax(1, rowH);
+    if (row >= 0 && row < AudioEngine::maxAudioTracks) return row;
+    return row == instrumentTrackIndex ? instrumentTrackIndex : -1;
+}
+
 class PluginDragDropController final : private juce::MouseListener
 {
 public:
@@ -98,6 +132,7 @@ public:
         juce::Desktop::getInstance().removeGlobalMouseListener(this);
         registered = false;
         candidate.reset();
+        oneKnobCandidate.reset();
         dragging = false;
     }
 
@@ -105,7 +140,8 @@ private:
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!event.mods.isLeftButtonDown()) return;
-        candidate = resolveSelectedPlugin(event.eventComponent);
+        oneKnobCandidate = resolveOneKnob(event.eventComponent);
+        candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent);
         dragStartScreen = event.getScreenPosition();
         dragging = false;
     }
@@ -114,9 +150,9 @@ private:
     {
         if (!event.mods.isLeftButtonDown()) return;
 
-        if (!candidate.has_value())
+        if (!oneKnobCandidate.has_value() && !candidate.has_value())
             candidate = resolveSelectedPlugin(event.eventComponent);
-        if (!candidate.has_value())
+        if (!oneKnobCandidate.has_value() && !candidate.has_value())
             return;
 
         const auto delta = event.getScreenPosition() - dragStartScreen;
@@ -128,7 +164,9 @@ private:
         if (auto* main = findMainComponentAtScreenPoint(event.getScreenPosition()))
         {
             const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
-            const int target = pluginDropTrack(*main, local, candidate->isInstrument);
+            const int target = oneKnobCandidate.has_value()
+                ? oneKnobDropTrack(*main, local)
+                : pluginDropTrack(*main, local, candidate->isInstrument);
             main->setMouseCursor(target >= 0 ? juce::MouseCursor::DraggingHandCursor
                                              : juce::MouseCursor::NoCursor);
         }
@@ -137,9 +175,11 @@ private:
     void mouseUp(const juce::MouseEvent& event) override
     {
         auto plugin = candidate;
+        auto oneKnob = oneKnobCandidate;
         candidate.reset();
+        oneKnobCandidate.reset();
 
-        if (!dragging || !plugin.has_value())
+        if (!dragging || (!plugin.has_value() && !oneKnob.has_value()))
         {
             dragging = false;
             return;
@@ -151,17 +191,32 @@ private:
         main->setMouseCursor(juce::MouseCursor::NormalCursor);
 
         const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
-        const int target = pluginDropTrack(*main, local, plugin->isInstrument);
+        const int target = oneKnob.has_value()
+            ? oneKnobDropTrack(*main, local)
+            : pluginDropTrack(*main, local, plugin->isInstrument);
 
         if (target < 0)
         {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon,
-                plugin->isInstrument ? "Liberty - Instrument" : "Liberty - Effet",
-                plugin->isInstrument
-                    ? "Dépose l'instrument sur la piste Instrument ou sa tranche MIXCONSOLE."
-                    : "Dépose l'effet sur une piste Audio 1 à 4 ou sa tranche MIXCONSOLE.",
+                oneKnob.has_value() ? "Liberty - One Knob" : (plugin->isInstrument ? "Liberty - Instrument" : "Liberty - Effet"),
+                oneKnob.has_value()
+                    ? "Dépose le One Knob sur une piste Audio 1 à 4 ou sur la piste Instrument."
+                    : (plugin->isInstrument
+                        ? "Dépose l'instrument sur la piste Instrument ou sa tranche MIXCONSOLE."
+                        : "Dépose l'effet sur une piste Audio 1 à 4 ou sa tranche MIXCONSOLE."),
                 "OK");
+            return;
+        }
+
+        if (oneKnob.has_value())
+        {
+            const int slot = target == instrumentTrackIndex ? LibertyOneKnobManager::maxTracks - 1 : target;
+            auto& manager = LibertyOneKnobManager::instance();
+            manager.setEffect(slot, *oneKnob);
+            manager.showEditor(slot);
+            main->selectedTrack = target;
+            main->repaint();
             return;
         }
 
@@ -192,6 +247,7 @@ private:
     }
 
     std::optional<juce::PluginDescription> candidate;
+    std::optional<LibertyOneKnobRack::Type> oneKnobCandidate;
     juce::Point<int> dragStartScreen;
     bool dragging = false;
     bool registered = true;
