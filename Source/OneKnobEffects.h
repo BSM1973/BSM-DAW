@@ -30,7 +30,7 @@ private:
     juce::dsp::Chorus<float> chorus;
     juce::dsp::Chorus<float> flanger;
     juce::dsp::Phaser<float> phaser;
-    juce::dsp::Reverb reverb;
+    juce::Reverb reverb;
     juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Linear> delay { 96000 };
     juce::dsp::Compressor<float> compressor;
     juce::dsp::StateVariableTPTFilter<float> filter;
