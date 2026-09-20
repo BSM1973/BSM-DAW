@@ -204,8 +204,11 @@ public:
         widthButton.setButtonText("1K WIDTH");
         filterButton.setButtonText("1K FILTER");
         doublerButton.setButtonText("1K DOUBLER");
+        exciterButton.setButtonText("1K EXCITER"); deEsserButton.setButtonText("1K DE-ESS");
+        gateButton.setButtonText("1K GATE"); bassBoostButton.setButtonText("1K BASS");
+        airButton.setButtonText("1K AIR"); punchButton.setButtonText("1K PUNCH"); softClipButton.setButtonText("1K CLIP");
         clearOneKnobButton.setButtonText("1K OFF");
-        for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton, &filterButton, &doublerButton, &clearOneKnobButton })
+        for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton, &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff16303b));
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff72d8f5));
@@ -223,6 +226,13 @@ public:
         widthButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::stereoWidth); };
         filterButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::filter); };
         doublerButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::doubler); };
+        exciterButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::exciter); };
+        deEsserButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::deEsser); };
+        gateButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::gate); };
+        bassBoostButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::bassBoost); };
+        airButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::air); };
+        punchButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::punch); };
+        softClipButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::softClip); };
         clearOneKnobButton.onClick = [this] { clearOneKnob(); };
 
         pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffaab2bc));
@@ -287,10 +297,10 @@ public:
         const int oneKnobW = juce::jmax(54, (getWidth() - 26) / 4);
         juce::TextButton* oneKnobButtons[] = { &chorusButton, &flangerButton, &phaserButton, &tremoloButton,
             &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
-            &filterButton, &doublerButton, &clearOneKnobButton };
-        for (int i = 0; i < 13; ++i)
+            &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
+        for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
-        pluginTree.setBounds(10, 294, getWidth() - 20, juce::jmax(40, getHeight() - 396));
+        pluginTree.setBounds(10, 354, getWidth() - 20, juce::jmax(40, getHeight() - 456));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
         favouritePluginButton.setBounds(10, controlsY, w, 28);
@@ -408,7 +418,9 @@ private:
         phaserButton.setVisible(pluginMode); tremoloButton.setVisible(pluginMode);
         reverbButton.setVisible(pluginMode); delayButton.setVisible(pluginMode); driveButton.setVisible(pluginMode);
         compressorButton.setVisible(pluginMode); saturationButton.setVisible(pluginMode); widthButton.setVisible(pluginMode);
-        filterButton.setVisible(pluginMode); doublerButton.setVisible(pluginMode); clearOneKnobButton.setVisible(pluginMode);
+        filterButton.setVisible(pluginMode); doublerButton.setVisible(pluginMode); exciterButton.setVisible(pluginMode);
+        deEsserButton.setVisible(pluginMode); gateButton.setVisible(pluginMode); bassBoostButton.setVisible(pluginMode);
+        airButton.setVisible(pluginMode); punchButton.setVisible(pluginMode); softClipButton.setVisible(pluginMode); clearOneKnobButton.setVisible(pluginMode);
         if (pluginMode && !scanning.load()) refreshPlugins();
     }
 
@@ -653,7 +665,7 @@ private:
     juce::StringArray favouriteKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
-    juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, clearOneKnobButton;
+    juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
