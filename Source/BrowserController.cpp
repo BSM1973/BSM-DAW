@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -191,6 +192,23 @@ public:
         openPluginButton.onClick = [this] { openLoadedPluginEditor(); };
         unloadPluginButton.onClick = [this] { unloadPlugin(); };
 
+        chorusButton.setButtonText("1K CHORUS");
+        flangerButton.setButtonText("1K FLANGER");
+        phaserButton.setButtonText("1K PHASER");
+        tremoloButton.setButtonText("1K TREMOLO");
+        clearOneKnobButton.setButtonText("1K OFF");
+        for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &clearOneKnobButton })
+        {
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff16303b));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff72d8f5));
+            addAndMakeVisible(*b);
+        }
+        chorusButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::chorus); };
+        flangerButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::flanger); };
+        phaserButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::phaser); };
+        tremoloButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::tremolo); };
+        clearOneKnobButton.onClick = [this] { clearOneKnob(); };
+
         pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffaab2bc));
         pluginStatus.setFont(juce::Font(10.0f));
         pluginStatus.setJustificationType(juce::Justification::centredLeft);
@@ -249,7 +267,14 @@ public:
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
         clearBlacklistButton.setBounds(14 + (getWidth() - 24) / 2, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
-        pluginTree.setBounds(10, 172, getWidth() - 20, juce::jmax(40, getHeight() - 274));
+        const int oneKnobY = 172;
+        const int oneKnobW = juce::jmax(42, (getWidth() - 28) / 5);
+        chorusButton.setBounds(10, oneKnobY, oneKnobW, 28);
+        flangerButton.setBounds(12 + oneKnobW, oneKnobY, oneKnobW, 28);
+        phaserButton.setBounds(14 + oneKnobW * 2, oneKnobY, oneKnobW, 28);
+        tremoloButton.setBounds(16 + oneKnobW * 3, oneKnobY, oneKnobW, 28);
+        clearOneKnobButton.setBounds(18 + oneKnobW * 4, oneKnobY, oneKnobW, 28);
+        pluginTree.setBounds(10, 206, getWidth() - 20, juce::jmax(40, getHeight() - 308));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
         favouritePluginButton.setBounds(10, controlsY, w, 28);
@@ -363,6 +388,9 @@ private:
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
         openPluginButton.setVisible(pluginMode); unloadPluginButton.setVisible(pluginMode);
         pluginStatus.setVisible(pluginMode);
+        chorusButton.setVisible(pluginMode); flangerButton.setVisible(pluginMode);
+        phaserButton.setVisible(pluginMode); tremoloButton.setVisible(pluginMode);
+        clearOneKnobButton.setVisible(pluginMode);
         if (pluginMode && !scanning.load()) refreshPlugins();
     }
 
@@ -515,6 +543,29 @@ private:
         refreshPluginStatus(); owner.repaint();
     }
 
+    int selectedAudioTrack() const
+    {
+        int track = owner.selectedTrack;
+        return (track >= 0 && track < AudioEngine::maxAudioTracks) ? track : 0;
+    }
+
+    void loadOneKnob(LibertyOneKnobRack::Type type)
+    {
+        const int track = selectedAudioTrack();
+        auto& manager = LibertyOneKnobManager::instance();
+        manager.setEffect(track, type);
+        manager.showEditor(track);
+        refreshPluginStatus();
+        owner.repaint();
+    }
+
+    void clearOneKnob()
+    {
+        LibertyOneKnobManager::instance().clearEffect(selectedAudioTrack());
+        refreshPluginStatus();
+        owner.repaint();
+    }
+
     void loadSelectedPlugin() { if (const auto* d = selectedPluginDescription()) loadPluginDescription(*d); }
     void openLoadedPluginEditor()
     {
@@ -535,7 +586,9 @@ private:
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
-        if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
+        auto& oneKnob = LibertyOneKnobManager::instance();
+        if (oneKnob.hasEffect(track)) text << "A" << (track + 1) << ": " << oneKnob.getName(track) << "   ";
+        if (host.hasEffectForTrack(track)) text << "FX: " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
@@ -582,6 +635,7 @@ private:
     juce::StringArray favouriteKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, clearOneKnobButton;
     juce::Label pluginStatus;
     juce::File rootDirectory;
     Category category = Category::files;
