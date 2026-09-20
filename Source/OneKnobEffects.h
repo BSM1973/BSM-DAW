@@ -48,12 +48,16 @@ public:
     juce::String getName(int trackIndex) const;
     bool hasEffect(int trackIndex) const;
     void process(int trackIndex, juce::AudioBuffer<float>& buffer);
+    void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
+    void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void showEditor(int trackIndex);
 
 private:
     LibertyOneKnobManager();
     bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxTracks; }
     std::array<LibertyOneKnobRack, maxTracks> racks;
+    std::array<juce::AudioBuffer<float>, maxTracks> baselines;
+    std::array<juce::AudioBuffer<float>, maxTracks> workBuffers;
     std::array<std::unique_ptr<juce::DocumentWindow>, maxTracks> editors;
     mutable juce::CriticalSection lock;
 };
