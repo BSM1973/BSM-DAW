@@ -75,14 +75,14 @@ void LibertyOneKnobRack::prepare(double sr, int maximumBlockSize)
     sampleRate = sr > 0.0 ? sr : 48000.0;
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32)juce::jmax(16, maximumBlockSize), 2 };
     chorus.prepare(spec); flanger.prepare(spec); phaser.prepare(spec);
-    delay.prepare(spec); compressor.prepare(spec); filter.prepare(spec); doubler.prepare(spec);
+    delay.prepare(spec); compressor.prepare(spec); filter.prepare(spec); doubler.prepare(spec); toneFilter.prepare(spec); deEsserCompressor.prepare(spec);
     reverb.setSampleRate(sampleRate);
     reset(); updateParameters();
 }
 
 void LibertyOneKnobRack::reset()
 {
-    chorus.reset(); flanger.reset(); phaser.reset(); delay.reset(); compressor.reset(); filter.reset(); doubler.reset(); reverb.reset(); tremoloPhase = 0.0;
+    chorus.reset(); flanger.reset(); phaser.reset(); delay.reset(); compressor.reset(); filter.reset(); doubler.reset(); toneFilter.reset(); deEsserCompressor.reset(); reverb.reset(); tremoloPhase = 0.0;
 }
 
 void LibertyOneKnobRack::setType(Type newType)
@@ -112,6 +112,13 @@ juce::String LibertyOneKnobRack::getName() const
         case Type::stereoWidth: return "One Knob Stereo Width";
         case Type::filter: return "One Knob Filter";
         case Type::doubler: return "One Knob Doubler";
+        case Type::exciter: return "One Knob Exciter";
+        case Type::deEsser: return "One Knob De-Esser";
+        case Type::gate: return "One Knob Gate";
+        case Type::bassBoost: return "One Knob Bass Boost";
+        case Type::air: return "One Knob Air";
+        case Type::punch: return "One Knob Punch";
+        case Type::softClip: return "One Knob Soft Clip";
         default: return {};
     }
 }
@@ -160,6 +167,13 @@ void LibertyOneKnobRack::updateParameters()
     doubler.setCentreDelay(12.0f + 12.0f * x);
     doubler.setFeedback(0.0f);
     doubler.setMix(0.10f + 0.42f * x);
+    toneFilter.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+    toneFilter.setCutoffFrequency(3500.0f + 4500.0f * x);
+    toneFilter.setResonance(0.7f);
+    deEsserCompressor.setThreshold(-10.0f - 22.0f * x);
+    deEsserCompressor.setRatio(2.0f + 8.0f * x);
+    deEsserCompressor.setAttack(1.5f);
+    deEsserCompressor.setRelease(45.0f);
 }
 
 void LibertyOneKnobRack::process(juce::AudioBuffer<float>& buffer)
@@ -232,6 +246,38 @@ void LibertyOneKnobRack::process(juce::AudioBuffer<float>& buffer)
             break;
         case Type::filter: filter.process(context); break;
         case Type::doubler: doubler.process(context); break;
+        case Type::exciter:
+            for (int ch=0; ch<buffer.getNumChannels(); ++ch) for (int s=0; s<buffer.getNumSamples(); ++s) {
+                const float v=buffer.getSample(ch,s); const float h=std::tanh(v*(2.0f+5.0f*amount));
+                buffer.setSample(ch,s, v + (h-v)*(0.08f+0.25f*amount)); } break;
+        case Type::deEsser:
+        {
+            juce::AudioBuffer<float> high(buffer.getNumChannels(), buffer.getNumSamples());
+            for(int ch=0;ch<buffer.getNumChannels();++ch) high.copyFrom(ch,0,buffer,ch,0,buffer.getNumSamples());
+            juce::dsp::AudioBlock<float> hb(high); juce::dsp::ProcessContextReplacing<float> hc(hb);
+            toneFilter.process(hc); deEsserCompressor.process(hc);
+            for(int ch=0;ch<buffer.getNumChannels();++ch) buffer.addFrom(ch,0,high,ch,0,buffer.getNumSamples(),-0.55f*amount);
+            break;
+        }
+        case Type::gate:
+            for(int ch=0;ch<buffer.getNumChannels();++ch) for(int s=0;s<buffer.getNumSamples();++s) {
+                const float v=buffer.getSample(ch,s); const float threshold=0.002f+0.035f*amount;
+                if(std::abs(v)<threshold) buffer.setSample(ch,s,v*(1.0f-0.92f*amount)); } break;
+        case Type::bassBoost:
+            for(int ch=0;ch<buffer.getNumChannels();++ch) for(int s=1;s<buffer.getNumSamples();++s) {
+                const float v=buffer.getSample(ch,s); const float prev=buffer.getSample(ch,s-1);
+                buffer.setSample(ch,s,v+(prev-v)*(0.08f+0.30f*amount)); } break;
+        case Type::air:
+            for(int ch=0;ch<buffer.getNumChannels();++ch) for(int s=1;s<buffer.getNumSamples();++s) {
+                const float v=buffer.getSample(ch,s), prev=buffer.getSample(ch,s-1);
+                buffer.setSample(ch,s,v+(v-prev)*(0.08f+0.35f*amount)); } break;
+        case Type::punch:
+            for(int ch=0;ch<buffer.getNumChannels();++ch) for(int s=1;s<buffer.getNumSamples();++s) {
+                const float v=buffer.getSample(ch,s), prev=buffer.getSample(ch,s-1);
+                buffer.setSample(ch,s,juce::jlimit(-1.2f,1.2f,v+(v-prev)*(0.15f+0.65f*amount))); } break;
+        case Type::softClip:
+            for(int ch=0;ch<buffer.getNumChannels();++ch) for(int s=0;s<buffer.getNumSamples();++s) {
+                const float gain=1.0f+6.0f*amount; buffer.setSample(ch,s,std::tanh(buffer.getSample(ch,s)*gain)/std::tanh(gain)); } break;
         default: break;
     }
 }
