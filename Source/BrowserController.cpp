@@ -2,7 +2,6 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
-#include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -99,27 +98,6 @@ class BrowserPanel final : public juce::Component,
                            private juce::Timer,
                            private juce::FileBrowserListener
 {
-    MainComponent& owner;
-    juce::TimeSliceThread thread { "Liberty Browser" };
-    juce::WildcardFileFilter filter;
-    juce::DirectoryContentsList directoryList;
-    juce::FileTreeComponent fileTree;
-    juce::TextButton toggleButton;
-    juce::TreeView pluginTree;
-    std::unique_ptr<PluginTreeItem> pluginRoot;
-    juce::Array<juce::PluginDescription> pluginDescriptions;
-    juce::StringArray favouriteKeys;
-    juce::TextButton closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
-    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
-    juce::Label pluginStatus;
-    juce::File rootDirectory;
-    Category category = Category::files;
-    std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
-    mutable juce::CriticalSection scanStatusLock;
-    juce::String scanStatusText;
-    std::thread scanThread;
-    bool browserOpen = false, hostExpanded = false;
-    juce::Rectangle<int> originalWindowBounds;
 public:
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
@@ -305,8 +283,7 @@ private:
         favouriteKeys.trim(); favouriteKeys.removeEmptyStrings(); favouriteKeys.removeDuplicates(false);
     }
 
-    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("
-")); }
+    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
 
     void toggleFavourite(const juce::PluginDescription& d)
@@ -453,30 +430,6 @@ private:
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
 
-        auto* oneKnob = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "LIBERTY FX - ONE KNOB");
-        pluginRoot->addSubItem(oneKnob);
-        const std::array<std::pair<juce::String, LibertyOneKnobRack::Type>, 4> internalEffects {{
-            { "One Knob Chorus", LibertyOneKnobRack::Type::chorus },
-            { "One Knob Flanger", LibertyOneKnobRack::Type::flanger },
-            { "One Knob Phaser", LibertyOneKnobRack::Type::phaser },
-            { "One Knob Tremolo", LibertyOneKnobRack::Type::tremolo }
-        }};
-        for (const auto& fx : internalEffects)
-        {
-            juce::PluginDescription d;
-            d.name = fx.first; d.manufacturerName = "Liberty FX"; d.pluginFormatName = "LIBERTY"; d.isInstrument = false;
-            oneKnob->addSubItem(new PluginTreeItem(PluginTreeItem::Kind::plugin, d.name, &d,
-                [this, type = fx.second](const juce::PluginDescription&)
-                {
-                    int track = owner.selectedTrack;
-                    if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
-                    LibertyOneKnobManager::instance().setEffect(track, type);
-                    LibertyOneKnobManager::instance().showEditor(track);
-                    refreshPluginStatus(); owner.repaint();
-                }));
-        }
-        oneKnob->setOpen(true);
-
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions) if (isFavouritePlugin(d)) fav->addSubItem(makePluginItem(d));
@@ -538,8 +491,7 @@ private:
     {
         auto& host = LibertyPluginHost::instance();
         auto entries = host.getBlacklistedPlugins();
-        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("
-");
+        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("\n");
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist", text, "OK");
     }
 
@@ -583,8 +535,7 @@ private:
         auto& host = LibertyPluginHost::instance();
         int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
         juce::String text;
-        if (LibertyOneKnobManager::instance().hasEffect(track)) text << "A" << (track + 1) << ": " << LibertyOneKnobManager::instance().getName(track) << "   ";
-        else if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
+        if (host.hasEffectForTrack(track)) text << "A" << (track + 1) << ": " << host.getEffectName(track) << "   ";
         if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
@@ -620,6 +571,26 @@ private:
         }
     }
 
+    MainComponent& owner;
+    juce::TimeSliceThread thread { "Liberty Browser" };
+    juce::WildcardFileFilter filter;
+    juce::DirectoryContentsList directoryList;
+    juce::FileTreeComponent fileTree;
+    juce::TreeView pluginTree;
+    std::unique_ptr<PluginTreeItem> pluginRoot;
+    juce::Array<juce::PluginDescription> pluginDescriptions;
+    juce::StringArray favouriteKeys;
+    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
+    juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
+    juce::Label pluginStatus;
+    juce::File rootDirectory;
+    Category category = Category::files;
+    std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
+    mutable juce::CriticalSection scanStatusLock;
+    juce::String scanStatusText;
+    std::thread scanThread;
+    bool browserOpen = false, hostExpanded = false;
+    juce::Rectangle<int> originalWindowBounds;
 };
 
 std::map<MainComponent*, std::unique_ptr<BrowserPanel>> browsers;
