@@ -7,7 +7,7 @@
 class LibertyOneKnobRack final
 {
 public:
-    enum class Type { none = 0, chorus, flanger, phaser, tremolo, reverb, delay, drive, compressor, saturation, stereoWidth, filter, doubler };
+    enum class Type { none = 0, chorus, flanger, phaser, tremolo, reverb, delay, drive, compressor, saturation, stereoWidth, filter, doubler, exciter, deEsser, gate, bassBoost, air, punch, softClip };
 
     LibertyOneKnobRack();
     ~LibertyOneKnobRack();
@@ -35,6 +35,8 @@ private:
     juce::dsp::Compressor<float> compressor;
     juce::dsp::StateVariableTPTFilter<float> filter;
     juce::dsp::Chorus<float> doubler;
+    juce::dsp::StateVariableTPTFilter<float> toneFilter;
+    juce::dsp::Compressor<float> deEsserCompressor;
     double tremoloPhase = 0.0;
 };
 
