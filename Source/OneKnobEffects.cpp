@@ -75,12 +75,14 @@ void LibertyOneKnobRack::prepare(double sr, int maximumBlockSize)
     sampleRate = sr > 0.0 ? sr : 48000.0;
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32)juce::jmax(16, maximumBlockSize), 2 };
     chorus.prepare(spec); flanger.prepare(spec); phaser.prepare(spec);
+    delay.prepare(spec); compressor.prepare(spec); filter.prepare(spec); doubler.prepare(spec);
+    reverb.setSampleRate(sampleRate);
     reset(); updateParameters();
 }
 
 void LibertyOneKnobRack::reset()
 {
-    chorus.reset(); flanger.reset(); phaser.reset(); tremoloPhase = 0.0;
+    chorus.reset(); flanger.reset(); phaser.reset(); delay.reset(); compressor.reset(); filter.reset(); doubler.reset(); reverb.reset(); tremoloPhase = 0.0;
 }
 
 void LibertyOneKnobRack::setType(Type newType)
@@ -102,6 +104,14 @@ juce::String LibertyOneKnobRack::getName() const
         case Type::flanger: return "One Knob Flanger";
         case Type::phaser: return "One Knob Phaser";
         case Type::tremolo: return "One Knob Tremolo";
+        case Type::reverb: return "One Knob Reverb";
+        case Type::delay: return "One Knob Delay";
+        case Type::drive: return "One Knob Drive";
+        case Type::compressor: return "One Knob Compressor";
+        case Type::saturation: return "One Knob Saturation";
+        case Type::stereoWidth: return "One Knob Stereo Width";
+        case Type::filter: return "One Knob Filter";
+        case Type::doubler: return "One Knob Doubler";
         default: return {};
     }
 }
@@ -126,6 +136,30 @@ void LibertyOneKnobRack::updateParameters()
     phaser.setCentreFrequency(260.0f + 1500.0f * x);
     phaser.setFeedback(0.03f + 0.68f * x);
     phaser.setMix(0.08f + 0.68f * x);
+
+    juce::dsp::Reverb::Parameters rp;
+    rp.roomSize = 0.18f + 0.72f * x;
+    rp.damping = 0.72f - 0.40f * x;
+    rp.wetLevel = 0.05f + 0.50f * x;
+    rp.dryLevel = 1.0f - 0.18f * x;
+    rp.width = 0.35f + 0.65f * x;
+    reverb.setParameters(rp);
+
+    delay.setDelay((float)(sampleRate * (0.045 + 0.34 * x)));
+    compressor.setThreshold(-6.0f - 24.0f * x);
+    compressor.setRatio(1.5f + 10.5f * x);
+    compressor.setAttack(18.0f - 15.0f * x);
+    compressor.setRelease(160.0f - 90.0f * x);
+
+    filter.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+    filter.setCutoffFrequency(18000.0f - 16500.0f * x);
+    filter.setResonance(0.72f + 1.8f * x);
+
+    doubler.setRate(0.12f + 0.28f * x);
+    doubler.setDepth(0.10f + 0.35f * x);
+    doubler.setCentreDelay(12.0f + 12.0f * x);
+    doubler.setFeedback(0.0f);
+    doubler.setMix(0.10f + 0.42f * x);
 }
 
 void LibertyOneKnobRack::process(juce::AudioBuffer<float>& buffer)
@@ -153,6 +187,51 @@ void LibertyOneKnobRack::process(juce::AudioBuffer<float>& buffer)
             }
             break;
         }
+        case Type::reverb: reverb.processStereo(buffer.getWritePointer(0), buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : buffer.getWritePointer(0), buffer.getNumSamples()); break;
+        case Type::delay:
+        {
+            const float wet = 0.08f + 0.55f * amount;
+            const float feedback = 0.08f + 0.58f * amount;
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int s = 0; s < buffer.getNumSamples(); ++s)
+                {
+                    const float in = buffer.getSample(ch, s);
+                    const float d = delay.popSample(ch);
+                    delay.pushSample(ch, in + d * feedback);
+                    buffer.setSample(ch, s, in * (1.0f - wet * 0.35f) + d * wet);
+                }
+            break;
+        }
+        case Type::drive:
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int s = 0; s < buffer.getNumSamples(); ++s)
+                {
+                    const float driveGain = 1.0f + 14.0f * amount;
+                    const float y = std::tanh(buffer.getSample(ch, s) * driveGain) / std::tanh(driveGain);
+                    buffer.setSample(ch, s, y);
+                }
+            break;
+        case Type::compressor: compressor.process(context); break;
+        case Type::saturation:
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int s = 0; s < buffer.getNumSamples(); ++s)
+                {
+                    const float x = buffer.getSample(ch, s);
+                    const float k = 1.0f + 5.0f * amount;
+                    buffer.setSample(ch, s, std::atan(x * k) / std::atan(k));
+                }
+            break;
+        case Type::stereoWidth:
+            if (buffer.getNumChannels() >= 2)
+                for (int s = 0; s < buffer.getNumSamples(); ++s)
+                {
+                    const float l = buffer.getSample(0, s), r = buffer.getSample(1, s);
+                    const float mid = 0.5f * (l + r), side = 0.5f * (l - r) * (1.0f + 1.6f * amount);
+                    buffer.setSample(0, s, mid + side); buffer.setSample(1, s, mid - side);
+                }
+            break;
+        case Type::filter: filter.process(context); break;
+        case Type::doubler: doubler.process(context); break;
         default: break;
     }
 }
