@@ -48,16 +48,28 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
 
 std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventComponent)
 {
-    for (auto* c = eventComponent; c != nullptr; c = c->getParentComponent())
+    auto match = [](juce::Component* c) -> std::optional<LibertyOneKnobRack::Type>
     {
         auto* button = dynamic_cast<juce::TextButton*>(c);
-        if (button == nullptr) continue;
+        if (button == nullptr) return std::nullopt;
         const auto text = button->getButtonText().toUpperCase();
         if (text == "1K CHORUS") return LibertyOneKnobRack::Type::chorus;
         if (text == "1K FLANGER") return LibertyOneKnobRack::Type::flanger;
         if (text == "1K PHASER") return LibertyOneKnobRack::Type::phaser;
         if (text == "1K TREMOLO") return LibertyOneKnobRack::Type::tremolo;
-    }
+        return std::nullopt;
+    };
+
+    for (auto* c = eventComponent; c != nullptr; c = c->getParentComponent())
+        if (auto type = match(c)) return type;
+
+    // Global mouse events may be retargeted to the Browser panel instead of the
+    // child TextButton. Resolve the real component underneath the pointer too.
+    const auto screen = juce::Desktop::getMousePosition();
+    if (auto* underMouse = juce::Desktop::getInstance().findComponentAt(screen))
+        for (auto* c = underMouse; c != nullptr; c = c->getParentComponent())
+            if (auto type = match(c)) return type;
+
     return std::nullopt;
 }
 
@@ -140,6 +152,7 @@ private:
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!event.mods.isLeftButtonDown()) return;
+        oneKnobCandidate.reset();
         oneKnobCandidate = resolveOneKnob(event.eventComponent);
         candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent);
         dragStartScreen = event.getScreenPosition();
@@ -150,6 +163,8 @@ private:
     {
         if (!event.mods.isLeftButtonDown()) return;
 
+        if (!oneKnobCandidate.has_value())
+            oneKnobCandidate = resolveOneKnob(event.eventComponent);
         if (!oneKnobCandidate.has_value() && !candidate.has_value())
             candidate = resolveSelectedPlugin(event.eventComponent);
         if (!oneKnobCandidate.has_value() && !candidate.has_value())
