@@ -225,6 +225,63 @@ void LibertyOneKnobManager::process(int trackIndex, juce::AudioBuffer<float>& bu
     lock.exit();
 }
 
+void LibertyOneKnobManager::beginAudioTrackBlock(int trackIndex,
+                                                    float* const* outputChannelData,
+                                                    int numOutputChannels,
+                                                    int numSamples)
+{
+    if (!validTrack(trackIndex) || !hasEffect(trackIndex) || numSamples <= 0) return;
+    if (!lock.tryEnter()) return;
+    const int channels = juce::jlimit(1, 2, numOutputChannels);
+    auto& baseline = baselines[(size_t)trackIndex];
+    baseline.setSize(channels, numSamples, false, false, true);
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        if (outputChannelData[ch] != nullptr)
+            baseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+        else
+            baseline.clear(ch, 0, numSamples);
+    }
+    lock.exit();
+}
+
+void LibertyOneKnobManager::endAudioTrackBlock(int trackIndex,
+                                                  float* const* outputChannelData,
+                                                  int numOutputChannels,
+                                                  int numSamples)
+{
+    if (!validTrack(trackIndex) || !hasEffect(trackIndex) || numSamples <= 0) return;
+    if (!lock.tryEnter()) return;
+
+    const int channels = juce::jlimit(1, 2, numOutputChannels);
+    auto& baseline = baselines[(size_t)trackIndex];
+    auto& work = workBuffers[(size_t)trackIndex];
+    if (baseline.getNumSamples() != numSamples || baseline.getNumChannels() < channels)
+    {
+        lock.exit();
+        return;
+    }
+
+    work.setSize(channels, numSamples, false, false, true);
+    work.clear();
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        if (outputChannelData[ch] == nullptr) continue;
+        work.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+        work.addFrom(ch, 0, baseline, ch, 0, numSamples, -1.0f);
+    }
+
+    racks[(size_t)trackIndex].process(work);
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        if (outputChannelData[ch] == nullptr) continue;
+        juce::FloatVectorOperations::copy(outputChannelData[ch], baseline.getReadPointer(ch), numSamples);
+        juce::FloatVectorOperations::add(outputChannelData[ch], work.getReadPointer(ch), numSamples);
+    }
+    lock.exit();
+}
+
 void LibertyOneKnobManager::showEditor(int trackIndex)
 {
     if (!validTrack(trackIndex) || !hasEffect(trackIndex)) return;
