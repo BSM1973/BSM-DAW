@@ -69,6 +69,8 @@ public:
                       double clipStartSeconds,
                       double clipLengthSeconds,
                       double tempoBpm) noexcept;
+    void setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
+                                 double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept;
 
     int getAudioTrackCount() const noexcept;
     int addAudioTrack();
@@ -152,6 +154,14 @@ private:
     };
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
+    struct InstrumentPlaybackState
+    {
+        std::array<MidiPlaybackNote, maxMidiPlaybackNotes> notes;
+        std::atomic<std::size_t> noteCount { 0 };
+        std::atomic<double> clipStartSeconds { 0.0 };
+        std::atomic<double> clipLengthSeconds { 0.0 };
+        std::atomic<double> tempoBpm { 120.0 };
+    };
     struct MidiPlaybackNote
     {
         std::atomic<double> startSeconds { 0.0 };
@@ -175,6 +185,7 @@ private:
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
     std::array<MidiPlaybackNote, maxMidiPlaybackNotes> midiPlaybackNotes;
+    std::vector<std::unique_ptr<InstrumentPlaybackState>> instrumentPlayback;
     std::atomic<std::size_t> midiPlaybackNoteCount { 0 };
     std::atomic<double> midiClipStartSeconds { 0.0 };
     std::atomic<double> midiClipLengthSeconds { 0.0 };
