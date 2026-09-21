@@ -146,80 +146,96 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 {
     constexpr int headerW = 210, rulerH = 32;
-    const int audioTrackCount = audioEngine.getAudioTrackCount();
-    const int instrumentTrackIndex = audioTrackCount + 1;
+    const int audioCount = audioEngine.getAudioTrackCount();
+    const int midiCount = getMidiTrackCount();
+    const int instrumentCount = getInstrumentTrackCount();
     const int rowH = getLibertyTrackRowHeight();
+    const int scrollRows = getTrackScrollRows();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
     const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
-    const float pixelsPerMeasure = static_cast<float>(secondsPerMeasure * pixelsPerSecond);
+    const float pixelsPerMeasure = (float)(secondsPerMeasure * pixelsPerSecond);
 
-    auto ruler = area.removeFromTop(rulerH); auto rows = area;
-    g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler); g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW)); g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
+    auto ruler = area.removeFromTop(rulerH);
+    auto rows = area;
+    g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler);
+    g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW));
+    g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
 
     g.setColour(juce::Colour(0xff353b44));
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
-        const int x = headerW + static_cast<int>(std::round(measureIndex * pixelsPerMeasure));
+        const int x = headerW + (int)std::round(measureIndex * pixelsPerMeasure);
         if (x >= getWidth()) break;
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
     }
-
     g.setColour(juce::Colour(0xff777f89)); g.setFont(juce::Font(11.0f));
     for (int i = 0; i < 100; ++i)
     {
-        const int x = headerW + static_cast<int>(std::round(i * pixelsPerMeasure));
+        const int x = headerW + (int)std::round(i * pixelsPerMeasure);
         if (x >= getWidth()) break;
         g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
     }
 
-    for (int i = 0; i < audioTrackCount; ++i)
+    const int totalRows = audioCount + midiCount + instrumentCount;
+    const int visibleRows = juce::jmax(1, rows.getHeight() / rowH + 1);
+    for (int logicalRow = scrollRows; logicalRow < totalRows && logicalRow < scrollRows + visibleRows; ++logicalRow)
     {
-        auto row = rows.removeFromTop(rowH); g.setColour(i % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
-        auto header = row.removeFromLeft(headerW); g.setColour(i == selectedTrack ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
-        // The recording controls start at x=108, so the title owns x=14..102 only.
-        g.drawText("Audio " + juce::String(i + 1), header.getX() + 14, header.getY() + 8, 88, 22, juce::Justification::left);
-        auto clip = row.withTrimmedLeft(20).reduced(4);
-        if (audioEngine.hasAudioFile(i))
+        const int visibleIndex = logicalRow - scrollRows;
+        auto row = juce::Rectangle<int>(rows.getX(), rows.getY() + visibleIndex * rowH, rows.getWidth(), rowH);
+        if (row.getY() >= rows.getBottom()) break;
+        row = row.getIntersection(rows);
+        g.setColour(logicalRow % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
+        auto header = row.withWidth(headerW);
+        bool selected = false;
+        juce::String title;
+        if (logicalRow < audioCount)
         {
-            const auto desiredWidth = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
-            clip.setWidth(desiredWidth);
-            clip.setX(headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond)));
-            g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
-            if (!waveformMin[(size_t)i].empty())
+            const int i = logicalRow;
+            selected = selectedTrack == i;
+            title = "Audio " + juce::String(i + 1);
+            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+            auto clip = row.withTrimmedLeft(headerW + 20).reduced(4);
+            if (audioEngine.hasAudioFile(i))
             {
-                const auto centreY = clip.getCentreY(); const auto amplitude = juce::jmax(1.0f, clip.getHeight() * 0.42f); const auto points = static_cast<int>(waveformMin[(size_t)i].size()); juce::Path waveform; waveform.preallocateSpace(points * 4);
-                for (int p = 0; p < points; ++p) { const auto x = clip.getX() + 4.0f + (clip.getWidth() - 8.0f) * (float)p / (float)juce::jmax(1, points - 1); const auto y = (float)centreY - waveformMax[(size_t)i][(size_t)p] * amplitude; if (p == 0) waveform.startNewSubPath(x, y); else waveform.lineTo(x, y); }
-                for (int p = points - 1; p >= 0; --p) { const auto x = clip.getX() + 4.0f + (clip.getWidth() - 8.0f) * (float)p / (float)juce::jmax(1, points - 1); waveform.lineTo(x, (float)centreY - waveformMin[(size_t)i][(size_t)p] * amplitude); }
-                waveform.closeSubPath(); g.setColour(juce::Colour(0xff9fc7e8)); g.fillPath(waveform);
+                clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
+                clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
+                g.setColour(selected ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
+                if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
+                {
+                    const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
+                    const int points=(int)waveformMin[(size_t)i].size(); juce::Path waveform;
+                    for(int p=0;p<points;++p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);const auto y=(float)centreY-waveformMax[(size_t)i][(size_t)p]*amplitude;if(p==0)waveform.startNewSubPath(x,y);else waveform.lineTo(x,y);}
+                    for(int p=points-1;p>=0;--p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);waveform.lineTo(x,(float)centreY-waveformMin[(size_t)i][(size_t)p]*amplitude);}
+                    waveform.closeSubPath(); g.setColour(juce::Colour(0xff9fc7e8)); g.fillPath(waveform);
+                }
+                g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             }
-            g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
-            if (i == selectedTrack && clip.getWidth() >= 110) { g.setColour(juce::Colour(0xffb9d9f0)); g.setFont(juce::Font(9.0f)); g.drawText("DRAG TO MOVE", clip.getX() + 8, clip.getBottom() - 16, 90, 12, juce::Justification::left); }
         }
+        else if (logicalRow < audioCount + midiCount)
+        {
+            const int i = logicalRow - audioCount;
+            title = "MIDI " + juce::String(i + 1);
+            selected = selectedTrack == audioCount + i;
+            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+        }
+        else
+        {
+            const int i = logicalRow - audioCount - midiCount;
+            title = "Instrument " + juce::String(i + 1);
+            selected = selectedTrack == audioCount + midiCount + i;
+            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+        }
+        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
+        g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
     }
 
-    auto midiRow = rows.removeFromTop(rowH);
-    auto instrumentRow = rows.removeFromTop(rowH);
-    for (auto row : { midiRow, instrumentRow }) { g.setColour(juce::Colour(0xff14171c)); g.fillRect(row); }
-
-    const bool midiSelected = selectedTrack < 0;
-    const bool instrumentSelected = selectedTrack == instrumentTrackIndex;
-    auto midiHeader = midiRow.removeFromLeft(headerW);
-    auto instrumentHeader = instrumentRow.removeFromLeft(headerW);
-    g.setColour(midiSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
-    g.fillRect(midiHeader);
-    g.setColour(instrumentSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
-    g.fillRect(instrumentHeader);
-
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
-    g.drawText("MIDI 1", midiHeader.getX() + 14, midiHeader.getY() + 8, 150, 22, juce::Justification::left);
-    g.drawText("Instrument 1", instrumentHeader.getX() + 14, instrumentHeader.getY() + 8, 150, 22, juce::Justification::left);
-
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
-    if (playheadX >= headerW && playheadX <= (float)getWidth()) { g.setColour(juce::Colours::white); g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f); }
+    if (playheadX >= headerW && playheadX <= (float)getWidth())
+    { g.setColour(juce::Colours::white); g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),2.0f); }
 }
-
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
     g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
@@ -327,7 +343,8 @@ int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
     constexpr int rulerH = 32;
     const int rowH = getLibertyTrackRowHeight();
     const int y = position.y - 76 - rulerH; if (y < 0) return -1;
-    const int track = y / rowH; return track >= 0 && track < audioEngine.getAudioTrackCount() ? track : -1;
+    const int logicalRow = getTrackScrollRows() + y / rowH;
+    return logicalRow >= 0 && logicalRow < audioEngine.getAudioTrackCount() ? logicalRow : -1;
 }
 
 bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const
@@ -336,7 +353,7 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
     constexpr int headerW = 210, rulerH = 32;
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
-    const int rowY = 76 + rulerH + trackIndex * rowH;
+    const int rowY = 76 + rulerH + (trackIndex - getTrackScrollRows()) * rowH;
     const int x = headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond));
     const int width = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)));
     return juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(position);
