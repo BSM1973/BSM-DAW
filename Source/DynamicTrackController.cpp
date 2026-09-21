@@ -5,7 +5,7 @@
 
 namespace
 {
-class DynamicTrackController final : public juce::Component, private juce::Timer
+class DynamicTrackController final : public juce::Component, private juce::Timer, private juce::MouseListener
 {
 public:
     explicit DynamicTrackController(MainComponent& o) : owner(o)
@@ -35,27 +35,61 @@ public:
         countLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9fc7e8));
         countLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(countLabel);
+        scrollBar.setRangeLimits(0.0, 1.0);
+        scrollBar.setCurrentRange(0.0, 1.0);
+        scrollBar.addListener(this);
+        addAndMakeVisible(scrollBar);
+        owner.addMouseListener(this, true);
         owner.addAndMakeVisible(this);
-        setBounds(8, 78, 198, 88);
+        setBounds(8, 78, 198, 118);
         startTimerHz(4);
     }
-    ~DynamicTrackController() override { stopTimer(); }
+    ~DynamicTrackController() override { owner.removeMouseListener(this); scrollBar.removeListener(this); stopTimer(); }
     void resized() override
     {
         addAudio.setBounds(0, 0, 82, 26);
         addMidi.setBounds(86, 0, 54, 26);
         addInstrument.setBounds(0, 30, 140, 26);
         countLabel.setBounds(0, 60, 196, 26);
+        scrollBar.setBounds(0, 90, 196, 18);
     }
 private:
+    void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
+    {
+        owner.setTrackScrollRows((int)std::round(newRangeStart));
+    }
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+    {
+        if (event.mods.isCommandDown()) return;
+        if (event.position.y < 76 + 32 || event.position.y >= owner.getHeight() - 210) return;
+        if (std::abs(wheel.deltaY) < 0.0001f) return;
+        const int direction = wheel.deltaY < 0.0f ? 1 : -1;
+        owner.setTrackScrollRows(owner.getTrackScrollRows() + direction);
+        updateScrollRange();
+    }
+    void updateScrollRange()
+    {
+        const int rowH = getLibertyTrackRowHeight();
+        const int available = juce::jmax(1, owner.getHeight() - 76 - 32 - 210);
+        const int visible = juce::jmax(1, available / rowH);
+        const int total = owner.getTotalArrangeTrackCount();
+        const int maxStart = juce::jmax(0, total - visible);
+        const int current = juce::jlimit(0, maxStart, owner.getTrackScrollRows());
+        if (current != owner.getTrackScrollRows()) owner.setTrackScrollRows(current);
+        scrollBar.setRangeLimits(0.0, (double)juce::jmax(1, maxStart + visible));
+        scrollBar.setCurrentRange((double)current, (double)visible, juce::dontSendNotification);
+        scrollBar.setVisible(maxStart > 0);
+    }
     void timerCallback() override
     {
         countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO", juce::dontSendNotification);
+        updateScrollRange();
         toFront(false);
     }
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
     juce::Label countLabel;
+    juce::ScrollBar scrollBar { false };
 };
 
 std::map<MainComponent*, std::unique_ptr<DynamicTrackController>> controllers;
