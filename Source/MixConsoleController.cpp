@@ -189,7 +189,7 @@ public:
             {
                 auto& host = LibertyPluginHost::instance();
                 auto& oneKnob = LibertyOneKnobManager::instance();
-                const int oneKnobSlot = ch == instrumentChannel ? LibertyOneKnobManager::maxTracks - 1 : ch;
+                const int oneKnobSlot = ch == instrumentChannel ? 100000 : ch;
                 if (ch != masterChannel && oneKnob.hasEffect(oneKnobSlot))
                     oneKnob.showEditor(oneKnobSlot);
                 else if (ch < AudioEngine::maxAudioTracks && host.hasEffectForTrack(ch))
@@ -215,7 +215,7 @@ public:
                 }
                 else if (ch == instrumentChannel)
                 {
-                    const int slot = LibertyOneKnobManager::maxTracks - 1;
+                    const int slot = 100000;
                     if (oneKnob.hasEffect(slot)) oneKnob.clearEffect(slot);
                     else host.unloadInstrument();
                 }
@@ -522,7 +522,7 @@ private:
             unloadButtons[(size_t)ch].setEnabled(oneKnobLoaded || externalLoaded);
         }
 
-        const int instrumentOneKnobSlot = LibertyOneKnobManager::maxTracks - 1;
+        const int instrumentOneKnobSlot = 100000;
         const bool instrumentFxLoaded = oneKnob.hasEffect(instrumentOneKnobSlot);
         const bool instrumentLoaded = host.hasInstrument();
         juce::String instrumentLabel = instrumentLoaded ? host.getInstrumentName() : "INSTRUMENT — EMPTY";
