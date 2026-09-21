@@ -17,21 +17,35 @@ public:
         addAudio.onClick = [this]
         {
             owner.addAudioTrack();
-            countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO", juce::dontSendNotification);
+            countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO  |  " +
+                           juce::String(owner.getMidiTrackCount()) + " MIDI  |  " +
+                           juce::String(owner.getInstrumentTrackCount()) + " INST", juce::dontSendNotification);
         };
-        addAndMakeVisible(addAudio);
+        addMidi.setButtonText("+ MIDI");
+        addInstrument.setButtonText("+ INSTRUMENT");
+        for (auto* b : { &addAudio, &addMidi, &addInstrument })
+        {
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff245b70));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            b->setMouseClickGrabsKeyboardFocus(false);
+            addAndMakeVisible(*b);
+        }
+        addMidi.onClick = [this] { owner.addMidiTrack(); };
+        addInstrument.onClick = [this] { owner.addInstrumentTrack(); };
         countLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9fc7e8));
         countLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(countLabel);
         owner.addAndMakeVisible(this);
-        setBounds(8, 78, 190, 28);
+        setBounds(8, 78, 198, 88);
         startTimerHz(4);
     }
     ~DynamicTrackController() override { stopTimer(); }
     void resized() override
     {
         addAudio.setBounds(0, 0, 82, 26);
-        countLabel.setBounds(88, 0, 98, 26);
+        addMidi.setBounds(86, 0, 54, 26);
+        addInstrument.setBounds(0, 30, 140, 26);
+        countLabel.setBounds(0, 60, 196, 26);
     }
 private:
     void timerCallback() override
@@ -40,7 +54,7 @@ private:
         toFront(false);
     }
     MainComponent& owner;
-    juce::TextButton addAudio;
+    juce::TextButton addAudio, addMidi, addInstrument;
     juce::Label countLabel;
 };
 
