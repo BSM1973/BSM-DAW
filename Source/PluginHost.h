@@ -3,7 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <array>
+#include <vector>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -11,7 +11,6 @@
 class LibertyPluginHost final
 {
 public:
-    static constexpr int maxAudioTracks = 4;
     using ScanProgressCallback = std::function<void(const juce::String& formatName,
                                                     const juce::String& pluginName,
                                                     float progress)>;
@@ -31,16 +30,21 @@ public:
 
     bool loadEffectForTrack(int trackIndex, const juce::PluginDescription& description, juce::String& error);
     bool loadInstrument(const juce::PluginDescription& description, juce::String& error);
+    bool loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
     void unloadEffectForTrack(int trackIndex);
     void unloadInstrument();
+    void unloadInstrumentForTrack(int instrumentTrack);
     bool hasEffectForTrack(int trackIndex) const;
     bool hasInstrument() const;
+    bool hasInstrumentForTrack(int instrumentTrack) const;
     juce::String getEffectName(int trackIndex) const;
     juce::String getInstrumentName() const;
+    juce::String getInstrumentNameForTrack(int instrumentTrack) const;
 
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     bool processInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
+    bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
 
     // Offline render is exclusive: the realtime audio callback is prevented from
     // driving the same instrument instance while AI Render owns it.
@@ -50,6 +54,7 @@ public:
 
     void showEditorForTrack(int trackIndex);
     void showInstrumentEditor();
+    void showInstrumentEditorForTrack(int instrumentTrack);
 
 private:
     LibertyPluginHost();
@@ -79,12 +84,14 @@ private:
     void savePersistentBlacklist();
     bool scanVST3OutOfProcess(const juce::String& identifier, const juce::String& displayName);
     void blacklistPluginIdentifier(const juce::String& identifier);
-    bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxAudioTracks; }
+    bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0; }
+    void ensureAudioTrackSlot(int trackIndex);
+    void ensureInstrumentSlot(int instrumentTrack);
 
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
-    std::array<Slot, maxAudioTracks> trackEffects;
-    Slot instrument;
+    std::vector<std::unique_ptr<Slot>> trackEffects;
+    std::vector<std::unique_ptr<Slot>> instruments;
     double currentSampleRate = 48000.0;
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
