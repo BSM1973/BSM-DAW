@@ -74,8 +74,8 @@ void LibertyPluginHost::initialise(double sampleRate, int blockSize)
     const juce::ScopedLock scoped(lock);
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 48000.0;
     currentBlockSize = juce::jmax(16, blockSize);
-    for (auto& slot : trackEffects) prepareSlot(slot);
-    prepareSlot(instrument);
+    for (auto& slot : trackEffects) if (slot) prepareSlot(*slot);
+    for (auto& slot : instruments) if (slot) prepareSlot(*slot);
 }
 
 void LibertyPluginHost::shutdown()
@@ -86,17 +86,18 @@ void LibertyPluginHost::shutdown()
         return;
 
     const juce::ScopedLock scoped(lock);
-    for (auto& slot : trackEffects)
+    for (auto& slot : trackEffects) if (slot)
     {
-        closeEditor(slot);
-        if (slot.processor) slot.processor->releaseResources();
-        slot.processor.reset();
-        slot.description = {};
+        closeEditor(*slot);
+        if (slot->processor) slot->processor->releaseResources();
+        slot->processor.reset(); slot->description = {};
     }
-    closeEditor(instrument);
-    if (instrument.processor) instrument.processor->releaseResources();
-    instrument.processor.reset();
-    instrument.description = {};
+    for (auto& slot : instruments) if (slot)
+    {
+        closeEditor(*slot);
+        if (slot->processor) slot->processor->releaseResources();
+        slot->processor.reset(); slot->description = {};
+    }
 }
 
 juce::File LibertyPluginHost::pluginListFile() const
@@ -394,19 +395,32 @@ bool LibertyPluginHost::loadIntoSlot(Slot& slot,
     return true;
 }
 
+void LibertyPluginHost::ensureAudioTrackSlot(int trackIndex)
+{
+    while ((int) trackEffects.size() <= trackIndex) trackEffects.push_back(std::make_unique<Slot>());
+}
+void LibertyPluginHost::ensureInstrumentSlot(int instrumentTrack)
+{
+    while ((int) instruments.size() <= instrumentTrack) instruments.push_back(std::make_unique<Slot>());
+}
+
 bool LibertyPluginHost::loadEffectForTrack(int trackIndex,
                                            const juce::PluginDescription& description,
                                            juce::String& error)
 {
     if (!validTrack(trackIndex)) { error = "Piste Audio invalide."; return false; }
     const juce::ScopedLock scoped(lock);
-    return loadIntoSlot(trackEffects[(size_t)trackIndex], description, error, false);
+    ensureAudioTrackSlot(trackIndex);
+    return loadIntoSlot(*trackEffects[(size_t)trackIndex], description, error, false);
 }
 
 bool LibertyPluginHost::loadInstrument(const juce::PluginDescription& description, juce::String& error)
+{ return loadInstrumentForTrack(0, description, error); }
+bool LibertyPluginHost::loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error)
 {
-    const juce::ScopedLock scoped(lock);
-    return loadIntoSlot(instrument, description, error, true);
+    if (instrumentTrack < 0) { error = "Piste Instrument invalide."; return false; }
+    const juce::ScopedLock scoped(lock); ensureInstrumentSlot(instrumentTrack);
+    return loadIntoSlot(*instruments[(size_t)instrumentTrack], description, error, true);
 }
 
 void LibertyPluginHost::closeEditor(Slot& slot)
@@ -422,46 +436,46 @@ void LibertyPluginHost::unloadEffectForTrack(int trackIndex)
 {
     if (!validTrack(trackIndex)) return;
     const juce::ScopedLock scoped(lock);
-    auto& slot = trackEffects[(size_t)trackIndex];
-    closeEditor(slot);
-    if (slot.processor) slot.processor->releaseResources();
-    slot.processor.reset();
-    slot.description = {};
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    auto& slot = *trackEffects[(size_t)trackIndex];
+    closeEditor(slot); if (slot.processor) slot.processor->releaseResources(); slot.processor.reset(); slot.description = {};
 }
 
-void LibertyPluginHost::unloadInstrument()
+void LibertyPluginHost::unloadInstrument(){ unloadInstrumentForTrack(0); }
+void LibertyPluginHost::unloadInstrumentForTrack(int instrumentTrack)
 {
     const juce::ScopedLock scoped(lock);
-    closeEditor(instrument);
-    if (instrument.processor) instrument.processor->releaseResources();
-    instrument.processor.reset();
-    instrument.description = {};
+    if (instrumentTrack < 0 || instrumentTrack >= (int)instruments.size() || !instruments[(size_t)instrumentTrack]) return;
+    auto& slot=*instruments[(size_t)instrumentTrack]; closeEditor(slot);
+    if(slot.processor)slot.processor->releaseResources(); slot.processor.reset(); slot.description={};
 }
 
 bool LibertyPluginHost::hasEffectForTrack(int trackIndex) const
 {
     if (!validTrack(trackIndex)) return false;
     const juce::ScopedLock scoped(lock);
-    return trackEffects[(size_t)trackIndex].processor != nullptr;
+    return trackIndex < (int)trackEffects.size() && trackEffects[(size_t)trackIndex] && trackEffects[(size_t)trackIndex]->processor != nullptr;
 }
 
-bool LibertyPluginHost::hasInstrument() const
+bool LibertyPluginHost::hasInstrument() const { return hasInstrumentForTrack(0); }
+bool LibertyPluginHost::hasInstrumentForTrack(int t) const
 {
     const juce::ScopedLock scoped(lock);
-    return instrument.processor != nullptr;
+    return t>=0 && t<(int)instruments.size() && instruments[(size_t)t] && instruments[(size_t)t]->processor!=nullptr;
 }
 
 juce::String LibertyPluginHost::getEffectName(int trackIndex) const
 {
     if (!validTrack(trackIndex)) return {};
     const juce::ScopedLock scoped(lock);
-    return trackEffects[(size_t)trackIndex].processor ? trackEffects[(size_t)trackIndex].description.name : juce::String{};
+    return trackIndex<(int)trackEffects.size() && trackEffects[(size_t)trackIndex] && trackEffects[(size_t)trackIndex]->processor ? trackEffects[(size_t)trackIndex]->description.name : juce::String{};
 }
 
-juce::String LibertyPluginHost::getInstrumentName() const
+juce::String LibertyPluginHost::getInstrumentName() const { return getInstrumentNameForTrack(0); }
+juce::String LibertyPluginHost::getInstrumentNameForTrack(int t) const
 {
     const juce::ScopedLock scoped(lock);
-    return instrument.processor ? instrument.description.name : juce::String{};
+    return t>=0&&t<(int)instruments.size()&&instruments[(size_t)t]&&instruments[(size_t)t]->processor?instruments[(size_t)t]->description.name:juce::String{};
 }
 
 void LibertyPluginHost::beginAudioTrackBlock(int trackIndex,
@@ -471,7 +485,8 @@ void LibertyPluginHost::beginAudioTrackBlock(int trackIndex,
 {
     if (!validTrack(trackIndex) || numSamples <= 0) return;
     if (!lock.tryEnter()) return;
-    auto& slot = trackEffects[(size_t)trackIndex];
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    auto& slot = *trackEffects[(size_t)trackIndex];
     if (!slot.processor) { lock.exit(); return; }
 
     const int channels = juce::jlimit(1, 2, numOutputChannels);
@@ -493,7 +508,8 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
 {
     if (!validTrack(trackIndex) || numSamples <= 0) return;
     if (!lock.tryEnter()) return;
-    auto& slot = trackEffects[(size_t)trackIndex];
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    auto& slot = *trackEffects[(size_t)trackIndex];
     if (!slot.processor) { lock.exit(); return; }
 
     const int channels = juce::jlimit(1, 2, numOutputChannels);
@@ -520,26 +536,16 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
     lock.exit();
 }
 
-bool LibertyPluginHost::processInstrument(float* const* outputChannelData,
-                                          int numOutputChannels,
-                                          int numSamples,
-                                          juce::MidiBuffer& midi)
+bool LibertyPluginHost::processInstrument(float* const* d,int ch,int n,juce::MidiBuffer& midi){return processInstrumentForTrack(0,d,ch,n,midi);}
+bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChannelData,int numOutputChannels,int numSamples,juce::MidiBuffer& midi)
 {
-    if (numSamples <= 0 || numOutputChannels <= 0) return false;
-    if (!lock.tryEnter()) return false;
-    if (!instrument.processor) { lock.exit(); return false; }
-
-    const int channels = juce::jlimit(1, 2, numOutputChannels);
-    instrument.work.setSize(juce::jmax(2, channels), numSamples, false, false, true);
-    instrument.work.clear();
-    instrument.processor->processBlock(instrument.work, midi);
-
-    for (int ch = 0; ch < channels; ++ch)
-        if (outputChannelData[ch] != nullptr)
-            juce::FloatVectorOperations::add(outputChannelData[ch], instrument.work.getReadPointer(ch), numSamples);
-
-    lock.exit();
-    return true;
+    if(numSamples<=0||numOutputChannels<=0||t<0)return false;if(!lock.tryEnter())return false;
+    if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor){lock.exit();return false;}
+    auto& instrument=*instruments[(size_t)t];const int channels=juce::jlimit(1,2,numOutputChannels);
+    instrument.work.setSize(juce::jmax(2,channels),numSamples,false,false,true);instrument.work.clear();
+    instrument.processor->processBlock(instrument.work,midi);
+    for(int c=0;c<channels;++c)if(outputChannelData[c])juce::FloatVectorOperations::add(outputChannelData[c],instrument.work.getReadPointer(c),numSamples);
+    lock.exit();return true;
 }
 
 void LibertyPluginHost::showEditor(Slot& slot, const juce::String& title)
@@ -559,12 +565,15 @@ void LibertyPluginHost::showEditorForTrack(int trackIndex)
 {
     if (!validTrack(trackIndex)) return;
     const juce::ScopedLock scoped(lock);
-    auto& slot = trackEffects[(size_t)trackIndex];
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    auto& slot = *trackEffects[(size_t)trackIndex];
     showEditor(slot, "Liberty - " + slot.description.name);
 }
 
-void LibertyPluginHost::showInstrumentEditor()
+void LibertyPluginHost::showInstrumentEditor(){showInstrumentEditorForTrack(0);}
+void LibertyPluginHost::showInstrumentEditorForTrack(int t)
 {
     const juce::ScopedLock scoped(lock);
-    showEditor(instrument, "Liberty - " + instrument.description.name);
+    if(t<0||t>=(int)instruments.size()||!instruments[(size_t)t])return;
+    auto& slot=*instruments[(size_t)t];showEditor(slot,"Liberty - "+slot.description.name);
 }
