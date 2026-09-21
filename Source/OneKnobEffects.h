@@ -1,7 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include <array>
+#include <vector>
 #include <memory>
 
 class LibertyOneKnobRack final
@@ -43,7 +43,6 @@ private:
 class LibertyOneKnobManager final
 {
 public:
-    static constexpr int maxTracks = 5;
     static LibertyOneKnobManager& instance();
 
     void prepare(double sampleRate, int maximumBlockSize);
@@ -58,14 +57,18 @@ public:
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void processInstrumentBlock(float* const* outputChannelData, int numOutputChannels, int numSamples);
+    void processInstrumentBlock(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void showEditor(int trackIndex);
 
 private:
     LibertyOneKnobManager();
-    bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < maxTracks; }
-    std::array<LibertyOneKnobRack, maxTracks> racks;
-    std::array<juce::AudioBuffer<float>, maxTracks> baselines;
-    std::array<juce::AudioBuffer<float>, maxTracks> workBuffers;
-    std::array<std::unique_ptr<juce::DocumentWindow>, maxTracks> editors;
+    bool validTrack(int trackIndex) const noexcept { return trackIndex >= 0; }
+    void ensureTrack(int trackIndex);
+    double preparedSampleRate = 48000.0;
+    int preparedBlockSize = 512;
+    std::vector<std::unique_ptr<LibertyOneKnobRack>> racks;
+    std::vector<std::unique_ptr<juce::AudioBuffer<float>>> baselines;
+    std::vector<std::unique_ptr<juce::AudioBuffer<float>>> workBuffers;
+    std::vector<std::unique_ptr<juce::DocumentWindow>> editors;
     mutable juce::CriticalSection lock;
 };
