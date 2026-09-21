@@ -249,8 +249,9 @@ private:
         if (plugin->isInstrument)
         {
             main->selectedTrack = target;
-            loaded = host.loadInstrument(*plugin, error);
-            if (loaded) host.showInstrumentEditor();
+            const int lane = target - main->getAudioTrackCount() - main->getMidiTrackCount();
+            loaded = host.loadInstrumentForTrack(lane, *plugin, error);
+            if (loaded) host.showInstrumentEditorForTrack(lane);
         }
         else
         {
