@@ -5,7 +5,7 @@
 
 namespace
 {
-class DynamicTrackController final : public juce::Component, private juce::Timer, private juce::MouseListener
+class DynamicTrackController final : public juce::Component, private juce::Timer, private juce::ScrollBar::Listener
 {
 public:
     explicit DynamicTrackController(MainComponent& o) : owner(o)
@@ -39,12 +39,11 @@ public:
         scrollBar.setCurrentRange(0.0, 1.0);
         scrollBar.addListener(this);
         addAndMakeVisible(scrollBar);
-        owner.addMouseListener(this, true);
         owner.addAndMakeVisible(this);
         setBounds(8, 78, 198, 118);
         startTimerHz(4);
     }
-    ~DynamicTrackController() override { owner.removeMouseListener(this); scrollBar.removeListener(this); stopTimer(); }
+    ~DynamicTrackController() override { scrollBar.removeListener(this); stopTimer(); }
     void resized() override
     {
         addAudio.setBounds(0, 0, 82, 26);
@@ -57,15 +56,6 @@ private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
     {
         owner.setTrackScrollRows((int)std::round(newRangeStart));
-    }
-    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
-    {
-        if (event.mods.isCommandDown()) return;
-        if (event.position.y < 76 + 32 || event.position.y >= owner.getHeight() - 210) return;
-        if (std::abs(wheel.deltaY) < 0.0001f) return;
-        const int direction = wheel.deltaY < 0.0f ? 1 : -1;
-        owner.setTrackScrollRows(owner.getTrackScrollRows() + direction);
-        updateScrollRange();
     }
     void updateScrollRange()
     {
