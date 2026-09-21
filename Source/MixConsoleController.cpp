@@ -22,9 +22,9 @@ namespace
 {
 constexpr int transportHeight = 76;
 constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
-constexpr int channelCount = AudioEngine::maxAudioTracks + 2; // 4 audio + instrument + master
-constexpr int instrumentChannel = AudioEngine::maxAudioTracks;
-constexpr int masterChannel = AudioEngine::maxAudioTracks + 1;
+constexpr int channelCount = 66; // compatibility capacity: 64 dynamic strips + master
+constexpr int instrumentChannel = 64;
+constexpr int masterChannel = 65;
 
 juce::Colour trackColour(int id)
 {
@@ -289,7 +289,8 @@ public:
     void resized() override
     {
         const int availableWidth = juce::jmax(720, getWidth() - 48);
-        const int stripW = juce::jlimit(118, 188, availableWidth / channelCount);
+        const int activeChannels = juce::jlimit(2, channelCount, owner.getAudioTrackCount() + owner.getInstrumentTrackCount() + 1);
+        const int stripW = juce::jlimit(118, 188, availableWidth / activeChannels);
         const int totalW = stripW * channelCount;
         const int startX = juce::jmax(12, (getWidth() - totalW) / 2);
         const int top = 66;
@@ -511,7 +512,7 @@ private:
     {
         auto& host = LibertyPluginHost::instance();
         auto& oneKnob = LibertyOneKnobManager::instance();
-        for (int ch = 0; ch < AudioEngine::maxAudioTracks; ++ch)
+        for (int ch = 0; ch < juce::jmin(owner.getAudioTrackCount(), instrumentChannel); ++ch)
         {
             const bool oneKnobLoaded = oneKnob.hasEffect(ch);
             const bool externalLoaded = host.hasEffectForTrack(ch);
@@ -538,7 +539,7 @@ private:
     void syncFromEngine()
     {
         syncing = true;
-        for (int ch = 0; ch < AudioEngine::maxAudioTracks; ++ch)
+        for (int ch = 0; ch < juce::jmin(owner.getAudioTrackCount(), instrumentChannel); ++ch)
         {
             faders[(size_t)ch].setValue(gainToDb(owner.audioEngine.getTrackGain(ch)), juce::dontSendNotification);
             pans[(size_t)ch].setValue(owner.audioEngine.getTrackPan(ch), juce::dontSendNotification);
