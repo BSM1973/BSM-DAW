@@ -18,7 +18,6 @@ bool isLibertyMixConsoleVisible(MainComponent* owner);
 namespace
 {
 constexpr int rulerH = 32;
-constexpr int instrumentTrack = AudioEngine::maxAudioTracks + 1;
 constexpr int controlledTracks = AudioEngine::maxAudioTracks + 1;
 
 class PanLookAndFeel final : public juce::LookAndFeel_V4
@@ -149,7 +148,7 @@ public:
             instrumentArmButton.setButtonText(instrumentArmed ? "ARMED" : "ARM");
             instrumentArmButton.setColour(juce::TextButton::buttonColourId,
                                           instrumentArmed ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31));
-            owner.selectedTrack = instrumentTrack;
+            owner.selectedTrack = (owner.getAudioTrackCount()+owner.getMidiTrackCount());
             owner.repaint();
         };
         instrumentMonitorButton.onClick = [this]
@@ -158,7 +157,7 @@ public:
             instrumentMonitorButton.setButtonText(instrumentMonitoring ? "MON ON" : "MON OFF");
             instrumentMonitorButton.setColour(juce::TextButton::buttonColourId,
                                               instrumentMonitoring ? juce::Colour(0xff2d6f8f) : juce::Colour(0xff252a31));
-            owner.selectedTrack = instrumentTrack;
+            owner.selectedTrack = (owner.getAudioTrackCount()+owner.getMidiTrackCount());
             owner.repaint();
         };
         addAndMakeVisible(instrumentArmButton);
@@ -189,7 +188,7 @@ public:
         for (int i = 0; i < controlledTracks; ++i)
         {
             const int row = controlTrack(i);
-            const int y = 76 + rulerH + row * rowH;
+            const int y = 76 + rulerH + (row - owner.getTrackScrollRows()) * rowH;
             const int mixY = y + rowH - 30;
             const int msY = y + 37;
 
@@ -224,7 +223,7 @@ public:
             soloButtons[(size_t)i].toFront(false);
         }
 
-        const int instrumentY = 76 + rulerH + instrumentTrack * rowH;
+        const int instrumentY = 76 + rulerH + (owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows()) * rowH;
         const int instrumentMiddleY = instrumentY + 39;
         instrumentArmButton.setBounds(82, instrumentMiddleY, 50, 20);
         instrumentMonitorButton.setBounds(136, instrumentMiddleY, 70, 20);
@@ -235,7 +234,7 @@ public:
 private:
     static int controlTrack(int control) noexcept
     {
-        return control < AudioEngine::maxAudioTracks ? control : instrumentTrack;
+        return control < AudioEngine::maxAudioTracks ? control : (owner.getAudioTrackCount()+owner.getMidiTrackCount());
     }
 
     void syncButtons()
