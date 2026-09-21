@@ -154,6 +154,13 @@ private:
     };
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
+    struct MidiPlaybackNote
+    {
+        std::atomic<double> startSeconds { 0.0 };
+        std::atomic<double> endSeconds { 0.0 };
+        std::atomic<double> frequency { 440.0 };
+        std::atomic<float> amplitude { 0.0f };
+    };
     struct InstrumentPlaybackState
     {
         std::array<MidiPlaybackNote, maxMidiPlaybackNotes> notes;
@@ -161,13 +168,6 @@ private:
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
-    };
-    struct MidiPlaybackNote
-    {
-        std::atomic<double> startSeconds { 0.0 };
-        std::atomic<double> endSeconds { 0.0 };
-        std::atomic<double> frequency { 440.0 };
-        std::atomic<float> amplitude { 0.0f };
     };
 
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
