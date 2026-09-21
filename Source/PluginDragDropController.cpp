@@ -16,7 +16,6 @@ namespace
 {
 constexpr int transportHeight = 76;
 constexpr int rulerHeight = 32;
-constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
 
 std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* eventComponent)
 {
@@ -108,13 +107,14 @@ int arrangerDropTrack(MainComponent& main, juce::Point<int> local, bool instrume
     const int rowH = getLibertyTrackRowHeight();
     const int relativeY = local.y - transportHeight - rulerHeight;
     if (relativeY < 0) return -1;
-    const int row = relativeY / juce::jmax(1, rowH);
-
+    const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
+    const int audioCount = main.getAudioTrackCount();
+    const int midiCount = main.getMidiTrackCount();
+    const int instrumentFirst = audioCount + midiCount;
     if (instrumentPlugin)
-        return row == instrumentTrackIndex ? instrumentTrackIndex : -1;
-    return row >= 0 && row < AudioEngine::maxAudioTracks ? row : -1;
+        return logicalRow >= instrumentFirst && logicalRow < instrumentFirst + main.getInstrumentTrackCount() ? logicalRow : -1;
+    return logicalRow >= 0 && logicalRow < audioCount ? logicalRow : -1;
 }
-
 int pluginDropTrack(MainComponent& main, juce::Point<int> local, bool instrumentPlugin)
 {
     if (isLibertyMixConsoleVisible(&main))
@@ -125,21 +125,13 @@ int pluginDropTrack(MainComponent& main, juce::Point<int> local, bool instrument
 int oneKnobDropTrack(MainComponent& main, juce::Point<int> local)
 {
     if (isLibertyMixConsoleVisible(&main))
-    {
-        int target = getLibertyMixConsolePluginDropTrack(&main, local, false);
-        if (target >= 0 && target < AudioEngine::maxAudioTracks) return target;
-        target = getLibertyMixConsolePluginDropTrack(&main, local, true);
-        return target == instrumentTrackIndex ? instrumentTrackIndex : -1;
-    }
-
+        return getLibertyMixConsolePluginDropTrack(&main, local, false);
     const int rowH = getLibertyTrackRowHeight();
     const int relativeY = local.y - transportHeight - rulerHeight;
     if (relativeY < 0) return -1;
-    const int row = relativeY / juce::jmax(1, rowH);
-    if (row >= 0 && row < AudioEngine::maxAudioTracks) return row;
-    return row == instrumentTrackIndex ? instrumentTrackIndex : -1;
+    const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
+    return logicalRow >= 0 && logicalRow < main.getAudioTrackCount() ? logicalRow : -1;
 }
-
 class PluginDragDropController final : private juce::MouseListener
 {
 public:
@@ -231,17 +223,17 @@ private:
                 juce::AlertWindow::WarningIcon,
                 oneKnob.has_value() ? "Liberty - One Knob" : (plugin->isInstrument ? "Liberty - Instrument" : "Liberty - Effet"),
                 oneKnob.has_value()
-                    ? "Dépose le One Knob sur une piste Audio 1 à 4 ou sur la piste Instrument."
+                    ? "Dépose le One Knob sur une piste Audio."
                     : (plugin->isInstrument
-                        ? "Dépose l'instrument sur la piste Instrument ou sa tranche MIXCONSOLE."
-                        : "Dépose l'effet sur une piste Audio 1 à 4 ou sa tranche MIXCONSOLE."),
+                        ? "Dépose l'instrument sur une piste Instrument."
+                        : "Dépose l'effet sur une piste Audio."),
                 "OK");
             return;
         }
 
         if (oneKnob.has_value())
         {
-            const int slot = target == instrumentTrackIndex ? LibertyOneKnobManager::maxTracks - 1 : target;
+            const int slot = target;
             auto& manager = LibertyOneKnobManager::instance();
             manager.setEffect(slot, *oneKnob);
             manager.showEditor(slot);
@@ -256,7 +248,7 @@ private:
 
         if (plugin->isInstrument)
         {
-            main->selectedTrack = instrumentTrackIndex;
+            main->selectedTrack = target;
             loaded = host.loadInstrument(*plugin, error);
             if (loaded) host.showInstrumentEditor();
         }
