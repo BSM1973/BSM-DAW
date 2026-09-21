@@ -282,161 +282,20 @@ void LibertyOneKnobRack::process(juce::AudioBuffer<float>& buffer)
     }
 }
 
-LibertyOneKnobManager& LibertyOneKnobManager::instance()
-{
-    static LibertyOneKnobManager manager;
-    return manager;
-}
-
-LibertyOneKnobManager::LibertyOneKnobManager() = default;
-
-void LibertyOneKnobManager::prepare(double sampleRate, int maximumBlockSize)
-{
-    const juce::ScopedLock scoped(lock);
-    for (auto& rack : racks) rack.prepare(sampleRate, maximumBlockSize);
-}
-
-void LibertyOneKnobManager::setEffect(int trackIndex, LibertyOneKnobRack::Type type)
-{
-    if (!validTrack(trackIndex)) return;
-    const juce::ScopedLock scoped(lock);
-    racks[(size_t)trackIndex].setType(type);
-    if (editors[(size_t)trackIndex]) editors[(size_t)trackIndex].reset();
-}
-
-void LibertyOneKnobManager::clearEffect(int trackIndex)
-{
-    setEffect(trackIndex, LibertyOneKnobRack::Type::none);
-}
-
-LibertyOneKnobRack::Type LibertyOneKnobManager::getEffect(int trackIndex) const
-{
-    if (!validTrack(trackIndex)) return LibertyOneKnobRack::Type::none;
-    const juce::ScopedLock scoped(lock);
-    return racks[(size_t)trackIndex].getType();
-}
-
-void LibertyOneKnobManager::setAmount(int trackIndex, float amount)
-{
-    if (!validTrack(trackIndex)) return;
-    const juce::ScopedLock scoped(lock);
-    racks[(size_t)trackIndex].setAmount(amount);
-}
-
-float LibertyOneKnobManager::getAmount(int trackIndex) const
-{
-    if (!validTrack(trackIndex)) return 0.0f;
-    const juce::ScopedLock scoped(lock);
-    return racks[(size_t)trackIndex].getAmount();
-}
-
-juce::String LibertyOneKnobManager::getName(int trackIndex) const
-{
-    if (!validTrack(trackIndex)) return {};
-    const juce::ScopedLock scoped(lock);
-    return racks[(size_t)trackIndex].getName();
-}
-
-bool LibertyOneKnobManager::hasEffect(int trackIndex) const
-{
-    return getEffect(trackIndex) != LibertyOneKnobRack::Type::none;
-}
-
-void LibertyOneKnobManager::process(int trackIndex, juce::AudioBuffer<float>& buffer)
-{
-    if (!validTrack(trackIndex)) return;
-    if (!lock.tryEnter()) return;
-    racks[(size_t)trackIndex].process(buffer);
-    lock.exit();
-}
-
-void LibertyOneKnobManager::beginAudioTrackBlock(int trackIndex,
-                                                    float* const* outputChannelData,
-                                                    int numOutputChannels,
-                                                    int numSamples)
-{
-    if (!validTrack(trackIndex) || !hasEffect(trackIndex) || numSamples <= 0) return;
-    if (!lock.tryEnter()) return;
-    const int channels = juce::jlimit(1, 2, numOutputChannels);
-    auto& baseline = baselines[(size_t)trackIndex];
-    baseline.setSize(channels, numSamples, false, false, true);
-    for (int ch = 0; ch < channels; ++ch)
-    {
-        if (outputChannelData[ch] != nullptr)
-            baseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-        else
-            baseline.clear(ch, 0, numSamples);
-    }
-    lock.exit();
-}
-
-void LibertyOneKnobManager::endAudioTrackBlock(int trackIndex,
-                                                  float* const* outputChannelData,
-                                                  int numOutputChannels,
-                                                  int numSamples)
-{
-    if (!validTrack(trackIndex) || !hasEffect(trackIndex) || numSamples <= 0) return;
-    if (!lock.tryEnter()) return;
-
-    const int channels = juce::jlimit(1, 2, numOutputChannels);
-    auto& baseline = baselines[(size_t)trackIndex];
-    auto& work = workBuffers[(size_t)trackIndex];
-    if (baseline.getNumSamples() != numSamples || baseline.getNumChannels() < channels)
-    {
-        lock.exit();
-        return;
-    }
-
-    work.setSize(channels, numSamples, false, false, true);
-    work.clear();
-    for (int ch = 0; ch < channels; ++ch)
-    {
-        if (outputChannelData[ch] == nullptr) continue;
-        work.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-        work.addFrom(ch, 0, baseline, ch, 0, numSamples, -1.0f);
-    }
-
-    racks[(size_t)trackIndex].process(work);
-
-    for (int ch = 0; ch < channels; ++ch)
-    {
-        if (outputChannelData[ch] == nullptr) continue;
-        juce::FloatVectorOperations::copy(outputChannelData[ch], baseline.getReadPointer(ch), numSamples);
-        juce::FloatVectorOperations::add(outputChannelData[ch], work.getReadPointer(ch), numSamples);
-    }
-    lock.exit();
-}
-
-void LibertyOneKnobManager::processInstrumentBlock(float* const* outputChannelData,
-                                                        int numOutputChannels,
-                                                        int numSamples)
-{
-    constexpr int instrumentSlot = maxTracks - 1;
-    if (!hasEffect(instrumentSlot) || numSamples <= 0 || numOutputChannels <= 0) return;
-    if (!lock.tryEnter()) return;
-
-    const int channels = juce::jlimit(1, 2, numOutputChannels);
-    auto& work = workBuffers[(size_t)instrumentSlot];
-    work.setSize(channels, numSamples, false, false, true);
-    work.clear();
-    for (int ch = 0; ch < channels; ++ch)
-        if (outputChannelData[ch] != nullptr)
-            work.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-
-    racks[(size_t)instrumentSlot].process(work);
-
-    for (int ch = 0; ch < channels; ++ch)
-        if (outputChannelData[ch] != nullptr)
-            juce::FloatVectorOperations::copy(outputChannelData[ch], work.getReadPointer(ch), numSamples);
-
-    lock.exit();
-}
-
-void LibertyOneKnobManager::showEditor(int trackIndex)
-{
-    if (!validTrack(trackIndex) || !hasEffect(trackIndex)) return;
-    const juce::ScopedLock scoped(lock);
-    auto& window = editors[(size_t)trackIndex];
-    if (!window) window = std::make_unique<OneKnobWindow>(*this, trackIndex);
-    else { window->setVisible(true); window->toFront(true); }
-}
+LibertyOneKnobManager& LibertyOneKnobManager::instance(){static LibertyOneKnobManager manager;return manager;}
+LibertyOneKnobManager::LibertyOneKnobManager()=default;
+void LibertyOneKnobManager::ensureTrack(int i){while((int)racks.size()<=i){auto r=std::make_unique<LibertyOneKnobRack>();r->prepare(preparedSampleRate,preparedBlockSize);racks.push_back(std::move(r));baselines.push_back(std::make_unique<juce::AudioBuffer<float>>());workBuffers.push_back(std::make_unique<juce::AudioBuffer<float>>());editors.push_back(nullptr);}}
+void LibertyOneKnobManager::prepare(double sr,int bs){const juce::ScopedLock s(lock);preparedSampleRate=sr>0?sr:48000.0;preparedBlockSize=juce::jmax(16,bs);for(auto&r:racks)if(r)r->prepare(preparedSampleRate,preparedBlockSize);}
+void LibertyOneKnobManager::setEffect(int i,LibertyOneKnobRack::Type t){if(!validTrack(i))return;const juce::ScopedLock s(lock);ensureTrack(i);racks[(size_t)i]->setType(t);if(editors[(size_t)i])editors[(size_t)i].reset();}
+void LibertyOneKnobManager::clearEffect(int i){setEffect(i,LibertyOneKnobRack::Type::none);}
+LibertyOneKnobRack::Type LibertyOneKnobManager::getEffect(int i)const{if(!validTrack(i))return LibertyOneKnobRack::Type::none;const juce::ScopedLock s(lock);return i<(int)racks.size()&&racks[(size_t)i]?racks[(size_t)i]->getType():LibertyOneKnobRack::Type::none;}
+void LibertyOneKnobManager::setAmount(int i,float a){if(!validTrack(i))return;const juce::ScopedLock s(lock);ensureTrack(i);racks[(size_t)i]->setAmount(a);}
+float LibertyOneKnobManager::getAmount(int i)const{const juce::ScopedLock s(lock);return i>=0&&i<(int)racks.size()&&racks[(size_t)i]?racks[(size_t)i]->getAmount():0;}
+juce::String LibertyOneKnobManager::getName(int i)const{const juce::ScopedLock s(lock);return i>=0&&i<(int)racks.size()&&racks[(size_t)i]?racks[(size_t)i]->getName():juce::String{};}
+bool LibertyOneKnobManager::hasEffect(int i)const{return getEffect(i)!=LibertyOneKnobRack::Type::none;}
+void LibertyOneKnobManager::process(int i,juce::AudioBuffer<float>&b){if(!validTrack(i)||!lock.tryEnter())return;if(i<(int)racks.size()&&racks[(size_t)i])racks[(size_t)i]->process(b);lock.exit();}
+void LibertyOneKnobManager::beginAudioTrackBlock(int i,float*const*d,int ch,int n){if(!validTrack(i)||!hasEffect(i)||n<=0||!lock.tryEnter())return;ensureTrack(i);int cc=juce::jlimit(1,2,ch);auto&b=*baselines[(size_t)i];b.setSize(cc,n,false,false,true);for(int c=0;c<cc;++c)d[c]?b.copyFrom(c,0,d[c],n):b.clear(c,0,n);lock.exit();}
+void LibertyOneKnobManager::endAudioTrackBlock(int i,float*const*d,int ch,int n){if(!validTrack(i)||!hasEffect(i)||n<=0||!lock.tryEnter())return;ensureTrack(i);int cc=juce::jlimit(1,2,ch);auto&b=*baselines[(size_t)i];auto&w=*workBuffers[(size_t)i];if(b.getNumSamples()!=n||b.getNumChannels()<cc){lock.exit();return;}w.setSize(cc,n,false,false,true);w.clear();for(int c=0;c<cc;++c)if(d[c]){w.copyFrom(c,0,d[c],n);w.addFrom(c,0,b,c,0,n,-1);}racks[(size_t)i]->process(w);for(int c=0;c<cc;++c)if(d[c]){juce::FloatVectorOperations::copy(d[c],b.getReadPointer(c),n);juce::FloatVectorOperations::add(d[c],w.getReadPointer(c),n);}lock.exit();}
+void LibertyOneKnobManager::processInstrumentBlock(float*const*d,int ch,int n){processInstrumentBlock(0,d,ch,n);}
+void LibertyOneKnobManager::processInstrumentBlock(int instrumentTrack,float*const*d,int ch,int n){const int slot=100000+instrumentTrack;if(!hasEffect(slot)||n<=0||ch<=0||!lock.tryEnter())return;ensureTrack(slot);int cc=juce::jlimit(1,2,ch);auto&w=*workBuffers[(size_t)slot];w.setSize(cc,n,false,false,true);for(int c=0;c<cc;++c)if(d[c])w.copyFrom(c,0,d[c],n);racks[(size_t)slot]->process(w);for(int c=0;c<cc;++c)if(d[c])juce::FloatVectorOperations::copy(d[c],w.getReadPointer(c),n);lock.exit();}
+void LibertyOneKnobManager::showEditor(int i){if(!validTrack(i)||!hasEffect(i))return;const juce::ScopedLock s(lock);ensureTrack(i);auto&w=editors[(size_t)i];if(!w)w=std::make_unique<OneKnobWindow>(*this,i);else{w->setVisible(true);w->toFront(true);}}
