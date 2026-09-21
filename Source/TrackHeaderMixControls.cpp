@@ -232,9 +232,9 @@ public:
     }
 
 private:
-    static int controlTrack(int control) noexcept
+    int controlTrack(int control) const noexcept
     {
-        return control < AudioEngine::maxAudioTracks ? control : (owner.getAudioTrackCount()+owner.getMidiTrackCount());
+        return control < AudioEngine::maxAudioTracks ? control : (owner.getAudioTrackCount() + owner.getMidiTrackCount());
     }
 
     void syncButtons()
