@@ -265,7 +265,7 @@ private:
         {
             owner->updateMidiClipTiming();
             const int rowH = getLibertyTrackRowHeight();
-            const auto rowY = 76 + 32 + (AudioEngine::maxAudioTracks * rowH);
+            const auto rowY = 76 + 32 + ((getAudioTrackCount() - getTrackScrollRows()) * rowH);
             setBounds(210, rowY, juce::jmax(1, owner->getWidth() - 210), rowH);
             repaint();
         }
