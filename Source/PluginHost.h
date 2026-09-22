@@ -40,6 +40,9 @@ public:
     juce::String getEffectName(int trackIndex) const;
     juce::String getInstrumentName() const;
     juce::String getInstrumentNameForTrack(int instrumentTrack) const;
+    bool getEffectDescriptionForTrack(int trackIndex, juce::PluginDescription& out) const;
+    bool getInstrumentDescriptionForTrack(int instrumentTrack, juce::PluginDescription& out) const;
+    bool findKnownPluginByIdentifier(const juce::String& identifier, juce::PluginDescription& out) const;
 
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
