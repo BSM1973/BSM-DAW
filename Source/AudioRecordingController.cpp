@@ -27,7 +27,7 @@ public:
             armButtons[(size_t)i]->setClickingTogglesState(false);
             armButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
             armButtons[(size_t)i]->onClick = [this, i] { armTrack(i); };
-            owner.addAndMakeVisible(armButtons[(size_t)i]);
+            owner.addAndMakeVisible(*armButtons[(size_t)i]);
 
             monitorButtons[(size_t)i]->setButtonText("MON OFF");
             monitorButtons[(size_t)i]->setClickingTogglesState(true);
@@ -41,7 +41,7 @@ public:
                 monitorButtons[(size_t)i]->setButtonText(enabled ? "MON ON" : "MON OFF");
                 updateMonitoringCallback();
             };
-            owner.addAndMakeVisible(monitorButtons[(size_t)i]);
+            owner.addAndMakeVisible(*monitorButtons[(size_t)i]);
         }
 
         recButton.setButtonText("REC");
@@ -62,9 +62,9 @@ public:
         stopTimer();
 
         for (auto& button : armButtons)
-            button.setVisible(false);
+            if (button) button->setVisible(false);
         for (auto& button : monitorButtons)
-            button.setVisible(false);
+            if (button) button->setVisible(false);
         recButton.setVisible(false);
     }
 
