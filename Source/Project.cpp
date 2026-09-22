@@ -243,7 +243,16 @@ void MainComponent::resetProjectState()
     resetLibertyTrackColours();
     resetLibertyTrackNames();
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    while (audioEngine.getAudioTrackCount() > AudioEngine::initialAudioTracks)
+        audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
+    dynamicMidiTrackCount = 1;
+    dynamicInstrumentTrackCount = 1;
+    trackScrollRows = 0;
+    waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
+    waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
+    trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
+
+    for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
     {
         audioEngine.clearAudioTrack(i);
         audioEngine.setTrackGain(i, 1.0f);
