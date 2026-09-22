@@ -50,6 +50,9 @@ juce::String MainComponent::getProjectStateSignature() const
     signature << "tempo=" << juce::String(tempoBpm, 6)
               << ";meter=" << timeSignatureNumerator << "/" << timeSignatureDenominator
               << ";master=" << juce::String(audioEngine.getMasterGain(), 6)
+              << ";audioTracks=" << getAudioTrackCount()
+              << ";midiTracks=" << getMidiTrackCount()
+              << ";instrumentTracks=" << getInstrumentTrackCount()
               << ";midiClipStart=" << juce::String(midiClipStartSeconds, 6)
               << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6)
               << ";midiColour=" << getLibertyTrackColourId(midiTrackColourIndex)
@@ -61,7 +64,7 @@ juce::String MainComponent::getProjectStateSignature() const
               << ";instrumentMute=" << (audioEngine.isInstrumentTrackMuted() ? 1 : 0)
               << ";instrumentSolo=" << (audioEngine.isInstrumentTrackSolo() ? 1 : 0);
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         signature << "|track=" << i
                   << ";loaded=" << (audioEngine.hasAudioFile(i) ? 1 : 0)
@@ -331,7 +334,10 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 8);
+    project.setAttribute("version", 9);
+    project.setAttribute("audioTrackCount", getAudioTrackCount());
+    project.setAttribute("midiTrackCount", getMidiTrackCount());
+    project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -362,7 +368,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         noteElement->setAttribute("channel", (int)note.channel);
     }
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
@@ -430,10 +436,18 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     resetProjectState();
 
+    const int savedAudioTracks = juce::jmax(AudioEngine::initialAudioTracks, project->getIntAttribute("audioTrackCount", AudioEngine::initialAudioTracks));
+    const int savedMidiTracks = juce::jmax(1, project->getIntAttribute("midiTrackCount", 1));
+    const int savedInstrumentTracks = juce::jmax(1, project->getIntAttribute("instrumentTrackCount", 1));
+    while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
+    while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
+    while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
+    trackScrollRows = 0;
+
     tempoBpm = juce::jlimit(20.0, 400.0, project->getDoubleAttribute("tempo", 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
     timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
-    selectedTrack = juce::jlimit(0, AudioEngine::maxAudioTracks - 1, project->getIntAttribute("selectedTrack", 0));
+    selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
     audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
     midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
@@ -467,7 +481,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     {
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
-        if (index < 0 || index >= AudioEngine::maxAudioTracks) continue;
+        if (index < 0 || index >= getAudioTrackCount()) continue;
         setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
         setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
