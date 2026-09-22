@@ -4,6 +4,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
+#include <vector>
 #include <map>
 #include <memory>
 
@@ -13,9 +14,6 @@ int getLibertyTrackRowHeight() noexcept;
 namespace
 {
 constexpr int colourDefault = 0;
-constexpr int totalTracks = AudioEngine::maxAudioTracks + 2;
-constexpr int midiTrackIndex = AudioEngine::maxAudioTracks;
-constexpr int instrumentTrackIndex = AudioEngine::maxAudioTracks + 1;
 constexpr int headerW = 210;
 constexpr int rulerH = 32;
 constexpr std::array<juce::uint32, 9> palette {
@@ -26,21 +24,24 @@ constexpr const char* colourNames[] = {
     "Defaut", "Bleu", "Vert", "Jaune", "Orange", "Rouge", "Violet", "Rose", "Turquoise"
 };
 
-std::array<int, totalTracks> colourIds {};
-std::array<juce::String, totalTracks> trackNames {};
+std::vector<int> colourIds;
+std::vector<juce::String> trackNames;
+void ensureTrackMetadata(int count){if(count<0)count=0;if((int)colourIds.size()<count)colourIds.resize((size_t)count,0);if((int)trackNames.size()<count)trackNames.resize((size_t)count);}
 
-juce::String defaultTrackName(int track)
+
+juce::String defaultTrackName(const MainComponent& owner,int track)
 {
-    if (track >= 0 && track < AudioEngine::maxAudioTracks) return "Audio " + juce::String(track + 1);
-    if (track == midiTrackIndex) return "MIDI 1";
-    if (track == instrumentTrackIndex) return "Instrument 1";
+    const int a=owner.getAudioTrackCount(),m=owner.getMidiTrackCount(),n=owner.getInstrumentTrackCount();
+    if(track>=0&&track<a)return "Audio "+juce::String(track+1);
+    if(track<a+m)return "MIDI "+juce::String(track-a+1);
+    if(track<a+m+n)return "Instrument "+juce::String(track-a-m+1);
     return {};
 }
-
-juce::String effectiveTrackName(int track)
+juce::String effectiveTrackName(const MainComponent& owner,int track)
 {
-    if (track < 0 || track >= totalTracks) return {};
-    return trackNames[(size_t)track].isNotEmpty() ? trackNames[(size_t)track] : defaultTrackName(track);
+    const int total=owner.getTotalArrangeTrackCount();ensureTrackMetadata(total);
+    if(track<0||track>=total)return {};
+    return trackNames[(size_t)track].isNotEmpty()?trackNames[(size_t)track]:defaultTrackName(owner,track);
 }
 
 juce::Colour colourForId(int id)
@@ -92,11 +93,13 @@ public:
         const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
 
+        const int totalTracks=owner.getTotalArrangeTrackCount(); ensureTrackMetadata(totalTracks);
+        const int scroll=owner.getTrackScrollRows();
         for (int i = 0; i < totalTracks; ++i)
         {
             const int id = colourIds[(size_t)i];
             const auto colour = colourForId(id);
-            const int rowY = 76 + rulerH + i * rowH;
+            const int rowY = 76 + rulerH + (i-scroll) * rowH;
             const auto header = juce::Rectangle<int>(0, rowY, headerW, rowH);
 
             if (id != colourDefault)
@@ -107,7 +110,7 @@ public:
                 g.fillRect(header.getX(), header.getY(), 5, header.getHeight());
                 g.fillRect(header.getX(), header.getY(), header.getWidth(), 3);
 
-                if (i < AudioEngine::maxAudioTracks && owner.audioEngine.hasAudioFile(i))
+                if (i < owner.getAudioTrackCount() && owner.audioEngine.hasAudioFile(i))
                 {
                     const int clipX = headerW + (int)std::round(owner.audioEngine.getTrackStartSeconds(i) * pixelsPerSecond);
                     const int clipW = juce::jmax(1, (int)std::round(owner.audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond));
@@ -117,18 +120,7 @@ public:
                     g.setColour(colour.withAlpha(0.95f));
                     g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
                 }
-                else if (i == midiTrackIndex && !owner.midiEngine.getNotesCopy().empty())
-                {
-                    const int clipX = headerW + (int)std::round(owner.midiClipStartSeconds * pixelsPerSecond);
-                    const int clipW = juce::jmax(80, (int)std::round(owner.midiClipLengthSeconds * pixelsPerSecond));
-                    const auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
-                    g.setColour(colour.withAlpha(0.18f));
-                    g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                    g.setColour(colour.withAlpha(0.95f));
-                    g.drawRoundedRectangle(clip.toFloat(), 5.0f, 2.0f);
-                }
-
-                if (i < AudioEngine::maxAudioTracks)
+                if (i < owner.getAudioTrackCount())
                 {
                     const int mixerTop = owner.getHeight() - 210;
                     const auto strip = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188);
@@ -152,10 +144,10 @@ public:
                 }
                 g.setColour(juce::Colours::white);
                 g.setFont(juce::Font(13.0f, juce::Font::bold));
-                g.drawText(effectiveTrackName(i), titleArea.reduced(4, 0), juce::Justification::centredLeft, true);
+                g.drawText(effectiveTrackName(owner,i), titleArea.reduced(4, 0), juce::Justification::centredLeft, true);
             }
 
-            if (i < AudioEngine::maxAudioTracks)
+            if (i < owner.getAudioTrackCount())
             {
                 const int mixerTop = owner.getHeight() - 210;
                 const auto mixerTitle = juce::Rectangle<int>(224 + i * 125, mixerTop + 18, 108, 20);
@@ -168,7 +160,7 @@ public:
                 }
                 g.setColour(juce::Colours::white);
                 g.setFont(juce::Font(11.0f, juce::Font::bold));
-                g.drawText(effectiveTrackName(i), mixerTitle, juce::Justification::centred, true);
+                g.drawText(effectiveTrackName(owner,i), mixerTitle, juce::Justification::centred, true);
             }
         }
     }
@@ -199,14 +191,16 @@ private:
         const int rowH = getLibertyTrackRowHeight();
         const int y = point.y - 76 - rulerH;
         if (y < 0) return;
-        const int track = y / rowH;
+        const int visibleTrack = y / rowH;
+        const int track = visibleTrack + owner.getTrackScrollRows();
         const int localY = y % rowH;
+        const int totalTracks=owner.getTotalArrangeTrackCount(); ensureTrackMetadata(totalTracks);
         if (track < 0 || track >= totalTracks || localY < 4 || localY > 32) return;
 
         if (editingTrack >= 0) finishRename(true);
         editingTrack = track;
-        renameEditor.setText(effectiveTrackName(track), false);
-        renameEditor.setBounds(8, 76 + rulerH + track * rowH + 6, 96, 24);
+        renameEditor.setText(effectiveTrackName(owner,track), false);
+        renameEditor.setBounds(8, 76 + rulerH + (track-owner.getTrackScrollRows()) * rowH + 6, 96, 24);
         renameEditor.setVisible(true);
         renameEditor.toFront(true);
         renameEditor.grabKeyboardFocus();
@@ -222,7 +216,7 @@ private:
         if (commit)
         {
             auto text = renameEditor.getText().trim();
-            if (text.isEmpty()) text = defaultTrackName(track);
+            if (text.isEmpty()) text = defaultTrackName(owner,track);
             if (text.length() > 32) text = text.substring(0, 32);
             trackNames[(size_t)track] = text;
         }
@@ -239,12 +233,14 @@ private:
         const int rowH = getLibertyTrackRowHeight();
         const int y = p.y - 76 - rulerH;
         if (y < 0) return;
-        const int track = y / rowH;
+        const int track = y / rowH + owner.getTrackScrollRows();
+        const int totalTracks=owner.getTotalArrangeTrackCount(); ensureTrackMetadata(totalTracks);
         if (track < 0 || track >= totalTracks) return;
 
-        if (track < AudioEngine::maxAudioTracks) owner.selectedTrack = track;
-        else if (track == midiTrackIndex) owner.selectMidiTrack();
-        else owner.selectedTrack = instrumentTrackIndex;
+        const int a=owner.getAudioTrackCount(),m=owner.getMidiTrackCount();
+        if(track<a) owner.selectedTrack=track;
+        else if(track<a+m) owner.selectMidiTrack();
+        else owner.selectedTrack=track;
         owner.repaint();
 
         juce::PopupMenu menu;
@@ -265,7 +261,7 @@ private:
     void resized() override
     {
         if (editingTrack >= 0)
-            renameEditor.setBounds(8, 76 + rulerH + editingTrack * getLibertyTrackRowHeight() + 6, 96, 24);
+            renameEditor.setBounds(8, 76 + rulerH + (editingTrack-owner.getTrackScrollRows()) * getLibertyTrackRowHeight() + 6, 96, 24);
     }
 
     void timerCallback() override
@@ -320,23 +316,23 @@ TrackColourBootstrap trackColourBootstrap;
 
 int getLibertyTrackColourId(int track)
 {
-    if (track < 0 || track >= totalTracks) return 0;
+    if (track < 0) return 0; ensureTrackMetadata(track+1);
     return colourIds[(size_t)track];
 }
 
 void setLibertyTrackColourId(int track, int colourId)
 {
-    if (track < 0 || track >= totalTracks) return;
+    if (track < 0) return; ensureTrackMetadata(track+1);
     colourIds[(size_t)track] = juce::jlimit(0, (int)palette.size() - 1, colourId);
 }
 
-void resetLibertyTrackColours() { colourIds.fill(0); }
+void resetLibertyTrackColours() { std::fill(colourIds.begin(),colourIds.end(),0); }
 
-juce::String getLibertyTrackName(int track) { return effectiveTrackName(track); }
+juce::String getLibertyTrackName(int track) { if(track<0)return {};ensureTrackMetadata(track+1);return trackNames[(size_t)track]; }
 
 void setLibertyTrackName(int track, const juce::String& name)
 {
-    if (track < 0 || track >= totalTracks) return;
+    if (track < 0) return; ensureTrackMetadata(track+1);
     auto clean = name.trim();
     if (clean.length() > 32) clean = clean.substring(0, 32);
     trackNames[(size_t)track] = clean;
