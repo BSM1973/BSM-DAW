@@ -471,6 +471,24 @@ juce::String LibertyPluginHost::getEffectName(int trackIndex) const
     return trackIndex<(int)trackEffects.size() && trackEffects[(size_t)trackIndex] && trackEffects[(size_t)trackIndex]->processor ? trackEffects[(size_t)trackIndex]->description.name : juce::String{};
 }
 
+bool LibertyPluginHost::getEffectDescriptionForTrack(int t, juce::PluginDescription& out) const
+{
+    const juce::ScopedLock sl(lock);
+    if(t<0||t>=(int)trackEffects.size()||!trackEffects[(size_t)t]||!trackEffects[(size_t)t]->processor)return false;
+    out=trackEffects[(size_t)t]->description; return true;
+}
+bool LibertyPluginHost::getInstrumentDescriptionForTrack(int t, juce::PluginDescription& out) const
+{
+    const juce::ScopedLock sl(lock);
+    if(t<0||t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)return false;
+    out=instruments[(size_t)t]->description; return true;
+}
+bool LibertyPluginHost::findKnownPluginByIdentifier(const juce::String& id, juce::PluginDescription& out) const
+{
+    if(id.isEmpty())return false;
+    for(const auto& d:knownPlugins.getTypes())if(d.fileOrIdentifier==id){out=d;return true;}
+    return false;
+}
 juce::String LibertyPluginHost::getInstrumentName() const { return getInstrumentNameForTrack(0); }
 juce::String LibertyPluginHost::getInstrumentNameForTrack(int t) const
 {
