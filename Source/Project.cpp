@@ -6,6 +6,8 @@ void resetLibertyTrackColours();
 juce::String getLibertyTrackName(int track);
 void setLibertyTrackName(int track, const juce::String& name);
 void resetLibertyTrackNames();
+void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
+void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
 
 namespace
 {
@@ -343,7 +345,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 9);
+    project.setAttribute("version", 10);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
@@ -404,6 +406,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
     }
+
+    saveLibertyMultiMidiClips(*this, project);
 
     auto output = file.createOutputStream();
     if (output == nullptr)
@@ -533,6 +537,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         rebuildWaveformCache(index);
     }
 
+    loadLibertyMultiMidiClips(*this, *project);
     updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
