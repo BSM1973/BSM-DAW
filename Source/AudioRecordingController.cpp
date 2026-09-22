@@ -6,7 +6,6 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -21,24 +20,25 @@ class LibertyAudioRecordingController final : public juce::Component, private ju
 public:
     explicit LibertyAudioRecordingController(MainComponent& ownerIn) : owner(ownerIn)
     {
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        syncTrackControls();
+        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
-            armButtons[(size_t)i].setButtonText("ARM");
-            armButtons[(size_t)i].setClickingTogglesState(false);
-            armButtons[(size_t)i].setMouseClickGrabsKeyboardFocus(false);
-            armButtons[(size_t)i].onClick = [this, i] { armTrack(i); };
+            armButtons[(size_t)i]->setButtonText("ARM");
+            armButtons[(size_t)i]->setClickingTogglesState(false);
+            armButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
+            armButtons[(size_t)i]->onClick = [this, i] { armTrack(i); };
             owner.addAndMakeVisible(armButtons[(size_t)i]);
 
-            monitorButtons[(size_t)i].setButtonText("MON OFF");
-            monitorButtons[(size_t)i].setClickingTogglesState(true);
-            monitorButtons[(size_t)i].setMouseClickGrabsKeyboardFocus(false);
-            monitorButtons[(size_t)i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-            monitorButtons[(size_t)i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
-            monitorButtons[(size_t)i].onClick = [this, i]
+            monitorButtons[(size_t)i]->setButtonText("MON OFF");
+            monitorButtons[(size_t)i]->setClickingTogglesState(true);
+            monitorButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
+            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
+            monitorButtons[(size_t)i]->onClick = [this, i]
             {
-                const bool enabled = monitorButtons[(size_t)i].getToggleState();
-                monitoringEnabled[(size_t)i].store(enabled, std::memory_order_relaxed);
-                monitorButtons[(size_t)i].setButtonText(enabled ? "MON ON" : "MON OFF");
+                const bool enabled = monitorButtons[(size_t)i]->getToggleState();
+                monitoringEnabled[(size_t)i]->store(enabled, std::memory_order_relaxed);
+                monitorButtons[(size_t)i]->setButtonText(enabled ? "MON ON" : "MON OFF");
                 updateMonitoringCallback();
             };
             owner.addAndMakeVisible(monitorButtons[(size_t)i]);
@@ -55,7 +55,7 @@ public:
     ~LibertyAudioRecordingController() override
     {
         for (auto& state : monitoringEnabled)
-            state.store(false, std::memory_order_relaxed);
+            state->store(false, std::memory_order_relaxed);
 
         stopRecording(false);
         detachAudioCallback();
@@ -71,11 +71,14 @@ public:
     void resized() override
     {
         const int rowH = getLibertyTrackRowHeight();
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
-            const int y = 76 + 32 + i * rowH + 7;
-            armButtons[(size_t)i].setBounds(108, y, 46, 22);
-            monitorButtons[(size_t)i].setBounds(158, y, 48, 22);
+            const int y = 76 + 32 + (i - owner.getTrackScrollRows()) * rowH + 7;
+            const bool visible = y >= 76 + 32 && y < owner.getHeight() - 210;
+            armButtons[(size_t)i]->setVisible(visible);
+            monitorButtons[(size_t)i]->setVisible(visible);
+            armButtons[(size_t)i]->setBounds(108, y, 46, 22);
+            monitorButtons[(size_t)i]->setBounds(158, y, 48, 22);
         }
 
         recButton.setBounds(525, 38, 70, 28);
@@ -85,8 +88,9 @@ private:
     bool isArmedTrackMonitoring() const noexcept
     {
         return armedTrack >= 0
-            && armedTrack < AudioEngine::maxAudioTracks
-            && monitoringEnabled[(size_t)armedTrack].load(std::memory_order_relaxed);
+            && armedTrack < owner.getAudioTrackCount()
+            && armedTrack < (int)monitoringEnabled.size()
+            && monitoringEnabled[(size_t)armedTrack]->load(std::memory_order_relaxed);
     }
 
     void attachAudioCallback()
@@ -135,8 +139,8 @@ private:
             return;
 
         armedTrack = track;
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
-            armButtons[(size_t)i].setButtonText(i == armedTrack ? "ARMED" : "ARM");
+        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
+            armButtons[(size_t)i]->setButtonText(i == armedTrack ? "ARMED" : "ARM");
 
         owner.selectedTrack = track;
         updateMonitoringCallback();
@@ -462,6 +466,7 @@ private:
 
     void timerCallback() override
     {
+        syncTrackControls();
         resized();
         if (recording)
         {
@@ -471,10 +476,29 @@ private:
         owner.repaint();
     }
 
+    void syncTrackControls()
+    {
+        const int count = owner.getAudioTrackCount();
+        while ((int)armButtons.size() < count)
+        {
+            const int i = (int)armButtons.size();
+            auto arm = std::make_unique<juce::TextButton>("ARM");
+            arm->setClickingTogglesState(false); arm->setMouseClickGrabsKeyboardFocus(false);
+            arm->onClick = [this, i] { armTrack(i); }; owner.addAndMakeVisible(*arm); armButtons.push_back(std::move(arm));
+            auto mon = std::make_unique<juce::TextButton>("MON OFF");
+            mon->setClickingTogglesState(true); mon->setMouseClickGrabsKeyboardFocus(false);
+            mon->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
+            mon->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
+            auto state = std::make_unique<std::atomic<bool>>(false);
+            mon->onClick = [this, i] { const bool enabled=monitorButtons[(size_t)i]->getToggleState(); monitoringEnabled[(size_t)i]->store(enabled,std::memory_order_relaxed); monitorButtons[(size_t)i]->setButtonText(enabled?"MON ON":"MON OFF"); updateMonitoringCallback(); };
+            owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
+        }
+    }
+
     MainComponent& owner;
-    std::array<juce::TextButton, AudioEngine::maxAudioTracks> armButtons;
-    std::array<juce::TextButton, AudioEngine::maxAudioTracks> monitorButtons;
-    std::array<std::atomic<bool>, AudioEngine::maxAudioTracks> monitoringEnabled {};
+    std::vector<std::unique_ptr<juce::TextButton>> armButtons;
+    std::vector<std::unique_ptr<juce::TextButton>> monitorButtons;
+    std::vector<std::unique_ptr<std::atomic<bool>>> monitoringEnabled;
     juce::TextButton recButton;
     std::vector<int> inputIndices;
     std::unique_ptr<juce::TimeSliceThread> recordingThread;
