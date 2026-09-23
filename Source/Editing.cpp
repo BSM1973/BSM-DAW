@@ -131,7 +131,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             return true;
         }
 
-        if (selectedTrack >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(selectedTrack))
+        if (selectedTrack >= getAudioTrackCount() || !audioEngine.hasAudioFile(selectedTrack))
             return true;
 
         audioEngine.clearAudioTrack(selectedTrack);
@@ -151,7 +151,7 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         if (selectedTrack < 0)
             return true;
 
-        if (selectedTrack >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(selectedTrack))
+        if (selectedTrack >= getAudioTrackCount() || !audioEngine.hasAudioFile(selectedTrack))
             return true;
 
         int newTrack = -1;
