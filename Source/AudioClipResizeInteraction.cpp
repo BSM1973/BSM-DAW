@@ -3,7 +3,7 @@
 #undef private
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <array>
+#include <vector>
 #include <atomic>
 #include <cmath>
 #include <map>
@@ -80,13 +80,7 @@ public:
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
 
-        for (int t = 0; t < AudioEngine::maxAudioTracks; ++t)
-        {
-            leftHandles[(size_t)t] = std::make_unique<Handle>(*this, t, Side::left);
-            rightHandles[(size_t)t] = std::make_unique<Handle>(*this, t, Side::right);
-            addAndMakeVisible(*leftHandles[(size_t)t]);
-            addAndMakeVisible(*rightHandles[(size_t)t]);
-        }
+        syncHandles();
         startTimerHz(30);
     }
 
@@ -103,6 +97,7 @@ public:
     {
         if (dragTrack < 0 || previewLength <= 0.0) return;
 
+        syncHandles();
         const double pps = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
         const int x = headerWidth + (int)std::llround(previewStart * pps);
@@ -213,7 +208,7 @@ private:
 
         const double pps = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
-        for (int t = 0; t < AudioEngine::maxAudioTracks; ++t)
+        for (int t = 0; t < owner.getAudioTrackCount(); ++t)
         {
             const int tool = getLibertyActiveTool();
             const bool show = owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t && dragTrack < 0 && (tool == 4 || tool == 5);
@@ -225,7 +220,7 @@ private:
 
             const int clipX = headerWidth + (int)std::llround(owner.audioEngine.getTrackStartSeconds(t) * pps);
             const int clipW = juce::jmax(2, (int)std::llround(owner.audioEngine.getAudioFileLengthSeconds(t) * pps));
-            const int y = 76 + rulerHeight + t * rowH + 4;
+            const int y = 76 + rulerHeight + (t-owner.getTrackScrollRows()) * rowH + 4;
             const int h = rowH - 8;
             left.setBounds(clipX - handleWidth / 2, y, handleWidth, h);
             right.setBounds(clipX + clipW - handleWidth / 2, y, handleWidth, h);
@@ -233,9 +228,17 @@ private:
         toFront(false);
     }
 
+    void syncHandles()
+    {
+        while((int)leftHandles.size()<owner.getAudioTrackCount()){
+            const int t=(int)leftHandles.size();
+            auto l=std::make_unique<Handle>(*this,t,Side::left); auto r=std::make_unique<Handle>(*this,t,Side::right);
+            addAndMakeVisible(*l); addAndMakeVisible(*r); leftHandles.push_back(std::move(l)); rightHandles.push_back(std::move(r));
+        }
+    }
     MainComponent& owner;
-    std::array<std::unique_ptr<Handle>, AudioEngine::maxAudioTracks> leftHandles;
-    std::array<std::unique_ptr<Handle>, AudioEngine::maxAudioTracks> rightHandles;
+    std::vector<std::unique_ptr<Handle>> leftHandles;
+    std::vector<std::unique_ptr<Handle>> rightHandles;
     std::atomic<bool> stopped { false };
     int dragTrack = -1;
     Side dragSide = Side::right;
