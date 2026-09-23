@@ -388,9 +388,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     const auto lengthSeconds = source.lengthSeconds.load();
     const auto splitOffsetSeconds = splitProjectSeconds - startSeconds;
     if (splitOffsetSeconds <= 0.01 || splitOffsetSeconds >= lengthSeconds - 0.01) { error = "Place the playhead inside the audio clip to split it."; return false; }
-    for (int i = 0; i < maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
         if (i != trackIndex && !tracks[(size_t)i]->loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
-    if (newTrackIndex < 0) { error = "No empty audio track is available for the second clip segment."; return false; }
+    if (newTrackIndex < 0) newTrackIndex = addAudioTrack();
+    if (newTrackIndex < 0) { error = "Could not create an audio track for the second clip segment."; return false; }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
     if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
     const auto rightSamples = source.numSamples - splitSample;
