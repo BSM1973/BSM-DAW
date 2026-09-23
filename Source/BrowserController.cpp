@@ -454,7 +454,7 @@ private:
         const auto ext = file.getFileExtension().toLowerCase();
         if (ext != ".wav" && ext != ".aif" && ext != ".aiff") return;
         int track = owner.selectedTrack;
-        if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
         juce::String error;
         if (!owner.audioEngine.loadAudioFileIntoTrack(track, file, error))
         {
@@ -565,7 +565,7 @@ private:
         else
         {
             int track = owner.selectedTrack;
-            if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+            if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
             ok = host.loadEffectForTrack(track, d, error);
             if (ok) host.showEditorForTrack(track);
         }
@@ -576,7 +576,7 @@ private:
     int selectedAudioTrack() const
     {
         int track = owner.selectedTrack;
-        return (track >= 0 && track < AudioEngine::maxAudioTracks) ? track : 0;
+        return (track >= 0 && track < owner.getAudioTrackCount()) ? track : 0;
     }
 
     void loadOneKnob(LibertyOneKnobRack::Type type)
@@ -600,13 +600,13 @@ private:
     void openLoadedPluginEditor()
     {
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) { LibertyPluginHost::instance().showInstrumentEditor(); return; }
-        int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
         LibertyPluginHost::instance().showEditorForTrack(track);
     }
     void unloadPlugin()
     {
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) LibertyPluginHost::instance().unloadInstrument();
-        else { int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0; LibertyPluginHost::instance().unloadEffectForTrack(track); }
+        else { int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0; LibertyPluginHost::instance().unloadEffectForTrack(track); }
         refreshPluginStatus(); owner.repaint();
     }
 
@@ -614,7 +614,7 @@ private:
     {
         if (scanning.load()) { pluginStatus.setText(getScanStatus(), juce::dontSendNotification); return; }
         auto& host = LibertyPluginHost::instance();
-        int track = owner.selectedTrack; if (track < 0 || track >= AudioEngine::maxAudioTracks) track = 0;
+        int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
         juce::String text;
         auto& oneKnob = LibertyOneKnobManager::instance();
         if (oneKnob.hasEffect(track)) text << "A" << (track + 1) << ": " << oneKnob.getName(track) << "   ";
