@@ -39,7 +39,7 @@ public:
 
     void showTrack(int track)
     {
-        if (track < 0 || track >= AudioEngine::maxAudioTracks || !owner.audioEngine.hasAudioFile(track)) return;
+        if (track < 0 || track >= owner.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(track)) return;
         selectedTrack = track;
         owner.selectedTrack = track;
         setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
