@@ -6,7 +6,6 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
-#include <vector>
 #include <atomic>
 #include <map>
 #include <memory>
@@ -46,7 +45,6 @@ public:
     explicit PerformAudioPlayer(MainComponent& ownerIn) : owner(ownerIn)
     {
         formats.registerBasicFormats();
-        tracks.resize((size_t)owner.getAudioTrackCount());
         owner.audioEngine.getDeviceManager().addAudioCallback(this);
         callbackAttached = true;
     }
@@ -61,7 +59,6 @@ public:
     void setEnabled(bool shouldEnable)
     {
         const juce::ScopedLock sl(lock);
-        if ((int)tracks.size() < owner.getAudioTrackCount()) tracks.resize((size_t)owner.getAudioTrackCount());
         enabled = shouldEnable;
         if (!enabled)
             for (auto& track : tracks) { track.playing = false; track.position = 0; }
@@ -69,7 +66,7 @@ public:
 
     bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
     {
-        if (trackIndex < 0 || trackIndex >= owner.getAudioTrackCount() || !file.existsAsFile())
+        if (trackIndex < 0 || trackIndex >= audioTracks || !file.existsAsFile())
         {
             error = "Invalid PERFORM clip.";
             return false;
@@ -126,7 +123,6 @@ public:
 
         {
             const juce::ScopedLock sl(lock);
-            if ((int)tracks.size() <= trackIndex) tracks.resize((size_t)trackIndex + 1);
             auto& track = tracks[(size_t)trackIndex];
             track.buffer = std::move(finalBuffer);
             track.file = file;
@@ -139,7 +135,7 @@ public:
 
     void stopTrack(int trackIndex)
     {
-        if (trackIndex < 0 || trackIndex >= owner.getAudioTrackCount()) return;
+        if (trackIndex < 0 || trackIndex >= audioTracks) return;
         const juce::ScopedLock sl(lock);
         tracks[(size_t)trackIndex].playing = false;
         tracks[(size_t)trackIndex].position = 0;
@@ -153,7 +149,7 @@ public:
 
     bool isTrackPlaying(int trackIndex) const
     {
-        if (trackIndex < 0 || trackIndex >= owner.getAudioTrackCount()) return false;
+        if (trackIndex < 0 || trackIndex >= audioTracks) return false;
         const juce::ScopedLock sl(lock);
         return tracks[(size_t)trackIndex].playing;
     }
@@ -255,8 +251,7 @@ private:
         const int captureSamples = juce::jmin(numSamples, captureMix.getNumSamples());
         if (captureSamples > 0) captureMix.clear(0, captureSamples);
 
-        const int playableTracks = juce::jmin(owner.getAudioTrackCount(), (int)tracks.size());
-        for (int trackIndex = 0; trackIndex < playableTracks; ++trackIndex)
+        for (int trackIndex = 0; trackIndex < audioTracks; ++trackIndex)
         {
             auto& state = tracks[(size_t)trackIndex];
             if (!state.playing || state.buffer == nullptr || state.position >= state.buffer->getNumSamples())
@@ -312,7 +307,7 @@ private:
 
     MainComponent& owner;
     juce::AudioFormatManager formats;
-    std::vector<TrackState> tracks;
+    std::array<TrackState, audioTracks> tracks;
     mutable juce::CriticalSection lock;
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
@@ -707,11 +702,17 @@ private:
         if (!capture.existsAsFile()) return;
 
         int targetTrack = -1;
-        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
+        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
             if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
 
-        if (targetTrack < 0) targetTrack = owner.addAudioTrack();
-        if (targetTrack < 0) return;
+        if (targetTrack < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                "Liberty - PERFORM",
+                "PERFORM capture was saved, but ARRANGE has no empty Audio track.\n\n" + capture.getFullPathName(),
+                "OK");
+            return;
+        }
 
         juce::String error;
         if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, capture, error))
