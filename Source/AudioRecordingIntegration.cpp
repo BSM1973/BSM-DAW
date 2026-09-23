@@ -76,7 +76,7 @@ private:
     void timerCallback() override { setBounds(525, 38, 56, 28); repaint(); }
     void startRecording()
     {
-        if (owner.selectedTrack < 0 || owner.selectedTrack >= AudioEngine::maxAudioTracks) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Recording", "Select an Audio track before recording.", "OK"); return; }
+        if (owner.selectedTrack < 0 || owner.selectedTrack >= owner.getAudioTrackCount()) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Recording", "Select an Audio track before recording.", "OK"); return; }
         auto* device = owner.audioEngine.getDeviceManager().getCurrentAudioDevice();
         if (device == nullptr || device->getActiveInputChannels().countNumberOfSetBits() == 0) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Recording", "No audio input is available. Select an input in AUDIO SETTINGS.", "OK"); return; }
         recordingTrack = owner.selectedTrack; recordingStartSeconds = owner.audioEngine.getCurrentTimeSeconds(); savedExtraLength = owner.audioEngine.getProjectExtraLengthSeconds(); owner.audioEngine.setProjectExtraLengthSeconds(juce::jmax(savedExtraLength, recordingStartSeconds + 600.0));
