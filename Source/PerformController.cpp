@@ -19,6 +19,10 @@ juce::String getLibertyTrackName(int track);
 namespace
 {
 constexpr int transportHeight = 76;
+constexpr int audioTracks = AudioEngine::maxAudioTracks;
+constexpr int midiTrack = AudioEngine::maxAudioTracks;
+constexpr int instrumentTrack = AudioEngine::maxAudioTracks + 1;
+constexpr int performTracks = AudioEngine::maxAudioTracks + 2;
 constexpr int sceneCount = 8;
 
 juce::Colour trackColour(int id)
