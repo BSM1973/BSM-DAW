@@ -239,9 +239,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
     g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
-    for (int i = 0; i < AudioEngine::maxAudioTracks + 1; ++i)
+    const int audioTracks = getAudioTrackCount();
+    for (int i = 0; i < audioTracks + 1; ++i)
     {
-        auto c = juce::Rectangle<int>(220 + i * 125, area.getY() + 12, 116, area.getHeight() - 22); const bool master = i == AudioEngine::maxAudioTracks;
+        auto c = juce::Rectangle<int>(220 + i * 125, area.getY() + 12, 116, area.getHeight() - 22); const bool master = i == audioTracks;
         g.setColour(master ? juce::Colour(0xff1b2027) : juce::Colour(0xff171b20)); g.fillRoundedRectangle(c.toFloat(), 5.0f); g.setColour(juce::Colour(0xff343a44)); g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
         const bool muted = !master && audioEngine.isTrackMuted(i); const bool solo = !master && audioEngine.isTrackSolo(i); g.setColour(juce::Colours::white); g.setFont(juce::Font(12.0f, juce::Font::bold)); g.drawText(master ? "MASTER" : "Audio " + juce::String(i + 1), c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
         if (!master) { auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20); g.setColour(muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f); g.setColour(solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f); g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred); }
@@ -362,10 +363,11 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
     const int mixerTop = getHeight() - 210; if (event.position.y < mixerTop) return false;
-    for (int i = 0; i < AudioEngine::maxAudioTracks + 1; ++i)
+    const int audioTracks = getAudioTrackCount();
+    for (int i = 0; i < audioTracks + 1; ++i)
     {
         auto c = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188); if (!c.contains(event.getPosition())) continue;
-        if (i < AudioEngine::maxAudioTracks)
+        if (i < audioTracks)
         {
             auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
             const bool isMouseDown = event.mouseDownPosition.toInt() == event.getPosition();
@@ -376,9 +378,9 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         if (event.position.y >= faderTop && event.position.y <= faderBottom)
         {
             const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
-            const float gain = n * 2.0f; if (i == AudioEngine::maxAudioTracks) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(i, gain); repaint(); return true;
+            const float gain = n * 2.0f; if (i == audioTracks) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(i, gain); repaint(); return true;
         }
-        if (i < AudioEngine::maxAudioTracks && event.position.y >= c.getBottom() - 28)
+        if (i < audioTracks && event.position.y >= c.getBottom() - 28)
         {
             const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f); audioEngine.setTrackPan(i, pan); repaint(); return true;
         }
