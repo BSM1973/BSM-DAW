@@ -59,7 +59,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     }
 
     int targetTrack = -1;
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
     if (targetTrack < 0)
     {
