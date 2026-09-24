@@ -50,7 +50,7 @@ public:
         addMidi.setBounds(58, 0, 50, 24);
         addInstrument.setBounds(112, 0, 66, 24);
         countLabel.setBounds(0, 28, 178, 24);
-        scrollBar.setBounds(0, 58, 178, 16);
+        scrollBar.setBounds(160, 28, 16, 50);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
@@ -60,7 +60,7 @@ private:
     void updateScrollRange()
     {
         const int rowH = getLibertyTrackRowHeight();
-        const int available = juce::jmax(1, owner.getHeight() - 76 - 32 - 210);
+        const int available = juce::jmax(1, owner.getHeight() - 76 - 32 - 210 - 4);
         const int visible = juce::jmax(1, available / rowH);
         const int total = owner.getTotalArrangeTrackCount();
         const int maxStart = juce::jmax(0, total - visible);
@@ -79,7 +79,7 @@ private:
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
     juce::Label countLabel;
-    juce::ScrollBar scrollBar { false };
+    juce::ScrollBar scrollBar { true };
 };
 
 std::map<MainComponent*, std::unique_ptr<DynamicTrackController>> controllers;
