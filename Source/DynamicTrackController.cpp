@@ -39,18 +39,21 @@ public:
         scrollBar.setCurrentRange(0.0, 1.0);
         scrollBar.addListener(this);
         addAndMakeVisible(scrollBar);
+        setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
-        setBounds(8, 78, 178, 86);
+        setBounds(owner.getLocalBounds());
         startTimerHz(4);
     }
     ~DynamicTrackController() override { scrollBar.removeListener(this); stopTimer(); }
     void resized() override
     {
-        addAudio.setBounds(0, 0, 54, 24);
-        addMidi.setBounds(58, 0, 50, 24);
-        addInstrument.setBounds(112, 0, 66, 24);
-        countLabel.setBounds(0, 28, 178, 24);
-        scrollBar.setBounds(160, 28, 16, 50);
+        addAudio.setBounds(8, 78, 54, 24);
+        addMidi.setBounds(66, 78, 50, 24);
+        addInstrument.setBounds(120, 78, 66, 24);
+        countLabel.setBounds(8, 104, 178, 22);
+        const int top = 108;
+        const int bottom = juce::jmax(top + 24, getHeight() - 210);
+        scrollBar.setBounds(juce::jmax(190, getWidth() - 17), top, 15, bottom - top);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
@@ -60,7 +63,7 @@ private:
     void updateScrollRange()
     {
         const int rowH = getLibertyTrackRowHeight();
-        const int available = juce::jmax(1, owner.getHeight() - 76 - 32 - 210 - 4);
+        const int available = juce::jmax(1, owner.getHeight() - 108 - 210);
         const int visible = juce::jmax(1, available / rowH);
         const int total = owner.getTotalArrangeTrackCount();
         const int maxStart = juce::jmax(0, total - visible);
@@ -72,8 +75,12 @@ private:
     }
     void timerCallback() override
     {
-        countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO", juce::dontSendNotification);
+        countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO  |  " +
+                           juce::String(owner.getMidiTrackCount()) + " MIDI  |  " +
+                           juce::String(owner.getInstrumentTrackCount()) + " INST", juce::dontSendNotification);
+        if (getBounds() != owner.getLocalBounds()) setBounds(owner.getLocalBounds());
         updateScrollRange();
+        resized();
         toFront(false);
     }
     MainComponent& owner;
