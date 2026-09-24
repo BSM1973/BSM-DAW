@@ -208,7 +208,7 @@ void MainComponent::showProjectMenu()
     menu.addItem(menuSave, "Save Project");
     menu.addItem(menuSaveAs, "Save Project As...");
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&projectButton),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(projectButton.get()),
                        [this](int result)
                        {
                            switch (result)
