@@ -9,31 +9,43 @@ jobs:
   fast-macos-arm64:
     name: Fast macOS arm64
     runs-on: macos-14
-    timeout-minutes: 45
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore fast build cache
+      - name: Install build tools
+        run: brew install ninja ccache
+
+      - name: Restore ccache
         uses: actions/cache@v4
         with:
-          path: |
-            build-fast
-          key: liberty-fast-arm64-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          path: ~/.cache/ccache
+          key: liberty-ccache-arm64-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: |
-            liberty-fast-arm64-${{ runner.os }}-
+            liberty-ccache-arm64-${{ runner.os }}-
 
       - name: Configure CMake arm64
-        run: >
-          cmake -S . -B build-fast
-          -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_ARCHITECTURES=arm64
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+        run: |
+          rm -rf build-fast
+          cmake -S . -B build-fast -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --zero-stats
 
       - name: Build Liberty fast
-        run: cmake --build build-fast --config Release --parallel $(sysctl -n hw.ncpu)
+        env:
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_NOHASHDIR: "true"
+          CCACHE_COMPRESS: "true"
+          CCACHE_MAXSIZE: "2G"
+        run: |
+          cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
+          ccache --show-stats
 
       - name: Verify application bundle
         run: |
