@@ -101,7 +101,7 @@ public:
         const double pps = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
         const int x = headerWidth + (int)std::llround(previewStart * pps);
-        const int y = 76 + rulerHeight + dragTrack * rowH + 4;
+        const int y = 76 + rulerHeight + (dragTrack - owner.getTrackScrollRows()) * rowH + 4;
         const int w = juce::jmax(2, (int)std::llround(previewLength * pps));
         const auto r = juce::Rectangle<int>(x, y, w, rowH - 8);
 
@@ -206,12 +206,22 @@ private:
         const auto wanted = owner.getLocalBounds();
         if (getBounds() != wanted) setBounds(wanted);
 
+        // The audio-track count can grow at runtime. Grow the handle arrays
+        // before indexing them; otherwise the first +AUDIO tick reads past
+        // the old four-track vectors and JUCE receives a dangling Component.
+        syncHandles();
+
         const double pps = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
+        const int arrangeTop = 76 + rulerHeight;
+        const int arrangeBottom = owner.getHeight() - 210;
         for (int t = 0; t < owner.getAudioTrackCount(); ++t)
         {
             const int tool = getLibertyActiveTool();
-            const bool show = owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t && dragTrack < 0 && (tool == 4 || tool == 5);
+            const int rowY = arrangeTop + (t - owner.getTrackScrollRows()) * rowH;
+            const bool rowVisible = rowY >= arrangeTop && rowY + rowH <= arrangeBottom;
+            const bool show = rowVisible && owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t
+                              && dragTrack < 0 && (tool == 4 || tool == 5);
             auto& left = *leftHandles[(size_t)t];
             auto& right = *rightHandles[(size_t)t];
             left.setVisible(show);
@@ -220,7 +230,7 @@ private:
 
             const int clipX = headerWidth + (int)std::llround(owner.audioEngine.getTrackStartSeconds(t) * pps);
             const int clipW = juce::jmax(2, (int)std::llround(owner.audioEngine.getAudioFileLengthSeconds(t) * pps));
-            const int y = 76 + rulerHeight + (t-owner.getTrackScrollRows()) * rowH + 4;
+            const int y = rowY + 4;
             const int h = rowH - 8;
             left.setBounds(clipX - handleWidth / 2, y, handleWidth, h);
             right.setBounds(clipX + clipW - handleWidth / 2, y, handleWidth, h);
