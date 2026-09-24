@@ -40,17 +40,17 @@ public:
         scrollBar.addListener(this);
         addAndMakeVisible(scrollBar);
         owner.addAndMakeVisible(this);
-        setBounds(8, 78, 198, 118);
+        setBounds(8, 78, 178, 86);
         startTimerHz(4);
     }
     ~DynamicTrackController() override { scrollBar.removeListener(this); stopTimer(); }
     void resized() override
     {
-        addAudio.setBounds(0, 0, 82, 26);
-        addMidi.setBounds(86, 0, 54, 26);
-        addInstrument.setBounds(0, 30, 140, 26);
-        countLabel.setBounds(0, 60, 196, 26);
-        scrollBar.setBounds(0, 90, 196, 18);
+        addAudio.setBounds(0, 0, 54, 24);
+        addMidi.setBounds(58, 0, 50, 24);
+        addInstrument.setBounds(112, 0, 66, 24);
+        countLabel.setBounds(0, 28, 178, 24);
+        scrollBar.setBounds(0, 58, 178, 16);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
