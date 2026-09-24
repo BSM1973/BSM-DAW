@@ -17,9 +17,7 @@ public:
         addAudio.onClick = [this]
         {
             owner.addAudioTrack();
-            countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO  |  " +
-                           juce::String(owner.getMidiTrackCount()) + " MIDI  |  " +
-                           juce::String(owner.getInstrumentTrackCount()) + " INST", juce::dontSendNotification);
+            countLabel.setVisible(false);
         };
         addMidi.setButtonText("+ MIDI");
         addInstrument.setButtonText("+ INSTRUMENT");
@@ -50,10 +48,12 @@ public:
         addAudio.setBounds(8, 78, 54, 24);
         addMidi.setBounds(66, 78, 50, 24);
         addInstrument.setBounds(120, 78, 66, 24);
-        countLabel.setBounds(8, 104, 178, 22);
+        countLabel.setVisible(false);
         const int top = 108;
         const int bottom = juce::jmax(top + 24, getHeight() - 210);
-        scrollBar.setBounds(juce::jmax(190, getWidth() - 17), top, 15, bottom - top);
+        // Keep track scrolling beside the track headers, not at the far-right
+        // edge of the arranger/timeline.
+        scrollBar.setBounds(192, top, 14, bottom - top);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
