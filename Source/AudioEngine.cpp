@@ -168,9 +168,23 @@ int AudioEngine::getAudioTrackCount() const noexcept
 
 int AudioEngine::addAudioTrack()
 {
-    const juce::ScopedLock lock(stateLock);
-    tracks.push_back(std::make_unique<AudioTrackState>());
-    return (int) tracks.size() - 1;
+    // The audio callback iterates the vector directly, so never reallocate it
+    // while that callback can be running.
+    const bool wasInitialised = initialised.load();
+    const bool wasPlaying = playing.load();
+    if (wasInitialised) deviceManager.removeAudioCallback(this);
+    playing.store(false);
+
+    int index = -1;
+    {
+        const juce::ScopedLock lock(stateLock);
+        tracks.push_back(std::make_unique<AudioTrackState>());
+        index = (int) tracks.size() - 1;
+    }
+
+    playing.store(wasPlaying);
+    if (wasInitialised) deviceManager.addAudioCallback(this);
+    return index;
 }
 
 bool AudioEngine::removeAudioTrack(int trackIndex)
