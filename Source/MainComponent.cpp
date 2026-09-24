@@ -55,6 +55,7 @@ MainComponent::MainComponent()
     waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
     trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
     audioEngine.initialise();
+    projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
