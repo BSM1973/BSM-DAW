@@ -53,7 +53,7 @@ public:
         const int bottom = juce::jmax(top + 24, getHeight() - 210);
         // Keep track scrolling beside the track headers, not at the far-right
         // edge of the arranger/timeline.
-        scrollBar.setBounds(192, top, 14, bottom - top);
+        scrollBar.setBounds(202, top, 4, bottom - top);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
@@ -75,13 +75,9 @@ private:
     }
     void timerCallback() override
     {
-        countLabel.setText(juce::String(owner.getAudioTrackCount()) + " AUDIO  |  " +
-                           juce::String(owner.getMidiTrackCount()) + " MIDI  |  " +
-                           juce::String(owner.getInstrumentTrackCount()) + " INST", juce::dontSendNotification);
-        if (getBounds() != owner.getLocalBounds()) setBounds(owner.getLocalBounds());
+        if (getBounds() != owner.getLocalBounds())
+            setBounds(owner.getLocalBounds());
         updateScrollRange();
-        resized();
-        toFront(false);
     }
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
