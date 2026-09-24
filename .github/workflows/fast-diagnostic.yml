@@ -1,0 +1,65 @@
+name: Liberty Fast Diagnostic
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  fast-macos-arm64:
+    name: Fast macOS arm64
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore fast build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-fast
+          key: liberty-fast-arm64-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            liberty-fast-arm64-${{ runner.os }}-
+
+      - name: Configure CMake arm64
+        run: >
+          cmake -S . -B build-fast
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Build Liberty fast
+        run: cmake --build build-fast --config Release --parallel $(sysctl -n hw.ncpu)
+
+      - name: Verify application bundle
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          test -d "$APP"
+          test -f "$APP/Contents/MacOS/Liberty"
+          file "$APP/Contents/MacOS/Liberty"
+
+      - name: Sign application for local macOS execution
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package fast diagnostic app
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          rm -rf dist-fast
+          mkdir -p dist-fast
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist-fast/Liberty-macOS-arm64-Diagnostic.zip"
+
+      - name: Upload diagnostic app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-macOS-arm64-Diagnostic
+          path: dist-fast/Liberty-macOS-arm64-Diagnostic.zip
+          if-no-files-found: error
+          retention-days: 7
