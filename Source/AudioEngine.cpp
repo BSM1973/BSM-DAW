@@ -168,12 +168,14 @@ int AudioEngine::getAudioTrackCount() const noexcept
 
 int AudioEngine::addAudioTrack()
 {
-    // The audio callback iterates the vector directly, so never reallocate it
-    // while that callback can be running.
+    // Dynamic track creation must not mutate the vector while the realtime
+    // callback is traversing it. The callback is stopped first, then the
+    // vector is changed under the state lock, and finally audio is restarted.
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
-    if (wasInitialised) deviceManager.removeAudioCallback(this);
     playing.store(false);
+    if (wasInitialised)
+        deviceManager.removeAudioCallback(this);
 
     int index = -1;
     {
@@ -182,8 +184,9 @@ int AudioEngine::addAudioTrack()
         index = (int) tracks.size() - 1;
     }
 
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
     playing.store(wasPlaying);
-    if (wasInitialised) deviceManager.addAudioCallback(this);
     return index;
 }
 
