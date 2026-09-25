@@ -74,7 +74,7 @@ public:
     bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
     {
         syncTrackCount();
-        if (trackIndex < 0 || trackIndex >= (int)tracks.size() || !file.existsAsFile())
+        if (trackIndex < 0 || trackIndex >= owner.getAudioTrackCount() || !file.existsAsFile())
         {
             error = "Invalid PERFORM clip.";
             return false;
@@ -131,6 +131,11 @@ public:
 
         {
             const juce::ScopedLock sl(lock);
+            if (trackIndex < 0 || trackIndex >= (int)tracks.size())
+            {
+                error = "The PERFORM track changed while loading the clip.";
+                return false;
+            }
             auto& track = tracks[(size_t)trackIndex];
             track.buffer = std::move(finalBuffer);
             track.file = file;
