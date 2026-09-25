@@ -82,6 +82,15 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";colour=" << getLibertyTrackColourId(i);
     }
 
+    for (int i = 0; i < getInstrumentTrackCount(); ++i)
+    {
+        signature << "|instrument=" << i
+                  << ";gain=" << juce::String(audioEngine.getInstrumentTrackGain(i), 6)
+                  << ";pan=" << juce::String(audioEngine.getInstrumentTrackPan(i), 6)
+                  << ";mute=" << (audioEngine.isInstrumentTrackMuted(i) ? 1 : 0)
+                  << ";solo=" << (audioEngine.isInstrumentTrackSolo(i) ? 1 : 0);
+    }
+
     signature << "|midi=";
     for (const auto& note : midiEngine.getNotesCopy())
         signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ';';
@@ -242,6 +251,13 @@ void MainComponent::resetProjectState()
     audioEngine.setInstrumentTrackMuted(false);
     audioEngine.setInstrumentTrackSolo(false);
     midiEngine.clear();
+    for (int i = 0; i < getInstrumentTrackCount(); ++i)
+    {
+        audioEngine.setInstrumentTrackGain(i, 1.0f);
+        audioEngine.setInstrumentTrackPan(i, 0.0f);
+        audioEngine.setInstrumentTrackMuted(i, false);
+        audioEngine.setInstrumentTrackSolo(i, false);
+    }
     resetLibertyTrackColours();
     resetLibertyTrackNames();
 
@@ -345,7 +361,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 11);
+    project.setAttribute("version", 12);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
@@ -405,6 +421,19 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
+    }
+
+    {
+        auto* instrumentMixer = project.createNewChildElement("InstrumentMixer");
+        for (int i = 0; i < getInstrumentTrackCount(); ++i)
+        {
+            auto* track = instrumentMixer->createNewChildElement("Track");
+            track->setAttribute("index", i);
+            track->setAttribute("gain", (double) audioEngine.getInstrumentTrackGain(i));
+            track->setAttribute("pan", (double) audioEngine.getInstrumentTrackPan(i));
+            track->setAttribute("muted", audioEngine.isInstrumentTrackMuted(i));
+            track->setAttribute("solo", audioEngine.isInstrumentTrackSolo(i));
+        }
     }
 
     {
@@ -551,6 +580,20 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
         audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         rebuildWaveformCache(index);
+    }
+
+    if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
+    {
+        for (auto* track = instrumentMixer->getFirstChildElement(); track != nullptr; track = track->getNextElement())
+        {
+            if (track->getTagName() != "Track") continue;
+            const int index = track->getIntAttribute("index", -1);
+            if (index < 0 || index >= getInstrumentTrackCount()) continue;
+            audioEngine.setInstrumentTrackGain(index, (float) track->getDoubleAttribute("gain", 1.0));
+            audioEngine.setInstrumentTrackPan(index, (float) track->getDoubleAttribute("pan", 0.0));
+            audioEngine.setInstrumentTrackMuted(index, track->getBoolAttribute("muted", false));
+            audioEngine.setInstrumentTrackSolo(index, track->getBoolAttribute("solo", false));
+        }
     }
 
     if(auto* inserts=project->getChildByName("DynamicInserts")){
