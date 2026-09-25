@@ -158,7 +158,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     const float pixelsPerMeasure = (float)(secondsPerMeasure * pixelsPerSecond);
 
     auto ruler = area.removeFromTop(rulerH);
-    auto rows = area;
+    auto rows = area.withTrimmedBottom(8);
     g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler);
     g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
@@ -179,7 +179,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     }
 
     const int totalRows = audioCount + midiCount + instrumentCount;
-    const int visibleRows = juce::jmax(1, rows.getHeight() / rowH + 1);
+    const int visibleRows = juce::jmax(1, rows.getHeight() / rowH);
     for (int logicalRow = scrollRows; logicalRow < totalRows && logicalRow < scrollRows + visibleRows; ++logicalRow)
     {
         const int visibleIndex = logicalRow - scrollRows;
