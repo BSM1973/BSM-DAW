@@ -355,7 +355,6 @@ public:
         trackHeaders.resize((size_t)trackCount());
         activeTrackScene.assign((size_t)trackCount(), -1);
         performAudioFiles.resize((size_t)audioTrackCount());
-        performTrackOwnsSlots.assign((size_t)audioTrackCount(), false);
 
         for (int track = 0; track < trackCount(); ++track)
         {
@@ -492,7 +491,6 @@ public:
         if (!selected.existsAsFile()) return;
 
         performAudioFiles[(size_t)dragTrack][(size_t)dragScene] = selected;
-        performTrackOwnsSlots[(size_t)dragTrack] = true;
         activeTrackScene[(size_t)dragTrack] = -1;
         dragTrack = dragScene = -1;
         refreshClipLabels();
@@ -601,7 +599,6 @@ private:
         if (trackHeaders.size() != wantedTracks) trackHeaders.resize(wantedTracks);
         if (activeTrackScene.size() != wantedTracks) activeTrackScene.resize(wantedTracks, -1);
         if (performAudioFiles.size() != wantedAudio) performAudioFiles.resize(wantedAudio);
-        if (performTrackOwnsSlots.size() != wantedAudio) performTrackOwnsSlots.resize(wantedAudio, false);
         for (size_t t = oldTracks; t < wantedTracks; ++t)
         {
             auto& stop = stopTrackButtons[t];
@@ -836,7 +833,6 @@ private:
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::vector<int> activeTrackScene;
     std::vector<std::array<juce::File, sceneCount>> performAudioFiles;
-    std::vector<bool> performTrackOwnsSlots;
     int dragTrack = -1;
     int dragScene = -1;
     bool performVisible = false;
