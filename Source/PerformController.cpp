@@ -18,10 +18,6 @@ juce::String getLibertyTrackName(int track);
 namespace
 {
 constexpr int transportHeight = 76;
-constexpr int audioTracks = AudioEngine::maxAudioTracks;
-constexpr int midiTrack = AudioEngine::maxAudioTracks;
-constexpr int instrumentTrack = AudioEngine::maxAudioTracks + 1;
-constexpr int performTracks = AudioEngine::maxAudioTracks + 2;
 constexpr int sceneCount = 8;
 
 juce::Colour trackColour(int id)
@@ -45,6 +41,7 @@ public:
     explicit PerformAudioPlayer(MainComponent& ownerIn) : owner(ownerIn)
     {
         formats.registerBasicFormats();
+        tracks.resize((size_t)owner.getAudioTrackCount());
         owner.audioEngine.getDeviceManager().addAudioCallback(this);
         callbackAttached = true;
     }
@@ -66,7 +63,7 @@ public:
 
     bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
     {
-        if (trackIndex < 0 || trackIndex >= audioTracks || !file.existsAsFile())
+        if (trackIndex < 0 || trackIndex >= (int)tracks.size() || !file.existsAsFile())
         {
             error = "Invalid PERFORM clip.";
             return false;
@@ -135,7 +132,7 @@ public:
 
     void stopTrack(int trackIndex)
     {
-        if (trackIndex < 0 || trackIndex >= audioTracks) return;
+        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return;
         const juce::ScopedLock sl(lock);
         tracks[(size_t)trackIndex].playing = false;
         tracks[(size_t)trackIndex].position = 0;
@@ -149,7 +146,7 @@ public:
 
     bool isTrackPlaying(int trackIndex) const
     {
-        if (trackIndex < 0 || trackIndex >= audioTracks) return false;
+        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return false;
         const juce::ScopedLock sl(lock);
         return tracks[(size_t)trackIndex].playing;
     }
@@ -251,7 +248,7 @@ private:
         const int captureSamples = juce::jmin(numSamples, captureMix.getNumSamples());
         if (captureSamples > 0) captureMix.clear(0, captureSamples);
 
-        for (int trackIndex = 0; trackIndex < audioTracks; ++trackIndex)
+        for (int trackIndex = 0; trackIndex < (int)tracks.size(); ++trackIndex)
         {
             auto& state = tracks[(size_t)trackIndex];
             if (!state.playing || state.buffer == nullptr || state.position >= state.buffer->getNumSamples())
@@ -307,7 +304,7 @@ private:
 
     MainComponent& owner;
     juce::AudioFormatManager formats;
-    std::array<TrackState, audioTracks> tracks;
+    std::vector<TrackState> tracks;
     mutable juce::CriticalSection lock;
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
@@ -329,8 +326,14 @@ public:
         setOpaque(true);
         setInterceptsMouseClicks(true, true);
         setAlwaysOnTop(true);
+        clipButtons.resize((size_t)trackCount());
+        stopTrackButtons.resize((size_t)trackCount());
+        trackHeaders.resize((size_t)trackCount());
+        activeTrackScene.assign((size_t)trackCount(), -1);
+        performAudioFiles.resize((size_t)audioTrackCount());
+        performTrackOwnsSlots.assign((size_t)audioTrackCount(), false);
 
-        for (int track = 0; track < performTracks; ++track)
+        for (int track = 0; track < trackCount(); ++track)
         {
             auto& stop = stopTrackButtons[(size_t)track];
             stop.setButtonText("STOP");
@@ -339,7 +342,7 @@ public:
             stop.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             stop.onClick = [this, track]
             {
-                if (track < audioTracks) player.stopTrack(track);
+                if (track < audioTrackCount()) player.stopTrack(track);
                 activeTrackScene[(size_t)track] = -1;
                 refreshClipLabels();
                 repaint();
@@ -373,7 +376,7 @@ public:
         stopAllButton.onClick = [this]
         {
             player.stopAll();
-            activeTrackScene.fill(-1);
+            std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             refreshClipLabels();
             repaint();
         };
@@ -386,7 +389,7 @@ public:
         recordArrangeButton.onClick = [this] { toggleCaptureToArrange(); };
         addAndMakeVisible(recordArrangeButton);
 
-        activeTrackScene.fill(-1);
+        std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
         setVisible(false);
         owner.addAndMakeVisible(this);
         startTimerHz(20);
@@ -420,7 +423,7 @@ public:
         else
         {
             player.stopAll();
-            activeTrackScene.fill(-1);
+            std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             if (player.isCapturing()) finishCaptureToArrange();
         }
     }
@@ -447,7 +450,7 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override
     {
         updateDropTarget({ x, y });
-        if (dragTrack < 0 || dragTrack >= audioTracks || dragScene < 0 || dragScene >= sceneCount)
+        if (dragTrack < 0 || dragTrack >= audioTrackCount() || dragScene < 0 || dragScene >= sceneCount)
         {
             dragTrack = dragScene = -1;
             refreshClipLabels();
@@ -486,7 +489,7 @@ public:
         g.setFont(juce::Font(10.0f));
         g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 330, 18, juce::Justification::centredLeft);
 
-        for (int track = 0; track < performTracks; ++track)
+        for (int track = 0; track < trackCount(); ++track)
         {
             const auto header = trackHeaders[(size_t)track];
             const auto colour = colourForTrack(track);
@@ -528,8 +531,8 @@ public:
         const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
         const int gap = 6;
-        const int available = juce::jmax(performTracks * 110, gridRight - gridLeft);
-        const int columnW = juce::jlimit(110, 220, (available - (performTracks - 1) * gap) / performTracks);
+        const int available = juce::jmax(trackCount() * 110, gridRight - gridLeft);
+        const int columnW = juce::jlimit(110, 220, (available - (trackCount() - 1) * gap) / trackCount());
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
@@ -537,7 +540,7 @@ public:
         const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - footerH - 16);
         const int rowH = juce::jlimit(44, 86, rowsAvailable / sceneCount);
 
-        for (int track = 0; track < performTracks; ++track)
+        for (int track = 0; track < trackCount(); ++track)
         {
             const int x = gridLeft + track * (columnW + gap);
             trackHeaders[(size_t)track] = { x, headerTop, columnW, headerH };
@@ -560,17 +563,22 @@ public:
     }
 
 private:
+    int audioTrackCount() const noexcept { return owner.getAudioTrackCount(); }
+    int trackCount() const noexcept { return owner.getTotalArrangeTrackCount(); }
+    int firstMidiTrack() const noexcept { return audioTrackCount(); }
+    int firstInstrumentTrack() const noexcept { return audioTrackCount() + owner.getMidiTrackCount(); }
+
     juce::String trackName(int track) const
     {
-        if (track < audioTracks) return "Audio " + juce::String(track + 1);
-        if (track == midiTrack) return "MIDI 1";
+        if (track < audioTrackCount()) return "Audio " + juce::String(track + 1);
+        if (track == firstMidiTrack()) return "MIDI 1";
         return "Instrument 1";
     }
 
     juce::String trackType(int track) const
     {
-        if (track < audioTracks) return "AUDIO";
-        if (track == midiTrack) return "MIDI";
+        if (track < audioTrackCount()) return "AUDIO";
+        if (track == firstMidiTrack()) return "MIDI";
         return "INSTRUMENT";
     }
 
@@ -581,13 +589,13 @@ private:
 
     bool hasDroppedAudio(int track, int scene) const
     {
-        return track >= 0 && track < audioTracks && scene >= 0 && scene < sceneCount
+        return track >= 0 && track < audioTrackCount() && scene >= 0 && scene < sceneCount
             && performAudioFiles[(size_t)track][(size_t)scene].existsAsFile();
     }
 
     bool slotHasClip(int track, int scene) const
     {
-        if (track < audioTracks)
+        if (track < audioTrackCount())
             return hasDroppedAudio(track, scene);
 
         // MIDI and virtual-instrument Session clips will get their own independent
@@ -605,7 +613,7 @@ private:
 
     void refreshClipLabels()
     {
-        for (int track = 0; track < performTracks; ++track)
+        for (int track = 0; track < trackCount(); ++track)
         {
             const auto colour = colourForTrack(track);
             for (int scene = 0; scene < sceneCount; ++scene)
@@ -613,10 +621,10 @@ private:
                 auto& button = clipButtons[(size_t)track][(size_t)scene];
                 const bool hasClip = slotHasClip(track, scene);
                 const bool active = activeTrackScene[(size_t)track] == scene
-                                 && track < audioTracks && player.isTrackPlaying(track);
+                                 && track < audioTrackCount() && player.isTrackPlaying(track);
                 const bool target = dragTrack == track && dragScene == scene;
                 button.setButtonText(target ? "DROP AUDIO" : slotName(track, scene));
-                button.setEnabled(track < audioTracks);
+                button.setEnabled(track < audioTrackCount());
                 button.setColour(juce::TextButton::buttonColourId,
                                  target ? juce::Colour(0xff245b70)
                                         : (active ? colour.brighter(0.25f)
@@ -631,7 +639,7 @@ private:
     {
         int nextTrack = -1;
         int nextScene = -1;
-        for (int track = 0; track < audioTracks; ++track)
+        for (int track = 0; track < audioTrackCount(); ++track)
         {
             for (int scene = 0; scene < sceneCount; ++scene)
             {
@@ -655,7 +663,7 @@ private:
 
     void launchClip(int track, int scene)
     {
-        if (track < 0 || track >= audioTracks || !slotHasClip(track, scene)) return;
+        if (track < 0 || track >= audioTrackCount() || !slotHasClip(track, scene)) return;
         juce::String error;
         if (!player.loadAndLaunch(track, performAudioFiles[(size_t)track][(size_t)scene], error))
         {
@@ -670,7 +678,7 @@ private:
 
     void launchScene(int scene)
     {
-        for (int track = 0; track < audioTracks; ++track)
+        for (int track = 0; track < audioTrackCount(); ++track)
             if (slotHasClip(track, scene)) launchClip(track, scene);
     }
 
@@ -702,7 +710,7 @@ private:
         if (!capture.existsAsFile()) return;
 
         int targetTrack = -1;
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
             if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
 
         if (targetTrack < 0)
@@ -740,15 +748,15 @@ private:
 
     MainComponent& owner;
     PerformAudioPlayer player;
-    std::array<std::array<juce::TextButton, sceneCount>, performTracks> clipButtons;
+    std::vector<std::array<juce::TextButton, sceneCount>> clipButtons;
     std::array<juce::TextButton, sceneCount> sceneButtons;
-    std::array<juce::TextButton, performTracks> stopTrackButtons;
+    std::vector<juce::TextButton> stopTrackButtons;
     juce::TextButton stopAllButton, recordArrangeButton;
-    std::array<juce::Rectangle<int>, performTracks> trackHeaders;
+    std::vector<juce::Rectangle<int>> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
-    std::array<int, performTracks> activeTrackScene;
-    std::array<std::array<juce::File, sceneCount>, audioTracks> performAudioFiles;
-    std::array<bool, audioTracks> performTrackOwnsSlots {};
+    std::vector<int> activeTrackScene;
+    std::vector<std::array<juce::File, sceneCount>> performAudioFiles;
+    std::vector<bool> performTrackOwnsSlots;
     int dragTrack = -1;
     int dragScene = -1;
     bool performVisible = false;
