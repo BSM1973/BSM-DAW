@@ -481,7 +481,7 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override
     {
         updateDropTarget({ x, y });
-        if (dragTrack < 0 || dragTrack >= audioTrackCount() || dragScene < 0 || dragScene >= sceneCount)
+        if (dragTrack < 0 || dragTrack >= audioTrackCount() || dragTrack >= (int)performAudioFiles.size() || dragScene < 0 || dragScene >= sceneCount)
         {
             dragTrack = dragScene = -1;
             refreshClipLabels();
@@ -661,7 +661,8 @@ private:
 
     bool hasDroppedAudio(int track, int scene) const
     {
-        return track >= 0 && track < audioTrackCount() && scene >= 0 && scene < sceneCount
+        return track >= 0 && track < audioTrackCount() && track < (int)performAudioFiles.size()
+            && scene >= 0 && scene < sceneCount
             && performAudioFiles[(size_t)track][(size_t)scene].existsAsFile();
     }
 
@@ -713,7 +714,8 @@ private:
     {
         int nextTrack = -1;
         int nextScene = -1;
-        for (int track = 0; track < audioTrackCount(); ++track)
+        const int droppableTracks = juce::jmin(audioTrackCount(), (int)clipButtons.size(), (int)performAudioFiles.size());
+        for (int track = 0; track < droppableTracks; ++track)
         {
             for (int scene = 0; scene < sceneCount; ++scene)
             {
