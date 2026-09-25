@@ -320,7 +320,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
         g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
 
-        const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : 1.0f);
+        const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : audioEngine.getInstrumentTrackGain(sourceIndex));
         const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
         const auto knobY = fader.getBottom() - normalized * fader.getHeight();
         g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
@@ -328,7 +328,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
         g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f));
         g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
-        g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN 0.00"),
+        g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN " + juce::String(audioEngine.getInstrumentTrackPan(sourceIndex), 2)),
                    c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
 }
@@ -460,10 +460,9 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         {
             auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
             auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
-            const bool isMouseDown = event.mouseDownPosition.toInt() == event.getPosition();
             const int sourceIndex = isAudio ? channel : channel - audioTracks;
-            if (isMouseDown && mute.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackMuted(sourceIndex,!audioEngine.isTrackMuted(sourceIndex)); else audioEngine.setInstrumentTrackMuted(sourceIndex,!audioEngine.isInstrumentTrackMuted(sourceIndex)); repaint(); return true; }
-            if (isMouseDown && solo.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackSolo(sourceIndex,!audioEngine.isTrackSolo(sourceIndex)); else audioEngine.setInstrumentTrackSolo(sourceIndex,!audioEngine.isInstrumentTrackSolo(sourceIndex)); repaint(); return true; }
+            if (mute.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackMuted(sourceIndex,!audioEngine.isTrackMuted(sourceIndex)); else audioEngine.setInstrumentTrackMuted(sourceIndex,!audioEngine.isInstrumentTrackMuted(sourceIndex)); repaint(); return true; }
+            if (solo.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackSolo(sourceIndex,!audioEngine.isTrackSolo(sourceIndex)); else audioEngine.setInstrumentTrackSolo(sourceIndex,!audioEngine.isInstrumentTrackSolo(sourceIndex)); repaint(); return true; }
         }
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
