@@ -62,8 +62,7 @@ public:
     {
         const juce::ScopedLock sl(lock);
         const auto wanted = (size_t)juce::jmax(0, owner.getAudioTrackCount());
-        if (tracks.size() < wanted) tracks.resize(wanted);
-        else if (tracks.size() > wanted) tracks.resize(wanted);
+        if (tracks.size() != wanted) tracks.resize(wanted);
     }
 
     void setEnabled(bool shouldEnable)
