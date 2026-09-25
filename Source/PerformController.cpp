@@ -540,14 +540,14 @@ public:
     void resized() override
     {
         syncTrackContainers();
-        const int visibleTracks = juce::jmax(1, juce::jmin(trackCount(), (int)trackHeaders.size()));
+        const int visibleTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
         const int leftMargin = 18;
         const int sceneLaunchW = 92;
         const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
         const int gap = 6;
         const int available = juce::jmax(visibleTracks * 110, gridRight - gridLeft);
-        const int columnW = juce::jlimit(110, 220, (available - (visibleTracks - 1) * gap) / visibleTracks);
+        const int columnW = visibleTracks > 0 ? juce::jlimit(110, 220, (available - (visibleTracks - 1) * gap) / visibleTracks) : 110;
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
