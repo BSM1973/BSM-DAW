@@ -735,8 +735,20 @@ private:
 
     void launchScene(int scene)
     {
-        for (int track = 0; track < audioTrackCount(); ++track)
-            if (slotHasClip(track, scene)) launchClip(track, scene);
+        if (scene < 0 || scene >= sceneCount) return;
+        const int tracks = audioTrackCount();
+        for (int track = 0; track < tracks; ++track)
+        {
+            if (slotHasClip(track, scene))
+                launchClip(track, scene);
+            else
+            {
+                player.stopTrack(track);
+                if (track < (int)activeTrackScene.size()) activeTrackScene[(size_t)track] = -1;
+            }
+        }
+        refreshClipLabels();
+        repaint();
     }
 
     void toggleCaptureToArrange()
