@@ -597,15 +597,17 @@ private:
 
     juce::String trackName(int track) const
     {
-        if (track < audioTrackCount()) return "Audio " + juce::String(track + 1);
-        if (track == firstMidiTrack()) return "MIDI 1";
-        return "Instrument 1";
+        const auto name = getLibertyTrackName(track);
+        if (name.isNotEmpty()) return name;
+        if (track < firstMidiTrack()) return "Audio " + juce::String(track + 1);
+        if (track < firstInstrumentTrack()) return "MIDI " + juce::String(track - firstMidiTrack() + 1);
+        return "Instrument " + juce::String(track - firstInstrumentTrack() + 1);
     }
 
     juce::String trackType(int track) const
     {
-        if (track < audioTrackCount()) return "AUDIO";
-        if (track == firstMidiTrack()) return "MIDI";
+        if (track < firstMidiTrack()) return "AUDIO";
+        if (track < firstInstrumentTrack()) return "MIDI";
         return "INSTRUMENT";
     }
 
