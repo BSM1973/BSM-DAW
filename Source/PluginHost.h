@@ -47,7 +47,7 @@ public:
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     bool processInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
-    bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
+    bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
 
     // Offline render is exclusive: the realtime audio callback is prevented from
     // driving the same instrument instance while AI Render owns it.
