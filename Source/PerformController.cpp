@@ -273,6 +273,19 @@ private:
                 continue;
             }
 
+            const bool muted = owner.audioEngine.isTrackMuted(trackIndex);
+            const bool soloed = owner.audioEngine.isTrackSolo(trackIndex);
+            if (muted || (owner.audioEngine.isAnyTrackSolo() && !soloed))
+            {
+                state.position += remaining;
+                if (state.position >= state.buffer->getNumSamples())
+                {
+                    state.playing = false;
+                    state.position = 0;
+                }
+                continue;
+            }
+
             const float gain = owner.audioEngine.getTrackGain(trackIndex);
             const float pan = owner.audioEngine.getTrackPan(trackIndex);
             const float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
