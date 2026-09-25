@@ -582,12 +582,38 @@ private:
     {
         const auto wantedTracks = (size_t)juce::jmax(0, trackCount());
         const auto wantedAudio = (size_t)juce::jmax(0, audioTrackCount());
+        const auto oldTracks = clipButtons.size();
         if (clipButtons.size() != wantedTracks) clipButtons.resize(wantedTracks);
         if (stopTrackButtons.size() != wantedTracks) stopTrackButtons.resize(wantedTracks);
         if (trackHeaders.size() != wantedTracks) trackHeaders.resize(wantedTracks);
         if (activeTrackScene.size() != wantedTracks) activeTrackScene.resize(wantedTracks, -1);
         if (performAudioFiles.size() != wantedAudio) performAudioFiles.resize(wantedAudio);
         if (performTrackOwnsSlots.size() != wantedAudio) performTrackOwnsSlots.resize(wantedAudio, false);
+        for (size_t t = oldTracks; t < wantedTracks; ++t)
+        {
+            auto& stop = stopTrackButtons[t];
+            stop.setButtonText("STOP");
+            stop.setMouseClickGrabsKeyboardFocus(false);
+            stop.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252b32));
+            stop.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            stop.onClick = [this, t]
+            {
+                const int track = (int)t;
+                if (track < audioTrackCount()) player.stopTrack(track);
+                if (track < (int)activeTrackScene.size()) activeTrackScene[t] = -1;
+                refreshClipLabels();
+                repaint();
+            };
+            addAndMakeVisible(stop);
+            for (int scene = 0; scene < sceneCount; ++scene)
+            {
+                auto& cell = clipButtons[t][(size_t)scene];
+                cell.setMouseClickGrabsKeyboardFocus(false);
+                cell.onClick = [this, t, scene] { launchClip((int)t, scene); };
+                addAndMakeVisible(cell);
+            }
+        }
+        if (dragTrack >= (int)wantedTracks || dragScene >= sceneCount) dragTrack = dragScene = -1;
     }
 
     int audioTrackCount() const noexcept { return owner.getAudioTrackCount(); }
