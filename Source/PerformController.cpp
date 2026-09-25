@@ -334,7 +334,7 @@ public:
         performAudioFiles.resize((size_t)audioTrackCount());
         performTrackOwnsSlots.assign((size_t)audioTrackCount(), false);
 
-        for (int track = 0; track < visibleTracks; ++track)
+        for (int track = 0; track < trackCount(); ++track)
         {
             auto& stop = stopTrackButtons[(size_t)track];
             stop.setButtonText("STOP");
@@ -491,7 +491,8 @@ public:
         g.setFont(juce::Font(10.0f));
         g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 330, 18, juce::Justification::centredLeft);
 
-        for (int track = 0; track < visibleTracks; ++track)
+        const int paintedTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
+        for (int track = 0; track < paintedTracks; ++track)
         {
             const auto header = trackHeaders[(size_t)track];
             const auto colour = colourForTrack(track);
