@@ -250,7 +250,9 @@ private:
     void audioDeviceStopped() override
     {
         const juce::ScopedLock sl(lock);
-        for (auto& track : tracks) track.playing = false;
+        for (auto& track : tracks) { track.playing = false; track.position = 0; }
+        if (captureActive.load(std::memory_order_relaxed))
+            stopCaptureInternal();
     }
 
     void audioDeviceIOCallbackWithContext(const float* const*, int,
