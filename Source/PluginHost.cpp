@@ -555,14 +555,16 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
 }
 
 bool LibertyPluginHost::processInstrument(float* const* d,int ch,int n,juce::MidiBuffer& midi){return processInstrumentForTrack(0,d,ch,n,midi);}
-bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChannelData,int numOutputChannels,int numSamples,juce::MidiBuffer& midi)
+bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChannelData,int numOutputChannels,int numSamples,juce::MidiBuffer& midi,float gain,float pan)
 {
     if(numSamples<=0||numOutputChannels<=0||t<0)return false;if(!lock.tryEnter())return false;
     if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor){lock.exit();return false;}
     auto& instrument=*instruments[(size_t)t];const int channels=juce::jlimit(1,2,numOutputChannels);
     instrument.work.setSize(juce::jmax(2,channels),numSamples,false,false,true);instrument.work.clear();
     instrument.processor->processBlock(instrument.work,midi);
-    for(int c=0;c<channels;++c)if(outputChannelData[c])juce::FloatVectorOperations::add(outputChannelData[c],instrument.work.getReadPointer(c),numSamples);
+    gain=juce::jlimit(0.f,2.f,gain);pan=juce::jlimit(-1.f,1.f,pan);
+    const float leftGain=gain*(pan>0.f?1.f-pan:1.f),rightGain=gain*(pan<0.f?1.f+pan:1.f);
+    for(int c=0;c<channels;++c)if(outputChannelData[c])juce::FloatVectorOperations::addWithMultiply(outputChannelData[c],instrument.work.getReadPointer(c),c==0?leftGain:rightGain,numSamples);
     lock.exit();return true;
 }
 
