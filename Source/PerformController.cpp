@@ -499,7 +499,8 @@ public:
         if (!selected.existsAsFile()) return;
 
         performAudioFiles[(size_t)dragTrack][(size_t)dragScene] = selected;
-        activeTrackScene[(size_t)dragTrack] = -1;
+        if (dragTrack < (int)activeTrackScene.size())
+            activeTrackScene[(size_t)dragTrack] = -1;
         dragTrack = dragScene = -1;
         refreshClipLabels();
         repaint();
@@ -696,7 +697,8 @@ private:
             {
                 auto& button = clipButtons[(size_t)track][(size_t)scene];
                 const bool hasClip = slotHasClip(track, scene);
-                const bool active = activeTrackScene[(size_t)track] == scene
+                const bool active = track < (int)activeTrackScene.size()
+                                 && activeTrackScene[(size_t)track] == scene
                                  && track < audioTrackCount() && player.isTrackPlaying(track);
                 const bool target = dragTrack == track && dragScene == scene;
                 button.setButtonText(target ? "DROP AUDIO" : slotName(track, scene));
