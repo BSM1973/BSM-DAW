@@ -43,8 +43,6 @@ void AudioEngine::shutdown()
     midiClipLengthSeconds.store(0.0, std::memory_order_relaxed);
     midiTrackMuted.store(false, std::memory_order_relaxed);
     midiTrackSolo.store(false, std::memory_order_relaxed);
-    instrumentTrackMuted.store(false, std::memory_order_relaxed);
-    instrumentTrackSolo.store(false, std::memory_order_relaxed);
     for (auto& trackPtr : tracks)
     {
         auto& track = *trackPtr;
