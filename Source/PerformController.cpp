@@ -740,7 +740,9 @@ private:
 
     void launchClip(int track, int scene)
     {
-        if (track < 0 || track >= audioTrackCount() || !slotHasClip(track, scene)) return;
+        if (track < 0 || track >= audioTrackCount() || track >= (int)performAudioFiles.size()
+            || track >= (int)activeTrackScene.size()
+            || scene < 0 || scene >= sceneCount || !slotHasClip(track, scene)) return;
         juce::String error;
         if (!player.loadAndLaunch(track, performAudioFiles[(size_t)track][(size_t)scene], error))
         {
@@ -756,7 +758,7 @@ private:
     void launchScene(int scene)
     {
         if (scene < 0 || scene >= sceneCount) return;
-        const int tracks = audioTrackCount();
+        const int tracks = juce::jmin(audioTrackCount(), (int)performAudioFiles.size(), (int)activeTrackScene.size());
         for (int track = 0; track < tracks; ++track)
         {
             if (slotHasClip(track, scene))
