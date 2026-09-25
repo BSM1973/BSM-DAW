@@ -1,6 +1,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cmath>
+#define private public
+#include "MainComponent.h"
+#undef private
 
 namespace
 {
@@ -71,6 +74,26 @@ public:
         const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
         if (std::abs(delta) < 0.0001f)
             return;
+
+        if (event.mods.isCtrlDown() && !isInsideMidiEditor(event.eventComponent))
+        {
+            auto* component = event.eventComponent;
+            MainComponent* owner = nullptr;
+            while (component != nullptr)
+            {
+                if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+                component = component->getParentComponent();
+            }
+            if (owner != nullptr)
+            {
+                const int rowH = getLibertyTrackRowHeight();
+                const int available = juce::jmax(1, owner->getArrangeRowsBounds().getHeight());
+                const int visible = juce::jmax(1, (available + rowH - 1) / rowH);
+                const int maxStart = juce::jmax(0, owner->getTotalArrangeTrackCount() - visible);
+                owner->setTrackScrollRows(juce::jlimit(0, maxStart, owner->getTrackScrollRows() + (delta > 0.0f ? -1 : 1)));
+            }
+            return;
+        }
 
         const bool vertical = event.mods.isCommandDown();
         if (isInsideMidiEditor(event.eventComponent))

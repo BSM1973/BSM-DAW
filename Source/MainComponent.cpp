@@ -240,7 +240,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const juce::Graphics::ScopedSaveState rowGridState(g);
             g.reduceClipRegion(row.withTrimmedLeft(headerW));
             g.setColour(juce::Colour(0xff252b33));
-            const int subdivisions = juce::jmax(1, timeSignatureNumerator);
+            // Uniform 1/16 Arrange grid on every row, including the final clipped row.
+            constexpr int subdivisions = 16;
             const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
             for (int subdivisionIndex = 0; subdivisionIndex < 100 * subdivisions; ++subdivisionIndex)
             {

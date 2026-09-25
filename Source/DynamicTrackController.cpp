@@ -5,7 +5,7 @@
 
 namespace
 {
-class DynamicTrackController final : public juce::Component, private juce::Timer, private juce::ScrollBar::Listener
+class DynamicTrackController final : public juce::Component, private juce::Timer
 {
 public:
     explicit DynamicTrackController(MainComponent& o) : owner(o)
@@ -33,46 +33,20 @@ public:
         countLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9fc7e8));
         countLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(countLabel);
-        scrollBar.setRangeLimits(0.0, 1.0);
-        scrollBar.setCurrentRange(0.0, 1.0);
-        scrollBar.addListener(this);
-        addAndMakeVisible(scrollBar);
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
         setBounds(owner.getLocalBounds());
         startTimerHz(4);
     }
-    ~DynamicTrackController() override { scrollBar.removeListener(this); stopTimer(); }
+    ~DynamicTrackController() override { stopTimer(); }
     void resized() override
     {
         addAudio.setBounds(8, 78, 54, 24);
         addMidi.setBounds(66, 78, 50, 24);
         addInstrument.setBounds(120, 78, 66, 24);
         countLabel.setVisible(false);
-        const auto rows = owner.getArrangeRowsBounds();
-        // The scrollbar shares the exact same viewport as the arranger rows.
-        scrollBar.setBounds(MainComponent::trackHeaderWidth - 10, rows.getY(), 6, rows.getHeight());
     }
 private:
-    void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
-    {
-        owner.setTrackScrollRows((int)std::round(newRangeStart));
-    }
-    void updateScrollRange()
-    {
-        const int rowH = getLibertyTrackRowHeight();
-        const int available = juce::jmax(1, owner.getArrangeRowsBounds().getHeight());
-        // A partially visible last row counts as visible because MainComponent
-        // clips that row exactly at the mixer boundary.
-        const int visible = juce::jmax(1, (available + rowH - 1) / rowH);
-        const int total = owner.getTotalArrangeTrackCount();
-        const int maxStart = juce::jmax(0, total - visible);
-        const int current = juce::jlimit(0, maxStart, owner.getTrackScrollRows());
-        if (current != owner.getTrackScrollRows()) owner.setTrackScrollRows(current);
-        scrollBar.setRangeLimits(0.0, (double)juce::jmax(1, maxStart + visible));
-        scrollBar.setCurrentRange((double)current, (double)visible, juce::dontSendNotification);
-        scrollBar.setVisible(maxStart > 0);
-    }
     void timerCallback() override
     {
         if (getBounds() != owner.getLocalBounds())
@@ -82,7 +56,6 @@ private:
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
     juce::Label countLabel;
-    juce::ScrollBar scrollBar { true };
 };
 
 std::map<MainComponent*, std::unique_ptr<DynamicTrackController>> controllers;
