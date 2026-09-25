@@ -160,6 +160,15 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
     state.noteCount.store(count,std::memory_order_release);
 }
 
+void AudioEngine::setInstrumentTrackGain(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->gain.store(juce::jlimit(0.f,2.f,v)); }
+float AudioEngine::getInstrumentTrackGain(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()?instrumentPlayback[(size_t)t]->gain.load():1.f; }
+void AudioEngine::setInstrumentTrackPan(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->pan.store(juce::jlimit(-1.f,1.f,v)); }
+float AudioEngine::getInstrumentTrackPan(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()?instrumentPlayback[(size_t)t]->pan.load():0.f; }
+void AudioEngine::setInstrumentTrackMuted(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->muted.store(v); }
+bool AudioEngine::isInstrumentTrackMuted(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()&&instrumentPlayback[(size_t)t]->muted.load(); }
+void AudioEngine::setInstrumentTrackSolo(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->solo.store(v); }
+bool AudioEngine::isInstrumentTrackSolo(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()&&instrumentPlayback[(size_t)t]->solo.load(); }
+
 int AudioEngine::getAudioTrackCount() const noexcept
 {
     const juce::ScopedLock lock(stateLock);
@@ -577,13 +586,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         oneKnob.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
     }
 
-    const bool instrumentMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
-    const bool instrumentSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
-    if (!instrumentMuted && (!anySolo || instrumentSolo) && rate > 0.0)
+    bool anyInstrumentSolo = false;
+    for (const auto& p : instrumentPlayback) if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
+    const bool legacyInstrumentMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
+    const bool legacyInstrumentSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+    if (rate > 0.0)
     {
         for (int instrumentTrack=0; instrumentTrack<(int)instrumentPlayback.size(); ++instrumentTrack)
         {
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
+            const bool trackMuted = legacyInstrumentMuted || state.muted.load(std::memory_order_relaxed);
+            const bool trackSolo = legacyInstrumentSolo || state.solo.load(std::memory_order_relaxed);
+            if (trackMuted || ((anySolo || anyInstrumentSolo) && !trackSolo)) continue;
             const auto count=state.noteCount.load(std::memory_order_acquire);
             const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
             const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
@@ -602,7 +616,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
                 if(absoluteStart>=blockStart&&absoluteStart<blockEnd)midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
-            if(pluginHost.processInstrumentForTrack(instrumentTrack,outputChannelData,numOutputChannels,numSamples,midi))
+            if(pluginHost.processInstrumentForTrack(instrumentTrack,outputChannelData,numOutputChannels,numSamples,midi,state.gain.load(std::memory_order_relaxed),state.pan.load(std::memory_order_relaxed)))
                 oneKnob.processInstrumentBlock(instrumentTrack,outputChannelData,numOutputChannels,numSamples);
         }
     }
