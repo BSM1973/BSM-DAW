@@ -217,7 +217,10 @@ void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValid
 bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->solo.load(); }
 bool AudioEngine::isAnyTrackSolo() const noexcept
 {
-    for (const auto& track : tracks) if (track && track->solo.load()) return true;
+    for (const auto& track : tracks)
+        if (track && track->solo.load(std::memory_order_relaxed)) return true;
+    for (const auto& state : instrumentPlayback)
+        if (state && state->solo.load(std::memory_order_relaxed)) return true;
     return midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
 }
 
