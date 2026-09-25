@@ -232,6 +232,26 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         }
         g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
         g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
+        // Draw the timeline grid inside EVERY visible row, including the
+        // final clipped row immediately above the mixer.  Previously the only
+        // vertical lines were painted before the rows; each row background then
+        // painted over them, which is why the last track could appear gridless.
+        {
+            const juce::Graphics::ScopedSaveState rowGridState(g);
+            g.reduceClipRegion(row.withTrimmedLeft(headerW));
+            g.setColour(juce::Colour(0xff252b33));
+            const int subdivisions = juce::jmax(1, timeSignatureNumerator);
+            const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
+            for (int subdivisionIndex = 0; subdivisionIndex < 100 * subdivisions; ++subdivisionIndex)
+            {
+                const int x = headerW + (int) std::round(subdivisionIndex * pixelsPerSubdivision);
+                if (x >= row.getRight()) break;
+                if (x < headerW) continue;
+                const bool measureLine = (subdivisionIndex % subdivisions) == 0;
+                g.setColour(measureLine ? juce::Colour(0xff3b424c) : juce::Colour(0xff252b33));
+                g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
+            }
+        }
         g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
     }
 
