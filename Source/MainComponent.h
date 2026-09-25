@@ -54,6 +54,16 @@ public:
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
+    static constexpr int transportHeight = 76;
+    static constexpr int trackRulerHeight = 32;
+    static constexpr int mixerHeight = 210;
+    static constexpr int trackHeaderWidth = 210;
+    int getArrangeTop() const noexcept { return transportHeight + trackRulerHeight; }
+    int getMixerTop() const noexcept { return juce::jmax(getArrangeTop(), getHeight() - mixerHeight); }
+    juce::Rectangle<int> getArrangeRowsBounds() const noexcept
+    {
+        return { 0, getArrangeTop(), getWidth(), juce::jmax(0, getMixerTop() - getArrangeTop()) };
+    }
 
     void updateMidiClipTiming() noexcept
     {

@@ -49,11 +49,9 @@ public:
         addMidi.setBounds(66, 78, 50, 24);
         addInstrument.setBounds(120, 78, 66, 24);
         countLabel.setVisible(false);
-        const int top = 108;
-        const int bottom = juce::jmax(top + 24, getHeight() - 210);
-        // Keep track scrolling beside the track headers, not at the far-right
-        // edge of the arranger/timeline.
-        scrollBar.setBounds(200, top, 6, bottom - top - 8);
+        const auto rows = owner.getArrangeRowsBounds();
+        // The scrollbar shares the exact same viewport as the arranger rows.
+        scrollBar.setBounds(MainComponent::trackHeaderWidth - 10, rows.getY(), 6, rows.getHeight());
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
@@ -63,7 +61,7 @@ private:
     void updateScrollRange()
     {
         const int rowH = getLibertyTrackRowHeight();
-        const int available = juce::jmax(1, owner.getHeight() - 108 - 218);
+        const int available = juce::jmax(1, owner.getArrangeRowsBounds().getHeight());
         const int visible = juce::jmax(1, available / rowH);
         const int total = owner.getTotalArrangeTrackCount();
         const int maxStart = juce::jmax(0, total - visible);
