@@ -538,7 +538,7 @@ public:
             g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom() - 1, 0.0f, (float)getWidth());
         }
 
-        if (dragTrack >= 0 && dragScene >= 0)
+        if (dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
         {
             const auto r = clipButtons[(size_t)dragTrack][(size_t)dragScene].getBounds().expanded(2);
             g.setColour(juce::Colour(0xff69d4ff));
@@ -623,7 +623,7 @@ private:
                 addAndMakeVisible(cell);
             }
         }
-        if (dragTrack >= (int)wantedTracks || dragScene >= sceneCount) dragTrack = dragScene = -1;
+        if (dragTrack < -1 || dragTrack >= (int)wantedTracks || dragScene < -1 || dragScene >= sceneCount) dragTrack = dragScene = -1;
     }
 
     int audioTrackCount() const noexcept { return owner.getAudioTrackCount(); }
