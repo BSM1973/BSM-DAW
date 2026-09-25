@@ -334,7 +334,7 @@ public:
         performAudioFiles.resize((size_t)audioTrackCount());
         performTrackOwnsSlots.assign((size_t)audioTrackCount(), false);
 
-        for (int track = 0; track < trackCount(); ++track)
+        for (int track = 0; track < visibleTracks; ++track)
         {
             auto& stop = stopTrackButtons[(size_t)track];
             stop.setButtonText("STOP");
@@ -412,6 +412,7 @@ public:
 
         if (shouldShow)
         {
+            syncTrackContainers();
             // ARRANGE transport is deliberately stopped. PERFORM owns independent audio.
             owner.audioEngine.setPlaying(false);
             owner.isPlaying = false;
@@ -490,7 +491,7 @@ public:
         g.setFont(juce::Font(10.0f));
         g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 330, 18, juce::Justification::centredLeft);
 
-        for (int track = 0; track < trackCount(); ++track)
+        for (int track = 0; track < visibleTracks; ++track)
         {
             const auto header = trackHeaders[(size_t)track];
             const auto colour = colourForTrack(track);
@@ -527,13 +528,15 @@ public:
 
     void resized() override
     {
+        syncTrackContainers();
+        const int visibleTracks = juce::jmax(1, juce::jmin(trackCount(), (int)trackHeaders.size()));
         const int leftMargin = 18;
         const int sceneLaunchW = 92;
         const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
         const int gap = 6;
-        const int available = juce::jmax(trackCount() * 110, gridRight - gridLeft);
-        const int columnW = juce::jlimit(110, 220, (available - (trackCount() - 1) * gap) / trackCount());
+        const int available = juce::jmax(visibleTracks * 110, gridRight - gridLeft);
+        const int columnW = juce::jlimit(110, 220, (available - (visibleTracks - 1) * gap) / visibleTracks);
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
@@ -541,7 +544,7 @@ public:
         const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - footerH - 16);
         const int rowH = juce::jlimit(44, 86, rowsAvailable / sceneCount);
 
-        for (int track = 0; track < trackCount(); ++track)
+        for (int track = 0; track < visibleTracks; ++track)
         {
             const int x = gridLeft + track * (columnW + gap);
             trackHeaders[(size_t)track] = { x, headerTop, columnW, headerH };
@@ -564,6 +567,18 @@ public:
     }
 
 private:
+    void syncTrackContainers()
+    {
+        const auto wantedTracks = (size_t)juce::jmax(0, trackCount());
+        const auto wantedAudio = (size_t)juce::jmax(0, audioTrackCount());
+        if (clipButtons.size() != wantedTracks) clipButtons.resize(wantedTracks);
+        if (stopTrackButtons.size() != wantedTracks) stopTrackButtons.resize(wantedTracks);
+        if (trackHeaders.size() != wantedTracks) trackHeaders.resize(wantedTracks);
+        if (activeTrackScene.size() != wantedTracks) activeTrackScene.resize(wantedTracks, -1);
+        if (performAudioFiles.size() != wantedAudio) performAudioFiles.resize(wantedAudio);
+        if (performTrackOwnsSlots.size() != wantedAudio) performTrackOwnsSlots.resize(wantedAudio, false);
+    }
+
     int audioTrackCount() const noexcept { return owner.getAudioTrackCount(); }
     int trackCount() const noexcept { return owner.getTotalArrangeTrackCount(); }
     int firstMidiTrack() const noexcept { return audioTrackCount(); }
@@ -614,7 +629,9 @@ private:
 
     void refreshClipLabels()
     {
-        for (int track = 0; track < trackCount(); ++track)
+        syncTrackContainers();
+        const int visibleTracks = juce::jmin(trackCount(), (int)clipButtons.size());
+        for (int track = 0; track < visibleTracks; ++track)
         {
             const auto colour = colourForTrack(track);
             for (int scene = 0; scene < sceneCount; ++scene)
