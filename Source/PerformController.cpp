@@ -54,8 +54,17 @@ public:
             owner.audioEngine.getDeviceManager().removeAudioCallback(this);
     }
 
+    void syncTrackCount()
+    {
+        const juce::ScopedLock sl(lock);
+        const auto wanted = (size_t)juce::jmax(0, owner.getAudioTrackCount());
+        if (tracks.size() < wanted) tracks.resize(wanted);
+        else if (tracks.size() > wanted) tracks.resize(wanted);
+    }
+
     void setEnabled(bool shouldEnable)
     {
+        syncTrackCount();
         const juce::ScopedLock sl(lock);
         enabled = shouldEnable;
         if (!enabled)
@@ -64,6 +73,7 @@ public:
 
     bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
     {
+        syncTrackCount();
         if (trackIndex < 0 || trackIndex >= (int)tracks.size() || !file.existsAsFile())
         {
             error = "Invalid PERFORM clip.";
@@ -734,11 +744,9 @@ private:
 
         if (targetTrack < 0)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                "Liberty - PERFORM",
-                "PERFORM capture was saved, but ARRANGE has no empty Audio track.\n\n" + capture.getFullPathName(),
-                "OK");
-            return;
+            targetTrack = owner.addAudioTrack();
+            player.syncTrackCount();
+            syncTrackContainers();
         }
 
         juce::String error;
