@@ -263,16 +263,70 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
     g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
+
     const int audioTracks = getAudioTrackCount();
-    for (int i = 0; i < audioTracks + 1; ++i)
+    const int instrumentTracks = getInstrumentTrackCount();
+    const int channelCount = audioTracks + instrumentTracks;
+
+    for (int channel = 0; channel < channelCount + 1; ++channel)
     {
-        auto c = juce::Rectangle<int>(220 + i * 125, area.getY() + 12, 116, area.getHeight() - 22); const bool master = i == audioTracks;
-        g.setColour(master ? juce::Colour(0xff1b2027) : juce::Colour(0xff171b20)); g.fillRoundedRectangle(c.toFloat(), 5.0f); g.setColour(juce::Colour(0xff343a44)); g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
-        const bool muted = !master && audioEngine.isTrackMuted(i); const bool solo = !master && audioEngine.isTrackSolo(i); g.setColour(juce::Colours::white); g.setFont(juce::Font(12.0f, juce::Font::bold)); g.drawText(master ? "MASTER" : "Audio " + juce::String(i + 1), c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
-        if (!master) { auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20); g.setColour(muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f); g.setColour(solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f); g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred); }
-        const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45; auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop)); g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
-        const float gain = master ? audioEngine.getMasterGain() : audioEngine.getTrackGain(i); const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f); const auto knobY = fader.getBottom() - normalized * fader.getHeight(); g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
-        const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain)); g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f)); g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred); g.drawText(master ? "MASTER" : "PAN " + juce::String(audioEngine.getTrackPan(i), 2), c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
+        const bool master = channel == channelCount;
+        const bool isAudio = channel < audioTracks;
+        const bool isInstrument = !master && !isAudio;
+        const int sourceIndex = isAudio ? channel : (channel - audioTracks);
+
+        auto c = juce::Rectangle<int>(220 + channel * 125, area.getY() + 12, 116, area.getHeight() - 22);
+        g.setColour(master ? juce::Colour(0xff1b2027)
+                           : (isInstrument ? juce::Colour(0xff182128) : juce::Colour(0xff171b20)));
+        g.fillRoundedRectangle(c.toFloat(), 5.0f);
+        g.setColour(isInstrument ? juce::Colour(0xff31546a) : juce::Colour(0xff343a44));
+        g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+
+        const juce::String channelName = master ? "MASTER"
+                                                : (isAudio ? "Audio " + juce::String(sourceIndex + 1)
+                                                           : "Instrument " + juce::String(sourceIndex + 1));
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawText(channelName, c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
+
+        // Audio channels keep their existing live mute/solo/gain/pan controls.
+        // Instrument strips are shown in the Arrange mini mixer now; their
+        // dedicated audio controls can be wired when per-instrument mixer state
+        // is introduced, without incorrectly controlling an audio track.
+        if (isAudio)
+        {
+            const bool muted = audioEngine.isTrackMuted(sourceIndex);
+            const bool solo = audioEngine.isTrackSolo(sourceIndex);
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            g.setColour(muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
+            g.setColour(solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
+        }
+        else if (isInstrument)
+        {
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setColour(juce::Colour(0xff9fc7e8)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
+        }
+
+        const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
+        auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
+        g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
+
+        const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : 1.0f);
+        const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
+        const auto knobY = fader.getBottom() - normalized * fader.getHeight();
+        g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
+
+        const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
+        g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f));
+        g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
+        g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN 0.00"),
+                   c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
 }
 
