@@ -204,8 +204,6 @@ private:
     std::atomic<double> midiTempoBpm { 120.0 };
     std::atomic<bool> midiTrackMuted { false };
     std::atomic<bool> midiTrackSolo { false };
-    std::atomic<bool> instrumentTrackMuted { false };
-    std::atomic<bool> instrumentTrackSolo { false };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
     std::atomic<double> sampleRate { 0.0 };
