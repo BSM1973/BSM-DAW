@@ -62,7 +62,9 @@ private:
     {
         const int rowH = getLibertyTrackRowHeight();
         const int available = juce::jmax(1, owner.getArrangeRowsBounds().getHeight());
-        const int visible = juce::jmax(1, available / rowH);
+        // A partially visible last row counts as visible because MainComponent
+        // clips that row exactly at the mixer boundary.
+        const int visible = juce::jmax(1, (available + rowH - 1) / rowH);
         const int total = owner.getTotalArrangeTrackCount();
         const int maxStart = juce::jmax(0, total - visible);
         const int current = juce::jlimit(0, maxStart, owner.getTrackScrollRows());

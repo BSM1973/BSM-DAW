@@ -179,7 +179,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     }
 
     const int totalRows = audioCount + midiCount + instrumentCount;
-    const int visibleRows = juce::jmax(1, rows.getHeight() / rowH);
+    // Draw the final partially visible row too, but clip it strictly to the
+    // arranger viewport. This makes the grid meet the mixer with no dead strip.
+    const int visibleRows = juce::jmax(1, (rows.getHeight() + rowH - 1) / rowH);
     for (int logicalRow = scrollRows; logicalRow < totalRows && logicalRow < scrollRows + visibleRows; ++logicalRow)
     {
         const int visibleIndex = logicalRow - scrollRows;
