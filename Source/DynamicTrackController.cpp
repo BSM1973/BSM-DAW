@@ -53,7 +53,7 @@ public:
         const int bottom = juce::jmax(top + 24, getHeight() - 210);
         // Keep track scrolling beside the track headers, not at the far-right
         // edge of the arranger/timeline.
-        scrollBar.setBounds(198, top, 8, bottom - top);
+        scrollBar.setBounds(200, top, 6, bottom - top - 8);
     }
 private:
     void scrollBarMoved(juce::ScrollBar*, double newRangeStart)
@@ -63,7 +63,7 @@ private:
     void updateScrollRange()
     {
         const int rowH = getLibertyTrackRowHeight();
-        const int available = juce::jmax(1, owner.getHeight() - 108 - 214);
+        const int available = juce::jmax(1, owner.getHeight() - 108 - 218);
         const int visible = juce::jmax(1, available / rowH);
         const int total = owner.getTotalArrangeTrackCount();
         const int maxStart = juce::jmax(0, total - visible);
