@@ -93,7 +93,7 @@ public:
         // Track overlays belong strictly to the arranger viewport. Never allow
         // dynamic rows to paint over the fixed mixer at the bottom.
         g.reduceClipRegion(juce::Rectangle<int>(0, 108, getWidth(),
-                                                juce::jmax(0, owner.getHeight() - 108 - 214)));
+                                                juce::jmax(0, owner.getHeight() - 108 - 218)));
         const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const int rowH = getLibertyTrackRowHeight();
 
