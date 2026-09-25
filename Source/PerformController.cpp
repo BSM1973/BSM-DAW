@@ -143,8 +143,8 @@ public:
 
     void stopTrack(int trackIndex)
     {
-        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return;
         const juce::ScopedLock sl(lock);
+        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return;
         tracks[(size_t)trackIndex].playing = false;
         tracks[(size_t)trackIndex].position = 0;
     }
@@ -157,8 +157,8 @@ public:
 
     bool isTrackPlaying(int trackIndex) const
     {
-        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return false;
         const juce::ScopedLock sl(lock);
+        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return false;
         return tracks[(size_t)trackIndex].playing;
     }
 
