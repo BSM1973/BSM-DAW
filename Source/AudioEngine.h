@@ -90,10 +90,18 @@ public:
     bool isMidiTrackMuted() const noexcept { return midiTrackMuted.load(std::memory_order_relaxed); }
     void setMidiTrackSolo(bool solo) noexcept { midiTrackSolo.store(solo, std::memory_order_relaxed); }
     bool isMidiTrackSolo() const noexcept { return midiTrackSolo.load(std::memory_order_relaxed); }
-    void setInstrumentTrackMuted(bool muted) noexcept { instrumentTrackMuted.store(muted, std::memory_order_relaxed); }
-    bool isInstrumentTrackMuted() const noexcept { return instrumentTrackMuted.load(std::memory_order_relaxed); }
-    void setInstrumentTrackSolo(bool solo) noexcept { instrumentTrackSolo.store(solo, std::memory_order_relaxed); }
-    bool isInstrumentTrackSolo() const noexcept { return instrumentTrackSolo.load(std::memory_order_relaxed); }
+    void setInstrumentTrackGain(int instrumentTrack, float gain) noexcept;
+    float getInstrumentTrackGain(int instrumentTrack) const noexcept;
+    void setInstrumentTrackPan(int instrumentTrack, float pan) noexcept;
+    float getInstrumentTrackPan(int instrumentTrack) const noexcept;
+    void setInstrumentTrackMuted(int instrumentTrack, bool muted) noexcept;
+    bool isInstrumentTrackMuted(int instrumentTrack) const noexcept;
+    void setInstrumentTrackSolo(int instrumentTrack, bool solo) noexcept;
+    bool isInstrumentTrackSolo(int instrumentTrack) const noexcept;
+    void setInstrumentTrackMuted(bool muted) noexcept { setInstrumentTrackMuted(0, muted); }
+    bool isInstrumentTrackMuted() const noexcept { return isInstrumentTrackMuted(0); }
+    void setInstrumentTrackSolo(bool solo) noexcept { setInstrumentTrackSolo(0, solo); }
+    bool isInstrumentTrackSolo() const noexcept { return isInstrumentTrackSolo(0); }
 
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
@@ -168,6 +176,10 @@ private:
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
+        std::atomic<float> gain { 1.0f };
+        std::atomic<float> pan { 0.0f };
+        std::atomic<bool> muted { false };
+        std::atomic<bool> solo { false };
     };
 
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
