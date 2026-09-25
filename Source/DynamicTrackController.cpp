@@ -51,7 +51,6 @@ private:
     {
         if (getBounds() != owner.getLocalBounds())
             setBounds(owner.getLocalBounds());
-        updateScrollRange();
     }
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
