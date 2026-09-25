@@ -308,7 +308,10 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         {
             auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
             auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
-            g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
+            const bool muted = audioEngine.isInstrumentTrackMuted(sourceIndex);
+            const bool solo = audioEngine.isInstrumentTrackSolo(sourceIndex);
+            g.setColour(muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
+            g.setColour(solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
             g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
             g.setColour(juce::Colour(0xff9fc7e8)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
         }
@@ -453,31 +456,30 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         const bool master = channel == channelCount;
         const bool isAudio = channel < audioTracks;
 
-        // Only controls backed by real mixer state are interactive. Instrument
-        // strips stay visible without ever indexing the AudioEngine by mistake.
-        if (isAudio)
+        if (!master)
         {
             auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
             auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
             const bool isMouseDown = event.mouseDownPosition.toInt() == event.getPosition();
-            if (isMouseDown && mute.contains(event.getPosition())) { audioEngine.setTrackMuted(channel, !audioEngine.isTrackMuted(channel)); repaint(); return true; }
-            if (isMouseDown && solo.contains(event.getPosition())) { audioEngine.setTrackSolo(channel, !audioEngine.isTrackSolo(channel)); repaint(); return true; }
+            const int sourceIndex = isAudio ? channel : channel - audioTracks;
+            if (isMouseDown && mute.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackMuted(sourceIndex,!audioEngine.isTrackMuted(sourceIndex)); else audioEngine.setInstrumentTrackMuted(sourceIndex,!audioEngine.isInstrumentTrackMuted(sourceIndex)); repaint(); return true; }
+            if (isMouseDown && solo.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackSolo(sourceIndex,!audioEngine.isTrackSolo(sourceIndex)); else audioEngine.setInstrumentTrackSolo(sourceIndex,!audioEngine.isInstrumentTrackSolo(sourceIndex)); repaint(); return true; }
         }
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
-        if ((isAudio || master) && event.position.y >= faderTop && event.position.y <= faderBottom)
+        if (event.position.y >= faderTop && event.position.y <= faderBottom)
         {
             const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
             const float gain = n * 2.0f;
-            if (master) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(channel, gain);
+            if (master) audioEngine.setMasterGain(gain); else if (isAudio) audioEngine.setTrackGain(channel, gain); else audioEngine.setInstrumentTrackGain(channel - audioTracks, gain);
             repaint();
             return true;
         }
 
-        if (isAudio && event.position.y >= c.getBottom() - 28)
+        if (!master && event.position.y >= c.getBottom() - 28)
         {
             const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f);
-            audioEngine.setTrackPan(channel, pan);
+            if (isAudio) audioEngine.setTrackPan(channel, pan); else audioEngine.setInstrumentTrackPan(channel - audioTracks, pan);
             repaint();
             return true;
         }
