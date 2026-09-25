@@ -261,10 +261,8 @@ private:
         if (!enabled.load(std::memory_order_relaxed)) return;
         if (!lock.tryEnter()) return;
 
-        if (captureMix.getNumSamples() < numSamples)
-            captureMix.setSize(2, numSamples, false, false, true);
-        const int captureSamples = numSamples;
-        captureMix.clear(0, captureSamples);
+        const int captureSamples = juce::jmin(numSamples, captureMix.getNumSamples());
+        if (captureSamples > 0) captureMix.clear(0, captureSamples);
 
         for (int trackIndex = 0; trackIndex < (int)tracks.size(); ++trackIndex)
         {
