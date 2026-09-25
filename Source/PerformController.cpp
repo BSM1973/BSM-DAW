@@ -680,7 +680,10 @@ private:
 
     juce::String slotName(int track, int scene) const
     {
-        if (!slotHasClip(track, scene)) return "EMPTY";
+        if (!slotHasClip(track, scene)
+            || track < 0 || track >= (int)performAudioFiles.size()
+            || scene < 0 || scene >= sceneCount)
+            return "EMPTY";
         auto name = performAudioFiles[(size_t)track][(size_t)scene].getFileName();
         if (name.length() > 22) name = name.substring(0, 19) + "...";
         return name;
