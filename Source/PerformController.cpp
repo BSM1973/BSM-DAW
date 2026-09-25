@@ -49,9 +49,13 @@ public:
 
     ~PerformAudioPlayer() override
     {
-        stopCaptureInternal();
         if (callbackAttached)
+        {
             owner.audioEngine.getDeviceManager().removeAudioCallback(this);
+            callbackAttached = false;
+        }
+        const juce::ScopedLock sl(lock);
+        stopCaptureInternal();
     }
 
     void syncTrackCount()
