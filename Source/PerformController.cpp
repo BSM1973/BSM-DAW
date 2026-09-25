@@ -428,9 +428,9 @@ public:
 
     ~PerformView() override
     {
+        stopTimer();
         if (player.isCapturing()) player.stopCapture();
         player.setEnabled(false);
-        stopTimer();
     }
 
     void setPerformVisible(bool shouldShow)
