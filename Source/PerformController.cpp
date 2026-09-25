@@ -819,6 +819,8 @@ private:
             return;
         }
         owner.audioEngine.setTrackStartSeconds(targetTrack, 0.0);
+        if (targetTrack >= (int)owner.trackSourceFiles.size())
+            owner.trackSourceFiles.resize((size_t)targetTrack + 1);
         owner.trackSourceFiles[(size_t)targetTrack] = capture;
         owner.rebuildWaveformCache(targetTrack);
         owner.selectedTrack = targetTrack;
