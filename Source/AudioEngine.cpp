@@ -221,7 +221,7 @@ bool AudioEngine::isAnyTrackSolo() const noexcept
         if (track && track->solo.load(std::memory_order_relaxed)) return true;
     for (const auto& state : instrumentPlayback)
         if (state && state->solo.load(std::memory_order_relaxed)) return true;
-    return midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+    return false;
 }
 
 double AudioEngine::getTrackStartSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->startSeconds.load() : 0.0; }
@@ -591,15 +591,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
 
     bool anyInstrumentSolo = false;
     for (const auto& p : instrumentPlayback) if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
-    const bool legacyInstrumentMuted = midiTrackMuted.load(std::memory_order_relaxed) || instrumentTrackMuted.load(std::memory_order_relaxed);
-    const bool legacyInstrumentSolo = midiTrackSolo.load(std::memory_order_relaxed) || instrumentTrackSolo.load(std::memory_order_relaxed);
+    const bool midiLaneMuted = midiTrackMuted.load(std::memory_order_relaxed);
+    const bool midiLaneSolo = midiTrackSolo.load(std::memory_order_relaxed);
     if (rate > 0.0)
     {
         for (int instrumentTrack=0; instrumentTrack<(int)instrumentPlayback.size(); ++instrumentTrack)
         {
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
-            const bool trackMuted = legacyInstrumentMuted || state.muted.load(std::memory_order_relaxed);
-            const bool trackSolo = legacyInstrumentSolo || state.solo.load(std::memory_order_relaxed);
+            const bool trackMuted = midiLaneMuted || state.muted.load(std::memory_order_relaxed);
+            const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
             if (trackMuted || ((anySolo || anyInstrumentSolo) && !trackSolo)) continue;
             const auto count=state.noteCount.load(std::memory_order_acquire);
             const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
