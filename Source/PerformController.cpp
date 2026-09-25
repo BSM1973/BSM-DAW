@@ -912,6 +912,7 @@ public:
 
     void setPerformVisible(bool shouldShow)
     {
+        if (stopped.load()) return;
         performVisible = shouldShow;
         view.setPerformVisible(shouldShow);
         arrangeOverlay.setVisible(shouldShow);
