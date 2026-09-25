@@ -373,7 +373,8 @@ public:
             stop.onClick = [this, track]
             {
                 if (track < audioTrackCount()) player.stopTrack(track);
-                activeTrackScene[(size_t)track] = -1;
+                if (track >= 0 && track < (int)activeTrackScene.size())
+                    activeTrackScene[(size_t)track] = -1;
                 refreshClipLabels();
                 repaint();
             };
