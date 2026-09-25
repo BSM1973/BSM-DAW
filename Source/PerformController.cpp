@@ -7,6 +7,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <atomic>
+#include <deque>
 #include <map>
 #include <memory>
 
@@ -748,9 +749,9 @@ private:
 
     MainComponent& owner;
     PerformAudioPlayer player;
-    std::vector<std::array<juce::TextButton, sceneCount>> clipButtons;
+    std::deque<std::array<juce::TextButton, sceneCount>> clipButtons;
     std::array<juce::TextButton, sceneCount> sceneButtons;
-    std::vector<juce::TextButton> stopTrackButtons;
+    std::deque<juce::TextButton> stopTrackButtons;
     juce::TextButton stopAllButton, recordArrangeButton;
     std::vector<juce::Rectangle<int>> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
