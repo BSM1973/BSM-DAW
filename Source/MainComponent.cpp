@@ -442,26 +442,50 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
     const int mixerTop = getMixerTop(); if (event.position.y < mixerTop) return false;
     const int audioTracks = getAudioTrackCount();
-    for (int i = 0; i < audioTracks + 1; ++i)
+    const int instrumentTracks = getInstrumentTrackCount();
+    const int channelCount = audioTracks + instrumentTracks;
+
+    for (int channel = 0; channel < channelCount + 1; ++channel)
     {
-        auto c = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188); if (!c.contains(event.getPosition())) continue;
-        if (i < audioTracks)
+        auto c = juce::Rectangle<int>(220 + channel * 125, mixerTop + 12, 116, 188);
+        if (!c.contains(event.getPosition())) continue;
+
+        const bool master = channel == channelCount;
+        const bool isAudio = channel < audioTracks;
+
+        // Only controls backed by real mixer state are interactive. Instrument
+        // strips stay visible without ever indexing the AudioEngine by mistake.
+        if (isAudio)
         {
-            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
             const bool isMouseDown = event.mouseDownPosition.toInt() == event.getPosition();
-            if (isMouseDown && mute.contains(event.getPosition())) { audioEngine.setTrackMuted(i, !audioEngine.isTrackMuted(i)); repaint(); return true; }
-            if (isMouseDown && solo.contains(event.getPosition())) { audioEngine.setTrackSolo(i, !audioEngine.isTrackSolo(i)); repaint(); return true; }
+            if (isMouseDown && mute.contains(event.getPosition())) { audioEngine.setTrackMuted(channel, !audioEngine.isTrackMuted(channel)); repaint(); return true; }
+            if (isMouseDown && solo.contains(event.getPosition())) { audioEngine.setTrackSolo(channel, !audioEngine.isTrackSolo(channel)); repaint(); return true; }
         }
+
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
-        if (event.position.y >= faderTop && event.position.y <= faderBottom)
+        if ((isAudio || master) && event.position.y >= faderTop && event.position.y <= faderBottom)
         {
             const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
-            const float gain = n * 2.0f; if (i == audioTracks) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(i, gain); repaint(); return true;
+            const float gain = n * 2.0f;
+            if (master) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(channel, gain);
+            repaint();
+            return true;
         }
-        if (i < audioTracks && event.position.y >= c.getBottom() - 28)
+
+        if (isAudio && event.position.y >= c.getBottom() - 28)
         {
-            const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f); audioEngine.setTrackPan(i, pan); repaint(); return true;
+            const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f);
+            audioEngine.setTrackPan(channel, pan);
+            repaint();
+            return true;
         }
+
+        // The click belongs to a visible instrument strip, but it has no
+        // per-instrument mixer state yet. Consume it so it cannot leak through
+        // to arranger hit-testing underneath the fixed mini mixer.
+        return true;
     }
     return false;
 }
@@ -537,7 +561,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     constexpr int headerW = 210, rulerH = 32;
     const int audioTrackCount = audioEngine.getAudioTrackCount();
-    const int instrumentTrackIndex = audioTrackCount + 1;
+    const int midiTrackCount = getMidiTrackCount();
+    const int instrumentTrackCount = getInstrumentTrackCount();
     const int rowH = getLibertyTrackRowHeight();
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
@@ -615,20 +640,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // MIDI and Instrument rows now select exactly like Audio rows.
-    const int rowOffset = p.y - 76 - rulerH;
-    if (rowOffset >= 0)
+    // Select every dynamic MIDI and Instrument row, including after vertical scrolling.
+    const int rowOffset = p.y - getArrangeTop();
+    if (rowOffset >= 0 && p.y < getMixerTop())
     {
-        const int rowIndex = rowOffset / rowH;
-        if (rowIndex == audioTrackCount)
+        const int logicalRow = getTrackScrollRows() + rowOffset / rowH;
+        const int midiFirst = audioTrackCount;
+        const int instrumentFirst = midiFirst + midiTrackCount;
+        const int totalRows = instrumentFirst + instrumentTrackCount;
+
+        if (logicalRow >= midiFirst && logicalRow < totalRows)
         {
-            selectedTrack = -1;
-            repaint();
-            return;
-        }
-        if (rowIndex == instrumentTrackIndex)
-        {
-            selectedTrack = instrumentTrackIndex;
+            selectedTrack = logicalRow;
             repaint();
             return;
         }
