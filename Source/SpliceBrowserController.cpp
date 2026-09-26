@@ -124,6 +124,7 @@ public:
         : sampleList("Splice Samples", this)
     {
         setOpaque(true);
+        setVisible(false);
         loadRootFolder();
 
         libraryButton.setButtonText("MES SAMPLES");
@@ -186,6 +187,7 @@ public:
         addAndMakeVisible(sampleList);
 
         addAndMakeVisible(browser);
+        showLibrary();
         browser.goToURL("https://splice.com/sounds");
 
         showLibrary();
