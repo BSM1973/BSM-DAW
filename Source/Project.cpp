@@ -650,7 +650,15 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
             const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
             if(e->getTagName()=="Plugin"){juce::PluginDescription d;if(host.findKnownPluginByIdentifier(e->getStringAttribute("identifier"),d)){juce::String error;if(kind=="instrument"&&lane<getInstrumentTrackCount())host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())host.loadEffectForTrack(lane,d,error);}}
-            else if(e->getTagName()=="OneKnob"){int slot=kind=="instrument"?100000+lane:lane;one.setEffect(slot,(LibertyOneKnobRack::Type)e->getIntAttribute("type",0));one.setAmount(slot,(float)e->getDoubleAttribute("amount",0.5));}
+            else if(e->getTagName()=="OneKnob"){
+                const bool validAudio = kind=="audio" && lane<getAudioTrackCount();
+                const bool validInstrument = kind=="instrument" && lane<getInstrumentTrackCount();
+                if(validAudio || validInstrument){
+                    const int slot=validInstrument?100000+lane:lane;
+                    one.setEffect(slot,(LibertyOneKnobRack::Type)e->getIntAttribute("type",0));
+                    one.setAmount(slot,(float)e->getDoubleAttribute("amount",0.5));
+                }
+            }
         }
     }
     loadLibertyMultiMidiClips(*this, *project);
