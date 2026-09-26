@@ -200,6 +200,10 @@ private:
             main->setMouseCursor(target >= 0 ? juce::MouseCursor::DraggingHandCursor
                                              : juce::MouseCursor::NoCursor);
         }
+        else
+        {
+            resetLibertyDragCursors();
+        }
     }
 
     void mouseUp(const juce::MouseEvent& event) override
