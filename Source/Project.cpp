@@ -1,4 +1,15 @@
 #include "MainComponent.h"
+#include "PluginHost.h"
+#include "OneKnobEffects.h"
+
+int getLibertyTrackColourId(int track);
+void setLibertyTrackColourId(int track, int colourId);
+void resetLibertyTrackColours();
+juce::String getLibertyTrackName(int track);
+void setLibertyTrackName(int track, const juce::String& name);
+void resetLibertyTrackNames();
+void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
+void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
 
 namespace
 {
@@ -41,21 +52,52 @@ juce::String MainComponent::getProjectStateSignature() const
     signature << "tempo=" << juce::String(tempoBpm, 6)
               << ";meter=" << timeSignatureNumerator << "/" << timeSignatureDenominator
               << ";master=" << juce::String(audioEngine.getMasterGain(), 6)
+              << ";audioTracks=" << getAudioTrackCount()
+              << ";midiTracks=" << getMidiTrackCount()
+              << ";instrumentTracks=" << getInstrumentTrackCount()
               << ";midiClipStart=" << juce::String(midiClipStartSeconds, 6)
-              << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6);
+              << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6)
+              << ";midiColour=" << getLibertyTrackColourId(getAudioTrackCount())
+              << ";midiName=" << getLibertyTrackName(getAudioTrackCount())
+              << ";midiMute=" << (audioEngine.isMidiTrackMuted() ? 1 : 0)
+              << ";midiSolo=" << (audioEngine.isMidiTrackSolo() ? 1 : 0)
+              << ";instrumentMute=" << (audioEngine.isInstrumentTrackMuted() ? 1 : 0)
+              << ";instrumentSolo=" << (audioEngine.isInstrumentTrackSolo() ? 1 : 0);
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         signature << "|track=" << i
                   << ";loaded=" << (audioEngine.hasAudioFile(i) ? 1 : 0)
                   << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
                   << ";name=" << audioEngine.getAudioFileName(i)
+                  << ";trackName=" << getLibertyTrackName(i)
                   << ";length=" << juce::String(audioEngine.getAudioFileLengthSeconds(i), 6)
                   << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
-                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0);
+                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
+                  << ";colour=" << getLibertyTrackColourId(i);
+    }
+
+    for (int i = 0; i < getMidiTrackCount(); ++i)
+    {
+        const int logical = getAudioTrackCount() + i;
+        signature << "|midiTrack=" << i
+                  << ";name=" << getLibertyTrackName(logical)
+                  << ";colour=" << getLibertyTrackColourId(logical);
+    }
+
+    for (int i = 0; i < getInstrumentTrackCount(); ++i)
+    {
+        const int logical = getAudioTrackCount() + getMidiTrackCount() + i;
+        signature << "|instrument=" << i
+                  << ";name=" << getLibertyTrackName(logical)
+                  << ";colour=" << getLibertyTrackColourId(logical)
+                  << ";gain=" << juce::String(audioEngine.getInstrumentTrackGain(i), 6)
+                  << ";pan=" << juce::String(audioEngine.getInstrumentTrackPan(i), 6)
+                  << ";mute=" << (audioEngine.isInstrumentTrackMuted(i) ? 1 : 0)
+                  << ";solo=" << (audioEngine.isInstrumentTrackSolo(i) ? 1 : 0);
     }
 
     signature << "|midi=";
@@ -134,6 +176,12 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
 
 void MainComponent::requestClose(std::function<void(bool)> completion)
 {
+    if (!hasUnsavedChanges())
+    {
+        completion(true);
+        return;
+    }
+
     juce::AlertWindow::showYesNoCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
@@ -178,7 +226,7 @@ void MainComponent::showProjectMenu()
     menu.addItem(menuSave, "Save Project");
     menu.addItem(menuSaveAs, "Save Project As...");
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&projectButton),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(projectButton.get()),
                        [this](int result)
                        {
                            switch (result)
@@ -207,9 +255,31 @@ void MainComponent::resetProjectState()
     midiClipLengthSeconds = 2.0;
     midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
+    audioEngine.setMidiTrackMuted(false);
+    audioEngine.setMidiTrackSolo(false);
+    audioEngine.setInstrumentTrackMuted(false);
+    audioEngine.setInstrumentTrackSolo(false);
     midiEngine.clear();
+    for (int i = 0; i < getInstrumentTrackCount(); ++i)
+    {
+        audioEngine.setInstrumentTrackGain(i, 1.0f);
+        audioEngine.setInstrumentTrackPan(i, 0.0f);
+        audioEngine.setInstrumentTrackMuted(i, false);
+        audioEngine.setInstrumentTrackSolo(i, false);
+    }
+    resetLibertyTrackColours();
+    resetLibertyTrackNames();
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    while (audioEngine.getAudioTrackCount() > AudioEngine::initialAudioTracks)
+        audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
+    dynamicMidiTrackCount = 1;
+    dynamicInstrumentTrackCount = 1;
+    trackScrollRows = 0;
+    waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
+    waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
+    trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
+
+    for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
     {
         audioEngine.clearAudioTrack(i);
         audioEngine.setTrackGain(i, 1.0f);
@@ -300,7 +370,10 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 5);
+    project.setAttribute("version", 13);
+    project.setAttribute("audioTrackCount", getAudioTrackCount());
+    project.setAttribute("midiTrackCount", getMidiTrackCount());
+    project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -309,6 +382,14 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     project.setAttribute("masterGain", (double)audioEngine.getMasterGain());
     project.setAttribute("midiClipStartSeconds", midiClipStartSeconds);
     project.setAttribute("midiClipLengthSeconds", midiClipLengthSeconds);
+    project.setAttribute("midiColourId", getLibertyTrackColourId(getAudioTrackCount()));
+    project.setAttribute("instrumentColourId", getLibertyTrackColourId(getAudioTrackCount() + getMidiTrackCount()));
+    project.setAttribute("midiTrackName", getLibertyTrackName(getAudioTrackCount()));
+    project.setAttribute("instrumentTrackName", getLibertyTrackName(getAudioTrackCount() + getMidiTrackCount()));
+    project.setAttribute("midiMuted", audioEngine.isMidiTrackMuted());
+    project.setAttribute("midiSolo", audioEngine.isMidiTrackSolo());
+    project.setAttribute("instrumentMuted", audioEngine.isInstrumentTrackMuted());
+    project.setAttribute("instrumentSolo", audioEngine.isInstrumentTrackSolo());
 
     auto* midi = project.createNewChildElement("MIDI");
     midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
@@ -323,11 +404,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         noteElement->setAttribute("channel", (int)note.channel);
     }
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
         track->setAttribute("loaded", audioEngine.hasAudioFile(i));
+        track->setAttribute("colourId", getLibertyTrackColourId(i));
+        track->setAttribute("trackName", getLibertyTrackName(i));
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const auto* buffer = audioEngine.getAudioBuffer(i);
@@ -348,6 +431,59 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
     }
+
+    {
+        auto* trackMetadata = project.createNewChildElement("DynamicTrackMetadata");
+        for (int i = 0; i < getMidiTrackCount(); ++i)
+        {
+            const int logical = getAudioTrackCount() + i;
+            auto* track = trackMetadata->createNewChildElement("Track");
+            track->setAttribute("kind", "midi");
+            track->setAttribute("index", i);
+            track->setAttribute("name", getLibertyTrackName(logical));
+            track->setAttribute("colourId", getLibertyTrackColourId(logical));
+        }
+        for (int i = 0; i < getInstrumentTrackCount(); ++i)
+        {
+            const int logical = getAudioTrackCount() + getMidiTrackCount() + i;
+            auto* track = trackMetadata->createNewChildElement("Track");
+            track->setAttribute("kind", "instrument");
+            track->setAttribute("index", i);
+            track->setAttribute("name", getLibertyTrackName(logical));
+            track->setAttribute("colourId", getLibertyTrackColourId(logical));
+        }
+    }
+
+    {
+        auto* instrumentMixer = project.createNewChildElement("InstrumentMixer");
+        for (int i = 0; i < getInstrumentTrackCount(); ++i)
+        {
+            auto* track = instrumentMixer->createNewChildElement("Track");
+            track->setAttribute("index", i);
+            track->setAttribute("gain", (double) audioEngine.getInstrumentTrackGain(i));
+            track->setAttribute("pan", (double) audioEngine.getInstrumentTrackPan(i));
+            track->setAttribute("muted", audioEngine.isInstrumentTrackMuted(i));
+            track->setAttribute("solo", audioEngine.isInstrumentTrackSolo(i));
+        }
+    }
+
+    {
+        auto* inserts = project.createNewChildElement("DynamicInserts");
+        auto& host = LibertyPluginHost::instance();
+        auto& one = LibertyOneKnobManager::instance();
+        for(int i=0;i<getAudioTrackCount();++i){
+            juce::PluginDescription d;
+            if(host.getEffectDescriptionForTrack(i,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","audioFX");e->setAttribute("lane",i);e->setAttribute("identifier",d.fileOrIdentifier);}
+            if(one.hasEffect(i)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","audio");e->setAttribute("lane",i);e->setAttribute("type",(int)one.getEffect(i));e->setAttribute("amount",(double)one.getAmount(i));}
+        }
+        for(int i=0;i<getInstrumentTrackCount();++i){
+            juce::PluginDescription d;
+            if(host.getInstrumentDescriptionForTrack(i,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("identifier",d.fileOrIdentifier);}
+            const int slot=100000+i;if(one.hasEffect(slot)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("type",(int)one.getEffect(slot));e->setAttribute("amount",(double)one.getAmount(slot));}
+        }
+    }
+
+    saveLibertyMultiMidiClips(*this, project);
 
     auto output = file.createOutputStream();
     if (output == nullptr)
@@ -389,14 +525,34 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     resetProjectState();
 
+    constexpr int maxRestoredTracksPerType = 512;
+    const int savedAudioTracks = juce::jlimit(AudioEngine::initialAudioTracks, maxRestoredTracksPerType,
+                                              project->getIntAttribute("audioTrackCount", AudioEngine::initialAudioTracks));
+    const int savedMidiTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                             project->getIntAttribute("midiTrackCount", 1));
+    const int savedInstrumentTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                                   project->getIntAttribute("instrumentTrackCount", 1));
+    while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
+    while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
+    while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
+    trackScrollRows = 0;
+
     tempoBpm = juce::jlimit(20.0, 400.0, project->getDoubleAttribute("tempo", 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
     timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
-    selectedTrack = juce::jlimit(0, AudioEngine::maxAudioTracks - 1, project->getIntAttribute("selectedTrack", 0));
+    selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
     audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
     midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
     setMidiClipLengthFromProject(project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
+    setLibertyTrackColourId(getAudioTrackCount(), project->getIntAttribute("midiColourId", 0));
+    setLibertyTrackColourId(getAudioTrackCount() + getMidiTrackCount(), project->getIntAttribute("instrumentColourId", 0));
+    setLibertyTrackName(getAudioTrackCount(), project->getStringAttribute("midiTrackName", "MIDI 1"));
+    setLibertyTrackName(getAudioTrackCount() + getMidiTrackCount(), project->getStringAttribute("instrumentTrackName", "Instrument 1"));
+    audioEngine.setMidiTrackMuted(project->getBoolAttribute("midiMuted", false));
+    audioEngine.setMidiTrackSolo(project->getBoolAttribute("midiSolo", false));
+    audioEngine.setInstrumentTrackMuted(project->getBoolAttribute("instrumentMuted", false));
+    audioEngine.setInstrumentTrackSolo(project->getBoolAttribute("instrumentSolo", false));
 
     if (auto* midi = project->getChildByName("MIDI"))
     {
@@ -418,7 +574,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     {
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
-        if (index < 0 || index >= AudioEngine::maxAudioTracks) continue;
+        if (index < 0 || index >= getAudioTrackCount()) continue;
+        setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
+        setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
+        audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
+        audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         if (!track->getBoolAttribute("loaded", false)) continue;
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
@@ -457,6 +617,55 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         rebuildWaveformCache(index);
     }
 
+    if (auto* trackMetadata = project->getChildByName("DynamicTrackMetadata"))
+    {
+        for (auto* track = trackMetadata->getFirstChildElement(); track != nullptr; track = track->getNextElement())
+        {
+            if (track->getTagName() != "Track") continue;
+            const int index = track->getIntAttribute("index", -1);
+            const auto kind = track->getStringAttribute("kind");
+            int logical = -1;
+            if (kind == "midi" && index >= 0 && index < getMidiTrackCount())
+                logical = getAudioTrackCount() + index;
+            else if (kind == "instrument" && index >= 0 && index < getInstrumentTrackCount())
+                logical = getAudioTrackCount() + getMidiTrackCount() + index;
+            if (logical < 0) continue;
+            setLibertyTrackName(logical, track->getStringAttribute("name"));
+            setLibertyTrackColourId(logical, track->getIntAttribute("colourId", 0));
+        }
+    }
+
+    if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
+    {
+        for (auto* track = instrumentMixer->getFirstChildElement(); track != nullptr; track = track->getNextElement())
+        {
+            if (track->getTagName() != "Track") continue;
+            const int index = track->getIntAttribute("index", -1);
+            if (index < 0 || index >= getInstrumentTrackCount()) continue;
+            audioEngine.setInstrumentTrackGain(index, (float) track->getDoubleAttribute("gain", 1.0));
+            audioEngine.setInstrumentTrackPan(index, (float) track->getDoubleAttribute("pan", 0.0));
+            audioEngine.setInstrumentTrackMuted(index, track->getBoolAttribute("muted", false));
+            audioEngine.setInstrumentTrackSolo(index, track->getBoolAttribute("solo", false));
+        }
+    }
+
+    if(auto* inserts=project->getChildByName("DynamicInserts")){
+        auto& host=LibertyPluginHost::instance(); auto& one=LibertyOneKnobManager::instance();
+        for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
+            const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
+            if(e->getTagName()=="Plugin"){juce::PluginDescription d;if(host.findKnownPluginByIdentifier(e->getStringAttribute("identifier"),d)){juce::String error;if(kind=="instrument"&&lane<getInstrumentTrackCount())host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())host.loadEffectForTrack(lane,d,error);}}
+            else if(e->getTagName()=="OneKnob"){
+                const bool validAudio = kind=="audio" && lane<getAudioTrackCount();
+                const bool validInstrument = kind=="instrument" && lane<getInstrumentTrackCount();
+                if(validAudio || validInstrument){
+                    const int slot=validInstrument?100000+lane:lane;
+                    one.setEffect(slot,(LibertyOneKnobRack::Type)e->getIntAttribute("type",0));
+                    one.setAmount(slot,(float)e->getDoubleAttribute("amount",0.5));
+                }
+            }
+        }
+    }
+    loadLibertyMultiMidiClips(*this, *project);
     updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
