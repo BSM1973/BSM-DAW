@@ -453,8 +453,13 @@ private:
         if (!fileMatchesCategory(file)) return;
         const auto ext = file.getFileExtension().toLowerCase();
         if (ext != ".wav" && ext != ".aif" && ext != ".aiff") return;
-        int track = owner.selectedTrack;
-        if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
+        const int track = selectedAudioTrack();
+        if (track < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Browser",
+                                                   "Sélectionne une piste Audio pour charger ce fichier.", "OK");
+            return;
+        }
         juce::String error;
         if (!owner.audioEngine.loadAudioFileIntoTrack(track, file, error))
         {
