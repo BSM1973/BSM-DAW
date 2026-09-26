@@ -582,13 +582,14 @@ private:
 
     int selectedAudioTrack() const
     {
-        int track = owner.selectedTrack;
-        return (track >= 0 && track < owner.getAudioTrackCount()) ? track : 0;
+        const int track = owner.selectedTrack;
+        return (track >= 0 && track < owner.getAudioTrackCount()) ? track : -1;
     }
 
     void loadOneKnob(LibertyOneKnobRack::Type type)
     {
         const int track = selectedAudioTrack();
+        if (track < 0) return;
         auto& manager = LibertyOneKnobManager::instance();
         manager.setEffect(track, type);
         manager.showEditor(track);
@@ -598,7 +599,9 @@ private:
 
     void clearOneKnob()
     {
-        LibertyOneKnobManager::instance().clearEffect(selectedAudioTrack());
+        const int track = selectedAudioTrack();
+        if (track < 0) return;
+        LibertyOneKnobManager::instance().clearEffect(track);
         refreshPluginStatus();
         owner.repaint();
     }
