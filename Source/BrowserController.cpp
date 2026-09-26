@@ -165,8 +165,12 @@ public:
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
         spliceButton.onClick = [this]
         {
-            // The Splice controller listens to this native tab. Hide Browser-owned
-            // content first so the Splice panel can become the active Browser page.
+            spliceButton.setToggleState(true, juce::dontSendNotification);
+            filesButton.setToggleState(false, juce::dontSendNotification);
+            audioButton.setToggleState(false, juce::dontSendNotification);
+            midiButton.setToggleState(false, juce::dontSendNotification);
+            presetsButton.setToggleState(false, juce::dontSendNotification);
+            pluginsButton.setToggleState(false, juce::dontSendNotification);
             fileTree.setVisible(false); homeButton.setVisible(false);
             pluginTree.setVisible(false); scanPluginsButton.setVisible(false);
             blacklistButton.setVisible(false); clearBlacklistButton.setVisible(false);
