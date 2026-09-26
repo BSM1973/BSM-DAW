@@ -589,10 +589,34 @@ private:
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-            if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
-                if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (controllers.find(main) == controllers.end())
-                        controllers.emplace(main, std::make_unique<SpliceBrowserController>(*main));
+        {
+            auto* top = desktop.getComponent(i);
+            if (top == nullptr) continue;
+
+            MainComponent* main = nullptr;
+            if (auto* window = dynamic_cast<juce::DocumentWindow*>(top))
+                main = dynamic_cast<MainComponent*>(window->getContentComponent());
+
+            // Native-title-bar/platform wrappers can keep the JUCE DocumentWindow
+            // out of Desktop's direct component list. Fall back to finding Liberty's
+            // MainComponent recursively so the Splice controller is always created.
+            if (main == nullptr)
+            {
+                std::function<MainComponent*(juce::Component*)> findMain;
+                findMain = [&findMain](juce::Component* parent) -> MainComponent*
+                {
+                    if (parent == nullptr) return nullptr;
+                    if (auto* found = dynamic_cast<MainComponent*>(parent)) return found;
+                    for (int child = 0; child < parent->getNumChildComponents(); ++child)
+                        if (auto* found = findMain(parent->getChildComponent(child))) return found;
+                    return nullptr;
+                };
+                main = findMain(top);
+            }
+
+            if (main != nullptr && controllers.find(main) == controllers.end())
+                controllers.emplace(main, std::make_unique<SpliceBrowserController>(*main));
+        }
     }
 };
 
