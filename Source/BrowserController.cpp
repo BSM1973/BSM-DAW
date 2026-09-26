@@ -638,7 +638,10 @@ private:
         auto& oneKnob = LibertyOneKnobManager::instance();
         if (oneKnob.hasEffect(track)) text << "A" << (track + 1) << ": " << oneKnob.getName(track) << "   ";
         if (host.hasEffectForTrack(track)) text << "FX: " << host.getEffectName(track) << "   ";
-        if (host.hasInstrument()) text << "INST: " << host.getInstrumentName();
+        const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+        const int logical = owner.selectedTrack;
+        const int instrumentLane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
+        if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
