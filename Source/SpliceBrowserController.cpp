@@ -25,14 +25,18 @@ juce::TextButton* findDirectButton(juce::Component* parent, const juce::String& 
 
 juce::Component* findBrowserPanel(MainComponent& owner)
 {
-    for (int i = 0; i < owner.getNumChildComponents(); ++i)
+    std::function<juce::Component*(juce::Component*)> findRecursive;
+    findRecursive = [&findRecursive](juce::Component* parent) -> juce::Component*
     {
-        auto* child = owner.getChildComponent(i);
-        if (child == nullptr) continue;
-        if (findDirectButton(child, "PLUGINS") != nullptr && findDirectButton(child, "FILES") != nullptr)
-            return child;
-    }
-    return nullptr;
+        if (parent == nullptr) return nullptr;
+        if (findDirectButton(parent, "PLUGINS") != nullptr && findDirectButton(parent, "FILES") != nullptr)
+            return parent;
+        for (int i = 0; i < parent->getNumChildComponents(); ++i)
+            if (auto* found = findRecursive(parent->getChildComponent(i)))
+                return found;
+        return nullptr;
+    };
+    return findRecursive(&owner);
 }
 
 bool isAudioSample(const juce::File& file)
