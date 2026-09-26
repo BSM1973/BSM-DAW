@@ -105,7 +105,7 @@ MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
 int arrangerDropTrack(MainComponent& main, juce::Point<int> local, bool instrumentPlugin)
 {
     const int rowH = getLibertyTrackRowHeight();
-    const int relativeY = local.y - transportHeight - rulerHeight;
+    const int relativeY = local.y - main.getArrangeTop();
     if (relativeY < 0 || local.y >= main.getMixerTop()) return -1;
     const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
     const int audioCount = main.getAudioTrackCount();
@@ -127,7 +127,7 @@ int oneKnobDropTrack(MainComponent& main, juce::Point<int> local)
     if (isLibertyMixConsoleVisible(&main))
         return getLibertyMixConsolePluginDropTrack(&main, local, false);
     const int rowH = getLibertyTrackRowHeight();
-    const int relativeY = local.y - transportHeight - rulerHeight;
+    const int relativeY = local.y - main.getArrangeTop();
     if (relativeY < 0 || local.y >= main.getMixerTop()) return -1;
     const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
     return logicalRow >= 0 && logicalRow < main.getAudioTrackCount() ? logicalRow : -1;
