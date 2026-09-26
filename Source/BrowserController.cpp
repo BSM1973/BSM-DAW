@@ -561,7 +561,14 @@ private:
         juce::String error;
         bool ok = false;
         auto& host = LibertyPluginHost::instance();
-        if (d.isInstrument) { ok = host.loadInstrument(d, error); if (ok) host.showInstrumentEditor(); }
+        if (d.isInstrument)
+        {
+            const int logical = owner.selectedTrack;
+            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+            const int instrumentLane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
+            ok = host.loadInstrumentForTrack(instrumentLane, d, error);
+            if (ok) host.showInstrumentEditorForTrack(instrumentLane);
+        }
         else
         {
             int track = owner.selectedTrack;
@@ -599,13 +606,25 @@ private:
     void loadSelectedPlugin() { if (const auto* d = selectedPluginDescription()) loadPluginDescription(*d); }
     void openLoadedPluginEditor()
     {
-        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) { LibertyPluginHost::instance().showInstrumentEditor(); return; }
+        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
+        {
+            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+            const int logical = owner.selectedTrack;
+            const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
+            LibertyPluginHost::instance().showInstrumentEditorForTrack(lane); return;
+        }
         int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
         LibertyPluginHost::instance().showEditorForTrack(track);
     }
     void unloadPlugin()
     {
-        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument) LibertyPluginHost::instance().unloadInstrument();
+        if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
+        {
+            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+            const int logical = owner.selectedTrack;
+            const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
+            LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
+        }
         else { int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0; LibertyPluginHost::instance().unloadEffectForTrack(track); }
         refreshPluginStatus(); owner.repaint();
     }
