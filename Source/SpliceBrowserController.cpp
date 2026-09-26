@@ -493,8 +493,18 @@ private:
         spliceVisible = shouldShow;
         if (splicePanel != nullptr)
         {
+            if (shouldShow && browserPanel != nullptr)
+            {
+                splicePanel->setBounds(0, 72, juce::jmax(1, browserPanel->getWidth()),
+                                       juce::jmax(40, browserPanel->getHeight() - 72));
+                splicePanel->resized();
+            }
             splicePanel->setVisible(shouldShow);
-            if (shouldShow) splicePanel->toFront(false);
+            if (shouldShow)
+            {
+                splicePanel->toFront(false);
+                splicePanel->repaint();
+            }
         }
         if (spliceButton != nullptr)
             spliceButton->setColour(juce::TextButton::buttonColourId,
@@ -536,7 +546,10 @@ private:
             }
         }
 
-        splicePanel->setBounds(0, 72, browserPanel->getWidth(), juce::jmax(40, browserPanel->getHeight() - 72));
+        const int panelWidth = juce::jmax(1, browserPanel->getWidth());
+        const int panelHeight = juce::jmax(40, browserPanel->getHeight() - 72);
+        splicePanel->setBounds(0, 72, panelWidth, panelHeight);
+        splicePanel->resized();
         spliceButton->setVisible(browserPanel->isVisible());
         if (spliceVisible)
         {
