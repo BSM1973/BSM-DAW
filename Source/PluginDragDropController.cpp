@@ -209,8 +209,10 @@ private:
         if (!dragging || (!plugin.has_value() && !oneKnob.has_value()))
         {
             dragging = false;
-            if (auto* main = findMainComponentAtScreenPoint(event.getScreenPosition()))
-                main->setMouseCursor(juce::MouseCursor::NormalCursor);
+            for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
+                if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
+                    if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                        owner->setMouseCursor(juce::MouseCursor::NormalCursor);
             return;
         }
         dragging = false;
