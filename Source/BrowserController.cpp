@@ -147,7 +147,8 @@ public:
         midiButton.setButtonText("MIDI");
         presetsButton.setButtonText("PRESETS");
         pluginsButton.setButtonText("PLUGINS");
-        for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton })
+        spliceButton.setButtonText("SPLICE");
+        for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2027));
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
@@ -281,11 +282,14 @@ public:
     void resized() override
     {
         closeButton.setBounds(getWidth() - 72, 8, 62, 26);
-        filesButton.setBounds(8, 42, 52, 26);
-        audioButton.setBounds(62, 42, 52, 26);
-        midiButton.setBounds(116, 42, 46, 26);
-        presetsButton.setBounds(164, 42, 66, 26);
-        pluginsButton.setBounds(232, 42, 80, 26);
+        const int tabGap = 3;
+        const int tabWidth = juce::jmax(42, (juce::jmax(300, getWidth() - 16) - tabGap * 5) / 6);
+        int tabX = 8;
+        for (auto* button : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
+        {
+            button->setBounds(tabX, 42, tabWidth, 26);
+            tabX += tabWidth + tabGap;
+        }
 
         homeButton.setBounds(12, 105, 70, 24);
         fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 174));
@@ -750,7 +754,7 @@ private:
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::StringArray favouriteKeys;
-    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, homeButton;
+    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus;
