@@ -289,7 +289,7 @@ private:
 
     void chooseSpliceFolder()
     {
-        chooser = std::make_unique<juce::FileChooser>("Choose your Splice sample folder", spliceRoot, "*");
+        chooser = std::make_unique<juce::FileChooser>("Choisir le dossier de samples Splice", spliceRoot, "*");
         chooser->launchAsync(juce::FileBrowserComponent::openMode
                              | juce::FileBrowserComponent::canSelectDirectories,
                              [this](const juce::FileChooser& fc)
@@ -351,17 +351,17 @@ private:
     {
         if (scanning.load())
         {
-            statusLabel.setText("Scanning " + spliceRoot.getFullPathName(), juce::dontSendNotification);
+            statusLabel.setText("Analyse : " + spliceRoot.getFullPathName(), juce::dontSendNotification);
             return;
         }
 
         if (!spliceRoot.isDirectory())
         {
-            statusLabel.setText("Splice folder not found. Use FOLDER to select it.", juce::dontSendNotification);
+            statusLabel.setText("Dossier Splice introuvable. Utilise FOLDER pour le sélectionner.", juce::dontSendNotification);
             return;
         }
 
-        statusLabel.setText(juce::String(filteredIndices.size()) + " sample(s) - drag directly to ARRANGE / PERFORM",
+        statusLabel.setText(juce::String(filteredIndices.size()) + " sample(s) - glisser vers ARRANGE / PERFORM",
                             juce::dontSendNotification);
     }
 
