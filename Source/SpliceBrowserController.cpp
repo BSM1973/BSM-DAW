@@ -164,7 +164,7 @@ public:
            #endif
         };
 
-        searchBox.setTextToShowWhenEmpty("Search downloaded Splice samples", juce::Colour(0xff69727c));
+        searchBox.setTextToShowWhenEmpty("Rechercher dans les samples Splice téléchargés", juce::Colour(0xff69727c));
         searchBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff171c22));
         searchBox.setColour(juce::TextEditor::textColourId, juce::Colours::white);
         searchBox.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff303842));
