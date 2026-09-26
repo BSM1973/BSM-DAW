@@ -142,6 +142,34 @@ public:
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
         addAndMakeVisible(pluginTree);
 
+        spliceTitle.setText("SPLICE", juce::dontSendNotification);
+        spliceTitle.setColour(juce::Label::textColourId, juce::Colours::white);
+        spliceTitle.setFont(juce::Font(14.0f, juce::Font::bold));
+        addAndMakeVisible(spliceTitle);
+        spliceInfo.setText("Bibliothèque Splice locale - sélectionne ton dossier de samples téléchargés.", juce::dontSendNotification);
+        spliceInfo.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3ad));
+        spliceInfo.setFont(juce::Font(10.0f));
+        spliceInfo.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(spliceInfo);
+        spliceFolderButton.setButtonText("DOSSIER SPLICE");
+        spliceFolderButton.onClick = [this]
+        {
+            spliceChooser = std::make_unique<juce::FileChooser>("Choisir le dossier de samples Splice", juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*");
+            spliceChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                [this](const juce::FileChooser& chooser)
+                {
+                    const auto folder = chooser.getResult();
+                    if (folder.isDirectory())
+                    {
+                        rootDirectory = folder;
+                        directoryList.setDirectory(rootDirectory, true, true);
+                        fileTree.refresh();
+                        spliceInfo.setText("Dossier Splice : " + folder.getFullPathName(), juce::dontSendNotification);
+                    }
+                });
+        };
+        addAndMakeVisible(spliceFolderButton);
+
         filesButton.setButtonText("FILES");
         audioButton.setButtonText("AUDIO");
         midiButton.setButtonText("MIDI");
@@ -163,26 +191,7 @@ public:
         midiButton.onClick = [this] { setCategory(Category::midi); };
         presetsButton.onClick = [this] { setCategory(Category::presets); };
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
-        spliceButton.onClick = [this]
-        {
-            spliceButton.setToggleState(true, juce::dontSendNotification);
-            filesButton.setToggleState(false, juce::dontSendNotification);
-            audioButton.setToggleState(false, juce::dontSendNotification);
-            midiButton.setToggleState(false, juce::dontSendNotification);
-            presetsButton.setToggleState(false, juce::dontSendNotification);
-            pluginsButton.setToggleState(false, juce::dontSendNotification);
-            fileTree.setVisible(false); homeButton.setVisible(false);
-            pluginTree.setVisible(false); scanPluginsButton.setVisible(false);
-            blacklistButton.setVisible(false); clearBlacklistButton.setVisible(false);
-            favouritePluginButton.setVisible(false); loadPluginButton.setVisible(false);
-            openPluginButton.setVisible(false); unloadPluginButton.setVisible(false);
-            pluginStatus.setVisible(false);
-            for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &reverbButton,
-                             &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
-                             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton,
-                             &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton })
-                b->setVisible(false);
-        };
+        spliceButton.onClick = [this] { setCategory(Category::splice); };
 
         homeButton.setButtonText("HOME");
         homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
@@ -332,10 +341,13 @@ public:
         openPluginButton.setBounds(18 + w * 2, controlsY, w, 28);
         unloadPluginButton.setBounds(22 + w * 3, controlsY, w, 28);
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
+        spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
+        spliceInfo.setBounds(12, 132, getWidth() - 24, 42);
+        spliceFolderButton.setBounds(12, 182, getWidth() - 24, 30);
     }
 
 private:
-    enum class Category { files, audio, midi, presets, plugins };
+    enum class Category { files, audio, midi, presets, plugins, splice };
 
     static juce::File favouritesFile()
     {
@@ -431,8 +443,11 @@ private:
         midiButton.setToggleState(category == Category::midi, juce::dontSendNotification);
         presetsButton.setToggleState(category == Category::presets, juce::dontSendNotification);
         pluginsButton.setToggleState(category == Category::plugins, juce::dontSendNotification);
+        spliceButton.setToggleState(category == Category::splice, juce::dontSendNotification);
         const bool pluginMode = category == Category::plugins;
-        fileTree.setVisible(!pluginMode); homeButton.setVisible(!pluginMode);
+        const bool spliceMode = category == Category::splice;
+        fileTree.setVisible(!pluginMode && !spliceMode); homeButton.setVisible(!pluginMode && !spliceMode);
+        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceFolderButton.setVisible(spliceMode);
         pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -777,7 +792,9 @@ private:
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
-    juce::Label pluginStatus;
+    juce::Label pluginStatus, spliceTitle, spliceInfo;
+    juce::TextButton spliceFolderButton;
+    std::unique_ptr<juce::FileChooser> spliceChooser;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
