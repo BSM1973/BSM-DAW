@@ -434,7 +434,7 @@ private:
     bool libraryMode = true;
 };
 
-class SpliceBrowserController final : private juce::Timer, private juce::MouseListener
+class SpliceBrowserController final : private juce::Timer, private juce::MouseListener, private juce::Button::Listener
 {
 public:
     explicit SpliceBrowserController(MainComponent& ownerIn) : owner(ownerIn)
