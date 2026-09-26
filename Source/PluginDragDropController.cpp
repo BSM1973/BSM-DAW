@@ -156,6 +156,10 @@ private:
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!event.mods.isLeftButtonDown()) return;
+        for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
+            if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
+                if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                    owner->setMouseCursor(juce::MouseCursor::NormalCursor);
         oneKnobCandidate.reset();
         oneKnobCandidate = resolveOneKnob(event.eventComponent);
         candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent);
