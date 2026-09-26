@@ -525,9 +525,13 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     resetProjectState();
 
-    const int savedAudioTracks = juce::jmax(AudioEngine::initialAudioTracks, project->getIntAttribute("audioTrackCount", AudioEngine::initialAudioTracks));
-    const int savedMidiTracks = juce::jmax(1, project->getIntAttribute("midiTrackCount", 1));
-    const int savedInstrumentTracks = juce::jmax(1, project->getIntAttribute("instrumentTrackCount", 1));
+    constexpr int maxRestoredTracksPerType = 512;
+    const int savedAudioTracks = juce::jlimit(AudioEngine::initialAudioTracks, maxRestoredTracksPerType,
+                                              project->getIntAttribute("audioTrackCount", AudioEngine::initialAudioTracks));
+    const int savedMidiTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                             project->getIntAttribute("midiTrackCount", 1));
+    const int savedInstrumentTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                                   project->getIntAttribute("instrumentTrackCount", 1));
     while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
     while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
     while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
