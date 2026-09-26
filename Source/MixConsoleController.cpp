@@ -18,7 +18,7 @@ constexpr int transportHeight=76, stripW=142, topY=66;
 float gainToDb(float g){return g<=.00001f?-60.f:juce::jlimit(-60.f,6.f,juce::Decibels::gainToDecibels(g));}
 float dbToGain(float d){return d<=-59.9f?0.f:juce::Decibels::decibelsToGain(d);}
 juce::Colour trackColour(int id){static constexpr juce::uint32 palette[]{0xff31506a,0xff3b82f6,0xff22c55e,0xffeab308,0xfff97316,0xffef4444,0xffa855f7,0xffec4899,0xff14b8a6};return juce::Colour(palette[(size_t)juce::jlimit(0,8,id)]);}
-struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload;juce::Rectangle<int>bounds;float level=0,peak=0;};
+struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload;juce::Rectangle<int>bounds;};
 class MixConsoleView final:public juce::Component,private juce::Timer{
 public:
  explicit MixConsoleView(MainComponent&o):owner(o){scrollListener.o=this;setOpaque(true);setInterceptsMouseClicks(true,true);scroll.setRangeLimits(0,1);scroll.addListener(&scrollListener);addAndMakeVisible(scroll);owner.addAndMakeVisible(this);startTimerHz(20);setVisible(false);}
