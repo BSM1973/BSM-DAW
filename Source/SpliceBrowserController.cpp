@@ -122,11 +122,11 @@ public:
         setOpaque(true);
         loadRootFolder();
 
-        libraryButton.setButtonText("MY SAMPLES");
-        soundsButton.setButtonText("SOUNDS");
-        loginButton.setButtonText("LOGIN");
-        rescanButton.setButtonText("RESCAN");
-        folderButton.setButtonText("FOLDER");
+        libraryButton.setButtonText("MES SAMPLES");
+        soundsButton.setButtonText("SONS");
+        loginButton.setButtonText("CONNEXION");
+        rescanButton.setButtonText("RÉANALYSER");
+        folderButton.setButtonText("DOSSIER");
         desktopButton.setButtonText("DESKTOP");
 
         for (auto* button : { &libraryButton, &soundsButton, &loginButton,
@@ -357,7 +357,7 @@ private:
 
         if (!spliceRoot.isDirectory())
         {
-            statusLabel.setText("Dossier Splice introuvable. Utilise FOLDER pour le sélectionner.", juce::dontSendNotification);
+            statusLabel.setText("Dossier Splice introuvable. Utilise DOSSIER pour le sélectionner.", juce::dontSendNotification);
             return;
         }
 
