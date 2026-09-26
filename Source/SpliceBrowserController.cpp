@@ -361,7 +361,7 @@ private:
             return;
         }
 
-        statusLabel.setText(juce::String(filteredIndices.size()) + " sample(s) - drag directly to ARRANGE or PERFORM",
+        statusLabel.setText(juce::String(filteredIndices.size()) + " sample(s) - drag directly to ARRANGE / PERFORM",
                             juce::dontSendNotification);
     }
 
