@@ -610,7 +610,12 @@ private:
     void loadOneKnob(LibertyOneKnobRack::Type type)
     {
         const int track = selectedAudioTrack();
-        if (track < 0) return;
+        if (track < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
+                                                   "Sélectionne une piste Audio pour charger ce One Knob.", "OK");
+            return;
+        }
         auto& manager = LibertyOneKnobManager::instance();
         manager.setEffect(track, type);
         manager.showEditor(track);
@@ -621,7 +626,12 @@ private:
     void clearOneKnob()
     {
         const int track = selectedAudioTrack();
-        if (track < 0) return;
+        if (track < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
+                                                   "Sélectionne une piste Audio pour retirer le One Knob.", "OK");
+            return;
+        }
         LibertyOneKnobManager::instance().clearEffect(track);
         refreshPluginStatus();
         owner.repaint();
