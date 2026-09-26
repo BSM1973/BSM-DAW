@@ -219,9 +219,13 @@ public:
         const int remainingActions = usable - rescanWidth - gap * 2;
         const int folderWidth = remainingActions / 2;
 
-        libraryButton.setBounds(margin, 30, w1, 26);
-        soundsButton.setBounds(margin + w1 + gap, 30, w1, 26);
-        loginButton.setBounds(margin + (w1 + gap) * 2, 30, usable - (w1 + gap) * 2, 26);
+        const int loginWidth = juce::jmin(juce::jmax(w1, 86), usable - gap * 2 - 120);
+        const int remainingModes = usable - loginWidth - gap * 2;
+        const int libraryWidth = remainingModes / 2;
+
+        libraryButton.setBounds(margin, 30, libraryWidth, 26);
+        soundsButton.setBounds(margin + libraryWidth + gap, 30, remainingModes - libraryWidth, 26);
+        loginButton.setBounds(margin + remainingModes + gap * 2, 30, loginWidth, 26);
 
         rescanButton.setBounds(margin, 60, rescanWidth, 24);
         folderButton.setBounds(margin + rescanWidth + gap, 60, folderWidth, 24);
