@@ -568,9 +568,13 @@ private:
         auto& host = LibertyPluginHost::instance();
         if (d.isInstrument)
         {
-            const int logical = owner.selectedTrack;
-            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
-            const int instrumentLane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
+            const int instrumentLane = selectedInstrumentTrack();
+            if (instrumentLane < 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Instrument",
+                                                       "Sélectionne une piste Instrument pour charger cet instrument.", "OK");
+                return;
+            }
             ok = host.loadInstrumentForTrack(instrumentLane, d, error);
             if (ok) host.showInstrumentEditorForTrack(instrumentLane);
         }
@@ -594,6 +598,13 @@ private:
     {
         const int track = owner.selectedTrack;
         return (track >= 0 && track < owner.getAudioTrackCount()) ? track : -1;
+    }
+
+    int selectedInstrumentTrack() const
+    {
+        const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+        const int track = owner.selectedTrack;
+        return (track >= firstInstrument && track < firstInstrument + owner.getInstrumentTrackCount()) ? track - firstInstrument : -1;
     }
 
     void loadOneKnob(LibertyOneKnobRack::Type type)
@@ -621,10 +632,9 @@ private:
     {
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
         {
-            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
-            const int logical = owner.selectedTrack;
-            const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
-            LibertyPluginHost::instance().showInstrumentEditorForTrack(lane); return;
+            const int lane = selectedInstrumentTrack();
+            if (lane >= 0) LibertyPluginHost::instance().showInstrumentEditorForTrack(lane);
+            return;
         }
         const int track = selectedAudioTrack();
         if (track >= 0) LibertyPluginHost::instance().showEditorForTrack(track);
@@ -633,10 +643,8 @@ private:
     {
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
         {
-            const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
-            const int logical = owner.selectedTrack;
-            const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
-            LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
+            const int lane = selectedInstrumentTrack();
+            if (lane >= 0) LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
         }
         else
         {
