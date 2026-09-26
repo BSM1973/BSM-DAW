@@ -154,6 +154,9 @@ public:
         spliceOpenPluginButton.setButtonText("OUVRIR SPLICE SOUNDS");
         spliceOpenPluginButton.onClick = [this] { openSpliceSounds(); };
         addAndMakeVisible(spliceOpenPluginButton);
+        spliceScanButton.setButtonText("SCAN SPLICE");
+        spliceScanButton.onClick = [this] { scanPlugins(); };
+        addAndMakeVisible(spliceScanButton);
 
         filesButton.setButtonText("FILES");
         audioButton.setButtonText("AUDIO");
@@ -328,7 +331,9 @@ public:
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
         spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
         spliceInfo.setBounds(12, 128, getWidth() - 24, 52);
-        spliceOpenPluginButton.setBounds(12, 188, getWidth() - 24, 32);
+        const int spliceButtonW = juce::jmax(80, (getWidth() - 28) / 2);
+        spliceOpenPluginButton.setBounds(12, 188, spliceButtonW, 32);
+        spliceScanButton.setBounds(16 + spliceButtonW, 188, getWidth() - 28 - spliceButtonW, 32);
     }
 
 private:
@@ -432,7 +437,7 @@ private:
         const bool pluginMode = category == Category::plugins;
         const bool spliceMode = category == Category::splice;
         fileTree.setVisible(!pluginMode && !spliceMode); homeButton.setVisible(!pluginMode && !spliceMode);
-        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceOpenPluginButton.setVisible(spliceMode);
+        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceOpenPluginButton.setVisible(spliceMode); spliceScanButton.setVisible(spliceMode);
         pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -818,7 +823,7 @@ private:
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus, spliceTitle, spliceInfo;
-    juce::TextButton spliceOpenPluginButton;
+    juce::TextButton spliceOpenPluginButton, spliceScanButton;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
