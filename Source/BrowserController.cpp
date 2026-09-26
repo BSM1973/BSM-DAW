@@ -152,11 +152,7 @@ public:
         spliceInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(spliceInfo);
         spliceOpenPluginButton.setButtonText("OUVRIR SPLICE SOUNDS");
-        spliceOpenPluginButton.onClick = [this]
-        {
-            setCategory(Category::plugins);
-            pluginStatus.setText("Sélectionne Splice Sounds dans la liste AU/VST3 puis clique LOAD.", juce::dontSendNotification);
-        };
+        spliceOpenPluginButton.onClick = [this] { openSpliceSounds(); };
         addAndMakeVisible(spliceOpenPluginButton);
 
         filesButton.setButtonText("FILES");
@@ -663,6 +659,46 @@ private:
         LibertyOneKnobManager::instance().clearEffect(track);
         refreshPluginStatus();
         owner.repaint();
+    }
+
+    void openSpliceSounds()
+    {
+        refreshPlugins();
+        const juce::PluginDescription* splice = nullptr;
+        for (const auto& d : pluginDescriptions)
+        {
+            const auto name = d.name.trim();
+            if (name.equalsIgnoreCase("Splice Sounds")
+                || (name.containsIgnoreCase("Splice") && name.containsIgnoreCase("Sounds")))
+            {
+                splice = &d;
+                if (d.isInstrument) break;
+            }
+        }
+
+        if (splice == nullptr)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Splice Sounds",
+                "Splice Sounds n'est pas encore présent dans la liste des plugins Liberty. Installe le plugin officiel puis lance SCAN AU + VST3.", "OK");
+            return;
+        }
+
+        if (!splice->isInstrument)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Splice Sounds",
+                "Liberty a trouvé un plugin Splice, mais pas l'instrument Splice Sounds. Vérifie que Splice Sounds est installé et rescanné.", "OK");
+            return;
+        }
+
+        const int lane = selectedInstrumentTrack();
+        if (lane < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Splice Sounds",
+                "Sélectionne d'abord une piste Instrument : Splice Sounds est un plugin instrument.", "OK");
+            return;
+        }
+
+        loadPluginDescription(*splice);
     }
 
     void loadSelectedPlugin() { if (const auto* d = selectedPluginDescription()) loadPluginDescription(*d); }
