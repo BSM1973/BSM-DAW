@@ -14,9 +14,6 @@ int getLibertyMixConsolePluginDropTrack(MainComponent* owner,
 
 namespace
 {
-constexpr int transportHeight = 76;
-constexpr int rulerHeight = 32;
-
 std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* eventComponent)
 {
     juce::TreeView* tree = nullptr;
