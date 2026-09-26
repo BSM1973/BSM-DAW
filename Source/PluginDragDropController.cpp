@@ -209,6 +209,8 @@ private:
         if (!dragging || (!plugin.has_value() && !oneKnob.has_value()))
         {
             dragging = false;
+            if (auto* main = findMainComponentAtScreenPoint(event.getScreenPosition()))
+                main->setMouseCursor(juce::MouseCursor::NormalCursor);
             return;
         }
         dragging = false;
