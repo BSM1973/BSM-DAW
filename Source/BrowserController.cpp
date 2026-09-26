@@ -146,29 +146,13 @@ public:
         spliceTitle.setColour(juce::Label::textColourId, juce::Colours::white);
         spliceTitle.setFont(juce::Font(14.0f, juce::Font::bold));
         addAndMakeVisible(spliceTitle);
-        spliceInfo.setText("Bibliothèque Splice locale - sélectionne ton dossier de samples téléchargés.", juce::dontSendNotification);
+        spliceInfo.setText("Splice Sounds intégré dans Liberty", juce::dontSendNotification);
         spliceInfo.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3ad));
         spliceInfo.setFont(juce::Font(10.0f));
         spliceInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(spliceInfo);
-        spliceFolderButton.setButtonText("DOSSIER SPLICE");
-        spliceFolderButton.onClick = [this]
-        {
-            spliceChooser = std::make_unique<juce::FileChooser>("Choisir le dossier de samples Splice", juce::File::getSpecialLocation(juce::File::userHomeDirectory), "*");
-            spliceChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                [this](const juce::FileChooser& chooser)
-                {
-                    const auto folder = chooser.getResult();
-                    if (folder.isDirectory())
-                    {
-                        rootDirectory = folder;
-                        directoryList.setDirectory(rootDirectory, true, true);
-                        fileTree.refresh();
-                        spliceInfo.setText("Dossier Splice : " + folder.getFullPathName(), juce::dontSendNotification);
-                    }
-                });
-        };
-        addAndMakeVisible(spliceFolderButton);
+        spliceWeb.goToURL("https://splice.com/sounds");
+        addAndMakeVisible(spliceWeb);
 
         filesButton.setButtonText("FILES");
         audioButton.setButtonText("AUDIO");
@@ -342,8 +326,8 @@ public:
         unloadPluginButton.setBounds(22 + w * 3, controlsY, w, 28);
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
         spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
-        spliceInfo.setBounds(12, 132, getWidth() - 24, 42);
-        spliceFolderButton.setBounds(12, 182, getWidth() - 24, 30);
+        spliceInfo.setBounds(12, 128, getWidth() - 24, 24);
+        spliceWeb.setBounds(6, 158, getWidth() - 12, juce::jmax(40, getHeight() - 164));
     }
 
 private:
@@ -447,7 +431,7 @@ private:
         const bool pluginMode = category == Category::plugins;
         const bool spliceMode = category == Category::splice;
         fileTree.setVisible(!pluginMode && !spliceMode); homeButton.setVisible(!pluginMode && !spliceMode);
-        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceFolderButton.setVisible(spliceMode);
+        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceWeb.setVisible(spliceMode);
         pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -793,8 +777,7 @@ private:
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus, spliceTitle, spliceInfo;
-    juce::TextButton spliceFolderButton;
-    std::unique_ptr<juce::FileChooser> spliceChooser;
+    juce::WebBrowserComponent spliceWeb;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
