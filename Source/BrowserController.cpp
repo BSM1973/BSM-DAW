@@ -146,13 +146,18 @@ public:
         spliceTitle.setColour(juce::Label::textColourId, juce::Colours::white);
         spliceTitle.setFont(juce::Font(14.0f, juce::Font::bold));
         addAndMakeVisible(spliceTitle);
-        spliceInfo.setText("Splice Sounds intégré dans Liberty", juce::dontSendNotification);
+        spliceInfo.setText("Splice Sounds - charge le plugin officiel AU/VST3 dans Liberty pour l'interface complète.", juce::dontSendNotification);
         spliceInfo.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3ad));
         spliceInfo.setFont(juce::Font(10.0f));
         spliceInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(spliceInfo);
-        spliceWeb.goToURL("https://splice.com/sounds");
-        addAndMakeVisible(spliceWeb);
+        spliceOpenPluginButton.setButtonText("OUVRIR SPLICE SOUNDS");
+        spliceOpenPluginButton.onClick = [this]
+        {
+            setCategory(Category::plugins);
+            pluginStatus.setText("Sélectionne Splice Sounds dans la liste AU/VST3 puis clique LOAD.", juce::dontSendNotification);
+        };
+        addAndMakeVisible(spliceOpenPluginButton);
 
         filesButton.setButtonText("FILES");
         audioButton.setButtonText("AUDIO");
@@ -326,8 +331,8 @@ public:
         unloadPluginButton.setBounds(22 + w * 3, controlsY, w, 28);
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
         spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
-        spliceInfo.setBounds(12, 128, getWidth() - 24, 24);
-        spliceWeb.setBounds(6, 158, getWidth() - 12, juce::jmax(40, getHeight() - 164));
+        spliceInfo.setBounds(12, 128, getWidth() - 24, 52);
+        spliceOpenPluginButton.setBounds(12, 188, getWidth() - 24, 32);
     }
 
 private:
@@ -431,7 +436,7 @@ private:
         const bool pluginMode = category == Category::plugins;
         const bool spliceMode = category == Category::splice;
         fileTree.setVisible(!pluginMode && !spliceMode); homeButton.setVisible(!pluginMode && !spliceMode);
-        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceWeb.setVisible(spliceMode);
+        spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceOpenPluginButton.setVisible(spliceMode);
         pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -777,7 +782,7 @@ private:
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus, spliceTitle, spliceInfo;
-    juce::WebBrowserComponent spliceWeb;
+    juce::TextButton spliceOpenPluginButton;
     juce::File rootDirectory;
     Category category = Category::files;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
