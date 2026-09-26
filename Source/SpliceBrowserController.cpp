@@ -214,13 +214,19 @@ public:
         const int usable = juce::jmax(240, getWidth() - margin * 2);
         const int w1 = (usable - gap * 2) / 3;
 
+        // Give the longest localized actions enough room at the minimum Browser width.
+        const int rescanWidth = juce::jmin(juce::jmax(w1, 92), usable - gap * 2 - 120);
+        const int remainingActions = usable - rescanWidth - gap * 2;
+        const int folderWidth = remainingActions / 2;
+
         libraryButton.setBounds(margin, 30, w1, 26);
         soundsButton.setBounds(margin + w1 + gap, 30, w1, 26);
         loginButton.setBounds(margin + (w1 + gap) * 2, 30, usable - (w1 + gap) * 2, 26);
 
-        rescanButton.setBounds(margin, 60, w1, 24);
-        folderButton.setBounds(margin + w1 + gap, 60, w1, 24);
-        desktopButton.setBounds(margin + (w1 + gap) * 2, 60, usable - (w1 + gap) * 2, 24);
+        rescanButton.setBounds(margin, 60, rescanWidth, 24);
+        folderButton.setBounds(margin + rescanWidth + gap, 60, folderWidth, 24);
+        desktopButton.setBounds(margin + rescanWidth + gap + folderWidth + gap, 60,
+                                remainingActions - folderWidth, 24);
 
         for (auto* button : { &libraryButton, &soundsButton, &loginButton,
                               &rescanButton, &folderButton, &desktopButton })
