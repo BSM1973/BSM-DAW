@@ -643,23 +643,47 @@ private:
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
         {
             const int lane = selectedInstrumentTrack();
-            if (lane >= 0) LibertyPluginHost::instance().showInstrumentEditorForTrack(lane);
+            if (lane < 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Instrument",
+                                                       "Sélectionne une piste Instrument pour ouvrir son interface.", "OK");
+                return;
+            }
+            LibertyPluginHost::instance().showInstrumentEditorForTrack(lane);
             return;
         }
         const int track = selectedAudioTrack();
-        if (track >= 0) LibertyPluginHost::instance().showEditorForTrack(track);
+        if (track < 0)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Effet",
+                                                   "Sélectionne une piste Audio pour ouvrir son effet.", "OK");
+            return;
+        }
+        LibertyPluginHost::instance().showEditorForTrack(track);
     }
     void unloadPlugin()
     {
         if (const auto* d = selectedPluginDescription(); d != nullptr && d->isInstrument)
         {
             const int lane = selectedInstrumentTrack();
-            if (lane >= 0) LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
+            if (lane < 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Instrument",
+                                                       "Sélectionne une piste Instrument pour retirer son instrument.", "OK");
+                return;
+            }
+            LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
         }
         else
         {
             const int track = selectedAudioTrack();
-            if (track >= 0) LibertyPluginHost::instance().unloadEffectForTrack(track);
+            if (track < 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Effet",
+                                                       "Sélectionne une piste Audio pour retirer son effet.", "OK");
+                return;
+            }
+            LibertyPluginHost::instance().unloadEffectForTrack(track);
         }
         refreshPluginStatus(); owner.repaint();
     }
