@@ -206,7 +206,14 @@ private:
         dragging = false;
 
         auto* main = findMainComponentAtScreenPoint(event.getScreenPosition());
-        if (main == nullptr) return;
+        if (main == nullptr)
+        {
+            for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
+                if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
+                    if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                        owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+            return;
+        }
         main->setMouseCursor(juce::MouseCursor::NormalCursor);
 
         const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
