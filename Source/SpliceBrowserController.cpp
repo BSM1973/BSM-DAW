@@ -214,17 +214,6 @@ public:
         const int usable = juce::jmax(240, getWidth() - margin * 2);
         const int w1 = (usable - gap * 2) / 3;
 
-        // Keep the longer localized labels readable at the minimum Browser width.
-        const auto fitButtonText = [](juce::TextButton& button, float preferred)
-        {
-            const auto available = juce::jmax(1, button.getWidth() - 10);
-            auto font = juce::Font(preferred, juce::Font::bold);
-            while (font.getStringWidth(button.getButtonText()) > available && font.getHeight() > 8.0f)
-                font.setHeight(font.getHeight() - 0.5f);
-            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            button.setTooltip(button.getButtonText());
-        };
-
         libraryButton.setBounds(margin, 30, w1, 26);
         soundsButton.setBounds(margin + w1 + gap, 30, w1, 26);
         loginButton.setBounds(margin + (w1 + gap) * 2, 30, usable - (w1 + gap) * 2, 26);
@@ -235,7 +224,7 @@ public:
 
         for (auto* button : { &libraryButton, &soundsButton, &loginButton,
                               &rescanButton, &folderButton, &desktopButton })
-            fitButtonText(*button, 11.0f);
+            button->setTooltip(button->getButtonText());
 
         searchBox.setBounds(margin, 90, usable, 26);
         statusLabel.setBounds(margin, 119, usable, 20);
