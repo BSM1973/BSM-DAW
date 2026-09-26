@@ -633,15 +633,21 @@ private:
     {
         if (scanning.load()) { pluginStatus.setText(getScanStatus(), juce::dontSendNotification); return; }
         auto& host = LibertyPluginHost::instance();
-        int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
-        juce::String text;
-        auto& oneKnob = LibertyOneKnobManager::instance();
-        if (oneKnob.hasEffect(track)) text << "A" << (track + 1) << ": " << oneKnob.getName(track) << "   ";
-        if (host.hasEffectForTrack(track)) text << "FX: " << host.getEffectName(track) << "   ";
-        const int firstInstrument = owner.getAudioTrackCount() + owner.getMidiTrackCount();
         const int logical = owner.selectedTrack;
-        const int instrumentLane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
-        if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
+        const int audioCount = owner.getAudioTrackCount();
+        const int firstInstrument = audioCount + owner.getMidiTrackCount();
+        juce::String text;
+        if (logical >= 0 && logical < audioCount)
+        {
+            auto& oneKnob = LibertyOneKnobManager::instance();
+            if (oneKnob.hasEffect(logical)) text << "A" << (logical + 1) << ": " << oneKnob.getName(logical) << "   ";
+            if (host.hasEffectForTrack(logical)) text << "FX: " << host.getEffectName(logical) << "   ";
+        }
+        else if (logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount())
+        {
+            const int instrumentLane = logical - firstInstrument;
+            if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
+        }
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
