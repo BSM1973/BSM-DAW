@@ -453,7 +453,7 @@ public:
         if (spliceButton != nullptr) spliceButton->setVisible(false);
         if (splicePanel != nullptr) splicePanel->setVisible(false);
         splicePanelOwned.reset();
-        spliceButtonOwned.reset();
+        spliceButton = nullptr;
     }
 
 private:
@@ -463,13 +463,14 @@ private:
         browserPanel = findBrowserPanel(owner);
         if (browserPanel == nullptr) return;
 
-        spliceButtonOwned = std::make_unique<juce::TextButton>("SPLICE");
-        spliceButton = spliceButtonOwned.get();
+        spliceButton = findDirectButton(browserPanel, "SPLICE");
+        if (spliceButton == nullptr)
+        {
+            browserPanel = nullptr;
+            return;
+        }
         spliceButton->setMouseClickGrabsKeyboardFocus(false);
-        spliceButton->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2027));
-        spliceButton->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
         spliceButton->onClick = [this] { showSplice(true); };
-        browserPanel->addAndMakeVisible(*spliceButton);
 
         splicePanelOwned = std::make_unique<SplicePanel>();
         splicePanel = splicePanelOwned.get();
@@ -537,7 +538,6 @@ private:
 
     MainComponent& owner;
     juce::Component* browserPanel = nullptr;
-    std::unique_ptr<juce::TextButton> spliceButtonOwned;
     juce::TextButton* spliceButton = nullptr;
     std::unique_ptr<SplicePanel> splicePanelOwned;
     SplicePanel* splicePanel = nullptr;
