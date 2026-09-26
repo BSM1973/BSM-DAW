@@ -454,7 +454,7 @@ public:
         juce::Desktop::getInstance().removeGlobalMouseListener(this);
         if (spliceButton != nullptr)
         {
-            spliceButton->onClick = nullptr;
+            spliceButton->setToggleState(false, juce::dontSendNotification);
             spliceButton->setVisible(false);
         }
         if (splicePanel != nullptr) splicePanel->setVisible(false);
@@ -476,7 +476,6 @@ private:
             return;
         }
         spliceButton->setMouseClickGrabsKeyboardFocus(false);
-        spliceButton->onClick = [this] { showSplice(true); };
 
         splicePanelOwned = std::make_unique<SplicePanel>();
         splicePanel = splicePanelOwned.get();
@@ -503,8 +502,7 @@ private:
             }
         }
         if (spliceButton != nullptr)
-            spliceButton->setColour(juce::TextButton::buttonColourId,
-                                    shouldShow ? juce::Colour(0xff315f7a) : juce::Colour(0xff1b2027));
+            spliceButton->setToggleState(shouldShow, juce::dontSendNotification);
     }
 
     void mouseDown(const juce::MouseEvent& event) override
@@ -547,6 +545,12 @@ private:
         splicePanel->setBounds(0, 72, panelWidth, panelHeight);
         splicePanel->resized();
         spliceButton->setVisible(browserPanel->isVisible());
+
+        // BrowserController owns the native tab click. Mirror its toggle state here
+        // so this controller cannot overwrite or race the Browser callback.
+        const bool requestedVisible = spliceButton->getToggleState();
+        if (requestedVisible != spliceVisible)
+            showSplice(requestedVisible);
         if (spliceVisible)
         {
             splicePanel->setVisible(browserPanel->isVisible());
