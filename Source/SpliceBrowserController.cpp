@@ -450,13 +450,23 @@ public:
         if (stopped.exchange(true)) return;
         stopTimer();
         juce::Desktop::getInstance().removeGlobalMouseListener(this);
-        if (spliceButton != nullptr) spliceButton->setVisible(false);
+        if (spliceButton != nullptr)
+        {
+            spliceButton->removeListener(this);
+            spliceButton->setVisible(false);
+        }
         if (splicePanel != nullptr) splicePanel->setVisible(false);
         splicePanelOwned.reset();
         spliceButton = nullptr;
     }
 
 private:
+    void buttonClicked(juce::Button* button) override
+    {
+        if (button == spliceButton)
+            showSplice(true);
+    }
+
     void attachIfPossible()
     {
         if (browserPanel != nullptr) return;
@@ -470,7 +480,7 @@ private:
             return;
         }
         spliceButton->setMouseClickGrabsKeyboardFocus(false);
-        spliceButton->onClick = [this] { showSplice(true); };
+        spliceButton->addListener(this);
 
         splicePanelOwned = std::make_unique<SplicePanel>();
         splicePanel = splicePanelOwned.get();
