@@ -23,7 +23,7 @@ class MixConsoleView final:public juce::Component,private juce::Timer{
 public:
  explicit MixConsoleView(MainComponent&o):owner(o){scrollListener.o=this;setOpaque(true);setInterceptsMouseClicks(true,true);scroll.setRangeLimits(0,1);scroll.addListener(&scrollListener);addAndMakeVisible(scroll);owner.addAndMakeVisible(this);startTimerHz(20);setVisible(false);}
  ~MixConsoleView()override{stopTimer();scroll.removeListener(&scrollListener);clear();}
- void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(false);}}
+ void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(false);}else{selected=nullptr;}}
  bool isConsoleVisible()const{return visible;}
  int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible)return-1;auto q=p-juce::Point<int>(0,transportHeight);for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&s->kind==Strip::audio)return s->lane;}return-1;}
  void paint(juce::Graphics&g)override{g.fillAll(juce::Colour(0xff0d1014));g.setColour(juce::Colour(0xff171c22));g.fillRect(0,0,getWidth(),54);g.setColour(juce::Colours::white);g.setFont(juce::Font(20.f,juce::Font::bold));g.drawText("MIXCONSOLE",24,10,190,28,juce::Justification::centredLeft);for(auto&s:strips)draw(g,*s);}
