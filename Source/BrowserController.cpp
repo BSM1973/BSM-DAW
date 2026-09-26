@@ -566,6 +566,7 @@ private:
         scanFinishedPending.store(false);
         for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
                          &loadPluginButton, &openPluginButton, &unloadPluginButton }) b->setEnabled(false);
+        spliceScanButton.setEnabled(false);
         setScanStatus("Préparation du scan AU + VST3");
         scanThread = std::thread([this]
         {
@@ -796,17 +797,31 @@ private:
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
 
-        if (category == Category::plugins)
+        if (category == Category::plugins || category == Category::splice)
         {
-            if (scanning.load()) pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
+            if (scanning.load())
+            {
+                if (category == Category::plugins) pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
+                else spliceInfo.setText(getScanStatus(), juce::dontSendNotification);
+            }
             else if (scanFinishedPending.exchange(false))
             {
                 if (scanThread.joinable()) scanThread.join();
                 refreshPlugins();
                 for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
                                  &loadPluginButton, &openPluginButton, &unloadPluginButton }) b->setEnabled(true);
+                spliceScanButton.setEnabled(true);
+                if (category == Category::splice)
+                {
+                    const bool found = std::any_of(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& d)
+                    {
+                        return d.isInstrument && d.name.containsIgnoreCase("Splice") && d.name.containsIgnoreCase("Sounds");
+                    });
+                    spliceInfo.setText(found ? "Splice Sounds détecté - prêt à ouvrir."
+                                             : "Splice Sounds non détecté après le scan AU + VST3.", juce::dontSendNotification);
+                }
             }
-            else refreshPluginStatus();
+            else if (category == Category::plugins) refreshPluginStatus();
         }
     }
 
