@@ -434,7 +434,7 @@ private:
     bool libraryMode = true;
 };
 
-class SpliceBrowserController final : private juce::Timer, private juce::MouseListener, private juce::Button::Listener
+class SpliceBrowserController final : private juce::Timer, private juce::MouseListener
 {
 public:
     explicit SpliceBrowserController(MainComponent& ownerIn) : owner(ownerIn)
@@ -452,7 +452,7 @@ public:
         juce::Desktop::getInstance().removeGlobalMouseListener(this);
         if (spliceButton != nullptr)
         {
-            spliceButton->removeListener(this);
+            spliceButton->onClick = nullptr;
             spliceButton->setVisible(false);
         }
         if (splicePanel != nullptr) splicePanel->setVisible(false);
@@ -461,12 +461,6 @@ public:
     }
 
 private:
-    void buttonClicked(juce::Button* button) override
-    {
-        if (button == spliceButton)
-            showSplice(true);
-    }
-
     void attachIfPossible()
     {
         if (browserPanel != nullptr) return;
@@ -480,7 +474,7 @@ private:
             return;
         }
         spliceButton->setMouseClickGrabsKeyboardFocus(false);
-        spliceButton->addListener(this);
+        spliceButton->onClick = [this] { showSplice(true); };
 
         splicePanelOwned = std::make_unique<SplicePanel>();
         splicePanel = splicePanelOwned.get();
