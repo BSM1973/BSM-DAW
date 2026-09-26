@@ -571,8 +571,13 @@ private:
         }
         else
         {
-            int track = owner.selectedTrack;
-            if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
+            const int track = selectedAudioTrack();
+            if (track < 0)
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Effet",
+                                                       "Sélectionne une piste Audio pour charger cet effet.", "OK");
+                return;
+            }
             ok = host.loadEffectForTrack(track, d, error);
             if (ok) host.showEditorForTrack(track);
         }
@@ -616,8 +621,8 @@ private:
             const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
             LibertyPluginHost::instance().showInstrumentEditorForTrack(lane); return;
         }
-        int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0;
-        LibertyPluginHost::instance().showEditorForTrack(track);
+        const int track = selectedAudioTrack();
+        if (track >= 0) LibertyPluginHost::instance().showEditorForTrack(track);
     }
     void unloadPlugin()
     {
@@ -628,7 +633,11 @@ private:
             const int lane = logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount() ? logical - firstInstrument : 0;
             LibertyPluginHost::instance().unloadInstrumentForTrack(lane);
         }
-        else { int track = owner.selectedTrack; if (track < 0 || track >= owner.getAudioTrackCount()) track = 0; LibertyPluginHost::instance().unloadEffectForTrack(track); }
+        else
+        {
+            const int track = selectedAudioTrack();
+            if (track >= 0) LibertyPluginHost::instance().unloadEffectForTrack(track);
+        }
         refreshPluginStatus(); owner.repaint();
     }
 
