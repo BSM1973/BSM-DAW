@@ -84,6 +84,15 @@ std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventCom
     return std::nullopt;
 }
 
+
+void resetLibertyDragCursors()
+{
+    for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
+            if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
 {
     auto& desktop = juce::Desktop::getInstance();
@@ -146,10 +155,7 @@ public:
     {
         if (!registered) return;
         juce::Desktop::getInstance().removeGlobalMouseListener(this);
-        for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
-            if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
-                if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+        resetLibertyDragCursors();
         registered = false;
         candidate.reset();
         oneKnobCandidate.reset();
@@ -160,10 +166,7 @@ private:
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!event.mods.isLeftButtonDown()) return;
-        for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
-            if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
-                if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+        resetLibertyDragCursors();
         oneKnobCandidate.reset();
         oneKnobCandidate = resolveOneKnob(event.eventComponent);
         candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent);
@@ -209,10 +212,7 @@ private:
         if (!dragging || (!plugin.has_value() && !oneKnob.has_value()))
         {
             dragging = false;
-            for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
-                if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
-                    if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                        owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+            resetLibertyDragCursors();
             return;
         }
         dragging = false;
@@ -220,10 +220,7 @@ private:
         auto* main = findMainComponentAtScreenPoint(event.getScreenPosition());
         if (main == nullptr)
         {
-            for (int i = 0; i < juce::Desktop::getInstance().getNumComponents(); ++i)
-                if (auto* window = dynamic_cast<juce::DocumentWindow*>(juce::Desktop::getInstance().getComponent(i)))
-                    if (auto* owner = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                        owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+            resetLibertyDragCursors();
             return;
         }
         main->setMouseCursor(juce::MouseCursor::NormalCursor);
