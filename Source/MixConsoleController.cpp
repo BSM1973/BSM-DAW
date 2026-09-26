@@ -22,7 +22,7 @@ class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinea
 struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;float level=0.f,peak=0.f;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload;juce::Rectangle<int>bounds;};
 class MixConsoleView final:public juce::Component,private juce::Timer{
 public:
- explicit MixConsoleView(MainComponent&o):owner(o){scrollListener.o=this;setOpaque(true);setInterceptsMouseClicks(true,true);scroll.setRangeLimits(0,1);scroll.addListener(&scrollListener);addAndMakeVisible(scroll);owner.addAndMakeVisible(this);startTimerHz(20);setVisible(false);}
+ explicit MixConsoleView(MainComponent&o):owner(o){scrollListener.o=this;setOpaque(true);setInterceptsMouseClicks(true,true);scroll.setRangeLimits(0,1);scroll.addListener(&scrollListener);addAndMakeVisible(scroll);owner.addAndMakeVisible(this);startTimerHz(24);setVisible(false);}
  ~MixConsoleView()override{stopTimer();scroll.removeListener(&scrollListener);clear();}
  void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(false);}else{selected=nullptr;}}
  bool isConsoleVisible()const{return visible;}
