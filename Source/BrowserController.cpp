@@ -163,6 +163,22 @@ public:
         midiButton.onClick = [this] { setCategory(Category::midi); };
         presetsButton.onClick = [this] { setCategory(Category::presets); };
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
+        spliceButton.onClick = [this]
+        {
+            // The Splice controller listens to this native tab. Hide Browser-owned
+            // content first so the Splice panel can become the active Browser page.
+            fileTree.setVisible(false); homeButton.setVisible(false);
+            pluginTree.setVisible(false); scanPluginsButton.setVisible(false);
+            blacklistButton.setVisible(false); clearBlacklistButton.setVisible(false);
+            favouritePluginButton.setVisible(false); loadPluginButton.setVisible(false);
+            openPluginButton.setVisible(false); unloadPluginButton.setVisible(false);
+            pluginStatus.setVisible(false);
+            for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &reverbButton,
+                             &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
+                             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton,
+                             &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton })
+                b->setVisible(false);
+        };
 
         homeButton.setButtonText("HOME");
         homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
