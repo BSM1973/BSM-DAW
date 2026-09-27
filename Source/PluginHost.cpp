@@ -103,6 +103,23 @@ void LibertyPluginHost::shutdown()
     }
 }
 
+void LibertyPluginHost::clearProjectPlugins()
+{
+    const juce::ScopedLock scoped(lock);
+    for (auto& chain : trackEffects) for (auto& slot : chain) if (slot)
+    {
+        closeEditor(*slot); if (slot->processor) slot->processor->releaseResources(); slot->processor.reset(); slot->description = {};
+    }
+    for (auto& chain : instrumentEffects) for (auto& slot : chain) if (slot)
+    {
+        closeEditor(*slot); if (slot->processor) slot->processor->releaseResources(); slot->processor.reset(); slot->description = {};
+    }
+    for (auto& slot : instruments) if (slot)
+    {
+        closeEditor(*slot); if (slot->processor) slot->processor->releaseResources(); slot->processor.reset(); slot->description = {};
+    }
+}
+
 juce::File LibertyPluginHost::pluginListFile() const
 {
     auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
