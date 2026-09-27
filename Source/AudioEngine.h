@@ -58,6 +58,13 @@ public:
         }
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    void setInputMonitoring(bool enabled, int leftInput = 0, int rightInput = 1) noexcept
+    {
+        monitorInputLeft.store(juce::jmax(0, leftInput), std::memory_order_relaxed);
+        monitorInputRight.store(juce::jmax(0, rightInput), std::memory_order_relaxed);
+        inputMonitoringEnabled.store(enabled, std::memory_order_release);
+    }
+    bool isInputMonitoringEnabled() const noexcept { return inputMonitoringEnabled.load(std::memory_order_acquire); }
     void setMetronomeEnabled(bool enabled) noexcept { metronomeEnabled.store(enabled, std::memory_order_relaxed); }
     bool isMetronomeEnabled() const noexcept { return metronomeEnabled.load(std::memory_order_relaxed); }
     void setMetronomeTiming(double bpm, int numerator, int denominator) noexcept
@@ -228,6 +235,9 @@ private:
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
+    std::atomic<bool> inputMonitoringEnabled { false };
+    std::atomic<int> monitorInputLeft { 0 };
+    std::atomic<int> monitorInputRight { 1 };
     std::atomic<bool> metronomeEnabled { false };
     std::atomic<double> metronomeBpm { 120.0 };
     std::atomic<int> metronomeNumerator { 4 };
