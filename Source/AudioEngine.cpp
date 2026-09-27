@@ -475,10 +475,9 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    // Isolation stage 3: do not read any loaded file buffer. Generate a known
-    // low-level continuous sine from the absolute transport position. If this
-    // is clean, the device/callback clock is healthy and the fault is in the
-    // loaded audio-buffer path.
+    // Isolation stage 4: read the loaded buffer at a fixed offset. This avoids
+    // all transport/source-offset arithmetic and proves whether the decoded
+    // AudioBuffer itself contains valid PCM samples.
     for (int channel = 0; channel < numOutputChannels; ++channel)
         if (outputChannelData[channel] != nullptr)
             juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
@@ -486,22 +485,22 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     if (!playing.load(std::memory_order_relaxed))
         return;
 
-    const auto rate = sampleRate.load(std::memory_order_relaxed);
-    if (rate <= 0.0)
-        return;
-
-    const auto position = transportSamples.load(std::memory_order_relaxed);
-    constexpr double twoPi = 6.28318530717958647692;
-    constexpr double frequency = 220.0;
-    constexpr float amplitude = 0.05f;
-
-    for (int sample = 0; sample < numSamples; ++sample)
+    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
     {
-        const auto value = amplitude * static_cast<float>(std::sin(twoPi * frequency * static_cast<double>(position + sample) / rate));
+        auto& track = *tracks[(size_t) trackIndex];
+        if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr)
+            continue;
+
+        const int sourceChannels = track.buffer->getNumChannels();
+        const int available = juce::jmin(numSamples, track.buffer->getNumSamples());
+        if (available <= 0 || sourceChannels <= 0)
+            continue;
+
         if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-            outputChannelData[0][sample] = value;
+            juce::FloatVectorOperations::copy(outputChannelData[0], track.buffer->getReadPointer(0), available);
         if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-            outputChannelData[1][sample] = value;
+            juce::FloatVectorOperations::copy(outputChannelData[1], track.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0), available);
+        break;
     }
 
     transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
