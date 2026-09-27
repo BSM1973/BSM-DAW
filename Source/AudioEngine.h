@@ -51,6 +51,15 @@ public:
             playbackClockBaseSeconds.store(current, std::memory_order_relaxed);
         }
         playing.store(shouldPlay, std::memory_order_relaxed);
+        if (!shouldPlay)
+        {
+            // STOP must also silence any device-side state immediately. Some
+            // CoreAudio/aggregate routes can continue ringing independently
+            // of the transport callback after a runaway event.
+            deviceManager.removeAudioCallback(this);
+            if (initialised.load(std::memory_order_relaxed))
+                deviceManager.addAudioCallback(this);
+        }
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
     void resetTransport() noexcept
