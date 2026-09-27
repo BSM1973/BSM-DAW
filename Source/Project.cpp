@@ -400,7 +400,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (file == juce::File{}) return false;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 14);
+    project.setAttribute("version", 15);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
@@ -504,15 +504,15 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         for(int i=0;i<getAudioTrackCount();++i){
             for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot){
                 juce::PluginDescription d;
-                if(host.getEffectDescriptionForTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","audioFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);}
+                if(host.getEffectDescriptionForTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","audioFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getEffectStateForTrackSlot(i,slot,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
                 const int key=i*8+slot;if(one.hasEffect(key)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","audio");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("type",(int)one.getEffect(key));e->setAttribute("amount",(double)one.getAmount(key));}
             }
         }
         for(int i=0;i<getInstrumentTrackCount();++i){
             juce::PluginDescription d;
-            if(host.getInstrumentDescriptionForTrack(i,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("identifier",d.fileOrIdentifier);}
+            if(host.getInstrumentDescriptionForTrack(i,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getInstrumentStateForTrack(i,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
             for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot){
-                if(host.getEffectDescriptionForInstrumentTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrumentFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);}
+                if(host.getEffectDescriptionForInstrumentTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrumentFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getEffectStateForInstrumentTrackSlot(i,slot,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
                 const int key=100000+i*8+slot;if(one.hasEffect(key)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("type",(int)one.getEffect(key));e->setAttribute("amount",(double)one.getAmount(key));}
             }
         }
@@ -689,7 +689,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
             const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
             const int insertSlot=juce::jlimit(0,LibertyPluginHost::effectSlotsPerTrack-1,e->getIntAttribute("slot",0));
-            if(e->getTagName()=="Plugin"){juce::PluginDescription d;if(host.findKnownPluginByIdentifier(e->getStringAttribute("identifier"),d)){juce::String error;if(kind=="instrument"&&lane<getInstrumentTrackCount())host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);}}
+            if(e->getTagName()=="Plugin"){juce::PluginDescription d;if(host.findKnownPluginByIdentifier(e->getStringAttribute("identifier"),d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(loaded&&e->hasAttribute("state")){juce::MemoryBlock state;if(state.fromBase64Encoding(e->getStringAttribute("state"))){if(kind=="instrument")host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);}}}}
             else if(e->getTagName()=="OneKnob"){
                 const bool validAudio = kind=="audio" && lane<getAudioTrackCount();
                 const bool validInstrument = kind=="instrument" && lane<getInstrumentTrackCount();
