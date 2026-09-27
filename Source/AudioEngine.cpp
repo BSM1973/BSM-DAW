@@ -668,11 +668,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                                     state.gain.load(std::memory_order_relaxed),
                                                     state.pan.load(std::memory_order_relaxed)))
             {
-                const int logicalTrack = (int)tracks.size() + 1 + instrumentTrack;
                 for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
                 {
                     pluginHost.processInstrumentEffectSlot(instrumentTrack, slot, instrumentBus);
-                    oneKnob.processInsertSlot(logicalTrack, slot, instrumentBus);
+                    oneKnob.process(100000 + instrumentTrack * 8 + slot, instrumentBus);
                 }
                 const int channels = juce::jmin(2, numOutputChannels);
                 for (int channel = 0; channel < channels; ++channel)
