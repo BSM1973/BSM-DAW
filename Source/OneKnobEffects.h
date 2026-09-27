@@ -13,7 +13,6 @@ public:
     ~LibertyOneKnobRack();
 
     void prepare(double sampleRate, int maximumBlockSize);
-    void clearAllEffects();
     void reset();
     void setType(Type newType);
     Type getType() const noexcept { return type; }
@@ -47,6 +46,7 @@ public:
     static LibertyOneKnobManager& instance();
 
     void prepare(double sampleRate, int maximumBlockSize);
+    void clearAllEffects();
     void setEffect(int trackIndex, LibertyOneKnobRack::Type type);
     void clearEffect(int trackIndex);
     LibertyOneKnobRack::Type getEffect(int trackIndex) const;
