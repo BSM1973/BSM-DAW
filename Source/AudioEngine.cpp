@@ -614,8 +614,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
                 if(absoluteStart>=blockStart&&absoluteStart<blockEnd)midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
-            if(pluginHost.processInstrumentForTrack(instrumentTrack,outputChannelData,numOutputChannels,numSamples,midi,state.gain.load(std::memory_order_relaxed),state.pan.load(std::memory_order_relaxed)))
-                oneKnob.processInstrumentBlock(instrumentTrack,outputChannelData,numOutputChannels,numSamples);
+            // Diagnostic isolation: instrument plugins (including Splice Sounds)
+            // must not run during plain audio-sample playback. A plugin can keep
+            // producing preview/transport audio independently of the audio clip.
+            juce::ignoreUnused(midi, instrumentTrack);
         }
     }
 
