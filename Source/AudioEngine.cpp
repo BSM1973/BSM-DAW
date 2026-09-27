@@ -483,6 +483,21 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
+    if (inputMonitoringEnabled.load(std::memory_order_acquire) && inputChannelData != nullptr && numInputChannels > 0)
+    {
+        const int left = juce::jlimit(0, numInputChannels - 1, monitorInputLeft.load(std::memory_order_relaxed));
+        const int right = juce::jlimit(0, numInputChannels - 1, monitorInputRight.load(std::memory_order_relaxed));
+        const float* leftIn = inputChannelData[left];
+        const float* rightIn = inputChannelData[right];
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && leftIn != nullptr)
+            juce::FloatVectorOperations::add(outputChannelData[0], leftIn, numSamples);
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+        {
+            const float* source = rightIn != nullptr ? rightIn : leftIn;
+            if (source != nullptr) juce::FloatVectorOperations::add(outputChannelData[1], source, numSamples);
+        }
+    }
+
     if (!playing.load()) return;
 
     const auto position = transportSamples.load();
