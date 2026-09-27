@@ -53,14 +53,8 @@ public:
         playing.store(shouldPlay, std::memory_order_relaxed);
         if (!shouldPlay)
         {
-            // Diagnostic hard STOP: close the audio device itself. If sound
-            // survives this, it is outside Liberty's AudioIODeviceCallback.
-            deviceManager.removeAudioCallback(this);
-            deviceManager.closeAudioDevice();
-            sampleRate.store(0.0, std::memory_order_relaxed);
-            bufferSize.store(0, std::memory_order_relaxed);
-            outputChannels.store(0, std::memory_order_relaxed);
-            initialised.store(false, std::memory_order_relaxed);
+            // STOP silences transport while keeping the configured audio
+            // device alive so PLAY can resume normally.
         }
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
