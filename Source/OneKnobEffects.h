@@ -13,6 +13,7 @@ public:
     ~LibertyOneKnobRack();
 
     void prepare(double sampleRate, int maximumBlockSize);
+    void clearAllEffects();
     void reset();
     void setType(Type newType);
     Type getType() const noexcept { return type; }
