@@ -617,7 +617,25 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     }
 
     const auto master = masterGain.load();
-    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::multiply(outputChannelData[channel], master, numSamples);
+    bool unsafeOutput = !std::isfinite(master) || std::abs(master) > 4.0f;
+    float peak = 0.0f;
+    for (int channel = 0; channel < numOutputChannels; ++channel)
+    {
+        if (outputChannelData[channel] == nullptr) continue;
+        juce::FloatVectorOperations::multiply(outputChannelData[channel], std::isfinite(master) ? juce::jlimit(0.0f, 4.0f, master) : 0.0f, numSamples);
+        const auto magnitude = juce::FloatVectorOperations::findMinAndMax(outputChannelData[channel], numSamples);
+        if (!std::isfinite(magnitude.getStart()) || !std::isfinite(magnitude.getEnd())) unsafeOutput = true;
+        peak = juce::jmax(peak, std::abs(magnitude.getStart()), std::abs(magnitude.getEnd()));
+    }
+    // Last-resort realtime protection: a DAW must never be allowed to emit
+    // runaway/non-finite output. Stop transport and mute the current block.
+    if (unsafeOutput || peak > 8.0f)
+    {
+        for (int channel = 0; channel < numOutputChannels; ++channel)
+            if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+        playing.store(false, std::memory_order_relaxed);
+        return;
+    }
     if (!hasBoundedAudioProject)
     {
         transportSamples.fetch_add(numSamples);
