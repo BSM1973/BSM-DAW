@@ -454,11 +454,7 @@ public:
             // ARRANGE transport is deliberately stopped. PERFORM owns independent audio.
             owner.audioEngine.setPlaying(false);
             owner.isPlaying = false;
-            // Cover the entire owner surface. The top transport controls that
-            // must remain accessible are explicitly brought above this view by
-            // PerformController; leaving the first transportHeight pixels
-            // uncovered allowed ARRANGE to flash through on the left.
-            setBounds(0, 0, owner.getWidth(), owner.getHeight());
+            setBounds(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
             resized();
             refreshClipLabels();
             toFront(false);
@@ -850,7 +846,7 @@ private:
     void timerCallback() override
     {
         if (!performVisible) return;
-        const auto wanted = owner.getLocalBounds();
+        const auto wanted = juce::Rectangle<int>(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
         if (getBounds() != wanted) setBounds(wanted);
         toFront(false);
         refreshClipLabels();
