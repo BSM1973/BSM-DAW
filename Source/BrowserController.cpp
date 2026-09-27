@@ -624,8 +624,15 @@ private:
             const int instrumentLane = selectedInstrumentTrack();
             if (instrumentLane >= 0)
             {
-                ok = host.loadEffectForInstrumentTrack(instrumentLane, d, error);
-                if (ok) host.showEffectEditorForInstrumentTrack(instrumentLane);
+                int slot = -1;
+                for (int i = 0; i < LibertyPluginHost::effectSlotsPerTrack; ++i)
+                    if (!host.hasEffectForInstrumentTrackSlot(instrumentLane, i)) { slot = i; break; }
+                if (slot < 0) { error = "Les 8 slots FX de cette piste Instrument sont occupés."; }
+                else
+                {
+                    ok = host.loadEffectForInstrumentTrackSlot(instrumentLane, slot, d, error);
+                    if (ok) host.showEffectEditorForInstrumentTrackSlot(instrumentLane, slot);
+                }
             }
             else
             {
@@ -636,8 +643,15 @@ private:
                                                            "Sélectionne une piste Audio ou Instrument pour charger cet effet.", "OK");
                     return;
                 }
-                ok = host.loadEffectForTrack(track, d, error);
-                if (ok) host.showEditorForTrack(track);
+                int slot = -1;
+                for (int i = 0; i < LibertyPluginHost::effectSlotsPerTrack; ++i)
+                    if (!host.hasEffectForTrackSlot(track, i)) { slot = i; break; }
+                if (slot < 0) { error = "Les 8 slots FX de cette piste Audio sont occupés."; }
+                else
+                {
+                    ok = host.loadEffectForTrackSlot(track, slot, d, error);
+                    if (ok) host.showEditorForTrackSlot(track, slot);
+                }
             }
         }
         if (!ok) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
