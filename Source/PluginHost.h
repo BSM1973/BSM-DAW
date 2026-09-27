@@ -22,6 +22,7 @@ public:
 
     void initialise(double sampleRate, int blockSize);
     void shutdown();
+    void clearProjectPlugins();
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});
     const juce::KnownPluginList& getKnownPluginList() const noexcept { return knownPlugins; }
     juce::Array<juce::PluginDescription> getPluginDescriptions() const;
