@@ -92,10 +92,9 @@ private:
                                            int numSamples,
                                            const juce::AudioIODeviceCallbackContext&) override
     {
-        for (int ch = 0; ch < numOutputs; ++ch)
-            if (outputs[ch] != nullptr)
-                juce::FloatVectorOperations::clear(outputs[ch], numSamples);
-
+        // The AudioEngine owns/clears the device output buffers. The metronome
+        // is an additive secondary callback and must never erase the master
+        // output, especially while disabled.
         if (!enabled.load(std::memory_order_relaxed) || !owner.audioEngine.isPlaying()) return;
 
         const double rate = owner.audioEngine.getSampleRate();
