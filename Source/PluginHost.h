@@ -64,6 +64,7 @@ public:
     juce::String getEffectNameForInstrumentTrack(int instrumentTrack) const;
     juce::String getEffectNameForInstrumentTrackSlot(int instrumentTrack, int slotIndex) const;
     void showEffectEditorForInstrumentTrack(int instrumentTrack);
+    void showEffectEditorForInstrumentTrackSlot(int instrumentTrack, int slotIndex);
     void processInstrumentEffect(int instrumentTrack, juce::AudioBuffer<float>& buffer, int numSamples);
 
     // Offline render is exclusive: the realtime audio callback is prevented from
@@ -73,6 +74,7 @@ public:
     void endOfflineInstrumentRender();
 
     void showEditorForTrack(int trackIndex);
+    void showEditorForTrackSlot(int trackIndex, int slotIndex);
     void showInstrumentEditor();
     void showInstrumentEditorForTrack(int instrumentTrack);
 
