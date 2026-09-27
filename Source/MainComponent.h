@@ -134,18 +134,19 @@ private:
         void resized() override { tempoButton.setBounds(0, 0, 80, 36); meterButton.setBounds(80, 0, 40, 36); }
     private: MainComponent* owner; juce::TextButton tempoButton; juce::TextButton meterButton;
     };
-    class ProjectButton final : public juce::Component, private juce::Timer
+    class ProjectButton final : public juce::Component
     {
     public:
         explicit ProjectButton(MainComponent* ownerIn) : owner(ownerIn)
         {
             setOpaque(true);
-            button.setButtonText("PROJECT"); button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31)); button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff303640)); button.setColour(juce::TextButton::textColourOffId, juce::Colours::white); button.setColour(juce::TextButton::textColourOnId, juce::Colours::white); button.setMouseClickGrabsKeyboardFocus(false); button.onClick = [this] { owner->showProjectMenu(); }; addAndMakeVisible(button); setBounds(215, 10, 90, 24); owner->addAndMakeVisible(this); owner->initializeProjectTracking(); startTimerHz(5);
+            button.setButtonText("PROJECT"); button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31)); button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff303640)); button.setColour(juce::TextButton::textColourOffId, juce::Colours::white); button.setColour(juce::TextButton::textColourOnId, juce::Colours::white); button.setMouseClickGrabsKeyboardFocus(false); button.onClick = [this] { owner->showProjectMenu(); }; addAndMakeVisible(button); setBounds(215, 10, 90, 24); owner->addAndMakeVisible(this); owner->initializeProjectTracking(); updateLabel();
         }
         void resized() override { button.setBounds(getLocalBounds()); }
         void paint(juce::Graphics& g) override { g.fillAll(juce::Colour(0xff15181d)); }
+    public:
+        void updateLabel() { const auto label = owner->hasUnsavedChanges() ? "PROJECT *" : "PROJECT"; if (button.getButtonText() != label) button.setButtonText(label); }
     private:
-        void timerCallback() override { const auto label = owner->hasUnsavedChanges() ? "PROJECT *" : "PROJECT"; if (button.getButtonText() != label) button.setButtonText(label); }
         MainComponent* owner; juce::TextButton button;
     };
     class MidiClipOverlay final : public juce::Component, private juce::Timer
