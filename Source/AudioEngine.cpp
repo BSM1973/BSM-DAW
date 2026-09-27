@@ -361,7 +361,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) { error = "The selected audio file is too large to load into memory."; return false; }
     const auto inputSamples = static_cast<int>(reader->lengthInSamples);
     const auto inputChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
-    auto decodedBuffer = std::make_unique<juce::AudioBuffer<float>>(inputChannels, inputSamples);
+    auto decodedBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, inputSamples);
     decodedBuffer->clear();
     if (!reader->read(decodedBuffer.get(), 0, inputSamples, 0, true, true)) { error = "Failed to decode the selected audio file."; return false; }
     const auto sourceRate = reader->sampleRate;
@@ -370,21 +370,11 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     const auto outputSamples64 = static_cast<std::int64_t>(std::floor(static_cast<double>(inputSamples) / ratio));
     if (outputSamples64 <= 0 || outputSamples64 > std::numeric_limits<int>::max()) { error = "The resampled audio file is too large to load into memory."; return false; }
     const auto outputSamples = static_cast<int>(outputSamples64);
-    auto newBuffer = std::make_unique<juce::AudioBuffer<float>>(inputChannels, outputSamples);
+    auto newBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, outputSamples);
     newBuffer->clear();
     if (std::abs(sourceRate - outputRate) > 0.01)
         for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
     else newBuffer->makeCopyOf(*decodedBuffer);
-
-    // Diagnostic: replace decoded PCM with a known-safe signal while keeping
-    // the exact same AudioBuffer allocation/lifetime and callback access path.
-    // This separates PCM decoding/content from buffer ownership/concurrency.
-    constexpr double diagnosticFrequency = 220.0;
-    constexpr double diagnosticTwoPi = 6.28318530717958647692;
-    for (int channel = 0; channel < inputChannels; ++channel)
-        for (int sample = 0; sample < outputSamples; ++sample)
-            newBuffer->setSample(channel, sample,
-                0.05f * static_cast<float>(std::sin(diagnosticTwoPi * diagnosticFrequency * static_cast<double>(sample) / outputRate)));
 
     const bool wasInitialised = initialised.load();
     playing.store(false); resetTransport();
@@ -436,7 +426,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
     const auto rightSamples = source.numSamples - splitSample;
     const auto channels = source.buffer->getNumChannels();
-    auto rightBuffer = std::make_unique<juce::AudioBuffer<float>>(channels, rightSamples);
+    auto rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
     rightBuffer->clear();
     for (int channel = 0; channel < channels; ++channel)
         rightBuffer->copyFrom(channel, 0, *source.buffer, channel, splitSample, rightSamples);
@@ -485,41 +475,180 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    // Isolation stage 5: exercise memory-buffer reads without touching any
-    // track-owned AudioBuffer. Static preallocated PCM has process lifetime and
-    // cannot be replaced/freed by project/UI code.
+    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+    if (!playing.load()) return;
+
+    const auto position = transportSamples.load();
+    const auto projectLength = getProjectLengthSamples();
+    const bool hasBoundedAudioProject = projectLength > 0;
+    const bool anySolo = isAnyTrackSolo();
+    const auto rate = sampleRate.load();
+    auto& pluginHost = LibertyPluginHost::instance();
+    auto& oneKnob = LibertyOneKnobManager::instance();
+
+    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+    {
+        auto& track = *tracks[(size_t)trackIndex];
+        if (!track.loaded.load(std::memory_order_acquire) || std::atomic_load(&track.buffer) == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
+        const auto audioBuffer = std::atomic_load(&track.buffer);
+        if (audioBuffer == nullptr) continue;
+        const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
+        const auto clipEnd = startSample + track.numSamples;
+        const auto blockEnd = position + numSamples;
+        if (blockEnd <= startSample || position >= clipEnd) continue;
+        const auto mixStart = juce::jmax(position, startSample);
+        const auto mixEnd = juce::jmin(blockEnd, clipEnd);
+        const auto samplesToMix = static_cast<int>(juce::jmax<std::int64_t>(0, mixEnd - mixStart));
+        if (samplesToMix <= 0) continue;
+        const auto outputOffset = static_cast<int>(mixStart - position);
+        const auto sourceOffset = static_cast<int>(mixStart - startSample);
+        const auto gain = track.gain.load(); const auto pan = track.pan.load();
+        const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+        const auto sourceChannels = audioBuffer->getNumChannels();
+
+        const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
+        const int rawMarkerCount = track.warpMarkerCount.load(std::memory_order_acquire);
+        if (!warpActive || rawMarkerCount < 2)
+        {
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, audioBuffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+                juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, audioBuffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+            continue;
+        }
+
+        const int markerCount = juce::jlimit(2, maxWarpMarkers, rawMarkerCount);
+        std::array<double, maxWarpMarkers> sourceMarkers {};
+        std::array<double, maxWarpMarkers> targetMarkers {};
+        for (int marker = 0; marker < markerCount; ++marker)
+        {
+            sourceMarkers[(size_t)marker] = track.warpSourceSeconds[(size_t)marker].load(std::memory_order_acquire);
+            targetMarkers[(size_t)marker] = track.warpTargetSeconds[(size_t)marker].load(std::memory_order_acquire);
+        }
+
+        const int mode = track.warpMode.load(std::memory_order_relaxed);
+        const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
+
+        auto readWarpedSample = [&](int channel, double samplePosition) -> float
+        {
+            const float* data = audioBuffer->getReadPointer(juce::jlimit(0, sourceChannels - 1, channel));
+            samplePosition = juce::jlimit(0.0, (double)lastSample, samplePosition);
+            if (mode == 0)
+                return data[juce::jlimit(0, lastSample, (int)std::llround(samplePosition))];
+
+            const int i1 = juce::jlimit(0, lastSample, (int)std::floor(samplePosition));
+            const int i2 = juce::jmin(lastSample, i1 + 1);
+            const float frac = (float)(samplePosition - (double)i1);
+            const float linear = data[i1] + (data[i2] - data[i1]) * frac;
+
+            if (mode == 2)
+            {
+                const int ip = juce::jmax(0, i1 - 1);
+                const int in = juce::jmin(lastSample, i2 + 1);
+                return 0.25f * data[ip] + 0.5f * linear + 0.25f * data[in];
+            }
+            if (mode == 4)
+            {
+                const int i0 = juce::jmax(0, i1 - 1);
+                const int i3 = juce::jmin(lastSample, i2 + 1);
+                const float p0 = data[i0], p1 = data[i1], p2 = data[i2], p3 = data[i3];
+                const float f2 = frac * frac, f3 = f2 * frac;
+                return 0.5f * ((2.0f * p1) + (-p0 + p2) * frac
+                    + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * f2
+                    + (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * f3);
+            }
+            return linear;
+        };
+
+        int currentSegment = 0;
+        for (int s = 0; s < samplesToMix; ++s)
+        {
+            const double targetSeconds = (double)(mixStart - startSample + s) / rate;
+
+            while (currentSegment < markerCount - 2 && targetSeconds > targetMarkers[(size_t)(currentSegment + 1)])
+                ++currentSegment;
+
+            const double ta = targetMarkers[(size_t)currentSegment];
+            const double tb = targetMarkers[(size_t)(currentSegment + 1)];
+            const double sa = sourceMarkers[(size_t)currentSegment];
+            const double sb = sourceMarkers[(size_t)(currentSegment + 1)];
+            const double span = juce::jmax(0.000001, tb - ta);
+            const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
+            const double sourceSeconds = sa + (sb - sa) * alpha;
+
+            const double sourceSamplePosition = sourceSeconds * rate;
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+                outputChannelData[0][outputOffset + s] += readWarpedSample(0, sourceSamplePosition) * leftGain;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+                outputChannelData[1][outputOffset + s] += readWarpedSample(sourceChannels == 1 ? 0 : 1, sourceSamplePosition) * rightGain;
+        }
+
+
+    }
+
+    bool anyInstrumentSolo = false;
+    for (const auto& p : instrumentPlayback) if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
+    const bool midiLaneMuted = midiTrackMuted.load(std::memory_order_relaxed);
+    const bool midiLaneSolo = midiTrackSolo.load(std::memory_order_relaxed);
+    if (rate > 0.0)
+    {
+        for (int instrumentTrack=0; instrumentTrack<(int)instrumentPlayback.size(); ++instrumentTrack)
+        {
+            auto& state=*instrumentPlayback[(size_t)instrumentTrack];
+            const bool trackMuted = midiLaneMuted || state.muted.load(std::memory_order_relaxed);
+            const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
+            if (trackMuted || ((anySolo || anyInstrumentSolo) && !trackSolo)) continue;
+            const auto count=state.noteCount.load(std::memory_order_acquire);
+            const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
+            const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
+            if (!pluginHost.hasInstrumentForTrack(instrumentTrack) || count==0 || clipLength<=0.0) continue;
+            juce::MidiBuffer midi;
+            const double blockStart=static_cast<double>(position)/rate;
+            const double blockEnd=static_cast<double>(position+numSamples)/rate;
+            for(std::size_t n=0;n<count;++n)
+            {
+                const auto absoluteStart=clipStart+state.notes[n].startSeconds.load();
+                const auto absoluteEnd=clipStart+state.notes[n].endSeconds.load();
+                const auto frequency=state.notes[n].frequency.load();
+                const auto amplitude=state.notes[n].amplitude.load();
+                const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
+                const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
+                if(absoluteStart>=blockStart&&absoluteStart<blockEnd)midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
+                if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
+            }
+            if(pluginHost.processInstrumentForTrack(instrumentTrack,outputChannelData,numOutputChannels,numSamples,midi,state.gain.load(std::memory_order_relaxed),state.pan.load(std::memory_order_relaxed)))
+                oneKnob.processInstrumentBlock(instrumentTrack,outputChannelData,numOutputChannels,numSamples);
+        }
+    }
+
+    const auto master = masterGain.load();
+    bool unsafeOutput = !std::isfinite(master) || std::abs(master) > 4.0f;
+    float peak = 0.0f;
     for (int channel = 0; channel < numOutputChannels; ++channel)
-        if (outputChannelData[channel] != nullptr)
-            juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
-
-    if (!playing.load(std::memory_order_relaxed))
-        return;
-
-    const auto rate = sampleRate.load(std::memory_order_relaxed);
-    if (rate <= 0.0)
-        return;
-
-    constexpr int diagnosticSamples = 48000;
-    static std::array<float, diagnosticSamples> diagnosticBuffer {};
-    static std::atomic<bool> prepared { false };
-    if (!prepared.load(std::memory_order_acquire))
     {
-        constexpr double twoPi = 6.28318530717958647692;
-        for (int i = 0; i < diagnosticSamples; ++i)
-            diagnosticBuffer[(size_t)i] = 0.05f * static_cast<float>(std::sin(twoPi * 220.0 * static_cast<double>(i) / 48000.0));
-        prepared.store(true, std::memory_order_release);
+        if (outputChannelData[channel] == nullptr) continue;
+        juce::FloatVectorOperations::multiply(outputChannelData[channel], std::isfinite(master) ? juce::jlimit(0.0f, 4.0f, master) : 0.0f, numSamples);
+        const auto magnitude = juce::FloatVectorOperations::findMinAndMax(outputChannelData[channel], numSamples);
+        if (!std::isfinite(magnitude.getStart()) || !std::isfinite(magnitude.getEnd())) unsafeOutput = true;
+        peak = juce::jmax(peak, std::abs(magnitude.getStart()), std::abs(magnitude.getEnd()));
     }
-
-    const auto position = transportSamples.load(std::memory_order_relaxed);
-    for (int sample = 0; sample < numSamples; ++sample)
+    // Last-resort realtime protection: a DAW must never be allowed to emit
+    // runaway/non-finite output. Stop transport and mute the current block.
+    if (unsafeOutput || peak > 8.0f)
     {
-        const float value = diagnosticBuffer[(size_t)((position + sample) % diagnosticSamples)];
-        if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-            outputChannelData[0][sample] = value;
-        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-            outputChannelData[1][sample] = value;
+        for (int channel = 0; channel < numOutputChannels; ++channel)
+            if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+        playing.store(false, std::memory_order_relaxed);
+        return;
     }
-    transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    if (!hasBoundedAudioProject)
+    {
+        transportSamples.fetch_add(numSamples);
+        return;
+    }
+    const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
+    if (advance > 0) transportSamples.fetch_add(advance);
+    if (position + advance >= projectLength) playing.store(false);
 }
 
 void AudioEngine::audioDeviceStopped() { playing.store(false); }
