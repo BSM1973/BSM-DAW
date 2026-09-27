@@ -657,32 +657,38 @@ private:
         return (track >= firstInstrument && track < firstInstrument + owner.getInstrumentTrackCount()) ? track - firstInstrument : -1;
     }
 
+    int selectedOneKnobSlot() const
+    {
+        if (const int instrumentLane = selectedInstrumentTrack(); instrumentLane >= 0) return 100000 + instrumentLane;
+        return selectedAudioTrack();
+    }
+
     void loadOneKnob(LibertyOneKnobRack::Type type)
     {
-        const int track = selectedAudioTrack();
-        if (track < 0)
+        const int slot = selectedOneKnobSlot();
+        if (slot < 0)
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
-                                                   "Sélectionne une piste Audio pour charger ce One Knob.", "OK");
+                                                   "Sélectionne une piste Audio ou Instrument pour charger ce One Knob.", "OK");
             return;
         }
         auto& manager = LibertyOneKnobManager::instance();
-        manager.setEffect(track, type);
-        manager.showEditor(track);
+        manager.setEffect(slot, type);
+        manager.showEditor(slot);
         refreshPluginStatus();
         owner.repaint();
     }
 
     void clearOneKnob()
     {
-        const int track = selectedAudioTrack();
-        if (track < 0)
+        const int slot = selectedOneKnobSlot();
+        if (slot < 0)
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
-                                                   "Sélectionne une piste Audio pour retirer le One Knob.", "OK");
+                                                   "Sélectionne une piste Audio ou Instrument pour retirer le One Knob.", "OK");
             return;
         }
-        LibertyOneKnobManager::instance().clearEffect(track);
+        LibertyOneKnobManager::instance().clearEffect(slot);
         refreshPluginStatus();
         owner.repaint();
     }
@@ -797,6 +803,8 @@ private:
             const int instrumentLane = logical - firstInstrument;
             if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
             if (host.hasEffectForInstrumentTrack(instrumentLane)) text << "   FX: " << host.getEffectNameForInstrumentTrack(instrumentLane);
+            const int oneKnobSlot = 100000 + instrumentLane;
+            if (LibertyOneKnobManager::instance().hasEffect(oneKnobSlot)) text << "   1K: " << LibertyOneKnobManager::instance().getName(oneKnobSlot);
         }
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
