@@ -475,8 +475,10 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    // Isolation stage 2: raw audio-file playback only. No warp, plugins,
-    // instruments, One Knob, master processing or other DSP.
+    // Isolation stage 3: do not read any loaded file buffer. Generate a known
+    // low-level continuous sine from the absolute transport position. If this
+    // is clean, the device/callback clock is healthy and the fault is in the
+    // loaded audio-buffer path.
     for (int channel = 0; channel < numOutputChannels; ++channel)
         if (outputChannelData[channel] != nullptr)
             juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
@@ -489,33 +491,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         return;
 
     const auto position = transportSamples.load(std::memory_order_relaxed);
-    const auto blockEnd = position + numSamples;
+    constexpr double twoPi = 6.28318530717958647692;
+    constexpr double frequency = 220.0;
+    constexpr float amplitude = 0.05f;
 
-    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+    for (int sample = 0; sample < numSamples; ++sample)
     {
-        auto& track = *tracks[(size_t) trackIndex];
-        if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load(std::memory_order_relaxed))
-            continue;
-
-        const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load(std::memory_order_relaxed) * rate));
-        const auto clipEnd = startSample + track.numSamples;
-        if (blockEnd <= startSample || position >= clipEnd)
-            continue;
-
-        const auto mixStart = juce::jmax(position, startSample);
-        const auto mixEnd = juce::jmin(blockEnd, clipEnd);
-        const int count = static_cast<int>(mixEnd - mixStart);
-        if (count <= 0)
-            continue;
-
-        const int dst = static_cast<int>(mixStart - position);
-        const int src = static_cast<int>(mixStart - startSample);
-        const int sourceChannels = track.buffer->getNumChannels();
-
-        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-            juce::FloatVectorOperations::copy(outputChannelData[0] + dst, track.buffer->getReadPointer(0) + src, count);
-        if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-            juce::FloatVectorOperations::copy(outputChannelData[1] + dst, track.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + src, count);
+        const auto value = amplitude * static_cast<float>(std::sin(twoPi * frequency * static_cast<double>(position + sample) / rate));
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
+            outputChannelData[0][sample] = value;
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+            outputChannelData[1][sample] = value;
     }
 
     transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
