@@ -527,6 +527,31 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = audioBuffer->getNumChannels();
 
+        const int insertChannels = juce::jlimit(1, 2, numOutputChannels);
+        juce::AudioBuffer<float> preInsertBaseline(insertChannels, numSamples);
+        for (int ch = 0; ch < insertChannels; ++ch)
+            if (outputChannelData[ch] != nullptr) preInsertBaseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+            else preInsertBaseline.clear(ch, 0, numSamples);
+        auto processTrackInsertChain = [&]()
+        {
+            juce::AudioBuffer<float> trackBus(insertChannels, numSamples);
+            for (int ch = 0; ch < insertChannels; ++ch)
+            {
+                if (outputChannelData[ch] == nullptr) { trackBus.clear(ch, 0, numSamples); continue; }
+                trackBus.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+                trackBus.addFrom(ch, 0, preInsertBaseline, ch, 0, numSamples, -1.0f);
+                juce::FloatVectorOperations::copy(outputChannelData[ch], preInsertBaseline.getReadPointer(ch), numSamples);
+            }
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                pluginHost.processAudioEffectSlot(trackIndex, slot, trackBus);
+                oneKnob.processInsertSlot(trackIndex, slot, trackBus);
+            }
+            for (int ch = 0; ch < insertChannels; ++ch)
+                if (outputChannelData[ch] != nullptr)
+                    juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
+        };
+
         const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
         const int rawMarkerCount = track.warpMarkerCount.load(std::memory_order_acquire);
         if (!warpActive || rawMarkerCount < 2)
@@ -535,6 +560,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, audioBuffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, audioBuffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+            processTrackInsertChain();
             continue;
         }
 
@@ -604,7 +630,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 outputChannelData[1][outputOffset + s] += readWarpedSample(sourceChannels == 1 ? 0 : 1, sourceSamplePosition) * rightGain;
         }
 
-
+        processTrackInsertChain();
     }
 
     bool anyInstrumentSolo = false;
@@ -642,9 +668,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                                     state.gain.load(std::memory_order_relaxed),
                                                     state.pan.load(std::memory_order_relaxed)))
             {
-                pluginHost.processInstrumentEffect(instrumentTrack, instrumentBus, numSamples);
-                float* busChannels[2] = { instrumentBus.getWritePointer(0), instrumentBus.getWritePointer(1) };
-                oneKnob.processInstrumentBlock(instrumentTrack, busChannels, 2, numSamples);
+                const int logicalTrack = (int)tracks.size() + 1 + instrumentTrack;
+                for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+                {
+                    pluginHost.processInstrumentEffectSlot(instrumentTrack, slot, instrumentBus);
+                    oneKnob.processInsertSlot(logicalTrack, slot, instrumentBus);
+                }
                 const int channels = juce::jmin(2, numOutputChannels);
                 for (int channel = 0; channel < channels; ++channel)
                     if (outputChannelData[channel] != nullptr)
