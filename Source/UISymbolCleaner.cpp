@@ -15,7 +15,14 @@ juce::String cleanText(juce::String text)
     text = text.replace("→", " ");
     text = text.replace("—", " - ");
     text = text.replace("…", "...");
-    text = text.replace("×", "CLOSE");
+    text = text.replace("×", "X");
+    // Also clean common UTF-8/Windows-1252 mojibake variants seen in Liberty UI.
+    text = text.replace("Â", "");
+    text = text.replace("Ã—", "X");
+    text = text.replace("â€”", " - ");
+    text = text.replace("â€“", "-");
+    text = text.replace("â†’", ">");
+    text = text.replace("â€¢", " ");
     while (text.contains("  ")) text = text.replace("  ", " ");
     return text.trim();
 }
