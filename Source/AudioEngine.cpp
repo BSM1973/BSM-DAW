@@ -485,9 +485,9 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    // Isolation stage 4: read the loaded buffer at a fixed offset. This avoids
-    // all transport/source-offset arithmetic and proves whether the decoded
-    // AudioBuffer itself contains valid PCM samples.
+    // Isolation stage 5: exercise memory-buffer reads without touching any
+    // track-owned AudioBuffer. Static preallocated PCM has process lifetime and
+    // cannot be replaced/freed by project/UI code.
     for (int channel = 0; channel < numOutputChannels; ++channel)
         if (outputChannelData[channel] != nullptr)
             juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
@@ -495,24 +495,30 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     if (!playing.load(std::memory_order_relaxed))
         return;
 
-    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+    const auto rate = sampleRate.load(std::memory_order_relaxed);
+    if (rate <= 0.0)
+        return;
+
+    constexpr int diagnosticSamples = 48000;
+    static std::array<float, diagnosticSamples> diagnosticBuffer {};
+    static std::atomic<bool> prepared { false };
+    if (!prepared.load(std::memory_order_acquire))
     {
-        auto& track = *tracks[(size_t) trackIndex];
-        if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr)
-            continue;
-
-        const int sourceChannels = track.buffer->getNumChannels();
-        const int available = juce::jmin(numSamples, track.buffer->getNumSamples());
-        if (available <= 0 || sourceChannels <= 0)
-            continue;
-
-        if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-            juce::FloatVectorOperations::copy(outputChannelData[0], track.buffer->getReadPointer(0), available);
-        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-            juce::FloatVectorOperations::copy(outputChannelData[1], track.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0), available);
-        break;
+        constexpr double twoPi = 6.28318530717958647692;
+        for (int i = 0; i < diagnosticSamples; ++i)
+            diagnosticBuffer[(size_t)i] = 0.05f * static_cast<float>(std::sin(twoPi * 220.0 * static_cast<double>(i) / 48000.0));
+        prepared.store(true, std::memory_order_release);
     }
 
+    const auto position = transportSamples.load(std::memory_order_relaxed);
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const float value = diagnosticBuffer[(size_t)((position + sample) % diagnosticSamples)];
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
+            outputChannelData[0][sample] = value;
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+            outputChannelData[1][sample] = value;
+    }
     transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
 }
 
