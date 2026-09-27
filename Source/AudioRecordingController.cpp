@@ -101,11 +101,10 @@ private:
         if (callbackRegistered)
             return;
 
-        auto& manager = owner.audioEngine.getDeviceManager();
-        manager.removeAudioCallback(&owner.audioEngine);
-        manager.addAudioCallback(this);
-        manager.addAudioCallback(&owner.audioEngine);
-        callbackRegistered = true;
+        // Recording must not register a second hardware callback. AudioEngine
+        // remains the sole owner of device output; recording input will be
+        // routed through the central engine in the rebuilt architecture.
+        callbackRegistered = false;
     }
 
     void detachAudioCallback()
@@ -113,7 +112,6 @@ private:
         if (!callbackRegistered)
             return;
 
-        owner.audioEngine.getDeviceManager().removeAudioCallback(this);
         callbackRegistered = false;
     }
 
