@@ -621,15 +621,24 @@ private:
         }
         else
         {
-            const int track = selectedAudioTrack();
-            if (track < 0)
+            const int instrumentLane = selectedInstrumentTrack();
+            if (instrumentLane >= 0)
             {
-                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Effet",
-                                                       "Sélectionne une piste Audio pour charger cet effet.", "OK");
-                return;
+                ok = host.loadEffectForInstrumentTrack(instrumentLane, d, error);
+                if (ok) host.showEffectEditorForInstrumentTrack(instrumentLane);
             }
-            ok = host.loadEffectForTrack(track, d, error);
-            if (ok) host.showEditorForTrack(track);
+            else
+            {
+                const int track = selectedAudioTrack();
+                if (track < 0)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Effet",
+                                                           "Sélectionne une piste Audio ou Instrument pour charger cet effet.", "OK");
+                    return;
+                }
+                ok = host.loadEffectForTrack(track, d, error);
+                if (ok) host.showEditorForTrack(track);
+            }
         }
         if (!ok) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
         refreshPluginStatus(); owner.repaint();
@@ -787,6 +796,7 @@ private:
         {
             const int instrumentLane = logical - firstInstrument;
             if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
+            if (host.hasEffectForInstrumentTrack(instrumentLane)) text << "   FX: " << host.getEffectNameForInstrumentTrack(instrumentLane);
         }
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
