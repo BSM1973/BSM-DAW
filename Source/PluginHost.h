@@ -7,6 +7,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <array>
 
 class LibertyPluginHost final
 {
@@ -28,16 +29,21 @@ public:
     void clearBlacklist();
     juce::File getBlacklistFolder() const;
 
+    static constexpr int effectSlotsPerTrack = 8;
     bool loadEffectForTrack(int trackIndex, const juce::PluginDescription& description, juce::String& error);
+    bool loadEffectForTrackSlot(int trackIndex, int slotIndex, const juce::PluginDescription& description, juce::String& error);
     bool loadInstrument(const juce::PluginDescription& description, juce::String& error);
     bool loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
     void unloadEffectForTrack(int trackIndex);
+    void unloadEffectForTrackSlot(int trackIndex, int slotIndex);
     void unloadInstrument();
     void unloadInstrumentForTrack(int instrumentTrack);
     bool hasEffectForTrack(int trackIndex) const;
+    bool hasEffectForTrackSlot(int trackIndex, int slotIndex) const;
     bool hasInstrument() const;
     bool hasInstrumentForTrack(int instrumentTrack) const;
     juce::String getEffectName(int trackIndex) const;
+    juce::String getEffectNameForTrackSlot(int trackIndex, int slotIndex) const;
     juce::String getInstrumentName() const;
     juce::String getInstrumentNameForTrack(int instrumentTrack) const;
     bool getEffectDescriptionForTrack(int trackIndex, juce::PluginDescription& out) const;
@@ -50,9 +56,13 @@ public:
     bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
     bool renderInstrumentForTrack(int instrumentTrack, juce::AudioBuffer<float>& destination, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
     bool loadEffectForInstrumentTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
+    bool loadEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex, const juce::PluginDescription& description, juce::String& error);
     void unloadEffectForInstrumentTrack(int instrumentTrack);
+    void unloadEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex);
     bool hasEffectForInstrumentTrack(int instrumentTrack) const;
+    bool hasEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex) const;
     juce::String getEffectNameForInstrumentTrack(int instrumentTrack) const;
+    juce::String getEffectNameForInstrumentTrackSlot(int instrumentTrack, int slotIndex) const;
     void showEffectEditorForInstrumentTrack(int instrumentTrack);
     void processInstrumentEffect(int instrumentTrack, juce::AudioBuffer<float>& buffer, int numSamples);
 
@@ -100,9 +110,9 @@ private:
 
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
-    std::vector<std::unique_ptr<Slot>> trackEffects;
+    std::vector<std::array<std::unique_ptr<Slot>, effectSlotsPerTrack>> trackEffects;
     std::vector<std::unique_ptr<Slot>> instruments;
-    std::vector<std::unique_ptr<Slot>> instrumentEffects;
+    std::vector<std::array<std::unique_ptr<Slot>, effectSlotsPerTrack>> instrumentEffects;
     double currentSampleRate = 48000.0;
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
