@@ -21,7 +21,7 @@ public:
         setInterceptsMouseClicks(true, false);
         setAlwaysOnTop(true);
         owner.addAndMakeVisible(this);
-        owner.audioEngine.getDeviceManager().addAudioCallback(this);
+        // Audio output is owned exclusively by AudioEngine.
         startTimerHz(12);
     }
 
@@ -31,7 +31,7 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
-        owner.audioEngine.getDeviceManager().removeAudioCallback(this);
+        // No independent device callback: AudioEngine owns the master output.
         setVisible(false);
     }
 
