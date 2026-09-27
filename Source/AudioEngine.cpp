@@ -475,15 +475,50 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
-    // Diagnostic: prove whether the 512-sample repetition is produced inside
-    // Liberty's playback renderer or by the device/callback layer. Always
-    // return a freshly cleared block, even while transport is running.
+    // Isolation stage 2: raw audio-file playback only. No warp, plugins,
+    // instruments, One Knob, master processing or other DSP.
     for (int channel = 0; channel < numOutputChannels; ++channel)
         if (outputChannelData[channel] != nullptr)
             juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
 
-    if (playing.load(std::memory_order_relaxed))
-        transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
+    if (!playing.load(std::memory_order_relaxed))
+        return;
+
+    const auto rate = sampleRate.load(std::memory_order_relaxed);
+    if (rate <= 0.0)
+        return;
+
+    const auto position = transportSamples.load(std::memory_order_relaxed);
+    const auto blockEnd = position + numSamples;
+
+    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+    {
+        auto& track = *tracks[(size_t) trackIndex];
+        if (!track.loaded.load(std::memory_order_acquire) || track.buffer == nullptr || track.muted.load(std::memory_order_relaxed))
+            continue;
+
+        const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load(std::memory_order_relaxed) * rate));
+        const auto clipEnd = startSample + track.numSamples;
+        if (blockEnd <= startSample || position >= clipEnd)
+            continue;
+
+        const auto mixStart = juce::jmax(position, startSample);
+        const auto mixEnd = juce::jmin(blockEnd, clipEnd);
+        const int count = static_cast<int>(mixEnd - mixStart);
+        if (count <= 0)
+            continue;
+
+        const int dst = static_cast<int>(mixStart - position);
+        const int src = static_cast<int>(mixStart - startSample);
+        const int sourceChannels = track.buffer->getNumChannels();
+
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+            juce::FloatVectorOperations::copy(outputChannelData[0] + dst, track.buffer->getReadPointer(0) + src, count);
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+            juce::FloatVectorOperations::copy(outputChannelData[1] + dst, track.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + src, count);
+    }
+
+    transportSamples.fetch_add(numSamples, std::memory_order_relaxed);
 }
 
 void AudioEngine::audioDeviceStopped() { playing.store(false); }
