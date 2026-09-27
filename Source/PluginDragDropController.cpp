@@ -257,7 +257,7 @@ private:
             const int insertSlot = packed % 8;
             const int audioCount = main->getAudioTrackCount();
             const int firstInstrument = audioCount + main->getMidiTrackCount();
-            const int oneKnobKey = logicalTrack * 8 + insertSlot;
+            const int oneKnobKey = logicalTrack < audioCount ? logicalTrack * 8 + insertSlot : 100000 + (logicalTrack - firstInstrument) * 8 + insertSlot;
             auto& manager = LibertyOneKnobManager::instance();
             auto& host = LibertyPluginHost::instance();
             if (logicalTrack < audioCount)
@@ -309,7 +309,7 @@ private:
                     loaded = host.loadEffectForInstrumentTrackSlot(lane, insertSlot, *plugin, error);
                     if (loaded)
                     {
-                        LibertyOneKnobManager::instance().clearEffect(logicalTrack * 8 + insertSlot);
+                        LibertyOneKnobManager::instance().clearEffect(100000 + lane * 8 + insertSlot);
                         host.showEffectEditorForInstrumentTrackSlot(lane, insertSlot);
                     }
                 }
