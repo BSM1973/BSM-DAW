@@ -574,6 +574,19 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
+    constexpr int currentProjectVersion = 15;
+    const int projectVersion = project->getIntAttribute("version", 1);
+    if (projectVersion < 1 || projectVersion > currentProjectVersion)
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               projectVersion > currentProjectVersion
+                                                   ? "This project was created by a newer version of Liberty and cannot be opened safely."
+                                                   : "This Liberty project version is invalid.",
+                                               "OK");
+        return false;
+    }
+
     resetProjectState();
 
     constexpr int maxRestoredTracksPerType = 512;
