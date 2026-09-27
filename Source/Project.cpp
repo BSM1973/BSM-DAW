@@ -100,6 +100,34 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";solo=" << (audioEngine.isInstrumentTrackSolo(i) ? 1 : 0);
     }
 
+    {
+        auto& host = LibertyPluginHost::instance();
+        auto& one = LibertyOneKnobManager::instance();
+        for (int lane = 0; lane < getAudioTrackCount(); ++lane)
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                juce::PluginDescription d;
+                signature << "|afx=" << lane << ',' << slot << ',';
+                if (host.getEffectDescriptionForTrackSlot(lane, slot, d)) signature << d.fileOrIdentifier;
+                const int key = lane * 8 + slot;
+                if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
+            }
+        for (int lane = 0; lane < getInstrumentTrackCount(); ++lane)
+        {
+            juce::PluginDescription instrument;
+            signature << "|instPlugin=" << lane << ',';
+            if (host.getInstrumentDescriptionForTrack(lane, instrument)) signature << instrument.fileOrIdentifier;
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                juce::PluginDescription d;
+                signature << "|ifx=" << lane << ',' << slot << ',';
+                if (host.getEffectDescriptionForInstrumentTrackSlot(lane, slot, d)) signature << d.fileOrIdentifier;
+                const int key = 100000 + lane * 8 + slot;
+                if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
+            }
+        }
+    }
+
     signature << "|midi=";
     for (const auto& note : midiEngine.getNotesCopy())
         signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ';';
@@ -259,6 +287,8 @@ void MainComponent::resetProjectState()
     audioEngine.setMidiTrackSolo(false);
     audioEngine.setInstrumentTrackMuted(false);
     audioEngine.setInstrumentTrackSolo(false);
+    LibertyPluginHost::instance().clearProjectPlugins();
+    LibertyOneKnobManager::instance().clearAllEffects();
     midiEngine.clear();
     for (int i = 0; i < getInstrumentTrackCount(); ++i)
     {
