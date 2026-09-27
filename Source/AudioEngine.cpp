@@ -376,6 +376,16 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
         for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
     else newBuffer->makeCopyOf(*decodedBuffer);
 
+    // Diagnostic: replace decoded PCM with a known-safe signal while keeping
+    // the exact same AudioBuffer allocation/lifetime and callback access path.
+    // This separates PCM decoding/content from buffer ownership/concurrency.
+    constexpr double diagnosticFrequency = 220.0;
+    constexpr double diagnosticTwoPi = 6.28318530717958647692;
+    for (int channel = 0; channel < inputChannels; ++channel)
+        for (int sample = 0; sample < outputSamples; ++sample)
+            newBuffer->setSample(channel, sample,
+                0.05f * static_cast<float>(std::sin(diagnosticTwoPi * diagnosticFrequency * static_cast<double>(sample) / outputRate)));
+
     const bool wasInitialised = initialised.load();
     playing.store(false); resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
