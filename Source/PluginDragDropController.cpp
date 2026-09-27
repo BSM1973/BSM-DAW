@@ -301,6 +301,7 @@ private:
             }
         }
 
+        if (loaded) refreshLibertyMixConsole(main);
         if (!loaded)
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Liberty - Plugin",
