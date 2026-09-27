@@ -483,6 +483,18 @@ bool LibertyPluginHost::getEffectDescriptionForTrack(int t, juce::PluginDescript
     if(t<0||t>=(int)trackEffects.size()||!trackEffects[(size_t)t][0]||!trackEffects[(size_t)t][0]->processor)return false;
     out=trackEffects[(size_t)t][0]->description; return true;
 }
+bool LibertyPluginHost::getEffectDescriptionForTrackSlot(int t,int si,juce::PluginDescription& out) const
+{
+    const juce::ScopedLock sl(lock);
+    if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)trackEffects.size()||!trackEffects[(size_t)t][(size_t)si]||!trackEffects[(size_t)t][(size_t)si]->processor)return false;
+    out=trackEffects[(size_t)t][(size_t)si]->description; return true;
+}
+bool LibertyPluginHost::getEffectDescriptionForInstrumentTrackSlot(int t,int si,juce::PluginDescription& out) const
+{
+    const juce::ScopedLock sl(lock);
+    if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][(size_t)si]||!instrumentEffects[(size_t)t][(size_t)si]->processor)return false;
+    out=instrumentEffects[(size_t)t][(size_t)si]->description; return true;
+}
 bool LibertyPluginHost::getInstrumentDescriptionForTrack(int t, juce::PluginDescription& out) const
 {
     const juce::ScopedLock sl(lock);
