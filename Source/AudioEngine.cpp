@@ -642,6 +642,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                                     state.gain.load(std::memory_order_relaxed),
                                                     state.pan.load(std::memory_order_relaxed)))
             {
+                pluginHost.processInstrumentEffect(instrumentTrack, instrumentBus, numSamples);
                 float* busChannels[2] = { instrumentBus.getWritePointer(0), instrumentBus.getWritePointer(1) };
                 oneKnob.processInstrumentBlock(instrumentTrack, busChannels, 2, numSamples);
                 const int channels = juce::jmin(2, numOutputChannels);
