@@ -387,39 +387,20 @@ private:
         owner.repaint();
     }
 
-    void audioDeviceAboutToStart(juce::AudioIODevice*) override {}
-    void audioDeviceStopped() override {}
-
-    void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                          int numInputChannels,
-                                          float* const* outputChannelData,
-                                          int numOutputChannels,
-                                          int numSamples,
-                                          const juce::AudioIODeviceCallbackContext&) override
+    void processInputBlock(const float* const* inputChannelData, int numInputChannels, int numSamples)
     {
-        // Recording callback is input-only. It must never clear, overwrite or
-        // otherwise touch the shared device output buffers owned by AudioEngine.
-        if (inputChannelData == nullptr)
-            return;
-
-        if (recording && threadedWriter != nullptr)
+        if (inputChannelData == nullptr || !recording || threadedWriter == nullptr) return;
+        const int channels = (int) inputIndices.size();
+        if (recordingBuffer.getNumSamples() < numSamples || recordingBuffer.getNumChannels() != channels) return;
+        for (int channel = 0; channel < channels; ++channel)
         {
-            const int channels = (int)inputIndices.size();
-            if (recordingBuffer.getNumSamples() >= numSamples && recordingBuffer.getNumChannels() == channels)
-            {
-                for (int channel = 0; channel < channels; ++channel)
-                {
-                    const int source = inputIndices[(size_t)channel];
-                    if (source < 0 || source >= numInputChannels || inputChannelData[source] == nullptr)
-                        recordingBuffer.clear(channel, 0, numSamples);
-                    else
-                        recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
-                }
-                threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
-            }
+            const int source = inputIndices[(size_t) channel];
+            if (source < 0 || source >= numInputChannels || inputChannelData[source] == nullptr)
+                recordingBuffer.clear(channel, 0, numSamples);
+            else
+                recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
         }
-
-        juce::ignoreUnused(outputChannelData, numOutputChannels);
+        threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
     }
 
     void timerCallback() override
@@ -475,6 +456,17 @@ public:
     LibertyAudioRecordingBootstrap() { startTimerHz(10); }
     ~LibertyAudioRecordingBootstrap() override { shutdown(); }
 
+    void processInput(AudioEngine* engine, const float* const* inputs, int numInputs, int numSamples)
+    {
+        if (engine == nullptr) return;
+        for (auto& entry : controllers)
+            if (entry.first != nullptr && &entry.first->audioEngine == engine && entry.second)
+            {
+                entry.second->processInputBlock(inputs, numInputs, numSamples);
+                return;
+            }
+    }
+
     void shutdown()
     {
         stopTimer();
@@ -496,6 +488,11 @@ private:
 };
 
 static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
+
+void processLibertyRecordingInput(AudioEngine* engine, const float* const* inputs, int numInputs, int numSamples)
+{
+    libertyAudioRecordingBootstrap.processInput(engine, inputs, numInputs, numSamples);
+}
 
 void shutdownLibertyAudioRecordingController()
 {
