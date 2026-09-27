@@ -518,6 +518,37 @@ bool LibertyPluginHost::getInstrumentDescriptionForTrack(int t, juce::PluginDesc
     if(t<0||t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)return false;
     out=instruments[(size_t)t]->description; return true;
 }
+bool LibertyPluginHost::getEffectStateForTrackSlot(int t,int si,juce::MemoryBlock& out) const
+{
+    const juce::ScopedLock sl(lock); if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)trackEffects.size()||!trackEffects[(size_t)t][(size_t)si]||!trackEffects[(size_t)t][(size_t)si]->processor)return false;
+    out.reset(); trackEffects[(size_t)t][(size_t)si]->processor->getStateInformation(out); return true;
+}
+bool LibertyPluginHost::setEffectStateForTrackSlot(int t,int si,const juce::MemoryBlock& state)
+{
+    const juce::ScopedLock sl(lock); if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)trackEffects.size()||!trackEffects[(size_t)t][(size_t)si]||!trackEffects[(size_t)t][(size_t)si]->processor)return false;
+    trackEffects[(size_t)t][(size_t)si]->processor->setStateInformation(state.getData(),(int)state.getSize()); return true;
+}
+bool LibertyPluginHost::getEffectStateForInstrumentTrackSlot(int t,int si,juce::MemoryBlock& out) const
+{
+    const juce::ScopedLock sl(lock); if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][(size_t)si]||!instrumentEffects[(size_t)t][(size_t)si]->processor)return false;
+    out.reset(); instrumentEffects[(size_t)t][(size_t)si]->processor->getStateInformation(out); return true;
+}
+bool LibertyPluginHost::setEffectStateForInstrumentTrackSlot(int t,int si,const juce::MemoryBlock& state)
+{
+    const juce::ScopedLock sl(lock); if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][(size_t)si]||!instrumentEffects[(size_t)t][(size_t)si]->processor)return false;
+    instrumentEffects[(size_t)t][(size_t)si]->processor->setStateInformation(state.getData(),(int)state.getSize()); return true;
+}
+bool LibertyPluginHost::getInstrumentStateForTrack(int t,juce::MemoryBlock& out) const
+{
+    const juce::ScopedLock sl(lock); if(t<0||t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)return false;
+    out.reset(); instruments[(size_t)t]->processor->getStateInformation(out); return true;
+}
+bool LibertyPluginHost::setInstrumentStateForTrack(int t,const juce::MemoryBlock& state)
+{
+    const juce::ScopedLock sl(lock); if(t<0||t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)return false;
+    instruments[(size_t)t]->processor->setStateInformation(state.getData(),(int)state.getSize()); return true;
+}
+
 bool LibertyPluginHost::findKnownPluginByIdentifier(const juce::String& id, juce::PluginDescription& out) const
 {
     if(id.isEmpty())return false;
