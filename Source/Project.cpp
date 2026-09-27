@@ -108,7 +108,12 @@ juce::String MainComponent::getProjectStateSignature() const
             {
                 juce::PluginDescription d;
                 signature << "|afx=" << lane << ',' << slot << ',';
-                if (host.getEffectDescriptionForTrackSlot(lane, slot, d)) signature << d.fileOrIdentifier;
+                if (host.getEffectDescriptionForTrackSlot(lane, slot, d))
+                {
+                    signature << d.fileOrIdentifier;
+                    juce::MemoryBlock state;
+                    if (host.getEffectStateForTrackSlot(lane, slot, state)) signature << ";state=" << state.toBase64Encoding();
+                }
                 const int key = lane * 8 + slot;
                 if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
             }
@@ -116,12 +121,22 @@ juce::String MainComponent::getProjectStateSignature() const
         {
             juce::PluginDescription instrument;
             signature << "|instPlugin=" << lane << ',';
-            if (host.getInstrumentDescriptionForTrack(lane, instrument)) signature << instrument.fileOrIdentifier;
+            if (host.getInstrumentDescriptionForTrack(lane, instrument))
+            {
+                signature << instrument.fileOrIdentifier;
+                juce::MemoryBlock state;
+                if (host.getInstrumentStateForTrack(lane, state)) signature << ";state=" << state.toBase64Encoding();
+            }
             for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
             {
                 juce::PluginDescription d;
                 signature << "|ifx=" << lane << ',' << slot << ',';
-                if (host.getEffectDescriptionForInstrumentTrackSlot(lane, slot, d)) signature << d.fileOrIdentifier;
+                if (host.getEffectDescriptionForInstrumentTrackSlot(lane, slot, d))
+                {
+                    signature << d.fileOrIdentifier;
+                    juce::MemoryBlock state;
+                    if (host.getEffectStateForInstrumentTrackSlot(lane, slot, state)) signature << ";state=" << state.toBase64Encoding();
+                }
                 const int key = 100000 + lane * 8 + slot;
                 if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
             }
