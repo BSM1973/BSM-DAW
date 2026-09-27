@@ -76,6 +76,7 @@ void LibertyPluginHost::initialise(double sampleRate, int blockSize)
     currentBlockSize = juce::jmax(16, blockSize);
     for (auto& slot : trackEffects) if (slot) prepareSlot(*slot);
     for (auto& slot : instruments) if (slot) prepareSlot(*slot);
+    for (auto& slot : instrumentEffects) if (slot) prepareSlot(*slot);
 }
 
 void LibertyPluginHost::shutdown()
@@ -87,6 +88,12 @@ void LibertyPluginHost::shutdown()
 
     const juce::ScopedLock scoped(lock);
     for (auto& slot : trackEffects) if (slot)
+    {
+        closeEditor(*slot);
+        if (slot->processor) slot->processor->releaseResources();
+        slot->processor.reset(); slot->description = {};
+    }
+    for (auto& slot : instrumentEffects) if (slot)
     {
         closeEditor(*slot);
         if (slot->processor) slot->processor->releaseResources();
@@ -581,6 +588,37 @@ bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>
     destination.applyGain(1, 0, n, gain * (pan < 0.0f ? 1.0f + pan : 1.0f));
     lock.exit();
     return true;
+}
+
+bool LibertyPluginHost::loadEffectForInstrumentTrack(int t, const juce::PluginDescription& d, juce::String& error)
+{
+    if (t < 0 || d.isInstrument) { error = "Invalid instrument-track audio effect."; return false; }
+    const juce::ScopedLock scoped(lock);
+    if (t >= (int)instrumentEffects.size()) instrumentEffects.resize((size_t)t + 1);
+    if (!instrumentEffects[(size_t)t]) instrumentEffects[(size_t)t] = std::make_unique<Slot>();
+    return loadIntoSlot(*instrumentEffects[(size_t)t], d, error, false);
+}
+void LibertyPluginHost::unloadEffectForInstrumentTrack(int t)
+{
+    const juce::ScopedLock scoped(lock); if(t<0||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t])return;
+    auto& slot=*instrumentEffects[(size_t)t]; closeEditor(slot); if(slot.processor)slot.processor->releaseResources(); slot.processor.reset(); slot.description={};
+}
+bool LibertyPluginHost::hasEffectForInstrumentTrack(int t) const
+{
+    const juce::ScopedLock scoped(lock); return t>=0&&t<(int)instrumentEffects.size()&&instrumentEffects[(size_t)t]&&instrumentEffects[(size_t)t]->processor;
+}
+juce::String LibertyPluginHost::getEffectNameForInstrumentTrack(int t) const
+{
+    const juce::ScopedLock scoped(lock); return t>=0&&t<(int)instrumentEffects.size()&&instrumentEffects[(size_t)t]&&instrumentEffects[(size_t)t]->processor?instrumentEffects[(size_t)t]->description.name:juce::String{};
+}
+void LibertyPluginHost::showEffectEditorForInstrumentTrack(int t)
+{
+    const juce::ScopedLock scoped(lock); if(t<0||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t])return; auto& slot=*instrumentEffects[(size_t)t]; showEditor(slot,"Liberty - "+slot.description.name);
+}
+void LibertyPluginHost::processInstrumentEffect(int t, juce::AudioBuffer<float>& buffer, int n)
+{
+    if(t<0||n<=0||!lock.tryEnter())return; if(t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t]||!instrumentEffects[(size_t)t]->processor){lock.exit();return;}
+    juce::MidiBuffer empty; instrumentEffects[(size_t)t]->processor->processBlock(buffer,empty); lock.exit();
 }
 
 void LibertyPluginHost::showEditor(Slot& slot, const juce::String& title)
