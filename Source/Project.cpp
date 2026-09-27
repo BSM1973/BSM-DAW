@@ -10,6 +10,7 @@ void setLibertyTrackName(int track, const juce::String& name);
 void resetLibertyTrackNames();
 void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
 void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
+void refreshLibertyMixConsole(MainComponent*);
 
 namespace
 {
@@ -620,6 +621,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     }
 
     juce::String missingFiles;
+    juce::String missingPlugins;
     for (auto* track = project->getFirstChildElement(); track != nullptr; track = track->getNextElement())
     {
         if (track->getTagName() != "Track") continue;
@@ -704,7 +706,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
             const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
             const int insertSlot=juce::jlimit(0,LibertyPluginHost::effectSlotsPerTrack-1,e->getIntAttribute("slot",0));
-            if(e->getTagName()=="Plugin"){juce::PluginDescription d;if(host.findKnownPluginByIdentifier(e->getStringAttribute("identifier"),d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(loaded&&e->hasAttribute("state")){juce::MemoryBlock state;if(state.fromBase64Encoding(e->getStringAttribute("state"))){if(kind=="instrument")host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);}}}}
+            if(e->getTagName()=="Plugin"){const auto identifier=e->getStringAttribute("identifier");juce::PluginDescription d;if(host.findKnownPluginByIdentifier(identifier,d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(!loaded&&error.isNotEmpty())missingPlugins<<identifier<<" : "<<error<<"\n";if(loaded&&e->hasAttribute("state")){juce::MemoryBlock state;if(state.fromBase64Encoding(e->getStringAttribute("state"))){if(kind=="instrument")host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);}}}else if(identifier.isNotEmpty())missingPlugins<<identifier<<" (not found)\n";}
             else if(e->getTagName()=="OneKnob"){
                 const bool validAudio = kind=="audio" && lane<getAudioTrackCount();
                 const bool validInstrument = kind=="instrument" && lane<getInstrumentTrackCount();
@@ -724,6 +726,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     audioEngine.setPlaying(false);
     currentProjectFile = file;
     tempoControls.refresh();
+    refreshLibertyMixConsole(this);
     markProjectClean();
     repaint();
 
@@ -731,6 +734,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Media",
                                                "Some audio files could not be restored:\n\n" + missingFiles,
+                                               "OK");
+    if (missingPlugins.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Plugins",
+                                               "Some plugins could not be restored:\n\n" + missingPlugins,
                                                "OK");
 
     return true;
