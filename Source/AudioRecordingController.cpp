@@ -399,10 +399,8 @@ private:
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override
     {
-        for (int channel = 0; channel < numOutputChannels; ++channel)
-            if (outputChannelData != nullptr && outputChannelData[channel] != nullptr)
-                juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
-
+        // Recording callback is input-only. It must never clear, overwrite or
+        // otherwise touch the shared device output buffers owned by AudioEngine.
         if (inputChannelData == nullptr)
             return;
 
@@ -419,54 +417,11 @@ private:
                     else
                         recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
                 }
-
                 threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
             }
         }
 
-        // Do not route live hardware input to the master output here. This
-        // controller is a second AudioIODeviceCallback and such monitoring can
-        // form a persistent hardware feedback loop independent of transport.
-        return;
-
-        int strongest = -1;
-        int secondStrongest = -1;
-        double strongestEnergy = -1.0;
-        double secondEnergy = -1.0;
-
-        for (int channel = 0; channel < numInputChannels; ++channel)
-        {
-            if (inputChannelData[channel] == nullptr)
-                continue;
-
-            double energy = 0.0;
-            const float* data = inputChannelData[channel];
-            for (int sample = 0; sample < numSamples; ++sample)
-                energy += static_cast<double>(data[sample]) * static_cast<double>(data[sample]);
-
-            if (energy > strongestEnergy)
-            {
-                secondEnergy = strongestEnergy;
-                secondStrongest = strongest;
-                strongestEnergy = energy;
-                strongest = channel;
-            }
-            else if (energy > secondEnergy)
-            {
-                secondEnergy = energy;
-                secondStrongest = channel;
-            }
-        }
-
-        if (strongest >= 0)
-        {
-            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-                juce::FloatVectorOperations::copy(outputChannelData[0], inputChannelData[strongest], numSamples);
-
-            const int rightSource = secondStrongest >= 0 ? secondStrongest : strongest;
-            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-                juce::FloatVectorOperations::copy(outputChannelData[1], inputChannelData[rightSource], numSamples);
-        }
+        juce::ignoreUnused(outputChannelData, numOutputChannels);
     }
 
     void timerCallback() override
