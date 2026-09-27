@@ -36,10 +36,13 @@ public:
             monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
             monitorButtons[(size_t)i]->onClick = [this, i]
             {
-                const bool enabled = monitorButtons[(size_t)i]->getToggleState();
-                monitoringEnabled[(size_t)i]->store(enabled, std::memory_order_relaxed);
-                monitorButtons[(size_t)i]->setButtonText(enabled ? "MON ON" : "MON OFF");
-                updateMonitoringCallback();
+                // Live input monitoring is disabled until it has a dedicated,
+                // feedback-safe routing path. Never copy hardware inputs into
+                // Liberty's master output from a second device callback.
+                monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
+                monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
+                monitorButtons[(size_t)i]->setButtonText("MON OFF");
+                detachAudioCallback();
             };
             owner.addAndMakeVisible(*monitorButtons[(size_t)i]);
         }
@@ -421,8 +424,10 @@ private:
             }
         }
 
-        if (!isArmedTrackMonitoring())
-            return;
+        // Do not route live hardware input to the master output here. This
+        // controller is a second AudioIODeviceCallback and such monitoring can
+        // form a persistent hardware feedback loop independent of transport.
+        return;
 
         int strongest = -1;
         int secondStrongest = -1;
@@ -490,7 +495,7 @@ private:
             mon->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             mon->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
             auto state = std::make_unique<std::atomic<bool>>(false);
-            mon->onClick = [this, i] { const bool enabled=monitorButtons[(size_t)i]->getToggleState(); monitoringEnabled[(size_t)i]->store(enabled,std::memory_order_relaxed); monitorButtons[(size_t)i]->setButtonText(enabled?"MON ON":"MON OFF"); updateMonitoringCallback(); };
+            mon->onClick = [this, i] { monitorButtons[(size_t)i]->setToggleState(false,juce::dontSendNotification); monitoringEnabled[(size_t)i]->store(false,std::memory_order_relaxed); monitorButtons[(size_t)i]->setButtonText("MON OFF"); detachAudioCallback(); };
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
         }
     }
