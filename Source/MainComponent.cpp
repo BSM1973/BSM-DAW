@@ -337,9 +337,13 @@ void MainComponent::resized() { repaint(); }
 
 void MainComponent::timerCallback()
 {
-    playheadSeconds = audioEngine.getCurrentTimeSeconds();
-    isPlaying = audioEngine.isPlaying();
-    repaint();
+    const auto newPlayhead = audioEngine.getCurrentTimeSeconds();
+    const bool newPlaying = audioEngine.isPlaying();
+    const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
+    playheadSeconds = newPlayhead;
+    isPlaying = newPlaying;
+    if (changed)
+        repaint(0, transportHeight, getWidth(), juce::jmax(0, getHeight() - transportHeight));
 }
 
 void MainComponent::openAudioSettings()
