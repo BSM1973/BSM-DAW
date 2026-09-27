@@ -12,7 +12,6 @@
 namespace
 {
 class MetronomeController final : public juce::Component,
-                                  private juce::AudioIODeviceCallback,
                                   private juce::Timer
 {
 public:
@@ -68,7 +67,10 @@ public:
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (!buttonBounds().contains(e.getPosition())) return;
-        enabled.store(!enabled.load());
+        const bool next = !enabled.load(std::memory_order_relaxed);
+        enabled.store(next, std::memory_order_relaxed);
+        owner.audioEngine.setMetronomeTiming(owner.tempoBpm, owner.timeSignatureNumerator, owner.timeSignatureDenominator);
+        owner.audioEngine.setMetronomeEnabled(next);
         repaint();
     }
 
@@ -80,52 +82,11 @@ private:
         if (stopped.load()) return;
         const auto wanted = owner.getLocalBounds();
         if (getBounds() != wanted) setBounds(wanted);
+        owner.audioEngine.setMetronomeTiming(owner.tempoBpm, owner.timeSignatureNumerator, owner.timeSignatureDenominator);
         toFront(false);
         repaint(buttonBounds());
     }
 
-    void audioDeviceAboutToStart(juce::AudioIODevice*) override {}
-    void audioDeviceStopped() override {}
-
-    void audioDeviceIOCallbackWithContext(const float* const*, int,
-                                           float* const* outputs, int numOutputs,
-                                           int numSamples,
-                                           const juce::AudioIODeviceCallbackContext&) override
-    {
-        // The AudioEngine owns/clears the device output buffers. The metronome
-        // is an additive secondary callback and must never erase the master
-        // output, especially while disabled.
-        if (!enabled.load(std::memory_order_relaxed) || !owner.audioEngine.isPlaying()) return;
-
-        const double rate = owner.audioEngine.getSampleRate();
-        if (rate <= 0.0) return;
-
-        const double bpm = juce::jmax(1.0, owner.tempoBpm);
-        const int numerator = juce::jmax(1, owner.timeSignatureNumerator);
-        const int denominator = juce::jmax(1, owner.timeSignatureDenominator);
-        const double secondsPerBeat = 60.0 / bpm * (4.0 / (double)denominator);
-        const auto beatSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::llround(secondsPerBeat * rate));
-        const auto clickSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::llround(0.035 * rate));
-        const auto position = owner.audioEngine.transportSamples.load(std::memory_order_relaxed);
-        constexpr double twoPi = 6.28318530717958647692;
-
-        for (int s = 0; s < numSamples; ++s)
-        {
-            const std::int64_t projectSample = position + s;
-            const std::int64_t beatIndex = projectSample / beatSamples;
-            const std::int64_t offset = projectSample % beatSamples;
-            if (offset >= clickSamples) continue;
-
-            const bool accent = (beatIndex % numerator) == 0;
-            const double t = (double)offset / rate;
-            const double frequency = accent ? 1760.0 : 1200.0;
-            const double decay = std::exp(-t * 95.0);
-            const float value = (float)(std::sin(twoPi * frequency * t) * decay * (accent ? 0.34 : 0.22));
-
-            if (numOutputs > 0 && outputs[0] != nullptr) outputs[0][s] += value;
-            if (numOutputs > 1 && outputs[1] != nullptr) outputs[1][s] += value;
-        }
-    }
 
     MainComponent& owner;
     std::atomic<bool> enabled { false };
