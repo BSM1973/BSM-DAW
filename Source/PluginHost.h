@@ -66,6 +66,8 @@ public:
     void showEffectEditorForInstrumentTrack(int instrumentTrack);
     void showEffectEditorForInstrumentTrackSlot(int instrumentTrack, int slotIndex);
     void processInstrumentEffect(int instrumentTrack, juce::AudioBuffer<float>& buffer, int numSamples);
+    void processAudioEffectSlot(int trackIndex, int slotIndex, juce::AudioBuffer<float>& buffer);
+    void processInstrumentEffectSlot(int instrumentTrack, int slotIndex, juce::AudioBuffer<float>& buffer);
 
     // Offline render is exclusive: the realtime audio callback is prevented from
     // driving the same instrument instance while AI Render owns it.
