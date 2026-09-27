@@ -503,7 +503,7 @@ void LibertyPluginHost::beginAudioTrackBlock(int trackIndex,
 {
     if (!validTrack(trackIndex) || numSamples <= 0) return;
     if (!lock.tryEnter()) return;
-    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) { lock.exit(); return; }
     auto& slot = *trackEffects[(size_t)trackIndex];
     if (!slot.processor) { lock.exit(); return; }
 
@@ -526,7 +526,7 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
 {
     if (!validTrack(trackIndex) || numSamples <= 0) return;
     if (!lock.tryEnter()) return;
-    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) return;
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) { lock.exit(); return; }
     auto& slot = *trackEffects[(size_t)trackIndex];
     if (!slot.processor) { lock.exit(); return; }
 
