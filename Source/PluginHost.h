@@ -47,6 +47,8 @@ public:
     juce::String getInstrumentName() const;
     juce::String getInstrumentNameForTrack(int instrumentTrack) const;
     bool getEffectDescriptionForTrack(int trackIndex, juce::PluginDescription& out) const;
+    bool getEffectDescriptionForTrackSlot(int trackIndex, int slotIndex, juce::PluginDescription& out) const;
+    bool getEffectDescriptionForInstrumentTrackSlot(int instrumentTrack, int slotIndex, juce::PluginDescription& out) const;
     bool getInstrumentDescriptionForTrack(int instrumentTrack, juce::PluginDescription& out) const;
     bool findKnownPluginByIdentifier(const juce::String& identifier, juce::PluginDescription& out) const;
 
