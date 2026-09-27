@@ -1,4 +1,8 @@
 #include "AudioEngine.h"
+
+// PERFORM contributes audio to this engine-owned hardware callback. It never
+// registers its own AudioIODeviceCallback.
+void renderLibertyPerformAudio(AudioEngine*, float* const*, int, int);
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include <algorithm>
@@ -476,6 +480,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+    renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
     if (!playing.load()) return;
 
     const auto position = transportSamples.load();
