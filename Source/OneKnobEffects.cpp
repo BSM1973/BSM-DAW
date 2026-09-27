@@ -286,6 +286,7 @@ LibertyOneKnobManager& LibertyOneKnobManager::instance(){static LibertyOneKnobMa
 LibertyOneKnobManager::LibertyOneKnobManager()=default;
 void LibertyOneKnobManager::ensureTrack(int i){while((int)racks.size()<=i){auto r=std::make_unique<LibertyOneKnobRack>();r->prepare(preparedSampleRate,preparedBlockSize);racks.push_back(std::move(r));baselines.push_back(std::make_unique<juce::AudioBuffer<float>>());workBuffers.push_back(std::make_unique<juce::AudioBuffer<float>>());editors.push_back(nullptr);}}
 void LibertyOneKnobManager::prepare(double sr,int bs){const juce::ScopedLock s(lock);preparedSampleRate=sr>0?sr:48000.0;preparedBlockSize=juce::jmax(16,bs);for(auto&r:racks)if(r)r->prepare(preparedSampleRate,preparedBlockSize);}
+void LibertyOneKnobManager::clearAllEffects(){const juce::ScopedLock s(lock);for(size_t i=0;i<racks.size();++i){if(racks[i])racks[i]->setType(LibertyOneKnobRack::Type::none);if(i<editors.size()&&editors[i])editors[i].reset();}}
 void LibertyOneKnobManager::setEffect(int i,LibertyOneKnobRack::Type t){if(!validTrack(i))return;const juce::ScopedLock s(lock);ensureTrack(i);racks[(size_t)i]->setType(t);if(editors[(size_t)i])editors[(size_t)i].reset();}
 void LibertyOneKnobManager::clearEffect(int i){setEffect(i,LibertyOneKnobRack::Type::none);}
 LibertyOneKnobRack::Type LibertyOneKnobManager::getEffect(int i)const{if(!validTrack(i))return LibertyOneKnobRack::Type::none;const juce::ScopedLock s(lock);return i<(int)racks.size()&&racks[(size_t)i]?racks[(size_t)i]->getType():LibertyOneKnobRack::Type::none;}
