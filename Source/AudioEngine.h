@@ -58,6 +58,14 @@ public:
         }
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    void setMetronomeEnabled(bool enabled) noexcept { metronomeEnabled.store(enabled, std::memory_order_relaxed); }
+    bool isMetronomeEnabled() const noexcept { return metronomeEnabled.load(std::memory_order_relaxed); }
+    void setMetronomeTiming(double bpm, int numerator, int denominator) noexcept
+    {
+        metronomeBpm.store(juce::jmax(1.0, bpm), std::memory_order_relaxed);
+        metronomeNumerator.store(juce::jmax(1, numerator), std::memory_order_relaxed);
+        metronomeDenominator.store(juce::jmax(1, denominator), std::memory_order_relaxed);
+    }
     void resetTransport() noexcept
     {
         transportSamples.store(0, std::memory_order_relaxed);
@@ -220,6 +228,10 @@ private:
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
+    std::atomic<bool> metronomeEnabled { false };
+    std::atomic<double> metronomeBpm { 120.0 };
+    std::atomic<int> metronomeNumerator { 4 };
+    std::atomic<int> metronomeDenominator { 4 };
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;
     juce::String lastError;
