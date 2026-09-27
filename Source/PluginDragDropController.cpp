@@ -11,6 +11,7 @@ bool isLibertyMixConsoleVisible(MainComponent* owner);
 int getLibertyMixConsolePluginDropTrack(MainComponent* owner,
                                         juce::Point<int> ownerPoint,
                                         bool instrumentPlugin);
+void refreshLibertyMixConsole(MainComponent* owner);
 
 namespace
 {
