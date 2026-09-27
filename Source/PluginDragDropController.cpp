@@ -240,21 +240,28 @@ private:
                 juce::AlertWindow::WarningIcon,
                 oneKnob.has_value() ? "Liberty - One Knob" : (plugin->isInstrument ? "Liberty - Instrument" : "Liberty - Effet"),
                 oneKnob.has_value()
-                    ? "Dépose le One Knob sur une piste Audio."
+                    ? "Dépose le One Knob directement sur un slot FX 1 à FX 8."
                     : (plugin->isInstrument
                         ? "Dépose l'instrument sur une piste Instrument."
-                        : "Dépose l'effet sur une piste Audio."),
+                        : "Dépose l'effet directement sur un slot FX 1 à FX 8."),
                 "OK");
             return;
         }
 
         if (oneKnob.has_value())
         {
-            const int slot = target;
+            if (target < 1000000) { resetLibertyDragCursors(); return; }
+            const int packed = target - 1000000;
+            const int logicalTrack = packed / 8;
+            const int insertSlot = packed % 8;
+            const int audioCount = main->getAudioTrackCount();
+            const int firstInstrument = audioCount + main->getMidiTrackCount();
+            const int oneKnobKey = logicalTrack < audioCount ? 200000 + logicalTrack * 8 + insertSlot
+                                                             : 300000 + (logicalTrack - firstInstrument) * 8 + insertSlot;
             auto& manager = LibertyOneKnobManager::instance();
-            manager.setEffect(slot, *oneKnob);
-            manager.showEditor(slot);
-            main->selectedTrack = target;
+            manager.setEffect(oneKnobKey, *oneKnob);
+            manager.showEditor(oneKnobKey);
+            main->selectedTrack = logicalTrack;
             main->repaint();
             return;
         }
@@ -272,9 +279,27 @@ private:
         }
         else
         {
-            main->selectedTrack = target;
-            loaded = host.loadEffectForTrack(target, *plugin, error);
-            if (loaded) host.showEditorForTrack(target);
+            if (target < 1000000) { error = "Dépose l'effet directement sur un slot FX 1 à FX 8."; }
+            else
+            {
+                const int packed = target - 1000000;
+                const int logicalTrack = packed / 8;
+                const int insertSlot = packed % 8;
+                const int audioCount = main->getAudioTrackCount();
+                const int firstInstrument = audioCount + main->getMidiTrackCount();
+                main->selectedTrack = logicalTrack;
+                if (logicalTrack < audioCount)
+                {
+                    loaded = host.loadEffectForTrackSlot(logicalTrack, insertSlot, *plugin, error);
+                    if (loaded) host.showEditorForTrackSlot(logicalTrack, insertSlot);
+                }
+                else if (logicalTrack >= firstInstrument)
+                {
+                    const int lane = logicalTrack - firstInstrument;
+                    loaded = host.loadEffectForInstrumentTrackSlot(lane, insertSlot, *plugin, error);
+                    if (loaded) host.showEffectEditorForInstrumentTrackSlot(lane, insertSlot);
+                }
+            }
         }
 
         if (!loaded)
