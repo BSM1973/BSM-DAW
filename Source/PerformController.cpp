@@ -223,6 +223,11 @@ public:
 
     bool isCapturing() const noexcept { return captureActive.load(std::memory_order_relaxed); }
 
+    void renderAudioBlock(float* const* outputs, int numOutputs, int numSamples)
+    {
+        audioDeviceIOCallbackWithContext(nullptr, 0, outputs, numOutputs, numSamples, {});
+    }
+
 private:
     struct TrackState
     {
@@ -461,6 +466,11 @@ public:
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             if (player.isCapturing()) finishCaptureToArrange();
         }
+    }
+
+    void renderAudioBlock(float* const* outputs, int numOutputs, int numSamples)
+    {
+        player.renderAudioBlock(outputs, numOutputs, numSamples);
     }
 
     bool isPerformVisible() const noexcept { return performVisible; }
@@ -926,6 +936,11 @@ public:
         owner.repaint();
     }
 
+    void renderAudioBlock(float* const* outputs, int numOutputs, int numSamples)
+    {
+        if (performVisible) view.renderAudioBlock(outputs, numOutputs, numSamples);
+    }
+
     bool isVisible() const noexcept { return performVisible; }
 
 private:
@@ -979,6 +994,17 @@ private:
 };
 
 Bootstrap bootstrap;
+}
+
+void renderLibertyPerformAudio(AudioEngine* engine, float* const* outputs, int numOutputs, int numSamples)
+{
+    if (engine == nullptr) return;
+    for (auto& entry : controllers)
+        if (entry.first != nullptr && &entry.first->audioEngine == engine && entry.second)
+        {
+            entry.second->renderAudioBlock(outputs, numOutputs, numSamples);
+            return;
+        }
 }
 
 bool isLibertyPerformVisible(MainComponent* owner)
