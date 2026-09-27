@@ -353,41 +353,39 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     error.clear();
     if (!isValidTrackIndex(trackIndex)) { error = "Invalid audio track."; return false; }
     if (!file.existsAsFile()) { error = "The selected audio file does not exist."; return false; }
-    juce::AudioFormatManager formatManager; formatManager.registerBasicFormats();
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
-    if (reader == nullptr) { error = "BSM DAW could not read this audio format. Use WAV, AIFF or AIF."; return false; }
-    const auto outputRate = sampleRate.load();
+    const auto outputRate = sampleRate.load(std::memory_order_relaxed);
     if (outputRate <= 0.0) { error = "No audio device is available."; return false; }
-    if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) { error = "The selected audio file is too large to load into memory."; return false; }
-    const auto inputSamples = static_cast<int>(reader->lengthInSamples);
-    const auto inputChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
-    auto decodedBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, inputSamples);
-    decodedBuffer->clear();
-    if (!reader->read(decodedBuffer.get(), 0, inputSamples, 0, true, true)) { error = "Failed to decode the selected audio file."; return false; }
-    const auto sourceRate = reader->sampleRate;
-    const auto ratio = sourceRate / outputRate;
-    if (ratio <= 0.0) { error = "The selected audio file has an invalid sample rate."; return false; }
-    const auto outputSamples64 = static_cast<std::int64_t>(std::floor(static_cast<double>(inputSamples) / ratio));
-    if (outputSamples64 <= 0 || outputSamples64 > std::numeric_limits<int>::max()) { error = "The resampled audio file is too large to load into memory."; return false; }
-    const auto outputSamples = static_cast<int>(outputSamples64);
-    auto newBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, outputSamples);
-    newBuffer->clear();
-    if (std::abs(sourceRate - outputRate) > 0.01)
-        for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
-    else newBuffer->makeCopyOf(*decodedBuffer);
 
-    const bool wasInitialised = initialised.load();
-    playing.store(false); resetTransport();
+    // Isolation stage 7: publish a newly-created track AudioBuffer without
+    // decoding or copying anything from the selected file.
+    const int outputSamples = juce::jmax(1, static_cast<int>(std::llround(outputRate * 10.0)));
+    auto newBuffer = std::make_shared<juce::AudioBuffer<float>>(2, outputSamples);
+    constexpr double twoPi = 6.28318530717958647692;
+    for (int sample = 0; sample < outputSamples; ++sample)
+    {
+        const float value = 0.05f * static_cast<float>(std::sin(twoPi * 220.0 * static_cast<double>(sample) / outputRate));
+        newBuffer->setSample(0, sample, value);
+        newBuffer->setSample(1, sample, value);
+    }
+
+    const bool wasInitialised = initialised.load(std::memory_order_relaxed);
+    playing.store(false, std::memory_order_relaxed);
+    resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
-    auto& track = *tracks[(size_t)trackIndex];
-    track.loaded.store(false, std::memory_order_release);
-    track.buffer = std::move(newBuffer); track.numSamples = outputSamples;
-    track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
-    track.warpEnabled.store(false, std::memory_order_relaxed);
-    track.warpMode.store(0, std::memory_order_relaxed);
-    track.loaded.store(true, std::memory_order_release);
-    resetTrackWarpMarkers(trackIndex);
-    { const juce::ScopedLock lock(stateLock); lastError.clear(); }
+    {
+        const juce::ScopedLock lock(stateLock);
+        auto& track = *tracks[(size_t)trackIndex];
+        track.loaded.store(false, std::memory_order_release);
+        std::atomic_store(&track.buffer, newBuffer);
+        track.numSamples = outputSamples;
+        track.fileName = file.getFileName();
+        track.lengthSeconds.store(10.0, std::memory_order_relaxed);
+        track.startSeconds.store(0.0, std::memory_order_relaxed);
+        track.warpEnabled.store(false, std::memory_order_relaxed);
+        track.warpMode.store(0, std::memory_order_relaxed);
+        track.loaded.store(true, std::memory_order_release);
+        lastError.clear();
+    }
     if (wasInitialised) deviceManager.addAudioCallback(this);
     return true;
 }
