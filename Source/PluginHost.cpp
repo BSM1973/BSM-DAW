@@ -568,6 +568,21 @@ bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChan
     lock.exit();return true;
 }
 
+bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>& destination, int n, juce::MidiBuffer& midi, float gain, float pan)
+{
+    if (n <= 0 || t < 0 || !lock.tryEnter()) return false;
+    if (t >= (int) instruments.size() || !instruments[(size_t)t] || !instruments[(size_t)t]->processor) { lock.exit(); return false; }
+    auto& instrument = *instruments[(size_t)t];
+    destination.setSize(2, n, false, false, true);
+    destination.clear();
+    instrument.processor->processBlock(destination, midi);
+    gain = juce::jlimit(0.0f, 2.0f, gain); pan = juce::jlimit(-1.0f, 1.0f, pan);
+    destination.applyGain(0, 0, n, gain * (pan > 0.0f ? 1.0f - pan : 1.0f));
+    destination.applyGain(1, 0, n, gain * (pan < 0.0f ? 1.0f + pan : 1.0f));
+    lock.exit();
+    return true;
+}
+
 void LibertyPluginHost::showEditor(Slot& slot, const juce::String& title)
 {
     if (!slot.processor) return;
