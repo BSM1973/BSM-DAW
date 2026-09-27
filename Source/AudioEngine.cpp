@@ -620,6 +620,31 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         }
     }
 
+    if (metronomeEnabled.load(std::memory_order_relaxed) && rate > 0.0)
+    {
+        const double bpm = juce::jmax(1.0, metronomeBpm.load(std::memory_order_relaxed));
+        const int numerator = juce::jmax(1, metronomeNumerator.load(std::memory_order_relaxed));
+        const int denominator = juce::jmax(1, metronomeDenominator.load(std::memory_order_relaxed));
+        const double secondsPerBeat = 60.0 / bpm * (4.0 / static_cast<double>(denominator));
+        const auto beatSamples = juce::jmax<std::int64_t>(1, static_cast<std::int64_t>(std::llround(secondsPerBeat * rate)));
+        const auto clickSamples = juce::jmax<std::int64_t>(1, static_cast<std::int64_t>(std::llround(0.035 * rate)));
+        constexpr double twoPi = 6.28318530717958647692;
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            const std::int64_t projectSample = position + sample;
+            const std::int64_t beatIndex = projectSample / beatSamples;
+            const std::int64_t offset = projectSample % beatSamples;
+            if (offset >= clickSamples) continue;
+            const bool accent = (beatIndex % numerator) == 0;
+            const double t = static_cast<double>(offset) / rate;
+            const double frequency = accent ? 1760.0 : 1200.0;
+            const double decay = std::exp(-t * 95.0);
+            const float value = static_cast<float>(std::sin(twoPi * frequency * t) * decay * (accent ? 0.34 : 0.22));
+            if (numOutputChannels > 0 && outputChannelData[0] != nullptr) outputChannelData[0][sample] += value;
+            if (numOutputChannels > 1 && outputChannelData[1] != nullptr) outputChannelData[1][sample] += value;
+        }
+    }
+
     const auto master = masterGain.load();
     bool unsafeOutput = !std::isfinite(master) || std::abs(master) > 4.0f;
     float peak = 0.0f;
