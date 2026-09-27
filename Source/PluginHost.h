@@ -52,6 +52,13 @@ public:
     bool getEffectDescriptionForInstrumentTrackSlot(int instrumentTrack, int slotIndex, juce::PluginDescription& out) const;
     bool getInstrumentDescriptionForTrack(int instrumentTrack, juce::PluginDescription& out) const;
     bool findKnownPluginByIdentifier(const juce::String& identifier, juce::PluginDescription& out) const;
+    bool getEffectStateForTrackSlot(int trackIndex, int slotIndex, juce::MemoryBlock& out) const;
+    bool setEffectStateForTrackSlot(int trackIndex, int slotIndex, const juce::MemoryBlock& state);
+    bool getEffectStateForInstrumentTrackSlot(int instrumentTrack, int slotIndex, juce::MemoryBlock& out) const;
+    bool setEffectStateForInstrumentTrackSlot(int instrumentTrack, int slotIndex, const juce::MemoryBlock& state);
+    bool getInstrumentStateForTrack(int instrumentTrack, juce::MemoryBlock& out) const;
+    bool setInstrumentStateForTrack(int instrumentTrack, const juce::MemoryBlock& state);
+
 
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
     void endAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
