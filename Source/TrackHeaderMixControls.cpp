@@ -9,6 +9,7 @@
 
 int getLibertyTrackRowHeight() noexcept;
 bool isLibertyMixConsoleVisible(MainComponent* owner);
+bool isLibertyPerformVisible(MainComponent* owner);
 
 namespace {
 constexpr int rulerH=32;
@@ -27,7 +28,7 @@ private:
  void layout(){int rh=getLibertyTrackRowHeight();for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int y=76+rulerH+(logicalTrack(i)-owner.getTrackScrollRows())*rh,my=y+rh-30,ms=y+39;bool vis=y+rh>=108&&y<owner.getHeight()-210;c.vol->setVisible(vis);c.pan->setVisible(vis);c.mute->setVisible(vis);c.solo->setVisible(vis);c.mask->setVisible(vis);if(!vis)continue;c.mute->setBounds(10,ms,30,20);c.solo->setBounds(44,ms,30,20);c.vol->setBounds(28,my+6,66,18);c.pan->setBounds(126,my+4,22,22);c.mask->setBounds(154,my,36,30);}}
  void sync(){syncing=true;for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner.getAudioTrackCount();float gain=isAudio(i)?owner.audioEngine.getTrackGain(i):owner.audioEngine.getInstrumentTrackGain(t);float pan=isAudio(i)?owner.audioEngine.getTrackPan(i):owner.audioEngine.getInstrumentTrackPan(t);c.vol->setValue(gain,juce::dontSendNotification);c.pan->setValue(pan,juce::dontSendNotification);bool m=isAudio(i)?owner.audioEngine.isTrackMuted(i):owner.audioEngine.isInstrumentTrackMuted(t),s=isAudio(i)?owner.audioEngine.isTrackSolo(i):owner.audioEngine.isInstrumentTrackSolo(t);c.mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xff9b4545):juce::Colour(0xff31363e));c.solo->setColour(juce::TextButton::buttonColourId,s?juce::Colour(0xff8b7a32):juce::Colour(0xff31363e));}syncing=false;}
  void clear(){for(auto&c:controls)if(c.pan)c.pan->setLookAndFeel(nullptr);controls.clear();}
- void timerCallback()override{if(stopped)return;if(isLibertyMixConsoleVisible(&owner)){setVisible(false);return;}setVisible(true);if(getBounds()!=owner.getLocalBounds())setBounds(owner.getLocalBounds());ensure();layout();sync();toFront(false);repaint();}
+ void timerCallback()override{if(stopped)return;if(isLibertyMixConsoleVisible(&owner)||isLibertyPerformVisible(&owner)){setVisible(false);return;}setVisible(true);if(getBounds()!=owner.getLocalBounds())setBounds(owner.getLocalBounds());ensure();layout();sync();toFront(false);repaint();}
  MainComponent&owner;PanLF lf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
 };
 std::map<MainComponent*,std::unique_ptr<TrackHeaderMixControls>>controllers;
