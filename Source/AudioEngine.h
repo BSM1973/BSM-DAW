@@ -161,7 +161,7 @@ private:
         std::atomic<int> warpMarkerCount { 0 };
         std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
-        std::unique_ptr<juce::AudioBuffer<float>> buffer;
+        std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         juce::String fileName;
     };
