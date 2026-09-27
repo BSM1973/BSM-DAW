@@ -256,8 +256,7 @@ private:
             const int insertSlot = packed % 8;
             const int audioCount = main->getAudioTrackCount();
             const int firstInstrument = audioCount + main->getMidiTrackCount();
-            const int oneKnobKey = logicalTrack < audioCount ? 200000 + logicalTrack * 8 + insertSlot
-                                                             : 300000 + (logicalTrack - firstInstrument) * 8 + insertSlot;
+            const int oneKnobKey = logicalTrack * 8 + insertSlot;
             auto& manager = LibertyOneKnobManager::instance();
             manager.setEffect(oneKnobKey, *oneKnob);
             manager.showEditor(oneKnobKey);
