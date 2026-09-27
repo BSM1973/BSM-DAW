@@ -438,6 +438,17 @@ private:
         const bool spliceMode = category == Category::splice;
         fileTree.setVisible(!pluginMode && !spliceMode); homeButton.setVisible(!pluginMode && !spliceMode);
         spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceOpenPluginButton.setVisible(spliceMode); spliceScanButton.setVisible(spliceMode);
+        if (spliceMode && !scanning.load())
+        {
+            refreshPlugins();
+            const bool found = std::any_of(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& d)
+            {
+                return d.isInstrument && d.name.containsIgnoreCase("Splice") && d.name.containsIgnoreCase("Sounds");
+            });
+            spliceOpenPluginButton.setEnabled(true);
+            spliceInfo.setText(found ? "Splice Sounds détecté - prêt à ouvrir."
+                                     : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
+        }
         pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -684,8 +695,8 @@ private:
 
         if (splice == nullptr)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Splice Sounds",
-                "Splice Sounds n'est pas encore présent dans la liste des plugins Liberty. Installe le plugin officiel puis lance SCAN AU + VST3.", "OK");
+            spliceInfo.setText("Splice Sounds non détecté - lancement du scan AU + VST3...", juce::dontSendNotification);
+            scanPlugins();
             return;
         }
 
@@ -819,6 +830,7 @@ private:
                     });
                     spliceInfo.setText(found ? "Splice Sounds détecté - prêt à ouvrir."
                                              : "Splice Sounds non détecté après le scan AU + VST3.", juce::dontSendNotification);
+                    spliceOpenPluginButton.setEnabled(found);
                 }
             }
             else if (category == Category::plugins) refreshPluginStatus();
