@@ -201,6 +201,7 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
+    std::shared_ptr<juce::AudioBuffer<float>> diagnosticPublishedBuffer;
     std::array<MidiPlaybackNote, maxMidiPlaybackNotes> midiPlaybackNotes;
     std::vector<std::unique_ptr<InstrumentPlaybackState>> instrumentPlayback;
     std::atomic<std::size_t> midiPlaybackNoteCount { 0 };
