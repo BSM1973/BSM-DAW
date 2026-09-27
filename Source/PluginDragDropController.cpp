@@ -259,9 +259,15 @@ private:
             const int firstInstrument = audioCount + main->getMidiTrackCount();
             const int oneKnobKey = logicalTrack * 8 + insertSlot;
             auto& manager = LibertyOneKnobManager::instance();
+            auto& host = LibertyPluginHost::instance();
+            if (logicalTrack < audioCount)
+                host.unloadEffectForTrackSlot(logicalTrack, insertSlot);
+            else if (logicalTrack >= firstInstrument)
+                host.unloadEffectForInstrumentTrackSlot(logicalTrack - firstInstrument, insertSlot);
             manager.setEffect(oneKnobKey, *oneKnob);
             manager.showEditor(oneKnobKey);
             main->selectedTrack = logicalTrack;
+            refreshLibertyMixConsole(main);
             main->repaint();
             return;
         }
@@ -291,13 +297,21 @@ private:
                 if (logicalTrack < audioCount)
                 {
                     loaded = host.loadEffectForTrackSlot(logicalTrack, insertSlot, *plugin, error);
-                    if (loaded) host.showEditorForTrackSlot(logicalTrack, insertSlot);
+                    if (loaded)
+                    {
+                        LibertyOneKnobManager::instance().clearEffect(logicalTrack * 8 + insertSlot);
+                        host.showEditorForTrackSlot(logicalTrack, insertSlot);
+                    }
                 }
                 else if (logicalTrack >= firstInstrument)
                 {
                     const int lane = logicalTrack - firstInstrument;
                     loaded = host.loadEffectForInstrumentTrackSlot(lane, insertSlot, *plugin, error);
-                    if (loaded) host.showEffectEditorForInstrumentTrackSlot(lane, insertSlot);
+                    if (loaded)
+                    {
+                        LibertyOneKnobManager::instance().clearEffect(logicalTrack * 8 + insertSlot);
+                        host.showEffectEditorForInstrumentTrackSlot(lane, insertSlot);
+                    }
                 }
             }
         }
