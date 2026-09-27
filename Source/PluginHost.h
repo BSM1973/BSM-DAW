@@ -49,6 +49,12 @@ public:
     bool processInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
     bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
     bool renderInstrumentForTrack(int instrumentTrack, juce::AudioBuffer<float>& destination, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
+    bool loadEffectForInstrumentTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
+    void unloadEffectForInstrumentTrack(int instrumentTrack);
+    bool hasEffectForInstrumentTrack(int instrumentTrack) const;
+    juce::String getEffectNameForInstrumentTrack(int instrumentTrack) const;
+    void showEffectEditorForInstrumentTrack(int instrumentTrack);
+    void processInstrumentEffect(int instrumentTrack, juce::AudioBuffer<float>& buffer, int numSamples);
 
     // Offline render is exclusive: the realtime audio callback is prevented from
     // driving the same instrument instance while AI Render owns it.
@@ -96,6 +102,7 @@ private:
     juce::KnownPluginList knownPlugins;
     std::vector<std::unique_ptr<Slot>> trackEffects;
     std::vector<std::unique_ptr<Slot>> instruments;
+    std::vector<std::unique_ptr<Slot>> instrumentEffects;
     double currentSampleRate = 48000.0;
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
