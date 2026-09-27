@@ -3,6 +3,7 @@
 // PERFORM contributes audio to this engine-owned hardware callback. It never
 // registers its own AudioIODeviceCallback.
 void renderLibertyPerformAudio(AudioEngine*, float* const*, int, int);
+void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include <algorithm>
@@ -477,8 +478,9 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     LibertyOneKnobManager::instance().prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
 }
 
-void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
+void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
+    processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
     if (!playing.load()) return;
