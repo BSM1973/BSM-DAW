@@ -15,7 +15,7 @@
 
 int getLibertyTrackRowHeight() noexcept;
 
-class LibertyAudioRecordingController final : public juce::Component, private juce::AudioIODeviceCallback, private juce::Timer
+class LibertyAudioRecordingController final : public juce::Component, private juce::Timer
 {
 public:
     explicit LibertyAudioRecordingController(MainComponent& ownerIn) : owner(ownerIn)
@@ -405,6 +405,7 @@ private:
         owner.repaint();
     }
 
+public:
     void processInputBlock(const float* const* inputChannelData, int numInputChannels, int numSamples)
     {
         if (inputChannelData == nullptr || !recording || threadedWriter == nullptr) return;
