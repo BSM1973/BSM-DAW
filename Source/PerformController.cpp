@@ -43,8 +43,8 @@ public:
     {
         formats.registerBasicFormats();
         tracks.resize((size_t)owner.getAudioTrackCount());
-        owner.audioEngine.getDeviceManager().addAudioCallback(this);
-        callbackAttached = true;
+        // AudioEngine is the sole owner of the hardware output callback.
+        callbackAttached = false;
     }
 
     ~PerformAudioPlayer() override
