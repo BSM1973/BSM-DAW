@@ -501,23 +501,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = track.buffer->getNumChannels();
 
-        // Process only the current track's contribution. Starting an insert
-        // block from the shared master output can feed previously mixed tracks
-        // back through later track inserts and create runaway feedback.
-        juce::AudioBuffer<float> previousMix(juce::jmax(1, numOutputChannels), numSamples);
-        for (int ch = 0; ch < numOutputChannels; ++ch)
-        {
-            if (outputChannelData[ch] != nullptr)
-                previousMix.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-            else
-                previousMix.clear(ch, 0, numSamples);
-        }
-        for (int ch = 0; ch < numOutputChannels; ++ch)
-            if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
-
-        oneKnob.beginAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-        pluginHost.beginAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-
         const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
         const int rawMarkerCount = track.warpMarkerCount.load(std::memory_order_acquire);
         if (!warpActive || rawMarkerCount < 2)
@@ -526,10 +509,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, track.buffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
                 juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, track.buffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
-            pluginHost.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-            oneKnob.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-            for (int ch = 0; ch < numOutputChannels; ++ch)
-                if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::add(outputChannelData[ch], previousMix.getReadPointer(ch), numSamples);
             continue;
         }
 
@@ -599,10 +578,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
                 outputChannelData[1][outputOffset + s] += readWarpedSample(sourceChannels == 1 ? 0 : 1, sourceSamplePosition) * rightGain;
         }
 
-        pluginHost.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-        oneKnob.endAudioTrackBlock(trackIndex, outputChannelData, numOutputChannels, numSamples);
-        for (int ch = 0; ch < numOutputChannels; ++ch)
-            if (outputChannelData[ch] != nullptr) juce::FloatVectorOperations::add(outputChannelData[ch], previousMix.getReadPointer(ch), numSamples);
+
     }
 
     bool anyInstrumentSolo = false;
