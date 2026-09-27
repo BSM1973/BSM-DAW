@@ -377,6 +377,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
         auto& track = *tracks[(size_t)trackIndex];
         track.loaded.store(false, std::memory_order_release);
         std::atomic_store(&track.buffer, newBuffer);
+        std::atomic_store(&diagnosticPublishedBuffer, newBuffer);
         track.numSamples = outputSamples;
         track.fileName = file.getFileName();
         track.lengthSeconds.store(10.0, std::memory_order_relaxed);
@@ -483,12 +484,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const*, int, flo
     if (!playing.load(std::memory_order_relaxed))
         return;
 
-    std::shared_ptr<juce::AudioBuffer<float>> audioBuffer;
-    {
-        const juce::ScopedLock lock(stateLock);
-        if (!tracks.empty())
-            audioBuffer = tracks.front()->buffer;
-    }
+    const auto audioBuffer = std::atomic_load(&diagnosticPublishedBuffer);
     if (audioBuffer == nullptr || audioBuffer->getNumChannels() <= 0 || audioBuffer->getNumSamples() <= 0)
         return;
 
