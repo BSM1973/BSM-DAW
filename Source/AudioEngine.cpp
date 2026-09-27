@@ -15,7 +15,10 @@ AudioEngine::~AudioEngine() { shutdown(); }
 
 bool AudioEngine::initialise()
 {
-    const auto error = deviceManager.initialiseWithDefaultDevices(8, 2);
+    // Playback must not open live hardware inputs by default. The stable Liberty
+    // engine used 0 inputs / 2 outputs; opening eight inputs can create a
+    // hardware monitoring feedback loop on interfaces such as the Studio 1824C.
+    const auto error = deviceManager.initialiseWithDefaultDevices(0, 2);
     if (error.isNotEmpty()) { const juce::ScopedLock lock(stateLock); lastError = error; initialised.store(false); return false; }
     auto* device = deviceManager.getCurrentAudioDevice();
     if (device == nullptr) { const juce::ScopedLock lock(stateLock); lastError = "No audio output device is available."; initialised.store(false); return false; }
