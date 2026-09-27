@@ -532,8 +532,8 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
 {
     if (!validTrack(trackIndex) || numSamples <= 0) return;
     if (!lock.tryEnter()) return;
-    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex]) { lock.exit(); return; }
-    auto& slot = *trackEffects[(size_t)trackIndex];
+    if (trackIndex >= (int)trackEffects.size() || !trackEffects[(size_t)trackIndex][0]) { lock.exit(); return; }
+    auto& slot = *trackEffects[(size_t)trackIndex][0];
     if (!slot.processor) { lock.exit(); return; }
 
     const int channels = juce::jlimit(1, 2, numOutputChannels);
