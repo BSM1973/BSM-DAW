@@ -604,6 +604,7 @@ bool LibertyPluginHost::hasEffectForInstrumentTrackSlot(int t,int si)const{const
 juce::String LibertyPluginHost::getEffectNameForInstrumentTrack(int t)const{return getEffectNameForInstrumentTrackSlot(t,0);}
 juce::String LibertyPluginHost::getEffectNameForInstrumentTrackSlot(int t,int si)const{const juce::ScopedLock scoped(lock);return t>=0&&si>=0&&si<effectSlotsPerTrack&&t<(int)instrumentEffects.size()&&instrumentEffects[(size_t)t][(size_t)si]&&instrumentEffects[(size_t)t][(size_t)si]->processor?instrumentEffects[(size_t)t][(size_t)si]->description.name:juce::String{};}
 void LibertyPluginHost::showEffectEditorForInstrumentTrack(int t){const juce::ScopedLock scoped(lock);if(t<0||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][0])return;auto&x=*instrumentEffects[(size_t)t][0];showEditor(x,"Liberty - "+x.description.name);}
+void LibertyPluginHost::showEffectEditorForInstrumentTrackSlot(int t,int si){const juce::ScopedLock scoped(lock);if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][(size_t)si])return;auto&x=*instrumentEffects[(size_t)t][(size_t)si];if(x.processor)showEditor(x,"Liberty - "+x.description.name);}
 void LibertyPluginHost::processInstrumentEffect(int t,juce::AudioBuffer<float>& buffer,int n){if(t<0||n<=0||!lock.tryEnter())return;if(t>=(int)instrumentEffects.size()){lock.exit();return;}juce::MidiBuffer empty;for(auto&slot:instrumentEffects[(size_t)t])if(slot&&slot->processor)slot->processor->processBlock(buffer,empty);lock.exit();}
 
 void LibertyPluginHost::showEditor(Slot& slot, const juce::String& title)
@@ -627,6 +628,7 @@ void LibertyPluginHost::showEditorForTrack(int trackIndex)
     auto& slot = *trackEffects[(size_t)trackIndex][0];
     showEditor(slot, "Liberty - " + slot.description.name);
 }
+void LibertyPluginHost::showEditorForTrackSlot(int t,int si){if(!validTrack(t)||si<0||si>=effectSlotsPerTrack)return;const juce::ScopedLock scoped(lock);if(t>=(int)trackEffects.size()||!trackEffects[(size_t)t][(size_t)si])return;auto&x=*trackEffects[(size_t)t][(size_t)si];if(x.processor)showEditor(x,"Liberty - "+x.description.name);}
 
 void LibertyPluginHost::showInstrumentEditor(){showInstrumentEditorForTrack(0);}
 void LibertyPluginHost::showInstrumentEditorForTrack(int t)
