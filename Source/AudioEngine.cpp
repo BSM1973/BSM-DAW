@@ -637,8 +637,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 if(absoluteStart>=blockStart&&absoluteStart<blockEnd)midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
-            if(pluginHost.processInstrumentForTrack(instrumentTrack,outputChannelData,numOutputChannels,numSamples,midi,state.gain.load(std::memory_order_relaxed),state.pan.load(std::memory_order_relaxed)))
-                oneKnob.processInstrumentBlock(instrumentTrack,outputChannelData,numOutputChannels,numSamples);
+            juce::AudioBuffer<float> instrumentBus;
+            if (pluginHost.renderInstrumentForTrack(instrumentTrack, instrumentBus, numSamples, midi,
+                                                    state.gain.load(std::memory_order_relaxed),
+                                                    state.pan.load(std::memory_order_relaxed)))
+            {
+                auto* busChannels[2] = { instrumentBus.getWritePointer(0), instrumentBus.getWritePointer(1) };
+                oneKnob.processInstrumentBlock(instrumentTrack, busChannels, 2, numSamples);
+                const int channels = juce::jmin(2, numOutputChannels);
+                for (int channel = 0; channel < channels; ++channel)
+                    if (outputChannelData[channel] != nullptr)
+                        juce::FloatVectorOperations::add(outputChannelData[channel], instrumentBus.getReadPointer(channel), numSamples);
+            }
         }
     }
 
