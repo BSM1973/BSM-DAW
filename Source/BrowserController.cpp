@@ -769,7 +769,9 @@ private:
                                                    "Sélectionne une piste Audio pour ouvrir son effet.", "OK");
             return;
         }
-        LibertyPluginHost::instance().showEditorForTrack(track);
+        auto& host = LibertyPluginHost::instance();
+        for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            if (host.hasEffectForTrackSlot(track, slot)) { host.showEditorForTrackSlot(track, slot); return; }
     }
     void unloadPlugin()
     {
@@ -793,7 +795,9 @@ private:
                                                        "Sélectionne une piste Audio pour retirer son effet.", "OK");
                 return;
             }
-            LibertyPluginHost::instance().unloadEffectForTrack(track);
+            auto& host = LibertyPluginHost::instance();
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+                if (host.hasEffectForTrackSlot(track, slot)) { host.unloadEffectForTrackSlot(track, slot); break; }
         }
         refreshPluginStatus(); owner.repaint();
     }
@@ -809,8 +813,14 @@ private:
         if (logical >= 0 && logical < audioCount)
         {
             auto& oneKnob = LibertyOneKnobManager::instance();
-            if (oneKnob.hasEffect(logical)) text << "A" << (logical + 1) << ": " << oneKnob.getName(logical) << "   ";
-            if (host.hasEffectForTrack(logical)) text << "FX: " << host.getEffectName(logical) << "   ";
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                const int oneKey = logical * 8 + slot;
+                if (host.hasEffectForTrackSlot(logical, slot))
+                    text << "FX" << (slot + 1) << ": " << host.getEffectNameForTrackSlot(logical, slot) << "   ";
+                else if (oneKnob.hasEffect(oneKey))
+                    text << "FX" << (slot + 1) << ": " << oneKnob.getName(oneKey) << "   ";
+            }
         }
         else if (logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount())
         {
