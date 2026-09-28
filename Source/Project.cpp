@@ -565,6 +565,17 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         output->flush();
     }
 
+    auto verifiedProject = juce::parseXML(tempFile);
+    if (verifiedProject == nullptr || verifiedProject->getTagName() != "LibertyProject")
+    {
+        tempFile.deleteFile();
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Save",
+                                               "The temporary project file could not be verified. The previous project was left unchanged.",
+                                               "OK");
+        return false;
+    }
+
     if (!tempFile.replaceFileIn(file))
     {
         tempFile.deleteFile();
