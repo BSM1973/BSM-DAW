@@ -715,9 +715,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
-        audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, track->getDoubleAttribute("startSeconds", 0.0)));
-        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) track->getDoubleAttribute("gain", 1.0)));
-        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) track->getDoubleAttribute("pan", 0.0)));
+        audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
+        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
+        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
         audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         rebuildWaveformCache(index);
@@ -748,8 +748,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             if (track->getTagName() != "Track") continue;
             const int index = track->getIntAttribute("index", -1);
             if (index < 0 || index >= getInstrumentTrackCount()) continue;
-            audioEngine.setInstrumentTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) track->getDoubleAttribute("gain", 1.0)));
-            audioEngine.setInstrumentTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) track->getDoubleAttribute("pan", 0.0)));
+            audioEngine.setInstrumentTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
+            audioEngine.setInstrumentTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
             audioEngine.setInstrumentTrackMuted(index, track->getBoolAttribute("muted", false));
             audioEngine.setInstrumentTrackSolo(index, track->getBoolAttribute("solo", false));
         }
@@ -771,7 +771,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                                                        lastOneKnobType,
                                                        e->getIntAttribute("type", 0));
                     const float savedAmount = juce::jlimit(0.0f, 1.0f,
-                                                           (float) e->getDoubleAttribute("amount", 0.5));
+                                                           (float) finiteOr(e->getDoubleAttribute("amount", 0.5), 0.5));
                     one.setEffect(key, (LibertyOneKnobRack::Type) savedType);
                     one.setAmount(key, savedAmount);
                 }
