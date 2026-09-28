@@ -1,4 +1,5 @@
 #pragma once
+class MainComponent;
 void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_audio_utils/juce_audio_utils.h>
