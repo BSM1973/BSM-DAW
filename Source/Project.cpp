@@ -630,14 +630,18 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
     trackScrollRows = 0;
 
-    tempoBpm = juce::jlimit(20.0, 400.0, project->getDoubleAttribute("tempo", 120.0));
+    const auto finiteOr = [](double value, double fallback) noexcept
+    {
+        return std::isfinite(value) ? value : fallback;
+    };
+    tempoBpm = juce::jlimit(20.0, 400.0, finiteOr(project->getDoubleAttribute("tempo", 120.0), 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
     timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
     selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
-    playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
-    audioEngine.setMasterGain(juce::jlimit(0.0f, 4.0f, (float) project->getDoubleAttribute("masterGain", 1.0)));
-    midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
-    setMidiClipLengthFromProject(project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
+    playheadSeconds = juce::jmax(0.0, finiteOr(project->getDoubleAttribute("playheadSeconds", 0.0), 0.0));
+    audioEngine.setMasterGain(juce::jlimit(0.0f, 4.0f, (float) finiteOr(project->getDoubleAttribute("masterGain", 1.0), 1.0)));
+    midiClipStartSeconds = juce::jmax(0.0, finiteOr(project->getDoubleAttribute("midiClipStartSeconds", 0.0), 0.0));
+    setMidiClipLengthFromProject(juce::jmax(0.001, finiteOr(project->getDoubleAttribute("midiClipLengthSeconds", 2.0), 2.0)));
     setLibertyTrackColourId(getAudioTrackCount(), project->getIntAttribute("midiColourId", 0));
     setLibertyTrackColourId(getAudioTrackCount() + getMidiTrackCount(), project->getIntAttribute("instrumentColourId", 0));
     setLibertyTrackName(getAudioTrackCount(), project->getStringAttribute("midiTrackName", "MIDI 1"));
