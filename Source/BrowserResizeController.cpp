@@ -73,8 +73,7 @@ private:
     int startScreenX = 0;
 };
 
-class BrowserResizeController final : private juce::Timer,
-                                     private juce::ComponentListener
+class BrowserResizeController final : private juce::ComponentListener
 {
 public:
     explicit BrowserResizeController(MainComponent& ownerIn)
@@ -89,7 +88,6 @@ public:
 
         handle.setVisible(false);
         owner.addAndMakeVisible(handle);
-        startTimerHz(12);
     }
 
     ~BrowserResizeController() override { shutdown(); }
@@ -97,7 +95,6 @@ public:
     void shutdown()
     {
         if (stopped.exchange(true)) return;
-        stopTimer();
         if (browserPanel != nullptr) browserPanel->removeComponentListener(this);
         handle.setVisible(false);
         browserPanel = nullptr;
@@ -181,15 +178,6 @@ private:
         applyBounds();
     }
 
-    void timerCallback() override
-    {
-        if (stopped.load()) return;
-        attachIfPossible();
-        if (browserPanel != nullptr && browserPanel->isVisible())
-            applyBounds();
-        else
-            handle.setVisible(false);
-    }
 
     MainComponent& owner;
     ResizeHandle handle;
