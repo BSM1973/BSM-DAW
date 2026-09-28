@@ -117,7 +117,11 @@ private:
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
                     if (controllers.find(main) == controllers.end())
+                    {
                         controllers.emplace(main, std::make_unique<MetronomeController>(*main));
+                        stopTimer();
+                        return;
+                    }
     }
 };
 
