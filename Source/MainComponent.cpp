@@ -3,6 +3,7 @@ void resizeLibertyDynamicTrackController(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
 
 void resizeLibertyMixConsole(MainComponent*);
+void resizeLibertyBrowserResizeController(MainComponent*);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
@@ -337,7 +338,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); resizeLibertyGridSnapController(this); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); repaint(); }
 
 void MainComponent::timerCallback()
 {
