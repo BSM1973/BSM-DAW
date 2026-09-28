@@ -825,10 +825,16 @@ private:
         else if (logical >= firstInstrument && logical < firstInstrument + owner.getInstrumentTrackCount())
         {
             const int instrumentLane = logical - firstInstrument;
-            if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane);
-            if (host.hasEffectForInstrumentTrack(instrumentLane)) text << "   FX: " << host.getEffectNameForInstrumentTrack(instrumentLane);
-            const int oneKnobSlot = 100000 + instrumentLane;
-            if (LibertyOneKnobManager::instance().hasEffect(oneKnobSlot)) text << "   1K: " << LibertyOneKnobManager::instance().getName(oneKnobSlot);
+            if (host.hasInstrumentForTrack(instrumentLane)) text << "INST: " << host.getInstrumentNameForTrack(instrumentLane) << "   ";
+            auto& oneKnob = LibertyOneKnobManager::instance();
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                const int oneKey = 100000 + instrumentLane * 8 + slot;
+                if (host.hasEffectForInstrumentTrackSlot(instrumentLane, slot))
+                    text << "FX" << (slot + 1) << ": " << host.getEffectNameForInstrumentTrackSlot(instrumentLane, slot) << "   ";
+                else if (oneKnob.hasEffect(oneKey))
+                    text << "FX" << (slot + 1) << ": " << oneKnob.getName(oneKey) << "   ";
+            }
         }
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
