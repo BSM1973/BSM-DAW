@@ -2,7 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
-#include "OneKnobEffects.h"
+#include "OneKnobEffects.h"\nvoid refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -671,40 +671,69 @@ private:
         return (track >= firstInstrument && track < firstInstrument + owner.getInstrumentTrackCount()) ? track - firstInstrument : -1;
     }
 
-    int selectedOneKnobSlot() const
+    int firstFreeOneKnobInsertSlot() const
     {
-        if (const int instrumentLane = selectedInstrumentTrack(); instrumentLane >= 0) return 100000 + instrumentLane;
-        return selectedAudioTrack();
+        auto& host = LibertyPluginHost::instance();
+        auto& one = LibertyOneKnobManager::instance();
+        if (const int instrumentLane = selectedInstrumentTrack(); instrumentLane >= 0)
+        {
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+                if (!host.hasEffectForInstrumentTrackSlot(instrumentLane, slot)
+                    && !one.hasEffect(100000 + instrumentLane * 8 + slot)) return slot;
+        }
+        else if (const int audioLane = selectedAudioTrack(); audioLane >= 0)
+        {
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+                if (!host.hasEffectForTrackSlot(audioLane, slot)
+                    && !one.hasEffect(audioLane * 8 + slot)) return slot;
+        }
+        return -1;
     }
 
     void loadOneKnob(LibertyOneKnobRack::Type type)
     {
-        const int slot = selectedOneKnobSlot();
-        if (slot < 0)
+        const int insertSlot = firstFreeOneKnobInsertSlot();
+        const int instrumentLane = selectedInstrumentTrack();
+        const int audioLane = selectedAudioTrack();
+        if (insertSlot < 0)
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
-                                                   "Sélectionne une piste Audio ou Instrument pour charger ce One Knob.", "OK");
+                                                   (instrumentLane < 0 && audioLane < 0)
+                                                       ? "Sélectionne une piste Audio ou Instrument pour charger ce One Knob."
+                                                       : "Les 8 inserts de cette piste sont déjà occupés.",
+                                                   "OK");
             return;
         }
+        const int key = instrumentLane >= 0 ? 100000 + instrumentLane * 8 + insertSlot : audioLane * 8 + insertSlot;
         auto& manager = LibertyOneKnobManager::instance();
-        manager.setEffect(slot, type);
-        manager.showEditor(slot);
+        manager.setEffect(key, type);
+        manager.showEditor(key);
         refreshPluginStatus();
+        refreshLibertyMixConsole(&owner);
         owner.repaint();
     }
 
     void clearOneKnob()
     {
-        const int slot = selectedOneKnobSlot();
-        if (slot < 0)
+        auto& manager = LibertyOneKnobManager::instance();
+        const int instrumentLane = selectedInstrumentTrack();
+        const int audioLane = selectedAudioTrack();
+        for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
         {
+            const int key = instrumentLane >= 0 ? 100000 + instrumentLane * 8 + slot
+                                               : (audioLane >= 0 ? audioLane * 8 + slot : -1);
+            if (key >= 0 && manager.hasEffect(key))
+            {
+                manager.clearEffect(key);
+                refreshPluginStatus();
+                refreshLibertyMixConsole(&owner);
+                owner.repaint();
+                return;
+            }
+        }
+        if (instrumentLane < 0 && audioLane < 0)
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
                                                    "Sélectionne une piste Audio ou Instrument pour retirer le One Knob.", "OK");
-            return;
-        }
-        LibertyOneKnobManager::instance().clearEffect(slot);
-        refreshPluginStatus();
-        owner.repaint();
     }
 
     void openSpliceSounds()
