@@ -338,6 +338,7 @@ void MainComponent::resetProjectState()
     }
 
     tempoControls.refresh();
+    refreshLibertyMixConsole(this);
     repaint();
 }
 
