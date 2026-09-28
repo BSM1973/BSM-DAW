@@ -755,8 +755,14 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 const bool validInstrument = kind=="instrument" && lane<getInstrumentTrackCount();
                 if(validAudio || validInstrument){
                     const int key=validInstrument?100000+lane*8+insertSlot:lane*8+insertSlot;
-                    one.setEffect(key,(LibertyOneKnobRack::Type)e->getIntAttribute("type",0));
-                    one.setAmount(key,(float)e->getDoubleAttribute("amount",0.5));
+                    constexpr int lastOneKnobType = (int) LibertyOneKnobRack::Type::softClip;
+                    const int savedType = juce::jlimit((int) LibertyOneKnobRack::Type::none,
+                                                       lastOneKnobType,
+                                                       e->getIntAttribute("type", 0));
+                    const float savedAmount = juce::jlimit(0.0f, 1.0f,
+                                                           (float) e->getDoubleAttribute("amount", 0.5));
+                    one.setEffect(key, (LibertyOneKnobRack::Type) savedType);
+                    one.setAmount(key, savedAmount);
                 }
             }
         }
