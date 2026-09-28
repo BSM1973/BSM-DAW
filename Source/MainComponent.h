@@ -1,4 +1,5 @@
 #pragma once
+void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -44,13 +45,14 @@ public:
         waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
         trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
         repaint();
+        refreshLibertyMixConsole(this);
         return index;
     }
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
-    int addMidiTrack() noexcept { const int i = dynamicMidiTrackCount++; repaint(); return i; }
-    int addInstrumentTrack() noexcept { const int i = dynamicInstrumentTrackCount++; repaint(); return i; }
+    int addMidiTrack() noexcept { const int i = dynamicMidiTrackCount++; repaint(); refreshLibertyMixConsole(this); return i; }
+    int addInstrumentTrack() noexcept { const int i = dynamicInstrumentTrackCount++; repaint(); refreshLibertyMixConsole(this); return i; }
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
