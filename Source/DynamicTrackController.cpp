@@ -6,7 +6,7 @@
 
 namespace
 {
-class DynamicTrackController final : public juce::Component, private juce::Timer
+class DynamicTrackController final : public juce::Component
 {
 public:
     explicit DynamicTrackController(MainComponent& o) : owner(o)
@@ -37,9 +37,7 @@ public:
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
         setBounds(owner.getLocalBounds());
-        startTimerHz(4);
     }
-    ~DynamicTrackController() override { stopTimer(); }
     void resized() override
     {
         addAudio.setBounds(8, 78, 54, 24);
@@ -47,12 +45,9 @@ public:
         addInstrument.setBounds(120, 78, 66, 24);
         countLabel.setVisible(false);
     }
+public:
+    void resizeToOwner() { setBounds(owner.getLocalBounds()); }
 private:
-    void timerCallback() override
-    {
-        if (getBounds() != owner.getLocalBounds())
-            setBounds(owner.getLocalBounds());
-    }
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
     juce::Label countLabel;
@@ -77,4 +72,12 @@ private:
     }
 };
 Bootstrap bootstrap;
+}
+
+void resizeLibertyDynamicTrackController(MainComponent* owner)
+{
+    if (owner == nullptr) return;
+    auto it = controllers.find(owner);
+    if (it != controllers.end() && it->second)
+        it->second->resizeToOwner();
 }
