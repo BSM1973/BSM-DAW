@@ -635,7 +635,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
     selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
-    audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
+    audioEngine.setMasterGain(juce::jlimit(0.0f, 4.0f, (float) project->getDoubleAttribute("masterGain", 1.0)));
     midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
     setMidiClipLengthFromProject(project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
     setLibertyTrackColourId(getAudioTrackCount(), project->getIntAttribute("midiColourId", 0));
@@ -704,9 +704,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
-        audioEngine.setTrackStartSeconds(index, track->getDoubleAttribute("startSeconds", 0.0));
-        audioEngine.setTrackGain(index, (float)track->getDoubleAttribute("gain", 1.0));
-        audioEngine.setTrackPan(index, (float)track->getDoubleAttribute("pan", 0.0));
+        audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, track->getDoubleAttribute("startSeconds", 0.0)));
+        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) track->getDoubleAttribute("gain", 1.0)));
+        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) track->getDoubleAttribute("pan", 0.0)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
         audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         rebuildWaveformCache(index);
@@ -737,8 +737,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             if (track->getTagName() != "Track") continue;
             const int index = track->getIntAttribute("index", -1);
             if (index < 0 || index >= getInstrumentTrackCount()) continue;
-            audioEngine.setInstrumentTrackGain(index, (float) track->getDoubleAttribute("gain", 1.0));
-            audioEngine.setInstrumentTrackPan(index, (float) track->getDoubleAttribute("pan", 0.0));
+            audioEngine.setInstrumentTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) track->getDoubleAttribute("gain", 1.0)));
+            audioEngine.setInstrumentTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) track->getDoubleAttribute("pan", 0.0)));
             audioEngine.setInstrumentTrackMuted(index, track->getBoolAttribute("muted", false));
             audioEngine.setInstrumentTrackSolo(index, track->getBoolAttribute("solo", false));
         }
