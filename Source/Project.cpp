@@ -653,9 +653,16 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
         {
             if (noteElement->getTagName() != "Note") continue;
+            const double rawStartTick = noteElement->getDoubleAttribute("startTick", 0.0);
+            const double rawLengthTicks = noteElement->getDoubleAttribute("lengthTicks", (double) MidiEngine::ticksPerQuarterNote);
+            if (!std::isfinite(rawStartTick) || !std::isfinite(rawLengthTicks)
+                || rawStartTick < 0.0 || rawLengthTicks <= 0.0
+                || rawStartTick > (double) std::numeric_limits<std::int64_t>::max()
+                || rawLengthTicks > (double) std::numeric_limits<std::int64_t>::max())
+                continue;
             midiEngine.addNote(
-                (std::int64_t)std::llround(noteElement->getDoubleAttribute("startTick", 0.0)),
-                (std::int64_t)std::llround(noteElement->getDoubleAttribute("lengthTicks", (double)MidiEngine::ticksPerQuarterNote)),
+                (std::int64_t) std::llround(rawStartTick),
+                (std::int64_t) std::llround(rawLengthTicks),
                 noteElement->getIntAttribute("pitch", 60),
                 noteElement->getIntAttribute("velocity", 100),
                 noteElement->getIntAttribute("channel", 1));
