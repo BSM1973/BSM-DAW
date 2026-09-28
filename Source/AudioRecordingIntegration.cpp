@@ -62,10 +62,10 @@ private:
     double recordingRate = 0.0; int recordingChannels = 0;
 };
 
-class RecordingController final : public juce::Component, private juce::Timer
+class RecordingController final : public juce::Component
 {
 public:
-    explicit RecordingController(MainComponent& o) : owner(o), recorder(o.audioEngine.getDeviceManager()) { setInterceptsMouseClicks(true, false); owner.addAndMakeVisible(this); startTimerHz(20); }
+    explicit RecordingController(MainComponent& o) : owner(o), recorder(o.audioEngine.getDeviceManager()) { setInterceptsMouseClicks(true, false); owner.addAndMakeVisible(this); setBounds(525, 38, 56, 28); }
     ~RecordingController() override { stopRecording(); }
     void paint(juce::Graphics& g) override
     {
@@ -73,18 +73,17 @@ public:
     }
     void mouseDown(const juce::MouseEvent&) override { if (recorder.isRecording()) stopRecording(); else startRecording(); }
 private:
-    void timerCallback() override { setBounds(525, 38, 56, 28); repaint(); }
     void startRecording()
     {
         if (owner.selectedTrack < 0 || owner.selectedTrack >= owner.getAudioTrackCount()) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Recording", "Select an Audio track before recording.", "OK"); return; }
         auto* device = owner.audioEngine.getDeviceManager().getCurrentAudioDevice();
         if (device == nullptr || device->getActiveInputChannels().countNumberOfSetBits() == 0) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Recording", "No audio input is available. Select an input in AUDIO SETTINGS.", "OK"); return; }
         recordingTrack = owner.selectedTrack; recordingStartSeconds = owner.audioEngine.getCurrentTimeSeconds(); savedExtraLength = owner.audioEngine.getProjectExtraLengthSeconds(); owner.audioEngine.setProjectExtraLengthSeconds(juce::jmax(savedExtraLength, recordingStartSeconds + 600.0));
-        if (!recorder.start()) return; owner.audioEngine.setPlaying(true); owner.isPlaying = true; owner.repaint();
+        if (!recorder.start()) return; owner.audioEngine.setPlaying(true); owner.isPlaying = true; repaint(); owner.repaint();
     }
     void stopRecording()
     {
-        if (!recorder.isRecording() && recorder.getRecordedSamples() <= 0) return; recorder.stop(); owner.audioEngine.setPlaying(false); owner.isPlaying = false; owner.audioEngine.setProjectExtraLengthSeconds(savedExtraLength);
+        if (!recorder.isRecording() && recorder.getRecordedSamples() <= 0) return; recorder.stop(); repaint(); owner.audioEngine.setPlaying(false); owner.isPlaying = false; owner.audioEngine.setProjectExtraLengthSeconds(savedExtraLength);
         const int samples = recorder.getRecordedSamples(); if (samples <= 0) { owner.repaint(); return; }
         juce::File folder = owner.currentProjectFile.existsAsFile() ? owner.currentProjectFile.getSiblingFile(owner.currentProjectFile.getFileNameWithoutExtension() + "_Media") : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("BSM DAW Recordings"); folder.createDirectory();
         const auto stamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S"); const auto file = folder.getNonexistentChildFile("Recording_" + stamp + "_Audio_" + juce::String(recordingTrack + 1), ".wav");
