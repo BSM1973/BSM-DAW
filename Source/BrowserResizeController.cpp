@@ -105,6 +105,15 @@ public:
 
     int getPreferredWidth() const noexcept { return preferredWidth; }
 
+    void resizeToOwner()
+    {
+        attachIfPossible();
+        if (browserPanel != nullptr && browserPanel->isVisible())
+            applyBounds();
+        else
+            handle.setVisible(false);
+    }
+
     void setPreferredWidth(int width)
     {
         preferredWidth = juce::jlimit(minBrowserWidth,
@@ -257,6 +266,14 @@ int getLibertyPreferredBrowserWidth(MainComponent* owner)
             return juce::jlimit(minBrowserWidth, maxBrowserWidth, stored);
     }
     return defaultBrowserWidth;
+}
+
+void resizeLibertyBrowserResizeController(MainComponent* owner)
+{
+    if (owner == nullptr) return;
+    const auto it = controllers.find(owner);
+    if (it != controllers.end() && it->second)
+        it->second->resizeToOwner();
 }
 
 void shutdownLibertyBrowserResizeController()
