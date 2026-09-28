@@ -615,7 +615,11 @@ private:
             }
 
             if (main != nullptr && controllers.find(main) == controllers.end())
+            {
                 controllers.emplace(main, std::make_unique<SpliceBrowserController>(*main));
+                stopTimer();
+                return;
+            }
         }
     }
 };
