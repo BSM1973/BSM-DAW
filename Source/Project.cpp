@@ -536,27 +536,45 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     saveLibertyMultiMidiClips(*this, project);
 
-    auto output = file.createOutputStream();
-    if (output == nullptr)
+    const auto tempFile = file.getSiblingFile(file.getFileName() + ".saving");
+    tempFile.deleteFile();
+
     {
+        auto output = tempFile.createOutputStream();
+        if (output == nullptr)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not create the temporary project file.",
+                                                   "OK");
+            return false;
+        }
+
+        const auto xmlText = project.toString();
+        if (!output->writeText(xmlText, false, false, "UTF-8"))
+        {
+            output.reset();
+            tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not write the Liberty project data.",
+                                                   "OK");
+            return false;
+        }
+
+        output->flush();
+    }
+
+    if (!tempFile.replaceFileIn(file))
+    {
+        tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
-                                               "Could not write the project file.",
+                                               "Could not replace the existing project file. The previous project was left unchanged.",
                                                "OK");
         return false;
     }
 
-    const auto xmlText = project.toString();
-    if (!output->writeText(xmlText, false, false, "UTF-8"))
-    {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                               "Liberty - Project Save",
-                                               "Could not write the Liberty project data.",
-                                               "OK");
-        return false;
-    }
-
-    output->flush();
     currentProjectFile = file;
     markProjectClean();
     return true;
