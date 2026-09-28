@@ -118,6 +118,9 @@ void LibertyPluginHost::clearProjectPlugins()
     {
         closeEditor(*slot); if (slot->processor) slot->processor->releaseResources(); slot->processor.reset(); slot->description = {};
     }
+    trackEffects.clear();
+    instrumentEffects.clear();
+    instruments.clear();
 }
 
 juce::File LibertyPluginHost::pluginListFile() const
