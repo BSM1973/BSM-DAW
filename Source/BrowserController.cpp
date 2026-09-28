@@ -2,7 +2,8 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
-#include "OneKnobEffects.h"\nvoid refreshLibertyMixConsole(MainComponent*);
+#include "OneKnobEffects.h"
+void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
