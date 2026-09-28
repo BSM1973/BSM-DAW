@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+void resizeLibertyDynamicTrackController(MainComponent*);
 
 void resizeLibertyMixConsole(MainComponent*);
 
@@ -335,7 +336,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); repaint(); }
 
 void MainComponent::timerCallback()
 {
