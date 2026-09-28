@@ -136,7 +136,7 @@ private:
  MainComponent& owner;juce::Component*parent=nullptr;std::unique_ptr<AIArranger>arranger;std::atomic<bool>stopped{false};
 };
 std::map<MainComponent*,std::unique_ptr<Controller>> controllers;
-class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(5);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(controllers.find(m)==controllers.end())controllers.emplace(m,std::make_unique<Controller>(*m));}};
+class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(5);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(controllers.find(m)==controllers.end()){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};
 Bootstrap bootstrap;
 }
 void shutdownLibertyAIArrangerController(){bootstrap.shutdown();}
