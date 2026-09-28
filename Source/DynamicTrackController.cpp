@@ -1,6 +1,5 @@
 #include "MainComponent.h"
 
-void refreshLibertyMixConsole(MainComponent*);
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <map>
 #include <memory>
@@ -19,7 +18,6 @@ public:
         addAudio.onClick = [this]
         {
             owner.addAudioTrack();
-            refreshLibertyMixConsole(&owner);
             countLabel.setVisible(false);
         };
         addMidi.setButtonText("+ MIDI");
@@ -31,8 +29,8 @@ public:
             b->setMouseClickGrabsKeyboardFocus(false);
             addAndMakeVisible(*b);
         }
-        addMidi.onClick = [this] { owner.addMidiTrack(); refreshLibertyMixConsole(&owner); };
-        addInstrument.onClick = [this] { owner.addInstrumentTrack(); refreshLibertyMixConsole(&owner); };
+        addMidi.onClick = [this] { owner.addMidiTrack(); };
+        addInstrument.onClick = [this] { owner.addInstrumentTrack(); };
         countLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9fc7e8));
         countLabel.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(countLabel);
