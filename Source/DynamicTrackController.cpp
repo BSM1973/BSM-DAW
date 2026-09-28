@@ -68,7 +68,11 @@ private:
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
                     if (!controllers.count(main))
+                    {
                         controllers.emplace(main, std::make_unique<DynamicTrackController>(*main));
+                        stopTimer();
+                        return;
+                    }
     }
 };
 Bootstrap bootstrap;
