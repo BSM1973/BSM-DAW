@@ -14,6 +14,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <thread>
 
 int getLibertyPreferredBrowserWidth(MainComponent* owner);
+void resizeLibertyBrowserResizeController(MainComponent* owner);
 
 namespace
 {
@@ -959,7 +960,7 @@ private:
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (browsers.find(main) == browsers.end()) { browsers.emplace(main, std::make_unique<BrowserPanel>(*main)); stopTimer(); return; }
+                    if (browsers.find(main) == browsers.end()) { browsers.emplace(main, std::make_unique<BrowserPanel>(*main)); resizeLibertyBrowserResizeController(main); stopTimer(); return; }
     }
 };
 
