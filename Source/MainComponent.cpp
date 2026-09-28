@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 
+void resizeLibertyMixConsole(MainComponent*);
+
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
 int getLibertyActiveTool();
@@ -333,7 +335,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); repaint(); }
 
 void MainComponent::timerCallback()
 {
