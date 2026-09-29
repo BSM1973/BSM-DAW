@@ -308,13 +308,7 @@ void MainComponent::resetProjectState()
     LibertyPluginHost::instance().clearProjectPlugins();
     LibertyOneKnobManager::instance().clearAllEffects();
     midiEngine.clear();
-    for (int i = 0; i < getInstrumentTrackCount(); ++i)
-    {
-        audioEngine.setInstrumentTrackGain(i, 1.0f);
-        audioEngine.setInstrumentTrackPan(i, 0.0f);
-        audioEngine.setInstrumentTrackMuted(i, false);
-        audioEngine.setInstrumentTrackSolo(i, false);
-    }
+    audioEngine.resetInstrumentPlayback(1);
     resetLibertyTrackColours();
     resetLibertyTrackNames();
 
