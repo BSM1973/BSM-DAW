@@ -32,7 +32,7 @@ private:
  MainComponent&owner;PanLF lf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
 };
 std::map<MainComponent*,std::unique_ptr<TrackHeaderMixControls>>controllers;
-class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(10);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&p:controllers)if(p.second)p.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(!controllers.count(m))controllers.emplace(m,std::make_unique<TrackHeaderMixControls>(*m));}};Bootstrap bootstrap;
+class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(10);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&p:controllers)if(p.second)p.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<TrackHeaderMixControls>(*m));stopTimer();return;}}};Bootstrap bootstrap;
 }
 void shutdownLibertyTrackHeaderMixControls(){bootstrap.shutdown();}
 void toggleLibertyMidiInstrumentMute(MainComponent&owner){int logical=owner.selectedTrack-owner.getAudioTrackCount()-owner.getMidiTrackCount();if(logical>=0&&logical<owner.getInstrumentTrackCount())owner.audioEngine.setInstrumentTrackMuted(logical,!owner.audioEngine.isInstrumentTrackMuted(logical));owner.repaint();}
