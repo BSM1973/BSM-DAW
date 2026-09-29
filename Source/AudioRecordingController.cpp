@@ -602,12 +602,7 @@ public:
                 return;
             }
 
-            for (int i = 0; i < (int) monitoringEnabled.size(); ++i)
-            {
-                monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
-                monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
-                monitorButtons[(size_t)i]->setButtonText("MON OFF");
-            }
+            clearMonitoringState();
         }
 
         disableInputWhenIdle();
