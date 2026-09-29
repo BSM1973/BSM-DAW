@@ -153,6 +153,17 @@ private:
         captureDeviceSignature();
     }
 
+    void clearMonitoringState()
+    {
+        for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
+        {
+            monitoringEnabled[(size_t)track]->store(false, std::memory_order_relaxed);
+            monitorButtons[(size_t)track]->setToggleState(false, juce::dontSendNotification);
+            monitorButtons[(size_t)track]->setButtonText("MON OFF");
+        }
+        owner.audioEngine.setInputMonitoring(false);
+    }
+
     void updateMonitoringCallback()
     {
         if (recording)
@@ -164,7 +175,14 @@ private:
         if (isArmedTrackMonitoring())
         {
             if (configureInput())
+            {
                 attachAudioCallback();
+                return;
+            }
+
+            clearMonitoringState();
+            detachAudioCallback();
+            disableInputWhenIdle();
         }
         else
         {
