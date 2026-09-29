@@ -386,6 +386,7 @@ private:
                                  false, false, true);
 
         recordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
+        recordingWriteFailed.store(false, std::memory_order_relaxed);
         recording = true;
         attachAudioCallback();
 
@@ -475,11 +476,19 @@ public:
             else
                 recordingBuffer.copyFrom(channel, 0, inputChannelData[source], numSamples);
         }
-        threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples);
+        if (!threadedWriter->write(recordingBuffer.getArrayOfReadPointers(), numSamples))
+            recordingWriteFailed.store(true, std::memory_order_release);
     }
 
     void timerCallback() override
     {
+        if (recordingWriteFailed.exchange(false, std::memory_order_acq_rel))
+        {
+            stopRecording(false);
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - Recording", "Recording stopped because audio data could not be written fast enough.", "OK");
+        }
+
         handleDeviceChange();
         syncTrackControls();
         resized();
@@ -599,6 +608,7 @@ public:
     double recordStartSeconds = 0.0;
     int armedTrack = -1;
     bool recording = false;
+    std::atomic<bool> recordingWriteFailed { false };
     bool callbackRegistered = false;
     juce::String deviceSignatureName;
     double deviceSignatureRate = 0.0;
