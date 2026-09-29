@@ -414,7 +414,7 @@ private:
         {
             if (recordingFile.existsAsFile())
                 recordingFile.deleteFile();
-            recordingFile = {};
+            recordingFile = juce::File();
             owner.repaint();
             return;
         }
@@ -428,7 +428,7 @@ private:
                     "Liberty - Recording", "Aucun signal audio détectable sur les entrées du périphérique sélectionné.", "OK");
                 if (recordingFile.existsAsFile())
                     recordingFile.deleteFile();
-                recordingFile = {};
+                recordingFile = juce::File();
                 owner.repaint();
                 return;
             }
@@ -451,7 +451,7 @@ private:
 
         if (recordingFile.existsAsFile())
             recordingFile.deleteFile();
-        recordingFile = {};
+        recordingFile = juce::File();
         owner.repaint();
     }
 
