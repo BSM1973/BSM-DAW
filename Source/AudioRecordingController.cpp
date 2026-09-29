@@ -490,7 +490,17 @@ public:
                     const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
                     owner.audioEngine.setInputMonitoring(true, left, right);
                 }
-                else owner.audioEngine.setInputMonitoring(false);
+                else
+                {
+                    owner.audioEngine.setInputMonitoring(false);
+                    if (enabled)
+                    {
+                        monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
+                        monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
+                        monitorButtons[(size_t)i]->setButtonText("MON OFF");
+                    }
+                    updateMonitoringCallback();
+                }
             };
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
         }
