@@ -691,13 +691,16 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     constexpr int maxProjectDiagnosticChars = 32768;
     const auto appendProjectDiagnostic = [](juce::String& target, const juce::String& message)
     {
-        if (target.length() >= maxProjectDiagnosticChars) return;
+        static constexpr auto omitted = "... additional messages omitted\n";
+        if (target.endsWith(omitted)) return;
         if (target.length() + message.length() + 1 <= maxProjectDiagnosticChars)
         {
             target << message << "\n";
             return;
         }
-        target << "... additional messages omitted\n";
+        const int keep = juce::jmax(0, maxProjectDiagnosticChars - (int) juce::String(omitted).length());
+        target = target.substring(0, keep);
+        target << omitted;
     };
     constexpr std::size_t maxVisitedProjectTrackElements = 4096;
     std::size_t visitedProjectTrackElements = 0;
