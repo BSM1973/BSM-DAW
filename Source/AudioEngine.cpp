@@ -181,6 +181,28 @@ int AudioEngine::getAudioTrackCount() const noexcept
     return (int) tracks.size();
 }
 
+void AudioEngine::resetInstrumentPlayback(int trackCount)
+{
+    const int safeCount = juce::jmax(1, trackCount);
+    const bool wasInitialised = initialised.load();
+    const bool wasPlaying = playing.load();
+    playing.store(false);
+    if (wasInitialised)
+        deviceManager.removeAudioCallback(this);
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        instrumentPlayback.clear();
+        instrumentPlayback.reserve((size_t) safeCount);
+        for (int i = 0; i < safeCount; ++i)
+            instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
+    }
+
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
+    playing.store(wasPlaying);
+}
+
 int AudioEngine::addAudioTrack()
 {
     // Dynamic track creation must not mutate the vector while the realtime
