@@ -59,6 +59,7 @@ public:
                         monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
                         monitorButtons[(size_t)i]->setButtonText("MON OFF");
                     }
+                    updateMonitoringCallback();
                 }
             };
             owner.addAndMakeVisible(*monitorButtons[(size_t)i]);
