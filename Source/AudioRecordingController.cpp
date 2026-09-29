@@ -20,6 +20,7 @@ class LibertyAudioRecordingController final : public juce::Component, private ju
 public:
     explicit LibertyAudioRecordingController(MainComponent& ownerIn) : owner(ownerIn)
     {
+        captureDeviceSignature();
         syncTrackControls();
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
@@ -450,6 +451,7 @@ public:
 
     void timerCallback() override
     {
+        handleDeviceChange();
         syncTrackControls();
         resized();
         if (recording)
@@ -506,6 +508,55 @@ public:
         }
     }
 
+    void captureDeviceSignature()
+    {
+        deviceSignatureName = owner.audioEngine.getDeviceName();
+        deviceSignatureRate = owner.audioEngine.getSampleRate();
+        deviceSignatureBuffer = owner.audioEngine.getBufferSize();
+    }
+
+    void handleDeviceChange()
+    {
+        const auto name = owner.audioEngine.getDeviceName();
+        const auto rate = owner.audioEngine.getSampleRate();
+        const auto buffer = owner.audioEngine.getBufferSize();
+        if (name == deviceSignatureName && rate == deviceSignatureRate && buffer == deviceSignatureBuffer)
+            return;
+
+        deviceSignatureName = name;
+        deviceSignatureRate = rate;
+        deviceSignatureBuffer = buffer;
+        inputIndices.clear();
+
+        if (recording)
+        {
+            stopRecording(false);
+            return;
+        }
+
+        if (isArmedTrackMonitoring())
+        {
+            if (configureInput())
+            {
+                const int left = inputIndices.empty() ? 0 : inputIndices[0];
+                const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
+                owner.audioEngine.setInputMonitoring(true, left, right);
+                captureDeviceSignature();
+                return;
+            }
+
+            for (int i = 0; i < (int) monitoringEnabled.size(); ++i)
+            {
+                monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
+                monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
+                monitorButtons[(size_t)i]->setButtonText("MON OFF");
+            }
+        }
+
+        disableInputWhenIdle();
+        captureDeviceSignature();
+    }
+
     MainComponent& owner;
     std::vector<std::unique_ptr<juce::TextButton>> armButtons;
     std::vector<std::unique_ptr<juce::TextButton>> monitorButtons;
@@ -520,6 +571,9 @@ public:
     int armedTrack = -1;
     bool recording = false;
     bool callbackRegistered = false;
+    juce::String deviceSignatureName;
+    double deviceSignatureRate = 0.0;
+    int deviceSignatureBuffer = 0;
 };
 
 class LibertyAudioRecordingBootstrap final : private juce::Timer
