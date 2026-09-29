@@ -146,8 +146,11 @@ private:
 
         setup.inputChannels.clear();
         setup.useDefaultInputChannels = false;
-        manager.setAudioDeviceSetup(setup, true);
+        if (manager.setAudioDeviceSetup(setup, true).isNotEmpty())
+            return;
+
         inputIndices.clear();
+        captureDeviceSignature();
     }
 
     void updateMonitoringCallback()
