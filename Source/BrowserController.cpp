@@ -510,6 +510,8 @@ private:
         }
         owner.trackSourceFiles[(size_t)track] = file;
         owner.audioEngine.setTrackStartSeconds(track, juce::jmax(0.0, owner.playheadSeconds));
+        owner.isPlaying = false;
+        owner.playheadSeconds = 0.0;
         owner.selectedTrack = track;
         owner.rebuildWaveformCache(track);
         owner.repaint();
