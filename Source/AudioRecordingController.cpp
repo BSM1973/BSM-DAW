@@ -398,6 +398,7 @@ private:
 
         recording = false;
         owner.audioEngine.setPlaying(false);
+        owner.isPlaying = false;
 
         threadedWriter.reset();
         if (recordingThread != nullptr)
