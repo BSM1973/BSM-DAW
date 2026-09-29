@@ -64,6 +64,17 @@ public:
         recButton.setVisible(false);
     }
 
+    void prepareForProjectReset()
+    {
+        if (recording)
+            stopRecording(false);
+        clearMonitoringState();
+        armedTrack = -1;
+        for (auto& button : armButtons)
+            if (button) button->setButtonText("ARM");
+        updateMonitoringCallback();
+    }
+
     void resized() override
     {
         const int rowH = getLibertyTrackRowHeight();
@@ -645,6 +656,13 @@ public:
             }
     }
 
+    void prepareForProjectReset(MainComponent* owner)
+    {
+        auto it = controllers.find(owner);
+        if (it != controllers.end() && it->second)
+            it->second->prepareForProjectReset();
+    }
+
     void shutdown()
     {
         stopTimer();
@@ -674,6 +692,12 @@ static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
 void processLibertyRecordingInput(AudioEngine* engine, const float* const* inputs, int numInputs, int numSamples)
 {
     libertyAudioRecordingBootstrap.processInput(engine, inputs, numInputs, numSamples);
+}
+
+void prepareLibertyAudioRecordingForProjectReset(MainComponent* owner)
+{
+    if (owner != nullptr)
+        libertyAudioRecordingBootstrap.prepareForProjectReset(owner);
 }
 
 void shutdownLibertyAudioRecordingController()
