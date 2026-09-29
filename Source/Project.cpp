@@ -52,7 +52,14 @@ juce::String MainComponent::getProjectStateSignature() const
 {
     const auto appendStateHash = [](juce::String& target, const juce::MemoryBlock& state)
     {
-        target << ";stateHash=" << juce::MD5(state.getData(), state.getSize()).toHexString();
+        std::uint64_t hash = 14695981039346656037ull;
+        const auto* bytes = static_cast<const std::uint8_t*>(state.getData());
+        for (std::size_t i = 0; i < state.getSize(); ++i)
+        {
+            hash ^= bytes[i];
+            hash *= 1099511628211ull;
+        }
+        target << ";stateHash=" << juce::String::toHexString((juce::int64) hash);
     };
     juce::String signature;
     signature << "tempo=" << juce::String(tempoBpm, 6)
