@@ -527,6 +527,27 @@ public:
     void syncTrackControls()
     {
         const int count = owner.getAudioTrackCount();
+
+        if ((int)armButtons.size() > count)
+        {
+            if (recording && armedTrack >= count)
+                stopRecording(false);
+
+            if (armedTrack >= count)
+            {
+                clearMonitoringState();
+                armedTrack = -1;
+                updateMonitoringCallback();
+            }
+
+            while ((int)armButtons.size() > count)
+            {
+                armButtons.pop_back();
+                monitorButtons.pop_back();
+                monitoringEnabled.pop_back();
+            }
+        }
+
         while ((int)armButtons.size() < count)
         {
             const int i = (int)armButtons.size();
