@@ -133,6 +133,21 @@ private:
         callbackRegistered = false;
     }
 
+    void disableInputWhenIdle()
+    {
+        owner.audioEngine.setInputMonitoring(false);
+
+        auto& manager = owner.audioEngine.getDeviceManager();
+        auto setup = manager.getAudioDeviceSetup();
+        if (setup.inputChannels.countNumberOfSetBits() == 0 && !setup.useDefaultInputChannels)
+            return;
+
+        setup.inputChannels.clear();
+        setup.useDefaultInputChannels = false;
+        manager.setAudioDeviceSetup(setup, true);
+        inputIndices.clear();
+    }
+
     void updateMonitoringCallback()
     {
         if (recording)
@@ -149,6 +164,7 @@ private:
         else
         {
             detachAudioCallback();
+            disableInputWhenIdle();
         }
     }
 
