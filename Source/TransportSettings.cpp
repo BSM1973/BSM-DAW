@@ -8,6 +8,8 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
                                   bool resizeLeft,
                                   juce::String& error);
 
+void syncLibertyMultiMidiPlayback(MainComponent& owner);
+
 void MainComponent::editTempo()
 {
     auto* alert = new juce::AlertWindow("BSM DAW - Tempo", "Enter tempo (BPM):", juce::MessageBoxIconType::NoIcon);
@@ -46,6 +48,7 @@ void MainComponent::editTempo()
                 }
 
                 tempoBpm = value;
+                syncLibertyMultiMidiPlayback(*this);
                 tempoControls.refresh();
             }
         }
