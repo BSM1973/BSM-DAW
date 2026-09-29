@@ -192,7 +192,11 @@ private:
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
                 if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
                     if (coordinators.find(main) == coordinators.end())
+                    {
                         coordinators.emplace(main, std::make_unique<PageModeCoordinator>(*main));
+                        stopTimer();
+                        return;
+                    }
     }
 };
 
