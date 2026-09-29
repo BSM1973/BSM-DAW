@@ -677,8 +677,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     juce::String missingFiles;
     juce::String missingPlugins;
     juce::String pluginStateWarnings;
+    constexpr std::size_t maxVisitedProjectTrackElements = 4096;
+    std::size_t visitedProjectTrackElements = 0;
     for (auto* track = project->getFirstChildElement(); track != nullptr; track = track->getNextElement())
     {
+        if (++visitedProjectTrackElements > maxVisitedProjectTrackElements) break;
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
         if (index < 0 || index >= getAudioTrackCount()) continue;
@@ -726,8 +729,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     if (auto* trackMetadata = project->getChildByName("DynamicTrackMetadata"))
     {
+        constexpr std::size_t maxVisitedTrackMetadataElements = 2048;
+        std::size_t visitedTrackMetadataElements = 0;
         for (auto* track = trackMetadata->getFirstChildElement(); track != nullptr; track = track->getNextElement())
         {
+            if (++visitedTrackMetadataElements > maxVisitedTrackMetadataElements) break;
             if (track->getTagName() != "Track") continue;
             const int index = track->getIntAttribute("index", -1);
             const auto kind = track->getStringAttribute("kind");
@@ -744,8 +750,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
     {
+        constexpr std::size_t maxVisitedInstrumentMixerElements = 1024;
+        std::size_t visitedInstrumentMixerElements = 0;
         for (auto* track = instrumentMixer->getFirstChildElement(); track != nullptr; track = track->getNextElement())
         {
+            if (++visitedInstrumentMixerElements > maxVisitedInstrumentMixerElements) break;
             if (track->getTagName() != "Track") continue;
             const int index = track->getIntAttribute("index", -1);
             if (index < 0 || index >= getInstrumentTrackCount()) continue;
@@ -758,7 +767,10 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
     if(auto* inserts=project->getChildByName("DynamicInserts")){
         auto& host=LibertyPluginHost::instance(); auto& one=LibertyOneKnobManager::instance();
+        constexpr std::size_t maxVisitedDynamicInsertElements = 16384;
+        std::size_t visitedDynamicInsertElements = 0;
         for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
+            if (++visitedDynamicInsertElements > maxVisitedDynamicInsertElements) break;
             const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
             const int insertSlot=juce::jlimit(0,LibertyPluginHost::effectSlotsPerTrack-1,e->getIntAttribute("slot",0));
             if(e->getTagName()=="Plugin"){const auto identifier=e->getStringAttribute("identifier");juce::PluginDescription d;if(host.findKnownPluginByIdentifier(identifier,d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(!loaded&&error.isNotEmpty())missingPlugins<<identifier<<" : "<<error<<"\n";if(loaded&&e->hasAttribute("state")){juce::MemoryBlock state;const bool decoded=state.fromBase64Encoding(e->getStringAttribute("state"));if(decoded&&state.getSize()>0){bool restored=false;if(kind=="instrument")restored=host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")restored=host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")restored=host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);if(!restored)pluginStateWarnings<<identifier<<" (state could not be applied)\n";}else pluginStateWarnings<<identifier<<" (invalid saved state)\n";}}else if(identifier.isNotEmpty())missingPlugins<<identifier<<" (not found)\n";}
