@@ -198,6 +198,9 @@ private:
         if (recording)
             return;
 
+        if (armedTrack != track && isArmedTrackMonitoring())
+            clearMonitoringState();
+
         armedTrack = track;
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
             armButtons[(size_t)i]->setButtonText(i == armedTrack ? "ARMED" : "ARM");
