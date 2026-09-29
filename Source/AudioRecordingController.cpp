@@ -410,13 +410,25 @@ private:
         recButton.setButtonText("REC");
         updateMonitoringCallback();
 
-        if (createClip && armedTrack >= 0 && recordingFile.existsAsFile() && recordingFile.getSize() > 44)
+        if (!createClip)
+        {
+            if (recordingFile.existsAsFile())
+                recordingFile.deleteFile();
+            recordingFile = {};
+            owner.repaint();
+            return;
+        }
+
+        if (armedTrack >= 0 && recordingFile.existsAsFile() && recordingFile.getSize() > 44)
         {
             juce::File stereoFile;
             if (!createStereoRecordingFromActiveChannels(stereoFile))
             {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                     "Liberty - Recording", "Aucun signal audio détectable sur les entrées du périphérique sélectionné.", "OK");
+                if (recordingFile.existsAsFile())
+                    recordingFile.deleteFile();
+                recordingFile = {};
                 owner.repaint();
                 return;
             }
@@ -437,6 +449,9 @@ private:
             }
         }
 
+        if (recordingFile.existsAsFile())
+            recordingFile.deleteFile();
+        recordingFile = {};
         owner.repaint();
     }
 
