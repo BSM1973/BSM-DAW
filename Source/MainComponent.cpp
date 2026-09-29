@@ -615,6 +615,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             if (tool == 3) // ERASE / EFFACER
             {
                 audioEngine.clearAudioTrack(track);
+                isPlaying = false;
+                playheadSeconds = 0.0;
                 trackSourceFiles[(size_t)track] = juce::File{};
                 waveformMin[(size_t)track].clear();
                 waveformMax[(size_t)track].clear();
