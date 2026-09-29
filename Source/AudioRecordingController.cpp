@@ -404,6 +404,7 @@ private:
         }
 
         recording = false;
+        recordingWriteFailed.store(false, std::memory_order_release);
         owner.audioEngine.setPlaying(false);
         owner.isPlaying = false;
 
