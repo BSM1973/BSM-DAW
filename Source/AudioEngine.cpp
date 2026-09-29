@@ -207,10 +207,26 @@ int AudioEngine::addAudioTrack()
 
 bool AudioEngine::removeAudioTrack(int trackIndex)
 {
-    const juce::ScopedLock lock(stateLock);
-    if (!isValidTrackIndex(trackIndex)) return false;
-    tracks.erase(tracks.begin() + trackIndex);
-    return true;
+    const bool wasInitialised = initialised.load();
+    const bool wasPlaying = playing.load();
+    playing.store(false);
+    if (wasInitialised)
+        deviceManager.removeAudioCallback(this);
+
+    bool removed = false;
+    {
+        const juce::ScopedLock lock(stateLock);
+        if (trackIndex >= 0 && trackIndex < (int) tracks.size())
+        {
+            tracks.erase(tracks.begin() + trackIndex);
+            removed = true;
+        }
+    }
+
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
+    playing.store(wasPlaying);
+    return removed;
 }
 
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
