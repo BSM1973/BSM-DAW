@@ -625,6 +625,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
     while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
     while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
+    audioEngine.resetInstrumentPlayback(savedInstrumentTracks);
     trackScrollRows = 0;
 
     const auto finiteOr = [](double value, double fallback) noexcept
