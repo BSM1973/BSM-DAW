@@ -219,7 +219,11 @@ private:
             if (active[i])
                 inputIndices.push_back(i);
 
-        return !inputIndices.empty();
+        if (inputIndices.empty())
+            return false;
+
+        captureDeviceSignature();
+        return true;
     }
 
     bool createStereoRecordingFromActiveChannels(juce::File& stereoFile)
