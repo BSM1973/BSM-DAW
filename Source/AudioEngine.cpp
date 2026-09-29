@@ -207,6 +207,12 @@ int AudioEngine::addAudioTrack()
 
 bool AudioEngine::removeAudioTrack(int trackIndex)
 {
+    {
+        const juce::ScopedLock lock(stateLock);
+        if (trackIndex < 0 || trackIndex != (int) tracks.size() - 1)
+            return false;
+    }
+
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
     playing.store(false);
