@@ -4,6 +4,7 @@ void resizeLibertyGridSnapController(MainComponent*);
 
 void resizeLibertyMixConsole(MainComponent*);
 void resizeLibertyBrowserResizeController(MainComponent*);
+void resizeLibertyMultiMidiClipController(MainComponent*);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
