@@ -35,34 +35,7 @@ public:
             monitorButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
             monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
-            monitorButtons[(size_t)i]->onClick = [this, i]
-            {
-                const bool enabled = monitorButtons[(size_t)i]->getToggleState();
-                for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
-                {
-                    const bool active = enabled && track == i;
-                    monitoringEnabled[(size_t)track]->store(active, std::memory_order_relaxed);
-                    monitorButtons[(size_t)track]->setToggleState(active, juce::dontSendNotification);
-                    monitorButtons[(size_t)track]->setButtonText(active ? "MON ON" : "MON OFF");
-                }
-                if (enabled && configureInput())
-                {
-                    const int left = inputIndices.empty() ? 0 : inputIndices[0];
-                    const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
-                    owner.audioEngine.setInputMonitoring(true, left, right);
-                }
-                else
-                {
-                    owner.audioEngine.setInputMonitoring(false);
-                    if (enabled)
-                    {
-                        monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
-                        monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
-                        monitorButtons[(size_t)i]->setButtonText("MON OFF");
-                    }
-                    updateMonitoringCallback();
-                }
-            };
+            monitorButtons[(size_t)i]->onClick = [this, i] { handleMonitorClick(i); };
             owner.addAndMakeVisible(*monitorButtons[(size_t)i]);
         }
 
@@ -151,6 +124,35 @@ private:
 
         inputIndices.clear();
         captureDeviceSignature();
+    }
+
+    void handleMonitorClick(int trackIndex)
+    {
+        const bool enabled = monitorButtons[(size_t)trackIndex]->getToggleState();
+        for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
+        {
+            const bool active = enabled && track == trackIndex;
+            monitoringEnabled[(size_t)track]->store(active, std::memory_order_relaxed);
+            monitorButtons[(size_t)track]->setToggleState(active, juce::dontSendNotification);
+            monitorButtons[(size_t)track]->setButtonText(active ? "MON ON" : "MON OFF");
+        }
+
+        if (enabled && configureInput())
+        {
+            const int left = inputIndices.empty() ? 0 : inputIndices[0];
+            const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
+            owner.audioEngine.setInputMonitoring(true, left, right);
+            return;
+        }
+
+        owner.audioEngine.setInputMonitoring(false);
+        if (enabled)
+        {
+            monitoringEnabled[(size_t)trackIndex]->store(false, std::memory_order_relaxed);
+            monitorButtons[(size_t)trackIndex]->setToggleState(false, juce::dontSendNotification);
+            monitorButtons[(size_t)trackIndex]->setButtonText("MON OFF");
+        }
+        updateMonitoringCallback();
     }
 
     void clearMonitoringState()
@@ -533,34 +535,7 @@ public:
             mon->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             mon->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
             auto state = std::make_unique<std::atomic<bool>>(false);
-            mon->onClick = [this, i]
-            {
-                const bool enabled = monitorButtons[(size_t)i]->getToggleState();
-                for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
-                {
-                    const bool active = enabled && track == i;
-                    monitoringEnabled[(size_t)track]->store(active, std::memory_order_relaxed);
-                    monitorButtons[(size_t)track]->setToggleState(active, juce::dontSendNotification);
-                    monitorButtons[(size_t)track]->setButtonText(active ? "MON ON" : "MON OFF");
-                }
-                if (enabled && configureInput())
-                {
-                    const int left = inputIndices.empty() ? 0 : inputIndices[0];
-                    const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
-                    owner.audioEngine.setInputMonitoring(true, left, right);
-                }
-                else
-                {
-                    owner.audioEngine.setInputMonitoring(false);
-                    if (enabled)
-                    {
-                        monitoringEnabled[(size_t)i]->store(false, std::memory_order_relaxed);
-                        monitorButtons[(size_t)i]->setToggleState(false, juce::dontSendNotification);
-                        monitorButtons[(size_t)i]->setButtonText("MON OFF");
-                    }
-                    updateMonitoringCallback();
-                }
-            };
+            mon->onClick = [this, i] { handleMonitorClick(i); };
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
         }
     }
