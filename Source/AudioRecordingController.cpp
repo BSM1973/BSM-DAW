@@ -337,7 +337,10 @@ private:
         auto& manager = owner.audioEngine.getDeviceManager();
         auto* device = manager.getCurrentAudioDevice();
         if (device == nullptr || device->getCurrentSampleRate() <= 0.0)
+        {
+            updateMonitoringCallback();
             return;
+        }
 
         recordingFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
                             .getNonexistentChildFile("Liberty_Recording", ".wav", false);
@@ -345,13 +348,19 @@ private:
         juce::WavAudioFormat wav;
         auto output = recordingFile.createOutputStream();
         if (output == nullptr)
+        {
+            updateMonitoringCallback();
             return;
+        }
 
         auto writer = std::unique_ptr<juce::AudioFormatWriter>(wav.createWriterFor(
             output.release(), device->getCurrentSampleRate(),
             (unsigned int)inputIndices.size(), 24, {}, 0));
         if (writer == nullptr)
+        {
+            updateMonitoringCallback();
             return;
+        }
 
         recordingThread = std::make_unique<juce::TimeSliceThread>("Liberty Recording Writer");
         recordingThread->startThread();
