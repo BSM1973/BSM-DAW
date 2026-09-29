@@ -794,10 +794,18 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         auto& host=LibertyPluginHost::instance(); auto& one=LibertyOneKnobManager::instance();
         constexpr std::size_t maxVisitedDynamicInsertElements = 16384;
         std::size_t visitedDynamicInsertElements = 0;
+        std::set<juce::String> restoredInsertLocations;
         for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
             if (++visitedDynamicInsertElements > maxVisitedDynamicInsertElements) break;
             const int lane=juce::jmax(0,e->getIntAttribute("lane",0)); const auto kind=e->getStringAttribute("kind");
             const int insertSlot=juce::jlimit(0,LibertyPluginHost::effectSlotsPerTrack-1,e->getIntAttribute("slot",0));
+            juce::String locationKey;
+            if(e->getTagName()=="Plugin"&&kind=="instrument"&&lane<getInstrumentTrackCount())locationKey="instrument:"+juce::String(lane);
+            else if(e->getTagName()=="Plugin"&&kind=="audioFX"&&lane<getAudioTrackCount())locationKey="audioFX:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="Plugin"&&kind=="instrumentFX"&&lane<getInstrumentTrackCount())locationKey="instrumentFX:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="OneKnob"&&kind=="audio"&&lane<getAudioTrackCount())locationKey="oneAudio:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="OneKnob"&&kind=="instrument"&&lane<getInstrumentTrackCount())locationKey="oneInstrument:"+juce::String(lane)+":"+juce::String(insertSlot);
+            if(locationKey.isNotEmpty()&&!restoredInsertLocations.insert(locationKey).second)continue;
             if(e->getTagName()=="Plugin"){const auto identifier=e->getStringAttribute("identifier");juce::PluginDescription d;if(host.findKnownPluginByIdentifier(identifier,d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(!loaded&&error.isNotEmpty())appendProjectDiagnostic(missingPlugins, identifier + " : " + error);if(loaded&&e->hasAttribute("state")){constexpr int maxSavedPluginStateBase64Chars=96*1024*1024;const auto savedState=e->getStringAttribute("state");if(savedState.length()>maxSavedPluginStateBase64Chars){appendProjectDiagnostic(pluginStateWarnings, identifier + " (saved state too large)");}else{juce::MemoryBlock state;const bool decoded=state.fromBase64Encoding(savedState);if(decoded&&state.getSize()>0&&state.getSize()<=64u*1024u*1024u){bool restored=false;if(kind=="instrument")restored=host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")restored=host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")restored=host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);if(!restored)appendProjectDiagnostic(pluginStateWarnings, identifier + " (state could not be applied)");}else appendProjectDiagnostic(pluginStateWarnings, identifier + " (invalid saved state)");}}}else if(identifier.isNotEmpty())appendProjectDiagnostic(missingPlugins, identifier + " (not found)");}
             else if(e->getTagName()=="OneKnob"){
                 const bool validAudio = kind=="audio" && lane<getAudioTrackCount();
