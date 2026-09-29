@@ -357,6 +357,9 @@ private:
         auto output = recordingFile.createOutputStream();
         if (output == nullptr)
         {
+            if (recordingFile.existsAsFile())
+                recordingFile.deleteFile();
+            recordingFile = juce::File();
             updateMonitoringCallback();
             return;
         }
@@ -366,6 +369,9 @@ private:
             (unsigned int)inputIndices.size(), 24, {}, 0));
         if (writer == nullptr)
         {
+            if (recordingFile.existsAsFile())
+                recordingFile.deleteFile();
+            recordingFile = juce::File();
             updateMonitoringCallback();
             return;
         }
