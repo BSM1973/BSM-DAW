@@ -820,7 +820,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                                                            (float) finiteOr(e->getDoubleAttribute("amount", 0.5), 0.5));
                     one.setEffect(key, (LibertyOneKnobRack::Type) savedType);
                     one.setAmount(key, savedAmount);
-                    if(locationKey.isNotEmpty())restoredInsertLocations.insert(locationKey);
+                    if(savedType != (int) LibertyOneKnobRack::Type::none && locationKey.isNotEmpty())
+                        restoredInsertLocations.insert(locationKey);
                 }
             }
         }
