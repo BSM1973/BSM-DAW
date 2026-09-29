@@ -652,8 +652,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     if (auto* midi = project->getChildByName("MIDI"))
     {
         midiEngine.clear();
+        constexpr std::size_t maxVisitedLegacyMidiElements = 32768;
+        std::size_t visitedLegacyMidiElements = 0;
         for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
         {
+            if (++visitedLegacyMidiElements > maxVisitedLegacyMidiElements) break;
             if (noteElement->getTagName() != "Note") continue;
             const double rawStartTick = noteElement->getDoubleAttribute("startTick", 0.0);
             const double rawLengthTicks = noteElement->getDoubleAttribute("lengthTicks", (double) MidiEngine::ticksPerQuarterNote);
