@@ -95,6 +95,7 @@ public:
     int getAudioTrackCount() const noexcept;
     int addAudioTrack();
     bool removeAudioTrack(int trackIndex);
+    void resetInstrumentPlayback(int trackCount);
 
     void setTrackGain(int trackIndex, float gain) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
