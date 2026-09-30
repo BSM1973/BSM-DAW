@@ -624,18 +624,25 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     const auto rollbackMedia = [&preparedMedia]()
     {
+        bool restoredAll = true;
         for (auto it = preparedMedia.rbegin(); it != preparedMedia.rend(); ++it)
         {
+            bool restored = true;
             if (it->committed)
             {
                 it->finalFile.deleteFile();
                 if (it->hadOriginal && it->backupFile.existsAsFile())
-                    it->backupFile.moveFileTo(it->finalFile);
+                    restored = it->backupFile.moveFileTo(it->finalFile);
             }
             it->tempFile.deleteFile();
-            if (it->backupFile.existsAsFile())
+
+            // Never destroy the last recoverable copy if the filesystem refused
+            // to restore it. A leftover .backup is preferable to lost project audio.
+            if (restored && it->backupFile.existsAsFile())
                 it->backupFile.deleteFile();
+            restoredAll = restoredAll && restored;
         }
+        return restoredAll;
     };
 
     for (auto& media : preparedMedia)
