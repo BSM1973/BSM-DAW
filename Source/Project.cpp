@@ -21,11 +21,12 @@ constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
 
-bool exportTrackToProjectMedia(const juce::File& projectFile,
-                               int trackIndex,
-                               const juce::AudioBuffer<float>* buffer,
-                               double sampleRate,
-                               juce::File& exportedFile)
+bool prepareTrackProjectMedia(const juce::File& projectFile,
+                              int trackIndex,
+                              const juce::AudioBuffer<float>* buffer,
+                              double sampleRate,
+                              juce::File& exportedFile,
+                              juce::File& tempFile)
 {
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0 || sampleRate <= 0.0)
         return false;
@@ -35,7 +36,7 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
         return false;
 
     exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
-    const auto tempFile = exportedFile.getSiblingFile(exportedFile.getFileName() + ".saving");
+    tempFile = exportedFile.getSiblingFile(exportedFile.getFileName() + ".saving");
     tempFile.deleteFile();
 
     auto output = tempFile.createOutputStream();
@@ -59,13 +60,17 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
     }
     writer.reset();
 
-    if (!tempFile.replaceFileIn(exportedFile))
-    {
-        tempFile.deleteFile();
-        return false;
-    }
     return true;
 }
+
+struct PreparedProjectMedia
+{
+    juce::File finalFile;
+    juce::File tempFile;
+    juce::File backupFile;
+    bool hadOriginal = false;
+    bool committed = false;
+};
 }
 
 juce::String MainComponent::getProjectStateSignature() const
@@ -444,6 +449,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 {
     if (file == juce::File{}) return false;
 
+    std::vector<PreparedProjectMedia> preparedMedia;
+
     juce::XmlElement project("LibertyProject");
     project.setAttribute("version", 15);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
@@ -492,9 +499,10 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
         if (audioEngine.hasAudioFile(i) && buffer != nullptr)
         {
-            juce::File exportedFile;
-            if (!exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
+            juce::File exportedFile, preparedFile;
+            if (!prepareTrackProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile, preparedFile))
             {
+                for (auto& media : preparedMedia) media.tempFile.deleteFile();
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                        "Liberty - Project Save",
                                                        "Could not safely export Audio " + juce::String(i + 1)
@@ -502,6 +510,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
                                                        "OK");
                 return false;
             }
+            preparedMedia.push_back({ exportedFile, preparedFile, {}, false, false });
             sourceFile = exportedFile;
         }
 
@@ -613,8 +622,55 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         return false;
     }
 
+    const auto rollbackMedia = [&preparedMedia]()
+    {
+        for (auto it = preparedMedia.rbegin(); it != preparedMedia.rend(); ++it)
+        {
+            if (it->committed)
+            {
+                it->finalFile.deleteFile();
+                if (it->hadOriginal && it->backupFile.existsAsFile())
+                    it->backupFile.moveFileTo(it->finalFile);
+            }
+            it->tempFile.deleteFile();
+            if (it->backupFile.existsAsFile())
+                it->backupFile.deleteFile();
+        }
+    };
+
+    for (auto& media : preparedMedia)
+    {
+        media.hadOriginal = media.finalFile.existsAsFile();
+        media.backupFile = media.finalFile.getSiblingFile(media.finalFile.getFileName() + ".backup");
+        media.backupFile.deleteFile();
+        if (media.hadOriginal && !media.finalFile.moveFileTo(media.backupFile))
+        {
+            rollbackMedia();
+            tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not protect the previous project audio. The project was not saved.",
+                                                   "OK");
+            return false;
+        }
+        if (!media.tempFile.moveFileTo(media.finalFile))
+        {
+            if (media.hadOriginal && media.backupFile.existsAsFile())
+                media.backupFile.moveFileTo(media.finalFile);
+            rollbackMedia();
+            tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not commit the project audio. The previous project was left unchanged.",
+                                                   "OK");
+            return false;
+        }
+        media.committed = true;
+    }
+
     if (!tempFile.replaceFileIn(file))
     {
+        rollbackMedia();
         tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
@@ -622,6 +678,9 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
                                                "OK");
         return false;
     }
+
+    for (auto& media : preparedMedia)
+        media.backupFile.deleteFile();
 
     currentProjectFile = file;
     markProjectClean();
