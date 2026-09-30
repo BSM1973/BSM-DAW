@@ -109,9 +109,14 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             const auto startSample = (int)std::llround(startSeconds * sampleRate);
             const auto endSample = (int)std::llround(endSeconds * sampleRate);
             const int midiChannel = juce::jlimit(1, 16, (int)n.channel);
-            if (startSample >= writePos && startSample < writePos + num)
+            // The extra render window after clipDuration is tail-only: it may drain
+            // synth releases and FX, but must never start notes hidden beyond the
+            // right edge of a resized Instrument clip.
+            const int clipEndSample = (int)std::llround(clipDuration * sampleRate);
+            if (startSample < clipEndSample && startSample >= writePos && startSample < writePos + num)
                 midi.addEvent(juce::MidiMessage::noteOn(midiChannel, (int)n.pitch, (juce::uint8)n.velocity), startSample - writePos);
-            if (endSample >= writePos && endSample < writePos + num)
+            if (startSample < clipEndSample && endSample < clipEndSample
+                && endSample >= writePos && endSample < writePos + num)
                 midi.addEvent(juce::MidiMessage::noteOff(midiChannel, (int)n.pitch), endSample - writePos);
         }
 
