@@ -209,6 +209,10 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     }
 
     owner.audioEngine.setTrackStartSeconds(targetTrack, juce::jmax(0.0, owner.midiClipStartSeconds));
+    // A reusable empty Audio lane may still carry an old Mute state. The freshly
+    // rendered bounce must be audible immediately; preserve Solo because it is
+    // part of the user's current mix selection.
+    owner.audioEngine.setTrackMuted(targetTrack, false);
     owner.trackSourceFiles[(size_t)targetTrack] = file;
     owner.rebuildWaveformCache(targetTrack);
 
