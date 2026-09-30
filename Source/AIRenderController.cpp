@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#include "OneKnobEffects.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -126,6 +127,15 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             silenceInstrumentState(host, instrumentTrack, blockSize);
             resultMessage = "L'instrument charge n'a pas pu etre rendu.";
             return false;
+        }
+
+        // Match realtime Instrument processing exactly: FX plugin then One Knob,
+        // slot by slot from FX1 through FX8 on the active Instrument lane.
+        auto& oneKnob = LibertyOneKnobManager::instance();
+        for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+        {
+            host.processInstrumentEffectSlot(instrumentTrack, slot, block);
+            oneKnob.process(100000 + instrumentTrack * 8 + slot, block);
         }
 
         // Reject invalid plugin output before it can reach a file or the speakers.
