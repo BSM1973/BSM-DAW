@@ -54,6 +54,7 @@ public:
     float getAmount(int trackIndex) const;
     juce::String getName(int trackIndex) const;
     bool hasEffect(int trackIndex) const;
+    void resetEffectState(int trackIndex);
     void process(int trackIndex, juce::AudioBuffer<float>& buffer);
     void processInsertSlot(int logicalTrackIndex, int slotIndex, juce::AudioBuffer<float>& buffer);
     void beginAudioTrackBlock(int trackIndex, float* const* outputChannelData, int numOutputChannels, int numSamples);
