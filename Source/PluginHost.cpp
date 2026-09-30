@@ -691,6 +691,14 @@ void LibertyPluginHost::processInstrumentEffectSlot(int t,int si,juce::AudioBuff
     lock.exit();
 }
 
+void LibertyPluginHost::resetInstrumentEffectState(int t)
+{
+    const juce::ScopedLock scoped(lock);
+    if(t<0||t>=(int)instrumentEffects.size())return;
+    for(auto& slot:instrumentEffects[(size_t)t])
+        if(slot&&slot->processor)slot->processor->reset();
+}
+
 void LibertyPluginHost::showEditor(Slot& slot, const juce::String& title)
 {
     if (!slot.processor) return;
