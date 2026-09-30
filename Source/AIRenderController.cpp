@@ -95,6 +95,18 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     owner.audioEngine.setPlaying(false);
     owner.isPlaying = false;
 
+    if (!host.beginOfflineInstrumentRender(instrumentTrack))
+    {
+        resultMessage = "L'instrument est deja utilise par un rendu offline.";
+        return false;
+    }
+    struct OfflineRenderGuard
+    {
+        LibertyPluginHost& host;
+        int track;
+        ~OfflineRenderGuard() { host.endOfflineInstrumentRender(track); }
+    } offlineGuard { host, instrumentTrack };
+
     const float instrumentGain = owner.audioEngine.getInstrumentTrackGain(instrumentTrack);
     const float instrumentPan = owner.audioEngine.getInstrumentTrackPan(instrumentTrack);
     const int blockSize = juce::jmax(64, owner.audioEngine.getBufferSize() > 0 ? owner.audioEngine.getBufferSize() : 512);
@@ -187,7 +199,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             }
 
         float* channels[] = { block.getWritePointer(0), block.getWritePointer(1) };
-        if (!host.processInstrumentForTrack(instrumentTrack, channels, 2, num, midi, instrumentGain, instrumentPan))
+        if (!host.processOfflineInstrument(instrumentTrack, channels, 2, num, midi, instrumentGain, instrumentPan))
         {
             tempWriter.reset();
             silenceInstrumentState(host, instrumentTrack, blockSize);
