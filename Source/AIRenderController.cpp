@@ -153,8 +153,12 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
 
         for (const auto& n : notes)
         {
+            if (n.startTick < 0 || n.lengthTicks <= 0
+                || n.startTick > std::numeric_limits<std::int64_t>::max() - n.lengthTicks)
+                continue;
+            const auto noteEndTick = n.startTick + n.lengthTicks;
             const auto startSeconds = MidiEngine::tickToSeconds(n.startTick, owner.tempoBpm);
-            const auto endSeconds = MidiEngine::tickToSeconds(n.startTick + n.lengthTicks, owner.tempoBpm);
+            const auto endSeconds = MidiEngine::tickToSeconds(noteEndTick, owner.tempoBpm);
             const double startSampleExact = startSeconds * sampleRate;
             const double endSampleExact = endSeconds * sampleRate;
             if (!std::isfinite(startSampleExact) || !std::isfinite(endSampleExact)
