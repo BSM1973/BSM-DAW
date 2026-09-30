@@ -1,6 +1,7 @@
 #include "MidiEngine.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 {
@@ -301,8 +302,8 @@ bool MidiEngine::setNoteVelocity(std::int64_t startTick, int pitch, int channel,
 
 std::vector<MidiEngine::NoteEvent> MidiEngine::getNotesCopy() const { return notes; }
 std::int64_t MidiEngine::getLengthTicks() const noexcept { std::int64_t length = 0; for (const auto& note : notes) length = std::max(length, note.startTick + note.lengthTicks); return length; }
-double MidiEngine::tickToSeconds(std::int64_t tick, double tempoBpm) noexcept { if (tick <= 0 || tempoBpm <= 0.0) return 0.0; return (static_cast<double>(tick) / static_cast<double>(ticksPerQuarterNote)) * (60.0 / tempoBpm); }
-std::int64_t MidiEngine::secondsToTick(double seconds, double tempoBpm) noexcept { if (seconds <= 0.0 || tempoBpm <= 0.0) return 0; return static_cast<std::int64_t>(std::llround(seconds * tempoBpm / 60.0 * static_cast<double>(ticksPerQuarterNote))); }
+double MidiEngine::tickToSeconds(std::int64_t tick, double tempoBpm) noexcept { if (tick <= 0 || !std::isfinite(tempoBpm) || tempoBpm <= 0.0) return 0.0; return (static_cast<double>(tick) / static_cast<double>(ticksPerQuarterNote)) * (60.0 / tempoBpm); }
+std::int64_t MidiEngine::secondsToTick(double seconds, double tempoBpm) noexcept { if (!std::isfinite(seconds) || !std::isfinite(tempoBpm) || seconds <= 0.0 || tempoBpm <= 0.0) return 0; const double ticks=seconds*tempoBpm/60.0*static_cast<double>(ticksPerQuarterNote); const double maxTick=static_cast<double>(std::numeric_limits<std::int64_t>::max()); if (!std::isfinite(ticks) || ticks >= maxTick) return std::numeric_limits<std::int64_t>::max(); return static_cast<std::int64_t>(std::llround(ticks)); }
 std::int64_t MidiEngine::quantizeTick(std::int64_t tick, std::int64_t gridTicks) noexcept { if (tick <= 0 || gridTicks <= 0) return std::max<std::int64_t>(0, tick); return static_cast<std::int64_t>(std::llround(static_cast<double>(tick) / static_cast<double>(gridTicks))) * gridTicks; }
 std::int64_t MidiEngine::ticksPerMeasure(int numerator, int denominator) noexcept { if (numerator <= 0 || denominator <= 0) return 0; return static_cast<std::int64_t>(numerator) * ticksPerQuarterNote * 4 / denominator; }
 void MidiEngine::setPlaybackPositionSeconds(double seconds) noexcept { playbackPositionSeconds.store(std::max(0.0, seconds), std::memory_order_relaxed); }
