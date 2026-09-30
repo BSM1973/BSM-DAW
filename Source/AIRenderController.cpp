@@ -103,12 +103,21 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const double totalSamplesExact = (clipDuration + tailSeconds) * sampleRate;
     if (!std::isfinite(clipDuration) || !std::isfinite(totalSamplesExact)
         || totalSamplesExact <= 0.0
-        || totalSamplesExact > (double) std::numeric_limits<int>::max())
+        || totalSamplesExact > (double) std::numeric_limits<std::int64_t>::max())
     {
-        resultMessage = "Le clip Instrument est trop long pour etre rendu en memoire.";
+        resultMessage = "Le clip Instrument est trop long pour etre rendu.";
         return false;
     }
-    const int totalSamples = juce::jmax(1, (int)std::ceil(totalSamplesExact));
+    const std::int64_t totalSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::ceil(totalSamplesExact));
+    const double clipEndSamplesExact = clipDuration * sampleRate;
+    if (!std::isfinite(clipEndSamplesExact)
+        || clipEndSamplesExact < 0.0
+        || clipEndSamplesExact > (double) std::numeric_limits<std::int64_t>::max())
+    {
+        resultMessage = "La duree du clip Instrument est invalide.";
+        return false;
+    }
+    const std::int64_t clipEndSample = (std::int64_t)std::llround(clipEndSamplesExact);
 
     // Clear any hanging note/sustain left by realtime playback before rendering.
     silenceInstrumentState(host, instrumentTrack, blockSize);
@@ -134,10 +143,10 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     tempStream.release();
 
     float peak = 0.0f;
-    int writePos = 0;
+    std::int64_t writePos = 0;
     while (writePos < totalSamples)
     {
-        const int num = juce::jmin(blockSize, totalSamples - writePos);
+        const int num = (int)juce::jmin<std::int64_t>(blockSize, totalSamples - writePos);
         juce::AudioBuffer<float> block(2, num);
         block.clear();
         juce::MidiBuffer midi;
@@ -146,26 +155,31 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         {
             const auto startSeconds = MidiEngine::tickToSeconds(n.startTick, owner.tempoBpm);
             const auto endSeconds = MidiEngine::tickToSeconds(n.startTick + n.lengthTicks, owner.tempoBpm);
-            const auto startSample = (int)std::llround(startSeconds * sampleRate);
-            const auto endSample = (int)std::llround(endSeconds * sampleRate);
+            const double startSampleExact = startSeconds * sampleRate;
+            const double endSampleExact = endSeconds * sampleRate;
+            if (!std::isfinite(startSampleExact) || !std::isfinite(endSampleExact)
+                || startSampleExact < 0.0 || endSampleExact < 0.0
+                || startSampleExact > (double) std::numeric_limits<std::int64_t>::max()
+                || endSampleExact > (double) std::numeric_limits<std::int64_t>::max())
+                continue;
+            const auto startSample = (std::int64_t)std::llround(startSampleExact);
+            const auto endSample = (std::int64_t)std::llround(endSampleExact);
             const int midiChannel = juce::jlimit(1, 16, (int)n.channel);
             // The extra render window after clipDuration is tail-only: it may drain
             // synth releases and FX, but must never start notes hidden beyond the
             // right edge of a resized Instrument clip.
-            const int clipEndSample = (int)std::llround(clipDuration * sampleRate);
             if (startSample < clipEndSample && startSample >= writePos && startSample < writePos + num)
-                midi.addEvent(juce::MidiMessage::noteOn(midiChannel, (int)n.pitch, (juce::uint8)n.velocity), startSample - writePos);
+                midi.addEvent(juce::MidiMessage::noteOn(midiChannel, (int)n.pitch, (juce::uint8)n.velocity), (int)(startSample - writePos));
             if (startSample < clipEndSample && endSample < clipEndSample
                 && endSample >= writePos && endSample < writePos + num)
-                midi.addEvent(juce::MidiMessage::noteOff(midiChannel, (int)n.pitch), endSample - writePos);
+                midi.addEvent(juce::MidiMessage::noteOff(midiChannel, (int)n.pitch), (int)(endSample - writePos));
         }
 
-        const int clipEndSample = (int)std::llround(clipDuration * sampleRate);
         if (clipEndSample >= writePos && clipEndSample < writePos + num)
             for (int channel = 1; channel <= 16; ++channel)
             {
-                midi.addEvent(juce::MidiMessage::allNotesOff(channel), clipEndSample - writePos);
-                midi.addEvent(juce::MidiMessage::controllerEvent(channel, 64, 0), clipEndSample - writePos);
+                midi.addEvent(juce::MidiMessage::allNotesOff(channel), (int)(clipEndSample - writePos));
+                midi.addEvent(juce::MidiMessage::controllerEvent(channel, 64, 0), (int)(clipEndSample - writePos));
             }
 
         float* channels[] = { block.getWritePointer(0), block.getWritePointer(1) };
