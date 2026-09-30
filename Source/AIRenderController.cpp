@@ -13,12 +13,17 @@ int getLibertyActiveInstrumentClipLane(MainComponent& owner);
 
 namespace
 {
+juce::File getRenderDirectory()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("BSM").getChildFile("Liberty").getChildFile("AI Renders");
+}
+
 juce::File makeRenderFile()
 {
-    auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                   .getChildFile("BSM").getChildFile("Liberty").getChildFile("AI Renders");
-    dir.createDirectory();
-    return dir.getNonexistentChildFile("AI Render " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H-%M-%S"), ".wav", false);
+    return getRenderDirectory().getNonexistentChildFile(
+        "AI Render " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H-%M-%S"),
+        ".wav", false);
 }
 
 void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int blockSize, bool offline = false)
@@ -146,8 +151,14 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
 
     // During pass two, the 32-bit temporary WAV and the 24-bit final WAV coexist.
     // Check the actual AI Renders volume before doing any expensive offline processing.
-    const auto renderProbe = makeRenderFile();
-    const auto bytesFree = renderProbe.getParentDirectory().getBytesFreeOnVolume();
+    const auto renderDirectory = getRenderDirectory();
+    const auto directoryResult = renderDirectory.createDirectory();
+    if (directoryResult.failed() || !renderDirectory.isDirectory())
+    {
+        resultMessage = "Impossible de creer le dossier AI Renders.";
+        return false;
+    }
+    const auto bytesFree = renderDirectory.getBytesFreeOnVolume();
     constexpr std::int64_t simultaneousBytesPerFrame = tempBytesPerFrame + finalBytesPerFrame;
     constexpr std::int64_t diskSafetyMargin = 64LL * 1024LL * 1024LL;
     const auto requiredDiskBytes = totalSamples * simultaneousBytesPerFrame + diskSafetyMargin;
