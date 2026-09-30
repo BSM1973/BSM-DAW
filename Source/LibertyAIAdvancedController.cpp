@@ -12,6 +12,7 @@
 #include <vector>
 
 bool commitLibertyAIGeneratedClip(MainComponent& owner, bool instrumentTrack);
+bool isLibertyActiveMidiClipInstrument(MainComponent& owner);
 
 namespace
 {
@@ -109,6 +110,7 @@ private:
     {
         const auto source = owner.midiEngine.getNotesCopy();
         if (source.empty()) return;
+        const bool instrumentTrack = isLibertyActiveMidiClipInstrument(owner);
 
         auto result = source;
         for (const auto& n : source)
@@ -124,7 +126,7 @@ private:
         }
 
         replaceMidi(result);
-        commitLibertyAIGeneratedClip(owner, true);
+        commitLibertyAIGeneratedClip(owner, instrumentTrack);
     }
 
     void makeChordTrack()
@@ -175,6 +177,7 @@ private:
     {
         const auto source = owner.midiEngine.getNotesCopy();
         if (source.empty()) return;
+        const bool instrumentTrack = isLibertyActiveMidiClipInstrument(owner);
 
         std::mt19937 rng((unsigned int)juce::Time::getMillisecondCounter() + (unsigned int)flavour * 7919u);
         std::vector<MidiEngine::NoteEvent> out;
@@ -193,7 +196,7 @@ private:
         }
 
         replaceMidi(out);
-        commitLibertyAIGeneratedClip(owner, true);
+        commitLibertyAIGeneratedClip(owner, instrumentTrack);
     }
 
     MainComponent& owner;
