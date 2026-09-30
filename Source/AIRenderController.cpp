@@ -100,7 +100,15 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const int blockSize = juce::jmax(64, owner.audioEngine.getBufferSize() > 0 ? owner.audioEngine.getBufferSize() : 512);
     const double clipDuration = juce::jmax(0.25, owner.midiClipLengthSeconds);
     const double tailSeconds = 2.0;
-    const int totalSamples = juce::jmax(1, (int)std::ceil((clipDuration + tailSeconds) * sampleRate));
+    const double totalSamplesExact = (clipDuration + tailSeconds) * sampleRate;
+    if (!std::isfinite(clipDuration) || !std::isfinite(totalSamplesExact)
+        || totalSamplesExact <= 0.0
+        || totalSamplesExact > (double) std::numeric_limits<int>::max())
+    {
+        resultMessage = "Le clip Instrument est trop long pour etre rendu en memoire.";
+        return false;
+    }
+    const int totalSamples = juce::jmax(1, (int)std::ceil(totalSamplesExact));
 
     // Clear any hanging note/sustain left by realtime playback before rendering.
     silenceInstrumentState(host, instrumentTrack, blockSize);
