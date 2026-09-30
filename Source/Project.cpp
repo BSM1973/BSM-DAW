@@ -676,9 +676,13 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 || rawStartTick > (double) std::numeric_limits<std::int64_t>::max()
                 || rawLengthTicks > (double) std::numeric_limits<std::int64_t>::max())
                 continue;
+            const auto restoredStartTick = (std::int64_t) std::llround(rawStartTick);
+            const auto restoredLengthTicks = (std::int64_t) std::llround(rawLengthTicks);
+            if (restoredStartTick > std::numeric_limits<std::int64_t>::max() - restoredLengthTicks)
+                continue;
             midiEngine.addNote(
-                (std::int64_t) std::llround(rawStartTick),
-                (std::int64_t) std::llround(rawLengthTicks),
+                restoredStartTick,
+                restoredLengthTicks,
                 noteElement->getIntAttribute("pitch", 60),
                 noteElement->getIntAttribute("velocity", 100),
                 noteElement->getIntAttribute("channel", 1));
