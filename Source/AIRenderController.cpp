@@ -8,6 +8,8 @@
 #include <cmath>
 #include <memory>
 
+int getLibertyActiveInstrumentClipLane(MainComponent& owner);
+
 namespace
 {
 juce::File makeRenderFile()
@@ -18,7 +20,7 @@ juce::File makeRenderFile()
     return dir.getNonexistentChildFile("AI Render " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H-%M-%S"), ".wav", false);
 }
 
-void silenceInstrumentState(LibertyPluginHost& host, int blockSize)
+void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int blockSize)
 {
     juce::AudioBuffer<float> discard(2, blockSize);
     discard.clear();
@@ -30,14 +32,14 @@ void silenceInstrumentState(LibertyPluginHost& host, int blockSize)
         panic.addEvent(juce::MidiMessage::controllerEvent(channel, 64, 0), 0); // sustain off
     }
     float* channels[] = { discard.getWritePointer(0), discard.getWritePointer(1) };
-    host.processInstrument(channels, 2, blockSize, panic);
+    host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, panic);
 
     // Drain residual synth/reverb state into a buffer that is never sent to the outputs.
     for (int i = 0; i < 8; ++i)
     {
         discard.clear();
         juce::MidiBuffer empty;
-        host.processInstrument(channels, 2, blockSize, empty);
+        host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, empty);
     }
 }
 }
@@ -45,7 +47,13 @@ void silenceInstrumentState(LibertyPluginHost& host, int blockSize)
 bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& resultMessage)
 {
     auto& host = LibertyPluginHost::instance();
-    if (!host.hasInstrument())
+    const int instrumentTrack = getLibertyActiveInstrumentClipLane(owner);
+    if (instrumentTrack < 0)
+    {
+        resultMessage = "Selectionne d'abord un clip Instrument actif a rendre.";
+        return false;
+    }
+    if (!host.hasInstrumentForTrack(instrumentTrack))
     {
         resultMessage = "Charge d'abord un instrument AU/VST3 sur la piste Instrument.";
         return false;
@@ -78,7 +86,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const int totalSamples = juce::jmax(1, (int)std::ceil((clipDuration + tailSeconds) * sampleRate));
 
     // Clear any hanging note/sustain left by realtime playback before rendering.
-    silenceInstrumentState(host, blockSize);
+    silenceInstrumentState(host, instrumentTrack, blockSize);
 
     juce::AudioBuffer<float> rendered(2, totalSamples);
     rendered.clear();
@@ -113,9 +121,9 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             }
 
         float* channels[] = { block.getWritePointer(0), block.getWritePointer(1) };
-        if (!host.processInstrument(channels, 2, num, midi))
+        if (!host.processInstrumentForTrack(instrumentTrack, channels, 2, num, midi))
         {
-            silenceInstrumentState(host, blockSize);
+            silenceInstrumentState(host, instrumentTrack, blockSize);
             resultMessage = "L'instrument charge n'a pas pu etre rendu.";
             return false;
         }
@@ -147,7 +155,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
     if (stream == nullptr)
     {
-        silenceInstrumentState(host, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize);
         resultMessage = "Impossible de creer le fichier AI Render.";
         return false;
     }
@@ -155,21 +163,21 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(stream.get(), sampleRate, 2, 24, {}, 0));
     if (writer == nullptr)
     {
-        silenceInstrumentState(host, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize);
         resultMessage = "Impossible de creer le writer WAV.";
         return false;
     }
     stream.release();
     if (!writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples()))
     {
-        silenceInstrumentState(host, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize);
         resultMessage = "Echec de l'ecriture du rendu audio.";
         return false;
     }
     writer.reset();
 
     // Critical anti-feedback step: terminate every synth voice after offline render.
-    silenceInstrumentState(host, blockSize);
+    silenceInstrumentState(host, instrumentTrack, blockSize);
 
     juce::String error;
     if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, file, error))
@@ -184,7 +192,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
 
     // The source Instrument is automatically muted after bounce so pressing Play
     // cannot double the live synth with its rendered copy. The MIDI clip is retained.
-    owner.audioEngine.setInstrumentTrackMuted(true);
+    owner.audioEngine.setInstrumentTrackMuted(instrumentTrack, true);
     owner.selectedTrack = targetTrack;
     owner.repaint();
 
