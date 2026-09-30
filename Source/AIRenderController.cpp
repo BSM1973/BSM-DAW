@@ -209,9 +209,11 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     }
 
     owner.audioEngine.setTrackStartSeconds(targetTrack, juce::jmax(0.0, owner.midiClipStartSeconds));
-    // A reusable empty Audio lane may still carry an old Mute state. The freshly
-    // rendered bounce must be audible immediately; preserve Solo because it is
-    // part of the user's current mix selection.
+    // A reusable empty Audio lane may still carry old mix settings. The rendered
+    // WAV already contains the Instrument gain/pan, so replay it at unity/centre
+    // and unmuted. Preserve Solo because it is part of the user's mix selection.
+    owner.audioEngine.setTrackGain(targetTrack, 1.0f);
+    owner.audioEngine.setTrackPan(targetTrack, 0.0f);
     owner.audioEngine.setTrackMuted(targetTrack, false);
     owner.trackSourceFiles[(size_t)targetTrack] = file;
     owner.rebuildWaveformCache(targetTrack);
