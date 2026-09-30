@@ -80,6 +80,8 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     owner.audioEngine.setPlaying(false);
     owner.isPlaying = false;
 
+    const float instrumentGain = owner.audioEngine.getInstrumentTrackGain(instrumentTrack);
+    const float instrumentPan = owner.audioEngine.getInstrumentTrackPan(instrumentTrack);
     const double sampleRate = owner.audioEngine.getSampleRate() > 0.0 ? owner.audioEngine.getSampleRate() : 48000.0;
     const int blockSize = juce::jmax(64, owner.audioEngine.getBufferSize() > 0 ? owner.audioEngine.getBufferSize() : 512);
     const double clipDuration = juce::jmax(0.25, owner.midiClipLengthSeconds);
@@ -122,7 +124,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             }
 
         float* channels[] = { block.getWritePointer(0), block.getWritePointer(1) };
-        if (!host.processInstrumentForTrack(instrumentTrack, channels, 2, num, midi))
+        if (!host.processInstrumentForTrack(instrumentTrack, channels, 2, num, midi, instrumentGain, instrumentPan))
         {
             silenceInstrumentState(host, instrumentTrack, blockSize);
             resultMessage = "L'instrument charge n'a pas pu etre rendu.";
