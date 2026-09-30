@@ -21,7 +21,7 @@ juce::File makeRenderFile()
     return dir.getNonexistentChildFile("AI Render " + juce::Time::getCurrentTime().formatted("%Y-%m-%d %H-%M-%S"), ".wav", false);
 }
 
-void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int blockSize)
+void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int blockSize, bool offline = false)
 {
     juce::AudioBuffer<float> discard(2, blockSize);
     discard.clear();
@@ -132,14 +132,14 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const std::int64_t clipEndSample = (std::int64_t)std::llround(clipEndSamplesExact);
 
     // Clear any hanging note/sustain left by realtime playback before rendering.
-    silenceInstrumentState(host, instrumentTrack, blockSize);
+    silenceInstrumentState(host, instrumentTrack, blockSize, true);
 
     auto tempFile = makeRenderFile().getSiblingFile("AI Render Temp " + juce::Uuid().toString() + ".wav");
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::FileOutputStream> tempStream(tempFile.createOutputStream());
     if (tempStream == nullptr)
     {
-        silenceInstrumentState(host, instrumentTrack, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
         resultMessage = "Impossible de creer le fichier temporaire AI Render.";
         return false;
@@ -147,7 +147,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::AudioFormatWriter> tempWriter(wav.createWriterFor(tempStream.get(), sampleRate, 2, 32, {}, 0));
     if (tempWriter == nullptr)
     {
-        silenceInstrumentState(host, instrumentTrack, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
         resultMessage = "Impossible de creer le writer temporaire AI Render.";
         return false;
@@ -202,7 +202,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         if (!host.processOfflineInstrument(instrumentTrack, channels, 2, num, midi, instrumentGain, instrumentPan))
         {
             tempWriter.reset();
-            silenceInstrumentState(host, instrumentTrack, blockSize);
+            silenceInstrumentState(host, instrumentTrack, blockSize, true);
             tempFile.deleteFile();
             resultMessage = "L'instrument charge n'a pas pu etre rendu.";
             return false;
@@ -230,7 +230,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         if (!tempWriter->writeFromAudioSampleBuffer(block, 0, num))
         {
             tempWriter.reset();
-            silenceInstrumentState(host, instrumentTrack, blockSize);
+            silenceInstrumentState(host, instrumentTrack, blockSize, true);
             tempFile.deleteFile();
             resultMessage = "Echec de l'ecriture du rendu audio temporaire.";
             return false;
@@ -250,7 +250,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::AudioFormatReader> tempReader(formats.createReaderFor(tempFile));
     if (tempReader == nullptr)
     {
-        silenceInstrumentState(host, instrumentTrack, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
         resultMessage = "Impossible de relire le rendu audio temporaire.";
         return false;
@@ -261,7 +261,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     if (stream == nullptr)
     {
         tempReader.reset();
-        silenceInstrumentState(host, instrumentTrack, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize, true);
         file.deleteFile();
         tempFile.deleteFile();
         resultMessage = "Impossible de creer le fichier AI Render.";
@@ -272,7 +272,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     if (writer == nullptr)
     {
         tempReader.reset();
-        silenceInstrumentState(host, instrumentTrack, blockSize);
+        silenceInstrumentState(host, instrumentTrack, blockSize, true);
         file.deleteFile();
         tempFile.deleteFile();
         resultMessage = "Impossible de creer le writer WAV.";
@@ -289,7 +289,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         {
             writer.reset();
             tempReader.reset();
-            silenceInstrumentState(host, instrumentTrack, blockSize);
+            silenceInstrumentState(host, instrumentTrack, blockSize, true);
             file.deleteFile();
             tempFile.deleteFile();
             resultMessage = "Echec de la relecture du rendu audio temporaire.";
@@ -301,7 +301,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         {
             writer.reset();
             tempReader.reset();
-            silenceInstrumentState(host, instrumentTrack, blockSize);
+            silenceInstrumentState(host, instrumentTrack, blockSize, true);
             file.deleteFile();
             tempFile.deleteFile();
             resultMessage = "Echec de l'ecriture du rendu audio.";
@@ -314,7 +314,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     tempFile.deleteFile();
 
     // Critical anti-feedback step: terminate every synth voice after offline render.
-    silenceInstrumentState(host, instrumentTrack, blockSize);
+    silenceInstrumentState(host, instrumentTrack, blockSize, true);
 
     juce::String error;
     if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, file, error))
