@@ -173,6 +173,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     if (stream == nullptr)
     {
         silenceInstrumentState(host, instrumentTrack, blockSize);
+        file.deleteFile();
         resultMessage = "Impossible de creer le fichier AI Render.";
         return false;
     }
