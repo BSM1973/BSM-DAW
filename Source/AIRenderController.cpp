@@ -42,6 +42,14 @@ void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int bl
         juce::MidiBuffer empty;
         host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, empty);
     }
+
+    // Offline bounce also advances every external Instrument insert. Clear only
+    // their DSP history; plugin parameters, slot assignments and One Knob amount
+    // remain untouched for the next realtime playback.
+    host.resetInstrumentEffectState(instrumentTrack);
+    auto& oneKnob = LibertyOneKnobManager::instance();
+    for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+        oneKnob.resetEffectState(100000 + instrumentTrack * 8 + slot);
 }
 }
 
