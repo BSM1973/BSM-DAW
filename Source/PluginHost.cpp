@@ -626,7 +626,9 @@ void LibertyPluginHost::endAudioTrackBlock(int trackIndex,
 bool LibertyPluginHost::processInstrument(float* const* d,int ch,int n,juce::MidiBuffer& midi){return processInstrumentForTrack(0,d,ch,n,midi);}
 bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChannelData,int numOutputChannels,int numSamples,juce::MidiBuffer& midi,float gain,float pan)
 {
-    if(numSamples<=0||numOutputChannels<=0||t<0)return false;if(!lock.tryEnter())return false;
+    if(numSamples<=0||numOutputChannels<=0||t<0)return false;
+    if(offlineInstrumentTrack.load(std::memory_order_acquire)==t)return true;
+    if(!lock.tryEnter())return false;
     if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor){lock.exit();return false;}
     auto& instrument=*instruments[(size_t)t];const int channels=juce::jlimit(1,2,numOutputChannels);
     instrument.work.setSize(juce::jmax(2,channels),numSamples,false,false,true);instrument.work.clear();
@@ -635,6 +637,38 @@ bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChan
     const float leftGain=gain*(pan>0.f?1.f-pan:1.f),rightGain=gain*(pan<0.f?1.f+pan:1.f);
     for(int c=0;c<channels;++c)if(outputChannelData[c])juce::FloatVectorOperations::addWithMultiply(outputChannelData[c],instrument.work.getReadPointer(c),c==0?leftGain:rightGain,numSamples);
     lock.exit();return true;
+}
+
+bool LibertyPluginHost::beginOfflineInstrumentRender(int t)
+{
+    if(t<0)return false;
+    int expected=-1;
+    if(!offlineInstrumentTrack.compare_exchange_strong(expected,t,std::memory_order_acq_rel))return false;
+    const juce::ScopedLock scoped(lock);
+    if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)
+    {
+        offlineInstrumentTrack.store(-1,std::memory_order_release);
+        return false;
+    }
+    return true;
+}
+bool LibertyPluginHost::processOfflineInstrument(int t,float* const* outputChannelData,int numOutputChannels,int numSamples,juce::MidiBuffer& midi,float gain,float pan)
+{
+    if(t<0||offlineInstrumentTrack.load(std::memory_order_acquire)!=t||numSamples<=0||numOutputChannels<=0)return false;
+    const juce::ScopedLock scoped(lock);
+    if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor)return false;
+    auto& instrument=*instruments[(size_t)t];const int channels=juce::jlimit(1,2,numOutputChannels);
+    instrument.work.setSize(juce::jmax(2,channels),numSamples,false,false,true);instrument.work.clear();
+    instrument.processor->processBlock(instrument.work,midi);
+    gain=juce::jlimit(0.f,2.f,gain);pan=juce::jlimit(-1.f,1.f,pan);
+    const float leftGain=gain*(pan>0.f?1.f-pan:1.f),rightGain=gain*(pan<0.f?1.f+pan:1.f);
+    for(int c=0;c<channels;++c)if(outputChannelData[c])juce::FloatVectorOperations::addWithMultiply(outputChannelData[c],instrument.work.getReadPointer(c),c==0?leftGain:rightGain,numSamples);
+    return true;
+}
+void LibertyPluginHost::endOfflineInstrumentRender(int t)
+{
+    if(offlineInstrumentTrack.load(std::memory_order_acquire)==t)
+        offlineInstrumentTrack.store(-1,std::memory_order_release);
 }
 
 bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>& destination, int n, juce::MidiBuffer& midi, float gain, float pan)
