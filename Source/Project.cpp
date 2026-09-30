@@ -664,8 +664,10 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         }
         if (!media.tempFile.moveFileTo(media.finalFile))
         {
-            if (media.hadOriginal && media.backupFile.existsAsFile())
-                media.backupFile.moveFileTo(media.finalFile);
+            // The original may already have been moved to .backup even though
+            // the new media was not committed. Let the central rollback restore it
+            // and report any restoration failure consistently.
+            media.committed = media.hadOriginal;
             const bool rollbackComplete = rollbackMedia();
             tempFile.deleteFile();
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
