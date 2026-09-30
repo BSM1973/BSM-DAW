@@ -82,9 +82,9 @@ public:
 
     // Offline render is exclusive: the realtime audio callback is prevented from
     // driving the same instrument instance while AI Render owns it.
-    bool beginOfflineInstrumentRender();
-    bool processOfflineInstrument(float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi);
-    void endOfflineInstrumentRender();
+    bool beginOfflineInstrumentRender(int instrumentTrack);
+    bool processOfflineInstrument(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
+    void endOfflineInstrumentRender(int instrumentTrack);
 
     void showEditorForTrack(int trackIndex);
     void showEditorForTrackSlot(int trackIndex, int slotIndex);
@@ -132,7 +132,7 @@ private:
     int currentBlockSize = 512;
     mutable juce::CriticalSection lock;
     std::atomic<bool> shutdownCompleted { false };
-    std::atomic<bool> offlineInstrumentRender { false };
+    std::atomic<int> offlineInstrumentTrack { -1 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibertyPluginHost)
 };
