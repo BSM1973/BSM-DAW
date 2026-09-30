@@ -10,6 +10,7 @@ void setLibertyTrackName(int track, const juce::String& name);
 void resetLibertyTrackNames();
 void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
 void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
+void resetLibertyMultiMidiProject(MainComponent&);
 void refreshLibertyMixConsole(MainComponent*);
 void prepareLibertyAudioRecordingForProjectReset(MainComponent*);
 
@@ -299,6 +300,7 @@ void MainComponent::showProjectMenu()
 void MainComponent::resetProjectState()
 {
     prepareLibertyAudioRecordingForProjectReset(this);
+    resetLibertyMultiMidiProject(*this);
     audioEngine.setPlaying(false);
     audioEngine.resetTransport();
     audioEngine.setProjectExtraLengthSeconds(0.0);
