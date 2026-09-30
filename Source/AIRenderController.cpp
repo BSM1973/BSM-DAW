@@ -120,11 +120,17 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const double clipDuration = juce::jmax(0.25, owner.midiClipLengthSeconds);
     const double tailSeconds = 2.0;
     const double totalSamplesExact = (clipDuration + tailSeconds) * sampleRate;
+    constexpr std::int64_t maxRiffBytes = 0xffffffffLL;
+    constexpr std::int64_t finalBytesPerFrame = 2 * 3; // stereo, 24-bit PCM
+    constexpr std::int64_t wavHeaderReserve = 4096;
+    const std::int64_t maxFinalWavSamples = (maxRiffBytes - wavHeaderReserve) / finalBytesPerFrame;
+    const std::int64_t maxLoadableSamples = juce::jmin<std::int64_t>(
+        std::numeric_limits<int>::max(), maxFinalWavSamples);
     if (!std::isfinite(clipDuration) || !std::isfinite(totalSamplesExact)
         || totalSamplesExact <= 0.0
-        || totalSamplesExact > (double) std::numeric_limits<std::int64_t>::max())
+        || totalSamplesExact > (double) maxLoadableSamples)
     {
-        resultMessage = "Le clip Instrument est trop long pour etre rendu.";
+        resultMessage = "Le clip Instrument est trop long pour etre rendu et charge en piste Audio.";
         return false;
     }
     const std::int64_t totalSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::ceil(totalSamplesExact));
