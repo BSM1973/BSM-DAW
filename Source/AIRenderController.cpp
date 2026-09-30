@@ -33,14 +33,20 @@ void silenceInstrumentState(LibertyPluginHost& host, int instrumentTrack, int bl
         panic.addEvent(juce::MidiMessage::controllerEvent(channel, 64, 0), 0); // sustain off
     }
     float* channels[] = { discard.getWritePointer(0), discard.getWritePointer(1) };
-    host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, panic);
+    if (offline)
+        host.processOfflineInstrument(instrumentTrack, channels, 2, blockSize, panic);
+    else
+        host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, panic);
 
     // Drain residual synth/reverb state into a buffer that is never sent to the outputs.
     for (int i = 0; i < 8; ++i)
     {
         discard.clear();
         juce::MidiBuffer empty;
-        host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, empty);
+        if (offline)
+            host.processOfflineInstrument(instrumentTrack, channels, 2, blockSize, empty);
+        else
+            host.processInstrumentForTrack(instrumentTrack, channels, 2, blockSize, empty);
     }
 
     // Offline bounce also advances every external Instrument insert. Clear only
