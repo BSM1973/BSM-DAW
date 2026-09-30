@@ -630,9 +630,15 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             bool restored = true;
             if (it->committed)
             {
-                it->finalFile.deleteFile();
-                if (it->hadOriginal && it->backupFile.existsAsFile())
+                const bool finalRemoved = !it->finalFile.existsAsFile() || it->finalFile.deleteFile();
+                if (!finalRemoved)
+                {
+                    restored = false;
+                }
+                else if (it->hadOriginal && it->backupFile.existsAsFile())
+                {
                     restored = it->backupFile.moveFileTo(it->finalFile);
+                }
             }
             it->tempFile.deleteFile();
 
