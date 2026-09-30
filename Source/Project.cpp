@@ -652,11 +652,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         media.backupFile.deleteFile();
         if (media.hadOriginal && !media.finalFile.moveFileTo(media.backupFile))
         {
-            rollbackMedia();
+            const bool rollbackComplete = rollbackMedia();
             tempFile.deleteFile();
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Liberty - Project Save",
-                                                   "Could not protect the previous project audio. The project was not saved.",
+                                                   rollbackComplete
+                                                       ? "Could not protect the previous project audio. The project was not saved."
+                                                       : "Project audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
                                                    "OK");
             return false;
         }
@@ -664,11 +666,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         {
             if (media.hadOriginal && media.backupFile.existsAsFile())
                 media.backupFile.moveFileTo(media.finalFile);
-            rollbackMedia();
+            const bool rollbackComplete = rollbackMedia();
             tempFile.deleteFile();
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Liberty - Project Save",
-                                                   "Could not commit the project audio. The previous project was left unchanged.",
+                                                   rollbackComplete
+                                                       ? "Could not commit the project audio. The previous project was left unchanged."
+                                                       : "Project audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
                                                    "OK");
             return false;
         }
@@ -677,11 +681,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     if (!tempFile.replaceFileIn(file))
     {
-        rollbackMedia();
+        const bool rollbackComplete = rollbackMedia();
         tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
-                                               "Could not replace the existing project file. The previous project was left unchanged.",
+                                               rollbackComplete
+                                                   ? "Could not replace the existing project file. The previous project was left unchanged."
+                                                   : "Project file replacement failed and audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
                                                "OK");
         return false;
     }
