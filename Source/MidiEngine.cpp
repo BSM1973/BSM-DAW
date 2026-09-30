@@ -82,7 +82,8 @@ void MidiEngine::clear()
 
 bool MidiEngine::addNote(std::int64_t startTick, std::int64_t lengthTicks, int pitch, int velocity, int channel)
 {
-    if (startTick < 0 || lengthTicks <= 0 || pitch < minMidiNote || pitch > maxMidiNote || velocity < 1 || velocity > 127 || channel < 1 || channel > 16) return false;
+    std::int64_t noteEnd = 0;
+    if (startTick < 0 || lengthTicks <= 0 || !checkedAdd(startTick, lengthTicks, noteEnd) || pitch < minMidiNote || pitch > maxMidiNote || velocity < 1 || velocity > 127 || channel < 1 || channel > 16) return false;
     NoteEvent note;
     note.startTick = startTick; note.lengthTicks = lengthTicks; note.pitch = static_cast<std::uint8_t>(pitch); note.velocity = static_cast<std::uint8_t>(velocity); note.channel = static_cast<std::uint8_t>(channel);
     const auto duplicate = std::find_if(notes.begin(), notes.end(), [note](const NoteEvent& existing)
@@ -282,6 +283,8 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel, 
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return note.startTick == oldStartTick && note.pitch == static_cast<std::uint8_t>(oldPitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (it == notes.end()) return false;
+    std::int64_t movedEnd = 0;
+    if (!checkedAdd(newStartTick, it->lengthTicks, movedEnd)) return false;
     const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return &note != &(*it) && note.startTick == newStartTick && note.pitch == static_cast<std::uint8_t>(newPitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (duplicate != notes.end()) return false;
@@ -297,7 +300,8 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel, 
 
 bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel, std::int64_t newLengthTicks)
 {
-    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote || channel < 1 || channel > 16 || newLengthTicks <= 0) return false;
+    std::int64_t resizedEnd = 0;
+    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote || channel < 1 || channel > 16 || newLengthTicks <= 0 || !checkedAdd(startTick, newLengthTicks, resizedEnd)) return false;
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return note.startTick == startTick && note.pitch == static_cast<std::uint8_t>(pitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (it == notes.end() || it->lengthTicks == newLengthTicks) return false;
