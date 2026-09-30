@@ -121,11 +121,14 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const double tailSeconds = 2.0;
     const double totalSamplesExact = (clipDuration + tailSeconds) * sampleRate;
     constexpr std::int64_t maxRiffBytes = 0xffffffffLL;
+    constexpr std::int64_t tempBytesPerFrame = 2 * 4;  // stereo, 32-bit float
     constexpr std::int64_t finalBytesPerFrame = 2 * 3; // stereo, 24-bit PCM
     constexpr std::int64_t wavHeaderReserve = 4096;
+    const std::int64_t maxTempWavSamples = (maxRiffBytes - wavHeaderReserve) / tempBytesPerFrame;
     const std::int64_t maxFinalWavSamples = (maxRiffBytes - wavHeaderReserve) / finalBytesPerFrame;
     const std::int64_t maxLoadableSamples = juce::jmin<std::int64_t>(
-        std::numeric_limits<int>::max(), maxFinalWavSamples);
+        std::numeric_limits<int>::max(),
+        juce::jmin(maxTempWavSamples, maxFinalWavSamples));
     if (!std::isfinite(clipDuration) || !std::isfinite(totalSamplesExact)
         || totalSamplesExact <= 0.0
         || totalSamplesExact > (double) maxLoadableSamples)
