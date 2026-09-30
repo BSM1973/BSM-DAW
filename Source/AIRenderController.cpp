@@ -113,9 +113,27 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     // Clear any hanging note/sustain left by realtime playback before rendering.
     silenceInstrumentState(host, instrumentTrack, blockSize);
 
-    juce::AudioBuffer<float> rendered(2, totalSamples);
-    rendered.clear();
+    auto tempFile = makeRenderFile().getSiblingFile("AI Render Temp " + juce::Uuid().toString() + ".wav");
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::FileOutputStream> tempStream(tempFile.createOutputStream());
+    if (tempStream == nullptr)
+    {
+        silenceInstrumentState(host, instrumentTrack, blockSize);
+        tempFile.deleteFile();
+        resultMessage = "Impossible de creer le fichier temporaire AI Render.";
+        return false;
+    }
+    std::unique_ptr<juce::AudioFormatWriter> tempWriter(wav.createWriterFor(tempStream.get(), sampleRate, 2, 32, {}, 0));
+    if (tempWriter == nullptr)
+    {
+        silenceInstrumentState(host, instrumentTrack, blockSize);
+        tempFile.deleteFile();
+        resultMessage = "Impossible de creer le writer temporaire AI Render.";
+        return false;
+    }
+    tempStream.release();
 
+    float peak = 0.0f;
     int writePos = 0;
     while (writePos < totalSamples)
     {
@@ -175,22 +193,38 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
                 if (!std::isfinite(data[s])) data[s] = 0.0f;
         }
 
-        rendered.copyFrom(0, writePos, block, 0, 0, num);
-        rendered.copyFrom(1, writePos, block, 1, 0, num);
+        for (int ch = 0; ch < block.getNumChannels(); ++ch)
+            peak = juce::jmax(peak, block.getMagnitude(ch, 0, num));
+        if (!tempWriter->writeFromAudioSampleBuffer(block, 0, num))
+        {
+            tempWriter.reset();
+            silenceInstrumentState(host, instrumentTrack, blockSize);
+            tempFile.deleteFile();
+            resultMessage = "Echec de l'ecriture du rendu audio temporaire.";
+            return false;
+        }
         writePos += num;
     }
+    tempWriter.reset();
 
-    // Safety ceiling: a synth/plugin that runs away during offline rendering must
-    // never create a full-scale feedback-like WAV. Preserve dynamics, attenuate only.
-    float peak = 0.0f;
-    for (int ch = 0; ch < rendered.getNumChannels(); ++ch)
-        peak = juce::jmax(peak, rendered.getMagnitude(ch, 0, rendered.getNumSamples()));
+    // Safety ceiling: preserve dynamics and attenuate only if the complete render
+    // exceeded -1 dBFS. The first pass stayed on disk, so long bounces do not need
+    // a full stereo buffer in RAM.
     constexpr float safePeak = 0.8912509f; // -1 dBFS
-    if (peak > safePeak && std::isfinite(peak))
-        rendered.applyGain(safePeak / peak);
+    const float renderGain = peak > safePeak && std::isfinite(peak) ? safePeak / peak : 1.0f;
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> tempReader(formats.createReaderFor(tempFile));
+    if (tempReader == nullptr)
+    {
+        silenceInstrumentState(host, instrumentTrack, blockSize);
+        tempFile.deleteFile();
+        resultMessage = "Impossible de relire le rendu audio temporaire.";
+        return false;
+    }
 
     auto file = makeRenderFile();
-    juce::WavAudioFormat wav;
     std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
     if (stream == nullptr)
     {
@@ -209,15 +243,39 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         return false;
     }
     stream.release();
-    if (!writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples()))
+    juce::AudioBuffer<float> finalBlock(2, blockSize);
+    std::int64_t readPos = 0;
+    while (readPos < tempReader->lengthInSamples)
     {
-        writer.reset();
-        silenceInstrumentState(host, instrumentTrack, blockSize);
-        file.deleteFile();
-        resultMessage = "Echec de l'ecriture du rendu audio.";
-        return false;
+        const int num = (int)juce::jmin<std::int64_t>(blockSize, tempReader->lengthInSamples - readPos);
+        finalBlock.clear();
+        if (!tempReader->read(&finalBlock, 0, num, readPos, true, true))
+        {
+            writer.reset();
+            tempReader.reset();
+            silenceInstrumentState(host, instrumentTrack, blockSize);
+            file.deleteFile();
+            tempFile.deleteFile();
+            resultMessage = "Echec de la relecture du rendu audio temporaire.";
+            return false;
+        }
+        if (renderGain < 1.0f)
+            finalBlock.applyGain(0, num, renderGain);
+        if (!writer->writeFromAudioSampleBuffer(finalBlock, 0, num))
+        {
+            writer.reset();
+            tempReader.reset();
+            silenceInstrumentState(host, instrumentTrack, blockSize);
+            file.deleteFile();
+            tempFile.deleteFile();
+            resultMessage = "Echec de l'ecriture du rendu audio.";
+            return false;
+        }
+        readPos += num;
     }
     writer.reset();
+    tempReader.reset();
+    tempFile.deleteFile();
 
     // Critical anti-feedback step: terminate every synth voice after offline render.
     silenceInstrumentState(host, instrumentTrack, blockSize);
