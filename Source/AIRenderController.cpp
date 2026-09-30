@@ -171,7 +171,9 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         float* channels[] = { block.getWritePointer(0), block.getWritePointer(1) };
         if (!host.processInstrumentForTrack(instrumentTrack, channels, 2, num, midi, instrumentGain, instrumentPan))
         {
+            tempWriter.reset();
             silenceInstrumentState(host, instrumentTrack, blockSize);
+            tempFile.deleteFile();
             resultMessage = "L'instrument charge n'a pas pu etre rendu.";
             return false;
         }
@@ -228,8 +230,10 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
     if (stream == nullptr)
     {
+        tempReader.reset();
         silenceInstrumentState(host, instrumentTrack, blockSize);
         file.deleteFile();
+        tempFile.deleteFile();
         resultMessage = "Impossible de creer le fichier AI Render.";
         return false;
     }
@@ -237,8 +241,10 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(stream.get(), sampleRate, 2, 24, {}, 0));
     if (writer == nullptr)
     {
+        tempReader.reset();
         silenceInstrumentState(host, instrumentTrack, blockSize);
         file.deleteFile();
+        tempFile.deleteFile();
         resultMessage = "Impossible de creer le writer WAV.";
         return false;
     }
