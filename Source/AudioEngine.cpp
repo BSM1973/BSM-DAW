@@ -181,6 +181,33 @@ int AudioEngine::getAudioTrackCount() const noexcept
     return (int) tracks.size();
 }
 
+void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
+{
+    const int safeCount = juce::jmax(1, trackCount);
+    {
+        const juce::ScopedLock lock(stateLock);
+        if ((int) instrumentPlayback.size() >= safeCount)
+            return;
+    }
+
+    const bool wasInitialised = initialised.load();
+    const bool wasPlaying = playing.load();
+    playing.store(false);
+    if (wasInitialised)
+        deviceManager.removeAudioCallback(this);
+
+    {
+        const juce::ScopedLock lock(stateLock);
+        instrumentPlayback.reserve((size_t) safeCount);
+        while ((int) instrumentPlayback.size() < safeCount)
+            instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
+    }
+
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
+    playing.store(wasPlaying);
+}
+
 void AudioEngine::resetInstrumentPlayback(int trackCount)
 {
     const int safeCount = juce::jmax(1, trackCount);
