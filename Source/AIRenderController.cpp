@@ -104,7 +104,14 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     {
         LibertyPluginHost& host;
         int track;
-        ~OfflineRenderGuard() { host.endOfflineInstrumentRender(track); }
+        bool active = true;
+        void release()
+        {
+            if (!active) return;
+            host.endOfflineInstrumentRender(track);
+            active = false;
+        }
+        ~OfflineRenderGuard() { release(); }
     } offlineGuard { host, instrumentTrack };
 
     const float instrumentGain = owner.audioEngine.getInstrumentTrackGain(instrumentTrack);
@@ -313,8 +320,10 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     tempReader.reset();
     tempFile.deleteFile();
 
-    // Critical anti-feedback step: terminate every synth voice after offline render.
+    // Critical anti-feedback step: terminate every synth voice before realtime
+    // processing is allowed to own this Instrument again.
     silenceInstrumentState(host, instrumentTrack, blockSize, true);
+    offlineGuard.release();
 
     juce::String error;
     if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, file, error))
