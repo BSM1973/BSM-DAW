@@ -673,7 +673,9 @@ void LibertyPluginHost::endOfflineInstrumentRender(int t)
 
 bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>& destination, int n, juce::MidiBuffer& midi, float gain, float pan)
 {
-    if (n <= 0 || t < 0 || !lock.tryEnter()) return false;
+    if (n <= 0 || t < 0) return false;
+    if (offlineInstrumentTrack.load(std::memory_order_acquire) == t) return false;
+    if (!lock.tryEnter()) return false;
     if (t >= (int) instruments.size() || !instruments[(size_t)t] || !instruments[(size_t)t]->processor) { lock.exit(); return false; }
     auto& instrument = *instruments[(size_t)t];
     destination.setSize(2, n, false, false, true);
