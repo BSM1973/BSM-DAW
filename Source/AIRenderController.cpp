@@ -84,13 +84,19 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         return false;
     }
 
+    const double sampleRate = owner.audioEngine.getSampleRate();
+    if (sampleRate <= 0.0)
+    {
+        resultMessage = "Aucun peripherique audio disponible pour le rendu AI.";
+        return false;
+    }
+
     // Render must never share live monitoring/playback with the generated audio.
     owner.audioEngine.setPlaying(false);
     owner.isPlaying = false;
 
     const float instrumentGain = owner.audioEngine.getInstrumentTrackGain(instrumentTrack);
     const float instrumentPan = owner.audioEngine.getInstrumentTrackPan(instrumentTrack);
-    const double sampleRate = owner.audioEngine.getSampleRate() > 0.0 ? owner.audioEngine.getSampleRate() : 48000.0;
     const int blockSize = juce::jmax(64, owner.audioEngine.getBufferSize() > 0 ? owner.audioEngine.getBufferSize() : 512);
     const double clipDuration = juce::jmax(0.25, owner.midiClipLengthSeconds);
     const double tailSeconds = 2.0;
