@@ -35,7 +35,10 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
         return false;
 
     exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
-    auto output = exportedFile.createOutputStream();
+    const auto tempFile = exportedFile.getSiblingFile(exportedFile.getFileName() + ".saving");
+    tempFile.deleteFile();
+
+    auto output = tempFile.createOutputStream();
     if (output == nullptr)
         return false;
 
@@ -43,9 +46,25 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
     auto writer = std::unique_ptr<juce::AudioFormatWriter>(
         wav.createWriterFor(output.release(), sampleRate, (unsigned int)buffer->getNumChannels(), 24, {}, 0));
     if (writer == nullptr)
+    {
+        tempFile.deleteFile();
         return false;
+    }
 
-    return writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples());
+    if (!writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples()))
+    {
+        writer.reset();
+        tempFile.deleteFile();
+        return false;
+    }
+    writer.reset();
+
+    if (!tempFile.replaceFileIn(exportedFile))
+    {
+        tempFile.deleteFile();
+        return false;
+    }
+    return true;
 }
 }
 
@@ -474,8 +493,16 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         if (audioEngine.hasAudioFile(i) && buffer != nullptr)
         {
             juce::File exportedFile;
-            if (exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
-                sourceFile = exportedFile;
+            if (!exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Liberty - Project Save",
+                                                       "Could not safely export Audio " + juce::String(i + 1)
+                                                           + " to the project media folder. The project was not saved.",
+                                                       "OK");
+                return false;
+            }
+            sourceFile = exportedFile;
         }
 
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
