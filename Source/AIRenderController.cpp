@@ -181,13 +181,16 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     if (writer == nullptr)
     {
         silenceInstrumentState(host, instrumentTrack, blockSize);
+        file.deleteFile();
         resultMessage = "Impossible de creer le writer WAV.";
         return false;
     }
     stream.release();
     if (!writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples()))
     {
+        writer.reset();
         silenceInstrumentState(host, instrumentTrack, blockSize);
+        file.deleteFile();
         resultMessage = "Echec de l'ecriture du rendu audio.";
         return false;
     }
@@ -199,6 +202,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     juce::String error;
     if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, file, error))
     {
+        file.deleteFile();
         resultMessage = error.isNotEmpty() ? error : "Le rendu WAV n'a pas pu etre charge dans ARRANGE.";
         return false;
     }
