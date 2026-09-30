@@ -11,6 +11,7 @@
 #include <vector>
 
 bool commitLibertyAIGeneratedClip(MainComponent& owner, bool instrumentTrack);
+bool isLibertyActiveMidiClipInstrument(MainComponent& owner);
 
 namespace
 {
@@ -87,12 +88,12 @@ private:
         return out;
     }
 
-    bool commitAt(const std::vector<MidiEngine::NoteEvent>& n,double start,const juce::String& label)
+    bool commitAt(const std::vector<MidiEngine::NoteEvent>& n,double start,const juce::String& label,bool instrumentTrack)
     {
         owner.midiEngine.clear();
         for(const auto& x:n) owner.midiEngine.addNote(x.startTick,x.lengthTicks,x.pitch,x.velocity,x.channel);
         owner.midiClipStartSeconds=start; owner.midiClipLengthUserDefined=false; owner.updateMidiClipTiming();
-        const bool ok=commitLibertyAIGeneratedClip(owner,true);
+        const bool ok=commitLibertyAIGeneratedClip(owner,instrumentTrack);
         if(ok) status.setText(label+" created",juce::dontSendNotification);
         return ok;
     }
@@ -100,13 +101,15 @@ private:
     void makeSection(const juce::String& name,int bars,float energy,int transpose)
     {
         const auto src=source(); if(src.empty()){status.setText("No active musical idea.",juce::dontSendNotification);return;}
+        const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const auto out=adapt(src,bars,energy,transpose,(unsigned)juce::Time::getMillisecondCounter());
-        commitAt(out,owner.midiClipStartSeconds+owner.midiClipLengthSeconds,name);
+        commitAt(out,owner.midiClipStartSeconds+owner.midiClipLengthSeconds,name,instrumentTrack);
     }
 
     void buildSong(bool compact)
     {
         const auto original=source(); if(original.empty()){status.setText("No active Instrument/MIDI idea to arrange.",juce::dontSendNotification);return;}
+        const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const double base=owner.midiClipStartSeconds;
         const double secondsPerBar=(60.0/juce::jmax(1.0,owner.tempoBpm))*4.0*(4.0/(double)juce::jmax(1,owner.timeSignatureDenominator))*owner.timeSignatureNumerator/4.0;
         const std::vector<Section> plan = compact
@@ -116,7 +119,7 @@ private:
         for(size_t i=0;i<plan.size();++i)
         {
             const auto& s=plan[i]; auto out=adapt(original,s.bars,s.energy,s.transpose,seed+(unsigned)i*1777u);
-            if(commitAt(out,cursor,s.name)) ++made;
+            if(commitAt(out,cursor,s.name,instrumentTrack)) ++made;
             cursor += secondsPerBar*(double)s.bars;
         }
         status.setText("AI ARRANGER: "+juce::String(made)+" sections created - editable Liberty clips",juce::dontSendNotification);
