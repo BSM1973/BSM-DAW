@@ -143,6 +143,20 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         return false;
     }
     const std::int64_t totalSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::ceil(totalSamplesExact));
+
+    // During pass two, the 32-bit temporary WAV and the 24-bit final WAV coexist.
+    // Check the actual AI Renders volume before doing any expensive offline processing.
+    const auto renderProbe = makeRenderFile();
+    const auto bytesFree = renderProbe.getParentDirectory().getBytesFreeOnVolume();
+    constexpr std::int64_t simultaneousBytesPerFrame = tempBytesPerFrame + finalBytesPerFrame;
+    constexpr std::int64_t diskSafetyMargin = 64LL * 1024LL * 1024LL;
+    const auto requiredDiskBytes = totalSamples * simultaneousBytesPerFrame + diskSafetyMargin;
+    if (bytesFree >= 0 && requiredDiskBytes > bytesFree)
+    {
+        resultMessage = "Espace disque insuffisant pour le rendu AI.";
+        return false;
+    }
+
     const double clipEndSamplesExact = clipDuration * sampleRate;
     if (!std::isfinite(clipEndSamplesExact)
         || clipEndSamplesExact < 0.0
