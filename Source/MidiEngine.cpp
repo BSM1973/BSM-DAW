@@ -3,6 +3,19 @@
 #include <cmath>
 #include <limits>
 
+namespace
+{
+bool checkedAdd(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept
+{
+    if ((b > 0 && a > std::numeric_limits<std::int64_t>::max() - b) ||
+        (b < 0 && a < std::numeric_limits<std::int64_t>::min() - b))
+        return false;
+    result = a + b;
+    return true;
+}
+}
+
+
 MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 {
     return { notes, selectedNotes };
@@ -134,7 +147,8 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     std::vector<NoteEvent> source = selectedNotes;
     for (const auto& n : source)
     {
-        const auto newStart = n.startTick + deltaTicks;
+        std::int64_t newStart = 0;
+        if (!checkedAdd(n.startTick, deltaTicks, newStart)) return false;
         const int newPitch = static_cast<int>(n.pitch) + deltaPitch;
         if (newStart < 0 || newPitch < minMidiNote || newPitch > maxMidiNote) return false;
         const bool collision = std::any_of(notes.begin(), notes.end(), [&n, newStart, newPitch, this](const NoteEvent& other)
@@ -168,14 +182,15 @@ bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdg
     {
         if (fromLeftEdge)
         {
-            const auto newStart = n.startTick + deltaTicks;
-            const auto newLength = n.lengthTicks - deltaTicks;
+            std::int64_t newStart = 0, newLength = 0;
+            if (!checkedAdd(n.startTick, deltaTicks, newStart) || !checkedAdd(n.lengthTicks, -deltaTicks, newLength)) return false;
             if (newStart < 0 || newLength < minimumLength)
                 return false;
         }
         else
         {
-            if (n.lengthTicks + deltaTicks < minimumLength)
+            std::int64_t newLength = 0;
+            if (!checkedAdd(n.lengthTicks, deltaTicks, newLength) || newLength < minimumLength)
                 return false;
         }
     }
@@ -225,8 +240,8 @@ bool MidiEngine::duplicateSelectedNotes(std::int64_t deltaTicks)
     std::vector<NoteEvent> copies;
     for (const auto& n : source)
     {
-        const auto newStart = n.startTick + deltaTicks;
-        if (newStart < 0) return false;
+        std::int64_t newStart = 0;
+        if (!checkedAdd(n.startTick, deltaTicks, newStart) || newStart < 0) return false;
         if (std::any_of(notes.begin(), notes.end(), [&n, newStart](const NoteEvent& other)
             { return other.startTick == newStart && other.pitch == n.pitch && other.channel == n.channel; })) return false;
         auto copy = n; copy.startTick = newStart; copies.push_back(copy);
