@@ -88,7 +88,12 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
 
     int targetTrack = -1;
     for (int i = 0; i < owner.getAudioTrackCount(); ++i)
-        if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
+        if (!owner.audioEngine.hasAudioFile(i)
+            && owner.trackSourceFiles[(size_t)i].getFullPathName().isEmpty())
+        {
+            targetTrack = i;
+            break;
+        }
     if (targetTrack < 0)
     {
         resultMessage = "Aucune piste Audio vide disponible.";
