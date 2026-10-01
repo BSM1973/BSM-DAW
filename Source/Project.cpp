@@ -13,6 +13,7 @@ void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
 void resetLibertyMultiMidiProject(MainComponent&);
 void refreshLibertyMixConsole(MainComponent*);
 void prepareLibertyAudioRecordingForProjectReset(MainComponent*);
+void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 
 namespace
 {
@@ -349,6 +350,9 @@ void MainComponent::resetProjectState()
     audioEngine.resetInstrumentPlayback(1);
     resetLibertyTrackColours();
     resetLibertyTrackNames();
+
+    for (int i = 0; i < audioEngine.getAudioTrackCount(); ++i)
+        clearLibertyAudioClipResizeSource(audioEngine, i);
 
     while (audioEngine.getAudioTrackCount() > AudioEngine::initialAudioTracks)
         audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
