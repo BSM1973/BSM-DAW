@@ -424,6 +424,21 @@ double AudioEngine::getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIn
     return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex]->warpTargetSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
 }
 
+AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackIndex) const noexcept
+{
+    AudioBufferSnapshot snapshot;
+    if (!isValidTrackIndex(trackIndex)) return snapshot;
+
+    const auto& track = *tracks[(size_t)trackIndex];
+    if (!track.loaded.load(std::memory_order_acquire)) return snapshot;
+
+    snapshot.buffer = std::atomic_load(&track.buffer);
+    snapshot.numSamples = track.numSamples.load(std::memory_order_relaxed);
+    snapshot.lengthSeconds = track.lengthSeconds.load(std::memory_order_relaxed);
+    snapshot.loaded = snapshot.buffer != nullptr && snapshot.numSamples > 0 && snapshot.lengthSeconds > 0.0;
+    return snapshot;
+}
+
 bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error)
 {
     error.clear();
