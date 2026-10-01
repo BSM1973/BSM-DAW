@@ -315,7 +315,8 @@ private:
         g.drawRoundedRectangle(outer.toFloat(), 5.0f, 1.0f);
         drawTimeline(g);
 
-        const auto* buffer = owner.audioEngine.getAudioBuffer(selectedTrack);
+        const auto bufferSnapshot = owner.audioEngine.getAudioBufferSnapshot(selectedTrack);
+        const auto* buffer = bufferSnapshot.get();
         if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
 
         const int centreY = area.getCentreY();
