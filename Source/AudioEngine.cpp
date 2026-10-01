@@ -438,6 +438,15 @@ AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackInd
     snapshot.buffer = std::atomic_load(&track.buffer);
     snapshot.numSamples = snapshot.buffer != nullptr ? snapshot.buffer->getNumSamples() : 0;
     snapshot.lengthSeconds = track.lengthSeconds.load(std::memory_order_relaxed);
+    if (!track.loaded.load(std::memory_order_acquire))
+    {
+        snapshot.loaded = false;
+        snapshot.valid = false;
+        snapshot.buffer.reset();
+        snapshot.numSamples = 0;
+        snapshot.lengthSeconds = 0.0;
+        return snapshot;
+    }
     snapshot.valid = snapshot.buffer != nullptr && snapshot.numSamples > 0 && snapshot.lengthSeconds > 0.0;
     return snapshot;
 }
