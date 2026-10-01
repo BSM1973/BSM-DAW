@@ -519,10 +519,11 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (newTrackIndex < 0) newTrackIndex = addAudioTrack();
     if (newTrackIndex < 0) { error = "Could not create an audio track for the second clip segment."; return false; }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
-    if (splitSample <= 0 || splitSample >= source.numSamples.load(std::memory_order_relaxed)) { error = "The split position is outside the audio clip."; return false; }
     const auto sourceBuffer = std::atomic_load(&source.buffer);
     if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
-    const auto rightSamples = source.numSamples.load(std::memory_order_relaxed) - splitSample;
+    const auto sourceSamples = sourceBuffer->getNumSamples();
+    if (splitSample <= 0 || splitSample >= sourceSamples) { error = "The split position is outside the audio clip."; return false; }
+    const auto rightSamples = sourceSamples - splitSample;
     const auto channels = sourceBuffer->getNumChannels();
     auto leftBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, splitSample);
     auto rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
