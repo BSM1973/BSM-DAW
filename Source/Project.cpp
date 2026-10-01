@@ -467,7 +467,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     std::vector<PreparedProjectMedia> preparedMedia;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 15);
+    project.setAttribute("version", 16);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
@@ -554,6 +554,19 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
+        track->setAttribute("warpEnabled", audioEngine.isTrackWarpEnabled(i));
+        track->setAttribute("warpMode", audioEngine.getTrackWarpMode(i));
+        const int warpMarkerCount = audioEngine.getTrackWarpMarkerCount(i);
+        if (warpMarkerCount > 0)
+        {
+            auto* warpMarkers = track->createNewChildElement("WarpMarkers");
+            for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
+            {
+                auto* marker = warpMarkers->createNewChildElement("Marker");
+                marker->setAttribute("sourceSeconds", audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex));
+                marker->setAttribute("targetSeconds", audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex));
+            }
+        }
     }
 
     {
@@ -762,7 +775,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
-    constexpr int currentProjectVersion = 15;
+    constexpr int currentProjectVersion = 16;
     const int projectVersion = project->getIntAttribute("version", 1);
     if (projectVersion < 1 || projectVersion > currentProjectVersion)
     {
@@ -917,6 +930,31 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             audioEngine.setAudioFileName(index, savedDisplayName);
         pendingAudioFileNames[(size_t)index].clear();
         pendingAudioLengths[(size_t)index] = 0.0;
+        if (projectVersion >= 16)
+        {
+            audioEngine.setTrackWarpMode(index, track->getIntAttribute("warpMode", 0));
+            audioEngine.resetTrackWarpMarkers(index);
+            if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
+            {
+                int restoredMarkers = 0;
+                for (auto* marker = warpMarkers->getFirstChildElement();
+                     marker != nullptr && restoredMarkers < 128;
+                     marker = marker->getNextElement())
+                {
+                    if (marker->getTagName() != "Marker") continue;
+                    const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
+                    const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
+                    if (sourceSeconds <= 0.0 || targetSeconds < 0.0) continue;
+                    const int count = audioEngine.getTrackWarpMarkerCount(index);
+                    if (count < 2) break;
+                    const double endSource = audioEngine.getTrackWarpMarkerSourceSeconds(index, count - 1);
+                    if (sourceSeconds >= endSource) continue;
+                    audioEngine.addTrackWarpMarker(index, sourceSeconds, targetSeconds);
+                    ++restoredMarkers;
+                }
+            }
+            audioEngine.setTrackWarpEnabled(index, track->getBoolAttribute("warpEnabled", false));
+        }
         rebuildWaveformCache(index);
     }
 
