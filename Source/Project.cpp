@@ -123,9 +123,7 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
                   << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
-                  << ";colour=" << getLibertyTrackColourId(i)
-                  << ";warpEnabled=" << (audioEngine.isTrackWarpEnabled(i) ? 1 : 0)
-                  << ";warpMode=" << audioEngine.getTrackWarpMode(i);
+                  << ";colour=" << getLibertyTrackColourId(i);
         const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
         const bool signatureWarpEnabled = audioLoaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled;
         const int signatureWarpMode = audioLoaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode;
