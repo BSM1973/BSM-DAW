@@ -358,6 +358,8 @@ void MainComponent::resetProjectState()
     waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
     waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
     trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioFileNames.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioLengths.resize((size_t)AudioEngine::initialAudioTracks);
 
     for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
     {
@@ -367,6 +369,8 @@ void MainComponent::resetProjectState()
         audioEngine.setTrackMuted(i, false);
         audioEngine.setTrackSolo(i, false);
         trackSourceFiles[(size_t)i] = juce::File{};
+        pendingAudioFileNames[(size_t)i].clear();
+        pendingAudioLengths[(size_t)i] = 0.0;
         waveformMin[(size_t)i].clear();
         waveformMax[(size_t)i].clear();
     }
@@ -531,9 +535,11 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         }
 
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
-        track->setAttribute("fileName", audioEngine.getAudioFileName(i));
+        const auto savedFileName = audioSnapshot.loaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
+        const auto savedLengthSeconds = audioSnapshot.loaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+        track->setAttribute("fileName", savedFileName);
         track->setAttribute("startSeconds", audioEngine.getTrackStartSeconds(i));
-        track->setAttribute("lengthSeconds", audioEngine.getAudioFileLengthSeconds(i));
+        track->setAttribute("lengthSeconds", savedLengthSeconds);
         track->setAttribute("gain", (double)audioEngine.getTrackGain(i));
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
@@ -858,6 +864,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         if (!track->getBoolAttribute("loaded", false)) continue;
 
+        pendingAudioFileNames[(size_t)index] = track->getStringAttribute("fileName");
+        pendingAudioLengths[(size_t)index] = juce::jmax(0.0, finiteOr(track->getDoubleAttribute("lengthSeconds", 0.0), 0.0));
+
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
         if (sourcePath.isNotEmpty())
@@ -893,6 +902,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
+        pendingAudioFileNames[(size_t)index].clear();
+        pendingAudioLengths[(size_t)index] = 0.0;
         rebuildWaveformCache(index);
     }
 
