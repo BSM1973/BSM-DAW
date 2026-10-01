@@ -944,10 +944,12 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
             {
                 int restoredMarkers = 0;
+                int visitedWarpMarkerElements = 0;
                 for (auto* marker = warpMarkers->getFirstChildElement();
-                     marker != nullptr && restoredMarkers < 128;
+                     marker != nullptr && restoredMarkers < 128 && visitedWarpMarkerElements < 512;
                      marker = marker->getNextElement())
                 {
+                    ++visitedWarpMarkerElements;
                     if (marker->getTagName() != "Marker") continue;
                     const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
                     const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
