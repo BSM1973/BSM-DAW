@@ -75,6 +75,16 @@ bool renderRegion(AudioEngine& engine,
     }
 
     const int channels = juce::jmax(1, juce::jmin(2, state.original->getNumChannels()));
+    constexpr std::uint64_t maxResizeBufferBytes = 512ull * 1024ull * 1024ull;
+    const auto requestedBytes = (std::uint64_t)std::llround(requestedSamples)
+                              * (std::uint64_t)channels
+                              * sizeof(float);
+    if (requestedBytes > maxResizeBufferBytes)
+    {
+        error = "The requested audio resize exceeds the safe render memory limit.";
+        return false;
+    }
+
     const int inputSamples = sourceEnd - sourceStart;
     const int outputSamples = juce::jmax(1, (int)std::llround(requestedSamples));
 
