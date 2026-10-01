@@ -200,7 +200,14 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
 
     int sourceStart = state.sourceStartSample;
     int sourceEnd = state.sourceEndSample;
-    const int sourceSpan = juce::jmax(1, sourceEnd - sourceStart);
+    const int totalSourceSamples = state.original->getNumSamples();
+    if (sourceStart < 0 || sourceEnd <= sourceStart || sourceEnd > totalSourceSamples)
+    {
+        error = "The cached audio resize source region is invalid.";
+        return false;
+    }
+
+    const int sourceSpan = sourceEnd - sourceStart;
 
     if (!preservePitchStretch)
     {
