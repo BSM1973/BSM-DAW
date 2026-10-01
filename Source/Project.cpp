@@ -498,7 +498,19 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const auto* buffer = audioEngine.getAudioBuffer(i);
 
-        if (audioEngine.hasAudioFile(i) && buffer != nullptr)
+        const bool audioLoaded = audioEngine.hasAudioFile(i);
+        if (audioLoaded && buffer == nullptr)
+        {
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Audio " + juce::String(i + 1)
+                                                       + " is marked as loaded but its audio buffer is unavailable. The project was not saved.",
+                                                   "OK");
+            return false;
+        }
+
+        if (audioLoaded)
         {
             juce::File exportedFile, preparedFile;
             if (!prepareTrackProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile, preparedFile))
