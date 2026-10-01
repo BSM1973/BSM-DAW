@@ -106,12 +106,17 @@ juce::String MainComponent::getProjectStateSignature() const
 
     for (int i = 0; i < getAudioTrackCount(); ++i)
     {
+        const bool audioLoaded = audioEngine.hasAudioFile(i);
+        const bool expectsAudioMedia = audioLoaded || trackSourceFiles[(size_t)i].getFullPathName().isNotEmpty();
+        const auto savedFileName = audioLoaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
+        const auto savedLengthSeconds = audioLoaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+
         signature << "|track=" << i
-                  << ";loaded=" << (audioEngine.hasAudioFile(i) ? 1 : 0)
+                  << ";loaded=" << (expectsAudioMedia ? 1 : 0)
                   << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
-                  << ";name=" << audioEngine.getAudioFileName(i)
+                  << ";name=" << savedFileName
                   << ";trackName=" << getLibertyTrackName(i)
-                  << ";length=" << juce::String(audioEngine.getAudioFileLengthSeconds(i), 6)
+                  << ";length=" << juce::String(savedLengthSeconds, 6)
                   << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
