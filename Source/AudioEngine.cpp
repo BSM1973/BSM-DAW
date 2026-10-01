@@ -75,8 +75,10 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
     {
         const auto& track = *trackPtr;
         if (!track.loaded.load(std::memory_order_acquire)) continue;
+        const auto audioBuffer = std::atomic_load(&track.buffer);
+        if (audioBuffer == nullptr) continue;
         const auto start = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        length = juce::jmax(length, start + track.numSamples.load(std::memory_order_relaxed));
+        length = juce::jmax(length, start + static_cast<std::int64_t>(audioBuffer->getNumSamples()));
     }
     const auto extraLength = static_cast<std::int64_t>(std::llround(projectExtraLengthSeconds.load(std::memory_order_relaxed) * rate));
     length = juce::jmax(length, extraLength);
