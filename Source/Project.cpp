@@ -123,7 +123,14 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
                   << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
-                  << ";colour=" << getLibertyTrackColourId(i);
+                  << ";colour=" << getLibertyTrackColourId(i)
+                  << ";warpEnabled=" << (audioEngine.isTrackWarpEnabled(i) ? 1 : 0)
+                  << ";warpMode=" << audioEngine.getTrackWarpMode(i);
+        const int warpMarkerCount = audioEngine.getTrackWarpMarkerCount(i);
+        signature << ";warpMarkers=" << warpMarkerCount;
+        for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
+            signature << ":" << juce::String(audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex), 6)
+                      << "," << juce::String(audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex), 6);
     }
 
     for (int i = 0; i < getMidiTrackCount(); ++i)
