@@ -513,7 +513,11 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         if (audioLoaded)
         {
             juce::File exportedFile, preparedFile;
-            if (!prepareTrackProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile, preparedFile))
+            const double currentSampleRate = audioEngine.getSampleRate();
+            const double mediaSampleRate = currentSampleRate > 0.0
+                ? currentSampleRate
+                : audioEngine.getAudioBufferSampleRate(i);
+            if (!prepareTrackProjectMedia(file, i, buffer, mediaSampleRate, exportedFile, preparedFile))
             {
                 for (auto& media : preparedMedia) media.tempFile.deleteFile();
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
