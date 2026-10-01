@@ -603,6 +603,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             if (tool == 2) // SPLIT / COUPER
             {
                 int newTrack = -1;
+                for (int i = 0; i < getAudioTrackCount(); ++i)
+                    if (i != track
+                        && !audioEngine.hasAudioFile(i)
+                        && trackSourceFiles[(size_t)i].getFullPathName().isEmpty())
+                    {
+                        newTrack = i;
+                        break;
+                    }
+                if (newTrack < 0)
+                    newTrack = addAudioTrack();
+
                 juce::String error;
                 if (audioEngine.splitAudioTrack(track, clickTime, newTrack, error))
                 {
