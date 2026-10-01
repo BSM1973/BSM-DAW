@@ -440,21 +440,23 @@ bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcep
 
 int AudioEngine::getTrackWarpMarkerCount(int trackIndex) const noexcept
 {
-    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire) : 0;
+    if (!isValidTrackIndex(trackIndex)) return 0;
+    const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
+    return snapshot != nullptr ? snapshot->count : 0;
 }
 
 double AudioEngine::getTrackWarpMarkerSourceSeconds(int trackIndex, int markerIndex) const noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return 0.0;
-    const int count = tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire);
-    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex]->warpSourceSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+    const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
+    return snapshot != nullptr && markerIndex >= 0 && markerIndex < snapshot->count ? snapshot->source[(size_t)markerIndex] : 0.0;
 }
 
 double AudioEngine::getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIndex) const noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return 0.0;
-    const int count = tracks[(size_t)trackIndex]->warpMarkerCount.load(std::memory_order_acquire);
-    return markerIndex >= 0 && markerIndex < count ? tracks[(size_t)trackIndex]->warpTargetSeconds[(size_t)markerIndex].load(std::memory_order_relaxed) : 0.0;
+    const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
+    return snapshot != nullptr && markerIndex >= 0 && markerIndex < snapshot->count ? snapshot->target[(size_t)markerIndex] : 0.0;
 }
 
 AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackIndex) const noexcept
