@@ -59,6 +59,7 @@ void AudioEngine::shutdown()
         track.warpEnabled.store(false, std::memory_order_relaxed);
         track.warpMode.store(0, std::memory_order_relaxed);
         track.warpMarkerCount.store(0, std::memory_order_relaxed);
+        std::atomic_store(&track.warpMarkerSnapshot, std::shared_ptr<WarpMarkerSnapshot>{});
         std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.fileName.clear();
     }
 }
@@ -334,6 +335,7 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
     if (length <= 0.0)
     {
         track.warpMarkerCount.store(0, std::memory_order_release);
+        std::atomic_store(&track.warpMarkerSnapshot, std::shared_ptr<WarpMarkerSnapshot>{});
         return;
     }
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
@@ -537,6 +539,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
+    std::atomic_store(&track.warpMarkerSnapshot, std::shared_ptr<WarpMarkerSnapshot>{});
     if (wasInitialised) deviceManager.addAudioCallback(this);
 }
 
