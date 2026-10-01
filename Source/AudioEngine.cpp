@@ -502,22 +502,29 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (newTrackIndex < 0) { error = "Could not create an audio track for the second clip segment."; return false; }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
     if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
+    const auto sourceBuffer = std::atomic_load(&source.buffer);
+    if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
     const auto rightSamples = source.numSamples - splitSample;
-    const auto channels = source.buffer->getNumChannels();
+    const auto channels = sourceBuffer->getNumChannels();
+    auto leftBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, splitSample);
     auto rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
+    leftBuffer->clear();
     rightBuffer->clear();
     for (int channel = 0; channel < channels; ++channel)
-        rightBuffer->copyFrom(channel, 0, *source.buffer, channel, splitSample, rightSamples);
+    {
+        leftBuffer->copyFrom(channel, 0, *sourceBuffer, channel, 0, splitSample);
+        rightBuffer->copyFrom(channel, 0, *sourceBuffer, channel, splitSample, rightSamples);
+    }
     const bool wasInitialised = initialised.load();
     const auto savedPlaying = playing.load();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     playing.store(false);
-    source.buffer->setSize(channels, splitSample, true, false, false);
+    std::atomic_store(&source.buffer, std::move(leftBuffer));
     source.numSamples = splitSample;
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
     auto& right = *tracks[(size_t)newTrackIndex];
     right.loaded.store(false, std::memory_order_release);
-    right.buffer = std::move(rightBuffer);
+    std::atomic_store(&right.buffer, std::move(rightBuffer));
     right.numSamples = rightSamples;
     right.fileName = source.fileName + " - Split";
     right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
