@@ -134,6 +134,7 @@ public:
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
+    std::shared_ptr<const juce::AudioBuffer<float>> getAudioBufferSnapshot(int trackIndex) const noexcept;
     double getAudioBufferSampleRate(int trackIndex) const noexcept;
 
     void setTrackWarpEnabled(int trackIndex, bool enabled) noexcept;
