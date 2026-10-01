@@ -589,6 +589,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         auto output = tempFile.createOutputStream();
         if (output == nullptr)
         {
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Liberty - Project Save",
                                                    "Could not create the temporary project file.",
@@ -601,6 +602,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         {
             output.reset();
             tempFile.deleteFile();
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Liberty - Project Save",
                                                    "Could not write the Liberty project data.",
@@ -615,6 +617,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     if (verifiedProject == nullptr || verifiedProject->getTagName() != "LibertyProject")
     {
         tempFile.deleteFile();
+        for (auto& media : preparedMedia) media.tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
                                                "The temporary project file could not be verified. The previous project was left unchanged.",
