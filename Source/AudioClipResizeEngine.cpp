@@ -225,7 +225,8 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
                 : juce::jlimit(1, state.original->getNumSamples(),
                                (int)std::llround(juce::jmin(requestedSpan,
                                                           (double)state.original->getNumSamples())));
-            sourceEnd = juce::jmin(state.original->getNumSamples(), sourceStart + desiredSpan);
+            const int remainingSamples = juce::jmax(0, state.original->getNumSamples() - sourceStart);
+            sourceEnd = sourceStart + juce::jmin(desiredSpan, remainingSamples);
             newLength = oldLength * ((double)(sourceEnd - sourceStart) / (double)sourceSpan);
         }
     }
