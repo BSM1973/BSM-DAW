@@ -363,7 +363,8 @@ void MainComponent::rebuildWaveformCache(int trackIndex)
 {
     if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount()) return;
     waveformMin[(size_t)trackIndex].clear(); waveformMax[(size_t)trackIndex].clear();
-    const auto* buffer = audioEngine.getAudioBuffer(trackIndex);
+    const auto bufferSnapshot = audioEngine.getAudioBufferSnapshot(trackIndex);
+    const auto* buffer = bufferSnapshot.get();
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
     constexpr int points = 1200;
     auto& minCache = waveformMin[(size_t)trackIndex]; auto& maxCache = waveformMax[(size_t)trackIndex];
