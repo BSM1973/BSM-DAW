@@ -519,13 +519,15 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     const auto savedPlaying = playing.load();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     playing.store(false);
+    source.loaded.store(false, std::memory_order_release);
     std::atomic_store(&source.buffer, std::move(leftBuffer));
-    source.numSamples = splitSample;
+    source.numSamples.store(splitSample, std::memory_order_relaxed);
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
+    source.loaded.store(true, std::memory_order_release);
     auto& right = *tracks[(size_t)newTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
-    right.numSamples = rightSamples;
+    right.numSamples.store(rightSamples, std::memory_order_relaxed);
     right.fileName = source.fileName + " - Split";
     right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
