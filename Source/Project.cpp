@@ -843,7 +843,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
 
-        if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty())
+        if (!sourceFile.existsAsFile()
+            && sourcePath.isNotEmpty()
+            && !juce::File::isAbsolutePath(sourcePath))
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
 
         // Only use the conventional project-media fallback when no source
