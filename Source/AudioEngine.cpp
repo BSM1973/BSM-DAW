@@ -510,10 +510,9 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.addAudioCallback(this);
 }
 
-bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error)
+bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, int targetTrackIndex, juce::String& error)
 {
     error.clear();
-    newTrackIndex = -1;
     if (!isValidTrackIndex(trackIndex) || !hasAudioFile(trackIndex)) { error = "Select a loaded audio clip first."; return false; }
     const auto deviceRate = sampleRate.load();
     const auto retainedRate = getAudioBufferSampleRate(trackIndex);
@@ -524,10 +523,12 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     const auto lengthSeconds = source.lengthSeconds.load();
     const auto splitOffsetSeconds = splitProjectSeconds - startSeconds;
     if (splitOffsetSeconds <= 0.01 || splitOffsetSeconds >= lengthSeconds - 0.01) { error = "Place the playhead inside the audio clip to split it."; return false; }
-    for (int i = 0; i < getAudioTrackCount(); ++i)
-        if (i != trackIndex && !tracks[(size_t)i]->loaded.load(std::memory_order_acquire)) { newTrackIndex = i; break; }
-    if (newTrackIndex < 0) newTrackIndex = addAudioTrack();
-    if (newTrackIndex < 0) { error = "Could not create an audio track for the second clip segment."; return false; }
+    if (!isValidTrackIndex(targetTrackIndex) || targetTrackIndex == trackIndex
+        || tracks[(size_t)targetTrackIndex]->loaded.load(std::memory_order_acquire))
+    {
+        error = "Select an empty audio track for the second clip segment.";
+        return false;
+    }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
     const auto sourceBuffer = std::atomic_load(&source.buffer);
     if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
@@ -552,7 +553,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     std::atomic_store(&source.buffer, std::move(leftBuffer));
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
     source.loaded.store(true, std::memory_order_release);
-    auto& right = *tracks[(size_t)newTrackIndex];
+    auto& right = *tracks[(size_t)targetTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
     right.fileName = source.fileName + " - Split";
@@ -566,7 +567,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.warpMode.store(source.warpMode.load(std::memory_order_relaxed), std::memory_order_relaxed);
     right.loaded.store(true, std::memory_order_release);
     resetTrackWarpMarkers(trackIndex);
-    resetTrackWarpMarkers(newTrackIndex);
+    resetTrackWarpMarkers(targetTrackIndex);
     if (wasInitialised) deviceManager.addAudioCallback(this);
     if (savedPlaying) playing.store(true);
     return true;
