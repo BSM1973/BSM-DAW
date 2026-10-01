@@ -860,6 +860,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
+        if (sourcePath.isNotEmpty())
+            trackSourceFiles[(size_t)index] = sourceFile;
 
         if (!sourceFile.existsAsFile()
             && sourcePath.isNotEmpty()
