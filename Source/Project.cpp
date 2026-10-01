@@ -911,6 +911,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
+        const auto savedDisplayName = pendingAudioFileNames[(size_t)index];
+        if (savedDisplayName.isNotEmpty())
+            audioEngine.setAudioFileName(index, savedDisplayName);
         pendingAudioFileNames[(size_t)index].clear();
         pendingAudioLengths[(size_t)index] = 0.0;
         rebuildWaveformCache(index);
