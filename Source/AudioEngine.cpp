@@ -59,7 +59,7 @@ void AudioEngine::shutdown()
         track.warpEnabled.store(false, std::memory_order_relaxed);
         track.warpMode.store(0, std::memory_order_relaxed);
         track.warpMarkerCount.store(0, std::memory_order_relaxed);
-        track.buffer.reset(); track.numSamples = 0; track.fileName.clear();
+        std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.numSamples = 0; track.fileName.clear();
     }
 }
 
@@ -457,7 +457,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    track.buffer = std::move(newBuffer); track.numSamples = outputSamples;
+    std::atomic_store(&track.buffer, std::move(newBuffer)); track.numSamples = outputSamples;
     track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
@@ -476,7 +476,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    track.buffer.reset(); track.numSamples = 0; track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.numSamples = 0; track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
     if (wasInitialised) deviceManager.addAudioCallback(this);
