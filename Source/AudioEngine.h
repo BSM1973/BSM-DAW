@@ -197,7 +197,6 @@ private:
         std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
-        std::atomic<std::int64_t> numSamples { 0 };
         juce::String fileName;
     };
 
