@@ -491,6 +491,7 @@ private:
                 owner.trackSourceFiles[(size_t)armedTrack] = stereoFile;
                 owner.pendingAudioFileNames[(size_t)armedTrack].clear();
                 owner.pendingAudioLengths[(size_t)armedTrack] = 0.0;
+    owner.pendingAudioWarpStates[(size_t)armedTrack] = {};
                 owner.audioEngine.setTrackStartSeconds(armedTrack, recordStartSeconds);
                 owner.rebuildWaveformCache(armedTrack);
                 owner.selectedTrack = armedTrack;
