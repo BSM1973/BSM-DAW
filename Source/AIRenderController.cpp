@@ -381,6 +381,8 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     owner.audioEngine.setTrackPan(targetTrack, 0.0f);
     owner.audioEngine.setTrackMuted(targetTrack, false);
     owner.trackSourceFiles[(size_t)targetTrack] = file;
+    owner.pendingAudioFileNames[(size_t)targetTrack].clear();
+    owner.pendingAudioLengths[(size_t)targetTrack] = 0.0;
     owner.rebuildWaveformCache(targetTrack);
 
     // The source Instrument is automatically muted after bounce so pressing Play
