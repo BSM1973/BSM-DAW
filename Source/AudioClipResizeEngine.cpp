@@ -98,8 +98,8 @@ bool renderRegion(AudioEngine& engine,
 
     auto& track = *engine.tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    track.buffer = std::move(rendered);
-    track.numSamples = outputSamples;
+    std::atomic_store(&track.buffer, std::move(rendered));
+    track.numSamples.store(outputSamples, std::memory_order_relaxed);
     track.lengthSeconds.store((double)outputSamples / rate, std::memory_order_relaxed);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.loaded.store(true, std::memory_order_release);
