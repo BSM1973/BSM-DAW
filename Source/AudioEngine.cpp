@@ -572,11 +572,7 @@ std::shared_ptr<const juce::AudioBuffer<float>> AudioEngine::getAudioBufferSnaps
 }
 double AudioEngine::getAudioBufferSampleRate(int trackIndex) const noexcept
 {
-    if (!isValidTrackIndex(trackIndex)) return 0.0;
-    const auto& track = *tracks[(size_t)trackIndex];
-    const double length = track.lengthSeconds.load(std::memory_order_relaxed);
-    const auto samples = track.numSamples.load(std::memory_order_relaxed);
-    return samples > 0 && length > 0.0 ? static_cast<double>(samples) / length : 0.0;
+    return getAudioTrackSnapshot(trackIndex).getSampleRate();
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
