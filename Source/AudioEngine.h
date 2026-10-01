@@ -151,7 +151,6 @@ public:
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
-    const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
     std::shared_ptr<const juce::AudioBuffer<float>> getAudioBufferSnapshot(int trackIndex) const noexcept;
     double getAudioBufferSampleRate(int trackIndex) const noexcept;
 
@@ -181,7 +180,6 @@ public:
     bool hasAudioFile() const noexcept { return hasAudioFile(0); }
     juce::String getAudioFileName() const { return getAudioFileName(0); }
     double getAudioFileLengthSeconds() const noexcept { return getAudioFileLengthSeconds(0); }
-    const juce::AudioBuffer<float>* getAudioBuffer() const noexcept { return getAudioBuffer(0); }
 
 private:
     struct AudioTrackState
