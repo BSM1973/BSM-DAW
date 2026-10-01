@@ -13,7 +13,7 @@ namespace
 {
 struct SourceState
 {
-    juce::String fileName;
+    std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
     std::unique_ptr<juce::AudioBuffer<float>> original;
     int sourceStartSample = 0;
     int sourceEndSample = 0;
@@ -27,14 +27,15 @@ SourceState& ensureSourceState(AudioEngine& engine, int trackIndex)
     const Key key { &engine, trackIndex };
     auto& state = sourceStates[key];
     auto& track = *engine.tracks[(size_t)trackIndex];
+    const auto publishedBuffer = std::atomic_load(&track.buffer);
 
-    const bool needsRefresh = state.original == nullptr || state.fileName != track.fileName;
+    const bool needsRefresh = state.original == nullptr || state.sourceBuffer != publishedBuffer;
     if (needsRefresh)
     {
-        state.fileName = track.fileName;
+        state.sourceBuffer = publishedBuffer;
         state.original = std::make_unique<juce::AudioBuffer<float>>();
-        if (track.buffer != nullptr)
-            state.original->makeCopyOf(*track.buffer);
+        if (publishedBuffer != nullptr)
+            state.original->makeCopyOf(*publishedBuffer);
         state.sourceStartSample = 0;
         state.sourceEndSample = state.original->getNumSamples();
     }
