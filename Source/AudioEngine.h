@@ -148,6 +148,7 @@ public:
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int targetTrackIndex, juce::String& error);
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
+    void setAudioFileName(int trackIndex, const juce::String& name);
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
