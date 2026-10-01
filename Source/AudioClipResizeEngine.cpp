@@ -137,6 +137,7 @@ bool renderRegion(AudioEngine& engine,
     std::shared_ptr<juce::AudioBuffer<float>> publishedBuffer(std::move(rendered));
     state.sourceBuffer = publishedBuffer;
     std::atomic_store(&track.buffer, std::move(publishedBuffer));
+    track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.lengthSeconds.store((double)outputSamples / rate, std::memory_order_relaxed);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.loaded.store(true, std::memory_order_release);
