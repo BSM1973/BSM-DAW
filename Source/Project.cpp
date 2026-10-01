@@ -491,34 +491,21 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     {
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
-        track->setAttribute("loaded", audioEngine.hasAudioFile(i));
+        const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
+        track->setAttribute("loaded", audioSnapshot.loaded);
         track->setAttribute("colourId", getLibertyTrackColourId(i));
         track->setAttribute("trackName", getLibertyTrackName(i));
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
-        const auto bufferSnapshot = audioEngine.getAudioBufferSnapshot(i);
-        const auto* buffer = bufferSnapshot.get();
 
-        const bool audioLoaded = audioEngine.hasAudioFile(i);
-        if (audioLoaded && buffer == nullptr)
-        {
-            for (auto& media : preparedMedia) media.tempFile.deleteFile();
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "Liberty - Project Save",
-                                                   "Audio " + juce::String(i + 1)
-                                                       + " is marked as loaded but its audio buffer is unavailable. The project was not saved.",
-                                                   "OK");
-            return false;
-        }
-
-        if (audioLoaded)
+        if (audioSnapshot.loaded)
         {
             juce::File exportedFile, preparedFile;
             const double currentSampleRate = audioEngine.getSampleRate();
             const double mediaSampleRate = currentSampleRate > 0.0
                 ? currentSampleRate
-                : audioEngine.getAudioBufferSampleRate(i);
-            if (!prepareTrackProjectMedia(file, i, buffer, mediaSampleRate, exportedFile, preparedFile))
+                : audioSnapshot.getSampleRate();
+            if (!prepareTrackProjectMedia(file, i, audioSnapshot.buffer.get(), mediaSampleRate, exportedFile, preparedFile))
             {
                 for (auto& media : preparedMedia) media.tempFile.deleteFile();
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
