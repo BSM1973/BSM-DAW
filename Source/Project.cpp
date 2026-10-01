@@ -890,12 +890,15 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     };
     constexpr std::size_t maxVisitedProjectTrackElements = 4096;
     std::size_t visitedProjectTrackElements = 0;
+    std::vector<bool> restoredAudioTrackIndices((size_t) getAudioTrackCount(), false);
     for (auto* track = project->getFirstChildElement(); track != nullptr; track = track->getNextElement())
     {
         if (++visitedProjectTrackElements > maxVisitedProjectTrackElements) break;
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
         if (index < 0 || index >= getAudioTrackCount()) continue;
+        if (restoredAudioTrackIndices[(size_t) index]) continue;
+        restoredAudioTrackIndices[(size_t) index] = true;
         setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
         setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
         audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
