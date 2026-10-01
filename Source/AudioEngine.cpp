@@ -605,8 +605,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
     {
         auto& track = *tracks[(size_t)trackIndex];
+        if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
-        if (!track.loaded.load(std::memory_order_acquire) || audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
+        if (audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         const auto clipEnd = startSample + track.numSamples.load(std::memory_order_relaxed);
         const auto blockEnd = position + numSamples;
