@@ -117,6 +117,7 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";name=" << savedFileName
                   << ";trackName=" << getLibertyTrackName(i)
                   << ";length=" << juce::String(savedLengthSeconds, 6)
+                  << ";contentRevision=" << juce::String((juce::int64)audioEngine.getAudioContentRevision(i))
                   << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
