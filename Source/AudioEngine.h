@@ -125,6 +125,23 @@ public:
     void setInstrumentTrackSolo(bool solo) noexcept { setInstrumentTrackSolo(0, solo); }
     bool isInstrumentTrackSolo() const noexcept { return isInstrumentTrackSolo(0); }
 
+    struct AudioBufferSnapshot
+    {
+        bool loaded = false;
+        std::shared_ptr<const juce::AudioBuffer<float>> buffer;
+        std::int64_t numSamples = 0;
+        double lengthSeconds = 0.0;
+
+        double getSampleRate() const noexcept
+        {
+            return numSamples > 0 && lengthSeconds > 0.0
+                ? static_cast<double>(numSamples) / lengthSeconds
+                : 0.0;
+        }
+    };
+
+    AudioBufferSnapshot getAudioTrackSnapshot(int trackIndex) const noexcept;
+
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error);
