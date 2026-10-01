@@ -956,8 +956,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                     if (count < 2) break;
                     const double endSource = audioEngine.getTrackWarpMarkerSourceSeconds(index, count - 1);
                     if (sourceSeconds >= endSource) continue;
-                    audioEngine.addTrackWarpMarker(index, sourceSeconds, targetSeconds);
-                    ++restoredMarkers;
+                    if (audioEngine.addTrackWarpMarker(index, sourceSeconds, targetSeconds))
+                        ++restoredMarkers;
                 }
             }
             audioEngine.setTrackWarpEnabled(index, track->getBoolAttribute("warpEnabled", false));
