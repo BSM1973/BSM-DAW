@@ -505,6 +505,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
+    track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
     if (wasInitialised) deviceManager.addAudioCallback(this);
 }
