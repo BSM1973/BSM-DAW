@@ -128,6 +128,7 @@ public:
     struct AudioBufferSnapshot
     {
         bool loaded = false;
+        bool valid = true;
         std::shared_ptr<const juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         double lengthSeconds = 0.0;
