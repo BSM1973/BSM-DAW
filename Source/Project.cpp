@@ -901,6 +901,28 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
         pendingAudioFileNames[(size_t)index] = track->getStringAttribute("fileName");
         pendingAudioLengths[(size_t)index] = juce::jmax(0.0, finiteOr(track->getDoubleAttribute("lengthSeconds", 0.0), 0.0));
+        auto& pendingWarp = pendingAudioWarpStates[(size_t)index];
+        pendingWarp = {};
+        if (projectVersion >= 16)
+        {
+            pendingWarp.enabled = track->getBoolAttribute("warpEnabled", false);
+            pendingWarp.mode = juce::jlimit(0, 4, track->getIntAttribute("warpMode", 0));
+            if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
+            {
+                int visitedWarpMarkerElements = 0;
+                for (auto* marker = warpMarkers->getFirstChildElement();
+                     marker != nullptr && (int) pendingWarp.markers.size() < 128 && visitedWarpMarkerElements < 512;
+                     marker = marker->getNextElement())
+                {
+                    ++visitedWarpMarkerElements;
+                    if (marker->getTagName() != "Marker") continue;
+                    const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
+                    const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
+                    if (sourceSeconds < 0.0 || targetSeconds < 0.0) continue;
+                    pendingWarp.markers.emplace_back(sourceSeconds, targetSeconds);
+                }
+            }
+        }
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
@@ -942,6 +964,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             audioEngine.setAudioFileName(index, savedDisplayName);
         pendingAudioFileNames[(size_t)index].clear();
         pendingAudioLengths[(size_t)index] = 0.0;
+        pendingAudioWarpStates[(size_t)index] = {};
         if (projectVersion >= 16)
         {
             audioEngine.setTrackWarpMode(index, track->getIntAttribute("warpMode", 0));
