@@ -174,10 +174,24 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
 
     const double rate = engine.sampleRate.load(std::memory_order_relaxed);
     const double oldStart = track.startSeconds.load(std::memory_order_relaxed);
-    const double oldLength = juce::jmax(0.000001, track.lengthSeconds.load(std::memory_order_relaxed));
-    const double oldRight = oldStart + oldLength;
-    const double minLength = 1.0 / juce::jmax(1.0, rate);
+    const double storedLength = track.lengthSeconds.load(std::memory_order_relaxed);
+    if (!std::isfinite(requestedStartSeconds) || !std::isfinite(requestedLengthSeconds)
+        || !std::isfinite(rate) || rate <= 0.0
+        || !std::isfinite(oldStart) || !std::isfinite(storedLength) || storedLength <= 0.0)
+    {
+        error = "The audio resize parameters are invalid.";
+        return false;
+    }
 
+    const double oldLength = juce::jmax(0.000001, storedLength);
+    const double oldRight = oldStart + oldLength;
+    if (!std::isfinite(oldRight))
+    {
+        error = "The audio clip timing is invalid.";
+        return false;
+    }
+
+    const double minLength = 1.0 / rate;
     double newStart = juce::jmax(0.0, requestedStartSeconds);
     double newLength = juce::jmax(minLength, requestedLengthSeconds);
 
