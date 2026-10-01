@@ -377,6 +377,7 @@ void MainComponent::resetProjectState()
     trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
     pendingAudioFileNames.resize((size_t)AudioEngine::initialAudioTracks);
     pendingAudioLengths.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioWarpStates.resize((size_t)AudioEngine::initialAudioTracks);
 
     for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
     {
@@ -388,6 +389,7 @@ void MainComponent::resetProjectState()
         trackSourceFiles[(size_t)i] = juce::File{};
         pendingAudioFileNames[(size_t)i].clear();
         pendingAudioLengths[(size_t)i] = 0.0;
+        pendingAudioWarpStates[(size_t)i] = {};
         waveformMin[(size_t)i].clear();
         waveformMax[(size_t)i].clear();
     }
@@ -561,17 +563,20 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
-        track->setAttribute("warpEnabled", audioEngine.isTrackWarpEnabled(i));
-        track->setAttribute("warpMode", audioEngine.getTrackWarpMode(i));
-        const int warpMarkerCount = audioEngine.getTrackWarpMarkerCount(i);
+        const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
+        track->setAttribute("warpEnabled", audioSnapshot.loaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled);
+        track->setAttribute("warpMode", audioSnapshot.loaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode);
+        const int warpMarkerCount = audioSnapshot.loaded ? audioEngine.getTrackWarpMarkerCount(i) : (int) pendingWarp.markers.size();
         if (warpMarkerCount > 0)
         {
             auto* warpMarkers = track->createNewChildElement("WarpMarkers");
             for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
             {
                 auto* marker = warpMarkers->createNewChildElement("Marker");
-                marker->setAttribute("sourceSeconds", audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex));
-                marker->setAttribute("targetSeconds", audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex));
+                const double sourceSeconds = audioSnapshot.loaded ? audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex) : pendingWarp.markers[(size_t)markerIndex].first;
+                const double targetSeconds = audioSnapshot.loaded ? audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex) : pendingWarp.markers[(size_t)markerIndex].second;
+                marker->setAttribute("sourceSeconds", sourceSeconds);
+                marker->setAttribute("targetSeconds", targetSeconds);
             }
         }
     }
