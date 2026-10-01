@@ -851,6 +851,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (index < 0 || index >= getAudioTrackCount()) continue;
         setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
         setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
+        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 2.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
+        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
         audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         if (!track->getBoolAttribute("loaded", false)) continue;
@@ -889,10 +891,6 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
         trackSourceFiles[(size_t)index] = sourceFile;
         audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
-        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
-        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
-        audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
-        audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         rebuildWaveformCache(index);
     }
 
