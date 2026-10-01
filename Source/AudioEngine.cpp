@@ -624,7 +624,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto audioBuffer = std::atomic_load(&track.buffer);
         if (audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        const auto clipEnd = startSample + track.numSamples.load(std::memory_order_relaxed);
+        const auto clipEnd = startSample + static_cast<std::int64_t>(audioBuffer->getNumSamples());
         const auto blockEnd = position + numSamples;
         if (blockEnd <= startSample || position >= clipEnd) continue;
         const auto mixStart = juce::jmax(position, startSample);
