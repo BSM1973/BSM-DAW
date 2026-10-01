@@ -154,6 +154,7 @@ public:
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     std::shared_ptr<const juce::AudioBuffer<float>> getAudioBufferSnapshot(int trackIndex) const noexcept;
     double getAudioBufferSampleRate(int trackIndex) const noexcept;
+    std::uint64_t getAudioContentRevision(int trackIndex) const noexcept;
 
     void setTrackWarpEnabled(int trackIndex, bool enabled) noexcept;
     bool isTrackWarpEnabled(int trackIndex) const noexcept;
@@ -198,6 +199,7 @@ private:
         std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
+        std::atomic<std::uint64_t> contentRevision { 0 };
         juce::String fileName;
     };
 
