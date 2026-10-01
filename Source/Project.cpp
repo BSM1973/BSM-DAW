@@ -706,6 +706,12 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     for (auto& media : preparedMedia)
         media.backupFile.deleteFile();
 
+    // The saved project now owns these media files. Keep the in-memory source
+    // metadata aligned with what was serialized so dirty-state tracking and
+    // subsequent saves do not keep referring to the pre-save source files.
+    for (int i = 0; i < (int)preparedMedia.size(); ++i)
+        trackSourceFiles[(size_t)i] = preparedMedia[(size_t)i].finalFile;
+
     currentProjectFile = file;
     markProjectClean();
     return true;
