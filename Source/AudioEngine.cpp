@@ -485,6 +485,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::move(newBuffer));
+    track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
@@ -503,7 +504,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
@@ -551,11 +552,13 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     playing.store(false);
     source.loaded.store(false, std::memory_order_release);
     std::atomic_store(&source.buffer, std::move(leftBuffer));
+    source.contentRevision.fetch_add(1, std::memory_order_relaxed);
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
     source.loaded.store(true, std::memory_order_release);
     auto& right = *tracks[(size_t)targetTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
+    right.contentRevision.fetch_add(1, std::memory_order_relaxed);
     right.fileName = source.fileName + " - Split";
     right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
@@ -584,6 +587,11 @@ std::shared_ptr<const juce::AudioBuffer<float>> AudioEngine::getAudioBufferSnaps
 double AudioEngine::getAudioBufferSampleRate(int trackIndex) const noexcept
 {
     return getAudioTrackSnapshot(trackIndex).getSampleRate();
+}
+
+std::uint64_t AudioEngine::getAudioContentRevision(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->contentRevision.load(std::memory_order_relaxed) : 0;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
