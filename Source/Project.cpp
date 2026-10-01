@@ -498,6 +498,17 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
 
+        if (audioSnapshot.loaded && !audioSnapshot.valid)
+        {
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Audio " + juce::String(i + 1)
+                                                       + " is marked as loaded but its audio state is incomplete. The project was not saved.",
+                                                   "OK");
+            return false;
+        }
+
         if (audioSnapshot.loaded)
         {
             juce::File exportedFile, preparedFile;
