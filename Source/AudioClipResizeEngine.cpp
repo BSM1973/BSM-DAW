@@ -52,7 +52,10 @@ bool renderRegion(AudioEngine& engine,
                   juce::String& error)
 {
     error.clear();
-    if (state.original == nullptr || sourceEnd <= sourceStart)
+    if (state.original == nullptr
+        || sourceStart < 0
+        || sourceEnd <= sourceStart
+        || sourceEnd > state.original->getNumSamples())
     {
         error = "Invalid source region.";
         return false;
