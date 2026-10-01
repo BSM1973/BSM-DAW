@@ -36,8 +36,8 @@ bool prepareTrackProjectMedia(const juce::File& projectFile,
         return false;
 
     exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
-    tempFile = exportedFile.getSiblingFile(exportedFile.getFileName() + ".saving");
-    tempFile.deleteFile();
+    tempFile = exportedFile.getSiblingFile(
+        exportedFile.getFileName() + ".saving-" + juce::Uuid().toString());
 
     auto output = tempFile.createOutputStream();
     if (output == nullptr)
@@ -582,8 +582,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     saveLibertyMultiMidiClips(*this, project);
 
-    const auto tempFile = file.getSiblingFile(file.getFileName() + ".saving");
-    tempFile.deleteFile();
+    const auto tempFile = file.getSiblingFile(
+        file.getFileName() + ".saving-" + juce::Uuid().toString());
 
     {
         auto output = tempFile.createOutputStream();
