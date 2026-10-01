@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 void resizeLibertyDynamicTrackController(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
+void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 
 void resizeLibertyMixConsole(MainComponent*);
 void resizeLibertyBrowserResizeController(MainComponent*);
@@ -633,6 +634,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
             if (tool == 3) // ERASE / EFFACER
             {
+                clearLibertyAudioClipResizeSource(audioEngine, track);
                 audioEngine.clearAudioTrack(track);
                 isPlaying = false;
                 playheadSeconds = 0.0;
