@@ -126,11 +126,19 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";colour=" << getLibertyTrackColourId(i)
                   << ";warpEnabled=" << (audioEngine.isTrackWarpEnabled(i) ? 1 : 0)
                   << ";warpMode=" << audioEngine.getTrackWarpMode(i);
-        const int warpMarkerCount = audioEngine.getTrackWarpMarkerCount(i);
+        const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
+        const bool signatureWarpEnabled = audioLoaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled;
+        const int signatureWarpMode = audioLoaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode;
+        signature << ";warpEnabled=" << (signatureWarpEnabled ? 1 : 0)
+                  << ";warpMode=" << signatureWarpMode;
+        const int warpMarkerCount = audioLoaded ? audioEngine.getTrackWarpMarkerCount(i) : (int) pendingWarp.markers.size();
         signature << ";warpMarkers=" << warpMarkerCount;
         for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
-            signature << ":" << juce::String(audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex), 6)
-                      << "," << juce::String(audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex), 6);
+        {
+            const double sourceSeconds = audioLoaded ? audioEngine.getTrackWarpMarkerSourceSeconds(i, markerIndex) : pendingWarp.markers[(size_t)markerIndex].first;
+            const double targetSeconds = audioLoaded ? audioEngine.getTrackWarpMarkerTargetSeconds(i, markerIndex) : pendingWarp.markers[(size_t)markerIndex].second;
+            signature << ":" << juce::String(sourceSeconds, 6) << "," << juce::String(targetSeconds, 6);
+        }
     }
 
     for (int i = 0; i < getMidiTrackCount(); ++i)
