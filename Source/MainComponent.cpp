@@ -60,6 +60,8 @@ MainComponent::MainComponent()
     waveformMin.resize((size_t) audioEngine.getAudioTrackCount());
     waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
     trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioFileNames.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioLengths.resize((size_t) audioEngine.getAudioTrackCount());
     audioEngine.initialise();
     projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
@@ -423,6 +425,8 @@ void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
     const double dropStartSeconds = x >= headerW ? juce::jmax(0.0, (x - headerW) / pixelsPerSecond) : 0.0;
 
     trackSourceFiles[(size_t)trackToLoad] = file;
+    pendingAudioFileNames[(size_t)trackToLoad].clear();
+    pendingAudioLengths[(size_t)trackToLoad] = 0.0;
     audioEngine.setTrackStartSeconds(trackToLoad, dropStartSeconds);
     audioEngine.setPlaying(false);
     selectedTrack = trackToLoad;
@@ -620,6 +624,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 isPlaying = false;
                 playheadSeconds = 0.0;
                 trackSourceFiles[(size_t)track] = juce::File{};
+                pendingAudioFileNames[(size_t)track].clear();
+                pendingAudioLengths[(size_t)track] = 0.0;
                 waveformMin[(size_t)track].clear();
                 waveformMax[(size_t)track].clear();
                 draggingClip = false;
