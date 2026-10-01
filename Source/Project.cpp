@@ -496,7 +496,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("trackName", getLibertyTrackName(i));
 
         juce::File sourceFile = trackSourceFiles[(size_t)i];
-        const auto* buffer = audioEngine.getAudioBuffer(i);
+        const auto bufferSnapshot = audioEngine.getAudioBufferSnapshot(i);
+        const auto* buffer = bufferSnapshot.get();
 
         const bool audioLoaded = audioEngine.hasAudioFile(i);
         if (audioLoaded && buffer == nullptr)
