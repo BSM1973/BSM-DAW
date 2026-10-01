@@ -87,6 +87,18 @@ bool renderRegion(AudioEngine& engine,
 
     const int inputSamples = sourceEnd - sourceStart;
     const int outputSamples = juce::jmax(1, (int)std::llround(requestedSamples));
+    if (inputSamples != outputSamples)
+    {
+        const auto inputBytes = (std::uint64_t)inputSamples
+                              * (std::uint64_t)channels
+                              * sizeof(float);
+        if (inputBytes > maxResizeBufferBytes
+            || inputBytes > maxResizeBufferBytes - requestedBytes)
+        {
+            error = "The requested audio stretch exceeds the safe temporary memory limit.";
+            return false;
+        }
+    }
 
     auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
     rendered->clear();
