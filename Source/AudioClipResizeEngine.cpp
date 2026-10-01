@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -64,9 +65,18 @@ bool renderRegion(AudioEngine& engine,
         return false;
     }
 
+    const double requestedSamples = targetLengthSeconds * rate;
+    if (!std::isfinite(requestedSamples)
+        || requestedSamples < 1.0
+        || requestedSamples > (double)std::numeric_limits<int>::max())
+    {
+        error = "The requested audio resize is too large.";
+        return false;
+    }
+
     const int channels = juce::jmax(1, juce::jmin(2, state.original->getNumChannels()));
     const int inputSamples = sourceEnd - sourceStart;
-    const int outputSamples = juce::jmax(1, (int)std::llround(targetLengthSeconds * rate));
+    const int outputSamples = juce::jmax(1, (int)std::llround(requestedSamples));
 
     auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
     rendered->clear();
@@ -160,7 +170,12 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
             newStart = juce::jlimit(0.0, oldRight - minLength, newStart);
             newLength = oldRight - newStart;
             const double ratio = juce::jmax(0.0, newLength / oldLength);
-            const int desiredSpan = juce::jmax(1, (int)std::llround((double)sourceSpan * ratio));
+            const double requestedSpan = (double)sourceSpan * ratio;
+            const int desiredSpan = !std::isfinite(requestedSpan)
+                ? state.original->getNumSamples()
+                : juce::jlimit(1, state.original->getNumSamples(),
+                               (int)std::llround(juce::jmin(requestedSpan,
+                                                          (double)state.original->getNumSamples())));
             sourceStart = juce::jmax(0, sourceEnd - desiredSpan);
             newLength = oldLength * ((double)(sourceEnd - sourceStart) / (double)sourceSpan);
             newStart = oldRight - newLength;
@@ -168,7 +183,12 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
         else
         {
             const double ratio = juce::jmax(0.0, newLength / oldLength);
-            const int desiredSpan = juce::jmax(1, (int)std::llround((double)sourceSpan * ratio));
+            const double requestedSpan = (double)sourceSpan * ratio;
+            const int desiredSpan = !std::isfinite(requestedSpan)
+                ? state.original->getNumSamples()
+                : juce::jlimit(1, state.original->getNumSamples(),
+                               (int)std::llround(juce::jmin(requestedSpan,
+                                                          (double)state.original->getNumSamples())));
             sourceEnd = juce::jmin(state.original->getNumSamples(), sourceStart + desiredSpan);
             newLength = oldLength * ((double)(sourceEnd - sourceStart) / (double)sourceSpan);
         }
