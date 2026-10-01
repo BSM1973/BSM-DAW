@@ -618,6 +618,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 if (audioEngine.splitAudioTrack(track, clickTime, newTrack, error))
                 {
                     trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)track];
+                    pendingAudioFileNames[(size_t)newTrack].clear();
+                    pendingAudioLengths[(size_t)newTrack] = 0.0;
                     rebuildWaveformCache(track);
                     rebuildWaveformCache(newTrack);
                     selectedTrack = newTrack;
