@@ -59,7 +59,7 @@ void AudioEngine::shutdown()
         track.warpEnabled.store(false, std::memory_order_relaxed);
         track.warpMode.store(0, std::memory_order_relaxed);
         track.warpMarkerCount.store(0, std::memory_order_relaxed);
-        std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.numSamples = 0; track.fileName.clear();
+        std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.fileName.clear();
     }
 }
 
@@ -475,7 +475,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::move(newBuffer)); track.numSamples = outputSamples;
+    std::atomic_store(&track.buffer, std::move(newBuffer));
     track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
@@ -540,13 +540,11 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     playing.store(false);
     source.loaded.store(false, std::memory_order_release);
     std::atomic_store(&source.buffer, std::move(leftBuffer));
-    source.numSamples.store(splitSample, std::memory_order_relaxed);
     source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
     source.loaded.store(true, std::memory_order_release);
     auto& right = *tracks[(size_t)newTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
-    right.numSamples.store(rightSamples, std::memory_order_relaxed);
     right.fileName = source.fileName + " - Split";
     right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
