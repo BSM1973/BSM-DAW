@@ -538,6 +538,13 @@ bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTr
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
 double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->lengthSeconds.load() : 0.0; }
 const juce::AudioBuffer<float>* AudioEngine::getAudioBuffer(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->buffer.get() : nullptr; }
+double AudioEngine::getAudioBufferSampleRate(int trackIndex) const noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return 0.0;
+    const auto& track = *tracks[(size_t)trackIndex];
+    const double length = track.lengthSeconds.load(std::memory_order_relaxed);
+    return track.numSamples > 0 && length > 0.0 ? static_cast<double>(track.numSamples) / length : 0.0;
+}
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
