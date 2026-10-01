@@ -924,7 +924,16 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                     if (marker->getTagName() != "Marker") continue;
                     const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
                     const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
-                    if (sourceSeconds < 0.0 || targetSeconds < 0.0) continue;
+                    const double pendingLength = pendingAudioLengths[(size_t)index];
+                    if (sourceSeconds < 0.0 || targetSeconds < 0.0
+                        || (pendingLength > 0.0 && (sourceSeconds > pendingLength || targetSeconds > pendingLength)))
+                        continue;
+                    if (!pendingWarp.markers.empty())
+                    {
+                        const auto& previous = pendingWarp.markers.back();
+                        if (sourceSeconds <= previous.first || targetSeconds <= previous.second)
+                            continue;
+                    }
                     pendingWarp.markers.emplace_back(sourceSeconds, targetSeconds);
                 }
             }
