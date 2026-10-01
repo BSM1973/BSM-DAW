@@ -438,6 +438,21 @@ bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcep
     return true;
 }
 
+AudioEngine::WarpSnapshot AudioEngine::getTrackWarpSnapshot(int trackIndex) const noexcept
+{
+    WarpSnapshot result;
+    if (!isValidTrackIndex(trackIndex)) return result;
+    const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
+    if (snapshot == nullptr) return result;
+    result.count = juce::jlimit(0, maxWarpMarkers, snapshot->count);
+    for (int i = 0; i < result.count; ++i)
+    {
+        result.source[(size_t)i] = snapshot->source[(size_t)i];
+        result.target[(size_t)i] = snapshot->target[(size_t)i];
+    }
+    return result;
+}
+
 int AudioEngine::getTrackWarpMarkerCount(int trackIndex) const noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return 0;
