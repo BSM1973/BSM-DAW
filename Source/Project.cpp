@@ -654,8 +654,8 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     for (auto& media : preparedMedia)
     {
         media.hadOriginal = media.finalFile.existsAsFile();
-        media.backupFile = media.finalFile.getSiblingFile(media.finalFile.getFileName() + ".backup");
-        media.backupFile.deleteFile();
+        media.backupFile = media.finalFile.getSiblingFile(
+            media.finalFile.getFileName() + ".backup-" + juce::Uuid().toString());
         if (media.hadOriginal && !media.finalFile.moveFileTo(media.backupFile))
         {
             const bool rollbackComplete = rollbackMedia();
