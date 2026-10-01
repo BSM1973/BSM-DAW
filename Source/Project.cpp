@@ -882,7 +882,10 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             const auto projectMediaFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_Media")
                                               .getChildFile("Audio_" + juce::String(index + 1) + ".wav");
             if (projectMediaFile.existsAsFile())
+            {
                 sourceFile = projectMediaFile;
+                trackSourceFiles[(size_t)index] = sourceFile;
+            }
         }
 
         if (!sourceFile.existsAsFile())
