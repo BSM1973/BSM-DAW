@@ -341,6 +341,11 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
     track.warpSourceSeconds[1].store(length, std::memory_order_relaxed);
     track.warpTargetSeconds[1].store(length, std::memory_order_relaxed);
     track.warpMarkerCount.store(2, std::memory_order_release);
+    auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->count = 2;
+    snapshot->source[0] = 0.0; snapshot->target[0] = 0.0;
+    snapshot->source[1] = length; snapshot->target[1] = length;
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
 bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept
@@ -373,6 +378,14 @@ bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, doubl
     track.warpSourceSeconds[(size_t)insertAt].store(sourceSeconds, std::memory_order_relaxed);
     track.warpTargetSeconds[(size_t)insertAt].store(targetSeconds, std::memory_order_relaxed);
     track.warpMarkerCount.store(count + 1, std::memory_order_release);
+    auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->count = count + 1;
+    for (int i = 0; i < snapshot->count; ++i)
+    {
+        snapshot->source[(size_t)i] = track.warpSourceSeconds[(size_t)i].load(std::memory_order_relaxed);
+        snapshot->target[(size_t)i] = track.warpTargetSeconds[(size_t)i].load(std::memory_order_relaxed);
+    }
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
     track.warpEnabled.store(true, std::memory_order_release);
     return true;
 }
@@ -388,6 +401,14 @@ bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double ta
     if (next - prev <= 0.002) return false;
     const double clamped = juce::jlimit(prev + 0.001, next - 0.001, targetSeconds);
     track.warpTargetSeconds[(size_t)markerIndex].store(clamped, std::memory_order_release);
+    auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->count = count;
+    for (int i = 0; i < count; ++i)
+    {
+        snapshot->source[(size_t)i] = track.warpSourceSeconds[(size_t)i].load(std::memory_order_relaxed);
+        snapshot->target[(size_t)i] = track.warpTargetSeconds[(size_t)i].load(std::memory_order_relaxed);
+    }
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
     track.warpEnabled.store(true, std::memory_order_release);
     return true;
 }
@@ -404,6 +425,14 @@ bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcep
         track.warpTargetSeconds[(size_t)i].store(track.warpTargetSeconds[(size_t)(i + 1)].load(std::memory_order_relaxed), std::memory_order_relaxed);
     }
     track.warpMarkerCount.store(count - 1, std::memory_order_release);
+    auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->count = count - 1;
+    for (int i = 0; i < snapshot->count; ++i)
+    {
+        snapshot->source[(size_t)i] = track.warpSourceSeconds[(size_t)i].load(std::memory_order_relaxed);
+        snapshot->target[(size_t)i] = track.warpTargetSeconds[(size_t)i].load(std::memory_order_relaxed);
+    }
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
     return true;
 }
 
@@ -680,7 +709,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         };
 
         const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
-        const int rawMarkerCount = track.warpMarkerCount.load(std::memory_order_acquire);
+        const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
+        const int rawMarkerCount = warpSnapshot != nullptr ? warpSnapshot->count : 0;
         if (!warpActive || rawMarkerCount < 2)
         {
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
@@ -696,8 +726,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         std::array<double, maxWarpMarkers> targetMarkers {};
         for (int marker = 0; marker < markerCount; ++marker)
         {
-            sourceMarkers[(size_t)marker] = track.warpSourceSeconds[(size_t)marker].load(std::memory_order_acquire);
-            targetMarkers[(size_t)marker] = track.warpTargetSeconds[(size_t)marker].load(std::memory_order_acquire);
+            sourceMarkers[(size_t)marker] = warpSnapshot->source[(size_t)marker];
+            targetMarkers[(size_t)marker] = warpSnapshot->target[(size_t)marker];
         }
 
         const int mode = track.warpMode.load(std::memory_order_relaxed);
