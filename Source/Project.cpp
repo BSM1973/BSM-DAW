@@ -65,6 +65,7 @@ bool prepareTrackProjectMedia(const juce::File& projectFile,
 
 struct PreparedProjectMedia
 {
+    int trackIndex = -1;
     juce::File finalFile;
     juce::File tempFile;
     juce::File backupFile;
@@ -510,7 +511,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
                                                        "OK");
                 return false;
             }
-            preparedMedia.push_back({ exportedFile, preparedFile, {}, false, false });
+            preparedMedia.push_back({ i, exportedFile, preparedFile, {}, false, false });
             sourceFile = exportedFile;
         }
 
@@ -709,8 +710,9 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     // The saved project now owns these media files. Keep the in-memory source
     // metadata aligned with what was serialized so dirty-state tracking and
     // subsequent saves do not keep referring to the pre-save source files.
-    for (int i = 0; i < (int)preparedMedia.size(); ++i)
-        trackSourceFiles[(size_t)i] = preparedMedia[(size_t)i].finalFile;
+    for (const auto& media : preparedMedia)
+        if (media.trackIndex >= 0 && media.trackIndex < (int)trackSourceFiles.size())
+            trackSourceFiles[(size_t)media.trackIndex] = media.finalFile;
 
     currentProjectFile = file;
     markProjectClean();
