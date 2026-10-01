@@ -369,6 +369,16 @@ private:
             return;
         }
 
+        if (!owner.audioEngine.hasAudioFile(armedTrack)
+            && owner.trackSourceFiles[(size_t)armedTrack].getFullPathName().isNotEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - Recording",
+                "This Audio track references media that is currently unavailable. Relink or erase that media before recording on this track.",
+                "OK");
+            return;
+        }
+
         if (!configureInput())
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
