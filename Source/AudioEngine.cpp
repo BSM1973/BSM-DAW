@@ -575,6 +575,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
 
 bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->loaded.load(std::memory_order_acquire); }
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
+void AudioEngine::setAudioFileName(int trackIndex, const juce::String& name) { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->fileName = name; }
 double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->lengthSeconds.load() : 0.0; }
 std::shared_ptr<const juce::AudioBuffer<float>> AudioEngine::getAudioBufferSnapshot(int trackIndex) const noexcept
 {
