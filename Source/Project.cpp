@@ -846,7 +846,10 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty())
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
 
-        if (!sourceFile.existsAsFile())
+        // Only use the conventional project-media fallback when no source
+        // path was serialized. If an explicit source path is missing, silently
+        // substituting Audio_X.wav could load stale or unrelated media.
+        if (!sourceFile.existsAsFile() && sourcePath.isEmpty())
         {
             const auto projectMediaFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_Media")
                                               .getChildFile("Audio_" + juce::String(index + 1) + ".wav");
