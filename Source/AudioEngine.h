@@ -184,6 +184,13 @@ public:
     double getAudioFileLengthSeconds() const noexcept { return getAudioFileLengthSeconds(0); }
 
 private:
+    struct WarpMarkerSnapshot
+    {
+        int count = 0;
+        std::array<double, maxWarpMarkers> source {};
+        std::array<double, maxWarpMarkers> target {};
+    };
+
     struct AudioTrackState
     {
         std::atomic<float> gain { 1.0f };
@@ -198,6 +205,7 @@ private:
         std::atomic<int> warpMarkerCount { 0 };
         std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
+        std::shared_ptr<WarpMarkerSnapshot> warpMarkerSnapshot;
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::atomic<std::uint64_t> contentRevision { 0 };
         juce::String fileName;
