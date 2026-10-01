@@ -143,6 +143,15 @@ public:
 
     AudioBufferSnapshot getAudioTrackSnapshot(int trackIndex) const noexcept;
 
+    struct WarpSnapshot
+    {
+        int count = 0;
+        std::array<double, maxWarpMarkers> source {};
+        std::array<double, maxWarpMarkers> target {};
+    };
+
+    WarpSnapshot getTrackWarpSnapshot(int trackIndex) const noexcept;
+
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int targetTrackIndex, juce::String& error);
