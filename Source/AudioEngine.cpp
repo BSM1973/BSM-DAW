@@ -76,7 +76,7 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
         const auto& track = *trackPtr;
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto start = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        length = juce::jmax(length, start + track.numSamples);
+        length = juce::jmax(length, start + track.numSamples.load(std::memory_order_relaxed));
     }
     const auto extraLength = static_cast<std::int64_t>(std::llround(projectExtraLengthSeconds.load(std::memory_order_relaxed) * rate));
     length = juce::jmax(length, extraLength);
@@ -501,10 +501,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (newTrackIndex < 0) newTrackIndex = addAudioTrack();
     if (newTrackIndex < 0) { error = "Could not create an audio track for the second clip segment."; return false; }
     const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
-    if (splitSample <= 0 || splitSample >= source.numSamples) { error = "The split position is outside the audio clip."; return false; }
+    if (splitSample <= 0 || splitSample >= source.numSamples.load(std::memory_order_relaxed)) { error = "The split position is outside the audio clip."; return false; }
     const auto sourceBuffer = std::atomic_load(&source.buffer);
     if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
-    const auto rightSamples = source.numSamples - splitSample;
+    const auto rightSamples = source.numSamples.load(std::memory_order_relaxed) - splitSample;
     const auto channels = sourceBuffer->getNumChannels();
     auto leftBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, splitSample);
     auto rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
@@ -556,7 +556,8 @@ double AudioEngine::getAudioBufferSampleRate(int trackIndex) const noexcept
     if (!isValidTrackIndex(trackIndex)) return 0.0;
     const auto& track = *tracks[(size_t)trackIndex];
     const double length = track.lengthSeconds.load(std::memory_order_relaxed);
-    return track.numSamples > 0 && length > 0.0 ? static_cast<double>(track.numSamples) / length : 0.0;
+    const auto samples = track.numSamples.load(std::memory_order_relaxed);
+    return samples > 0 && length > 0.0 ? static_cast<double>(samples) / length : 0.0;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
@@ -605,7 +606,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto audioBuffer = std::atomic_load(&track.buffer);
         if (!track.loaded.load(std::memory_order_acquire) || audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        const auto clipEnd = startSample + track.numSamples;
+        const auto clipEnd = startSample + track.numSamples.load(std::memory_order_relaxed);
         const auto blockEnd = position + numSamples;
         if (blockEnd <= startSample || position >= clipEnd) continue;
         const auto mixStart = juce::jmax(position, startSample);
