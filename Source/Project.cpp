@@ -492,11 +492,11 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
         const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
-        track->setAttribute("loaded", audioSnapshot.loaded);
+        juce::File sourceFile = trackSourceFiles[(size_t)i];
+        const bool expectsAudioMedia = audioSnapshot.loaded || sourceFile.getFullPathName().isNotEmpty();
+        track->setAttribute("loaded", expectsAudioMedia);
         track->setAttribute("colourId", getLibertyTrackColourId(i));
         track->setAttribute("trackName", getLibertyTrackName(i));
-
-        juce::File sourceFile = trackSourceFiles[(size_t)i];
 
         if (audioSnapshot.loaded && !audioSnapshot.valid)
         {
