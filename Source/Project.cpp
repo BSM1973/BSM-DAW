@@ -1,4 +1,19 @@
 #include "MainComponent.h"
+#include "PluginHost.h"
+#include "OneKnobEffects.h"
+
+int getLibertyTrackColourId(int track);
+void setLibertyTrackColourId(int track, int colourId);
+void resetLibertyTrackColours();
+juce::String getLibertyTrackName(int track);
+void setLibertyTrackName(int track, const juce::String& name);
+void resetLibertyTrackNames();
+void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
+void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
+void resetLibertyMultiMidiProject(MainComponent&);
+void refreshLibertyMixConsole(MainComponent*);
+void prepareLibertyAudioRecordingForProjectReset(MainComponent*);
+void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 
 namespace
 {
@@ -7,11 +22,12 @@ constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
 
-bool exportTrackToProjectMedia(const juce::File& projectFile,
-                               int trackIndex,
-                               const juce::AudioBuffer<float>* buffer,
-                               double sampleRate,
-                               juce::File& exportedFile)
+bool prepareTrackProjectMedia(const juce::File& projectFile,
+                              int trackIndex,
+                              const juce::AudioBuffer<float>* buffer,
+                              double sampleRate,
+                              juce::File& exportedFile,
+                              juce::File& tempFile)
 {
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0 || sampleRate <= 0.0)
         return false;
@@ -21,7 +37,10 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
         return false;
 
     exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
-    auto output = exportedFile.createOutputStream();
+    tempFile = exportedFile.getSiblingFile(
+        exportedFile.getFileName() + ".saving-" + juce::Uuid().toString());
+
+    auto output = tempFile.createOutputStream();
     if (output == nullptr)
         return false;
 
@@ -29,33 +48,159 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
     auto writer = std::unique_ptr<juce::AudioFormatWriter>(
         wav.createWriterFor(output.release(), sampleRate, (unsigned int)buffer->getNumChannels(), 24, {}, 0));
     if (writer == nullptr)
+    {
+        tempFile.deleteFile();
         return false;
+    }
 
-    return writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples());
+    if (!writer->writeFromAudioSampleBuffer(*buffer, 0, buffer->getNumSamples()))
+    {
+        writer.reset();
+        tempFile.deleteFile();
+        return false;
+    }
+    writer.reset();
+
+    return true;
 }
+
+struct PreparedProjectMedia
+{
+    int trackIndex = -1;
+    juce::File finalFile;
+    juce::File tempFile;
+    juce::File backupFile;
+    bool hadOriginal = false;
+    bool committed = false;
+};
 }
 
 juce::String MainComponent::getProjectStateSignature() const
 {
+    const auto appendStateHash = [](juce::String& target, const juce::MemoryBlock& state)
+    {
+        std::uint64_t hash = 14695981039346656037ull;
+        const auto* bytes = static_cast<const std::uint8_t*>(state.getData());
+        for (std::size_t i = 0; i < state.getSize(); ++i)
+        {
+            hash ^= bytes[i];
+            hash *= 1099511628211ull;
+        }
+        target << ";stateHash=" << juce::String::toHexString((juce::int64) hash);
+    };
     juce::String signature;
     signature << "tempo=" << juce::String(tempoBpm, 6)
               << ";meter=" << timeSignatureNumerator << "/" << timeSignatureDenominator
               << ";master=" << juce::String(audioEngine.getMasterGain(), 6)
+              << ";audioTracks=" << getAudioTrackCount()
+              << ";midiTracks=" << getMidiTrackCount()
+              << ";instrumentTracks=" << getInstrumentTrackCount()
               << ";midiClipStart=" << juce::String(midiClipStartSeconds, 6)
-              << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6);
+              << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6)
+              << ";midiColour=" << getLibertyTrackColourId(getAudioTrackCount())
+              << ";midiName=" << getLibertyTrackName(getAudioTrackCount())
+              << ";midiMute=" << (audioEngine.isMidiTrackMuted() ? 1 : 0)
+              << ";midiSolo=" << (audioEngine.isMidiTrackSolo() ? 1 : 0)
+              << ";instrumentMute=" << (audioEngine.isInstrumentTrackMuted() ? 1 : 0)
+              << ";instrumentSolo=" << (audioEngine.isInstrumentTrackSolo() ? 1 : 0);
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
+        const bool audioLoaded = audioEngine.hasAudioFile(i);
+        const bool expectsAudioMedia = audioLoaded || trackSourceFiles[(size_t)i].getFullPathName().isNotEmpty();
+        const auto savedFileName = audioLoaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
+        const auto savedLengthSeconds = audioLoaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+
         signature << "|track=" << i
-                  << ";loaded=" << (audioEngine.hasAudioFile(i) ? 1 : 0)
+                  << ";loaded=" << (expectsAudioMedia ? 1 : 0)
                   << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
-                  << ";name=" << audioEngine.getAudioFileName(i)
-                  << ";length=" << juce::String(audioEngine.getAudioFileLengthSeconds(i), 6)
+                  << ";name=" << savedFileName
+                  << ";trackName=" << getLibertyTrackName(i)
+                  << ";length=" << juce::String(savedLengthSeconds, 6)
+                  << ";contentRevision=" << juce::String((juce::int64)audioEngine.getAudioContentRevision(i))
                   << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
-                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0);
+                  << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
+                  << ";colour=" << getLibertyTrackColourId(i);
+        const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
+        const bool signatureWarpEnabled = audioLoaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled;
+        const int signatureWarpMode = audioLoaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode;
+        signature << ";warpEnabled=" << (signatureWarpEnabled ? 1 : 0)
+                  << ";warpMode=" << signatureWarpMode;
+        const auto warpSnapshot = audioLoaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
+        const int warpMarkerCount = audioLoaded ? warpSnapshot.count : (int) pendingWarp.markers.size();
+        signature << ";warpMarkers=" << warpMarkerCount;
+        for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
+        {
+            const double sourceSeconds = audioLoaded ? warpSnapshot.source[(size_t)markerIndex] : pendingWarp.markers[(size_t)markerIndex].first;
+            const double targetSeconds = audioLoaded ? warpSnapshot.target[(size_t)markerIndex] : pendingWarp.markers[(size_t)markerIndex].second;
+            signature << ":" << juce::String(sourceSeconds, 6) << "," << juce::String(targetSeconds, 6);
+        }
+    }
+
+    for (int i = 0; i < getMidiTrackCount(); ++i)
+    {
+        const int logical = getAudioTrackCount() + i;
+        signature << "|midiTrack=" << i
+                  << ";name=" << getLibertyTrackName(logical)
+                  << ";colour=" << getLibertyTrackColourId(logical);
+    }
+
+    for (int i = 0; i < getInstrumentTrackCount(); ++i)
+    {
+        const int logical = getAudioTrackCount() + getMidiTrackCount() + i;
+        signature << "|instrument=" << i
+                  << ";name=" << getLibertyTrackName(logical)
+                  << ";colour=" << getLibertyTrackColourId(logical)
+                  << ";gain=" << juce::String(audioEngine.getInstrumentTrackGain(i), 6)
+                  << ";pan=" << juce::String(audioEngine.getInstrumentTrackPan(i), 6)
+                  << ";mute=" << (audioEngine.isInstrumentTrackMuted(i) ? 1 : 0)
+                  << ";solo=" << (audioEngine.isInstrumentTrackSolo(i) ? 1 : 0);
+    }
+
+    {
+        auto& host = LibertyPluginHost::instance();
+        auto& one = LibertyOneKnobManager::instance();
+        for (int lane = 0; lane < getAudioTrackCount(); ++lane)
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                juce::PluginDescription d;
+                signature << "|afx=" << lane << ',' << slot << ',';
+                if (host.getEffectDescriptionForTrackSlot(lane, slot, d))
+                {
+                    signature << d.fileOrIdentifier;
+                    juce::MemoryBlock state;
+                    if (host.getEffectStateForTrackSlot(lane, slot, state)) appendStateHash(signature, state);
+                }
+                const int key = lane * 8 + slot;
+                if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
+            }
+        for (int lane = 0; lane < getInstrumentTrackCount(); ++lane)
+        {
+            juce::PluginDescription instrument;
+            signature << "|instPlugin=" << lane << ',';
+            if (host.getInstrumentDescriptionForTrack(lane, instrument))
+            {
+                signature << instrument.fileOrIdentifier;
+                juce::MemoryBlock state;
+                if (host.getInstrumentStateForTrack(lane, state)) appendStateHash(signature, state);
+            }
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                juce::PluginDescription d;
+                signature << "|ifx=" << lane << ',' << slot << ',';
+                if (host.getEffectDescriptionForInstrumentTrackSlot(lane, slot, d))
+                {
+                    signature << d.fileOrIdentifier;
+                    juce::MemoryBlock state;
+                    if (host.getEffectStateForInstrumentTrackSlot(lane, slot, state)) appendStateHash(signature, state);
+                }
+                const int key = 100000 + lane * 8 + slot;
+                if (one.hasEffect(key)) signature << ";ok=" << (int)one.getEffect(key) << ',' << juce::String(one.getAmount(key), 6);
+            }
+        }
     }
 
     signature << "|midi=";
@@ -134,6 +279,12 @@ void MainComponent::confirmBeforeProjectAction(std::function<void()> action)
 
 void MainComponent::requestClose(std::function<void(bool)> completion)
 {
+    if (!hasUnsavedChanges())
+    {
+        completion(true);
+        return;
+    }
+
     juce::AlertWindow::showYesNoCancelBox(
         juce::MessageBoxIconType::WarningIcon,
         "Liberty - Unsaved Changes",
@@ -178,7 +329,7 @@ void MainComponent::showProjectMenu()
     menu.addItem(menuSave, "Save Project");
     menu.addItem(menuSaveAs, "Save Project As...");
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&projectButton),
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(projectButton.get()),
                        [this](int result)
                        {
                            switch (result)
@@ -194,6 +345,8 @@ void MainComponent::showProjectMenu()
 
 void MainComponent::resetProjectState()
 {
+    prepareLibertyAudioRecordingForProjectReset(this);
+    resetLibertyMultiMidiProject(*this);
     audioEngine.setPlaying(false);
     audioEngine.resetTransport();
     audioEngine.setProjectExtraLengthSeconds(0.0);
@@ -207,9 +360,33 @@ void MainComponent::resetProjectState()
     midiClipLengthSeconds = 2.0;
     midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
+    audioEngine.setMidiTrackMuted(false);
+    audioEngine.setMidiTrackSolo(false);
+    audioEngine.setInstrumentTrackMuted(false);
+    audioEngine.setInstrumentTrackSolo(false);
+    LibertyPluginHost::instance().clearProjectPlugins();
+    LibertyOneKnobManager::instance().clearAllEffects();
     midiEngine.clear();
+    audioEngine.resetInstrumentPlayback(1);
+    resetLibertyTrackColours();
+    resetLibertyTrackNames();
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < audioEngine.getAudioTrackCount(); ++i)
+        clearLibertyAudioClipResizeSource(audioEngine, i);
+
+    while (audioEngine.getAudioTrackCount() > AudioEngine::initialAudioTracks)
+        audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
+    dynamicMidiTrackCount = 1;
+    dynamicInstrumentTrackCount = 1;
+    trackScrollRows = 0;
+    waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
+    waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
+    trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioFileNames.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioLengths.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioWarpStates.resize((size_t)AudioEngine::initialAudioTracks);
+
+    for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
     {
         audioEngine.clearAudioTrack(i);
         audioEngine.setTrackGain(i, 1.0f);
@@ -217,11 +394,15 @@ void MainComponent::resetProjectState()
         audioEngine.setTrackMuted(i, false);
         audioEngine.setTrackSolo(i, false);
         trackSourceFiles[(size_t)i] = juce::File{};
+        pendingAudioFileNames[(size_t)i].clear();
+        pendingAudioLengths[(size_t)i] = 0.0;
+        pendingAudioWarpStates[(size_t)i] = {};
         waveformMin[(size_t)i].clear();
         waveformMax[(size_t)i].clear();
     }
 
     tempoControls.refresh();
+    refreshLibertyMixConsole(this);
     repaint();
 }
 
@@ -299,8 +480,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 {
     if (file == juce::File{}) return false;
 
+    std::vector<PreparedProjectMedia> preparedMedia;
+
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 5);
+    project.setAttribute("version", 16);
+    project.setAttribute("audioTrackCount", getAudioTrackCount());
+    project.setAttribute("midiTrackCount", getMidiTrackCount());
+    project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -309,6 +495,14 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     project.setAttribute("masterGain", (double)audioEngine.getMasterGain());
     project.setAttribute("midiClipStartSeconds", midiClipStartSeconds);
     project.setAttribute("midiClipLengthSeconds", midiClipLengthSeconds);
+    project.setAttribute("midiColourId", getLibertyTrackColourId(getAudioTrackCount()));
+    project.setAttribute("instrumentColourId", getLibertyTrackColourId(getAudioTrackCount() + getMidiTrackCount()));
+    project.setAttribute("midiTrackName", getLibertyTrackName(getAudioTrackCount()));
+    project.setAttribute("instrumentTrackName", getLibertyTrackName(getAudioTrackCount() + getMidiTrackCount()));
+    project.setAttribute("midiMuted", audioEngine.isMidiTrackMuted());
+    project.setAttribute("midiSolo", audioEngine.isMidiTrackSolo());
+    project.setAttribute("instrumentMuted", audioEngine.isInstrumentTrackMuted());
+    project.setAttribute("instrumentSolo", audioEngine.isInstrumentTrackSolo());
 
     auto* midi = project.createNewChildElement("MIDI");
     midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
@@ -323,53 +517,267 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         noteElement->setAttribute("channel", (int)note.channel);
     }
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
-        track->setAttribute("loaded", audioEngine.hasAudioFile(i));
-
+        const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
         juce::File sourceFile = trackSourceFiles[(size_t)i];
-        const auto* buffer = audioEngine.getAudioBuffer(i);
+        const bool expectsAudioMedia = audioSnapshot.loaded || sourceFile.getFullPathName().isNotEmpty();
+        track->setAttribute("loaded", expectsAudioMedia);
+        track->setAttribute("colourId", getLibertyTrackColourId(i));
+        track->setAttribute("trackName", getLibertyTrackName(i));
 
-        if (audioEngine.hasAudioFile(i) && buffer != nullptr)
+        if (audioSnapshot.loaded && !audioSnapshot.valid)
         {
-            juce::File exportedFile;
-            if (exportTrackToProjectMedia(file, i, buffer, audioEngine.getSampleRate(), exportedFile))
-                sourceFile = exportedFile;
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Audio " + juce::String(i + 1)
+                                                       + " is marked as loaded but its audio state is incomplete. The project was not saved.",
+                                                   "OK");
+            return false;
+        }
+
+        if (audioSnapshot.loaded)
+        {
+            juce::File exportedFile, preparedFile;
+            const double currentSampleRate = audioEngine.getSampleRate();
+            const double mediaSampleRate = currentSampleRate > 0.0
+                ? currentSampleRate
+                : audioSnapshot.getSampleRate();
+            if (!prepareTrackProjectMedia(file, i, audioSnapshot.buffer.get(), mediaSampleRate, exportedFile, preparedFile))
+            {
+                for (auto& media : preparedMedia) media.tempFile.deleteFile();
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                       "Liberty - Project Save",
+                                                       "Could not safely export Audio " + juce::String(i + 1)
+                                                           + " to the project media folder. The project was not saved.",
+                                                       "OK");
+                return false;
+            }
+            preparedMedia.push_back({ i, exportedFile, preparedFile, {}, false, false });
+            sourceFile = exportedFile;
         }
 
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
-        track->setAttribute("fileName", audioEngine.getAudioFileName(i));
+        const auto savedFileName = audioSnapshot.loaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
+        const auto savedLengthSeconds = audioSnapshot.loaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+        track->setAttribute("fileName", savedFileName);
         track->setAttribute("startSeconds", audioEngine.getTrackStartSeconds(i));
-        track->setAttribute("lengthSeconds", audioEngine.getAudioFileLengthSeconds(i));
+        track->setAttribute("lengthSeconds", savedLengthSeconds);
         track->setAttribute("gain", (double)audioEngine.getTrackGain(i));
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
+        const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
+        track->setAttribute("warpEnabled", audioSnapshot.loaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled);
+        track->setAttribute("warpMode", audioSnapshot.loaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode);
+        const auto warpSnapshot = audioSnapshot.loaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
+        const int warpMarkerCount = audioSnapshot.loaded ? warpSnapshot.count : (int) pendingWarp.markers.size();
+        if (warpMarkerCount > 0)
+        {
+            auto* warpMarkers = track->createNewChildElement("WarpMarkers");
+            for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
+            {
+                auto* marker = warpMarkers->createNewChildElement("Marker");
+                const double sourceSeconds = audioSnapshot.loaded ? warpSnapshot.source[(size_t)markerIndex] : pendingWarp.markers[(size_t)markerIndex].first;
+                const double targetSeconds = audioSnapshot.loaded ? warpSnapshot.target[(size_t)markerIndex] : pendingWarp.markers[(size_t)markerIndex].second;
+                marker->setAttribute("sourceSeconds", sourceSeconds);
+                marker->setAttribute("targetSeconds", targetSeconds);
+            }
+        }
     }
 
-    auto output = file.createOutputStream();
-    if (output == nullptr)
     {
+        auto* trackMetadata = project.createNewChildElement("DynamicTrackMetadata");
+        for (int i = 0; i < getMidiTrackCount(); ++i)
+        {
+            const int logical = getAudioTrackCount() + i;
+            auto* track = trackMetadata->createNewChildElement("Track");
+            track->setAttribute("kind", "midi");
+            track->setAttribute("index", i);
+            track->setAttribute("name", getLibertyTrackName(logical));
+            track->setAttribute("colourId", getLibertyTrackColourId(logical));
+        }
+        for (int i = 0; i < getInstrumentTrackCount(); ++i)
+        {
+            const int logical = getAudioTrackCount() + getMidiTrackCount() + i;
+            auto* track = trackMetadata->createNewChildElement("Track");
+            track->setAttribute("kind", "instrument");
+            track->setAttribute("index", i);
+            track->setAttribute("name", getLibertyTrackName(logical));
+            track->setAttribute("colourId", getLibertyTrackColourId(logical));
+        }
+    }
+
+    {
+        auto* instrumentMixer = project.createNewChildElement("InstrumentMixer");
+        for (int i = 0; i < getInstrumentTrackCount(); ++i)
+        {
+            auto* track = instrumentMixer->createNewChildElement("Track");
+            track->setAttribute("index", i);
+            track->setAttribute("gain", (double) audioEngine.getInstrumentTrackGain(i));
+            track->setAttribute("pan", (double) audioEngine.getInstrumentTrackPan(i));
+            track->setAttribute("muted", audioEngine.isInstrumentTrackMuted(i));
+            track->setAttribute("solo", audioEngine.isInstrumentTrackSolo(i));
+        }
+    }
+
+    {
+        auto* inserts = project.createNewChildElement("DynamicInserts");
+        auto& host = LibertyPluginHost::instance();
+        auto& one = LibertyOneKnobManager::instance();
+        for(int i=0;i<getAudioTrackCount();++i){
+            for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot){
+                juce::PluginDescription d;
+                if(host.getEffectDescriptionForTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","audioFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getEffectStateForTrackSlot(i,slot,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
+                const int key=i*8+slot;if(one.hasEffect(key)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","audio");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("type",(int)one.getEffect(key));e->setAttribute("amount",(double)one.getAmount(key));}
+            }
+        }
+        for(int i=0;i<getInstrumentTrackCount();++i){
+            juce::PluginDescription d;
+            if(host.getInstrumentDescriptionForTrack(i,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getInstrumentStateForTrack(i,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
+            for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot){
+                if(host.getEffectDescriptionForInstrumentTrackSlot(i,slot,d)){auto*e=inserts->createNewChildElement("Plugin");e->setAttribute("kind","instrumentFX");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("identifier",d.fileOrIdentifier);juce::MemoryBlock state;if(host.getEffectStateForInstrumentTrackSlot(i,slot,state)&&state.getSize()>0)e->setAttribute("state",state.toBase64Encoding());}
+                const int key=100000+i*8+slot;if(one.hasEffect(key)){auto*e=inserts->createNewChildElement("OneKnob");e->setAttribute("kind","instrument");e->setAttribute("lane",i);e->setAttribute("slot",slot);e->setAttribute("type",(int)one.getEffect(key));e->setAttribute("amount",(double)one.getAmount(key));}
+            }
+        }
+    }
+
+    saveLibertyMultiMidiClips(*this, project);
+
+    const auto tempFile = file.getSiblingFile(
+        file.getFileName() + ".saving-" + juce::Uuid().toString());
+
+    {
+        auto output = tempFile.createOutputStream();
+        if (output == nullptr)
+        {
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not create the temporary project file.",
+                                                   "OK");
+            return false;
+        }
+
+        const auto xmlText = project.toString();
+        if (!output->writeText(xmlText, false, false, "UTF-8"))
+        {
+            output.reset();
+            tempFile.deleteFile();
+            for (auto& media : preparedMedia) media.tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   "Could not write the Liberty project data.",
+                                                   "OK");
+            return false;
+        }
+
+        output->flush();
+    }
+
+    auto verifiedProject = juce::parseXML(tempFile);
+    if (verifiedProject == nullptr || verifiedProject->getTagName() != "LibertyProject")
+    {
+        tempFile.deleteFile();
+        for (auto& media : preparedMedia) media.tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
-                                               "Could not write the project file.",
+                                               "The temporary project file could not be verified. The previous project was left unchanged.",
                                                "OK");
         return false;
     }
 
-    const auto xmlText = project.toString();
-    if (!output->writeText(xmlText, false, false, "UTF-8"))
+    const auto rollbackMedia = [&preparedMedia]()
     {
+        bool restoredAll = true;
+        for (auto it = preparedMedia.rbegin(); it != preparedMedia.rend(); ++it)
+        {
+            bool restored = true;
+            if (it->committed)
+            {
+                const bool finalRemoved = !it->finalFile.existsAsFile() || it->finalFile.deleteFile();
+                if (!finalRemoved)
+                {
+                    restored = false;
+                }
+                else if (it->hadOriginal && it->backupFile.existsAsFile())
+                {
+                    restored = it->backupFile.moveFileTo(it->finalFile);
+                }
+            }
+            it->tempFile.deleteFile();
+
+            // Never destroy the last recoverable copy if the filesystem refused
+            // to restore it. A leftover .backup is preferable to lost project audio.
+            if (restored && it->backupFile.existsAsFile())
+                it->backupFile.deleteFile();
+            restoredAll = restoredAll && restored;
+        }
+        return restoredAll;
+    };
+
+    for (auto& media : preparedMedia)
+    {
+        media.hadOriginal = media.finalFile.existsAsFile();
+        media.backupFile = media.finalFile.getSiblingFile(
+            media.finalFile.getFileName() + ".backup-" + juce::Uuid().toString());
+        if (media.hadOriginal && !media.finalFile.moveFileTo(media.backupFile))
+        {
+            const bool rollbackComplete = rollbackMedia();
+            tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   rollbackComplete
+                                                       ? "Could not protect the previous project audio. The project was not saved."
+                                                       : "Project audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
+                                                   "OK");
+            return false;
+        }
+        if (!media.tempFile.moveFileTo(media.finalFile))
+        {
+            // The original may already have been moved to .backup even though
+            // the new media was not committed. Let the central rollback restore it
+            // and report any restoration failure consistently.
+            media.committed = media.hadOriginal;
+            const bool rollbackComplete = rollbackMedia();
+            tempFile.deleteFile();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - Project Save",
+                                                   rollbackComplete
+                                                       ? "Could not commit the project audio. The previous project was left unchanged."
+                                                       : "Project audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
+                                                   "OK");
+            return false;
+        }
+        media.committed = true;
+    }
+
+    if (!tempFile.replaceFileIn(file))
+    {
+        const bool rollbackComplete = rollbackMedia();
+        tempFile.deleteFile();
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Save",
-                                               "Could not write the Liberty project data.",
+                                               rollbackComplete
+                                                   ? "Could not replace the existing project file. The previous project was left unchanged."
+                                                   : "Project file replacement failed and audio rollback was incomplete. Recovery .backup files were preserved in the project media folder.",
                                                "OK");
         return false;
     }
 
-    output->flush();
+    for (auto& media : preparedMedia)
+        media.backupFile.deleteFile();
+
+    // The saved project now owns these media files. Keep the in-memory source
+    // metadata aligned with what was serialized so dirty-state tracking and
+    // subsequent saves do not keep referring to the pre-save source files.
+    for (const auto& media : preparedMedia)
+        if (media.trackIndex >= 0 && media.trackIndex < (int)trackSourceFiles.size())
+            trackSourceFiles[(size_t)media.trackIndex] = media.finalFile;
+
     currentProjectFile = file;
     markProjectClean();
     return true;
@@ -387,26 +795,78 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
+    constexpr int currentProjectVersion = 16;
+    const int projectVersion = project->getIntAttribute("version", 1);
+    if (projectVersion < 1 || projectVersion > currentProjectVersion)
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               projectVersion > currentProjectVersion
+                                                   ? "This project was created by a newer version of Liberty and cannot be opened safely."
+                                                   : "This Liberty project version is invalid.",
+                                               "OK");
+        return false;
+    }
+
     resetProjectState();
 
-    tempoBpm = juce::jlimit(20.0, 400.0, project->getDoubleAttribute("tempo", 120.0));
+    constexpr int maxRestoredTracksPerType = 512;
+    const int savedAudioTracks = juce::jlimit(AudioEngine::initialAudioTracks, maxRestoredTracksPerType,
+                                              project->getIntAttribute("audioTrackCount", AudioEngine::initialAudioTracks));
+    const int savedMidiTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                             project->getIntAttribute("midiTrackCount", 1));
+    const int savedInstrumentTracks = juce::jlimit(1, maxRestoredTracksPerType,
+                                                   project->getIntAttribute("instrumentTrackCount", 1));
+    while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
+    while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
+    while (getInstrumentTrackCount() < savedInstrumentTracks) addInstrumentTrack();
+    audioEngine.resetInstrumentPlayback(savedInstrumentTracks);
+    trackScrollRows = 0;
+
+    const auto finiteOr = [](double value, double fallback) noexcept
+    {
+        return std::isfinite(value) ? value : fallback;
+    };
+    tempoBpm = juce::jlimit(20.0, 400.0, finiteOr(project->getDoubleAttribute("tempo", 120.0), 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
     timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
-    selectedTrack = juce::jlimit(0, AudioEngine::maxAudioTracks - 1, project->getIntAttribute("selectedTrack", 0));
-    playheadSeconds = juce::jmax(0.0, project->getDoubleAttribute("playheadSeconds", 0.0));
-    audioEngine.setMasterGain((float)project->getDoubleAttribute("masterGain", 1.0));
-    midiClipStartSeconds = juce::jmax(0.0, project->getDoubleAttribute("midiClipStartSeconds", 0.0));
-    setMidiClipLengthFromProject(project->getDoubleAttribute("midiClipLengthSeconds", 2.0));
+    selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
+    playheadSeconds = juce::jmax(0.0, finiteOr(project->getDoubleAttribute("playheadSeconds", 0.0), 0.0));
+    audioEngine.setMasterGain(juce::jlimit(0.0f, 4.0f, (float) finiteOr(project->getDoubleAttribute("masterGain", 1.0), 1.0)));
+    midiClipStartSeconds = juce::jmax(0.0, finiteOr(project->getDoubleAttribute("midiClipStartSeconds", 0.0), 0.0));
+    setMidiClipLengthFromProject(juce::jmax(0.001, finiteOr(project->getDoubleAttribute("midiClipLengthSeconds", 2.0), 2.0)));
+    setLibertyTrackColourId(getAudioTrackCount(), project->getIntAttribute("midiColourId", 0));
+    setLibertyTrackColourId(getAudioTrackCount() + getMidiTrackCount(), project->getIntAttribute("instrumentColourId", 0));
+    setLibertyTrackName(getAudioTrackCount(), project->getStringAttribute("midiTrackName", "MIDI 1"));
+    setLibertyTrackName(getAudioTrackCount() + getMidiTrackCount(), project->getStringAttribute("instrumentTrackName", "Instrument 1"));
+    audioEngine.setMidiTrackMuted(project->getBoolAttribute("midiMuted", false));
+    audioEngine.setMidiTrackSolo(project->getBoolAttribute("midiSolo", false));
+    audioEngine.setInstrumentTrackMuted(project->getBoolAttribute("instrumentMuted", false));
+    audioEngine.setInstrumentTrackSolo(project->getBoolAttribute("instrumentSolo", false));
 
     if (auto* midi = project->getChildByName("MIDI"))
     {
         midiEngine.clear();
+        constexpr std::size_t maxVisitedLegacyMidiElements = 32768;
+        std::size_t visitedLegacyMidiElements = 0;
         for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
         {
+            if (++visitedLegacyMidiElements > maxVisitedLegacyMidiElements) break;
             if (noteElement->getTagName() != "Note") continue;
+            const double rawStartTick = noteElement->getDoubleAttribute("startTick", 0.0);
+            const double rawLengthTicks = noteElement->getDoubleAttribute("lengthTicks", (double) MidiEngine::ticksPerQuarterNote);
+            if (!std::isfinite(rawStartTick) || !std::isfinite(rawLengthTicks)
+                || rawStartTick < 0.0 || rawLengthTicks <= 0.0
+                || rawStartTick > (double) std::numeric_limits<std::int64_t>::max()
+                || rawLengthTicks > (double) std::numeric_limits<std::int64_t>::max())
+                continue;
+            const auto restoredStartTick = (std::int64_t) std::llround(rawStartTick);
+            const auto restoredLengthTicks = (std::int64_t) std::llround(rawLengthTicks);
+            if (restoredStartTick > std::numeric_limits<std::int64_t>::max() - restoredLengthTicks)
+                continue;
             midiEngine.addNote(
-                (std::int64_t)std::llround(noteElement->getDoubleAttribute("startTick", 0.0)),
-                (std::int64_t)std::llround(noteElement->getDoubleAttribute("lengthTicks", (double)MidiEngine::ticksPerQuarterNote)),
+                restoredStartTick,
+                restoredLengthTicks,
                 noteElement->getIntAttribute("pitch", 60),
                 noteElement->getIntAttribute("velocity", 100),
                 noteElement->getIntAttribute("channel", 1));
@@ -414,49 +874,223 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     }
 
     juce::String missingFiles;
+    juce::String missingPlugins;
+    juce::String pluginStateWarnings;
+    constexpr int maxProjectDiagnosticChars = 32768;
+    const auto appendProjectDiagnostic = [](juce::String& target, const juce::String& message)
+    {
+        static constexpr auto omitted = "... additional messages omitted\n";
+        if (target.endsWith(omitted)) return;
+        if (target.length() + message.length() + 1 <= maxProjectDiagnosticChars)
+        {
+            target << message << "\n";
+            return;
+        }
+        const int keep = juce::jmax(0, maxProjectDiagnosticChars - (int) juce::String(omitted).length());
+        target = target.substring(0, keep);
+        target << omitted;
+    };
+    constexpr std::size_t maxVisitedProjectTrackElements = 4096;
+    std::size_t visitedProjectTrackElements = 0;
+    std::vector<bool> restoredAudioTrackIndices((size_t) getAudioTrackCount(), false);
     for (auto* track = project->getFirstChildElement(); track != nullptr; track = track->getNextElement())
     {
+        if (++visitedProjectTrackElements > maxVisitedProjectTrackElements) break;
         if (track->getTagName() != "Track") continue;
         const int index = track->getIntAttribute("index", -1);
-        if (index < 0 || index >= AudioEngine::maxAudioTracks) continue;
+        if (index < 0 || index >= getAudioTrackCount()) continue;
+        if (restoredAudioTrackIndices[(size_t) index]) continue;
+        restoredAudioTrackIndices[(size_t) index] = true;
+        setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
+        setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
+        audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
+        audioEngine.setTrackGain(index, juce::jlimit(0.0f, 2.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
+        audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
+        audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
+        audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
         if (!track->getBoolAttribute("loaded", false)) continue;
+
+        pendingAudioFileNames[(size_t)index] = track->getStringAttribute("fileName");
+        pendingAudioLengths[(size_t)index] = juce::jmax(0.0, finiteOr(track->getDoubleAttribute("lengthSeconds", 0.0), 0.0));
+        auto& pendingWarp = pendingAudioWarpStates[(size_t)index];
+        pendingWarp = {};
+        if (projectVersion >= 16)
+        {
+            pendingWarp.enabled = track->getBoolAttribute("warpEnabled", false);
+            pendingWarp.mode = juce::jlimit(0, 4, track->getIntAttribute("warpMode", 0));
+            if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
+            {
+                int visitedWarpMarkerElements = 0;
+                for (auto* marker = warpMarkers->getFirstChildElement();
+                     marker != nullptr && (int) pendingWarp.markers.size() < 128 && visitedWarpMarkerElements < 512;
+                     marker = marker->getNextElement())
+                {
+                    ++visitedWarpMarkerElements;
+                    if (marker->getTagName() != "Marker") continue;
+                    const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
+                    const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
+                    const double pendingLength = pendingAudioLengths[(size_t)index];
+                    if (sourceSeconds < 0.0 || targetSeconds < 0.0
+                        || (pendingLength > 0.0 && (sourceSeconds > pendingLength || targetSeconds > pendingLength)))
+                        continue;
+                    if (!pendingWarp.markers.empty())
+                    {
+                        const auto& previous = pendingWarp.markers.back();
+                        if (sourceSeconds <= previous.first || targetSeconds <= previous.second)
+                            continue;
+                    }
+                    pendingWarp.markers.emplace_back(sourceSeconds, targetSeconds);
+                }
+            }
+        }
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
         juce::File sourceFile(sourcePath);
-
-        if (!sourceFile.existsAsFile() && sourcePath.isNotEmpty())
+        if (sourcePath.isNotEmpty() && !juce::File::isAbsolutePath(sourcePath))
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
+        if (sourcePath.isNotEmpty())
+            trackSourceFiles[(size_t)index] = sourceFile;
 
-        if (!sourceFile.existsAsFile())
+        // Only use the conventional project-media fallback when no source
+        // path was serialized. If an explicit source path is missing, silently
+        // substituting Audio_X.wav could load stale or unrelated media.
+        if (!sourceFile.existsAsFile() && sourcePath.isEmpty())
         {
             const auto projectMediaFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_Media")
                                               .getChildFile("Audio_" + juce::String(index + 1) + ".wav");
             if (projectMediaFile.existsAsFile())
+            {
                 sourceFile = projectMediaFile;
+                trackSourceFiles[(size_t)index] = sourceFile;
+            }
         }
 
         if (!sourceFile.existsAsFile())
         {
-            missingFiles << "Audio " << (index + 1) << ": " << sourcePath << "\n";
+            appendProjectDiagnostic(missingFiles, "Audio " + juce::String(index + 1) + ": " + sourcePath);
             continue;
         }
 
         juce::String error;
         if (!audioEngine.loadAudioFileIntoTrack(index, sourceFile, error))
         {
-            missingFiles << "Audio " << (index + 1) << ": " << error << "\n";
+            appendProjectDiagnostic(missingFiles, "Audio " + juce::String(index + 1) + ": " + error);
             continue;
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
-        audioEngine.setTrackStartSeconds(index, track->getDoubleAttribute("startSeconds", 0.0));
-        audioEngine.setTrackGain(index, (float)track->getDoubleAttribute("gain", 1.0));
-        audioEngine.setTrackPan(index, (float)track->getDoubleAttribute("pan", 0.0));
-        audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
-        audioEngine.setTrackSolo(index, track->getBoolAttribute("solo", false));
+        const auto savedDisplayName = pendingAudioFileNames[(size_t)index];
+        if (savedDisplayName.isNotEmpty())
+            audioEngine.setAudioFileName(index, savedDisplayName);
+        pendingAudioFileNames[(size_t)index].clear();
+        pendingAudioLengths[(size_t)index] = 0.0;
+        pendingAudioWarpStates[(size_t)index] = {};
+        if (projectVersion >= 16)
+        {
+            audioEngine.setTrackWarpMode(index, track->getIntAttribute("warpMode", 0));
+            audioEngine.resetTrackWarpMarkers(index);
+            if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
+            {
+                int restoredMarkers = 0;
+                int visitedWarpMarkerElements = 0;
+                for (auto* marker = warpMarkers->getFirstChildElement();
+                     marker != nullptr && restoredMarkers < 128 && visitedWarpMarkerElements < 512;
+                     marker = marker->getNextElement())
+                {
+                    ++visitedWarpMarkerElements;
+                    if (marker->getTagName() != "Marker") continue;
+                    const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
+                    const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
+                    if (sourceSeconds <= 0.0 || targetSeconds < 0.0) continue;
+                    const int count = audioEngine.getTrackWarpMarkerCount(index);
+                    if (count < 2) break;
+                    const double endSource = audioEngine.getTrackWarpMarkerSourceSeconds(index, count - 1);
+                    if (sourceSeconds >= endSource) continue;
+                    if (audioEngine.addTrackWarpMarker(index, sourceSeconds, targetSeconds))
+                        ++restoredMarkers;
+                }
+            }
+            audioEngine.setTrackWarpEnabled(index, track->getBoolAttribute("warpEnabled", false));
+        }
         rebuildWaveformCache(index);
     }
 
+    if (auto* trackMetadata = project->getChildByName("DynamicTrackMetadata"))
+    {
+        constexpr std::size_t maxVisitedTrackMetadataElements = 2048;
+        std::size_t visitedTrackMetadataElements = 0;
+        for (auto* track = trackMetadata->getFirstChildElement(); track != nullptr; track = track->getNextElement())
+        {
+            if (++visitedTrackMetadataElements > maxVisitedTrackMetadataElements) break;
+            if (track->getTagName() != "Track") continue;
+            const int index = track->getIntAttribute("index", -1);
+            const auto kind = track->getStringAttribute("kind");
+            int logical = -1;
+            if (kind == "midi" && index >= 0 && index < getMidiTrackCount())
+                logical = getAudioTrackCount() + index;
+            else if (kind == "instrument" && index >= 0 && index < getInstrumentTrackCount())
+                logical = getAudioTrackCount() + getMidiTrackCount() + index;
+            if (logical < 0) continue;
+            setLibertyTrackName(logical, track->getStringAttribute("name"));
+            setLibertyTrackColourId(logical, track->getIntAttribute("colourId", 0));
+        }
+    }
+
+    if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
+    {
+        constexpr std::size_t maxVisitedInstrumentMixerElements = 1024;
+        std::size_t visitedInstrumentMixerElements = 0;
+        for (auto* track = instrumentMixer->getFirstChildElement(); track != nullptr; track = track->getNextElement())
+        {
+            if (++visitedInstrumentMixerElements > maxVisitedInstrumentMixerElements) break;
+            if (track->getTagName() != "Track") continue;
+            const int index = track->getIntAttribute("index", -1);
+            if (index < 0 || index >= getInstrumentTrackCount()) continue;
+            audioEngine.setInstrumentTrackGain(index, juce::jlimit(0.0f, 4.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
+            audioEngine.setInstrumentTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
+            audioEngine.setInstrumentTrackMuted(index, track->getBoolAttribute("muted", false));
+            audioEngine.setInstrumentTrackSolo(index, track->getBoolAttribute("solo", false));
+        }
+    }
+
+    if(auto* inserts=project->getChildByName("DynamicInserts")){
+        auto& host=LibertyPluginHost::instance(); auto& one=LibertyOneKnobManager::instance();
+        constexpr std::size_t maxVisitedDynamicInsertElements = 16384;
+        std::size_t visitedDynamicInsertElements = 0;
+        std::set<juce::String> restoredInsertLocations;
+        for(auto*e=inserts->getFirstChildElement();e;e=e->getNextElement()){
+            if (++visitedDynamicInsertElements > maxVisitedDynamicInsertElements) break;
+            const int lane=e->getIntAttribute("lane",-1); const auto kind=e->getStringAttribute("kind");
+            const int insertSlot=e->getIntAttribute("slot",-1);
+            const bool validInsertSlot=insertSlot>=0&&insertSlot<LibertyPluginHost::effectSlotsPerTrack;
+            juce::String locationKey;
+            if(e->getTagName()=="Plugin"&&kind=="instrument"&&lane>=0&&lane<getInstrumentTrackCount())locationKey="instrument:"+juce::String(lane);
+            else if(e->getTagName()=="Plugin"&&kind=="audioFX"&&lane>=0&&lane<getAudioTrackCount()&&validInsertSlot)locationKey="audioSlot:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="Plugin"&&kind=="instrumentFX"&&lane>=0&&lane<getInstrumentTrackCount()&&validInsertSlot)locationKey="instrumentSlot:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="OneKnob"&&kind=="audio"&&lane>=0&&lane<getAudioTrackCount()&&validInsertSlot)locationKey="audioSlot:"+juce::String(lane)+":"+juce::String(insertSlot);
+            else if(e->getTagName()=="OneKnob"&&kind=="instrument"&&lane>=0&&lane<getInstrumentTrackCount()&&validInsertSlot)locationKey="instrumentSlot:"+juce::String(lane)+":"+juce::String(insertSlot);
+            if(locationKey.isNotEmpty()&&restoredInsertLocations.count(locationKey)>0)continue;
+            if(e->getTagName()=="Plugin"){if(locationKey.isEmpty())continue;const auto identifier=e->getStringAttribute("identifier");juce::PluginDescription d;if(host.findKnownPluginByIdentifier(identifier,d)){juce::String error;bool loaded=false;if(kind=="instrument"&&lane<getInstrumentTrackCount())loaded=host.loadInstrumentForTrack(lane,d,error);else if(kind=="audioFX"&&lane<getAudioTrackCount())loaded=host.loadEffectForTrackSlot(lane,insertSlot,d,error);else if(kind=="instrumentFX"&&lane<getInstrumentTrackCount())loaded=host.loadEffectForInstrumentTrackSlot(lane,insertSlot,d,error);if(!loaded&&error.isNotEmpty())appendProjectDiagnostic(missingPlugins, identifier + " : " + error);if(loaded&&locationKey.isNotEmpty())restoredInsertLocations.insert(locationKey);if(loaded&&e->hasAttribute("state")){constexpr int maxSavedPluginStateBase64Chars=96*1024*1024;const auto savedState=e->getStringAttribute("state");if(savedState.length()>maxSavedPluginStateBase64Chars){appendProjectDiagnostic(pluginStateWarnings, identifier + " (saved state too large)");}else{juce::MemoryBlock state;const bool decoded=state.fromBase64Encoding(savedState);if(decoded&&state.getSize()>0&&state.getSize()<=64u*1024u*1024u){bool restored=false;if(kind=="instrument")restored=host.setInstrumentStateForTrack(lane,state);else if(kind=="audioFX")restored=host.setEffectStateForTrackSlot(lane,insertSlot,state);else if(kind=="instrumentFX")restored=host.setEffectStateForInstrumentTrackSlot(lane,insertSlot,state);if(!restored)appendProjectDiagnostic(pluginStateWarnings, identifier + " (state could not be applied)");}else appendProjectDiagnostic(pluginStateWarnings, identifier + " (invalid saved state)");}}}else if(identifier.isNotEmpty())appendProjectDiagnostic(missingPlugins, identifier + " (not found)");}
+            else if(e->getTagName()=="OneKnob"){
+                const bool validAudio = kind=="audio" && lane>=0 && lane<getAudioTrackCount() && validInsertSlot;
+                const bool validInstrument = kind=="instrument" && lane>=0 && lane<getInstrumentTrackCount() && validInsertSlot;
+                if(validAudio || validInstrument){
+                    const int key=validInstrument?100000+lane*8+insertSlot:lane*8+insertSlot;
+                    constexpr int lastOneKnobType = (int) LibertyOneKnobRack::Type::softClip;
+                    const int savedType = juce::jlimit((int) LibertyOneKnobRack::Type::none,
+                                                       lastOneKnobType,
+                                                       e->getIntAttribute("type", 0));
+                    const float savedAmount = juce::jlimit(0.0f, 1.0f,
+                                                           (float) finiteOr(e->getDoubleAttribute("amount", 0.5), 0.5));
+                    one.setEffect(key, (LibertyOneKnobRack::Type) savedType);
+                    one.setAmount(key, savedAmount);
+                    if(savedType != (int) LibertyOneKnobRack::Type::none && locationKey.isNotEmpty())
+                        restoredInsertLocations.insert(locationKey);
+                }
+            }
+        }
+    }
+    loadLibertyMultiMidiClips(*this, *project);
     updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
@@ -464,6 +1098,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     audioEngine.setPlaying(false);
     currentProjectFile = file;
     tempoControls.refresh();
+    refreshLibertyMixConsole(this);
     markProjectClean();
     repaint();
 
@@ -471,6 +1106,16 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                "Liberty - Project Media",
                                                "Some audio files could not be restored:\n\n" + missingFiles,
+                                               "OK");
+    if (missingPlugins.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Plugins",
+                                               "Some plugins could not be restored:\n\n" + missingPlugins,
+                                               "OK");
+    if (pluginStateWarnings.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Plugin State",
+                                               "Some plugin settings could not be restored. The plugins remain loaded with their current/default settings:\n\n" + pluginStateWarnings,
                                                "OK");
 
     return true;
