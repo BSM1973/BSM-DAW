@@ -487,8 +487,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     error.clear();
     newTrackIndex = -1;
     if (!isValidTrackIndex(trackIndex) || !hasAudioFile(trackIndex)) { error = "Select a loaded audio clip first."; return false; }
-    const auto rate = sampleRate.load();
-    if (rate <= 0.0) { error = "No audio device is available."; return false; }
+    const auto deviceRate = sampleRate.load();
+    const auto retainedRate = getAudioBufferSampleRate(trackIndex);
+    const auto rate = deviceRate > 0.0 ? deviceRate : retainedRate;
+    if (rate <= 0.0) { error = "The loaded audio clip has no valid sample rate."; return false; }
     auto& source = *tracks[(size_t)trackIndex];
     const auto startSeconds = source.startSeconds.load();
     const auto lengthSeconds = source.lengthSeconds.load();
