@@ -170,6 +170,7 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
         state.notes[i].endSeconds.store(MidiEngine::tickToSeconds(note.startTick+note.lengthTicks,rate));
         state.notes[i].frequency.store(440.0*std::pow(2.0,(static_cast<int>(note.pitch)-69)/12.0));
         state.notes[i].amplitude.store(0.045f*(static_cast<float>(note.velocity)/127.0f));
+        state.notes[i].channel.store(juce::jlimit(1,16,(int)note.channel));
     }
     state.noteCount.store(count,std::memory_order_release);
     if (playing.load(std::memory_order_relaxed))
@@ -1022,15 +1023,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const auto absoluteEnd=clipStart+state.notes[n].endSeconds.load();
                 const auto frequency=state.notes[n].frequency.load();
                 const auto amplitude=state.notes[n].amplitude.load();
+                const int channel=juce::jlimit(1,16,state.notes[n].channel.load());
                 const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
                 const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
                 const bool noteStartsInBlock = absoluteStart >= blockStart && absoluteStart < blockEnd;
                 const bool noteSpansResume = resumeInstruments && absoluteStart < blockStart && absoluteEnd > blockStart;
                 if (noteSpansResume)
-                    midi.addEvent(juce::MidiMessage::noteOn(1, pitch, velocity), 0);
+                    midi.addEvent(juce::MidiMessage::noteOn(channel, pitch, velocity), 0);
                 else if (noteStartsInBlock)
-                    midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
-                if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
+                    midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
+                if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
             juce::AudioBuffer<float> instrumentBus;
             if (pluginHost.renderInstrumentForTrack(instrumentTrack, instrumentBus, numSamples, midi,
