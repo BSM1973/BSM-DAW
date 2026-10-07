@@ -57,7 +57,7 @@ public:
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
     int addMidiTrack() noexcept { const int i = dynamicMidiTrackCount++; repaint(); refreshLibertyMixConsole(this); return i; }
-    int addInstrumentTrack() noexcept { const int i = dynamicInstrumentTrackCount++; audioEngine.ensureInstrumentPlaybackTracks(dynamicInstrumentTrackCount); repaint(); refreshLibertyMixConsole(this); return i; }
+    int addInstrumentTrack() noexcept { const int i = dynamicInstrumentTrackCount; if (!audioEngine.ensureInstrumentPlaybackTracks(i + 1)) return -1; ++dynamicInstrumentTrackCount; repaint(); refreshLibertyMixConsole(this); return i; }
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
