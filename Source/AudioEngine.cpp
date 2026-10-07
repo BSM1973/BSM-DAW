@@ -102,6 +102,7 @@ void AudioEngine::setCurrentTimeSeconds(double seconds) noexcept
     instrumentPanicPending.store(true, std::memory_order_release);
     if (playing.load(std::memory_order_relaxed))
     {
+        instrumentResumePending.store(true, std::memory_order_release);
         playbackClockBaseSeconds.store(static_cast<double>(clamped) / rate, std::memory_order_relaxed);
         playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
     }
