@@ -542,10 +542,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         if (audioSnapshot.loaded)
         {
             juce::File exportedFile, preparedFile;
-            const double currentSampleRate = audioEngine.getSampleRate();
-            const double mediaSampleRate = currentSampleRate > 0.0
-                ? currentSampleRate
-                : audioSnapshot.getSampleRate();
+            const double mediaSampleRate = audioSnapshot.getSampleRate();
             if (!prepareTrackProjectMedia(file, i, audioSnapshot.buffer.get(), mediaSampleRate, exportedFile, preparedFile))
             {
                 for (auto& media : preparedMedia) media.tempFile.deleteFile();
