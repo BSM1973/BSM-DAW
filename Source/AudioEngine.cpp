@@ -733,7 +733,17 @@ std::uint64_t AudioEngine::getAudioContentRevision(int trackIndex) const noexcep
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device == nullptr) return;
-    sampleRate.store(device->getCurrentSampleRate());
+    const double newRate = device->getCurrentSampleRate();
+    const double oldRate = sampleRate.exchange(newRate);
+    if (oldRate > 0.0 && newRate > 0.0 && std::abs(oldRate - newRate) > 0.01)
+    {
+        const auto oldPosition = transportSamples.load(std::memory_order_relaxed);
+        const double positionSeconds = static_cast<double>(oldPosition) / oldRate;
+        transportSamples.store(static_cast<std::int64_t>(std::llround(positionSeconds * newRate)),
+                               std::memory_order_relaxed);
+        playbackClockBaseSeconds.store(positionSeconds, std::memory_order_relaxed);
+        playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+    }
     bufferSize.store(device->getCurrentBufferSizeSamples());
     outputChannels.store(device->getActiveOutputChannels().countNumberOfSetBits());
     LibertyPluginHost::instance().initialise(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
