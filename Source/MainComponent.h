@@ -37,6 +37,7 @@ public:
     int getTimeSignatureDenominator() const noexcept { return timeSignatureDenominator; }
     double getAudioCurrentTimeSeconds() const noexcept { return audioEngine.getCurrentTimeSeconds(); }
     bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
+    void notifyInstrumentChanged() noexcept { audioEngine.notifyInstrumentChanged(); }
     double getMidiClipLengthSeconds() const noexcept { return midiClipLengthSeconds; }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
     int addAudioTrack()
