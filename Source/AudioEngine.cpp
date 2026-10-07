@@ -773,6 +773,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
     if (!playing.load())
     {
+        instrumentResumePending.store(false, std::memory_order_release);
         if (instrumentPanicPending.exchange(false, std::memory_order_acq_rel))
         {
             auto& pluginHost = LibertyPluginHost::instance();
