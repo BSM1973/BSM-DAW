@@ -281,7 +281,11 @@ private:
             main->selectedTrack = target;
             const int lane = target - main->getAudioTrackCount() - main->getMidiTrackCount();
             loaded = host.loadInstrumentForTrack(lane, *plugin, error);
-            if (loaded) host.showInstrumentEditorForTrack(lane);
+            if (loaded)
+            {
+                main->notifyInstrumentChanged();
+                host.showInstrumentEditorForTrack(lane);
+            }
         }
         else
         {
