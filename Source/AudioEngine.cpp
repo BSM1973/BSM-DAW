@@ -776,7 +776,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto audioBuffer = std::atomic_load(&track.buffer);
         if (audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        const auto clipEnd = startSample + static_cast<std::int64_t>(audioBuffer->getNumSamples());
+        const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
+        const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
+        const int rawMarkerCount = warpSnapshot != nullptr ? warpSnapshot->count : 0;
+        const auto clipEnd = warpActive && rawMarkerCount >= 2
+            ? startSample + static_cast<std::int64_t>(std::llround(track.lengthSeconds.load() * rate))
+            : startSample + static_cast<std::int64_t>(audioBuffer->getNumSamples());
         const auto blockEnd = position + numSamples;
         if (blockEnd <= startSample || position >= clipEnd) continue;
         const auto mixStart = juce::jmax(position, startSample);
@@ -814,9 +819,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
         };
 
-        const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
-        const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
-        const int rawMarkerCount = warpSnapshot != nullptr ? warpSnapshot->count : 0;
         if (!warpActive || rawMarkerCount < 2)
         {
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
@@ -886,7 +888,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double alpha = juce::jlimit(0.0, 1.0, (targetSeconds - ta) / span);
             const double sourceSeconds = sa + (sb - sa) * alpha;
 
-            const double sourceSamplePosition = sourceSeconds * rate;
+            const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
+            const double sourceSamplePosition = sourceSeconds * sourceRate;
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readWarpedSample(0, sourceSamplePosition) * leftGain;
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
