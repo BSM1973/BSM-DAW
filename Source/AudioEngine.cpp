@@ -646,14 +646,16 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     source.loaded.store(false, std::memory_order_release);
     std::atomic_store(&source.buffer, std::move(leftBuffer));
     source.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    source.lengthSeconds.store(static_cast<double>(splitSample) / rate);
+    const double leftTargetLength = sourceWarp.enabled ? splitOffsetSeconds : static_cast<double>(splitSample) / rate;
+    const double rightTargetLength = sourceWarp.enabled ? juce::jmax(0.0, lengthSeconds - splitOffsetSeconds) : static_cast<double>(rightSamples) / rate;
+    source.lengthSeconds.store(leftTargetLength);
     source.loaded.store(true, std::memory_order_release);
     auto& right = *tracks[(size_t)targetTrackIndex];
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
     right.contentRevision.fetch_add(1, std::memory_order_relaxed);
     right.fileName = source.fileName + " - Split";
-    right.lengthSeconds.store(static_cast<double>(rightSamples) / rate);
+    right.lengthSeconds.store(rightTargetLength);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
     right.gain.store(source.gain.load());
     right.pan.store(source.pan.load());
