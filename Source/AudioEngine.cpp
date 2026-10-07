@@ -79,7 +79,8 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
         const auto audioBuffer = std::atomic_load(&track.buffer);
         if (audioBuffer == nullptr) continue;
         const auto start = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
-        length = juce::jmax(length, start + static_cast<std::int64_t>(audioBuffer->getNumSamples()));
+        const auto duration = static_cast<std::int64_t>(std::llround(track.lengthSeconds.load() * rate));
+        length = juce::jmax(length, start + duration);
     }
     const auto extraLength = static_cast<std::int64_t>(std::llround(projectExtraLengthSeconds.load(std::memory_order_relaxed) * rate));
     length = juce::jmax(length, extraLength);
@@ -779,9 +780,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
         const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
         const int rawMarkerCount = warpSnapshot != nullptr ? warpSnapshot->count : 0;
-        const auto clipEnd = warpActive && rawMarkerCount >= 2
-            ? startSample + static_cast<std::int64_t>(std::llround(track.lengthSeconds.load() * rate))
-            : startSample + static_cast<std::int64_t>(audioBuffer->getNumSamples());
+        const auto clipEnd = startSample + static_cast<std::int64_t>(std::llround(track.lengthSeconds.load() * rate));
         const auto blockEnd = position + numSamples;
         if (blockEnd <= startSample || position >= clipEnd) continue;
         const auto mixStart = juce::jmax(position, startSample);
@@ -821,10 +820,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
         if (!warpActive || rawMarkerCount < 2)
         {
-            if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                juce::FloatVectorOperations::addWithMultiply(outputChannelData[0] + outputOffset, audioBuffer->getReadPointer(0) + sourceOffset, leftGain, samplesToMix);
-            if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                juce::FloatVectorOperations::addWithMultiply(outputChannelData[1] + outputOffset, audioBuffer->getReadPointer(sourceChannels == 1 ? 0 : 1) + sourceOffset, rightGain, samplesToMix);
+            const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
+            if (sourceRate <= 0.0) continue;
+            const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
+            const double sourceStep = sourceRate / rate;
+            for (int s = 0; s < samplesToMix; ++s)
+            {
+                const double sourcePosition = (static_cast<double>(sourceOffset) + s) * sourceStep;
+                const int i1 = juce::jlimit(0, lastSample, static_cast<int>(std::floor(sourcePosition)));
+                const int i2 = juce::jmin(lastSample, i1 + 1);
+                const float frac = static_cast<float>(sourcePosition - static_cast<double>(i1));
+                auto readLinear = [&](int channel)
+                {
+                    const float* data = audioBuffer->getReadPointer(juce::jlimit(0, sourceChannels - 1, channel));
+                    return data[i1] + (data[i2] - data[i1]) * frac;
+                };
+                if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
+                    outputChannelData[0][outputOffset + s] += readLinear(0) * leftGain;
+                if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
+                    outputChannelData[1][outputOffset + s] += readLinear(sourceChannels == 1 ? 0 : 1) * rightGain;
+            }
             processTrackInsertChain();
             continue;
         }
