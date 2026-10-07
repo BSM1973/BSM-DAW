@@ -209,11 +209,20 @@ int AudioEngine::getAudioTrackCount() const noexcept
 void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
 {
     const int safeCount = juce::jmax(1, trackCount);
+    int currentCount = 0;
     {
         const juce::ScopedLock lock(stateLock);
-        if ((int) instrumentPlayback.size() >= safeCount)
+        currentCount = (int) instrumentPlayback.size();
+        if (currentCount >= safeCount)
             return;
     }
+
+    std::vector<std::unique_ptr<InstrumentPlaybackState>> additions;
+    std::vector<std::unique_ptr<InstrumentPlaybackState>> replacement;
+    additions.reserve((size_t) (safeCount - currentCount));
+    replacement.reserve((size_t) safeCount);
+    for (int i = currentCount; i < safeCount; ++i)
+        additions.push_back(std::make_unique<InstrumentPlaybackState>());
 
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
@@ -223,9 +232,14 @@ void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
 
     {
         const juce::ScopedLock lock(stateLock);
-        instrumentPlayback.reserve((size_t) safeCount);
-        while ((int) instrumentPlayback.size() < safeCount)
-            instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
+        if ((int) instrumentPlayback.size() < safeCount)
+        {
+            for (auto& state : instrumentPlayback)
+                replacement.push_back(std::move(state));
+            for (auto& state : additions)
+                replacement.push_back(std::move(state));
+            instrumentPlayback.swap(replacement);
+        }
     }
 
     if (wasPlaying)
@@ -241,6 +255,11 @@ void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
 void AudioEngine::resetInstrumentPlayback(int trackCount)
 {
     const int safeCount = juce::jmax(1, trackCount);
+    std::vector<std::unique_ptr<InstrumentPlaybackState>> replacement;
+    replacement.reserve((size_t) safeCount);
+    for (int i = 0; i < safeCount; ++i)
+        replacement.push_back(std::make_unique<InstrumentPlaybackState>());
+
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
     playing.store(false);
@@ -249,10 +268,7 @@ void AudioEngine::resetInstrumentPlayback(int trackCount)
 
     {
         const juce::ScopedLock lock(stateLock);
-        instrumentPlayback.clear();
-        instrumentPlayback.reserve((size_t) safeCount);
-        for (int i = 0; i < safeCount; ++i)
-            instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
+        instrumentPlayback.swap(replacement);
     }
 
     if (wasPlaying)
