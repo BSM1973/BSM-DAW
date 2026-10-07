@@ -840,11 +840,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const auto position = transportSamples.load();
     const auto projectLength = getProjectLengthSamples();
     const bool hasBoundedAudioProject = projectLength > 0;
-    const bool anySolo = isAnyTrackSolo();
-    bool anyInstrumentSolo = false;
-    for (const auto& p : instrumentPlayback)
-        if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
-    const bool anyPlaybackSolo = anySolo || anyInstrumentSolo;
+    const bool anyPlaybackSolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
     auto& oneKnob = LibertyOneKnobManager::instance();
