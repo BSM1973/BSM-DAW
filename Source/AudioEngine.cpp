@@ -958,20 +958,24 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
             const bool trackMuted = midiLaneMuted || state.muted.load(std::memory_order_relaxed);
             const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
+            const bool hasInstrument = pluginHost.hasInstrumentForTrack(instrumentTrack);
+            if (panicInstruments && hasInstrument)
+            {
+                juce::MidiBuffer panicMidi;
+                for (int channel = 1; channel <= 16; ++channel)
+                {
+                    panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+                juce::AudioBuffer<float> panicBuffer;
+                pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
+            }
             if (trackMuted || ((anySolo || anyInstrumentSolo) && !trackSolo)) continue;
             const auto count=state.noteCount.load(std::memory_order_acquire);
             const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
             const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
-            if (!pluginHost.hasInstrumentForTrack(instrumentTrack) || count==0 || clipLength<=0.0) continue;
+            if (!hasInstrument || count==0 || clipLength<=0.0) continue;
             juce::MidiBuffer midi;
-            if (panicInstruments)
-            {
-                for (int channel = 1; channel <= 16; ++channel)
-                {
-                    midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
-                    midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
-                }
-            }
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
             for(std::size_t n=0;n<count;++n)
