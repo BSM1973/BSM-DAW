@@ -175,9 +175,9 @@ void AudioEngine::setInstrumentTrackGain(int t,float v) noexcept { const juce::S
 float AudioEngine::getInstrumentTrackGain(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()?instrumentPlayback[(size_t)t]->gain.load():1.f; }
 void AudioEngine::setInstrumentTrackPan(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->pan.store(juce::jlimit(-1.f,1.f,v)); }
 float AudioEngine::getInstrumentTrackPan(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()?instrumentPlayback[(size_t)t]->pan.load():0.f; }
-void AudioEngine::setInstrumentTrackMuted(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->muted.store(v); }
+void AudioEngine::setInstrumentTrackMuted(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) { instrumentPlayback[(size_t)t]->muted.store(v); instrumentPanicPending.store(true,std::memory_order_release); instrumentResumePending.store(true,std::memory_order_release); } }
 bool AudioEngine::isInstrumentTrackMuted(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()&&instrumentPlayback[(size_t)t]->muted.load(); }
-void AudioEngine::setInstrumentTrackSolo(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->solo.store(v); }
+void AudioEngine::setInstrumentTrackSolo(int t,bool v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) { instrumentPlayback[(size_t)t]->solo.store(v); instrumentPanicPending.store(true,std::memory_order_release); instrumentResumePending.store(true,std::memory_order_release); } }
 bool AudioEngine::isInstrumentTrackSolo(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()&&instrumentPlayback[(size_t)t]->solo.load(); }
 
 int AudioEngine::getAudioTrackCount() const noexcept
