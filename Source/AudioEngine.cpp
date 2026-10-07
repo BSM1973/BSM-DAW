@@ -771,7 +771,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
     }
 
-    if (!playing.load()) return;
+    if (!playing.load())
+    {
+        if (instrumentPanicPending.exchange(false, std::memory_order_acq_rel))
+        {
+            auto& pluginHost = LibertyPluginHost::instance();
+            for (int instrumentTrack = 0; instrumentTrack < (int) instrumentPlayback.size(); ++instrumentTrack)
+            {
+                if (!pluginHost.hasInstrumentForTrack(instrumentTrack)) continue;
+                juce::MidiBuffer panicMidi;
+                for (int channel = 1; channel <= 16; ++channel)
+                {
+                    panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+                juce::AudioBuffer<float> panicBuffer;
+                pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
+            }
+        }
+        return;
+    }
 
     const auto position = transportSamples.load();
     const auto projectLength = getProjectLengthSamples();
