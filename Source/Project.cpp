@@ -125,11 +125,11 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";solo=" << (audioEngine.isTrackSolo(i) ? 1 : 0)
                   << ";colour=" << getLibertyTrackColourId(i);
         const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
-        const bool signatureWarpEnabled = audioLoaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled;
-        const int signatureWarpMode = audioLoaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode;
+        const auto warpSnapshot = audioLoaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
+        const bool signatureWarpEnabled = audioLoaded ? warpSnapshot.enabled : pendingWarp.enabled;
+        const int signatureWarpMode = audioLoaded ? warpSnapshot.mode : pendingWarp.mode;
         signature << ";warpEnabled=" << (signatureWarpEnabled ? 1 : 0)
                   << ";warpMode=" << signatureWarpMode;
-        const auto warpSnapshot = audioLoaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
         const int warpMarkerCount = audioLoaded ? warpSnapshot.count : (int) pendingWarp.markers.size();
         signature << ";warpMarkers=" << warpMarkerCount;
         for (int markerIndex = 0; markerIndex < warpMarkerCount; ++markerIndex)
@@ -571,9 +571,9 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
         const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
-        track->setAttribute("warpEnabled", audioSnapshot.loaded ? audioEngine.isTrackWarpEnabled(i) : pendingWarp.enabled);
-        track->setAttribute("warpMode", audioSnapshot.loaded ? audioEngine.getTrackWarpMode(i) : pendingWarp.mode);
         const auto warpSnapshot = audioSnapshot.loaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
+        track->setAttribute("warpEnabled", audioSnapshot.loaded ? warpSnapshot.enabled : pendingWarp.enabled);
+        track->setAttribute("warpMode", audioSnapshot.loaded ? warpSnapshot.mode : pendingWarp.mode);
         const int warpMarkerCount = audioSnapshot.loaded ? warpSnapshot.count : (int) pendingWarp.markers.size();
         if (warpMarkerCount > 0)
         {
