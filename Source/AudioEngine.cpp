@@ -611,9 +611,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
 {
     error.clear();
     if (!isValidTrackIndex(trackIndex) || !hasAudioFile(trackIndex)) { error = "Select a loaded audio clip first."; return false; }
-    const auto deviceRate = sampleRate.load();
-    const auto retainedRate = getAudioBufferSampleRate(trackIndex);
-    const auto rate = deviceRate > 0.0 ? deviceRate : retainedRate;
+    const auto rate = getAudioBufferSampleRate(trackIndex);
     if (rate <= 0.0) { error = "The loaded audio clip has no valid sample rate."; return false; }
     auto& source = *tracks[(size_t)trackIndex];
     const auto startSeconds = source.startSeconds.load();
@@ -642,6 +640,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         splitSourceSeconds = sa + (sb - sa) * alpha;
     }
     const auto splitSample = static_cast<int>(std::llround(splitSourceSeconds * rate));
+    const double actualSplitSourceSeconds = static_cast<double>(splitSample) / rate;
     const auto sourceBuffer = std::atomic_load(&source.buffer);
     if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
     const auto sourceSamples = sourceBuffer->getNumSamples();
@@ -692,10 +691,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         {
             const double sourceSeconds = sourceWarp.source[(size_t)marker];
             const double targetSeconds = sourceWarp.target[(size_t)marker];
-            if (targetSeconds < splitOffsetSeconds - 0.001 && sourceSeconds < splitSourceSeconds - 0.001)
+            if (targetSeconds < splitOffsetSeconds - 0.001 && sourceSeconds < actualSplitSourceSeconds - 0.001)
                 addTrackWarpMarker(trackIndex, sourceSeconds, targetSeconds);
-            else if (targetSeconds > splitOffsetSeconds + 0.001 && sourceSeconds > splitSourceSeconds + 0.001)
-                addTrackWarpMarker(targetTrackIndex, sourceSeconds - splitSourceSeconds, targetSeconds - splitOffsetSeconds);
+            else if (targetSeconds > splitOffsetSeconds + 0.001 && sourceSeconds > actualSplitSourceSeconds + 0.001)
+                addTrackWarpMarker(targetTrackIndex, sourceSeconds - actualSplitSourceSeconds, targetSeconds - splitOffsetSeconds);
         }
         setTrackWarpMode(trackIndex, sourceWarp.mode);
         setTrackWarpMode(targetTrackIndex, sourceWarp.mode);
