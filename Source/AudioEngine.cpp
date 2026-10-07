@@ -534,7 +534,10 @@ AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackInd
         snapshot.sampleRate = 0.0;
         return snapshot;
     }
-    snapshot.valid = snapshot.buffer != nullptr && snapshot.numSamples > 0 && snapshot.lengthSeconds > 0.0;
+    snapshot.valid = snapshot.buffer != nullptr
+        && snapshot.numSamples > 0
+        && std::isfinite(snapshot.lengthSeconds) && snapshot.lengthSeconds > 0.0
+        && std::isfinite(snapshot.sampleRate) && snapshot.sampleRate > 0.0;
     return snapshot;
 }
 
