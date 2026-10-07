@@ -291,9 +291,24 @@ void AudioEngine::resetInstrumentPlayback(int trackCount)
 
 int AudioEngine::addAudioTrack()
 {
-    // Dynamic track creation must not mutate the vector while the realtime
-    // callback is traversing it. The callback is stopped first, then the
-    // vector is changed under the state lock, and finally audio is restarted.
+    int currentCount = 0;
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentCount = (int) tracks.size();
+    }
+
+    std::unique_ptr<AudioTrackState> newTrack;
+    std::vector<std::unique_ptr<AudioTrackState>> replacement;
+    try
+    {
+        newTrack = std::make_unique<AudioTrackState>();
+        replacement.reserve((size_t) currentCount + 1);
+    }
+    catch (...)
+    {
+        return -1;
+    }
+
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
     playing.store(false);
@@ -303,7 +318,10 @@ int AudioEngine::addAudioTrack()
     int index = -1;
     {
         const juce::ScopedLock lock(stateLock);
-        tracks.push_back(std::make_unique<AudioTrackState>());
+        for (auto& track : tracks)
+            replacement.push_back(std::move(track));
+        replacement.push_back(std::move(newTrack));
+        tracks.swap(replacement);
         index = (int) tracks.size() - 1;
     }
 
