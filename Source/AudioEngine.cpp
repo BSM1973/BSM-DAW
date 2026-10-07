@@ -309,7 +309,16 @@ void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept 
 
 void AudioEngine::setTrackWarpEnabled(int trackIndex, bool enabled) noexcept
 {
-    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->warpEnabled.store(enabled, std::memory_order_relaxed);
+    if (!isValidTrackIndex(trackIndex)) return;
+    auto& track = *tracks[(size_t)trackIndex];
+    track.warpEnabled.store(enabled, std::memory_order_relaxed);
+    const auto current = std::atomic_load(&track.warpMarkerSnapshot);
+    if (current != nullptr)
+    {
+        auto snapshot = std::make_shared<WarpMarkerSnapshot>(*current);
+        snapshot->enabled = enabled;
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+    }
 }
 
 bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
@@ -319,7 +328,17 @@ bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
 
 void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
 {
-    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->warpMode.store(juce::jlimit(0, 4, mode), std::memory_order_relaxed);
+    if (!isValidTrackIndex(trackIndex)) return;
+    auto& track = *tracks[(size_t)trackIndex];
+    const int clampedMode = juce::jlimit(0, 4, mode);
+    track.warpMode.store(clampedMode, std::memory_order_relaxed);
+    const auto current = std::atomic_load(&track.warpMarkerSnapshot);
+    if (current != nullptr)
+    {
+        auto snapshot = std::make_shared<WarpMarkerSnapshot>(*current);
+        snapshot->mode = clampedMode;
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+    }
 }
 
 int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
