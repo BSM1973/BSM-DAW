@@ -928,7 +928,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                     const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
                     const double pendingLength = pendingAudioLengths[(size_t)index];
                     if (sourceSeconds < 0.0 || targetSeconds < 0.0
-                        || (pendingLength > 0.0 && (sourceSeconds > pendingLength || targetSeconds > pendingLength)))
+                        || (pendingLength > 0.0 && targetSeconds > pendingLength))
                         continue;
                     if (!pendingWarp.markers.empty())
                     {
@@ -976,6 +976,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
+        const double savedTimelineLength = pendingAudioLengths[(size_t)index];
+        if (savedTimelineLength > 0.0)
+            audioEngine.setAudioFileLengthSeconds(index, savedTimelineLength);
         const auto savedDisplayName = pendingAudioFileNames[(size_t)index];
         if (savedDisplayName.isNotEmpty())
             audioEngine.setAudioFileName(index, savedDisplayName);
