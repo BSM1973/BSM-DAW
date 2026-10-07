@@ -824,7 +824,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     {
         return std::isfinite(value) ? value : fallback;
     };
-    tempoBpm = juce::jlimit(20.0, 400.0, finiteOr(project->getDoubleAttribute("tempo", 120.0), 120.0));
+    tempoBpm = juce::jlimit(20.0, 300.0, finiteOr(project->getDoubleAttribute("tempo", 120.0), 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
     const int savedTimeSignatureDenominator = project->getIntAttribute("timeSignatureDenominator", 4);
     timeSignatureDenominator = (savedTimeSignatureDenominator == 2 || savedTimeSignatureDenominator == 4
