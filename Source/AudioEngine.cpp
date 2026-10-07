@@ -826,8 +826,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceStep = sourceRate / rate;
             for (int s = 0; s < samplesToMix; ++s)
             {
-                const double sourcePosition = (static_cast<double>(sourceOffset) + s) * sourceStep;
-                const int i1 = juce::jlimit(0, lastSample, static_cast<int>(std::floor(sourcePosition)));
+                const double sourcePosition = juce::jlimit(0.0, static_cast<double>(lastSample),
+                                                          (static_cast<double>(sourceOffset) + s) * sourceStep);
+                const int i1 = static_cast<int>(std::floor(sourcePosition));
                 const int i2 = juce::jmin(lastSample, i1 + 1);
                 const float frac = static_cast<float>(sourcePosition - static_cast<double>(i1));
                 auto readLinear = [&](int channel)
