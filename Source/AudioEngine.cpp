@@ -154,9 +154,9 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
                                           double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept
 {
     if (instrumentTrack < 0) return;
+    ensureInstrumentPlaybackTracks(instrumentTrack + 1);
     const juce::ScopedLock lock(stateLock);
-    while ((int) instrumentPlayback.size() <= instrumentTrack)
-        instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
+    if (instrumentTrack >= (int) instrumentPlayback.size()) return;
     auto& state = *instrumentPlayback[(size_t)instrumentTrack];
     const auto rate = juce::jmax(1.0, tempoBpm);
     auto snapshot = std::make_shared<InstrumentNoteSnapshot>();
