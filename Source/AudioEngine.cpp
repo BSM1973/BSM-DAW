@@ -1055,6 +1055,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     {
         for (int channel = 0; channel < numOutputChannels; ++channel)
             if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+        instrumentResumePending.store(false, std::memory_order_release);
+        instrumentPanicPending.store(true, std::memory_order_release);
         playing.store(false, std::memory_order_relaxed);
         return;
     }
@@ -1065,7 +1067,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     }
     const auto advance = juce::jmin<std::int64_t>(numSamples, juce::jmax<std::int64_t>(0, projectLength - position));
     if (advance > 0) transportSamples.fetch_add(advance);
-    if (position + advance >= projectLength) playing.store(false);
+    if (position + advance >= projectLength)
+    {
+        instrumentResumePending.store(false, std::memory_order_release);
+        instrumentPanicPending.store(true, std::memory_order_release);
+        playing.store(false, std::memory_order_release);
+    }
 }
 
-void AudioEngine::audioDeviceStopped() { playing.store(false); }
+void AudioEngine::audioDeviceStopped()
+{
+    instrumentResumePending.store(false, std::memory_order_release);
+    instrumentPanicPending.store(true, std::memory_order_release);
+    playing.store(false, std::memory_order_release);
+}
