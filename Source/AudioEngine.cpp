@@ -350,8 +350,16 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
     auto& track = *tracks[(size_t)trackIndex];
-    const double length = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
-    if (length <= 0.0)
+    const double targetLength = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
+    const auto buffer = std::atomic_load(&track.buffer);
+    double sourceLength = targetLength;
+    if (buffer != nullptr && targetLength > 0.0)
+    {
+        const double retainedRate = getAudioBufferSampleRate(trackIndex);
+        if (retainedRate > 0.0)
+            sourceLength = static_cast<double>(buffer->getNumSamples()) / retainedRate;
+    }
+    if (sourceLength <= 0.0 || targetLength <= 0.0)
     {
         track.warpMarkerCount.store(0, std::memory_order_release);
         std::atomic_store(&track.warpMarkerSnapshot, std::shared_ptr<WarpMarkerSnapshot>{});
@@ -359,15 +367,15 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
     }
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
-    track.warpSourceSeconds[1].store(length, std::memory_order_relaxed);
-    track.warpTargetSeconds[1].store(length, std::memory_order_relaxed);
+    track.warpSourceSeconds[1].store(sourceLength, std::memory_order_relaxed);
+    track.warpTargetSeconds[1].store(targetLength, std::memory_order_relaxed);
     track.warpMarkerCount.store(2, std::memory_order_release);
     auto snapshot = std::make_shared<WarpMarkerSnapshot>();
     snapshot->enabled = track.warpEnabled.load(std::memory_order_relaxed);
     snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = 2;
     snapshot->source[0] = 0.0; snapshot->target[0] = 0.0;
-    snapshot->source[1] = length; snapshot->target[1] = length;
+    snapshot->source[1] = sourceLength; snapshot->target[1] = targetLength;
     std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
