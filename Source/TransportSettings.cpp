@@ -26,13 +26,13 @@ void MainComponent::editTempo()
             if (value >= 20.0 && value <= 300.0)
             {
                 const double oldTempo = juce::jmax(1.0, tempoBpm);
+                const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
                 if (std::abs(value - oldTempo) > 0.000001)
                 {
                     // Audio clips are treated as musical clips: their number of measures stays fixed.
                     // Example in 4/4: 4 measures at 120 BPM = 8 s, and become 12 s at 80 BPM.
                     // Signalsmith Stretch is used through commitLibertyAudioClipResize(), with pitch preserved.
                     const double tempoRatio = oldTempo / value;
-                    const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
                     juce::String stretchError;
                     if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError))
                     {
