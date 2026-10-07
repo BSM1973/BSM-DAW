@@ -159,20 +159,22 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
         instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
     auto& state = *instrumentPlayback[(size_t)instrumentTrack];
     const auto rate = juce::jmax(1.0, tempoBpm);
-    const auto count = std::min(notes.size(), maxMidiPlaybackNotes);
+    auto snapshot = std::make_shared<InstrumentNoteSnapshot>();
+    snapshot->notes.reserve(notes.size());
+    for (const auto& note : notes)
+    {
+        InstrumentPlaybackNote playbackNote;
+        playbackNote.startSeconds = MidiEngine::tickToSeconds(note.startTick, rate);
+        playbackNote.endSeconds = MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate);
+        playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
+        playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
+        playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
+        snapshot->notes.push_back(playbackNote);
+    }
     state.clipStartSeconds.store(juce::jmax(0.0, clipStartSeconds));
     state.clipLengthSeconds.store(juce::jmax(0.0, clipLengthSeconds));
     state.tempoBpm.store(rate);
-    for (std::size_t i=0;i<count;++i)
-    {
-        const auto& note=notes[i];
-        state.notes[i].startSeconds.store(MidiEngine::tickToSeconds(note.startTick,rate));
-        state.notes[i].endSeconds.store(MidiEngine::tickToSeconds(note.startTick+note.lengthTicks,rate));
-        state.notes[i].frequency.store(440.0*std::pow(2.0,(static_cast<int>(note.pitch)-69)/12.0));
-        state.notes[i].amplitude.store(0.045f*(static_cast<float>(note.velocity)/127.0f));
-        state.notes[i].channel.store(juce::jlimit(1,16,(int)note.channel));
-    }
-    state.noteCount.store(count,std::memory_order_release);
+    std::atomic_store(&state.noteSnapshot, std::move(snapshot));
     if (playing.load(std::memory_order_relaxed))
     {
         instrumentPanicPending.store(true, std::memory_order_release);
@@ -1014,20 +1016,20 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
             if (trackMuted || (anyPlaybackSolo && !trackSolo)) continue;
-            const auto count=state.noteCount.load(std::memory_order_acquire);
+            const auto noteSnapshot = std::atomic_load(&state.noteSnapshot);
             const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
             const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
-            if (!hasInstrument || count==0 || clipLength<=0.0) continue;
+            if (!hasInstrument || noteSnapshot == nullptr || noteSnapshot->notes.empty() || clipLength<=0.0) continue;
             juce::MidiBuffer midi;
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
-            for(std::size_t n=0;n<count;++n)
+            for (const auto& note : noteSnapshot->notes)
             {
-                const auto absoluteStart=clipStart+state.notes[n].startSeconds.load();
-                const auto absoluteEnd=clipStart+state.notes[n].endSeconds.load();
-                const auto frequency=state.notes[n].frequency.load();
-                const auto amplitude=state.notes[n].amplitude.load();
-                const int channel=juce::jlimit(1,16,state.notes[n].channel.load());
+                const auto absoluteStart=clipStart+note.startSeconds;
+                const auto absoluteEnd=clipStart+note.endSeconds;
+                const auto frequency=note.frequency;
+                const auto amplitude=note.amplitude;
+                const int channel=juce::jlimit(1,16,note.channel);
                 const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
                 const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
                 const bool noteStartsInBlock = absoluteStart >= blockStart && absoluteStart < blockEnd;
