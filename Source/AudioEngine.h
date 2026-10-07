@@ -132,13 +132,9 @@ public:
         std::shared_ptr<const juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         double lengthSeconds = 0.0;
+        double sampleRate = 0.0;
 
-        double getSampleRate() const noexcept
-        {
-            return numSamples > 0 && lengthSeconds > 0.0
-                ? static_cast<double>(numSamples) / lengthSeconds
-                : 0.0;
-        }
+        double getSampleRate() const noexcept { return sampleRate; }
     };
 
     AudioBufferSnapshot getAudioTrackSnapshot(int trackIndex) const noexcept;
@@ -212,6 +208,7 @@ private:
         std::atomic<bool> solo { false };
         std::atomic<bool> loaded { false };
         std::atomic<double> lengthSeconds { 0.0 };
+        std::atomic<double> bufferSampleRate { 0.0 };
         std::atomic<double> startSeconds { 0.0 };
         std::atomic<bool> warpEnabled { false };
         std::atomic<int> warpMode { 0 };
