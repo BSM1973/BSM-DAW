@@ -835,6 +835,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const auto projectLength = getProjectLengthSamples();
     const bool hasBoundedAudioProject = projectLength > 0;
     const bool anySolo = isAnyTrackSolo();
+    bool anyInstrumentSolo = false;
+    for (const auto& p : instrumentPlayback)
+        if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
+    const bool anyPlaybackSolo = anySolo || anyInstrumentSolo;
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
     auto& oneKnob = LibertyOneKnobManager::instance();
@@ -846,7 +850,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         auto& track = *tracks[(size_t)trackIndex];
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
-        if (audioBuffer == nullptr || track.muted.load() || (anySolo && !track.solo.load())) continue;
+        if (audioBuffer == nullptr || track.muted.load() || (anyPlaybackSolo && !track.solo.load())) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
         const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
@@ -986,8 +990,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         processTrackInsertChain();
     }
 
-    bool anyInstrumentSolo = false;
-    for (const auto& p : instrumentPlayback) if (p && p->solo.load(std::memory_order_relaxed)) { anyInstrumentSolo = true; break; }
     const bool midiLaneMuted = midiTrackMuted.load(std::memory_order_relaxed);
     const bool midiLaneSolo = midiTrackSolo.load(std::memory_order_relaxed);
     if (rate > 0.0)
@@ -1009,7 +1011,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 juce::AudioBuffer<float> panicBuffer;
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
-            if (trackMuted || ((anySolo || anyInstrumentSolo) && !trackSolo)) continue;
+            if (trackMuted || (anyPlaybackSolo && !trackSolo)) continue;
             const auto count=state.noteCount.load(std::memory_order_acquire);
             const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
             const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
