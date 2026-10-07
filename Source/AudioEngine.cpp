@@ -324,7 +324,13 @@ void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidT
 float AudioEngine::getTrackPan(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->pan.load() : 0.0f; }
 void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->muted.store(muted); }
 bool AudioEngine::isTrackMuted(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->muted.load(); }
-void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->solo.store(solo); }
+void AudioEngine::setTrackSolo(int trackIndex, bool solo) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->solo.store(solo);
+    instrumentPanicPending.store(true, std::memory_order_release);
+    instrumentResumePending.store(playing.load(std::memory_order_relaxed), std::memory_order_release);
+}
 bool AudioEngine::isTrackSolo(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->solo.load(); }
 bool AudioEngine::isAnyTrackSolo() const noexcept
 {
