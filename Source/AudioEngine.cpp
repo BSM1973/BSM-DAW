@@ -154,23 +154,32 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
                                           double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept
 {
     if (instrumentTrack < 0) return;
-    ensureInstrumentPlaybackTracks(instrumentTrack + 1);
+    const auto rate = juce::jmax(1.0, tempoBpm);
+    std::shared_ptr<InstrumentNoteSnapshot> snapshot;
+    try
+    {
+        ensureInstrumentPlaybackTracks(instrumentTrack + 1);
+        snapshot = std::make_shared<InstrumentNoteSnapshot>();
+        snapshot->notes.reserve(notes.size());
+        for (const auto& note : notes)
+        {
+            InstrumentPlaybackNote playbackNote;
+            playbackNote.startSeconds = MidiEngine::tickToSeconds(note.startTick, rate);
+            playbackNote.endSeconds = MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate);
+            playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
+            playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
+            playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
+            snapshot->notes.push_back(playbackNote);
+        }
+    }
+    catch (...)
+    {
+        return;
+    }
+
     const juce::ScopedLock lock(stateLock);
     if (instrumentTrack >= (int) instrumentPlayback.size()) return;
     auto& state = *instrumentPlayback[(size_t)instrumentTrack];
-    const auto rate = juce::jmax(1.0, tempoBpm);
-    auto snapshot = std::make_shared<InstrumentNoteSnapshot>();
-    snapshot->notes.reserve(notes.size());
-    for (const auto& note : notes)
-    {
-        InstrumentPlaybackNote playbackNote;
-        playbackNote.startSeconds = MidiEngine::tickToSeconds(note.startTick, rate);
-        playbackNote.endSeconds = MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate);
-        playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
-        playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
-        playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
-        snapshot->notes.push_back(playbackNote);
-    }
     state.clipStartSeconds.store(juce::jmax(0.0, clipStartSeconds));
     state.clipLengthSeconds.store(juce::jmax(0.0, clipLengthSeconds));
     state.tempoBpm.store(rate);
