@@ -43,6 +43,8 @@ public:
     int addAudioTrack()
     {
         const int index = audioEngine.addAudioTrack();
+        if (index < 0)
+            return -1;
         waveformMin.resize((size_t) audioEngine.getAudioTrackCount());
         waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
         trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
