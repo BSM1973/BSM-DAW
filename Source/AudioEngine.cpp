@@ -97,6 +97,7 @@ void AudioEngine::setCurrentTimeSeconds(double seconds) noexcept
         ? juce::jlimit<std::int64_t>(0, projectLength, requested)
         : juce::jmax<std::int64_t>(0, requested);
     transportSamples.store(clamped, std::memory_order_relaxed);
+    instrumentPanicPending.store(true, std::memory_order_release);
     if (playing.load(std::memory_order_relaxed))
     {
         playbackClockBaseSeconds.store(static_cast<double>(clamped) / rate, std::memory_order_relaxed);
@@ -779,6 +780,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
     auto& oneKnob = LibertyOneKnobManager::instance();
+    const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
 
     for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
     {
@@ -942,6 +944,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
             if (!pluginHost.hasInstrumentForTrack(instrumentTrack) || count==0 || clipLength<=0.0) continue;
             juce::MidiBuffer midi;
+            if (panicInstruments)
+            {
+                for (int channel = 1; channel <= 16; ++channel)
+                {
+                    midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+            }
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
             for(std::size_t n=0;n<count;++n)
