@@ -55,7 +55,7 @@ void AudioEngine::shutdown()
     {
         auto& track = *trackPtr;
         track.loaded.store(false, std::memory_order_release);
-        track.lengthSeconds.store(0.0); track.startSeconds.store(0.0);
+        track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0);
         track.warpEnabled.store(false, std::memory_order_relaxed);
         track.warpMode.store(0, std::memory_order_relaxed);
         track.warpMarkerCount.store(0, std::memory_order_relaxed);
@@ -523,6 +523,7 @@ AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackInd
     snapshot.buffer = std::atomic_load(&track.buffer);
     snapshot.numSamples = snapshot.buffer != nullptr ? snapshot.buffer->getNumSamples() : 0;
     snapshot.lengthSeconds = track.lengthSeconds.load(std::memory_order_relaxed);
+    snapshot.sampleRate = track.bufferSampleRate.load(std::memory_order_relaxed);
     if (!track.loaded.load(std::memory_order_acquire))
     {
         snapshot.loaded = false;
@@ -530,6 +531,7 @@ AudioEngine::AudioBufferSnapshot AudioEngine::getAudioTrackSnapshot(int trackInd
         snapshot.buffer.reset();
         snapshot.numSamples = 0;
         snapshot.lengthSeconds = 0.0;
+        snapshot.sampleRate = 0.0;
         return snapshot;
     }
     snapshot.valid = snapshot.buffer != nullptr && snapshot.numSamples > 0 && snapshot.lengthSeconds > 0.0;
@@ -571,7 +573,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.startSeconds.store(0.0);
+    track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.loaded.store(true, std::memory_order_release);
@@ -589,7 +591,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
@@ -657,6 +659,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     const double leftTargetLength = sourceWarp.enabled ? splitOffsetSeconds : static_cast<double>(splitSample) / rate;
     const double rightTargetLength = sourceWarp.enabled ? juce::jmax(0.0, lengthSeconds - splitOffsetSeconds) : static_cast<double>(rightSamples) / rate;
     source.lengthSeconds.store(leftTargetLength);
+    source.bufferSampleRate.store(rate);
     source.loaded.store(true, std::memory_order_release);
     auto& right = *tracks[(size_t)targetTrackIndex];
     right.loaded.store(false, std::memory_order_release);
@@ -664,6 +667,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.contentRevision.fetch_add(1, std::memory_order_relaxed);
     right.fileName = source.fileName + " - Split";
     right.lengthSeconds.store(rightTargetLength);
+    right.bufferSampleRate.store(rate);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
     right.gain.store(source.gain.load());
     right.pan.store(source.pan.load());
