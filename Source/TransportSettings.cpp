@@ -43,6 +43,7 @@ void MainComponent::editTempo()
                         repaint();
                         return;
                     }
+                }
                 tempoBpm = value;
                 if (std::abs(value - oldTempo) > 0.000001)
                     scaleLibertyMultiMidiClipsForTempoChange(*this, oldTempo / value);
