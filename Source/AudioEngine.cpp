@@ -206,7 +206,7 @@ int AudioEngine::getAudioTrackCount() const noexcept
     return (int) tracks.size();
 }
 
-void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
+bool AudioEngine::ensureInstrumentPlaybackTracks(int trackCount) noexcept
 {
     const int safeCount = juce::jmax(1, trackCount);
     int currentCount = 0;
@@ -214,15 +214,22 @@ void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
         const juce::ScopedLock lock(stateLock);
         currentCount = (int) instrumentPlayback.size();
         if (currentCount >= safeCount)
-            return;
+            return true;
     }
 
     std::vector<std::unique_ptr<InstrumentPlaybackState>> additions;
     std::vector<std::unique_ptr<InstrumentPlaybackState>> replacement;
-    additions.reserve((size_t) (safeCount - currentCount));
-    replacement.reserve((size_t) safeCount);
-    for (int i = currentCount; i < safeCount; ++i)
-        additions.push_back(std::make_unique<InstrumentPlaybackState>());
+    try
+    {
+        additions.reserve((size_t) (safeCount - currentCount));
+        replacement.reserve((size_t) safeCount);
+        for (int i = currentCount; i < safeCount; ++i)
+            additions.push_back(std::make_unique<InstrumentPlaybackState>());
+    }
+    catch (...)
+    {
+        return false;
+    }
 
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
@@ -250,6 +257,7 @@ void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
     playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    return true;
 }
 
 void AudioEngine::resetInstrumentPlayback(int trackCount)
