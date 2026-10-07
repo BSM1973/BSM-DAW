@@ -10,7 +10,7 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
 
 void syncLibertyMultiMidiPlayback(MainComponent& owner);
 void scaleLibertyMultiMidiClipsForTempoChange(MainComponent& owner, double ratio);
-bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error);
+bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error, bool restorePlaying);
 
 void MainComponent::editTempo()
 {
@@ -27,6 +27,7 @@ void MainComponent::editTempo()
             {
                 const double oldTempo = juce::jmax(1.0, tempoBpm);
                 const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
+                const bool wasPlayingBeforeTempoChange = audioEngine.isPlaying();
                 if (std::abs(value - oldTempo) > 0.000001)
                 {
                     // Audio clips are treated as musical clips: their number of measures stays fixed.
@@ -34,7 +35,7 @@ void MainComponent::editTempo()
                     // Signalsmith Stretch is used through commitLibertyAudioClipResize(), with pitch preserved.
                     const double tempoRatio = oldTempo / value;
                     juce::String stretchError;
-                    if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError))
+                    if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError, false))
                     {
                         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                                "Liberty - Tempo Stretch",
@@ -51,6 +52,8 @@ void MainComponent::editTempo()
                     const double tempoRatio = oldTempo / value;
                     scaleLibertyMultiMidiClipsForTempoChange(*this, tempoRatio);
                     audioEngine.setCurrentTimeSeconds(transportBeforeTempoChange * tempoRatio);
+                    if (wasPlayingBeforeTempoChange)
+                        audioEngine.setPlaying(true);
                 }
                 else
                     syncLibertyMultiMidiPlayback(*this);
