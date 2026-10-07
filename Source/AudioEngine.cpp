@@ -608,7 +608,22 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         error = "Select an empty audio track for the second clip segment.";
         return false;
     }
-    const auto splitSample = static_cast<int>(std::llround(splitOffsetSeconds * rate));
+    const auto sourceWarp = getTrackWarpSnapshot(trackIndex);
+    double splitSourceSeconds = splitOffsetSeconds;
+    if (sourceWarp.enabled && sourceWarp.count >= 2)
+    {
+        int segment = 0;
+        while (segment < sourceWarp.count - 2 && splitOffsetSeconds > sourceWarp.target[(size_t)(segment + 1)])
+            ++segment;
+        const double ta = sourceWarp.target[(size_t)segment];
+        const double tb = sourceWarp.target[(size_t)(segment + 1)];
+        const double sa = sourceWarp.source[(size_t)segment];
+        const double sb = sourceWarp.source[(size_t)(segment + 1)];
+        const double span = juce::jmax(0.000001, tb - ta);
+        const double alpha = juce::jlimit(0.0, 1.0, (splitOffsetSeconds - ta) / span);
+        splitSourceSeconds = sa + (sb - sa) * alpha;
+    }
+    const auto splitSample = static_cast<int>(std::llround(splitSourceSeconds * rate));
     const auto sourceBuffer = std::atomic_load(&source.buffer);
     if (sourceBuffer == nullptr) { error = "The loaded audio clip buffer is unavailable."; return false; }
     const auto sourceSamples = sourceBuffer->getNumSamples();
@@ -645,10 +660,26 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.muted.store(source.muted.load());
     right.solo.store(source.solo.load());
     right.warpEnabled.store(false, std::memory_order_relaxed);
-    right.warpMode.store(source.warpMode.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    right.warpMode.store(sourceWarp.mode, std::memory_order_relaxed);
     right.loaded.store(true, std::memory_order_release);
     resetTrackWarpMarkers(trackIndex);
     resetTrackWarpMarkers(targetTrackIndex);
+    if (sourceWarp.count >= 2)
+    {
+        for (int marker = 1; marker < sourceWarp.count - 1; ++marker)
+        {
+            const double sourceSeconds = sourceWarp.source[(size_t)marker];
+            const double targetSeconds = sourceWarp.target[(size_t)marker];
+            if (targetSeconds < splitOffsetSeconds - 0.001 && sourceSeconds < splitSourceSeconds - 0.001)
+                addTrackWarpMarker(trackIndex, sourceSeconds, targetSeconds);
+            else if (targetSeconds > splitOffsetSeconds + 0.001 && sourceSeconds > splitSourceSeconds + 0.001)
+                addTrackWarpMarker(targetTrackIndex, sourceSeconds - splitSourceSeconds, targetSeconds - splitOffsetSeconds);
+        }
+        setTrackWarpMode(trackIndex, sourceWarp.mode);
+        setTrackWarpMode(targetTrackIndex, sourceWarp.mode);
+        setTrackWarpEnabled(trackIndex, sourceWarp.enabled);
+        setTrackWarpEnabled(targetTrackIndex, sourceWarp.enabled);
+    }
     if (wasInitialised) deviceManager.addAudioCallback(this);
     if (savedPlaying) playing.store(true);
     return true;
