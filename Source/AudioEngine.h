@@ -56,6 +56,14 @@ public:
             instrumentPanicPending.store(true, std::memory_order_release);
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    void notifyInstrumentChanged() noexcept
+    {
+        instrumentPanicPending.store(true, std::memory_order_release);
+        if (playing.load(std::memory_order_relaxed))
+            instrumentResumePending.store(true, std::memory_order_release);
+        else
+            instrumentResumePending.store(false, std::memory_order_release);
+    }
     void setInputMonitoring(bool enabled, int leftInput = 0, int rightInput = 1) noexcept
     {
         monitorInputLeft.store(juce::jmax(0, leftInput), std::memory_order_relaxed);
