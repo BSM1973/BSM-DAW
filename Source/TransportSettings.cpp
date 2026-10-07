@@ -32,6 +32,7 @@ void MainComponent::editTempo()
                     // Example in 4/4: 4 measures at 120 BPM = 8 s, and become 12 s at 80 BPM.
                     // Signalsmith Stretch is used through commitLibertyAudioClipResize(), with pitch preserved.
                     const double tempoRatio = oldTempo / value;
+                    const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
                     juce::String stretchError;
                     if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError))
                     {
@@ -46,7 +47,11 @@ void MainComponent::editTempo()
                 }
                 tempoBpm = value;
                 if (std::abs(value - oldTempo) > 0.000001)
-                    scaleLibertyMultiMidiClipsForTempoChange(*this, oldTempo / value);
+                {
+                    const double tempoRatio = oldTempo / value;
+                    scaleLibertyMultiMidiClipsForTempoChange(*this, tempoRatio);
+                    audioEngine.setCurrentTimeSeconds(transportBeforeTempoChange * tempoRatio);
+                }
                 else
                     syncLibertyMultiMidiPlayback(*this);
                 tempoControls.refresh();
