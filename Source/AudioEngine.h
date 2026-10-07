@@ -236,6 +236,7 @@ private:
         std::atomic<double> endSeconds { 0.0 };
         std::atomic<double> frequency { 440.0 };
         std::atomic<float> amplitude { 0.0f };
+        std::atomic<int> channel { 1 };
     };
     struct InstrumentPlaybackState
     {
