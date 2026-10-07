@@ -706,6 +706,11 @@ bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTr
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
 void AudioEngine::setAudioFileName(int trackIndex, const juce::String& name) { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->fileName = name; }
 double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->lengthSeconds.load() : 0.0; }
+void AudioEngine::setAudioFileLengthSeconds(int trackIndex, double seconds) noexcept
+{
+    if (!isValidTrackIndex(trackIndex) || !std::isfinite(seconds) || seconds <= 0.0) return;
+    tracks[(size_t)trackIndex]->lengthSeconds.store(seconds, std::memory_order_relaxed);
+}
 std::shared_ptr<const juce::AudioBuffer<float>> AudioEngine::getAudioBufferSnapshot(int trackIndex) const noexcept
 {
     return isValidTrackIndex(trackIndex) ? std::atomic_load(&tracks[(size_t)trackIndex]->buffer) : nullptr;
