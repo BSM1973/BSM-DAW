@@ -172,6 +172,11 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
         state.notes[i].amplitude.store(0.045f*(static_cast<float>(note.velocity)/127.0f));
     }
     state.noteCount.store(count,std::memory_order_release);
+    if (playing.load(std::memory_order_relaxed))
+    {
+        instrumentPanicPending.store(true, std::memory_order_release);
+        instrumentResumePending.store(true, std::memory_order_release);
+    }
 }
 
 void AudioEngine::setInstrumentTrackGain(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->gain.store(juce::jlimit(0.f,2.f,v)); }
