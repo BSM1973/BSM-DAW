@@ -10,6 +10,7 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
 
 void syncLibertyMultiMidiPlayback(MainComponent& owner);
 void scaleLibertyMultiMidiClipsForTempoChange(MainComponent& owner, double ratio);
+bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error);
 
 void MainComponent::editTempo()
 {
@@ -31,24 +32,17 @@ void MainComponent::editTempo()
                     // Example in 4/4: 4 measures at 120 BPM = 8 s, and become 12 s at 80 BPM.
                     // Signalsmith Stretch is used through commitLibertyAudioClipResize(), with pitch preserved.
                     const double tempoRatio = oldTempo / value;
-                    for (int track = 0; track < AudioEngine::maxAudioTracks; ++track)
+                    juce::String stretchError;
+                    if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError))
                     {
-                        if (!audioEngine.hasAudioFile(track)) continue;
-                        const double start = audioEngine.getTrackStartSeconds(track);
-                        const double currentLength = audioEngine.getAudioFileLengthSeconds(track);
-                        const double wantedStart = juce::jmax(0.0, start * tempoRatio);
-                        const double wantedLength = juce::jmax(0.001, currentLength * tempoRatio);
-                        juce::String stretchError;
-                        if (!commitLibertyAudioClipResize(*this, track, wantedStart, wantedLength, true, false, stretchError))
-                        {
-                            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                                   "Liberty - Tempo Stretch",
-                                                                   "Audio " + juce::String(track + 1) + ": " + stretchError,
-                                                                   "OK");
-                        }
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Liberty - Tempo Stretch",
+                                                               stretchError,
+                                                               "OK");
+                        delete alert;
+                        repaint();
+                        return;
                     }
-                }
-
                 tempoBpm = value;
                 if (std::abs(value - oldTempo) > 0.000001)
                     scaleLibertyMultiMidiClipsForTempoChange(*this, oldTempo / value);
