@@ -344,6 +344,8 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
     track.warpTargetSeconds[1].store(length, std::memory_order_relaxed);
     track.warpMarkerCount.store(2, std::memory_order_release);
     auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->enabled = track.warpEnabled.load(std::memory_order_relaxed);
+    snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = 2;
     snapshot->source[0] = 0.0; snapshot->target[0] = 0.0;
     snapshot->source[1] = length; snapshot->target[1] = length;
@@ -381,6 +383,8 @@ bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, doubl
     track.warpTargetSeconds[(size_t)insertAt].store(targetSeconds, std::memory_order_relaxed);
     track.warpMarkerCount.store(count + 1, std::memory_order_release);
     auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->enabled = true;
+    snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = count + 1;
     for (int i = 0; i < snapshot->count; ++i)
     {
@@ -404,6 +408,8 @@ bool AudioEngine::moveTrackWarpMarker(int trackIndex, int markerIndex, double ta
     const double clamped = juce::jlimit(prev + 0.001, next - 0.001, targetSeconds);
     track.warpTargetSeconds[(size_t)markerIndex].store(clamped, std::memory_order_release);
     auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->enabled = true;
+    snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = count;
     for (int i = 0; i < count; ++i)
     {
@@ -428,6 +434,8 @@ bool AudioEngine::removeTrackWarpMarker(int trackIndex, int markerIndex) noexcep
     }
     track.warpMarkerCount.store(count - 1, std::memory_order_release);
     auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    snapshot->enabled = true;
+    snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = count - 1;
     for (int i = 0; i < snapshot->count; ++i)
     {
@@ -444,6 +452,8 @@ AudioEngine::WarpSnapshot AudioEngine::getTrackWarpSnapshot(int trackIndex) cons
     if (!isValidTrackIndex(trackIndex)) return result;
     const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
     if (snapshot == nullptr) return result;
+    result.enabled = snapshot->enabled;
+    result.mode = juce::jlimit(0, 4, snapshot->mode);
     result.count = juce::jlimit(0, maxWarpMarkers, snapshot->count);
     for (int i = 0; i < result.count; ++i)
     {
