@@ -38,6 +38,7 @@ public:
         const auto rate = sampleRate.load(std::memory_order_relaxed);
         if (shouldPlay)
         {
+            instrumentResumePending.store(true, std::memory_order_release);
             const auto current = rate > 0.0
                 ? static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate
                 : 0.0;
@@ -267,6 +268,7 @@ private:
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
     std::atomic<bool> instrumentPanicPending { false };
+    std::atomic<bool> instrumentResumePending { false };
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
