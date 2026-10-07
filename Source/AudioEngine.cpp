@@ -757,8 +757,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
         };
 
-        const bool warpActive = track.warpEnabled.load(std::memory_order_acquire);
         const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
+        const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
         const int rawMarkerCount = warpSnapshot != nullptr ? warpSnapshot->count : 0;
         if (!warpActive || rawMarkerCount < 2)
         {
@@ -779,7 +779,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             targetMarkers[(size_t)marker] = warpSnapshot->target[(size_t)marker];
         }
 
-        const int mode = track.warpMode.load(std::memory_order_relaxed);
+        const int mode = juce::jlimit(0, 4, warpSnapshot->mode);
         const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
 
         auto readWarpedSample = [&](int channel, double samplePosition) -> float
