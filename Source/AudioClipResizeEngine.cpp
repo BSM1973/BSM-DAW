@@ -266,6 +266,138 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
     return true;
 }
 
+bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error)
+{
+    error.clear();
+    auto& engine = owner.audioEngine;
+    const double rate = engine.sampleRate.load(std::memory_order_relaxed);
+    if (!std::isfinite(tempoRatio) || tempoRatio <= 0.0 || !std::isfinite(rate) || rate <= 0.0)
+    {
+        error = "The tempo stretch parameters are invalid.";
+        return false;
+    }
+
+    struct Prepared
+    {
+        int trackIndex = -1;
+        double startSeconds = 0.0;
+        int sourceStart = 0;
+        int sourceEnd = 0;
+        std::unique_ptr<juce::AudioBuffer<float>> buffer;
+    };
+    std::vector<Prepared> prepared;
+
+    for (int trackIndex = 0; trackIndex < engine.getAudioTrackCount(); ++trackIndex)
+    {
+        if (!engine.hasAudioFile(trackIndex)) continue;
+        auto& track = *engine.tracks[(size_t)trackIndex];
+        auto& state = ensureSourceState(engine, trackIndex);
+        if (state.original == nullptr || state.original->getNumSamples() <= 0)
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": source audio is unavailable.";
+            return false;
+        }
+
+        const double oldStart = track.startSeconds.load(std::memory_order_relaxed);
+        const double oldLength = track.lengthSeconds.load(std::memory_order_relaxed);
+        if (!std::isfinite(oldStart) || !std::isfinite(oldLength) || oldLength <= 0.0)
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": invalid clip timing.";
+            return false;
+        }
+
+        const int sourceStart = state.sourceStartSample;
+        const int sourceEnd = state.sourceEndSample;
+        if (sourceStart < 0 || sourceEnd <= sourceStart || sourceEnd > state.original->getNumSamples())
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": invalid cached source region.";
+            return false;
+        }
+
+        const double targetLength = oldLength * tempoRatio;
+        const double requestedSamples = targetLength * rate;
+        if (!std::isfinite(requestedSamples) || requestedSamples < 1.0
+            || requestedSamples > (double)std::numeric_limits<int>::max())
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": requested tempo stretch is too large.";
+            return false;
+        }
+
+        const int channels = juce::jmax(1, juce::jmin(2, state.original->getNumChannels()));
+        constexpr std::uint64_t maxResizeBufferBytes = 512ull * 1024ull * 1024ull;
+        const int inputSamples = sourceEnd - sourceStart;
+        const int outputSamples = juce::jmax(1, (int)std::llround(requestedSamples));
+        const auto outputBytes = (std::uint64_t)outputSamples * (std::uint64_t)channels * sizeof(float);
+        const auto inputBytes = (std::uint64_t)inputSamples * (std::uint64_t)channels * sizeof(float);
+        if (outputBytes > maxResizeBufferBytes
+            || (inputSamples != outputSamples
+                && (inputBytes > maxResizeBufferBytes || inputBytes > maxResizeBufferBytes - outputBytes)))
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": tempo stretch exceeds the safe memory limit.";
+            return false;
+        }
+
+        auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
+        rendered->clear();
+        if (inputSamples == outputSamples)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+                rendered->copyFrom(ch, 0, *state.original, ch, sourceStart, outputSamples);
+        }
+        else
+        {
+            juce::AudioBuffer<float> input(channels, inputSamples);
+            for (int ch = 0; ch < channels; ++ch)
+                input.copyFrom(ch, 0, *state.original, ch, sourceStart, inputSamples);
+            signalsmith::stretch::SignalsmithStretch<float> stretch;
+            stretch.presetDefault(channels, rate);
+            stretch.setTransposeFactor(1.0);
+            stretch.process(input.getArrayOfReadPointers(), inputSamples,
+                            rendered->getArrayOfWritePointers(), outputSamples);
+        }
+
+        Prepared item;
+        item.trackIndex = trackIndex;
+        item.startSeconds = oldStart * tempoRatio;
+        item.sourceStart = sourceStart;
+        item.sourceEnd = sourceEnd;
+        item.buffer = std::move(rendered);
+        prepared.push_back(std::move(item));
+    }
+
+    const bool wasInitialised = engine.initialised.load(std::memory_order_relaxed);
+    const bool wasPlaying = engine.playing.load(std::memory_order_relaxed);
+    if (wasInitialised) engine.deviceManager.removeAudioCallback(&engine);
+    engine.playing.store(false, std::memory_order_relaxed);
+
+    for (auto& item : prepared)
+    {
+        auto& track = *engine.tracks[(size_t)item.trackIndex];
+        auto& state = ensureSourceState(engine, item.trackIndex);
+        track.loaded.store(false, std::memory_order_release);
+        std::shared_ptr<juce::AudioBuffer<float>> publishedBuffer(std::move(item.buffer));
+        state.sourceBuffer = publishedBuffer;
+        std::atomic_store(&track.buffer, std::move(publishedBuffer));
+        state.sourceStartSample = item.sourceStart;
+        state.sourceEndSample = item.sourceEnd;
+        track.contentRevision.fetch_add(1, std::memory_order_relaxed);
+        const auto buffer = std::atomic_load(&track.buffer);
+        track.lengthSeconds.store(buffer != nullptr ? (double)buffer->getNumSamples() / rate : 0.0,
+                                  std::memory_order_relaxed);
+        track.bufferSampleRate.store(rate, std::memory_order_relaxed);
+        track.startSeconds.store(juce::jmax(0.0, item.startSeconds), std::memory_order_relaxed);
+        track.warpEnabled.store(false, std::memory_order_relaxed);
+        track.loaded.store(true, std::memory_order_release);
+        engine.resetTrackWarpMarkers(item.trackIndex);
+        owner.rebuildWaveformCache(item.trackIndex);
+    }
+
+    if (wasInitialised) engine.deviceManager.addAudioCallback(&engine);
+    if (wasPlaying) engine.setPlaying(true);
+    owner.repaint();
+    return true;
+}
+
 void clearLibertyAudioClipResizeSource(AudioEngine& engine, int trackIndex)
 {
     sourceStates.erase({ &engine, trackIndex });
