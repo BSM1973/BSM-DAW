@@ -115,9 +115,9 @@ public:
     bool isTrackSolo(int trackIndex) const noexcept;
     bool isAnyTrackSolo() const noexcept;
 
-    void setMidiTrackMuted(bool muted) noexcept { midiTrackMuted.store(muted, std::memory_order_relaxed); instrumentPanicPending.store(true, std::memory_order_release); instrumentResumePending.store(true, std::memory_order_release); }
+    void setMidiTrackMuted(bool muted) noexcept { midiTrackMuted.store(muted, std::memory_order_relaxed); instrumentPanicPending.store(true, std::memory_order_release); instrumentResumePending.store(playing.load(std::memory_order_relaxed), std::memory_order_release); }
     bool isMidiTrackMuted() const noexcept { return midiTrackMuted.load(std::memory_order_relaxed); }
-    void setMidiTrackSolo(bool solo) noexcept { midiTrackSolo.store(solo, std::memory_order_relaxed); instrumentPanicPending.store(true, std::memory_order_release); instrumentResumePending.store(true, std::memory_order_release); }
+    void setMidiTrackSolo(bool solo) noexcept { midiTrackSolo.store(solo, std::memory_order_relaxed); instrumentPanicPending.store(true, std::memory_order_release); instrumentResumePending.store(playing.load(std::memory_order_relaxed), std::memory_order_release); }
     bool isMidiTrackSolo() const noexcept { return midiTrackSolo.load(std::memory_order_relaxed); }
     void setInstrumentTrackGain(int instrumentTrack, float gain) noexcept;
     float getInstrumentTrackGain(int instrumentTrack) const noexcept;
