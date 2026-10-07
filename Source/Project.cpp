@@ -826,7 +826,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     };
     tempoBpm = juce::jlimit(20.0, 400.0, finiteOr(project->getDoubleAttribute("tempo", 120.0), 120.0));
     timeSignatureNumerator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureNumerator", 4));
-    timeSignatureDenominator = juce::jlimit(1, 32, project->getIntAttribute("timeSignatureDenominator", 4));
+    const int savedTimeSignatureDenominator = project->getIntAttribute("timeSignatureDenominator", 4);
+    timeSignatureDenominator = (savedTimeSignatureDenominator == 2 || savedTimeSignatureDenominator == 4
+                                || savedTimeSignatureDenominator == 8 || savedTimeSignatureDenominator == 16)
+                                   ? savedTimeSignatureDenominator
+                                   : 4;
     selectedTrack = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), project->getIntAttribute("selectedTrack", 0));
     playheadSeconds = juce::jmax(0.0, finiteOr(project->getDoubleAttribute("playheadSeconds", 0.0), 0.0));
     audioEngine.setMasterGain(juce::jlimit(0.0f, 4.0f, (float) finiteOr(project->getDoubleAttribute("masterGain", 1.0), 1.0)));
