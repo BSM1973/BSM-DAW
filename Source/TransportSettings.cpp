@@ -9,6 +9,7 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
                                   juce::String& error);
 
 void syncLibertyMultiMidiPlayback(MainComponent& owner);
+void scaleLibertyMultiMidiClipsForTempoChange(MainComponent& owner, double ratio);
 
 void MainComponent::editTempo()
 {
@@ -35,9 +36,10 @@ void MainComponent::editTempo()
                         if (!audioEngine.hasAudioFile(track)) continue;
                         const double start = audioEngine.getTrackStartSeconds(track);
                         const double currentLength = audioEngine.getAudioFileLengthSeconds(track);
+                        const double wantedStart = juce::jmax(0.0, start * tempoRatio);
                         const double wantedLength = juce::jmax(0.001, currentLength * tempoRatio);
                         juce::String stretchError;
-                        if (!commitLibertyAudioClipResize(*this, track, start, wantedLength, true, false, stretchError))
+                        if (!commitLibertyAudioClipResize(*this, track, wantedStart, wantedLength, true, false, stretchError))
                         {
                             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                                    "Liberty - Tempo Stretch",
@@ -48,7 +50,10 @@ void MainComponent::editTempo()
                 }
 
                 tempoBpm = value;
-                syncLibertyMultiMidiPlayback(*this);
+                if (std::abs(value - oldTempo) > 0.000001)
+                    scaleLibertyMultiMidiClipsForTempoChange(*this, oldTempo / value);
+                else
+                    syncLibertyMultiMidiPlayback(*this);
                 tempoControls.refresh();
             }
         }
