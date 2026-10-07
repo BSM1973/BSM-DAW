@@ -52,10 +52,7 @@ public:
         }
         playing.store(shouldPlay, std::memory_order_relaxed);
         if (!shouldPlay)
-        {
-            // STOP silences transport while keeping the configured audio
-            // device alive so PLAY can resume normally.
-        }
+            instrumentPanicPending.store(true, std::memory_order_release);
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
     void setInputMonitoring(bool enabled, int leftInput = 0, int rightInput = 1) noexcept
@@ -78,6 +75,7 @@ public:
         transportSamples.store(0, std::memory_order_relaxed);
         playbackClockBaseSeconds.store(0.0, std::memory_order_relaxed);
         playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+        instrumentPanicPending.store(true, std::memory_order_release);
     }
     void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
@@ -268,6 +266,7 @@ private:
     std::atomic<bool> midiTrackSolo { false };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
+    std::atomic<bool> instrumentPanicPending { false };
     std::atomic<double> sampleRate { 0.0 };
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
