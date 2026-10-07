@@ -40,6 +40,8 @@ bool AudioEngine::initialise()
 
 void AudioEngine::shutdown()
 {
+    instrumentResumePending.store(false, std::memory_order_release);
+    instrumentPanicPending.store(false, std::memory_order_release);
     playing.store(false);
     if (initialised.exchange(false)) deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
@@ -577,6 +579,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     else newBuffer->makeCopyOf(*decodedBuffer);
 
     const bool wasInitialised = initialised.load();
+    instrumentResumePending.store(false, std::memory_order_release);
+    instrumentPanicPending.store(true, std::memory_order_release);
     playing.store(false); resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
@@ -597,6 +601,8 @@ void AudioEngine::clearAudioTrack(int trackIndex)
 {
     if (!isValidTrackIndex(trackIndex)) return;
     const bool wasInitialised = initialised.load();
+    instrumentResumePending.store(false, std::memory_order_release);
+    instrumentPanicPending.store(true, std::memory_order_release);
     playing.store(false); resetTransport();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
