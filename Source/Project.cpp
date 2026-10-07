@@ -814,7 +814,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                                              project->getIntAttribute("midiTrackCount", 1));
     const int savedInstrumentTracks = juce::jlimit(1, maxRestoredTracksPerType,
                                                    project->getIntAttribute("instrumentTrackCount", 1));
-    while (getAudioTrackCount() < savedAudioTracks) addAudioTrack();
+    while (getAudioTrackCount() < savedAudioTracks)
+    {
+        if (addAudioTrack() < 0)
+            break;
+    }
     while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
     while (getInstrumentTrackCount() < savedInstrumentTracks)
     {
