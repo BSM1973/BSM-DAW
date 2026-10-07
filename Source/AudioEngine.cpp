@@ -730,7 +730,12 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         setTrackWarpEnabled(targetTrackIndex, sourceWarp.enabled);
     }
     if (wasInitialised) deviceManager.addAudioCallback(this);
-    if (savedPlaying) playing.store(true);
+    if (savedPlaying)
+    {
+        instrumentPanicPending.store(true, std::memory_order_release);
+        instrumentResumePending.store(true, std::memory_order_release);
+        playing.store(true, std::memory_order_release);
+    }
     return true;
 }
 
