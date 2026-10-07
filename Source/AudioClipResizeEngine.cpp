@@ -286,6 +286,8 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
     };
     std::vector<Prepared> prepared;
+    constexpr std::uint64_t maxTempoBatchBytes = 512ull * 1024ull * 1024ull;
+    std::uint64_t preparedBytes = 0;
 
     for (int trackIndex = 0; trackIndex < engine.getAudioTrackCount(); ++trackIndex)
     {
@@ -330,6 +332,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         const auto outputBytes = (std::uint64_t)outputSamples * (std::uint64_t)channels * sizeof(float);
         const auto inputBytes = (std::uint64_t)inputSamples * (std::uint64_t)channels * sizeof(float);
         if (outputBytes > maxResizeBufferBytes
+            || outputBytes > maxTempoBatchBytes - preparedBytes
             || (inputSamples != outputSamples
                 && (inputBytes > maxResizeBufferBytes || inputBytes > maxResizeBufferBytes - outputBytes)))
         {
@@ -337,6 +340,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
             return false;
         }
 
+        preparedBytes += outputBytes;
         auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
         rendered->clear();
         if (inputSamples == outputSamples)
