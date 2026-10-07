@@ -387,8 +387,13 @@ bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, doubl
     if (count < 2) { resetTrackWarpMarkers(trackIndex); count = track.warpMarkerCount.load(std::memory_order_acquire); }
     if (count < 2 || count >= maxWarpMarkers) return false;
 
-    const double length = track.lengthSeconds.load(std::memory_order_relaxed);
-    sourceSeconds = juce::jlimit(0.001, juce::jmax(0.001, length - 0.001), sourceSeconds);
+    const auto buffer = std::atomic_load(&track.buffer);
+    const double retainedRate = track.bufferSampleRate.load(std::memory_order_relaxed);
+    const double sourceLength = buffer != nullptr && retainedRate > 0.0
+        ? static_cast<double>(buffer->getNumSamples()) / retainedRate
+        : 0.0;
+    if (!std::isfinite(sourceLength) || sourceLength <= 0.002) return false;
+    sourceSeconds = juce::jlimit(0.001, sourceLength - 0.001, sourceSeconds);
     int insertAt = 1;
     while (insertAt < count && track.warpSourceSeconds[(size_t)insertAt].load(std::memory_order_relaxed) < sourceSeconds) ++insertAt;
     if (insertAt <= 0 || insertAt >= count) return false;
