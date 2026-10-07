@@ -401,14 +401,17 @@ void AudioEngine::setTrackWarpEnabled(int trackIndex, bool enabled) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
     auto& track = *tracks[(size_t)trackIndex];
-    track.warpEnabled.store(enabled, std::memory_order_relaxed);
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
+    std::shared_ptr<WarpMarkerSnapshot> snapshot;
     if (current != nullptr)
     {
-        auto snapshot = std::make_shared<WarpMarkerSnapshot>(*current);
+        try { snapshot = std::make_shared<WarpMarkerSnapshot>(*current); }
+        catch (...) { return; }
         snapshot->enabled = enabled;
-        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
     }
+    track.warpEnabled.store(enabled, std::memory_order_relaxed);
+    if (snapshot != nullptr)
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
 bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
@@ -421,14 +424,17 @@ void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
     if (!isValidTrackIndex(trackIndex)) return;
     auto& track = *tracks[(size_t)trackIndex];
     const int clampedMode = juce::jlimit(0, 4, mode);
-    track.warpMode.store(clampedMode, std::memory_order_relaxed);
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
+    std::shared_ptr<WarpMarkerSnapshot> snapshot;
     if (current != nullptr)
     {
-        auto snapshot = std::make_shared<WarpMarkerSnapshot>(*current);
+        try { snapshot = std::make_shared<WarpMarkerSnapshot>(*current); }
+        catch (...) { return; }
         snapshot->mode = clampedMode;
-        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
     }
+    track.warpMode.store(clampedMode, std::memory_order_relaxed);
+    if (snapshot != nullptr)
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
 int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
@@ -455,17 +461,19 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
         std::atomic_store(&track.warpMarkerSnapshot, std::shared_ptr<WarpMarkerSnapshot>{});
         return;
     }
-    track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
-    track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
-    track.warpSourceSeconds[1].store(sourceLength, std::memory_order_relaxed);
-    track.warpTargetSeconds[1].store(targetLength, std::memory_order_relaxed);
-    track.warpMarkerCount.store(2, std::memory_order_release);
-    auto snapshot = std::make_shared<WarpMarkerSnapshot>();
+    std::shared_ptr<WarpMarkerSnapshot> snapshot;
+    try { snapshot = std::make_shared<WarpMarkerSnapshot>(); }
+    catch (...) { return; }
     snapshot->enabled = track.warpEnabled.load(std::memory_order_relaxed);
     snapshot->mode = track.warpMode.load(std::memory_order_relaxed);
     snapshot->count = 2;
     snapshot->source[0] = 0.0; snapshot->target[0] = 0.0;
     snapshot->source[1] = sourceLength; snapshot->target[1] = targetLength;
+    track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpSourceSeconds[1].store(sourceLength, std::memory_order_relaxed);
+    track.warpTargetSeconds[1].store(targetLength, std::memory_order_relaxed);
+    track.warpMarkerCount.store(2, std::memory_order_release);
     std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
