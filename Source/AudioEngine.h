@@ -145,6 +145,8 @@ public:
 
     struct WarpSnapshot
     {
+        bool enabled = false;
+        int mode = 0;
         int count = 0;
         std::array<double, maxWarpMarkers> source {};
         std::array<double, maxWarpMarkers> target {};
@@ -195,6 +197,8 @@ public:
 private:
     struct WarpMarkerSnapshot
     {
+        bool enabled = false;
+        int mode = 0;
         int count = 0;
         std::array<double, maxWarpMarkers> source {};
         std::array<double, maxWarpMarkers> target {};
