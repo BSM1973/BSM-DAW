@@ -559,7 +559,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
         const auto savedFileName = audioSnapshot.loaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
-        const auto savedLengthSeconds = audioSnapshot.loaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+        const auto savedLengthSeconds = audioSnapshot.loaded ? audioSnapshot.lengthSeconds : pendingAudioLengths[(size_t)i];
         track->setAttribute("fileName", savedFileName);
         track->setAttribute("startSeconds", audioEngine.getTrackStartSeconds(i));
         track->setAttribute("lengthSeconds", savedLengthSeconds);
