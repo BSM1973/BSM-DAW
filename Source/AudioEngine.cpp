@@ -800,6 +800,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     auto& pluginHost = LibertyPluginHost::instance();
     auto& oneKnob = LibertyOneKnobManager::instance();
     const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
+    const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
 
     for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
     {
@@ -981,7 +982,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const auto amplitude=state.notes[n].amplitude.load();
                 const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
                 const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
-                if(absoluteStart>=blockStart&&absoluteStart<blockEnd)midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
+                const bool noteStartsInBlock = absoluteStart >= blockStart && absoluteStart < blockEnd;
+                const bool noteSpansResume = resumeInstruments && absoluteStart < blockStart && absoluteEnd > blockStart;
+                if (noteSpansResume)
+                    midi.addEvent(juce::MidiMessage::noteOn(1, pitch, velocity), 0);
+                else if (noteStartsInBlock)
+                    midi.addEvent(juce::MidiMessage::noteOn(1,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(1,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
             juce::AudioBuffer<float> instrumentBus;
