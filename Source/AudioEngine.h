@@ -238,10 +238,21 @@ private:
         std::atomic<float> amplitude { 0.0f };
         std::atomic<int> channel { 1 };
     };
+    struct InstrumentPlaybackNote
+    {
+        double startSeconds = 0.0;
+        double endSeconds = 0.0;
+        double frequency = 440.0;
+        float amplitude = 0.0f;
+        int channel = 1;
+    };
+    struct InstrumentNoteSnapshot
+    {
+        std::vector<InstrumentPlaybackNote> notes;
+    };
     struct InstrumentPlaybackState
     {
-        std::array<MidiPlaybackNote, maxMidiPlaybackNotes> notes;
-        std::atomic<std::size_t> noteCount { 0 };
+        std::shared_ptr<InstrumentNoteSnapshot> noteSnapshot;
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
