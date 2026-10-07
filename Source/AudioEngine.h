@@ -157,6 +157,7 @@ public:
     juce::String getAudioFileName(int trackIndex) const;
     void setAudioFileName(int trackIndex, const juce::String& name);
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
+    void setAudioFileLengthSeconds(int trackIndex, double seconds) noexcept;
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     std::shared_ptr<const juce::AudioBuffer<float>> getAudioBufferSnapshot(int trackIndex) const noexcept;
