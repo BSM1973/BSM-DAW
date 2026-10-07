@@ -216,14 +216,14 @@ void AudioEngine::ensureInstrumentPlaybackTracks(int trackCount)
             instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
     }
 
-    if (wasInitialised)
-        deviceManager.addAudioCallback(this);
     if (wasPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying);
+    playing.store(wasPlaying, std::memory_order_release);
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
 }
 
 void AudioEngine::resetInstrumentPlayback(int trackCount)
@@ -243,14 +243,14 @@ void AudioEngine::resetInstrumentPlayback(int trackCount)
             instrumentPlayback.push_back(std::make_unique<InstrumentPlaybackState>());
     }
 
-    if (wasInitialised)
-        deviceManager.addAudioCallback(this);
     if (wasPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying);
+    playing.store(wasPlaying, std::memory_order_release);
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
 }
 
 int AudioEngine::addAudioTrack()
@@ -271,14 +271,14 @@ int AudioEngine::addAudioTrack()
         index = (int) tracks.size() - 1;
     }
 
-    if (wasInitialised)
-        deviceManager.addAudioCallback(this);
     if (wasPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying);
+    playing.store(wasPlaying, std::memory_order_release);
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
     return index;
 }
 
@@ -306,14 +306,14 @@ bool AudioEngine::removeAudioTrack(int trackIndex)
         }
     }
 
-    if (wasInitialised)
-        deviceManager.addAudioCallback(this);
     if (wasPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying);
+    playing.store(wasPlaying, std::memory_order_release);
+    if (wasInitialised)
+        deviceManager.addAudioCallback(this);
     return removed;
 }
 
@@ -735,13 +735,13 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         setTrackWarpEnabled(trackIndex, sourceWarp.enabled);
         setTrackWarpEnabled(targetTrackIndex, sourceWarp.enabled);
     }
-    if (wasInitialised) deviceManager.addAudioCallback(this);
     if (savedPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
         playing.store(true, std::memory_order_release);
     }
+    if (wasInitialised) deviceManager.addAudioCallback(this);
     return true;
 }
 
