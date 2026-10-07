@@ -407,11 +407,12 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         track.warpEnabled.store(false, std::memory_order_relaxed);
         track.loaded.store(true, std::memory_order_release);
         engine.resetTrackWarpMarkers(item.trackIndex);
-        owner.rebuildWaveformCache(item.trackIndex);
     }
 
     if (wasInitialised) engine.deviceManager.addAudioCallback(&engine);
     if (wasPlaying) engine.setPlaying(true);
+    for (const auto& item : prepared)
+        owner.rebuildWaveformCache(item.trackIndex);
     owner.repaint();
     return true;
 }
