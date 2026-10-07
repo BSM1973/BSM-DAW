@@ -266,7 +266,7 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
     return true;
 }
 
-bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error)
+bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error, bool restorePlaying)
 {
     error.clear();
     auto& engine = owner.audioEngine;
@@ -410,7 +410,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
     }
 
     if (wasInitialised) engine.deviceManager.addAudioCallback(&engine);
-    if (wasPlaying) engine.setPlaying(true);
+    if (wasPlaying && restorePlaying) engine.setPlaying(true);
     for (const auto& item : prepared)
         owner.rebuildWaveformCache(item.trackIndex);
     owner.repaint();
