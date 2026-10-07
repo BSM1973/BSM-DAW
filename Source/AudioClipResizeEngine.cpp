@@ -340,33 +340,47 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
             return false;
         }
 
-        preparedBytes += outputBytes;
-        auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
-        rendered->clear();
-        if (inputSamples == outputSamples)
+        try
         {
-            for (int ch = 0; ch < channels; ++ch)
-                rendered->copyFrom(ch, 0, *state.original, ch, sourceStart, outputSamples);
-        }
-        else
-        {
-            juce::AudioBuffer<float> input(channels, inputSamples);
-            for (int ch = 0; ch < channels; ++ch)
-                input.copyFrom(ch, 0, *state.original, ch, sourceStart, inputSamples);
-            signalsmith::stretch::SignalsmithStretch<float> stretch;
-            stretch.presetDefault(channels, rate);
-            stretch.setTransposeFactor(1.0);
-            stretch.process(input.getArrayOfReadPointers(), inputSamples,
-                            rendered->getArrayOfWritePointers(), outputSamples);
-        }
+            auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
+            rendered->clear();
+            if (inputSamples == outputSamples)
+            {
+                for (int ch = 0; ch < channels; ++ch)
+                    rendered->copyFrom(ch, 0, *state.original, ch, sourceStart, outputSamples);
+            }
+            else
+            {
+                juce::AudioBuffer<float> input(channels, inputSamples);
+                for (int ch = 0; ch < channels; ++ch)
+                    input.copyFrom(ch, 0, *state.original, ch, sourceStart, inputSamples);
+                signalsmith::stretch::SignalsmithStretch<float> stretch;
+                stretch.presetDefault(channels, rate);
+                stretch.setTransposeFactor(1.0);
+                stretch.process(input.getArrayOfReadPointers(), inputSamples,
+                                rendered->getArrayOfWritePointers(), outputSamples);
+            }
 
-        Prepared item;
-        item.trackIndex = trackIndex;
-        item.startSeconds = oldStart * tempoRatio;
-        item.sourceStart = sourceStart;
-        item.sourceEnd = sourceEnd;
-        item.buffer = std::move(rendered);
-        prepared.push_back(std::move(item));
+            Prepared item;
+            item.trackIndex = trackIndex;
+            item.startSeconds = oldStart * tempoRatio;
+            item.sourceStart = sourceStart;
+            item.sourceEnd = sourceEnd;
+            item.buffer = std::move(rendered);
+            prepared.push_back(std::move(item));
+            preparedBytes += outputBytes;
+        }
+        catch (const std::exception& exception)
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": tempo render failed: "
+                  + juce::String(exception.what());
+            return false;
+        }
+        catch (...)
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": tempo render failed.";
+            return false;
+        }
     }
 
     const bool wasInitialised = engine.initialised.load(std::memory_order_relaxed);
