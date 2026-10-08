@@ -284,6 +284,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         int sourceStart = 0;
         int sourceEnd = 0;
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
+        std::shared_ptr<AudioEngine::WarpMarkerSnapshot> warpSnapshot;
     };
     std::vector<Prepared> prepared;
     constexpr std::uint64_t maxTempoBatchBytes = 512ull * 1024ull * 1024ull;
@@ -367,6 +368,15 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
             item.sourceStart = sourceStart;
             item.sourceEnd = sourceEnd;
             item.buffer = std::move(rendered);
+            item.warpSnapshot = std::make_shared<AudioEngine::WarpMarkerSnapshot>();
+            const double publishedLength = static_cast<double>(outputSamples) / rate;
+            item.warpSnapshot->enabled = false;
+            item.warpSnapshot->mode = 0;
+            item.warpSnapshot->count = 2;
+            item.warpSnapshot->source[0] = 0.0;
+            item.warpSnapshot->target[0] = 0.0;
+            item.warpSnapshot->source[1] = publishedLength;
+            item.warpSnapshot->target[1] = publishedLength;
             prepared.push_back(std::move(item));
             preparedBytes += outputBytes;
         }
@@ -404,9 +414,16 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
                                   std::memory_order_relaxed);
         track.bufferSampleRate.store(rate, std::memory_order_relaxed);
         track.startSeconds.store(juce::jmax(0.0, item.startSeconds), std::memory_order_relaxed);
+        const double publishedLength = track.lengthSeconds.load(std::memory_order_relaxed);
+        track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
+        track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
+        track.warpSourceSeconds[1].store(publishedLength, std::memory_order_relaxed);
+        track.warpTargetSeconds[1].store(publishedLength, std::memory_order_relaxed);
+        track.warpMarkerCount.store(2, std::memory_order_release);
         track.warpEnabled.store(false, std::memory_order_relaxed);
+        track.warpMode.store(0, std::memory_order_relaxed);
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(item.warpSnapshot));
         track.loaded.store(true, std::memory_order_release);
-        engine.resetTrackWarpMarkers(item.trackIndex);
     }
 
     if (wasInitialised) engine.deviceManager.addAudioCallback(&engine);
