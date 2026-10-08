@@ -11,20 +11,24 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
     const auto effectiveStepTicks = pattern.rateModifier == 1 ? std::max<std::int64_t>(1, baseStepTicks * 2 / 3)
                                   : pattern.rateModifier == 2 ? std::max<std::int64_t>(1, baseStepTicks * 3 / 2)
                                   : baseStepTicks;
-    try { notes.reserve((size_t) count * 4u); } catch (...) { return {}; }
-    for (int i = 0; i < count; ++i)
+    const int outputCount = pattern.direction == Direction::PingPong && count > 1 ? count * 2 - 2 : count;
+    try { notes.reserve((size_t) outputCount * 4u); } catch (...) { return {}; }
+    auto sourceIndexForPosition = [&](int position)
     {
-        int sourceIndex = i;
-        if (pattern.direction == Direction::Reverse)
-            sourceIndex = count - 1 - i;
-        else if (pattern.direction == Direction::PingPong && count > 1)
+        if (pattern.direction == Direction::Reverse) return count - 1 - (position % count);
+        if (pattern.direction == Direction::PingPong && count > 1)
         {
             const int period = count * 2 - 2;
-            const int phase = i % period;
-            sourceIndex = phase < count ? phase : period - phase;
+            const int phase = position % period;
+            return phase < count ? phase : period - phase;
         }
-        else if (pattern.direction == Direction::Random)
-            sourceIndex = (int)(((unsigned)i * 2654435761u + 1013904223u) % (unsigned)count);
+        if (pattern.direction == Direction::Random)
+            return (int)(((unsigned)position * 2654435761u + 1013904223u) % (unsigned)count);
+        return position % count;
+    };
+    for (int i = 0; i < outputCount; ++i)
+    {
+        const int sourceIndex = sourceIndexForPosition(i);
         const auto& step = pattern.steps[(size_t)sourceIndex];
         const int velocityLane = sourceIndex % std::clamp(pattern.velocityLaneSteps, 1, count);
         const int gateLane = sourceIndex % std::clamp(pattern.gateLaneSteps, 1, count);
@@ -40,17 +44,18 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         int tiedSteps = 1;
         if (step.tie)
         {
-            while (i + tiedSteps < count)
+            while (i + tiedSteps < outputCount)
             {
-                const auto& previous = pattern.steps[(size_t)(i + tiedSteps - 1)];
-                const auto& next = pattern.steps[(size_t)(i + tiedSteps)];
+                const auto& previous = pattern.steps[(size_t)sourceIndexForPosition(i + tiedSteps - 1)];
+                const auto& next = pattern.steps[(size_t)sourceIndexForPosition(i + tiedSteps)];
                 if (!previous.tie || !next.enabled || next.pitch != step.pitch || next.octave != step.octave
                     || next.channel != step.channel || next.chord != step.chord)
                     break;
                 ++tiedSteps;
             }
         }
-        const int ratchets = step.tie ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
+        const bool hasTieContinuation = tiedSteps > 1;
+        const int ratchets = hasTieContinuation ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.octaveShift, -4, 4) * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
@@ -95,14 +100,14 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             {
                 MidiEngine::NoteEvent note;
                 note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-                note.lengthTicks = step.tie ? effectiveStepTicks * tiedSteps : gateTicks;
+                note.lengthTicks = hasTieContinuation ? effectiveStepTicks * tiedSteps : gateTicks;
                 note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
                 note.velocity = (std::uint8_t)velocity;
                 note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
                 notes.push_back(note);
             }
         }
-        if (step.tie && tiedSteps > 1)
+        if (hasTieContinuation)
             i += tiedSteps - 1;
     }
     return notes;
