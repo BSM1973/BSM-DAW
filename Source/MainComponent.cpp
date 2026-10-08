@@ -286,6 +286,25 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawControl("SW " + juce::String((int)std::round(pattern->swing * 100.0f)) + "%", cx, 62, pattern->swing > 0.0f); cx += 68;
                     const int pages = juce::jmax(1, (pattern->stepCount + 15) / 16);
                     for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
+                    const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
+                    const auto& editStep = pattern->steps[(size_t)selectedStep];
+                    const int editY = controlsY + 22;
+                    auto drawEdit = [&](juce::String text, int x, int w, bool active)
+                    {
+                        auto r = juce::Rectangle<int>(x, editY, w, 18);
+                        g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff20242b)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
+                        g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
+                        g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f)); g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int ex = panel.getX();
+                    drawEdit("STEP " + juce::String(selectedStep + 1), ex, 52, true); ex += 56;
+                    drawEdit("NOTE " + juce::String((int)editStep.pitch + editStep.octave * 12), ex, 64, false); ex += 68;
+                    drawEdit("VEL " + juce::String((int)editStep.velocity), ex, 54, false); ex += 58;
+                    drawEdit("GATE " + juce::String((int)std::round(editStep.gate * 100.0f)) + "%", ex, 66, false); ex += 70;
+                    drawEdit("PROB " + juce::String((int)editStep.probability) + "%", ex, 66, false); ex += 70;
+                    drawEdit("RATCH x" + juce::String((int)editStep.ratchet), ex, 62, editStep.ratchet > 1); ex += 66;
+                    drawEdit("ACC", ex, 38, editStep.accent); ex += 42;
+                    drawEdit("OCT " + juce::String(editStep.octave), ex, 48, editStep.octave != 0);
                 }
             }
         }
@@ -677,6 +696,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
                         if (pad.contains(p) && absoluteStep < pattern->stepCount)
                         {
+                            stepSequencerSelectedStep = absoluteStep;
                             pattern->steps[(size_t)absoluteStep].enabled = !pattern->steps[(size_t)absoluteStep].enabled;
                             publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                         }
