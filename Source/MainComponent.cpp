@@ -353,6 +353,11 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
                     const int controlsY = panel.getY() + 42;
+                    g.setColour(juce::Colour(0xff35495f));
+                    g.fillRect(panel.getX(), controlsY - 7, panel.getWidth(), 1);
+                    g.setColour(juce::Colour(0xff243448));
+                    g.fillRect(panel.getX(), controlsY + 30, panel.getWidth(), 1);
+                    g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, controlsY, 26, 650);
