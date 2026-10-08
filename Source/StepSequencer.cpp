@@ -26,7 +26,13 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         if (!step.enabled || probabilityStep.probability == 0) continue;
         const unsigned hash = (unsigned)(i * 1103515245u + 12345u);
         if ((hash % 100u) >= std::min<unsigned>(100u, probabilityStep.probability)) continue;
-        const int ratchets = std::clamp<int>(ratchetStep.ratchet, 1, 8);
+        int tiedSteps = 1;
+        if (step.tie)
+        {
+            while (i + tiedSteps < count && pattern.steps[(size_t)(i + tiedSteps - 1)].tie)
+                ++tiedSteps;
+        }
+        const int ratchets = step.tie ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
@@ -71,13 +77,15 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             {
                 MidiEngine::NoteEvent note;
                 note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-                note.lengthTicks = step.tie ? effectiveStepTicks : gateTicks;
+                note.lengthTicks = step.tie ? effectiveStepTicks * tiedSteps : gateTicks;
                 note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
                 note.velocity = (std::uint8_t)velocity;
                 note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
                 notes.push_back(note);
             }
         }
+        if (step.tie && tiedSteps > 1)
+            i += tiedSteps - 1;
     }
     return notes;
 }
