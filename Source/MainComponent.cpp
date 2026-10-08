@@ -320,8 +320,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("RANDOM", ax, 58); ax += 62;
                     drawAction("REVERSE", ax, 62); ax += 66;
                     drawAction("ROTATE", ax, 56); ax += 60;
-                    drawAction("DUPLICATE", ax, 72);
-                    ax += 80;
+                    drawAction("DUPLICATE", ax, 72); ax += 80;
+                    static constexpr const char* rootNames[] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+                    static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
+                    drawAction("ROOT " + juce::String(rootNames[juce::jlimit(0,11,(int)pattern->root)]), ax, 58); ax += 62;
+                    drawAction("SCALE " + juce::String(scaleNames[juce::jlimit(0,3,(int)pattern->scale)]), ax, 82); ax += 86;
+                    drawAction("TRANS " + juce::String(pattern->transpose), ax, 66);
+                    ax += 74;
                     if ((size_t)i < instrumentStepSequencers.size())
                     {
                         const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
@@ -788,6 +793,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                     }
                     ax += 80;
+                    if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
+                    if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
+                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 74;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
