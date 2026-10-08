@@ -332,8 +332,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60); ax += 64;
                     drawAction("EUC " + juce::String(pattern->euclideanPulses) + "/" + juce::String(pattern->stepCount), ax, 68); ax += 72;
                     drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70); ax += 74;
-                    drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66);
-                    ax += 70;
+                    drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66); ax += 70;
+                    drawAction("VL " + juce::String(pattern->velocityLaneSteps), ax, 42); ax += 46;
+                    drawAction("GL " + juce::String(pattern->gateLaneSteps), ax, 42); ax += 46;
+                    drawAction("PL " + juce::String(pattern->probabilityLaneSteps), ax, 42); ax += 46;
+                    drawAction("RL " + juce::String(pattern->ratchetLaneSteps), ax, 42);
+                    ax += 46;
                     if ((size_t)i < instrumentStepSequencers.size())
                     {
                         const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
@@ -829,8 +833,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         }
                         publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                     } ax += 74;
-                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    ax += 70;
+                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,42)) { pattern->velocityLaneSteps=pattern->velocityLaneSteps>=pattern->cycleSteps?1:pattern->velocityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->gateLaneSteps=pattern->gateLaneSteps>=pattern->cycleSteps?1:pattern->gateLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->probabilityLaneSteps=pattern->probabilityLaneSteps>=pattern->cycleSteps?1:pattern->probabilityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->ratchetLaneSteps=pattern->ratchetLaneSteps>=pattern->cycleSteps?1:pattern->ratchetLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 46;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
