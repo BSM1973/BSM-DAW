@@ -1038,34 +1038,16 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             audioEngine.setAudioFileName(index, savedDisplayName);
         pendingAudioFileNames[(size_t)index].clear();
         pendingAudioLengths[(size_t)index] = 0.0;
-        pendingAudioWarpStates[(size_t)index] = {};
         if (projectVersion >= 16)
         {
-            audioEngine.setTrackWarpMode(index, track->getIntAttribute("warpMode", 0));
-            audioEngine.resetTrackWarpMarkers(index);
-            if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
+            const auto pendingWarp = pendingAudioWarpStates[(size_t)index];
+            if (!audioEngine.restoreTrackWarpState(index, pendingWarp.enabled, pendingWarp.mode, pendingWarp.markers))
             {
-                int restoredMarkers = 0;
-                int visitedWarpMarkerElements = 0;
-                for (auto* marker = warpMarkers->getFirstChildElement();
-                     marker != nullptr && restoredMarkers < 128 && visitedWarpMarkerElements < 512;
-                     marker = marker->getNextElement())
-                {
-                    ++visitedWarpMarkerElements;
-                    if (marker->getTagName() != "Marker") continue;
-                    const double sourceSeconds = finiteOr(marker->getDoubleAttribute("sourceSeconds", -1.0), -1.0);
-                    const double targetSeconds = finiteOr(marker->getDoubleAttribute("targetSeconds", -1.0), -1.0);
-                    if (sourceSeconds <= 0.0 || targetSeconds < 0.0) continue;
-                    const int count = audioEngine.getTrackWarpMarkerCount(index);
-                    if (count < 2) break;
-                    const double endSource = audioEngine.getTrackWarpMarkerSourceSeconds(index, count - 1);
-                    if (sourceSeconds >= endSource) continue;
-                    if (audioEngine.addTrackWarpMarker(index, sourceSeconds, targetSeconds))
-                        ++restoredMarkers;
-                }
+                appendProjectDiagnostic(missingFiles, "Audio " + juce::String(index + 1) + ": warp state could not be restored.");
+                continue;
             }
-            audioEngine.setTrackWarpEnabled(index, track->getBoolAttribute("warpEnabled", false));
         }
+        pendingAudioWarpStates[(size_t)index] = {};
         rebuildWaveformCache(index);
     }
 
