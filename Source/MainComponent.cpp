@@ -422,14 +422,19 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         {
                             const auto patRect = wideRow(bankIndex, 8, panel.getBottom() - 30, 28);
                             ax = patRect.getX();
-                            g.setColour(juce::Colour(0xff293b4d)); g.fillRoundedRectangle(patRect.toFloat(), 4.0f);
+                            const bool selectedPattern = bankIndex == activePattern;
+                            g.setColour(selectedPattern ? juce::Colour(0xff294c79) : juce::Colour(0xff263445));
+                            g.fillRoundedRectangle(patRect.toFloat(), 6.0f);
+                            g.setColour(selectedPattern ? juce::Colour(0xff79b4ff) : juce::Colour(0xff43576e));
+                            g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
                             g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
                             g.drawText("PAT " + juce::String(bankIndex + 1), patRect, juce::Justification::centred);
                             if (bankIndex == activePattern)
                             {
                                 auto active = patRect;
-                                g.setColour(juce::Colour(0xff4f82ff));
-                                g.drawRoundedRectangle(active.toFloat(), 3.0f, 2.0f);
+                                g.setColour(juce::Colour(0xff9acbff));
+                                g.fillRoundedRectangle((float)active.getX() + 9.0f, (float)active.getBottom() - 4.0f,
+                                                       (float)juce::jmax(1, active.getWidth() - 18), 2.0f, 1.0f);
                             }
                             ax += 48;
                         }
