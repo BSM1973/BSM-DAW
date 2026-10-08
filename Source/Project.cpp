@@ -836,13 +836,38 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (addAudioTrack() < 0)
             break;
     }
+    if (getAudioTrackCount() < savedAudioTracks)
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               "Liberty could not create all audio tracks because memory is unavailable.",
+                                               "OK");
+        return false;
+    }
+
     while (getMidiTrackCount() < savedMidiTracks) addMidiTrack();
+
     while (getInstrumentTrackCount() < savedInstrumentTracks)
     {
         if (addInstrumentTrack() < 0)
             break;
     }
-    audioEngine.resetInstrumentPlayback(getInstrumentTrackCount());
+    if (getInstrumentTrackCount() < savedInstrumentTracks)
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               "Liberty could not create all instrument tracks because memory is unavailable.",
+                                               "OK");
+        return false;
+    }
+    if (!audioEngine.resetInstrumentPlayback(getInstrumentTrackCount()))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               "Liberty could not reset the restored instrument tracks because memory is unavailable.",
+                                               "OK");
+        return false;
+    }
     trackScrollRows = 0;
 
     const auto finiteOr = [](double value, double fallback) noexcept
