@@ -29,8 +29,15 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         int tiedSteps = 1;
         if (step.tie)
         {
-            while (i + tiedSteps < count && pattern.steps[(size_t)(i + tiedSteps - 1)].tie)
+            while (i + tiedSteps < count)
+            {
+                const auto& previous = pattern.steps[(size_t)(i + tiedSteps - 1)];
+                const auto& next = pattern.steps[(size_t)(i + tiedSteps)];
+                if (!previous.tie || !next.enabled || next.pitch != step.pitch || next.octave != step.octave
+                    || next.channel != step.channel || next.chord != step.chord)
+                    break;
                 ++tiedSteps;
+            }
         }
         const int ratchets = step.tie ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
