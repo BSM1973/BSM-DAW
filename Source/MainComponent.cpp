@@ -278,10 +278,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
             {
                 const auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
-                if (bank.hasTimelinePatternClip && bank.timelinePatternLengthSeconds > 0.0)
+                for (const auto& patternClip : bank.timelineClips)
                 {
-                    const int clipX = headerW + (int) std::round(bank.timelinePatternStartSeconds * pixelsPerSecond);
-                    const int clipWidth = juce::jmax(1, (int) std::round(bank.timelinePatternLengthSeconds * pixelsPerSecond));
+                    if (patternClip.lengthSeconds <= 0.0) continue;
+                    const int clipX = headerW + (int) std::round(patternClip.startSeconds * pixelsPerSecond);
+                    const int clipWidth = juce::jmax(1, (int) std::round(patternClip.lengthSeconds * pixelsPerSecond));
                     auto clip = juce::Rectangle<int>(clipX, row.getY() + 5, clipWidth, juce::jmax(1, row.getHeight() - 10))
                                     .getIntersection(row.withTrimmedLeft(headerW));
                     if (!clip.isEmpty())
@@ -292,7 +293,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
                         g.setColour(juce::Colours::white);
                         g.setFont(juce::Font(11.0f, juce::Font::bold));
-                        g.drawText(bank.timelinePatternName, clip.reduced(7, 2), juce::Justification::centredLeft, true);
+                        g.drawText(patternClip.name, clip.reduced(7, 2), juce::Justification::centredLeft, true);
                     }
                 }
             }
