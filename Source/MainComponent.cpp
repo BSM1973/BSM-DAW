@@ -380,6 +380,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawAction("TRANS " + juce::String(pattern->transpose), ax, 66); ax += 70;
                     drawAction("OCT " + juce::String(pattern->octaveShift), ax, 52); ax += 56;
                     drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60); ax += 64;
+                    if (ax + 72 > panel.getRight()) { ax = panel.getX(); }
                     drawAction("EUC " + juce::String(pattern->euclideanPulses) + "/" + juce::String(pattern->stepCount), ax, 68); ax += 72;
                     drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70); ax += 74;
                     drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66); ax += 70;
@@ -393,6 +394,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         const auto activePattern = instrumentStepSequencers[(size_t)instrumentIndex].activePattern;
                         for (int bankIndex = 0; bankIndex < 8; ++bankIndex)
                         {
+                            if (bankIndex == 0) ax = panel.getX() + juce::jmax(0, panel.getWidth() - 8 * 48);
                             drawAction("PAT " + juce::String(bankIndex + 1), ax, 44);
                             if (bankIndex == activePattern)
                             {
