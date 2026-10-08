@@ -328,6 +328,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("REVERSE", ax, 62); ax += 66;
                     drawAction("ROTATE", ax, 56); ax += 60;
                     drawAction("DUPLICATE", ax, 72); ax += 80;
+                    drawAction("MIDI " + juce::String(stepSequencerMidiTarget + 1), ax, 52); ax += 56;
                     drawAction("TO MIDI", ax, 58); ax += 62;
                     static constexpr const char* rootNames[] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
                     static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
@@ -814,7 +815,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                     }
                     ax += 80;
-                    if (actionHit(ax,58)) { commitInstrumentStepSequencerToMidiClip(instrumentIndex); repaint(); return; } ax += 62;
+                    if (actionHit(ax,52)) { stepSequencerMidiTarget = (stepSequencerMidiTarget + 1) % juce::jmax(1, getMidiTrackCount()); repaint(); return; } ax += 56;
+                    if (actionHit(ax,58)) { commitInstrumentStepSequencerToMidiClip(instrumentIndex, stepSequencerMidiTarget); repaint(); return; } ax += 62;
                     if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
                     if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
                     if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
