@@ -127,11 +127,8 @@ public:
                                           : baseStepTicks;
             const auto lengthTicks = (std::int64_t)juce::jlimit(1, juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount), pattern->cycleSteps) * effectiveStepTicks;
             const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
-            auto& bank = instrumentStepSequencers[(size_t) track];
-            const double startSeconds = bank.hasTimelinePatternClip ? bank.timelinePatternStartSeconds : 0.0;
-            if (bank.hasTimelinePatternClip)
-                bank.timelinePatternLengthSeconds = lengthSeconds;
-            audioEngine.setInstrumentTrackNotes(track, notes, startSeconds, lengthSeconds, tempoBpm);
+            // Editing the step grid only updates audition notes, not previously placed clips.
+            audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);
             return true;
         }
         catch (...) { return false; }
@@ -146,12 +143,12 @@ public:
         const auto lengthTicks = LibertyStepSequencer::getCycleLengthTicks(*pattern);
         if (lengthTicks <= 0) return false;
         auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
-        bank.hasTimelinePatternClip = true;
-        bank.timelinePatternStartSeconds = juce::jmax(0.0, playheadSeconds);
-        bank.timelinePatternLengthSeconds = juce::jmax(0.001, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
-        bank.timelinePatternName = "Pattern " + juce::String(bank.activePattern + 1);
-        audioEngine.setInstrumentTrackNotes(instrumentIndex, notes, bank.timelinePatternStartSeconds,
-                                             bank.timelinePatternLengthSeconds, tempoBpm);
+        InstrumentStepSequencerBank::TimelinePatternClip clip;
+        clip.startSeconds = juce::jmax(0.0, playheadSeconds);
+        clip.lengthSeconds = juce::jmax(0.001, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
+        clip.name = "Pattern " + juce::String(bank.activePattern + 1);
+        clip.notes = notes;
+        bank.timelineClips.push_back(std::move(clip));
         repaint();
         return true;
     }
@@ -426,10 +423,14 @@ private:
     {
         std::array<LibertyStepSequencer::Pattern, 8> patterns {};
         int activePattern = 0;
-        bool hasTimelinePatternClip = false;
-        double timelinePatternStartSeconds = 0.0;
-        double timelinePatternLengthSeconds = 0.0;
-        juce::String timelinePatternName = "Pattern";
+        struct TimelinePatternClip
+        {
+            double startSeconds = 0.0;
+            double lengthSeconds = 0.0;
+            juce::String name = "Pattern";
+            std::vector<MidiEngine::NoteEvent> notes;
+        };
+        std::vector<TimelinePatternClip> timelineClips;
     };
     std::vector<InstrumentStepSequencerBank> instrumentStepSequencers; int stepSequencerPage = 0; int stepSequencerSelectedStep = 0; int stepSequencerMidiTarget = 0; bool draggingStepSequencerPattern = false; int draggedStepSequencerInstrument = -1; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
