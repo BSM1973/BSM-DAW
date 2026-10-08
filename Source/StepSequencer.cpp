@@ -17,7 +17,25 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const int ratchets = std::clamp<int>(step.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, pattern.stepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
-        const int pitch = std::clamp((int)step.pitch + step.octave * 12, MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
+        int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
+        if (pattern.scale != Scale::Off)
+        {
+            static constexpr bool major[12] = {true,false,true,false,true,true,false,true,false,true,false,true};
+            static constexpr bool minor[12] = {true,false,true,true,false,true,false,true,true,false,true,false};
+            static constexpr bool penta[12] = {true,false,false,true,false,true,false,true,false,false,true,false};
+            const bool* allowed = pattern.scale == Scale::Major ? major : (pattern.scale == Scale::Minor ? minor : penta);
+            const int root = std::clamp((int)pattern.root, 0, 11);
+            auto inScale = [&](int note) { int pc=(note-root)%12; if(pc<0) pc+=12; return allowed[pc]; };
+            if (!inScale(pitch))
+            {
+                for (int distance=1; distance<12; ++distance)
+                {
+                    const int down=pitch-distance, up=pitch+distance;
+                    if (down>=MidiEngine::minMidiNote && inScale(down)) { pitch=down; break; }
+                    if (up<=MidiEngine::maxMidiNote && inScale(up)) { pitch=up; break; }
+                }
+            }
+        }
         const int velocity = std::clamp((int)step.velocity + (step.accent ? 18 : 0), 1, 127);
         const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)step.gate, 0.01, 1.0)));
         for (int r = 0; r < ratchets; ++r)
