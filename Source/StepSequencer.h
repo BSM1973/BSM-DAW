@@ -33,6 +33,8 @@ public:
         Scale scale = Scale::Off;
         int transpose = 0;
         float humanize = 0.0f;
+        int euclideanPulses = 4;
+        int euclideanRotation = 0;
         std::array<Step, maxSteps> steps {};
     };
 
