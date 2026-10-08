@@ -366,7 +366,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
-                        auto r = stretchedControl(x, w, controlsY, 26, 650);
+                        auto r = stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16));
                         g.setColour(active ? juce::Colour(0xff2a639a) : juce::Colour(0xff263343)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
                         if (active) { g.setColour(juce::Colour(0xff84c1ff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xff9acaff) : juce::Colour(0xff50677e));
@@ -864,7 +864,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         }
                     }
                     const int controlsY = panel.getY() + 42;
-                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 650).contains(p); };
+                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16)).contains(p); };
                     int cx = panel.getX();
                     const int counts[] = {16,32,64};
                     for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=(n == 2 ? 42 : 34); }
