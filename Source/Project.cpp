@@ -1043,6 +1043,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             const auto pendingWarp = pendingAudioWarpStates[(size_t)index];
             if (!audioEngine.restoreTrackWarpState(index, pendingWarp.enabled, pendingWarp.mode, pendingWarp.markers))
             {
+                clearLibertyAudioClipResizeSource(audioEngine, index);
+                audioEngine.clearAudioTrack(index);
                 appendProjectDiagnostic(missingFiles, "Audio " + juce::String(index + 1) + ": warp state could not be restored.");
                 continue;
             }
