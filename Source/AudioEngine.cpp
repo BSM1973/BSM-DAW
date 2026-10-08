@@ -1111,6 +1111,65 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
     }
 
+    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0)
+    {
+        // Audition only the selected instrument, leaving arrangement time untouched.
+        const auto previewTrack = stepPreviewTrack.load(std::memory_order_acquire);
+        const auto rate = sampleRate.load(std::memory_order_relaxed);
+        auto& host = LibertyPluginHost::instance();
+        const bool panic = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
+        if (rate > 0.0 && previewTrack >= 0 && previewTrack < (int) instrumentPlayback.size())
+        {
+            auto& state = *instrumentPlayback[(size_t) previewTrack];
+            const auto snapshot = std::atomic_load(&state.noteSnapshot);
+            const double cycle = state.clipLengthSeconds.load(std::memory_order_relaxed);
+            const auto position = stepPreviewSamples.load(std::memory_order_relaxed);
+            juce::MidiBuffer midi;
+            if (panic)
+                for (int channel = 1; channel <= 16; ++channel)
+                {
+                    midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+            if (snapshot != nullptr && cycle > 0.0 && host.hasInstrumentForTrack(previewTrack))
+            {
+                const double blockStart = (double) position / rate;
+                const double blockEnd = (double) (position + numSamples) / rate;
+                for (const auto& note : snapshot->notes)
+                {
+                    const int channel = juce::jlimit(1, 16, note.channel);
+                    const int pitch = juce::jlimit(0, 127, (int) std::llround(69.0 + 12.0 * std::log2(juce::jmax(0.0001, note.frequency / 440.0))));
+                    const float velocity = juce::jlimit(0.0f, 1.0f, note.amplitude / 0.045f);
+                    const auto firstCycle = (std::int64_t) std::floor(blockStart / cycle);
+                    const auto lastCycle = (std::int64_t) std::floor(blockEnd / cycle);
+                    for (auto iteration = firstCycle; iteration <= lastCycle; ++iteration)
+                    {
+                        const double offset = (double) iteration * cycle;
+                        const double start = offset + note.startSeconds;
+                        const double end = offset + note.endSeconds;
+                        if (start >= blockStart && start < blockEnd)
+                            midi.addEvent(juce::MidiMessage::noteOn(channel, pitch, velocity),
+                                          juce::jlimit(0, numSamples - 1, (int) std::llround((start - blockStart) * rate)));
+                        if (end >= blockStart && end < blockEnd)
+                            midi.addEvent(juce::MidiMessage::noteOff(channel, pitch),
+                                          juce::jlimit(0, numSamples - 1, (int) std::llround((end - blockStart) * rate)));
+                    }
+                }
+                juce::AudioBuffer<float> bus;
+                if (host.renderInstrumentForTrack(previewTrack, bus, numSamples, midi,
+                                                  state.gain.load(std::memory_order_relaxed),
+                                                  state.pan.load(std::memory_order_relaxed)))
+                {
+                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                        if (outputChannelData[ch] != nullptr)
+                            juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
+                }
+            }
+            stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
+        }
+        return;
+    }
+
     if (!playing.load())
     {
         instrumentResumePending.store(false, std::memory_order_release);
