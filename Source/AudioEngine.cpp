@@ -191,6 +191,46 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
     }
 }
 
+void AudioEngine::setInstrumentArrangementClips(int instrumentTrack,
+                                                const std::vector<InstrumentArrangementClip>& clips,
+                                                double tempoBpm) noexcept
+{
+    if (instrumentTrack < 0) return;
+    const double rate = juce::jmax(1.0, tempoBpm);
+    std::shared_ptr<InstrumentNoteSnapshot> snapshot;
+    try
+    {
+        ensureInstrumentPlaybackTracks(instrumentTrack + 1);
+        snapshot = std::make_shared<InstrumentNoteSnapshot>();
+        for (const auto& clip : clips)
+        {
+            if (clip.lengthSeconds <= 0.0) continue;
+            for (const auto& note : clip.notes)
+            {
+                InstrumentPlaybackNote playbackNote;
+                playbackNote.startSeconds = clip.startSeconds + MidiEngine::tickToSeconds(note.startTick, rate);
+                playbackNote.endSeconds = juce::jmin(clip.startSeconds + clip.lengthSeconds,
+                    clip.startSeconds + MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate));
+                if (playbackNote.endSeconds <= playbackNote.startSeconds) continue;
+                playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
+                playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
+                playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
+                snapshot->notes.push_back(playbackNote);
+            }
+        }
+    }
+    catch (...) { return; }
+    const juce::ScopedLock lock(stateLock);
+    if (instrumentTrack >= (int) instrumentPlayback.size()) return;
+    auto& state = *instrumentPlayback[(size_t) instrumentTrack];
+    std::atomic_store(&state.arrangementSnapshot, std::move(snapshot));
+    if (playing.load(std::memory_order_relaxed))
+    {
+        instrumentPanicPending.store(true, std::memory_order_release);
+        instrumentResumePending.store(true, std::memory_order_release);
+    }
+}
+
 void AudioEngine::setInstrumentTrackGain(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->gain.store(juce::jlimit(0.f,2.f,v)); }
 float AudioEngine::getInstrumentTrackGain(int t) const noexcept { const juce::ScopedLock l(stateLock); return t>=0&&t<(int)instrumentPlayback.size()?instrumentPlayback[(size_t)t]->gain.load():1.f; }
 void AudioEngine::setInstrumentTrackPan(int t,float v) noexcept { const juce::ScopedLock l(stateLock); if(t>=0&&t<(int)instrumentPlayback.size()) instrumentPlayback[(size_t)t]->pan.store(juce::jlimit(-1.f,1.f,v)); }
@@ -1369,9 +1409,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
             if (trackMuted || (anyPlaybackSolo && !trackSolo)) continue;
-            const auto noteSnapshot = std::atomic_load(&state.noteSnapshot);
-            const auto clipStart=state.clipStartSeconds.load(std::memory_order_relaxed);
-            const auto clipLength=state.clipLengthSeconds.load(std::memory_order_relaxed);
+            const auto arrangementNotes = std::atomic_load(&state.arrangementSnapshot);
+            const auto noteSnapshot = arrangementNotes != nullptr ? arrangementNotes : std::atomic_load(&state.noteSnapshot);
+            const auto clipStart=arrangementNotes != nullptr ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
+            const auto clipLength=arrangementNotes != nullptr ? 1.0 : state.clipLengthSeconds.load(std::memory_order_relaxed);
             if (!hasInstrument || noteSnapshot == nullptr || noteSnapshot->notes.empty() || clipLength<=0.0) continue;
             juce::MidiBuffer midi;
             const double blockStart=static_cast<double>(position)/rate;
