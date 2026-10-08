@@ -8,6 +8,7 @@ class LibertyStepSequencer final
 {
 public:
     static constexpr int maxSteps = 64;
+    enum class Chord : std::uint8_t { Off = 0, Major, Minor, Power, Seventh };
     struct Step
     {
         bool enabled = false;
@@ -21,6 +22,7 @@ public:
         bool accent = false;
         int octave = 0;
         float microTiming = 0.0f;
+        Chord chord = Chord::Off;
     };
     enum class Scale : std::uint8_t { Off = 0, Major, Minor, Pentatonic };
     struct Pattern
