@@ -38,6 +38,10 @@ public:
         float humanize = 0.0f;
         int euclideanPulses = 4;
         int euclideanRotation = 0;
+        int velocityLaneSteps = 16;
+        int gateLaneSteps = 16;
+        int probabilityLaneSteps = 16;
+        int ratchetLaneSteps = 16;
         std::array<Step, maxSteps> steps {};
     };
 
