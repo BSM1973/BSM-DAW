@@ -241,6 +241,33 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             title = "Instrument " + juce::String(i + 1);
             selected = selectedTrack == audioCount + midiCount + i;
             g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+            if (selected)
+            {
+                if (auto* pattern = getInstrumentStepSequencer(i))
+                {
+                    auto panel = row.withTrimmedLeft(headerW + 8).reduced(2, 8);
+                    const int titleWidth = 122;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
+                    g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
+                    g.fillRoundedRectangle(onOff.toFloat(), 4.0f);
+                    g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
+                    g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
+                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
+                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    const int stepsY = panel.getY();
+                    for (int s = 0; s < 16; ++s)
+                    {
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, stepsY, stepW - 3, 22);
+                        const bool active = pattern->steps[(size_t)s].enabled;
+                        g.setColour(active ? juce::Colour(0xff4f82ff) : juce::Colour(0xff252a31));
+                        g.fillRoundedRectangle(pad.toFloat(), 3.0f);
+                        g.setColour((s % 4) == 0 ? juce::Colour(0xff93a9c5) : juce::Colour(0xff454b54));
+                        g.drawRoundedRectangle(pad.toFloat(), 3.0f, 1.0f);
+                        g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f));
+                        g.drawText(juce::String(s + 1), pad, juce::Justification::centred);
+                    }
+                }
+            }
         }
         g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
         g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
@@ -595,6 +622,48 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         playheadSeconds = snappedTime;
         repaint();
         return;
+    }
+
+    // Step Sequencer hit-test for the selected Instrument row.
+    {
+        const int rowOffset = p.y - getArrangeTop();
+        if (rowOffset >= 0 && p.y < getMixerTop())
+        {
+            const int logicalRow = getTrackScrollRows() + rowOffset / rowH;
+            const int instrumentFirst = audioTrackCount + midiTrackCount;
+            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount
+                && selectedTrack == logicalRow)
+            {
+                const int instrumentIndex = logicalRow - instrumentFirst;
+                if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
+                {
+                    const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
+                    auto panel = juce::Rectangle<int>(headerW + 8, rowY + 8, getWidth() - headerW - 16, juce::jmax(1, rowH - 16));
+                    const int titleWidth = 122;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
+                    if (onOff.contains(p))
+                    {
+                        pattern->enabled = !pattern->enabled;
+                        publishInstrumentStepSequencer(instrumentIndex);
+                        repaint();
+                        return;
+                    }
+                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
+                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    for (int s = 0; s < 16; ++s)
+                    {
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
+                        if (pad.contains(p))
+                        {
+                            pattern->steps[(size_t)s].enabled = !pattern->steps[(size_t)s].enabled;
+                            publishInstrumentStepSequencer(instrumentIndex);
+                            repaint();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     const int track = getAudioTrackAtPosition(p);
