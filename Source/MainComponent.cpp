@@ -63,6 +63,7 @@ MainComponent::MainComponent()
     trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
     pendingAudioFileNames.resize((size_t) audioEngine.getAudioTrackCount());
     pendingAudioLengths.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioStartSeconds.resize((size_t) audioEngine.getAudioTrackCount());
     pendingAudioWarpStates.resize((size_t) audioEngine.getAudioTrackCount());
     audioEngine.initialise();
     projectButton = std::make_unique<ProjectButton>(this);
