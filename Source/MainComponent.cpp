@@ -83,7 +83,10 @@ void MainComponent::paint(juce::Graphics& g)
     auto mixer = bounds.removeFromBottom(mixerHeight);
     drawTransport(g, transport);
     drawTrackArea(g, bounds);
-    drawMixer(g, mixer);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    if (!showStepSequencer)
+        drawMixer(g, mixer);
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
@@ -246,7 +249,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             {
                 if (auto* pattern = getInstrumentStepSequencer(i))
                 {
-                    auto panel = row.withTrimmedLeft(headerW + 8).reduced(2, 8);
+                    auto panel = juce::Rectangle<int>(8, getMixerTop() + 8, getWidth() - 16, juce::jmax(1, mixerHeight - 16));
                     const int titleWidth = 122;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
@@ -732,8 +735,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 const int instrumentIndex = logicalRow - instrumentFirst;
                 if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
                 {
-                    const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
-                    auto panel = juce::Rectangle<int>(headerW + 8, rowY + 8, getWidth() - headerW - 16, juce::jmax(1, rowH - 16));
+                    auto panel = juce::Rectangle<int>(8, getMixerTop() + 8, getWidth() - 16, juce::jmax(1, mixerHeight - 16));
                     const int titleWidth = 122;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
                     if (onOff.contains(p))
