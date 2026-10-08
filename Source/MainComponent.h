@@ -52,6 +52,18 @@ public:
     bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
     void notifyInstrumentChanged() noexcept { audioEngine.notifyInstrumentChanged(); }
     double getMidiClipLengthSeconds() const noexcept { return midiClipLengthSeconds; }
+    double getMidiClipStartSeconds(int track) const noexcept
+    {
+        if (track == 0) return midiClipStartSeconds;
+        if (track < 0 || (size_t)(track - 1) >= additionalMidiClipStartSeconds.size()) return 0.0;
+        return additionalMidiClipStartSeconds[(size_t)(track - 1)];
+    }
+    double getMidiClipLengthSeconds(int track) const noexcept
+    {
+        if (track == 0) return midiClipLengthSeconds;
+        if (track < 0 || (size_t)(track - 1) >= additionalMidiClipLengthSeconds.size()) return 0.0;
+        return additionalMidiClipLengthSeconds[(size_t)(track - 1)];
+    }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
     int addAudioTrack()
     {
