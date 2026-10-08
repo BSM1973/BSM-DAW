@@ -458,6 +458,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             const bool selectedPattern = bankIndex == activePattern;
                             g.setColour(selectedPattern ? juce::Colour(0xff294c79) : juce::Colour(0xff263445));
                             g.fillRoundedRectangle(patRect.toFloat(), 6.0f);
+                            if (selectedPattern)
+                            {
+                                g.setColour(juce::Colour(0x444e9cff));
+                                g.fillRoundedRectangle((float)patRect.getX() + 3.0f, (float)patRect.getY() + 2.0f,
+                                                       (float)juce::jmax(1, patRect.getWidth() - 6), 5.0f, 2.0f);
+                            }
                             g.setColour(selectedPattern ? juce::Colour(0xff79b4ff) : juce::Colour(0xff43576e));
                             g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
                             g.setColour(selectedPattern ? juce::Colour(0xfff2f8ff) : juce::Colour(0xffb7c7d9));
