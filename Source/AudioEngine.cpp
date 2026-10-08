@@ -260,13 +260,29 @@ bool AudioEngine::ensureInstrumentPlaybackTracks(int trackCount) noexcept
     return true;
 }
 
-void AudioEngine::resetInstrumentPlayback(int trackCount)
+bool AudioEngine::resetInstrumentPlayback(int trackCount) noexcept
 {
     const int safeCount = juce::jmax(1, trackCount);
+    int currentCount = 0;
+    {
+        const juce::ScopedLock lock(stateLock);
+        currentCount = (int) instrumentPlayback.size();
+    }
+
     std::vector<std::unique_ptr<InstrumentPlaybackState>> replacement;
-    replacement.reserve((size_t) safeCount);
-    for (int i = 0; i < safeCount; ++i)
-        replacement.push_back(std::make_unique<InstrumentPlaybackState>());
+    if (currentCount != safeCount)
+    {
+        try
+        {
+            replacement.reserve((size_t) safeCount);
+            for (int i = 0; i < safeCount; ++i)
+                replacement.push_back(std::make_unique<InstrumentPlaybackState>());
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
 
     const bool wasInitialised = initialised.load();
     const bool wasPlaying = playing.load();
@@ -274,12 +290,33 @@ void AudioEngine::resetInstrumentPlayback(int trackCount)
     if (wasInitialised)
         deviceManager.removeAudioCallback(this);
 
+    bool published = false;
     {
         const juce::ScopedLock lock(stateLock);
-        instrumentPlayback.swap(replacement);
+        if (currentCount == safeCount && (int) instrumentPlayback.size() == safeCount)
+        {
+            for (auto& statePtr : instrumentPlayback)
+            {
+                auto& state = *statePtr;
+                std::atomic_store(&state.noteSnapshot, std::shared_ptr<InstrumentNoteSnapshot>{});
+                state.clipStartSeconds.store(0.0, std::memory_order_relaxed);
+                state.clipLengthSeconds.store(0.0, std::memory_order_relaxed);
+                state.tempoBpm.store(120.0, std::memory_order_relaxed);
+                state.gain.store(1.0f, std::memory_order_relaxed);
+                state.pan.store(0.0f, std::memory_order_relaxed);
+                state.muted.store(false, std::memory_order_relaxed);
+                state.solo.store(false, std::memory_order_relaxed);
+            }
+            published = true;
+        }
+        else if ((int) instrumentPlayback.size() == currentCount)
+        {
+            instrumentPlayback.swap(replacement);
+            published = true;
+        }
     }
 
-    if (wasPlaying)
+    if (wasPlaying && published)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
@@ -287,6 +324,7 @@ void AudioEngine::resetInstrumentPlayback(int trackCount)
     playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    return published;
 }
 
 int AudioEngine::addAudioTrack()
