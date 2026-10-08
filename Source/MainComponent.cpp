@@ -311,8 +311,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
-                    g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff263343));
-                    g.fillRoundedRectangle(onOff.toFloat(), 4.0f);
+                    g.setColour(pattern->enabled ? juce::Colour(0xff177c70) : juce::Colour(0xff303d4d));
+                    g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
+                    g.setColour(pattern->enabled ? juce::Colour(0xff5de0b9) : juce::Colour(0xff607187));
+                    g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
@@ -390,7 +392,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     {
                         auto r = stretchedControl(x, w, actionY, 26, 1260);
                         g.setColour(juce::Colour(0xff293b4d)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
-                        g.setColour(juce::Colour(0xff59636f)); g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
+                        g.setColour(juce::Colour(0xff58718b)); g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
                     };
                     int ax = panel.getX();
