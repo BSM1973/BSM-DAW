@@ -249,7 +249,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             {
                 if (auto* pattern = getInstrumentStepSequencer(i))
                 {
-                    auto panel = juce::Rectangle<int>(8, getMixerTop() + 8, getWidth() - 16, juce::jmax(1, mixerHeight - 16));
+                    auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
                     const int titleWidth = 122;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
