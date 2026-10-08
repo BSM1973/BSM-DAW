@@ -306,7 +306,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawEdit("ACC", ex, 38, editStep.accent); ex += 42;
                     drawEdit("OCT " + juce::String(editStep.octave), ex, 48, editStep.octave != 0); ex += 52;
                     drawEdit("TIE", ex, 38, editStep.tie); ex += 42;
-                    drawEdit("CH " + juce::String((int)editStep.channel), ex, 42, editStep.channel != 1);
+                    drawEdit("CH " + juce::String((int)editStep.channel), ex, 42, editStep.channel != 1); ex += 46;
+                    drawEdit("MICRO " + juce::String((int)std::round(editStep.microTiming * 100.0f)) + "%", ex, 70, editStep.microTiming != 0.0f);
                     const int actionY = editY + 22;
                     auto drawAction = [&](juce::String text, int x, int w)
                     {
@@ -325,8 +326,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
                     drawAction("ROOT " + juce::String(rootNames[juce::jlimit(0,11,(int)pattern->root)]), ax, 58); ax += 62;
                     drawAction("SCALE " + juce::String(scaleNames[juce::jlimit(0,3,(int)pattern->scale)]), ax, 82); ax += 86;
-                    drawAction("TRANS " + juce::String(pattern->transpose), ax, 66);
-                    ax += 74;
+                    drawAction("TRANS " + juce::String(pattern->transpose), ax, 66); ax += 70;
+                    drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60);
+                    ax += 64;
                     if ((size_t)i < instrumentStepSequencers.size())
                     {
                         const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
@@ -763,7 +765,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,38)) { editStep.accent = !editStep.accent; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
                     if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
                     if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
-                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
+                    if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
                     const int actionY = editY + 22;
                     auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 18).contains(p); };
                     int ax = panel.getX();
@@ -795,8 +798,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     ax += 80;
                     if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
                     if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
-                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    ax += 74;
+                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,60)) { pattern->humanize=pattern->humanize>=1.0f ? 0.0f : juce::jmin(1.0f,pattern->humanize+0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 64;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
