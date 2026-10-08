@@ -297,6 +297,13 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         const int width = juce::jmax(1, (panel.getWidth() - (count - 1) * gap) / count);
                         return juce::Rectangle<int>(panel.getX() + index * (width + gap), y, width, height);
                     };
+                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
+                    {
+                        const int availableWidth = juce::jmax(1, panel.getWidth());
+                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
+                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
+                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
+                    };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
@@ -322,7 +329,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     const int controlsY = panel.getY() + 42;
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
-                        auto r = juce::Rectangle<int>(x, controlsY, w, 26);
+                        auto r = stretchedControl(x, w, controlsY, 26, 650);
                         g.setColour(active ? juce::Colour(0xff2d6f9f) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f)); g.drawText(text, r, juce::Justification::centred);
@@ -346,7 +353,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     const int editY = controlsY + 36;
                     auto drawEdit = [&](juce::String text, int x, int w, bool active)
                     {
-                        auto r = juce::Rectangle<int>(x, editY, w, 26);
+                        auto r = stretchedControl(x, w, editY, 26, 780);
                         g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff20242b)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f)); g.drawText(text, r, juce::Justification::centred);
@@ -368,7 +375,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     const int actionY = editY + 36;
                     auto drawAction = [&](juce::String text, int x, int w)
                     {
-                        auto r = juce::Rectangle<int>(x, actionY, w, 26);
+                        auto r = stretchedControl(x, w, actionY, 26, 1260);
                         g.setColour(juce::Colour(0xff29313a)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff59636f)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
@@ -388,7 +395,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawAction("TRANS " + juce::String(pattern->transpose), ax, 66); ax += 70;
                     drawAction("OCT " + juce::String(pattern->octaveShift), ax, 52); ax += 56;
                     drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60); ax += 64;
-                    if (ax + 72 > panel.getRight()) { ax = panel.getX(); }
+                    
                     drawAction("EUC " + juce::String(pattern->euclideanPulses) + "/" + juce::String(pattern->stepCount), ax, 68); ax += 72;
                     drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70); ax += 74;
                     drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66); ax += 70;
@@ -761,6 +768,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
                     const int dockInset = 8;
                     panel = panel.reduced(dockInset, 6);
+                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
+                    {
+                        const int availableWidth = juce::jmax(1, panel.getWidth());
+                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
+                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
+                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
+                    };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
                     if (onOff.contains(p))
@@ -785,10 +799,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         }
                     }
                     const int controlsY = panel.getY() + 42;
-                    auto hit = [&](int x, int w) { return juce::Rectangle<int>(x, controlsY, w, 26).contains(p); };
+                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 650).contains(p); };
                     int cx = panel.getX();
                     const int counts[] = {16,32,64};
-                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=34; }
+                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=(n == 2 ? 42 : 34); }
                     const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
                     for (int r=0;r<5;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
                     for (int m=0;m<3;++m) { if(hit(cx,34)) { pattern->rateModifier=(std::uint8_t)m; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=38; }
@@ -800,7 +814,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
                     auto& editStep = pattern->steps[(size_t)selectedStep];
                     const int editY = controlsY + 36;
-                    auto editHit = [&](int x, int w) { return juce::Rectangle<int>(x, editY, w, 26).contains(p); };
+                    auto editHit = [&](int x, int w) { return stretchedControl(x, w, editY, 26, 780).contains(p); };
                     int ex = panel.getX() + 56;
                     if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
                     if (editHit(ex,54)) { editStep.velocity = (std::uint8_t)(editStep.velocity >= 127 ? 20 : juce::jmin(127, (int)editStep.velocity + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 58;
@@ -814,7 +828,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
                     if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
                     const int actionY = editY + 36;
-                    auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 26).contains(p); };
+                    auto actionHit = [&](int x, int w) { return stretchedControl(x, w, actionY, 26, 1260).contains(p); };
                     int ax = panel.getX();
                     if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
                     if (actionHit(ax,58))
