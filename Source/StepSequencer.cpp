@@ -126,3 +126,101 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
     }
     return notes;
 }
+
+void MainComponent::saveStepSequencers(juce::XmlElement& root) const
+{
+    auto* all = root.createNewChildElement("StepSequencers");
+    for (size_t lane = 0; lane < instrumentStepSequencers.size(); ++lane)
+    {
+        const auto& bank = instrumentStepSequencers[lane];
+        auto* track = all->createNewChildElement("Track");
+        track->setAttribute("lane", (int) lane);
+        track->setAttribute("activePattern", juce::jlimit(0, 7, bank.activePattern));
+        for (int pi = 0; pi < 8; ++pi)
+        {
+            const auto& p = bank.patterns[(size_t) pi];
+            auto* pe = track->createNewChildElement("Pattern");
+            pe->setAttribute("index", pi); pe->setAttribute("enabled", p.enabled);
+            pe->setAttribute("stepCount", p.stepCount); pe->setAttribute("cycleSteps", p.cycleSteps);
+            pe->setAttribute("stepTicks", (double) p.stepTicks); pe->setAttribute("rateModifier", (int) p.rateModifier);
+            pe->setAttribute("direction", (int) p.direction); pe->setAttribute("swing", (double) p.swing);
+            pe->setAttribute("root", (int) p.root); pe->setAttribute("scale", (int) p.scale);
+            pe->setAttribute("transpose", p.transpose); pe->setAttribute("octaveShift", p.octaveShift);
+            pe->setAttribute("humanize", (double) p.humanize); pe->setAttribute("euclideanPulses", p.euclideanPulses);
+            pe->setAttribute("euclideanRotation", p.euclideanRotation); pe->setAttribute("velocityLaneSteps", p.velocityLaneSteps);
+            pe->setAttribute("gateLaneSteps", p.gateLaneSteps); pe->setAttribute("probabilityLaneSteps", p.probabilityLaneSteps);
+            pe->setAttribute("ratchetLaneSteps", p.ratchetLaneSteps);
+            for (int si = 0; si < LibertyStepSequencer::maxSteps; ++si)
+            {
+                const auto& st = p.steps[(size_t) si];
+                auto* se = pe->createNewChildElement("Step"); se->setAttribute("index", si);
+                se->setAttribute("enabled", st.enabled); se->setAttribute("pitch", (int) st.pitch);
+                se->setAttribute("velocity", (int) st.velocity); se->setAttribute("channel", (int) st.channel);
+                se->setAttribute("gate", (double) st.gate); se->setAttribute("probability", (int) st.probability);
+                se->setAttribute("ratchet", (int) st.ratchet); se->setAttribute("tie", st.tie);
+                se->setAttribute("accent", st.accent); se->setAttribute("octave", st.octave);
+                se->setAttribute("microTiming", (double) st.microTiming); se->setAttribute("chord", (int) st.chord);
+            }
+        }
+    }
+}
+
+void MainComponent::loadStepSequencers(const juce::XmlElement& root)
+{
+    const auto* all = root.getChildByName("StepSequencers");
+    if (all == nullptr) return;
+    for (auto* track = all->getFirstChildElement(); track; track = track->getNextElement())
+    {
+        if (track->getTagName() != "Track") continue;
+        const int lane = track->getIntAttribute("lane", -1);
+        if (lane < 0 || lane >= getInstrumentTrackCount() || (size_t) lane >= instrumentStepSequencers.size()) continue;
+        auto restored = instrumentStepSequencers[(size_t) lane];
+        restored.activePattern = juce::jlimit(0, 7, track->getIntAttribute("activePattern", 0));
+        for (auto* pe = track->getFirstChildElement(); pe; pe = pe->getNextElement())
+        {
+            if (pe->getTagName() != "Pattern") continue;
+            const int pi = pe->getIntAttribute("index", -1); if (pi < 0 || pi >= 8) continue;
+            auto p = restored.patterns[(size_t) pi];
+            p.enabled = pe->getBoolAttribute("enabled", p.enabled);
+            p.stepCount = juce::jlimit(1, LibertyStepSequencer::maxSteps, pe->getIntAttribute("stepCount", p.stepCount));
+            p.cycleSteps = juce::jlimit(1, p.stepCount, pe->getIntAttribute("cycleSteps", p.cycleSteps));
+            const double ticks = pe->getDoubleAttribute("stepTicks", (double) p.stepTicks);
+            if (std::isfinite(ticks) && ticks >= 1.0 && ticks <= (double) std::numeric_limits<std::int64_t>::max()) p.stepTicks = (std::int64_t) std::llround(ticks);
+            p.rateModifier = (std::uint8_t) juce::jlimit(0, 2, pe->getIntAttribute("rateModifier", p.rateModifier));
+            p.direction = (LibertyStepSequencer::Direction) juce::jlimit(0, 3, pe->getIntAttribute("direction", (int)p.direction));
+            p.swing = (float) juce::jlimit(0.0, 0.75, pe->getDoubleAttribute("swing", p.swing));
+            p.root = (std::uint8_t) juce::jlimit(0, 11, pe->getIntAttribute("root", p.root));
+            p.scale = (LibertyStepSequencer::Scale) juce::jlimit(0, 3, pe->getIntAttribute("scale", (int)p.scale));
+            p.transpose = juce::jlimit(-12, 12, pe->getIntAttribute("transpose", p.transpose));
+            p.octaveShift = juce::jlimit(-4, 4, pe->getIntAttribute("octaveShift", p.octaveShift));
+            p.humanize = (float) juce::jlimit(0.0, 1.0, pe->getDoubleAttribute("humanize", p.humanize));
+            p.euclideanPulses = juce::jlimit(1, p.stepCount, pe->getIntAttribute("euclideanPulses", p.euclideanPulses));
+            p.euclideanRotation = juce::jlimit(0, p.stepCount - 1, pe->getIntAttribute("euclideanRotation", p.euclideanRotation));
+            p.velocityLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("velocityLaneSteps", p.velocityLaneSteps));
+            p.gateLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("gateLaneSteps", p.gateLaneSteps));
+            p.probabilityLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("probabilityLaneSteps", p.probabilityLaneSteps));
+            p.ratchetLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("ratchetLaneSteps", p.ratchetLaneSteps));
+            for (auto* se = pe->getFirstChildElement(); se; se = se->getNextElement())
+            {
+                if (se->getTagName() != "Step") continue;
+                const int si = se->getIntAttribute("index", -1); if (si < 0 || si >= LibertyStepSequencer::maxSteps) continue;
+                auto st = p.steps[(size_t) si];
+                st.enabled = se->getBoolAttribute("enabled", st.enabled);
+                st.pitch = (std::uint8_t) juce::jlimit(0, 127, se->getIntAttribute("pitch", st.pitch));
+                st.velocity = (std::uint8_t) juce::jlimit(1, 127, se->getIntAttribute("velocity", st.velocity));
+                st.channel = (std::uint8_t) juce::jlimit(1, 16, se->getIntAttribute("channel", st.channel));
+                st.gate = (float) juce::jlimit(0.01, 1.0, se->getDoubleAttribute("gate", st.gate));
+                st.probability = (std::uint8_t) juce::jlimit(0, 100, se->getIntAttribute("probability", st.probability));
+                st.ratchet = (std::uint8_t) juce::jlimit(1, 8, se->getIntAttribute("ratchet", st.ratchet));
+                st.tie = se->getBoolAttribute("tie", st.tie); st.accent = se->getBoolAttribute("accent", st.accent);
+                st.octave = juce::jlimit(-2, 2, se->getIntAttribute("octave", st.octave));
+                st.microTiming = (float) juce::jlimit(-0.5, 0.5, se->getDoubleAttribute("microTiming", st.microTiming));
+                st.chord = (LibertyStepSequencer::Chord) juce::jlimit(0, 4, se->getIntAttribute("chord", (int)st.chord));
+                p.steps[(size_t) si] = st;
+            }
+            restored.patterns[(size_t) pi] = p;
+        }
+        instrumentStepSequencers[(size_t) lane] = restored;
+        publishInstrumentStepSequencer(lane);
+    }
+}
