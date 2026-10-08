@@ -322,9 +322,10 @@ bool AudioEngine::resetInstrumentPlayback(int trackCount) noexcept
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    if (wasPlaying && published)
+        setPlaying(true);
     return published;
 }
 
