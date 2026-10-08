@@ -1134,6 +1134,29 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (logicalRow >= midiFirst && logicalRow < totalRows)
         {
             selectedTrack = logicalRow;
+            if (logicalRow >= instrumentFirst && p.x >= headerW)
+            {
+                const int instrumentIndex = logicalRow - instrumentFirst;
+                if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+                {
+                    auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                    for (int clipIndex = (int) clips.size() - 1; clipIndex >= 0; --clipIndex)
+                    {
+                        const auto& clip = clips[(size_t) clipIndex];
+                        const int left = headerW + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                        const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                        if (p.x >= left && p.x < left + width)
+                        {
+                            draggedPatternInstrument = instrumentIndex;
+                            draggedPatternClip = clipIndex;
+                            dragStartMouseX = (float) p.x;
+                            dragStartSeconds = clip.startSeconds;
+                            repaint();
+                            return;
+                        }
+                    }
+                }
+            }
             repaint();
             return;
         }
@@ -1154,6 +1177,24 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
     if (draggingStepSequencerPattern)
     {
         repaint();
+        return;
+    }
+    if (draggedPatternInstrument >= 0 && draggedPatternClip >= 0)
+    {
+        if (draggedPatternInstrument < (int) instrumentStepSequencers.size())
+        {
+            auto& clips = instrumentStepSequencers[(size_t) draggedPatternInstrument].timelineClips;
+            if (draggedPatternClip < (int) clips.size())
+            {
+                const double deltaSeconds = ((double) event.position.x - (double) dragStartMouseX)
+                                            / getLibertyTimelinePixelsPerSecond();
+                const double beat = 60.0 / juce::jmax(1.0, tempoBpm);
+                const double sixteenth = beat / 4.0;
+                const double target = juce::jmax(0.0, dragStartSeconds + deltaSeconds);
+                clips[(size_t) draggedPatternClip].startSeconds = std::round(target / sixteenth) * sixteenth;
+                repaint();
+            }
+        }
         return;
     }
     if (draggingClip && draggedTrack >= 0)
@@ -1195,6 +1236,10 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         repaint();
         return;
     }
+    if (draggedPatternInstrument >= 0)
+        publishInstrumentArrangementClips(draggedPatternInstrument);
+    draggedPatternInstrument = -1;
+    draggedPatternClip = -1;
     draggingClip = false;
     draggedTrack = -1;
 }
