@@ -109,6 +109,16 @@ public:
     void setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
                                  double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept;
 
+    struct InstrumentArrangementClip
+    {
+        double startSeconds = 0.0;
+        double lengthSeconds = 0.0;
+        std::vector<MidiEngine::NoteEvent> notes;
+    };
+    void setInstrumentArrangementClips(int instrumentTrack,
+                                       const std::vector<InstrumentArrangementClip>& clips,
+                                       double tempoBpm) noexcept;
+
     int getAudioTrackCount() const noexcept;
     int addAudioTrack();
     bool removeAudioTrack(int trackIndex);
@@ -264,6 +274,7 @@ private:
     struct InstrumentPlaybackState
     {
         std::shared_ptr<InstrumentNoteSnapshot> noteSnapshot;
+        std::shared_ptr<InstrumentNoteSnapshot> arrangementSnapshot;
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
