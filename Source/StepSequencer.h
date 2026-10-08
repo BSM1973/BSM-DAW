@@ -27,6 +27,7 @@ public:
     {
         bool enabled = false;
         int stepCount = 16;
+        int cycleSteps = 16;
         std::int64_t stepTicks = MidiEngine::ticksPerQuarterNote / 4;
         float swing = 0.0f;
         std::uint8_t root = 0;
