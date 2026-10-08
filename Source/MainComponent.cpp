@@ -289,8 +289,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
     if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
     {
                     auto panel = area;
-                    const int titleWidth = 122;
-                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
+                    const int dockInset = 8;
+                    panel = panel.reduced(dockInset, 6);
+                    const int titleWidth = 132;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
                     g.fillRoundedRectangle(onOff.toFloat(), 4.0f);
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
@@ -301,7 +303,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     for (int s = 0; s < 16; ++s)
                     {
                         const int absoluteStep = firstStep + s;
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 4, 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
                         g.setColour(active ? juce::Colour(0xff4f82ff) : (availableStep ? juce::Colour(0xff252a31) : juce::Colour(0xff15181d)));
@@ -311,10 +313,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(9.0f));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
-                    const int controlsY = panel.getY() + 54;
+                    const int controlsY = panel.getY() + 42;
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
-                        auto r = juce::Rectangle<int>(x, controlsY, w, 18);
+                        auto r = juce::Rectangle<int>(x, controlsY, w, 26);
                         g.setColour(active ? juce::Colour(0xff2d6f9f) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f)); g.drawText(text, r, juce::Justification::centred);
@@ -335,10 +337,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
                     const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
                     const auto& editStep = pattern->steps[(size_t)selectedStep];
-                    const int editY = controlsY + 42;
+                    const int editY = controlsY + 36;
                     auto drawEdit = [&](juce::String text, int x, int w, bool active)
                     {
-                        auto r = juce::Rectangle<int>(x, editY, w, 18);
+                        auto r = juce::Rectangle<int>(x, editY, w, 26);
                         g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff20242b)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f)); g.drawText(text, r, juce::Justification::centred);
@@ -357,10 +359,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawEdit("MICRO " + juce::String((int)std::round(editStep.microTiming * 100.0f)) + "%", ex, 70, editStep.microTiming != 0.0f); ex += 74;
                     static constexpr const char* chordNames[]={"OFF","MAJ","MIN","POWER","7TH"};
                     drawEdit("CHORD " + juce::String(chordNames[juce::jlimit(0,4,(int)editStep.chord)]), ex, 76, editStep.chord != LibertyStepSequencer::Chord::Off);
-                    const int actionY = editY + 42;
+                    const int actionY = editY + 36;
                     auto drawAction = [&](juce::String text, int x, int w)
                     {
-                        auto r = juce::Rectangle<int>(x, actionY, w, 18);
+                        auto r = juce::Rectangle<int>(x, actionY, w, 26);
                         g.setColour(juce::Colour(0xff29313a)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
                         g.setColour(juce::Colour(0xff59636f)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
@@ -398,7 +400,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             drawAction("PAT " + juce::String(bankIndex + 1), ax, 44);
                             if (bankIndex == activePattern)
                             {
-                                auto active = juce::Rectangle<int>(ax, actionY, 44, 18);
+                                auto active = juce::Rectangle<int>(ax, actionY, 44, 26);
                                 g.setColour(juce::Colour(0xff4f82ff));
                                 g.drawRoundedRectangle(active.toFloat(), 3.0f, 2.0f);
                             }
@@ -748,8 +750,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
                 {
                     auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
-                    const int titleWidth = 122;
-                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
+                    const int dockInset = 8;
+                    panel = panel.reduced(dockInset, 6);
+                    const int titleWidth = 132;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
                     if (onOff.contains(p))
                     {
                         pattern->enabled = !pattern->enabled;
@@ -763,7 +767,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int s = 0; s < 16; ++s)
                     {
                         const int absoluteStep = firstStep + s;
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 4, 30);
                         if (pad.contains(p) && absoluteStep < pattern->stepCount)
                         {
                             stepSequencerSelectedStep = absoluteStep;
@@ -771,8 +775,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                         }
                     }
-                    const int controlsY = panel.getY() + 54;
-                    auto hit = [&](int x, int w) { return juce::Rectangle<int>(x, controlsY, w, 18).contains(p); };
+                    const int controlsY = panel.getY() + 42;
+                    auto hit = [&](int x, int w) { return juce::Rectangle<int>(x, controlsY, w, 26).contains(p); };
                     int cx = panel.getX();
                     const int counts[] = {16,32,64};
                     for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=34; }
@@ -786,8 +790,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
                     const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
                     auto& editStep = pattern->steps[(size_t)selectedStep];
-                    const int editY = controlsY + 42;
-                    auto editHit = [&](int x, int w) { return juce::Rectangle<int>(x, editY, w, 18).contains(p); };
+                    const int editY = controlsY + 36;
+                    auto editHit = [&](int x, int w) { return juce::Rectangle<int>(x, editY, w, 26).contains(p); };
                     int ex = panel.getX() + 56;
                     if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
                     if (editHit(ex,54)) { editStep.velocity = (std::uint8_t)(editStep.velocity >= 127 ? 20 : juce::jmin(127, (int)editStep.velocity + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 58;
@@ -800,8 +804,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
                     if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
                     if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    const int actionY = editY + 42;
-                    auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 18).contains(p); };
+                    const int actionY = editY + 36;
+                    auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 26).contains(p); };
                     int ax = panel.getX();
                     if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
                     if (actionHit(ax,58))
