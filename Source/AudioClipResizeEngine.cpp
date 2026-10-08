@@ -103,27 +103,52 @@ bool renderRegion(AudioEngine& engine,
         }
     }
 
-    auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
-    rendered->clear();
-
-    if (inputSamples == outputSamples)
+    std::unique_ptr<juce::AudioBuffer<float>> rendered;
+    std::shared_ptr<AudioEngine::WarpMarkerSnapshot> warpSnapshot;
+    try
     {
-        for (int ch = 0; ch < channels; ++ch)
-            rendered->copyFrom(ch, 0, *state.original, ch, sourceStart, outputSamples);
+        rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
+        rendered->clear();
+
+        if (inputSamples == outputSamples)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+                rendered->copyFrom(ch, 0, *state.original, ch, sourceStart, outputSamples);
+        }
+        else
+        {
+            juce::AudioBuffer<float> input(channels, inputSamples);
+            for (int ch = 0; ch < channels; ++ch)
+                input.copyFrom(ch, 0, *state.original, ch, sourceStart, inputSamples);
+
+            signalsmith::stretch::SignalsmithStretch<float> stretch;
+            stretch.presetDefault(channels, rate);
+            stretch.setTransposeFactor(1.0);
+
+            auto inputPointers = input.getArrayOfReadPointers();
+            auto outputPointers = rendered->getArrayOfWritePointers();
+            stretch.process(inputPointers, inputSamples, outputPointers, outputSamples);
+        }
+
+        const double publishedLength = static_cast<double>(outputSamples) / rate;
+        warpSnapshot = std::make_shared<AudioEngine::WarpMarkerSnapshot>();
+        warpSnapshot->enabled = false;
+        warpSnapshot->mode = 0;
+        warpSnapshot->count = 2;
+        warpSnapshot->source[0] = 0.0;
+        warpSnapshot->target[0] = 0.0;
+        warpSnapshot->source[1] = publishedLength;
+        warpSnapshot->target[1] = publishedLength;
     }
-    else
+    catch (const std::exception& exception)
     {
-        juce::AudioBuffer<float> input(channels, inputSamples);
-        for (int ch = 0; ch < channels; ++ch)
-            input.copyFrom(ch, 0, *state.original, ch, sourceStart, inputSamples);
-
-        signalsmith::stretch::SignalsmithStretch<float> stretch;
-        stretch.presetDefault(channels, rate);
-        stretch.setTransposeFactor(1.0);
-
-        auto inputPointers = input.getArrayOfReadPointers();
-        auto outputPointers = rendered->getArrayOfWritePointers();
-        stretch.process(inputPointers, inputSamples, outputPointers, outputSamples);
+        error = "Audio resize render failed: " + juce::String(exception.what());
+        return false;
+    }
+    catch (...)
+    {
+        error = "Audio resize render failed.";
+        return false;
     }
 
     const bool wasInitialised = engine.initialised.load(std::memory_order_relaxed);
@@ -138,11 +163,18 @@ bool renderRegion(AudioEngine& engine,
     state.sourceBuffer = publishedBuffer;
     std::atomic_store(&track.buffer, std::move(publishedBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    track.lengthSeconds.store((double)outputSamples / rate, std::memory_order_relaxed);
+    const double publishedLength = static_cast<double>(outputSamples) / rate;
+    track.lengthSeconds.store(publishedLength, std::memory_order_relaxed);
     track.bufferSampleRate.store(rate, std::memory_order_relaxed);
+    track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpSourceSeconds[1].store(publishedLength, std::memory_order_relaxed);
+    track.warpTargetSeconds[1].store(publishedLength, std::memory_order_relaxed);
+    track.warpMarkerCount.store(2, std::memory_order_release);
     track.warpEnabled.store(false, std::memory_order_relaxed);
+    track.warpMode.store(0, std::memory_order_relaxed);
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(warpSnapshot));
     track.loaded.store(true, std::memory_order_release);
-    engine.resetTrackWarpMarkers(trackIndex);
 
     if (wasInitialised)
         engine.deviceManager.addAudioCallback(&engine);
