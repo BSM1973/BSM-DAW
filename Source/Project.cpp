@@ -343,8 +343,11 @@ void MainComponent::showProjectMenu()
                        });
 }
 
-void MainComponent::resetProjectState()
+bool MainComponent::resetProjectState()
 {
+    if (!audioEngine.resetInstrumentPlayback(1))
+        return false;
+
     prepareLibertyAudioRecordingForProjectReset(this);
     resetLibertyMultiMidiProject(*this);
     audioEngine.setPlaying(false);
@@ -367,7 +370,6 @@ void MainComponent::resetProjectState()
     LibertyPluginHost::instance().clearProjectPlugins();
     LibertyOneKnobManager::instance().clearAllEffects();
     midiEngine.clear();
-    audioEngine.resetInstrumentPlayback(1);
     resetLibertyTrackColours();
     resetLibertyTrackNames();
 
@@ -404,13 +406,21 @@ void MainComponent::resetProjectState()
     tempoControls.refresh();
     refreshLibertyMixConsole(this);
     repaint();
+    return true;
 }
 
 void MainComponent::newProject()
 {
     confirmBeforeProjectAction([this]
     {
-        resetProjectState();
+        if (!resetProjectState())
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                   "Liberty - New Project",
+                                                   "Liberty could not reset the instrument engine because memory is unavailable.",
+                                                   "OK");
+            return;
+        }
         currentProjectFile = juce::File{};
         markProjectClean();
     });
@@ -805,7 +815,14 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
-    resetProjectState();
+    if (!resetProjectState())
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Project Open",
+                                               "Liberty could not reset the instrument engine because memory is unavailable.",
+                                               "OK");
+        return false;
+    }
 
     constexpr int maxRestoredTracksPerType = 512;
     const int savedAudioTracks = juce::jlimit(AudioEngine::initialAudioTracks, maxRestoredTracksPerType,
