@@ -43,14 +43,28 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const auto microOffset = (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
         const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)pattern.stepTicks * 0.10);
         const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)step.gate, 0.01, 1.0)));
+        int intervals[4] = {0, 0, 0, 0};
+        int chordNotes = 1;
+        switch (step.chord)
+        {
+            case Chord::Major: intervals[1]=4; intervals[2]=7; chordNotes=3; break;
+            case Chord::Minor: intervals[1]=3; intervals[2]=7; chordNotes=3; break;
+            case Chord::Power: intervals[1]=7; intervals[2]=12; chordNotes=3; break;
+            case Chord::Seventh: intervals[1]=4; intervals[2]=7; intervals[3]=10; chordNotes=4; break;
+            default: break;
+        }
         for (int r = 0; r < ratchets; ++r)
         {
-            MidiEngine::NoteEvent note;
-            note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * pattern.stepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-            note.lengthTicks = step.tie ? pattern.stepTicks : gateTicks;
-            note.pitch = (std::uint8_t)pitch; note.velocity = (std::uint8_t)velocity;
-            note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
-            notes.push_back(note);
+            for (int chordIndex=0; chordIndex<chordNotes; ++chordIndex)
+            {
+                MidiEngine::NoteEvent note;
+                note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * pattern.stepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
+                note.lengthTicks = step.tie ? pattern.stepTicks : gateTicks;
+                note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
+                note.velocity = (std::uint8_t)velocity;
+                note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
+                notes.push_back(note);
+            }
         }
     }
     return notes;
