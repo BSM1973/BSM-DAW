@@ -103,11 +103,11 @@ bool renderRegion(AudioEngine& engine,
         }
     }
 
-    std::unique_ptr<juce::AudioBuffer<float>> rendered;
+    std::shared_ptr<juce::AudioBuffer<float>> rendered;
     std::shared_ptr<AudioEngine::WarpMarkerSnapshot> warpSnapshot;
     try
     {
-        rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
+        rendered = std::make_shared<juce::AudioBuffer<float>>(channels, outputSamples);
         rendered->clear();
 
         if (inputSamples == outputSamples)
@@ -159,9 +159,8 @@ bool renderRegion(AudioEngine& engine,
 
     auto& track = *engine.tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::shared_ptr<juce::AudioBuffer<float>> publishedBuffer(std::move(rendered));
-    state.sourceBuffer = publishedBuffer;
-    std::atomic_store(&track.buffer, std::move(publishedBuffer));
+    state.sourceBuffer = rendered;
+    std::atomic_store(&track.buffer, std::move(rendered));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     const double publishedLength = static_cast<double>(outputSamples) / rate;
     track.lengthSeconds.store(publishedLength, std::memory_order_relaxed);
@@ -315,7 +314,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         double startSeconds = 0.0;
         int sourceStart = 0;
         int sourceEnd = 0;
-        std::unique_ptr<juce::AudioBuffer<float>> buffer;
+        std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::shared_ptr<AudioEngine::WarpMarkerSnapshot> warpSnapshot;
     };
     std::vector<Prepared> prepared;
@@ -375,7 +374,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
 
         try
         {
-            auto rendered = std::make_unique<juce::AudioBuffer<float>>(channels, outputSamples);
+            auto rendered = std::make_shared<juce::AudioBuffer<float>>(channels, outputSamples);
             rendered->clear();
             if (inputSamples == outputSamples)
             {
@@ -435,9 +434,8 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         auto& track = *engine.tracks[(size_t)item.trackIndex];
         auto& state = ensureSourceState(engine, item.trackIndex);
         track.loaded.store(false, std::memory_order_release);
-        std::shared_ptr<juce::AudioBuffer<float>> publishedBuffer(std::move(item.buffer));
-        state.sourceBuffer = publishedBuffer;
-        std::atomic_store(&track.buffer, std::move(publishedBuffer));
+        state.sourceBuffer = item.buffer;
+        std::atomic_store(&track.buffer, std::move(item.buffer));
         state.sourceStartSample = item.sourceStart;
         state.sourceEndSample = item.sourceEnd;
         track.contentRevision.fetch_add(1, std::memory_order_relaxed);
