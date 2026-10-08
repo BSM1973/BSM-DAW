@@ -85,7 +85,9 @@ void MainComponent::paint(juce::Graphics& g)
     drawTrackArea(g, bounds);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    if (!showStepSequencer)
+    if (showStepSequencer)
+        drawStepSequencerDock(g, mixer);
+    else
         drawMixer(g, mixer);
 }
 
@@ -245,11 +247,48 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             title = "Instrument " + juce::String(i + 1);
             selected = selectedTrack == audioCount + midiCount + i;
             g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
-            if (selected)
+
+        }
+        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
+        // Draw the timeline grid inside EVERY visible row, including the
+        // final clipped row immediately above the mixer.  Previously the only
+        // vertical lines were painted before the rows; each row background then
+        // painted over them, which is why the last track could appear gridless.
+        {
+            const juce::Graphics::ScopedSaveState rowGridState(g);
+            g.reduceClipRegion(row.withTrimmedLeft(headerW));
+            g.setColour(juce::Colour(0xff252b33));
+            // Uniform 1/16 Arrange grid on every row, including the final clipped row.
+            constexpr int subdivisions = 16;
+            const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
+            for (int subdivisionIndex = 0; subdivisionIndex < 100 * subdivisions; ++subdivisionIndex)
             {
-                if (auto* pattern = getInstrumentStepSequencer(i))
-                {
-                    auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
+                const int x = headerW + (int) std::round(subdivisionIndex * pixelsPerSubdivision);
+                if (x >= row.getRight()) break;
+                if (x < headerW) continue;
+                const bool measureLine = (subdivisionIndex % subdivisions) == 0;
+                g.setColour(measureLine ? juce::Colour(0xff3b424c) : juce::Colour(0xff252b33));
+                g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
+            }
+        }
+        g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
+    }
+
+    const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
+    if (playheadX >= headerW && playheadX <= (float)getWidth())
+    { g.setColour(juce::Colours::white); g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),2.0f); }
+}
+
+void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const int instrumentIndex = selectedTrack - instrumentFirst;
+    if (instrumentIndex < 0 || instrumentIndex >= getInstrumentTrackCount()) return;
+    if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
+    {
+                    auto panel = area;
                     const int titleWidth = 122;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
@@ -349,9 +388,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("PL " + juce::String(pattern->probabilityLaneSteps), ax, 42); ax += 46;
                     drawAction("RL " + juce::String(pattern->ratchetLaneSteps), ax, 42);
                     ax += 46;
-                    if ((size_t)i < instrumentStepSequencers.size())
+                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
-                        const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
+                        const auto activePattern = instrumentStepSequencers[(size_t)instrumentIndex].activePattern;
                         for (int bankIndex = 0; bankIndex < 8; ++bankIndex)
                         {
                             drawAction("PAT " + juce::String(bankIndex + 1), ax, 44);
@@ -364,38 +403,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                             ax += 48;
                         }
                     }
-                }
-            }
-        }
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
-        g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
-        // Draw the timeline grid inside EVERY visible row, including the
-        // final clipped row immediately above the mixer.  Previously the only
-        // vertical lines were painted before the rows; each row background then
-        // painted over them, which is why the last track could appear gridless.
-        {
-            const juce::Graphics::ScopedSaveState rowGridState(g);
-            g.reduceClipRegion(row.withTrimmedLeft(headerW));
-            g.setColour(juce::Colour(0xff252b33));
-            // Uniform 1/16 Arrange grid on every row, including the final clipped row.
-            constexpr int subdivisions = 16;
-            const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
-            for (int subdivisionIndex = 0; subdivisionIndex < 100 * subdivisions; ++subdivisionIndex)
-            {
-                const int x = headerW + (int) std::round(subdivisionIndex * pixelsPerSubdivision);
-                if (x >= row.getRight()) break;
-                if (x < headerW) continue;
-                const bool measureLine = (subdivisionIndex % subdivisions) == 0;
-                g.setColour(measureLine ? juce::Colour(0xff3b424c) : juce::Colour(0xff252b33));
-                g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
-            }
-        }
-        g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
+                
     }
-
-    const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
-    if (playheadX >= headerW && playheadX <= (float)getWidth())
-    { g.setColour(juce::Colours::white); g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),2.0f); }
 }
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
