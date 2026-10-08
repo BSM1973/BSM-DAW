@@ -430,6 +430,7 @@ void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
     trackSourceFiles[(size_t)trackToLoad] = file;
     pendingAudioFileNames[(size_t)trackToLoad].clear();
     pendingAudioLengths[(size_t)trackToLoad] = 0.0;
+    pendingAudioStartSeconds[(size_t)trackToLoad] = 0.0;
     pendingAudioWarpStates[(size_t)trackToLoad] = {};
     audioEngine.setTrackStartSeconds(trackToLoad, dropStartSeconds);
     audioEngine.setPlaying(false);
@@ -624,7 +625,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)track];
                     pendingAudioFileNames[(size_t)newTrack].clear();
                     pendingAudioLengths[(size_t)newTrack] = 0.0;
-    pendingAudioWarpStates[(size_t)newTrack] = {};
+                    pendingAudioStartSeconds[(size_t)newTrack] = 0.0;
+                    pendingAudioWarpStates[(size_t)newTrack] = {};
                     rebuildWaveformCache(track);
                     rebuildWaveformCache(newTrack);
                     selectedTrack = newTrack;
@@ -645,7 +647,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 trackSourceFiles[(size_t)track] = juce::File{};
                 pendingAudioFileNames[(size_t)track].clear();
                 pendingAudioLengths[(size_t)track] = 0.0;
-    pendingAudioWarpStates[(size_t)track] = {};
+                pendingAudioStartSeconds[(size_t)track] = 0.0;
+                pendingAudioWarpStates[(size_t)track] = {};
                 waveformMin[(size_t)track].clear();
                 waveformMax[(size_t)track].clear();
                 draggingClip = false;
