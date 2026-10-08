@@ -83,7 +83,7 @@ public:
         try
         {
             const auto notes = LibertyStepSequencer::render(*pattern);
-            const auto lengthTicks = (std::int64_t)juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount) * juce::jmax<std::int64_t>(1, pattern->stepTicks);
+            const auto lengthTicks = (std::int64_t)juce::jlimit(1, juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount), pattern->cycleSteps) * juce::jmax<std::int64_t>(1, pattern->stepTicks);
             const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
             audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);
             return true;
