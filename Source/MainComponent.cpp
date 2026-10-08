@@ -291,6 +291,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     auto panel = area;
                     const int dockInset = 8;
                     panel = panel.reduced(dockInset, 6);
+                    const auto wideRow = [&](int index, int count, int y, int height)
+                    {
+                        const int gap = 5;
+                        const int width = juce::jmax(1, (panel.getWidth() - (count - 1) * gap) / count);
+                        return juce::Rectangle<int>(panel.getX() + index * (width + gap), y, width, height);
+                    };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
                     g.setColour(pattern->enabled ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31));
@@ -396,11 +402,14 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         const auto activePattern = instrumentStepSequencers[(size_t)instrumentIndex].activePattern;
                         for (int bankIndex = 0; bankIndex < 8; ++bankIndex)
                         {
-                            if (bankIndex == 0) ax = panel.getX() + juce::jmax(0, panel.getWidth() - 8 * 48);
-                            drawAction("PAT " + juce::String(bankIndex + 1), ax, 44);
+                            const auto patRect = wideRow(bankIndex, 8, panel.getBottom() - 30, 28);
+                            ax = patRect.getX();
+                            g.setColour(juce::Colour(0xff29313a)); g.fillRoundedRectangle(patRect.toFloat(), 4.0f);
+                            g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+                            g.drawText("PAT " + juce::String(bankIndex + 1), patRect, juce::Justification::centred);
                             if (bankIndex == activePattern)
                             {
-                                auto active = juce::Rectangle<int>(ax, actionY, 44, 26);
+                                auto active = patRect;
                                 g.setColour(juce::Colour(0xff4f82ff));
                                 g.drawRoundedRectangle(active.toFloat(), 3.0f, 2.0f);
                             }
@@ -871,10 +880,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     ax += 46;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
-                        ax = panel.getX() + juce::jmax(0, panel.getWidth() - 8 * 48);
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
                         {
-                            if (actionHit(ax,44))
+                            const int gap = 5;
+                            const int width = juce::jmax(1, (panel.getWidth() - 7 * gap) / 8);
+                            const auto patRect = juce::Rectangle<int>(panel.getX() + bankIndex * (width + gap), panel.getBottom() - 30, width, 28);
+                            if (patRect.contains(p))
                             {
                                 instrumentStepSequencers[(size_t)instrumentIndex].activePattern = bankIndex;
                                 stepSequencerPage = 0; stepSequencerSelectedStep = 0;
