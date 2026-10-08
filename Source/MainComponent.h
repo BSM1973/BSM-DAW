@@ -133,6 +133,20 @@ public:
         }
         catch (...) { return false; }
     }
+    void publishInstrumentArrangementClips(int instrumentIndex)
+    {
+        if (instrumentIndex < 0 || instrumentIndex >= (int) instrumentStepSequencers.size()) return;
+        std::vector<AudioEngine::InstrumentArrangementClip> clips;
+        for (const auto& patternClip : instrumentStepSequencers[(size_t) instrumentIndex].timelineClips)
+        {
+            AudioEngine::InstrumentArrangementClip clip;
+            clip.startSeconds = patternClip.startSeconds;
+            clip.lengthSeconds = patternClip.lengthSeconds;
+            clip.notes = patternClip.notes;
+            clips.push_back(std::move(clip));
+        }
+        audioEngine.setInstrumentArrangementClips(instrumentIndex, clips, tempoBpm);
+    }
     bool createInstrumentPatternClip(int instrumentIndex) noexcept
     {
         if (instrumentIndex < 0 || instrumentIndex >= (int) instrumentStepSequencers.size()) return false;
@@ -149,6 +163,7 @@ public:
         clip.name = "Pattern " + juce::String(bank.activePattern + 1);
         clip.notes = notes;
         bank.timelineClips.push_back(std::move(clip));
+        publishInstrumentArrangementClips(instrumentIndex);
         repaint();
         return true;
     }
