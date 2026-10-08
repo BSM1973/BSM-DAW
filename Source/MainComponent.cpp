@@ -328,7 +328,13 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.fillRoundedRectangle(pad.toFloat(), 6.0f);
                         g.setColour((s % 4) == 0 ? juce::Colour(0xff93a9c5) : juce::Colour(0xff496078));
                         g.drawRoundedRectangle(pad.toFloat(), 6.0f, 1.0f);
-                        g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(9.0f));
+                        if (active)
+                        {
+                            g.setColour(juce::Colour(0xff9ac8ff));
+                            g.fillRoundedRectangle((float)pad.getX() + 5.0f, (float)pad.getBottom() - 4.0f,
+                                                   (float)juce::jmax(1, pad.getWidth() - 10), 2.0f, 1.0f);
+                        }
+                        g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(10.0f, juce::Font::bold));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
                     const int controlsY = panel.getY() + 42;
