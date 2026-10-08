@@ -649,7 +649,10 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
-    if (handleMixerMouse(event)) return;
+    const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
+                                      && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
+    if (!stepSequencerDockActive && handleMixerMouse(event)) return;
 
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
     const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
