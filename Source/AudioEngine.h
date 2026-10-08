@@ -103,7 +103,7 @@ public:
     int addAudioTrack();
     bool removeAudioTrack(int trackIndex);
     bool ensureInstrumentPlaybackTracks(int trackCount) noexcept;
-    void resetInstrumentPlayback(int trackCount);
+    bool resetInstrumentPlayback(int trackCount) noexcept;
 
     void setTrackGain(int trackIndex, float gain) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
