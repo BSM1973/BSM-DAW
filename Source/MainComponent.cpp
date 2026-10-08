@@ -336,7 +336,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             g.fillRoundedRectangle((float)pad.getX() + 5.0f, (float)pad.getBottom() - 4.0f,
                                                    (float)juce::jmax(1, pad.getWidth() - 10), 2.0f, 1.0f);
                         }
-                        g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(10.0f, juce::Font::bold));
+                        g.setColour(active ? juce::Colours::white : (availableStep ? juce::Colour(0xffd0dce9) : juce::Colour(0xff555a61)));
+                        g.setFont(juce::Font(10.0f, juce::Font::bold));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
                     const int controlsY = panel.getY() + 42;
@@ -371,7 +372,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff273143)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
                         g.setColour(active ? juce::Colour(0xffb59dff) : juce::Colour(0xff496078));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
-                        g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f)); g.drawText(text, r, juce::Justification::centred);
+                        g.setColour(juce::Colour(0xffe5ebf6)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
                     };
                     int ex = panel.getX();
                     drawEdit("STEP " + juce::String(selectedStep + 1), ex, 52, true); ex += 56;
