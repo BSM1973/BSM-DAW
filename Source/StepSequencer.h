@@ -38,6 +38,7 @@ public:
         std::uint8_t root = 0;
         Scale scale = Scale::Off;
         int transpose = 0;
+        int octaveShift = 0;
         float humanize = 0.0f;
         int euclideanPulses = 4;
         int euclideanRotation = 0;
