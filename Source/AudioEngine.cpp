@@ -982,6 +982,10 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         }
     }
 
+    juce::String rightFileName;
+    try { rightFileName = source.fileName + " - Split"; }
+    catch (...) { error = "Not enough memory to prepare the split clip name."; return false; }
+
     const bool wasInitialised = initialised.load();
     const auto savedPlaying = playing.load();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
@@ -997,7 +1001,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.loaded.store(false, std::memory_order_release);
     std::atomic_store(&right.buffer, std::move(rightBuffer));
     right.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    right.fileName = source.fileName + " - Split";
+    right.fileName = std::move(rightFileName);
     right.lengthSeconds.store(rightTargetLength);
     right.bufferSampleRate.store(rate);
     right.startSeconds.store(startSeconds + splitOffsetSeconds);
