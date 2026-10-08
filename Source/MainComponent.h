@@ -152,9 +152,8 @@ public:
         if (pattern == nullptr || midiTrack < 0 || midiTrack >= getMidiTrackCount()) return false;
         auto notes = LibertyStepSequencer::render(*pattern, 0);
         if (notes.empty()) return false;
-        const auto lengthTicks = pattern->rateModifier == 1 ? juce::jmax<std::int64_t>(1, pattern->stepTicks * 2 / 3) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps)
-                              : pattern->rateModifier == 2 ? juce::jmax<std::int64_t>(1, pattern->stepTicks * 3 / 2) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps)
-                              : juce::jmax<std::int64_t>(1, pattern->stepTicks) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps);
+        const auto lengthTicks = LibertyStepSequencer::getCycleLengthTicks(*pattern);
+        if (lengthTicks <= 0) return false;
         const auto lengthSeconds = juce::jmax(0.001, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
         return commitLibertySequencerMidiClip(*this, notes, midiTrack, playheadSeconds, lengthSeconds);
     }
