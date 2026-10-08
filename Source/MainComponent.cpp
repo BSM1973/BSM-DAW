@@ -296,7 +296,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
-                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    const int stepW = juce::jmax(12, available / 16);
                     const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
                     for (int s = 0; s < 16; ++s)
                     {
@@ -867,6 +867,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     ax += 46;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
+                        ax = panel.getX() + juce::jmax(0, panel.getWidth() - 8 * 48);
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
                         {
                             if (actionHit(ax,44))
