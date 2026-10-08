@@ -145,15 +145,27 @@ public:
         return { 0, getArrangeTop(), getWidth(), juce::jmax(0, getMixerTop() - getArrangeTop()) };
     }
 
-    bool commitInstrumentStepSequencerToMidiClip(int instrumentIndex)
+    bool commitInstrumentStepSequencerToMidiClip(int instrumentIndex, int midiTrack = 0)
     {
         const auto* pattern = getInstrumentStepSequencer(instrumentIndex);
-        if (pattern == nullptr) return false;
+        auto* targetEngine = getMidiEngine(midiTrack);
+        if (pattern == nullptr || targetEngine == nullptr) return false;
         auto notes = LibertyStepSequencer::render(*pattern, 0);
-        if (!midiEngine.replaceNotes(notes)) return false;
-        midiClipStartSeconds = playheadSeconds;
-        midiClipLengthUserDefined = false;
-        updateMidiClipTiming();
+        if (!targetEngine->replaceNotes(notes)) return false;
+        if (midiTrack == 0)
+        {
+            midiClipStartSeconds = playheadSeconds;
+            midiClipLengthUserDefined = false;
+            updateMidiClipTiming();
+        }
+        else
+        {
+            const auto index = (size_t)(midiTrack - 1);
+            additionalMidiClipStartSeconds[index] = playheadSeconds;
+            additionalMidiClipLengthUserDefined[index] = false;
+            const auto lengthTicks = targetEngine->getLengthTicks();
+            additionalMidiClipLengthSeconds[index] = juce::jmax(0.0, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
+        }
         repaint();
         return true;
     }
