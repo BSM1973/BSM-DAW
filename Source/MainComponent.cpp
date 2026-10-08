@@ -323,7 +323,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
-                    const auto seqPlay = juce::Rectangle<int>(onOff.getRight() - 55, onOff.getY(), 55, onOff.getHeight());
+                    const auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, onOff.getHeight());
                     const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
                     g.setColour(previewActive ? juce::Colour(0xff286c9a) : juce::Colour(0xff273e55));
                     g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
