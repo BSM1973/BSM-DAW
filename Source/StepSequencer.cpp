@@ -1,6 +1,20 @@
 #include "StepSequencer.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
+
+std::int64_t LibertyStepSequencer::getCycleLengthTicks(const Pattern& pattern) noexcept
+{
+    if (pattern.stepTicks <= 0) return 0;
+    const int count = std::clamp(pattern.cycleSteps, 1, std::clamp(pattern.stepCount, 1, maxSteps));
+    const auto base = std::max<std::int64_t>(1, pattern.stepTicks);
+    const auto step = pattern.rateModifier == 1 ? std::max<std::int64_t>(1, base * 2 / 3)
+                    : pattern.rateModifier == 2 ? std::max<std::int64_t>(1, base * 3 / 2)
+                    : base;
+    const int positions = pattern.direction == Direction::PingPong && count > 1 ? count * 2 - 2 : count;
+    if (positions <= 0 || step > std::numeric_limits<std::int64_t>::max() / positions) return 0;
+    return step * positions;
+}
 
 std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& pattern, std::int64_t startTick)
 {
