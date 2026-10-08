@@ -98,6 +98,31 @@ bool MidiEngine::addNote(std::int64_t startTick, std::int64_t lengthTicks, int p
     return true;
 }
 
+bool MidiEngine::replaceNotes(const std::vector<NoteEvent>& replacement)
+{
+    std::vector<NoteEvent> prepared;
+    try { prepared = replacement; } catch (...) { return false; }
+    for (const auto& note : prepared)
+    {
+        std::int64_t noteEnd = 0;
+        if (note.startTick < 0 || note.lengthTicks <= 0 || !checkedAdd(note.startTick, note.lengthTicks, noteEnd)
+            || note.pitch > maxMidiNote || note.velocity < 1 || note.velocity > 127 || note.channel < 1 || note.channel > 16)
+            return false;
+    }
+    std::sort(prepared.begin(), prepared.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    pushUndoState();
+    notes.swap(prepared);
+    clearNoteSelection();
+    setPlaybackPositionSeconds(0.0);
+    setPlaying(false);
+    return true;
+}
+
 bool MidiEngine::selectNoteAt(std::int64_t startTick, int pitch, int channel) noexcept
 {
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
