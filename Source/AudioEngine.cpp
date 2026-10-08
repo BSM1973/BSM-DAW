@@ -711,8 +711,17 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) { error = "The selected audio file is too large to load into memory."; return false; }
     const auto inputSamples = static_cast<int>(reader->lengthInSamples);
     const auto inputChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
-    auto decodedBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, inputSamples);
-    decodedBuffer->clear();
+    std::shared_ptr<juce::AudioBuffer<float>> decodedBuffer;
+    try
+    {
+        decodedBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, inputSamples);
+        decodedBuffer->clear();
+    }
+    catch (...)
+    {
+        error = "Not enough memory to decode the selected audio file.";
+        return false;
+    }
     if (!reader->read(decodedBuffer.get(), 0, inputSamples, 0, true, true)) { error = "Failed to decode the selected audio file."; return false; }
     const auto sourceRate = reader->sampleRate;
     const auto ratio = sourceRate / outputRate;
@@ -720,11 +729,20 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     const auto outputSamples64 = static_cast<std::int64_t>(std::floor(static_cast<double>(inputSamples) / ratio));
     if (outputSamples64 <= 0 || outputSamples64 > std::numeric_limits<int>::max()) { error = "The resampled audio file is too large to load into memory."; return false; }
     const auto outputSamples = static_cast<int>(outputSamples64);
-    auto newBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, outputSamples);
-    newBuffer->clear();
-    if (std::abs(sourceRate - outputRate) > 0.01)
-        for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
-    else newBuffer->makeCopyOf(*decodedBuffer);
+    std::shared_ptr<juce::AudioBuffer<float>> newBuffer;
+    try
+    {
+        newBuffer = std::make_shared<juce::AudioBuffer<float>>(inputChannels, outputSamples);
+        newBuffer->clear();
+        if (std::abs(sourceRate - outputRate) > 0.01)
+            for (int channel = 0; channel < inputChannels; ++channel) { juce::LagrangeInterpolator interpolator; interpolator.process(ratio, decodedBuffer->getReadPointer(channel), newBuffer->getWritePointer(channel), outputSamples); }
+        else newBuffer->makeCopyOf(*decodedBuffer);
+    }
+    catch (...)
+    {
+        error = "Not enough memory to prepare the selected audio file.";
+        return false;
+    }
 
     const bool wasInitialised = initialised.load();
     instrumentResumePending.store(false, std::memory_order_release);
@@ -803,14 +821,24 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     if (splitSample <= 0 || splitSample >= sourceSamples) { error = "The split position is outside the audio clip."; return false; }
     const auto rightSamples = sourceSamples - splitSample;
     const auto channels = sourceBuffer->getNumChannels();
-    auto leftBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, splitSample);
-    auto rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
-    leftBuffer->clear();
-    rightBuffer->clear();
-    for (int channel = 0; channel < channels; ++channel)
+    std::shared_ptr<juce::AudioBuffer<float>> leftBuffer;
+    std::shared_ptr<juce::AudioBuffer<float>> rightBuffer;
+    try
     {
-        leftBuffer->copyFrom(channel, 0, *sourceBuffer, channel, 0, splitSample);
-        rightBuffer->copyFrom(channel, 0, *sourceBuffer, channel, splitSample, rightSamples);
+        leftBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, splitSample);
+        rightBuffer = std::make_shared<juce::AudioBuffer<float>>(channels, rightSamples);
+        leftBuffer->clear();
+        rightBuffer->clear();
+        for (int channel = 0; channel < channels; ++channel)
+        {
+            leftBuffer->copyFrom(channel, 0, *sourceBuffer, channel, 0, splitSample);
+            rightBuffer->copyFrom(channel, 0, *sourceBuffer, channel, splitSample, rightSamples);
+        }
+    }
+    catch (...)
+    {
+        error = "Not enough memory to split the audio clip.";
+        return false;
     }
     const bool wasInitialised = initialised.load();
     const auto savedPlaying = playing.load();
