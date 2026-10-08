@@ -743,6 +743,34 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
                     if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
                     if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    const int actionY = editY + 22;
+                    auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 18).contains(p); };
+                    int ax = panel.getX();
+                    if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
+                    if (actionHit(ax,58))
+                    {
+                        for (int s=0;s<pattern->stepCount;++s)
+                        {
+                            auto& st=pattern->steps[(size_t)s];
+                            const unsigned h=(unsigned)(s*1664525u+1013904223u);
+                            st.enabled=(h%100u)<55u; st.velocity=(std::uint8_t)(70u+(h%58u)); st.probability=(std::uint8_t)(70u+(h%31u));
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 62;
+                    if (actionHit(ax,62)) { std::reverse(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 66;
+                    if (actionHit(ax,56))
+                    {
+                        if(pattern->stepCount>1) std::rotate(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount-1, pattern->steps.begin()+pattern->stepCount);
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 60;
+                    if (actionHit(ax,72))
+                    {
+                        const int half=pattern->stepCount/2;
+                        if(half>0) for(int s=0;s<half && s+half<pattern->stepCount;++s) pattern->steps[(size_t)(s+half)]=pattern->steps[(size_t)s];
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
                 }
             }
         }
