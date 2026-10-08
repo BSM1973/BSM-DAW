@@ -148,26 +148,14 @@ public:
     bool commitInstrumentStepSequencerToMidiClip(int instrumentIndex, int midiTrack = 0)
     {
         const auto* pattern = getInstrumentStepSequencer(instrumentIndex);
-        auto* targetEngine = getMidiEngine(midiTrack);
-        if (pattern == nullptr || targetEngine == nullptr) return false;
+        if (pattern == nullptr || midiTrack < 0 || midiTrack >= getMidiTrackCount()) return false;
         auto notes = LibertyStepSequencer::render(*pattern, 0);
-        if (!targetEngine->replaceNotes(notes)) return false;
-        if (midiTrack == 0)
-        {
-            midiClipStartSeconds = playheadSeconds;
-            midiClipLengthUserDefined = false;
-            updateMidiClipTiming();
-        }
-        else
-        {
-            const auto index = (size_t)(midiTrack - 1);
-            additionalMidiClipStartSeconds[index] = playheadSeconds;
-            additionalMidiClipLengthUserDefined[index] = false;
-            const auto lengthTicks = targetEngine->getLengthTicks();
-            additionalMidiClipLengthSeconds[index] = juce::jmax(0.0, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
-        }
-        repaint();
-        return true;
+        if (notes.empty()) return false;
+        const auto lengthTicks = pattern->rateModifier == 1 ? juce::jmax<std::int64_t>(1, pattern->stepTicks * 2 / 3) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps)
+                              : pattern->rateModifier == 2 ? juce::jmax<std::int64_t>(1, pattern->stepTicks * 3 / 2) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps)
+                              : juce::jmax<std::int64_t>(1, pattern->stepTicks) * juce::jlimit(1, pattern->stepCount, pattern->cycleSteps);
+        const auto lengthSeconds = juce::jmax(0.001, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
+        return commitLibertySequencerMidiClip(*this, notes, midiTrack, playheadSeconds, lengthSeconds);
     }
 
     void updateMidiClipTiming() noexcept
