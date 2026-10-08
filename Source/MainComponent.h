@@ -108,6 +108,19 @@ public:
         return { 0, getArrangeTop(), getWidth(), juce::jmax(0, getMixerTop() - getArrangeTop()) };
     }
 
+    bool commitInstrumentStepSequencerToMidiClip(int instrumentIndex)
+    {
+        const auto* pattern = getInstrumentStepSequencer(instrumentIndex);
+        if (pattern == nullptr) return false;
+        auto notes = LibertyStepSequencer::render(*pattern, 0);
+        if (!midiEngine.replaceNotes(notes)) return false;
+        midiClipStartSeconds = playheadSeconds;
+        midiClipLengthUserDefined = false;
+        updateMidiClipTiming();
+        repaint();
+        return true;
+    }
+
     void updateMidiClipTiming() noexcept
     {
         const auto notes = midiEngine.getNotesCopy();
