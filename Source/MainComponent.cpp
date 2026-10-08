@@ -439,8 +439,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawAction("REVERSE", ax, 62); ax += 66;
                     drawAction("ROTATE", ax, 56); ax += 60;
                     drawAction("DUPLICATE", ax, 72); ax += 80;
-                    drawAction("MIDI " + juce::String(stepSequencerMidiTarget + 1), ax, 52); ax += 56;
-                    drawAction("TO MIDI", ax, 58); ax += 62;
+                    drawAction("MIDI " + juce::String(stepSequencerMidiTarget + 1) + "/" + juce::String(juce::jmax(1, getMidiTrackCount())), ax, 52); ax += 56;
+                    drawAction("DRAG MIDI", ax, 58); ax += 62;
                     static constexpr const char* rootNames[] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
                     static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
                     drawAction("ROOT " + juce::String(rootNames[juce::jlimit(0,11,(int)pattern->root)]), ax, 58); ax += 62;
