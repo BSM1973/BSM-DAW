@@ -314,6 +314,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
         double startSeconds = 0.0;
         int sourceStart = 0;
         int sourceEnd = 0;
+        SourceState* state = nullptr;
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::shared_ptr<AudioEngine::WarpMarkerSnapshot> warpSnapshot;
     };
@@ -398,6 +399,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
             item.startSeconds = oldStart * tempoRatio;
             item.sourceStart = sourceStart;
             item.sourceEnd = sourceEnd;
+            item.state = &state;
             item.buffer = std::move(rendered);
             item.warpSnapshot = std::make_shared<AudioEngine::WarpMarkerSnapshot>();
             const double publishedLength = static_cast<double>(outputSamples) / rate;
@@ -432,7 +434,7 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
     for (auto& item : prepared)
     {
         auto& track = *engine.tracks[(size_t)item.trackIndex];
-        auto& state = ensureSourceState(engine, item.trackIndex);
+        auto& state = *item.state;
         track.loaded.store(false, std::memory_order_release);
         state.sourceBuffer = item.buffer;
         std::atomic_store(&track.buffer, std::move(item.buffer));
