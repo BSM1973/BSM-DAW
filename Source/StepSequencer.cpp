@@ -14,11 +14,22 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
     try { notes.reserve((size_t) count * 4u); } catch (...) { return {}; }
     for (int i = 0; i < count; ++i)
     {
-        const auto& step = pattern.steps[(size_t)i];
-        const int velocityLane = i % std::clamp(pattern.velocityLaneSteps, 1, count);
-        const int gateLane = i % std::clamp(pattern.gateLaneSteps, 1, count);
-        const int probabilityLane = i % std::clamp(pattern.probabilityLaneSteps, 1, count);
-        const int ratchetLane = i % std::clamp(pattern.ratchetLaneSteps, 1, count);
+        int sourceIndex = i;
+        if (pattern.direction == Direction::Reverse)
+            sourceIndex = count - 1 - i;
+        else if (pattern.direction == Direction::PingPong && count > 1)
+        {
+            const int period = count * 2 - 2;
+            const int phase = i % period;
+            sourceIndex = phase < count ? phase : period - phase;
+        }
+        else if (pattern.direction == Direction::Random)
+            sourceIndex = (int)(((unsigned)i * 2654435761u + 1013904223u) % (unsigned)count);
+        const auto& step = pattern.steps[(size_t)sourceIndex];
+        const int velocityLane = sourceIndex % std::clamp(pattern.velocityLaneSteps, 1, count);
+        const int gateLane = sourceIndex % std::clamp(pattern.gateLaneSteps, 1, count);
+        const int probabilityLane = sourceIndex % std::clamp(pattern.probabilityLaneSteps, 1, count);
+        const int ratchetLane = sourceIndex % std::clamp(pattern.ratchetLaneSteps, 1, count);
         const auto& velocityStep = pattern.steps[(size_t)velocityLane];
         const auto& gateStep = pattern.steps[(size_t)gateLane];
         const auto& probabilityStep = pattern.steps[(size_t)probabilityLane];
