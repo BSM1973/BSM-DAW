@@ -13,6 +13,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <cmath>
 
 int getLibertyTrackRowHeight() noexcept;
+bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
