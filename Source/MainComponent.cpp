@@ -344,7 +344,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, controlsY, 26, 650);
-                        g.setColour(active ? juce::Colour(0xff2d6f9f) : juce::Colour(0xff263343)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(active ? juce::Colour(0xff2a639a) : juce::Colour(0xff263343)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        if (active) { g.setColour(juce::Colour(0xff84c1ff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xff83baff) : juce::Colour(0xff496078));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
                         g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f)); g.drawText(text, r, juce::Justification::centred);
@@ -370,6 +371,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     {
                         auto r = stretchedControl(x, w, editY, 26, 780);
                         g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff273143)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        if (active) { g.setColour(juce::Colour(0xffc4adff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xffb59dff) : juce::Colour(0xff496078));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
                         g.setColour(juce::Colour(0xffe5ebf6)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
