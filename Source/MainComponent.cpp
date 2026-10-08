@@ -474,7 +474,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawAction("ROTATE", ax, 56); ax += 60;
                     drawAction("DUPLICATE", ax, 72); ax += 80;
                     drawAction("SEND MIDI", ax, 52); ax += 56;
-                    drawAction("DRAG MIDI", ax, 58); ax += 62;
+                    drawAction("DRAG CLIP", ax, 58); ax += 62;
                     static constexpr const char* rootNames[] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
                     static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
                     drawAction("ROOT " + juce::String(rootNames[juce::jlimit(0,11,(int)pattern->root)]), ax, 58); ax += 62;
