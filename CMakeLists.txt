@@ -9,7 +9,7 @@ FetchContent_Declare(signalsmith-stretch GIT_REPOSITORY https://github.com/Signa
 FetchContent_MakeAvailable(JUCE signalsmith-stretch)
 juce_add_gui_app(BSM_DAW PRODUCT_NAME "Liberty" COMPANY_NAME "BSM / Bijou Studio Music" VERSION "0.1.0" BUNDLE_ID "com.bsm.liberty" NEEDS_CURL FALSE NEEDS_WEB_BROWSER TRUE MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording.")
 target_sources(BSM_DAW PRIVATE
- Source/Main.cpp Source/MainComponent.cpp Source/AudioEngine.cpp Source/MidiEngine.cpp Source/MidiQuantize.cpp Source/MidiEditor.cpp
+ Source/Main.cpp Source/MainComponent.cpp Source/AudioEngine.cpp Source/MidiEngine.cpp Source/StepSequencer.cpp Source/MidiQuantize.cpp Source/MidiEditor.cpp
  Source/MidiVelocityInteraction.cpp Source/MidiNoteSelectionInteraction.cpp Source/MidiGroupDragInteraction.cpp Source/MidiMarqueeOverlay.cpp Source/MidiMarqueeManager.cpp Source/MidiSelectAllInteraction.cpp Source/MidiQuantizeInteraction.cpp Source/MidiKeyboardRouter.cpp
  Source/Editing.cpp Source/Project.cpp Source/TransportSettings.cpp Source/AudioRecordingController.cpp Source/TrackColourInteraction.cpp Source/MultiMidiClipController.cpp Source/GridSnapController.cpp Source/TrackHeaderMixControls.cpp Source/TrackPluginInsertControls.cpp Source/PluginDragDropController.cpp
  Source/MixConsoleController.cpp Source/PerformController.cpp Source/PageModeCoordinator.cpp Source/UISymbolCleaner.cpp Source/SpliceBrowserController.cpp Source/BrowserResizeController.cpp Source/UILayerCoordinator.cpp Source/AudioSettingsRelocator.cpp Source/LanguageController.cpp Source/ToolPaletteController.cpp
