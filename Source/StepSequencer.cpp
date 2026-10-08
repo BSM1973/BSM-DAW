@@ -6,7 +6,7 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
 {
     std::vector<MidiEngine::NoteEvent> notes;
     if (!pattern.enabled || pattern.stepTicks <= 0) return notes;
-    const int count = std::clamp(pattern.stepCount, 1, maxSteps);
+    const int count = std::clamp(pattern.cycleSteps, 1, std::clamp(pattern.stepCount, 1, maxSteps));
     try { notes.reserve((size_t) count * 4u); } catch (...) { return {}; }
     for (int i = 0; i < count; ++i)
     {
