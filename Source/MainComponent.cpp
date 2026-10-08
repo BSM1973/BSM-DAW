@@ -443,7 +443,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             g.fillRoundedRectangle(patRect.toFloat(), 6.0f);
                             g.setColour(selectedPattern ? juce::Colour(0xff79b4ff) : juce::Colour(0xff43576e));
                             g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
-                            g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+                            g.setColour(selectedPattern ? juce::Colour(0xfff2f8ff) : juce::Colour(0xffb7c7d9));
+                            g.setFont(juce::Font(11.0f, juce::Font::bold));
                             g.drawText("PAT " + juce::String(bankIndex + 1), patRect, juce::Justification::centred);
                             if (bankIndex == activePattern)
                             {
