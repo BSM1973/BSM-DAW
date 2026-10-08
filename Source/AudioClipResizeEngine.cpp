@@ -23,24 +23,36 @@ struct SourceState
 using Key = std::pair<AudioEngine*, int>;
 std::map<Key, SourceState> sourceStates;
 
-SourceState& ensureSourceState(AudioEngine& engine, int trackIndex)
+SourceState* ensureSourceState(AudioEngine& engine, int trackIndex, juce::String& error) noexcept
 {
-    const Key key { &engine, trackIndex };
-    auto& state = sourceStates[key];
-    auto& track = *engine.tracks[(size_t)trackIndex];
-    const auto publishedBuffer = std::atomic_load(&track.buffer);
-
-    const bool needsRefresh = state.original == nullptr || state.sourceBuffer != publishedBuffer;
-    if (needsRefresh)
+    error.clear();
+    try
     {
-        state.sourceBuffer = publishedBuffer;
-        state.original = std::make_unique<juce::AudioBuffer<float>>();
-        if (publishedBuffer != nullptr)
-            state.original->makeCopyOf(*publishedBuffer);
-        state.sourceStartSample = 0;
-        state.sourceEndSample = state.original->getNumSamples();
+        const Key key { &engine, trackIndex };
+        auto [it, inserted] = sourceStates.try_emplace(key);
+        auto& state = it->second;
+        auto& track = *engine.tracks[(size_t)trackIndex];
+        const auto publishedBuffer = std::atomic_load(&track.buffer);
+
+        const bool needsRefresh = state.original == nullptr || state.sourceBuffer != publishedBuffer;
+        if (needsRefresh)
+        {
+            auto refreshedOriginal = std::make_unique<juce::AudioBuffer<float>>();
+            if (publishedBuffer != nullptr)
+                refreshedOriginal->makeCopyOf(*publishedBuffer);
+
+            state.sourceBuffer = publishedBuffer;
+            state.original = std::move(refreshedOriginal);
+            state.sourceStartSample = 0;
+            state.sourceEndSample = state.original->getNumSamples();
+        }
+        return &state;
     }
-    return state;
+    catch (...)
+    {
+        error = "Not enough memory to prepare the audio resize source.";
+        return nullptr;
+    }
 }
 
 bool renderRegion(AudioEngine& engine,
@@ -201,7 +213,10 @@ bool commitLibertyAudioClipResize(MainComponent& owner,
 
     auto& engine = owner.audioEngine;
     auto& track = *engine.tracks[(size_t)trackIndex];
-    auto& state = ensureSourceState(engine, trackIndex);
+    auto* statePtr = ensureSourceState(engine, trackIndex, error);
+    if (statePtr == nullptr)
+        return false;
+    auto& state = *statePtr;
     if (state.original == nullptr || state.original->getNumSamples() <= 0)
     {
         error = "The source audio is unavailable.";
@@ -326,7 +341,14 @@ bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce
     {
         if (!engine.hasAudioFile(trackIndex)) continue;
         auto& track = *engine.tracks[(size_t)trackIndex];
-        auto& state = ensureSourceState(engine, trackIndex);
+        juce::String sourceError;
+        auto* statePtr = ensureSourceState(engine, trackIndex, sourceError);
+        if (statePtr == nullptr)
+        {
+            error = "Audio " + juce::String(trackIndex + 1) + ": " + sourceError;
+            return false;
+        }
+        auto& state = *statePtr;
         if (state.original == nullptr || state.original->getNumSamples() <= 0)
         {
             error = "Audio " + juce::String(trackIndex + 1) + ": source audio is unavailable.";
