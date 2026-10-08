@@ -272,6 +272,31 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
             }
         }
+        if (logicalRow >= audioCount + midiCount)
+        {
+            const int instrumentIndex = logicalRow - audioCount - midiCount;
+            if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+            {
+                const auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
+                if (bank.hasTimelinePatternClip && bank.timelinePatternLengthSeconds > 0.0)
+                {
+                    const int clipX = headerW + (int) std::round(bank.timelinePatternStartSeconds * pixelsPerSecond);
+                    const int clipWidth = juce::jmax(1, (int) std::round(bank.timelinePatternLengthSeconds * pixelsPerSecond));
+                    auto clip = juce::Rectangle<int>(clipX, row.getY() + 5, clipWidth, juce::jmax(1, row.getHeight() - 10))
+                                    .getIntersection(row.withTrimmedLeft(headerW));
+                    if (!clip.isEmpty())
+                    {
+                        g.setColour(juce::Colour(0xff265c65));
+                        g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                        g.setColour(juce::Colour(0xff75d6db));
+                        g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
+                        g.setColour(juce::Colours::white);
+                        g.setFont(juce::Font(11.0f, juce::Font::bold));
+                        g.drawText(bank.timelinePatternName, clip.reduced(7, 2), juce::Justification::centredLeft, true);
+                    }
+                }
+            }
+        }
         g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
     }
 
@@ -466,6 +491,15 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     drawAction("PL " + juce::String(pattern->probabilityLaneSteps), ax, 42); ax += 46;
                     drawAction("RL " + juce::String(pattern->ratchetLaneSteps), ax, 42);
                     ax += 46;
+                    // Dedicated instrument-lane clip creation, separate from MIDI export.
+                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
+                    g.setColour(juce::Colour(0xff255a69));
+                    g.fillRoundedRectangle(createClipButton.toFloat(), 5.0f);
+                    g.setColour(juce::Colour(0xff6dd6db));
+                    g.drawRoundedRectangle(createClipButton.toFloat(), 5.0f, 1.2f);
+                    g.setFont(juce::Font(10.0f, juce::Font::bold));
+                    g.setColour(juce::Colours::white);
+                    g.drawText("CREATE PATTERN CLIP", createClipButton, juce::Justification::centred);
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         const auto activePattern = instrumentStepSequencers[(size_t)instrumentIndex].activePattern;
@@ -973,6 +1007,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (actionHit(ax,42)) { pattern->probabilityLaneSteps=pattern->probabilityLaneSteps>=pattern->cycleSteps?1:pattern->probabilityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
                     if (actionHit(ax,42)) { pattern->ratchetLaneSteps=pattern->ratchetLaneSteps>=pattern->cycleSteps?1:pattern->ratchetLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
                     ax += 46;
+                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
+                    if (createClipButton.contains(p))
+                    {
+                        createInstrumentPatternClip(instrumentIndex);
+                        return;
+                    }
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
