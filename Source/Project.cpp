@@ -110,6 +110,7 @@ juce::String MainComponent::getProjectStateSignature() const
         const bool expectsAudioMedia = audioLoaded || trackSourceFiles[(size_t)i].getFullPathName().isNotEmpty();
         const auto savedFileName = audioLoaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
         const auto savedLengthSeconds = audioLoaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
+        const auto savedStartSeconds = audioLoaded ? audioEngine.getTrackStartSeconds(i) : pendingAudioStartSeconds[(size_t)i];
 
         signature << "|track=" << i
                   << ";loaded=" << (expectsAudioMedia ? 1 : 0)
@@ -118,7 +119,7 @@ juce::String MainComponent::getProjectStateSignature() const
                   << ";trackName=" << getLibertyTrackName(i)
                   << ";length=" << juce::String(savedLengthSeconds, 6)
                   << ";contentRevision=" << juce::String((juce::int64)audioEngine.getAudioContentRevision(i))
-                  << ";start=" << juce::String(audioEngine.getTrackStartSeconds(i), 6)
+                  << ";start=" << juce::String(savedStartSeconds, 6)
                   << ";gain=" << juce::String(audioEngine.getTrackGain(i), 6)
                   << ";pan=" << juce::String(audioEngine.getTrackPan(i), 6)
                   << ";mute=" << (audioEngine.isTrackMuted(i) ? 1 : 0)
@@ -386,6 +387,7 @@ bool MainComponent::resetProjectState()
     trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
     pendingAudioFileNames.resize((size_t)AudioEngine::initialAudioTracks);
     pendingAudioLengths.resize((size_t)AudioEngine::initialAudioTracks);
+    pendingAudioStartSeconds.resize((size_t)AudioEngine::initialAudioTracks);
     pendingAudioWarpStates.resize((size_t)AudioEngine::initialAudioTracks);
 
     for (int i = 0; i < AudioEngine::initialAudioTracks; ++i)
@@ -398,6 +400,7 @@ bool MainComponent::resetProjectState()
         trackSourceFiles[(size_t)i] = juce::File{};
         pendingAudioFileNames[(size_t)i].clear();
         pendingAudioLengths[(size_t)i] = 0.0;
+        pendingAudioStartSeconds[(size_t)i] = 0.0;
         pendingAudioWarpStates[(size_t)i] = {};
         waveformMin[(size_t)i].clear();
         waveformMax[(size_t)i].clear();
@@ -570,8 +573,9 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("sourceFile", sourceFile.getFullPathName());
         const auto savedFileName = audioSnapshot.loaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
         const auto savedLengthSeconds = audioSnapshot.loaded ? audioSnapshot.lengthSeconds : pendingAudioLengths[(size_t)i];
+        const auto savedStartSeconds = audioSnapshot.loaded ? audioEngine.getTrackStartSeconds(i) : pendingAudioStartSeconds[(size_t)i];
         track->setAttribute("fileName", savedFileName);
-        track->setAttribute("startSeconds", audioEngine.getTrackStartSeconds(i));
+        track->setAttribute("startSeconds", savedStartSeconds);
         track->setAttribute("lengthSeconds", savedLengthSeconds);
         track->setAttribute("gain", (double)audioEngine.getTrackGain(i));
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
@@ -963,6 +967,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
 
         pendingAudioFileNames[(size_t)index] = track->getStringAttribute("fileName");
         pendingAudioLengths[(size_t)index] = juce::jmax(0.0, finiteOr(track->getDoubleAttribute("lengthSeconds", 0.0), 0.0));
+        pendingAudioStartSeconds[(size_t)index] = juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0));
         auto& pendingWarp = pendingAudioWarpStates[(size_t)index];
         pendingWarp = {};
         if (projectVersion >= 16)
@@ -1049,6 +1054,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
         pendingAudioFileNames[(size_t)index].clear();
         pendingAudioLengths[(size_t)index] = 0.0;
+        pendingAudioStartSeconds[(size_t)index] = 0.0;
         pendingAudioWarpStates[(size_t)index] = {};
         rebuildWaveformCache(index);
     }
