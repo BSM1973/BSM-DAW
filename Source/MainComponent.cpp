@@ -310,7 +310,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
                     };
                     const int titleWidth = 132;
-                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
                     g.setColour(pattern->enabled ? juce::Colour(0xff177c70) : juce::Colour(0xff303d4d));
                     g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
                     if (pattern->enabled)
@@ -323,6 +323,15 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
+                    const auto seqPlay = juce::Rectangle<int>(onOff.getRight() - 55, onOff.getY(), 55, onOff.getHeight());
+                    const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
+                    g.setColour(previewActive ? juce::Colour(0xff286c9a) : juce::Colour(0xff273e55));
+                    g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
+                    g.setColour(previewActive ? juce::Colour(0xff83d8ff) : juce::Colour(0xff638aa9));
+                    g.drawRoundedRectangle(seqPlay.toFloat(), 7.0f, 1.2f);
+                    g.setColour(juce::Colours::white);
+                    g.setFont(juce::Font(9.0f, juce::Font::bold));
+                    g.drawText(previewActive ? "STOP" : "PLAY", seqPlay, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
                     const int stepW = juce::jmax(1, available / 16);
                     const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
@@ -841,7 +850,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
                     };
                     const int titleWidth = 132;
-                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8, 30);
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
+                    auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, 30);
+                    if (seqPlay.contains(p))
+                    {
+                        if (audioEngine.isStepPreviewPlaying()) audioEngine.setStepPreview(instrumentIndex, false);
+                        else if (!audioEngine.isPlaying()) audioEngine.setStepPreview(instrumentIndex, true);
+                        repaint(); return;
+                    }
                     if (onOff.contains(p))
                     {
                         pattern->enabled = !pattern->enabled;
