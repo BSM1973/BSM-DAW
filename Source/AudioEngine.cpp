@@ -808,6 +808,9 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
         error = "Not enough memory to prepare the audio warp state.";
         return false;
     }
+    juce::String newFileName;
+    try { newFileName = file.getFileName(); }
+    catch (...) { error = "Not enough memory to prepare the audio file name."; return false; }
     const double newLengthSeconds = static_cast<double>(outputSamples) / outputRate;
     newWarpSnapshot->enabled = false;
     newWarpSnapshot->mode = 0;
@@ -826,7 +829,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    track.fileName = file.getFileName(); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
+    track.fileName = std::move(newFileName); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpSourceSeconds[1].store(newLengthSeconds, std::memory_order_relaxed);
