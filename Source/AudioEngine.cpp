@@ -254,9 +254,10 @@ bool AudioEngine::ensureInstrumentPlaybackTracks(int trackCount) noexcept
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    if (wasPlaying)
+        setPlaying(true);
     return true;
 }
 
@@ -368,9 +369,10 @@ int AudioEngine::addAudioTrack()
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    if (wasPlaying)
+        setPlaying(true);
     return index;
 }
 
@@ -403,9 +405,10 @@ bool AudioEngine::removeAudioTrack(int trackIndex)
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
     }
-    playing.store(wasPlaying, std::memory_order_release);
     if (wasInitialised)
         deviceManager.addAudioCallback(this);
+    if (wasPlaying)
+        setPlaying(true);
     return removed;
 }
 
@@ -1038,9 +1041,9 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     {
         instrumentPanicPending.store(true, std::memory_order_release);
         instrumentResumePending.store(true, std::memory_order_release);
-        playing.store(true, std::memory_order_release);
     }
     if (wasInitialised) deviceManager.addAudioCallback(this);
+    if (savedPlaying) setPlaying(true);
     return true;
 }
 
