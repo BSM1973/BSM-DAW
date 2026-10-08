@@ -33,6 +33,18 @@ public:
     void filesDropped(const juce::StringArray& files, int x, int y) override;
     MidiEngine& getMidiEngine() noexcept { return midiEngine; }
     const MidiEngine& getMidiEngine() const noexcept { return midiEngine; }
+    MidiEngine* getMidiEngine(int track) noexcept
+    {
+        if (track == 0) return &midiEngine;
+        if (track < 0 || track >= dynamicMidiTrackCount || (size_t)(track - 1) >= additionalMidiEngines.size()) return nullptr;
+        return additionalMidiEngines[(size_t)(track - 1)].get();
+    }
+    const MidiEngine* getMidiEngine(int track) const noexcept
+    {
+        if (track == 0) return &midiEngine;
+        if (track < 0 || track >= dynamicMidiTrackCount || (size_t)(track - 1) >= additionalMidiEngines.size()) return nullptr;
+        return additionalMidiEngines[(size_t)(track - 1)].get();
+    }
     double getTempoBpm() const noexcept { return tempoBpm; }
     int getTimeSignatureNumerator() const noexcept { return timeSignatureNumerator; }
     int getTimeSignatureDenominator() const noexcept { return timeSignatureDenominator; }
@@ -60,7 +72,20 @@ public:
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
-    int addMidiTrack() noexcept { const int i = dynamicMidiTrackCount++; repaint(); refreshLibertyMixConsole(this); return i; }
+    int addMidiTrack() noexcept
+    {
+        const int i = dynamicMidiTrackCount;
+        try
+        {
+            additionalMidiEngines.push_back(std::make_unique<MidiEngine>());
+            additionalMidiClipStartSeconds.push_back(0.0);
+            additionalMidiClipLengthSeconds.push_back(2.0);
+            additionalMidiClipLengthUserDefined.push_back(false);
+        }
+        catch (...) { return -1; }
+        ++dynamicMidiTrackCount;
+        repaint(); refreshLibertyMixConsole(this); return i;
+    }
     int addInstrumentTrack() noexcept
     {
         const int i = dynamicInstrumentTrackCount;
@@ -354,7 +379,12 @@ private:
         std::vector<std::pair<double, double>> markers;
     };
 
-    AudioEngine audioEngine; MidiEngine midiEngine; struct InstrumentStepSequencerBank
+    AudioEngine audioEngine; MidiEngine midiEngine;
+    std::vector<std::unique_ptr<MidiEngine>> additionalMidiEngines;
+    std::vector<double> additionalMidiClipStartSeconds;
+    std::vector<double> additionalMidiClipLengthSeconds;
+    std::vector<bool> additionalMidiClipLengthUserDefined;
+    struct InstrumentStepSequencerBank
     {
         std::array<LibertyStepSequencer::Pattern, 8> patterns {};
         int activePattern = 0;
