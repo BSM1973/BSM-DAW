@@ -53,7 +53,7 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const int ratchets = step.tie ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
-        int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
+        int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.octaveShift, -4, 4) * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
         if (pattern.scale != Scale::Off)
         {
             static constexpr bool major[12] = {true,false,true,false,true,true,false,true,false,true,false,true};
