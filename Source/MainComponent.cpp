@@ -733,7 +733,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 const int instrumentIndex = logicalRow - instrumentFirst;
                 if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
                 {
-                    auto panel = juce::Rectangle<int>(8, getMixerTop() + 8, getWidth() - 16, juce::jmax(1, mixerHeight - 16));
+                    auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
                     const int titleWidth = 122;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 6, 22);
                     if (onOff.contains(p))
@@ -757,7 +757,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                         }
                     }
-                    const int controlsY = panel.getY() + 27;
+                    const int controlsY = panel.getY() + 54;
                     auto hit = [&](int x, int w) { return juce::Rectangle<int>(x, controlsY, w, 18).contains(p); };
                     int cx = panel.getX();
                     const int counts[] = {16,32,64};
@@ -772,7 +772,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
                     const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
                     auto& editStep = pattern->steps[(size_t)selectedStep];
-                    const int editY = controlsY + 22;
+                    const int editY = controlsY + 42;
                     auto editHit = [&](int x, int w) { return juce::Rectangle<int>(x, editY, w, 18).contains(p); };
                     int ex = panel.getX() + 56;
                     if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
@@ -786,7 +786,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
                     if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
                     if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    const int actionY = editY + 22;
+                    const int actionY = editY + 42;
                     auto actionHit = [&](int x, int w) { return juce::Rectangle<int>(x, actionY, w, 18).contains(p); };
                     int ax = panel.getX();
                     if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
