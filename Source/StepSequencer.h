@@ -20,6 +20,7 @@ public:
         bool tie = false;
         bool accent = false;
         int octave = 0;
+        float microTiming = 0.0f;
     };
     enum class Scale : std::uint8_t { Off = 0, Major, Minor, Pentatonic };
     struct Pattern
@@ -31,6 +32,7 @@ public:
         std::uint8_t root = 0;
         Scale scale = Scale::Off;
         int transpose = 0;
+        float humanize = 0.0f;
         std::array<Step, maxSteps> steps {};
     };
 
