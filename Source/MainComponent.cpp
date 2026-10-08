@@ -254,18 +254,38 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
                     const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
-                    const int stepsY = panel.getY();
+                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
                     for (int s = 0; s < 16; ++s)
                     {
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, stepsY, stepW - 3, 22);
-                        const bool active = pattern->steps[(size_t)s].enabled;
-                        g.setColour(active ? juce::Colour(0xff4f82ff) : juce::Colour(0xff252a31));
+                        const int absoluteStep = firstStep + s;
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
+                        const bool availableStep = absoluteStep < pattern->stepCount;
+                        const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
+                        g.setColour(active ? juce::Colour(0xff4f82ff) : (availableStep ? juce::Colour(0xff252a31) : juce::Colour(0xff15181d)));
                         g.fillRoundedRectangle(pad.toFloat(), 3.0f);
                         g.setColour((s % 4) == 0 ? juce::Colour(0xff93a9c5) : juce::Colour(0xff454b54));
                         g.drawRoundedRectangle(pad.toFloat(), 3.0f, 1.0f);
-                        g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f));
-                        g.drawText(juce::String(s + 1), pad, juce::Justification::centred);
+                        g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(9.0f));
+                        g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
+                    const int controlsY = panel.getY() + 27;
+                    auto drawControl = [&](juce::String text, int x, int w, bool active)
+                    {
+                        auto r = juce::Rectangle<int>(x, controlsY, w, 18);
+                        g.setColour(active ? juce::Colour(0xff2d6f9f) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
+                        g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
+                        g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f)); g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int cx = panel.getX();
+                    drawControl("16", cx, 30, pattern->stepCount == 16); cx += 34;
+                    drawControl("32", cx, 30, pattern->stepCount == 32); cx += 34;
+                    drawControl("64", cx, 30, pattern->stepCount == 64); cx += 42;
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8 };
+                    const char* rateNames[] = { "1/4", "1/8", "1/16", "1/32" };
+                    for (int r = 0; r < 4; ++r) { drawControl(rateNames[r], cx, 38, pattern->stepTicks == rates[r]); cx += 42; }
+                    drawControl("SW " + juce::String((int)std::round(pattern->swing * 100.0f)) + "%", cx, 62, pattern->swing > 0.0f); cx += 68;
+                    const int pages = juce::jmax(1, (pattern->stepCount + 15) / 16);
+                    for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
                 }
             }
         }
