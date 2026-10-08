@@ -36,12 +36,17 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
                 }
             }
         }
-        const int velocity = std::clamp((int)step.velocity + (step.accent ? 18 : 0), 1, 127);
+        const unsigned humanHash = (unsigned)(i * 747796405u + 2891336453u);
+        const double human = std::clamp((double)pattern.humanize, 0.0, 1.0);
+        const int velocityJitter = (int)std::llround((((int)((humanHash >> 8) % 2001u) - 1000) / 1000.0) * human * 12.0);
+        const int velocity = std::clamp((int)step.velocity + (step.accent ? 18 : 0) + velocityJitter, 1, 127);
+        const auto microOffset = (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
+        const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)pattern.stepTicks * 0.10);
         const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)step.gate, 0.01, 1.0)));
         for (int r = 0; r < ratchets; ++r)
         {
             MidiEngine::NoteEvent note;
-            note.startTick = startTick + (std::int64_t)i * pattern.stepTicks + swingOffset + (std::int64_t)r * subdivision;
+            note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * pattern.stepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
             note.lengthTicks = step.tie ? pattern.stepTicks : gateTicks;
             note.pitch = (std::uint8_t)pitch; note.velocity = (std::uint8_t)velocity;
             note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
