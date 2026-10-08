@@ -49,5 +49,6 @@ public:
         std::array<Step, maxSteps> steps {};
     };
 
+    static std::int64_t getCycleLengthTicks(const Pattern&) noexcept;
     static std::vector<MidiEngine::NoteEvent> render(const Pattern&, std::int64_t startTick = 0);
 };
