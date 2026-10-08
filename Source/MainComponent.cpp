@@ -1175,12 +1175,17 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         {
             const int logicalRow = getTrackScrollRows() + rowOffset / juce::jmax(1, rowH);
             const int midiLane = logicalRow - getAudioTrackCount();
-            if (midiLane >= 0 && midiLane < getMidiTrackCount())
+            const int instrumentLane = midiLane - getMidiTrackCount();
+            if ((midiLane >= 0 && midiLane < getMidiTrackCount())
+                || (instrumentLane >= 0 && instrumentLane < getInstrumentTrackCount()))
             {
                 const double dropTime = juce::jmax(0.0, (double)(p.x - 210) / getLibertyTimelinePixelsPerSecond());
                 const double oldPlayhead = playheadSeconds;
                 playheadSeconds = dropTime;
-                commitInstrumentStepSequencerToMidiClip(draggedStepSequencerInstrument, midiLane);
+                if (midiLane >= 0 && midiLane < getMidiTrackCount())
+                    commitInstrumentStepSequencerToMidiClip(draggedStepSequencerInstrument, midiLane);
+                else if (instrumentLane == draggedStepSequencerInstrument)
+                    createInstrumentPatternClip(instrumentLane);
                 playheadSeconds = oldPlayhead;
             }
         }
