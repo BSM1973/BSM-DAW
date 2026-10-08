@@ -1035,6 +1035,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
+        const double savedTimelineStart = pendingAudioStartSeconds[(size_t)index];
+        audioEngine.setTrackStartSeconds(index, savedTimelineStart);
         const double savedTimelineLength = pendingAudioLengths[(size_t)index];
         if (savedTimelineLength > 0.0)
             audioEngine.setAudioFileLengthSeconds(index, savedTimelineLength);
