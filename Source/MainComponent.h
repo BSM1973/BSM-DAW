@@ -146,6 +146,9 @@ public:
         return { 0, getArrangeTop(), getWidth(), juce::jmax(0, getMixerTop() - getArrangeTop()) };
     }
 
+    void saveStepSequencers(juce::XmlElement& root) const;
+    void loadStepSequencers(const juce::XmlElement& root);
+
     bool commitInstrumentStepSequencerToMidiClip(int instrumentIndex, int midiTrack = 0)
     {
         const auto* pattern = getInstrumentStepSequencer(instrumentIndex);
