@@ -176,6 +176,7 @@ public:
     void setTrackWarpMode(int trackIndex, int mode) noexcept;
     int getTrackWarpMode(int trackIndex) const noexcept;
     void resetTrackWarpMarkers(int trackIndex) noexcept;
+    bool restoreTrackWarpState(int trackIndex, bool enabled, int mode, const std::vector<std::pair<double, double>>& markers) noexcept;
     bool addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept;
     bool moveTrackWarpMarker(int trackIndex, int markerIndex, double targetSeconds) noexcept;
     bool removeTrackWarpMarker(int trackIndex, int markerIndex) noexcept;
