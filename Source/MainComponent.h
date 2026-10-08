@@ -6,6 +6,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "AudioEngine.h"
 #include "MidiEngine.h"
+#include "StepSequencer.h"
 #include <array>
 #include <vector>
 #include <functional>
@@ -60,7 +61,32 @@ public:
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
     int addMidiTrack() noexcept { const int i = dynamicMidiTrackCount++; repaint(); refreshLibertyMixConsole(this); return i; }
-    int addInstrumentTrack() noexcept { const int i = dynamicInstrumentTrackCount; if (!audioEngine.ensureInstrumentPlaybackTracks(i + 1)) return -1; ++dynamicInstrumentTrackCount; repaint(); refreshLibertyMixConsole(this); return i; }
+    int addInstrumentTrack() noexcept
+    {
+        const int i = dynamicInstrumentTrackCount;
+        if (!audioEngine.ensureInstrumentPlaybackTracks(i + 1)) return -1;
+        try { instrumentStepSequencers.resize((size_t)i + 1); } catch (...) { return -1; }
+        ++dynamicInstrumentTrackCount;
+        repaint(); refreshLibertyMixConsole(this); return i;
+    }
+    LibertyStepSequencer::Pattern* getInstrumentStepSequencer(int track) noexcept
+    {
+        return track >= 0 && track < (int)instrumentStepSequencers.size() ? &instrumentStepSequencers[(size_t)track] : nullptr;
+    }
+    bool publishInstrumentStepSequencer(int track) noexcept
+    {
+        auto* pattern = getInstrumentStepSequencer(track);
+        if (pattern == nullptr) return false;
+        try
+        {
+            const auto notes = LibertyStepSequencer::render(*pattern);
+            const auto lengthTicks = (std::int64_t)juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount) * juce::jmax<std::int64_t>(1, pattern->stepTicks);
+            const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
+            audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);
+            return true;
+        }
+        catch (...) { return false; }
+    }
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
@@ -308,6 +334,6 @@ private:
         std::vector<std::pair<double, double>> markers;
     };
 
-    AudioEngine audioEngine; MidiEngine midiEngine; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
+    AudioEngine audioEngine; MidiEngine midiEngine; std::vector<LibertyStepSequencer::Pattern> instrumentStepSequencers; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
