@@ -56,6 +56,16 @@ public:
             instrumentPanicPending.store(true, std::memory_order_release);
     }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    // Independent Step Sequencer audition state; never starts the arrangement transport.
+    void setStepPreview(int instrumentTrack, bool enabled) noexcept
+    {
+        stepPreviewTrack.store(enabled ? instrumentTrack : -1, std::memory_order_release);
+        stepPreviewSamples.store(0, std::memory_order_release);
+        instrumentPanicPending.store(true, std::memory_order_release);
+    }
+    bool isStepPreviewPlaying() const noexcept { return stepPreviewTrack.load(std::memory_order_acquire) >= 0; }
+    int getStepPreviewTrack() const noexcept { return stepPreviewTrack.load(std::memory_order_acquire); }
+
     void notifyInstrumentChanged() noexcept
     {
         instrumentPanicPending.store(true, std::memory_order_release);
@@ -288,6 +298,8 @@ private:
     std::atomic<bool> midiTrackSolo { false };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
+    std::atomic<int> stepPreviewTrack { -1 };
+    std::atomic<std::int64_t> stepPreviewSamples { 0 };
     std::atomic<bool> instrumentPanicPending { false };
     std::atomic<bool> instrumentResumePending { false };
     std::atomic<double> sampleRate { 0.0 };
