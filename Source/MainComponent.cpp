@@ -817,7 +817,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     ax += 80;
                     if (actionHit(ax,52)) { stepSequencerMidiTarget = (stepSequencerMidiTarget + 1) % juce::jmax(1, getMidiTrackCount()); repaint(); return; } ax += 56;
-                    if (actionHit(ax,58)) { commitInstrumentStepSequencerToMidiClip(instrumentIndex, stepSequencerMidiTarget); repaint(); return; } ax += 62;
+                    if (actionHit(ax,58)) { draggingStepSequencerPattern=true; draggedStepSequencerInstrument=instrumentIndex; repaint(); return; } ax += 62;
                     if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
                     if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
                     if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
@@ -986,6 +986,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingStepSequencerPattern)
+    {
+        repaint();
+        return;
+    }
     if (draggingClip && draggedTrack >= 0)
     {
         const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
@@ -993,4 +998,33 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
         audioEngine.setTrackStartSeconds(draggedTrack, juce::jmax(0.0, dragStartSeconds + deltaSeconds)); repaint(); return;
     }
     handleMixerMouse(event);
+}
+
+void MainComponent::mouseUp(const juce::MouseEvent& event)
+{
+    if (draggingStepSequencerPattern)
+    {
+        const auto p = event.getPosition();
+        const int rowH = getLibertyTrackRowHeight();
+        const int rowOffset = p.y - getArrangeTop();
+        if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= 210)
+        {
+            const int logicalRow = getTrackScrollRows() + rowOffset / juce::jmax(1, rowH);
+            const int midiLane = logicalRow - getAudioTrackCount();
+            if (midiLane >= 0 && midiLane < getMidiTrackCount())
+            {
+                const double dropTime = juce::jmax(0.0, (double)(p.x - 210) / getLibertyTimelinePixelsPerSecond());
+                const double oldPlayhead = playheadSeconds;
+                playheadSeconds = dropTime;
+                commitInstrumentStepSequencerToMidiClip(draggedStepSequencerInstrument, midiLane);
+                playheadSeconds = oldPlayhead;
+            }
+        }
+        draggingStepSequencerPattern = false;
+        draggedStepSequencerInstrument = -1;
+        repaint();
+        return;
+    }
+    draggingClip = false;
+    draggedTrack = -1;
 }
