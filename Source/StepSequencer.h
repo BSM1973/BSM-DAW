@@ -31,6 +31,7 @@ public:
         int stepCount = 16;
         int cycleSteps = 16;
         std::int64_t stepTicks = MidiEngine::ticksPerQuarterNote / 4;
+        std::uint8_t rateModifier = 0; // 0 straight, 1 triplet, 2 dotted
         float swing = 0.0f;
         std::uint8_t root = 0;
         Scale scale = Scale::Off;
