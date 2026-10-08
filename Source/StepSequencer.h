@@ -25,6 +25,7 @@ public:
         Chord chord = Chord::Off;
     };
     enum class Scale : std::uint8_t { Off = 0, Major, Minor, Pentatonic };
+    enum class Direction : std::uint8_t { Forward = 0, Reverse, PingPong, Random };
     struct Pattern
     {
         bool enabled = false;
@@ -32,6 +33,7 @@ public:
         int cycleSteps = 16;
         std::int64_t stepTicks = MidiEngine::ticksPerQuarterNote / 4;
         std::uint8_t rateModifier = 0; // 0 straight, 1 triplet, 2 dotted
+        Direction direction = Direction::Forward;
         float swing = 0.0f;
         std::uint8_t root = 0;
         Scale scale = Scale::Off;
