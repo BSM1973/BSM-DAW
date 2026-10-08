@@ -311,12 +311,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
-                    const int stepW = juce::jmax(12, available / 16);
+                    const int stepW = juce::jmax(1, available / 16);
                     const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
                     for (int s = 0; s < 16; ++s)
                     {
                         const int absoluteStep = firstStep + s;
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 4, 30);
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
                         g.setColour(active ? juce::Colour(0xff4f82ff) : (availableStep ? juce::Colour(0xff252a31) : juce::Colour(0xff15181d)));
@@ -790,7 +790,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int s = 0; s < 16; ++s)
                     {
                         const int absoluteStep = firstStep + s;
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 4, 30);
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         if (pad.contains(p) && absoluteStep < pattern->stepCount)
                         {
                             stepSequencerSelectedStep = absoluteStep;
