@@ -127,7 +127,11 @@ public:
                                           : baseStepTicks;
             const auto lengthTicks = (std::int64_t)juce::jlimit(1, juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount), pattern->cycleSteps) * effectiveStepTicks;
             const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
-            audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);
+            auto& bank = instrumentStepSequencers[(size_t) track];
+            const double startSeconds = bank.hasTimelinePatternClip ? bank.timelinePatternStartSeconds : 0.0;
+            if (bank.hasTimelinePatternClip)
+                bank.timelinePatternLengthSeconds = lengthSeconds;
+            audioEngine.setInstrumentTrackNotes(track, notes, startSeconds, lengthSeconds, tempoBpm);
             return true;
         }
         catch (...) { return false; }
