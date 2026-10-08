@@ -354,7 +354,9 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         if (active) { g.setColour(juce::Colour(0xff84c1ff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xff83baff) : juce::Colour(0xff496078));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
-                        g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f)); g.drawText(text, r, juce::Justification::centred);
+                        g.setColour(active ? juce::Colour(0xfff3f9ff) : juce::Colour(0xffbfcede));
+                        g.setFont(juce::Font(9.0f, juce::Font::bold));
+                        g.drawText(text, r, juce::Justification::centred);
                     };
                     int cx = panel.getX();
                     drawControl("16", cx, 30, pattern->stepCount == 16); cx += 34;
