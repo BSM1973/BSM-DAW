@@ -724,13 +724,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     // Step Sequencer hit-test for the selected Instrument row.
     {
-        const int rowOffset = p.y - getArrangeTop();
-        if (rowOffset >= 0 && p.y < getMixerTop())
+        if (p.y >= getMixerTop())
         {
-            const int logicalRow = getTrackScrollRows() + rowOffset / rowH;
+            const int logicalRow = selectedTrack;
             const int instrumentFirst = audioTrackCount + midiTrackCount;
-            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount
-                && selectedTrack == logicalRow)
+            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)
             {
                 const int instrumentIndex = logicalRow - instrumentFirst;
                 if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
