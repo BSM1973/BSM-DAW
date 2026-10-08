@@ -272,7 +272,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.setColour(availableStep ? juce::Colours::white : juce::Colour(0xff555a61)); g.setFont(juce::Font(9.0f));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
-                    const int controlsY = panel.getY() + 27;
+                    const int controlsY = panel.getY() + 54;
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = juce::Rectangle<int>(x, controlsY, w, 18);
@@ -296,7 +296,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
                     const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
                     const auto& editStep = pattern->steps[(size_t)selectedStep];
-                    const int editY = controlsY + 22;
+                    const int editY = controlsY + 42;
                     auto drawEdit = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = juce::Rectangle<int>(x, editY, w, 18);
@@ -318,7 +318,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawEdit("MICRO " + juce::String((int)std::round(editStep.microTiming * 100.0f)) + "%", ex, 70, editStep.microTiming != 0.0f); ex += 74;
                     static constexpr const char* chordNames[]={"OFF","MAJ","MIN","POWER","7TH"};
                     drawEdit("CHORD " + juce::String(chordNames[juce::jlimit(0,4,(int)editStep.chord)]), ex, 76, editStep.chord != LibertyStepSequencer::Chord::Off);
-                    const int actionY = editY + 22;
+                    const int actionY = editY + 42;
                     auto drawAction = [&](juce::String text, int x, int w)
                     {
                         auto r = juce::Rectangle<int>(x, actionY, w, 18);
