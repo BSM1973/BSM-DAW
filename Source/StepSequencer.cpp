@@ -7,6 +7,10 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
     std::vector<MidiEngine::NoteEvent> notes;
     if (!pattern.enabled || pattern.stepTicks <= 0) return notes;
     const int count = std::clamp(pattern.cycleSteps, 1, std::clamp(pattern.stepCount, 1, maxSteps));
+    const auto baseStepTicks = std::max<std::int64_t>(1, pattern.stepTicks);
+    const auto effectiveStepTicks = pattern.rateModifier == 1 ? std::max<std::int64_t>(1, baseStepTicks * 2 / 3)
+                                  : pattern.rateModifier == 2 ? std::max<std::int64_t>(1, baseStepTicks * 3 / 2)
+                                  : baseStepTicks;
     try { notes.reserve((size_t) count * 4u); } catch (...) { return {}; }
     for (int i = 0; i < count; ++i)
     {
@@ -23,8 +27,8 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const unsigned hash = (unsigned)(i * 1103515245u + 12345u);
         if ((hash % 100u) >= std::min<unsigned>(100u, probabilityStep.probability)) continue;
         const int ratchets = std::clamp<int>(ratchetStep.ratchet, 1, 8);
-        const auto subdivision = std::max<std::int64_t>(1, pattern.stepTicks / ratchets);
-        const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
+        const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
+        const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
         if (pattern.scale != Scale::Off)
         {
@@ -48,8 +52,8 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const double human = std::clamp((double)pattern.humanize, 0.0, 1.0);
         const int velocityJitter = (int)std::llround((((int)((humanHash >> 8) % 2001u) - 1000) / 1000.0) * human * 12.0);
         const int velocity = std::clamp((int)velocityStep.velocity + (step.accent ? 18 : 0) + velocityJitter, 1, 127);
-        const auto microOffset = (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
-        const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)pattern.stepTicks * 0.10);
+        const auto microOffset = (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
+        const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)effectiveStepTicks * 0.10);
         const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)gateStep.gate, 0.01, 1.0)));
         int intervals[4] = {0, 0, 0, 0};
         int chordNotes = 1;
@@ -66,8 +70,8 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             for (int chordIndex=0; chordIndex<chordNotes; ++chordIndex)
             {
                 MidiEngine::NoteEvent note;
-                note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * pattern.stepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-                note.lengthTicks = step.tie ? pattern.stepTicks : gateTicks;
+                note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
+                note.lengthTicks = step.tie ? effectiveStepTicks : gateTicks;
                 note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
                 note.velocity = (std::uint8_t)velocity;
                 note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
