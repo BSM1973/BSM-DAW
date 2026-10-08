@@ -1,4 +1,5 @@
 #include "StepSequencer.h"
+#include "MainComponent.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
