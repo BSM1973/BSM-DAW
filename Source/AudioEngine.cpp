@@ -744,6 +744,25 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
         return false;
     }
 
+    std::shared_ptr<WarpMarkerSnapshot> newWarpSnapshot;
+    try
+    {
+        newWarpSnapshot = std::make_shared<WarpMarkerSnapshot>();
+    }
+    catch (...)
+    {
+        error = "Not enough memory to prepare the audio warp state.";
+        return false;
+    }
+    const double newLengthSeconds = static_cast<double>(outputSamples) / outputRate;
+    newWarpSnapshot->enabled = false;
+    newWarpSnapshot->mode = 0;
+    newWarpSnapshot->count = 2;
+    newWarpSnapshot->source[0] = 0.0;
+    newWarpSnapshot->target[0] = 0.0;
+    newWarpSnapshot->source[1] = newLengthSeconds;
+    newWarpSnapshot->target[1] = newLengthSeconds;
+
     const bool wasInitialised = initialised.load();
     instrumentResumePending.store(false, std::memory_order_release);
     instrumentPanicPending.store(true, std::memory_order_release);
@@ -753,11 +772,16 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    track.fileName = file.getFileName(); track.lengthSeconds.store(static_cast<double>(outputSamples) / outputRate); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
+    track.fileName = file.getFileName(); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
+    track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
+    track.warpSourceSeconds[1].store(newLengthSeconds, std::memory_order_relaxed);
+    track.warpTargetSeconds[1].store(newLengthSeconds, std::memory_order_relaxed);
+    track.warpMarkerCount.store(2, std::memory_order_release);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(newWarpSnapshot));
     track.loaded.store(true, std::memory_order_release);
-    resetTrackWarpMarkers(trackIndex);
     { const juce::ScopedLock lock(stateLock); lastError.clear(); }
     if (wasInitialised) deviceManager.addAudioCallback(this);
     return true;
