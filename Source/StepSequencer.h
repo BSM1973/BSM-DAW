@@ -21,12 +21,16 @@ public:
         bool accent = false;
         int octave = 0;
     };
+    enum class Scale : std::uint8_t { Off = 0, Major, Minor, Pentatonic };
     struct Pattern
     {
         bool enabled = false;
         int stepCount = 16;
         std::int64_t stepTicks = MidiEngine::ticksPerQuarterNote / 4;
         float swing = 0.0f;
+        std::uint8_t root = 0;
+        Scale scale = Scale::Off;
+        int transpose = 0;
         std::array<Step, maxSteps> steps {};
     };
 
