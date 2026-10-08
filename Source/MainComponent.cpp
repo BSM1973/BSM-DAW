@@ -321,6 +321,22 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("REVERSE", ax, 62); ax += 66;
                     drawAction("ROTATE", ax, 56); ax += 60;
                     drawAction("DUPLICATE", ax, 72);
+                    ax += 80;
+                    if ((size_t)i < instrumentStepSequencers.size())
+                    {
+                        const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
+                        for (int bankIndex = 0; bankIndex < 8; ++bankIndex)
+                        {
+                            drawAction("PAT " + juce::String(bankIndex + 1), ax, 44);
+                            if (bankIndex == activePattern)
+                            {
+                                auto active = juce::Rectangle<int>(ax, actionY, 44, 18);
+                                g.setColour(juce::Colour(0xff4f82ff));
+                                g.drawRoundedRectangle(active.toFloat(), 3.0f, 2.0f);
+                            }
+                            ax += 48;
+                        }
+                    }
                 }
             }
         }
@@ -770,6 +786,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int half=pattern->stepCount/2;
                         if(half>0) for(int s=0;s<half && s+half<pattern->stepCount;++s) pattern->steps[(size_t)(s+half)]=pattern->steps[(size_t)s];
                         publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 80;
+                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
+                    {
+                        for (int bankIndex=0; bankIndex<8; ++bankIndex)
+                        {
+                            if (actionHit(ax,44))
+                            {
+                                instrumentStepSequencers[(size_t)instrumentIndex].activePattern = bankIndex;
+                                stepSequencerPage = 0; stepSequencerSelectedStep = 0;
+                                publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                            }
+                            ax += 48;
+                        }
                     }
                 }
             }
