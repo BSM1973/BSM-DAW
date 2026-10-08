@@ -657,6 +657,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     }
 
     saveLibertyMultiMidiClips(*this, project);
+    saveStepSequencers(project);
 
     const auto tempFile = file.getSiblingFile(
         file.getFileName() + ".saving-" + juce::Uuid().toString());
@@ -1137,6 +1138,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
     }
     loadLibertyMultiMidiClips(*this, *project);
+    loadStepSequencers(*project);
     updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
