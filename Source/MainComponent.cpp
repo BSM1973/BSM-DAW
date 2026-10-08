@@ -304,7 +304,23 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawEdit("PROB " + juce::String((int)editStep.probability) + "%", ex, 66, false); ex += 70;
                     drawEdit("RATCH x" + juce::String((int)editStep.ratchet), ex, 62, editStep.ratchet > 1); ex += 66;
                     drawEdit("ACC", ex, 38, editStep.accent); ex += 42;
-                    drawEdit("OCT " + juce::String(editStep.octave), ex, 48, editStep.octave != 0);
+                    drawEdit("OCT " + juce::String(editStep.octave), ex, 48, editStep.octave != 0); ex += 52;
+                    drawEdit("TIE", ex, 38, editStep.tie); ex += 42;
+                    drawEdit("CH " + juce::String((int)editStep.channel), ex, 42, editStep.channel != 1);
+                    const int actionY = editY + 22;
+                    auto drawAction = [&](juce::String text, int x, int w)
+                    {
+                        auto r = juce::Rectangle<int>(x, actionY, w, 18);
+                        g.setColour(juce::Colour(0xff29313a)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
+                        g.setColour(juce::Colour(0xff59636f)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
+                        g.setColour(juce::Colours::white); g.setFont(juce::Font(8.5f, juce::Font::bold)); g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int ax = panel.getX();
+                    drawAction("CLEAR", ax, 48); ax += 52;
+                    drawAction("RANDOM", ax, 58); ax += 62;
+                    drawAction("REVERSE", ax, 62); ax += 66;
+                    drawAction("ROTATE", ax, 56); ax += 60;
+                    drawAction("DUPLICATE", ax, 72);
                 }
             }
         }
@@ -724,7 +740,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (editHit(ex,66)) { editStep.probability = (std::uint8_t)(editStep.probability >= 100 ? 10 : juce::jmin(100, (int)editStep.probability + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
                     if (editHit(ex,62)) { editStep.ratchet = (std::uint8_t)(editStep.ratchet >= 8 ? 1 : editStep.ratchet + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 66;
                     if (editHit(ex,38)) { editStep.accent = !editStep.accent; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
-                    if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
+                    if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
+                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
                 }
             }
         }
