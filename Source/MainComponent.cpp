@@ -6,6 +6,7 @@ void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 void resizeLibertyMixConsole(MainComponent*);
 void resizeLibertyBrowserResizeController(MainComponent*);
 void resizeLibertyMultiMidiClipController(MainComponent*);
+bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
