@@ -332,7 +332,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
-                        g.setColour(active ? juce::Colour(0xff438cff) : (availableStep ? juce::Colour(0xff263343) : juce::Colour(0xff15181d)));
+                        g.setColour(active ? juce::Colour(0xff438cff) : (availableStep ? juce::Colour(0xff28394d) : juce::Colour(0xff111823)));
                         g.fillRoundedRectangle(pad.toFloat(), 6.0f);
                         if (active)
                         {
