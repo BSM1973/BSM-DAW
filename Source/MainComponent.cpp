@@ -670,17 +670,29 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
                     const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
                     for (int s = 0; s < 16; ++s)
                     {
+                        const int absoluteStep = firstStep + s;
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + s * stepW, panel.getY(), stepW - 3, 22);
-                        if (pad.contains(p))
+                        if (pad.contains(p) && absoluteStep < pattern->stepCount)
                         {
-                            pattern->steps[(size_t)s].enabled = !pattern->steps[(size_t)s].enabled;
-                            publishInstrumentStepSequencer(instrumentIndex);
-                            repaint();
-                            return;
+                            pattern->steps[(size_t)absoluteStep].enabled = !pattern->steps[(size_t)absoluteStep].enabled;
+                            publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
                         }
                     }
+                    const int controlsY = panel.getY() + 27;
+                    auto hit = [&](int x, int w) { return juce::Rectangle<int>(x, controlsY, w, 18).contains(p); };
+                    int cx = panel.getX();
+                    const int counts[] = {16,32,64};
+                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=34; }
+                    cx += 8;
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8 };
+                    for (int r=0;r<4;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
+                    if (hit(cx,62)) { pattern->swing = pattern->swing >= 0.50f ? 0.0f : pattern->swing + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    cx += 68;
+                    const int pages = juce::jmax(1,(pattern->stepCount+15)/16);
+                    for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
                 }
             }
         }
