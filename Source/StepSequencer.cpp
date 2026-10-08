@@ -11,10 +11,18 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
     for (int i = 0; i < count; ++i)
     {
         const auto& step = pattern.steps[(size_t)i];
-        if (!step.enabled || step.probability == 0) continue;
+        const int velocityLane = i % std::clamp(pattern.velocityLaneSteps, 1, count);
+        const int gateLane = i % std::clamp(pattern.gateLaneSteps, 1, count);
+        const int probabilityLane = i % std::clamp(pattern.probabilityLaneSteps, 1, count);
+        const int ratchetLane = i % std::clamp(pattern.ratchetLaneSteps, 1, count);
+        const auto& velocityStep = pattern.steps[(size_t)velocityLane];
+        const auto& gateStep = pattern.steps[(size_t)gateLane];
+        const auto& probabilityStep = pattern.steps[(size_t)probabilityLane];
+        const auto& ratchetStep = pattern.steps[(size_t)ratchetLane];
+        if (!step.enabled || probabilityStep.probability == 0) continue;
         const unsigned hash = (unsigned)(i * 1103515245u + 12345u);
-        if ((hash % 100u) >= std::min<unsigned>(100u, step.probability)) continue;
-        const int ratchets = std::clamp<int>(step.ratchet, 1, 8);
+        if ((hash % 100u) >= std::min<unsigned>(100u, probabilityStep.probability)) continue;
+        const int ratchets = std::clamp<int>(ratchetStep.ratchet, 1, 8);
         const auto subdivision = std::max<std::int64_t>(1, pattern.stepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
@@ -39,10 +47,10 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const unsigned humanHash = (unsigned)(i * 747796405u + 2891336453u);
         const double human = std::clamp((double)pattern.humanize, 0.0, 1.0);
         const int velocityJitter = (int)std::llround((((int)((humanHash >> 8) % 2001u) - 1000) / 1000.0) * human * 12.0);
-        const int velocity = std::clamp((int)step.velocity + (step.accent ? 18 : 0) + velocityJitter, 1, 127);
+        const int velocity = std::clamp((int)velocityStep.velocity + (step.accent ? 18 : 0) + velocityJitter, 1, 127);
         const auto microOffset = (std::int64_t)std::llround((double)pattern.stepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
         const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)pattern.stepTicks * 0.10);
-        const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)step.gate, 0.01, 1.0)));
+        const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)gateStep.gate, 0.01, 1.0)));
         int intervals[4] = {0, 0, 0, 0};
         int chordNotes = 1;
         switch (step.chord)
