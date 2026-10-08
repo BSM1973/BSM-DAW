@@ -1036,8 +1036,6 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         const auto savedDisplayName = pendingAudioFileNames[(size_t)index];
         if (savedDisplayName.isNotEmpty())
             audioEngine.setAudioFileName(index, savedDisplayName);
-        pendingAudioFileNames[(size_t)index].clear();
-        pendingAudioLengths[(size_t)index] = 0.0;
         if (projectVersion >= 16)
         {
             const auto pendingWarp = pendingAudioWarpStates[(size_t)index];
@@ -1049,6 +1047,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 continue;
             }
         }
+        pendingAudioFileNames[(size_t)index].clear();
+        pendingAudioLengths[(size_t)index] = 0.0;
         pendingAudioWarpStates[(size_t)index] = {};
         rebuildWaveformCache(index);
     }
