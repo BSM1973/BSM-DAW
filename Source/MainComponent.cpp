@@ -329,8 +329,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawAction("TRANS " + juce::String(pattern->transpose), ax, 66); ax += 70;
                     drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60); ax += 64;
                     drawAction("EUC " + juce::String(pattern->euclideanPulses) + "/" + juce::String(pattern->stepCount), ax, 68); ax += 72;
-                    drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70);
-                    ax += 74;
+                    drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70); ax += 74;
+                    drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66);
+                    ax += 70;
                     if ((size_t)i < instrumentStepSequencers.size())
                     {
                         const auto activePattern = instrumentStepSequencers[(size_t)i].activePattern;
@@ -824,8 +825,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             pattern->steps[(size_t)s].enabled=((rotated*pulses)%pattern->stepCount)<pulses;
                         }
                         publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    }
-                    ax += 74;
+                    } ax += 74;
+                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 70;
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
                         for (int bankIndex=0; bankIndex<8; ++bankIndex)
