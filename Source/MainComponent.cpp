@@ -280,9 +280,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     drawControl("16", cx, 30, pattern->stepCount == 16); cx += 34;
                     drawControl("32", cx, 30, pattern->stepCount == 32); cx += 34;
                     drawControl("64", cx, 30, pattern->stepCount == 64); cx += 42;
-                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8 };
-                    const char* rateNames[] = { "1/4", "1/8", "1/16", "1/32" };
-                    for (int r = 0; r < 4; ++r) { drawControl(rateNames[r], cx, 38, pattern->stepTicks == rates[r]); cx += 42; }
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
+                    const char* rateNames[] = { "1/4", "1/8", "1/16", "1/32", "1/64" };
+                    for (int r = 0; r < 5; ++r) { drawControl(rateNames[r], cx, 38, pattern->stepTicks == rates[r]); cx += 42; }
+                    const char* modifierNames[] = { "STR", "TRI", "DOT" };
+                    for (int m=0;m<3;++m) { drawControl(modifierNames[m], cx, 34, pattern->rateModifier == m); cx += 38; }
                     drawControl("SW " + juce::String((int)std::round(pattern->swing * 100.0f)) + "%", cx, 62, pattern->swing > 0.0f); cx += 68;
                     const int pages = juce::jmax(1, (pattern->stepCount + 15) / 16);
                     for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
@@ -755,8 +757,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const int counts[] = {16,32,64};
                     for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=34; }
                     cx += 8;
-                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8 };
-                    for (int r=0;r<4;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
+                    for (int r=0;r<5;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
+                    for (int m=0;m<3;++m) { if(hit(cx,34)) { pattern->rateModifier=(std::uint8_t)m; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=38; }
                     if (hit(cx,62)) { pattern->swing = pattern->swing >= 0.50f ? 0.0f : pattern->swing + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
                     cx += 68;
                     const int pages = juce::jmax(1,(pattern->stepCount+15)/16);
