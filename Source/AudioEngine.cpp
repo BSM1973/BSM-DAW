@@ -840,6 +840,70 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
         error = "Not enough memory to split the audio clip.";
         return false;
     }
+    const double leftTargetLength = sourceWarp.enabled ? splitOffsetSeconds : static_cast<double>(splitSample) / rate;
+    const double rightTargetLength = sourceWarp.enabled ? juce::jmax(0.0, lengthSeconds - splitOffsetSeconds) : static_cast<double>(rightSamples) / rate;
+    std::shared_ptr<WarpMarkerSnapshot> leftWarpSnapshot;
+    std::shared_ptr<WarpMarkerSnapshot> rightWarpSnapshot;
+    try
+    {
+        leftWarpSnapshot = std::make_shared<WarpMarkerSnapshot>();
+        rightWarpSnapshot = std::make_shared<WarpMarkerSnapshot>();
+    }
+    catch (...)
+    {
+        error = "Not enough memory to prepare the split warp state.";
+        return false;
+    }
+
+    leftWarpSnapshot->enabled = sourceWarp.enabled;
+    leftWarpSnapshot->mode = sourceWarp.mode;
+    leftWarpSnapshot->count = 2;
+    leftWarpSnapshot->source[0] = 0.0;
+    leftWarpSnapshot->target[0] = 0.0;
+    leftWarpSnapshot->source[1] = actualSplitSourceSeconds;
+    leftWarpSnapshot->target[1] = leftTargetLength;
+
+    rightWarpSnapshot->enabled = sourceWarp.enabled;
+    rightWarpSnapshot->mode = sourceWarp.mode;
+    rightWarpSnapshot->count = 2;
+    rightWarpSnapshot->source[0] = 0.0;
+    rightWarpSnapshot->target[0] = 0.0;
+    rightWarpSnapshot->source[1] = static_cast<double>(rightSamples) / rate;
+    rightWarpSnapshot->target[1] = rightTargetLength;
+
+    if (sourceWarp.count >= 2)
+    {
+        for (int markerIndex = 1; markerIndex < sourceWarp.count - 1; ++markerIndex)
+        {
+            const double markerSource = sourceWarp.source[(size_t)markerIndex];
+            const double markerTarget = sourceWarp.target[(size_t)markerIndex];
+            if (markerTarget < splitOffsetSeconds - 0.001 && markerSource < actualSplitSourceSeconds - 0.001)
+            {
+                const int index = leftWarpSnapshot->count - 1;
+                if (leftWarpSnapshot->count < maxWarpMarkers)
+                {
+                    leftWarpSnapshot->source[(size_t)leftWarpSnapshot->count] = leftWarpSnapshot->source[(size_t)index];
+                    leftWarpSnapshot->target[(size_t)leftWarpSnapshot->count] = leftWarpSnapshot->target[(size_t)index];
+                    leftWarpSnapshot->source[(size_t)index] = markerSource;
+                    leftWarpSnapshot->target[(size_t)index] = markerTarget;
+                    ++leftWarpSnapshot->count;
+                }
+            }
+            else if (markerTarget > splitOffsetSeconds + 0.001 && markerSource > actualSplitSourceSeconds + 0.001)
+            {
+                const int index = rightWarpSnapshot->count - 1;
+                if (rightWarpSnapshot->count < maxWarpMarkers)
+                {
+                    rightWarpSnapshot->source[(size_t)rightWarpSnapshot->count] = rightWarpSnapshot->source[(size_t)index];
+                    rightWarpSnapshot->target[(size_t)rightWarpSnapshot->count] = rightWarpSnapshot->target[(size_t)index];
+                    rightWarpSnapshot->source[(size_t)index] = markerSource - actualSplitSourceSeconds;
+                    rightWarpSnapshot->target[(size_t)index] = markerTarget - splitOffsetSeconds;
+                    ++rightWarpSnapshot->count;
+                }
+            }
+        }
+    }
+
     const bool wasInitialised = initialised.load();
     const auto savedPlaying = playing.load();
     if (wasInitialised) deviceManager.removeAudioCallback(this);
@@ -847,8 +911,7 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     source.loaded.store(false, std::memory_order_release);
     std::atomic_store(&source.buffer, std::move(leftBuffer));
     source.contentRevision.fetch_add(1, std::memory_order_relaxed);
-    const double leftTargetLength = sourceWarp.enabled ? splitOffsetSeconds : static_cast<double>(splitSample) / rate;
-    const double rightTargetLength = sourceWarp.enabled ? juce::jmax(0.0, lengthSeconds - splitOffsetSeconds) : static_cast<double>(rightSamples) / rate;
+
     source.lengthSeconds.store(leftTargetLength);
     source.bufferSampleRate.store(rate);
     source.loaded.store(true, std::memory_order_release);
@@ -867,24 +930,25 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
     right.warpEnabled.store(false, std::memory_order_relaxed);
     right.warpMode.store(sourceWarp.mode, std::memory_order_relaxed);
     right.loaded.store(true, std::memory_order_release);
-    resetTrackWarpMarkers(trackIndex);
-    resetTrackWarpMarkers(targetTrackIndex);
-    if (sourceWarp.count >= 2)
+    for (int i = 0; i < leftWarpSnapshot->count; ++i)
     {
-        for (int marker = 1; marker < sourceWarp.count - 1; ++marker)
-        {
-            const double sourceSeconds = sourceWarp.source[(size_t)marker];
-            const double targetSeconds = sourceWarp.target[(size_t)marker];
-            if (targetSeconds < splitOffsetSeconds - 0.001 && sourceSeconds < actualSplitSourceSeconds - 0.001)
-                addTrackWarpMarker(trackIndex, sourceSeconds, targetSeconds);
-            else if (targetSeconds > splitOffsetSeconds + 0.001 && sourceSeconds > actualSplitSourceSeconds + 0.001)
-                addTrackWarpMarker(targetTrackIndex, sourceSeconds - actualSplitSourceSeconds, targetSeconds - splitOffsetSeconds);
-        }
-        setTrackWarpMode(trackIndex, sourceWarp.mode);
-        setTrackWarpMode(targetTrackIndex, sourceWarp.mode);
-        setTrackWarpEnabled(trackIndex, sourceWarp.enabled);
-        setTrackWarpEnabled(targetTrackIndex, sourceWarp.enabled);
+        source.warpSourceSeconds[(size_t)i].store(leftWarpSnapshot->source[(size_t)i], std::memory_order_relaxed);
+        source.warpTargetSeconds[(size_t)i].store(leftWarpSnapshot->target[(size_t)i], std::memory_order_relaxed);
     }
+    source.warpMarkerCount.store(leftWarpSnapshot->count, std::memory_order_release);
+    source.warpMode.store(sourceWarp.mode, std::memory_order_relaxed);
+    source.warpEnabled.store(sourceWarp.enabled, std::memory_order_relaxed);
+    std::atomic_store(&source.warpMarkerSnapshot, std::move(leftWarpSnapshot));
+
+    for (int i = 0; i < rightWarpSnapshot->count; ++i)
+    {
+        right.warpSourceSeconds[(size_t)i].store(rightWarpSnapshot->source[(size_t)i], std::memory_order_relaxed);
+        right.warpTargetSeconds[(size_t)i].store(rightWarpSnapshot->target[(size_t)i], std::memory_order_relaxed);
+    }
+    right.warpMarkerCount.store(rightWarpSnapshot->count, std::memory_order_release);
+    right.warpMode.store(sourceWarp.mode, std::memory_order_relaxed);
+    right.warpEnabled.store(sourceWarp.enabled, std::memory_order_relaxed);
+    std::atomic_store(&right.warpMarkerSnapshot, std::move(rightWarpSnapshot));
     if (savedPlaying)
     {
         instrumentPanicPending.store(true, std::memory_order_release);
