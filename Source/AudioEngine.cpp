@@ -515,6 +515,60 @@ void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
     std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
+bool AudioEngine::restoreTrackWarpState(int trackIndex, bool enabled, int mode,
+                                            const std::vector<std::pair<double, double>>& markers) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return false;
+    auto& track = *tracks[(size_t)trackIndex];
+    const auto buffer = std::atomic_load(&track.buffer);
+    const double rate = track.bufferSampleRate.load(std::memory_order_relaxed);
+    const double sourceLength = buffer != nullptr && rate > 0.0
+        ? static_cast<double>(buffer->getNumSamples()) / rate : 0.0;
+    const double targetLength = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
+    if (sourceLength <= 0.0 || targetLength <= 0.0) return false;
+
+    std::shared_ptr<WarpMarkerSnapshot> snapshot;
+    try { snapshot = std::make_shared<WarpMarkerSnapshot>(); }
+    catch (...) { return false; }
+
+    snapshot->enabled = enabled;
+    snapshot->mode = juce::jlimit(0, 4, mode);
+    snapshot->count = 2;
+    snapshot->source[0] = 0.0;
+    snapshot->target[0] = 0.0;
+    snapshot->source[1] = sourceLength;
+    snapshot->target[1] = targetLength;
+
+    for (const auto& marker : markers)
+    {
+        if (snapshot->count >= maxWarpMarkers) break;
+        const double sourceSeconds = marker.first;
+        const double targetSeconds = marker.second;
+        const int endIndex = snapshot->count - 1;
+        if (!std::isfinite(sourceSeconds) || !std::isfinite(targetSeconds)
+            || sourceSeconds <= snapshot->source[(size_t)(endIndex - 1)]
+            || targetSeconds <= snapshot->target[(size_t)(endIndex - 1)]
+            || sourceSeconds >= sourceLength || targetSeconds >= targetLength)
+            continue;
+        snapshot->source[(size_t)snapshot->count] = snapshot->source[(size_t)endIndex];
+        snapshot->target[(size_t)snapshot->count] = snapshot->target[(size_t)endIndex];
+        snapshot->source[(size_t)endIndex] = sourceSeconds;
+        snapshot->target[(size_t)endIndex] = targetSeconds;
+        ++snapshot->count;
+    }
+
+    for (int i = 0; i < snapshot->count; ++i)
+    {
+        track.warpSourceSeconds[(size_t)i].store(snapshot->source[(size_t)i], std::memory_order_relaxed);
+        track.warpTargetSeconds[(size_t)i].store(snapshot->target[(size_t)i], std::memory_order_relaxed);
+    }
+    track.warpMarkerCount.store(snapshot->count, std::memory_order_release);
+    track.warpMode.store(snapshot->mode, std::memory_order_relaxed);
+    track.warpEnabled.store(enabled, std::memory_order_relaxed);
+    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+    return true;
+}
+
 bool AudioEngine::addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return false;
