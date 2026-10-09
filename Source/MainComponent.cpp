@@ -376,7 +376,8 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
 
 void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.fillAll(juce::Colour(0xff101b2a));
+    g.setColour(juce::Colour(0xff101b2a));
+    g.fillRect(area);
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
@@ -401,9 +402,21 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     for (int i = 0; i < steps; ++i)
     {
         auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
-        g.setColour(pattern->steps[(size_t)(firstStep + i)].enabled ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
+        const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
+        const bool inCycle = firstStep + i < pattern->cycleSteps;
+        g.setColour(active ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
-        g.setColour(juce::Colours::white);
+        if (!inCycle)
+        {
+            g.setColour(juce::Colour(0x880a101a));
+            g.fillRoundedRectangle(r.toFloat(), 4.0f);
+        }
+        if (i % 4 == 0)
+        {
+            g.setColour(juce::Colour(0xff79b9d1));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.2f);
+        }
+        g.setColour(inCycle ? juce::Colours::white : juce::Colour(0xff758395));
         g.drawText(juce::String(firstStep + i + 1), r, juce::Justification::centred);
     }
     g.setColour(juce::Colour(0xffa3b7cc));
@@ -420,7 +433,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
-        g.drawText(juce::String(pageIndex + 1), pageRect, juce::Justification::centred);
+        g.drawText(juce::String(pageIndex * 16 + 1) + "-" + juce::String((pageIndex + 1) * 16),
+                   pageRect, juce::Justification::centred);
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
