@@ -456,8 +456,10 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
+    const int safeCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                           pattern->cycleSteps);
     const int activeSteps = (int) std::count_if(
-        pattern->steps.begin(), pattern->steps.begin() + pattern->cycleSteps,
+        pattern->steps.begin(), pattern->steps.begin() + safeCycleSteps,
         [](const auto& step) { return step.enabled; });
     g.drawText("Pattern P" + juce::String(bank.activePattern + 1)
                    + "  |  " + juce::String(pattern->cycleSteps) + " pas"
