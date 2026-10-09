@@ -74,6 +74,8 @@ public:
         if (selectedTrack >= instrumentFirst
             && selectedTrack < instrumentFirst + getInstrumentTrackCount())
             drawStepSequencerDock(g, area);
+        else if (selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst)
+            drawMidiStepSequencer(g, area);
         else
         {
             g.fillAll(juce::Colour(0xff101b2a));
@@ -86,6 +88,8 @@ public:
                        area, juce::Justification::centred);
         }
     }
+    void drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area);
+    void clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void showFloatingStepSequencer();
     void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void handleStepSequencerClick(juce::Point<int> point, juce::Rectangle<int> area);
