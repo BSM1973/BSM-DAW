@@ -497,9 +497,15 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
         if (r.contains(point))
         {
-            pattern->stepCount = juce::jmax(pattern->stepCount, firstStep + i + 1);
-            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
-            pattern->steps[(size_t)(firstStep + i)].enabled = !pattern->steps[(size_t)(firstStep + i)].enabled;
+            auto& step = pattern->steps[(size_t)(firstStep + i)];
+            step.enabled = !step.enabled;
+            if (step.enabled)
+            {
+                // Only enabling a note extends the musical cycle. Disabling a
+                // step must never lengthen an otherwise shorter Pattern.
+                pattern->stepCount = juce::jmax(pattern->stepCount, firstStep + i + 1);
+                pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
+            }
             pattern->enabled = true;
             repaint();
             return;
