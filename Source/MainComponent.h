@@ -159,7 +159,10 @@ public:
         if (lengthTicks <= 0) return false;
         auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
         InstrumentStepSequencerBank::TimelinePatternClip clip;
-        clip.startSeconds = juce::jmax(0.0, playheadSeconds);
+        // Place newly created Patterns on the musical sixteenth-note grid.
+        const double sixteenthSeconds = 15.0 / juce::jmax(1.0, tempoBpm);
+        const double playhead = juce::jmax(0.0, playheadSeconds);
+        clip.startSeconds = std::round(playhead / sixteenthSeconds) * sixteenthSeconds;
         clip.lengthSeconds = juce::jmax(0.001, MidiEngine::tickToSeconds(lengthTicks, tempoBpm));
         clip.name = "Pattern " + juce::String(bank.activePattern + 1);
         clip.notes = notes;
