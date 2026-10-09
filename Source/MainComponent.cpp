@@ -422,11 +422,12 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
     const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
-    g.setColour(juce::Colour(0xff287d9d));
+    g.setColour(pattern->enabled ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
-    g.setColour(juce::Colours::white);
+    g.setColour(pattern->enabled ? juce::Colours::white : juce::Colour(0xff8293a6));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawText("CRÉER CLIP MIDI", exportButton, juce::Justification::centred);
+    g.drawText(pattern->enabled ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
+               exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
         const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
