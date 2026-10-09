@@ -464,7 +464,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         pattern->steps.begin(), pattern->steps.begin() + safeCycleSteps,
         [](const auto& step) { return step.enabled; });
     g.drawText("Pattern P" + juce::String(bank.activePattern + 1)
-                   + "  |  " + juce::String(pattern->cycleSteps) + " pas"
+                   + "  |  " + juce::String(safeCycleSteps) + " pas"
                    + "  |  " + juce::String(activeSteps) + " notes"
                    + "  |  Piano Roll indépendant",
                left, area.getY() + 197, width, 20, juce::Justification::left);
