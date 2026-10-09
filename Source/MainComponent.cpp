@@ -406,8 +406,16 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
-    g.drawText("Patterns MIDI indépendants - édition sans modifier le Piano Roll",
-               left, area.getY() + 161, width, 24, juce::Justification::left);
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
+    g.setColour(juce::Colour(0xff287d9d));
+    g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText("CRÉER CLIP MIDI", exportButton, juce::Justification::centred);
+    g.setColour(juce::Colour(0xffa3b7cc));
+    g.setFont(juce::Font(12.0f));
+    g.drawText("Piano Roll préservé jusqu'à l'export explicite",
+               left + 200, area.getY() + 163, juce::jmax(1, width - 200), 24, juce::Justification::left);
 }
 
 void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
@@ -416,6 +424,20 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
     const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
+    if (exportButton.contains(point))
+    {
+        const auto notes = LibertyStepSequencer::render(*pattern);
+        if (!notes.empty())
+        {
+            const double lengthSeconds = MidiEngine::tickToSeconds(
+                LibertyStepSequencer::getCycleLengthTicks(*pattern), tempoBpm);
+            commitLibertySequencerMidiClip(*this, notes, midiIndex,
+                                           playheadSeconds, juce::jmax(0.01, lengthSeconds));
+        }
+        repaint();
+        return;
+    }
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
