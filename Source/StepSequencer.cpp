@@ -233,6 +233,72 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
         publishInstrumentStepSequencer((int) lane);
         publishInstrumentArrangementClips((int) lane);
     }
+    // MIDI banks are independent of the instrument Pattern banks.
+    for (auto& bank : midiStepSequencers) bank = MidiStepSequencerBank {};
+    if (const auto* midiAll = root.getChildByName("MidiStepSequencers"))
+    {
+        for (auto* track = midiAll->getFirstChildElement(); track; track = track->getNextElement())
+        {
+            if (track->getTagName() != "Track") continue;
+            const int lane = track->getIntAttribute("lane", -1);
+            if (lane < 0 || (size_t) lane >= midiStepSequencers.size()) continue;
+            auto restored = midiStepSequencers[(size_t) lane];
+        restored.activePattern = juce::jlimit(0, 7, track->getIntAttribute("activePattern", 0));
+        for (auto* pe = track->getFirstChildElement(); pe; pe = pe->getNextElement())
+        {
+            if (pe->getTagName() != "Pattern") continue;
+            const int pi = pe->getIntAttribute("index", -1); if (pi < 0 || pi >= 8) continue;
+            auto p = restored.patterns[(size_t) pi];
+            p.enabled = pe->getBoolAttribute("enabled", p.enabled);
+            p.stepCount = juce::jlimit(1, LibertyStepSequencer::maxSteps, pe->getIntAttribute("stepCount", p.stepCount));
+            p.cycleSteps = juce::jlimit(1, p.stepCount, pe->getIntAttribute("cycleSteps", p.cycleSteps));
+            const double ticks = pe->getDoubleAttribute("stepTicks", (double) p.stepTicks);
+            // Limit malformed step durations before render multiplies them by
+            // rate modifiers, cycle length, ratchets and ping-pong positions.
+            // Values outside the safe musical range retain the default step.
+            if (std::isfinite(ticks) && ticks >= 1.0 && ticks <= 1.0e9)
+                p.stepTicks = (std::int64_t) std::llround(ticks);
+            p.rateModifier = (std::uint8_t) juce::jlimit(0, 2, pe->getIntAttribute("rateModifier", p.rateModifier));
+            p.direction = (LibertyStepSequencer::Direction) juce::jlimit(0, 3, pe->getIntAttribute("direction", (int)p.direction));
+            const double swing = pe->getDoubleAttribute("swing", p.swing);
+            if (std::isfinite(swing)) p.swing = (float) juce::jlimit(0.0, 0.75, swing);
+            p.root = (std::uint8_t) juce::jlimit(0, 11, pe->getIntAttribute("root", p.root));
+            p.scale = (LibertyStepSequencer::Scale) juce::jlimit(0, 3, pe->getIntAttribute("scale", (int)p.scale));
+            p.transpose = juce::jlimit(-12, 12, pe->getIntAttribute("transpose", p.transpose));
+            p.octaveShift = juce::jlimit(-4, 4, pe->getIntAttribute("octaveShift", p.octaveShift));
+            const double humanize = pe->getDoubleAttribute("humanize", p.humanize);
+            if (std::isfinite(humanize)) p.humanize = (float) juce::jlimit(0.0, 1.0, humanize);
+            p.euclideanPulses = juce::jlimit(1, p.stepCount, pe->getIntAttribute("euclideanPulses", p.euclideanPulses));
+            p.euclideanRotation = juce::jlimit(0, p.stepCount - 1, pe->getIntAttribute("euclideanRotation", p.euclideanRotation));
+            p.velocityLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("velocityLaneSteps", p.velocityLaneSteps));
+            p.gateLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("gateLaneSteps", p.gateLaneSteps));
+            p.probabilityLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("probabilityLaneSteps", p.probabilityLaneSteps));
+            p.ratchetLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("ratchetLaneSteps", p.ratchetLaneSteps));
+            for (auto* se = pe->getFirstChildElement(); se; se = se->getNextElement())
+            {
+                if (se->getTagName() != "Step") continue;
+                const int si = se->getIntAttribute("index", -1); if (si < 0 || si >= LibertyStepSequencer::maxSteps) continue;
+                auto st = p.steps[(size_t) si];
+                st.enabled = se->getBoolAttribute("enabled", st.enabled);
+                st.pitch = (std::uint8_t) juce::jlimit(0, 127, se->getIntAttribute("pitch", st.pitch));
+                st.velocity = (std::uint8_t) juce::jlimit(1, 127, se->getIntAttribute("velocity", st.velocity));
+                st.channel = (std::uint8_t) juce::jlimit(1, 16, se->getIntAttribute("channel", st.channel));
+                const double gate = se->getDoubleAttribute("gate", st.gate);
+                if (std::isfinite(gate)) st.gate = (float) juce::jlimit(0.01, 1.0, gate);
+                st.probability = (std::uint8_t) juce::jlimit(0, 100, se->getIntAttribute("probability", st.probability));
+                st.ratchet = (std::uint8_t) juce::jlimit(1, 8, se->getIntAttribute("ratchet", st.ratchet));
+                st.tie = se->getBoolAttribute("tie", st.tie); st.accent = se->getBoolAttribute("accent", st.accent);
+                st.octave = juce::jlimit(-2, 2, se->getIntAttribute("octave", st.octave));
+                const double microTiming = se->getDoubleAttribute("microTiming", st.microTiming);
+                if (std::isfinite(microTiming)) st.microTiming = (float) juce::jlimit(-0.5, 0.5, microTiming);
+                st.chord = (LibertyStepSequencer::Chord) juce::jlimit(0, 4, se->getIntAttribute("chord", (int)st.chord));
+                p.steps[(size_t) si] = st;
+            }
+            restored.patterns[(size_t) pi] = p;
+        }
+            midiStepSequencers[(size_t) lane] = restored;
+        }
+    }
     if (all == nullptr) return;
     for (auto* track = all->getFirstChildElement(); track; track = track->getNextElement())
     {
