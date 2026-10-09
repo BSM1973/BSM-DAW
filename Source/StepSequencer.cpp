@@ -222,12 +222,14 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 p.stepTicks = (std::int64_t) std::llround(ticks);
             p.rateModifier = (std::uint8_t) juce::jlimit(0, 2, pe->getIntAttribute("rateModifier", p.rateModifier));
             p.direction = (LibertyStepSequencer::Direction) juce::jlimit(0, 3, pe->getIntAttribute("direction", (int)p.direction));
-            p.swing = (float) juce::jlimit(0.0, 0.75, pe->getDoubleAttribute("swing", p.swing));
+            const double swing = pe->getDoubleAttribute("swing", p.swing);
+            if (std::isfinite(swing)) p.swing = (float) juce::jlimit(0.0, 0.75, swing);
             p.root = (std::uint8_t) juce::jlimit(0, 11, pe->getIntAttribute("root", p.root));
             p.scale = (LibertyStepSequencer::Scale) juce::jlimit(0, 3, pe->getIntAttribute("scale", (int)p.scale));
             p.transpose = juce::jlimit(-12, 12, pe->getIntAttribute("transpose", p.transpose));
             p.octaveShift = juce::jlimit(-4, 4, pe->getIntAttribute("octaveShift", p.octaveShift));
-            p.humanize = (float) juce::jlimit(0.0, 1.0, pe->getDoubleAttribute("humanize", p.humanize));
+            const double humanize = pe->getDoubleAttribute("humanize", p.humanize);
+            if (std::isfinite(humanize)) p.humanize = (float) juce::jlimit(0.0, 1.0, humanize);
             p.euclideanPulses = juce::jlimit(1, p.stepCount, pe->getIntAttribute("euclideanPulses", p.euclideanPulses));
             p.euclideanRotation = juce::jlimit(0, p.stepCount - 1, pe->getIntAttribute("euclideanRotation", p.euclideanRotation));
             p.velocityLaneSteps = juce::jlimit(1, p.cycleSteps, pe->getIntAttribute("velocityLaneSteps", p.velocityLaneSteps));
@@ -243,12 +245,14 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 st.pitch = (std::uint8_t) juce::jlimit(0, 127, se->getIntAttribute("pitch", st.pitch));
                 st.velocity = (std::uint8_t) juce::jlimit(1, 127, se->getIntAttribute("velocity", st.velocity));
                 st.channel = (std::uint8_t) juce::jlimit(1, 16, se->getIntAttribute("channel", st.channel));
-                st.gate = (float) juce::jlimit(0.01, 1.0, se->getDoubleAttribute("gate", st.gate));
+                const double gate = se->getDoubleAttribute("gate", st.gate);
+                if (std::isfinite(gate)) st.gate = (float) juce::jlimit(0.01, 1.0, gate);
                 st.probability = (std::uint8_t) juce::jlimit(0, 100, se->getIntAttribute("probability", st.probability));
                 st.ratchet = (std::uint8_t) juce::jlimit(1, 8, se->getIntAttribute("ratchet", st.ratchet));
                 st.tie = se->getBoolAttribute("tie", st.tie); st.accent = se->getBoolAttribute("accent", st.accent);
                 st.octave = juce::jlimit(-2, 2, se->getIntAttribute("octave", st.octave));
-                st.microTiming = (float) juce::jlimit(-0.5, 0.5, se->getDoubleAttribute("microTiming", st.microTiming));
+                const double microTiming = se->getDoubleAttribute("microTiming", st.microTiming);
+                if (std::isfinite(microTiming)) st.microTiming = (float) juce::jlimit(-0.5, 0.5, microTiming);
                 st.chord = (LibertyStepSequencer::Chord) juce::jlimit(0, 4, se->getIntAttribute("chord", (int)st.chord));
                 p.steps[(size_t) si] = st;
             }
