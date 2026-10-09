@@ -425,7 +425,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
     g.drawText("Piano Roll préservé jusqu'à l'export explicite",
-               left + 200, area.getY() + 163, juce::jmax(1, width - 200), 24, juce::Justification::left);
+               left, area.getY() + 197, width, 20, juce::Justification::left);
 }
 
 void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
@@ -447,6 +447,18 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         }
         repaint();
         return;
+    }
+    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
+    {
+        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 161, 47, 29);
+        if (pageRect.contains(point))
+        {
+            stepSequencerPage = pageIndex;
+            pattern->stepCount = juce::jmax(pattern->stepCount, (pageIndex + 1) * 16);
+            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
+            repaint();
+            return;
+        }
     }
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
