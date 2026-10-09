@@ -461,8 +461,10 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
-        g.drawText(juce::String(pageIndex * 16 + 1) + "-" + juce::String((pageIndex + 1) * 16),
-                   pageRect, juce::Justification::centred);
+        const bool compactPageButton = pageRect.getWidth() < 60;
+        g.drawFittedText(compactPageButton ? "P" + juce::String(pageIndex + 1)
+                                          : juce::String(pageIndex * 16 + 1) + "-" + juce::String((pageIndex + 1) * 16),
+                         pageRect.reduced(2, 0), juce::Justification::centred, 1);
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
