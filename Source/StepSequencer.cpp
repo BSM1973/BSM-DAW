@@ -189,11 +189,13 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
 void MainComponent::loadStepSequencers(const juce::XmlElement& root)
 {
     const auto* all = root.getChildByName("StepSequencers");
-    // Always discard the previous project's arrangement, including legacy projects
-    // which do not contain the StepSequencers XML section.
+    // Clear the entire previous bank, not only its arrangement clips.
+    // Older projects and tracks missing from the XML must not inherit the
+    // previous project's patterns, active selection or MIDI audition notes.
     for (size_t lane = 0; lane < instrumentStepSequencers.size(); ++lane)
     {
-        instrumentStepSequencers[lane].timelineClips.clear();
+        instrumentStepSequencers[lane] = InstrumentStepSequencerBank {};
+        publishInstrumentStepSequencer((int) lane);
         publishInstrumentArrangementClips((int) lane);
     }
     if (all == nullptr) return;
