@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "MidiEditor.h"
 void resizeLibertyDynamicTrackController(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
 void clearLibertyAudioClipResizeSource(AudioEngine&, int);
@@ -85,10 +86,31 @@ void MainComponent::paint(juce::Graphics& g)
     drawTrackArea(g, bounds);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    if (showStepSequencer)
+    if (showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, mixer);
     else
         drawMixer(g, mixer);
+
+    // Shared editor navigation for MIDI and instrument tracks.
+    const bool isMidi = selectedTrack >= getAudioTrackCount()
+                     && selectedTrack < instrumentFirst;
+    if (isMidi || showStepSequencer)
+    {
+        const auto tabs = juce::Rectangle<int>(juce::jmax(8, getWidth() - 254),
+                                               mixer.getY() + 7, 244, 28);
+        const auto piano = tabs.removeFromLeft(118);
+        const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
+        const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
+        {
+            g.setColour(active ? juce::Colour(0xff286c9a) : juce::Colour(0xff253344));
+            g.fillRoundedRectangle(rect.toFloat(), 5.0f);
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(12.0f, juce::Font::bold));
+            g.drawText(label, rect, juce::Justification::centred);
+        };
+        drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
+        drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
+    }
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
@@ -778,6 +800,31 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool selectedMidi = selectedTrack >= getAudioTrackCount()
+                           && selectedTrack < dockInstrumentFirst;
+    const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
+                                 && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 7
+        && p.y < getMixerTop() + 35)
+    {
+        const int tabX = juce::jmax(8, getWidth() - 254);
+        if (p.x >= tabX && p.x < tabX + 118)
+        {
+            dockStepSequencerMode = false;
+            openLibertyMidiEditor(*this);
+            repaint();
+            return;
+        }
+        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        {
+            // MIDI-track Pattern playback needs its own routing and persistence;
+            // do not pretend the instrument sequencer edits the selected MIDI track.
+            if (selectedInstrument) dockStepSequencerMode = true;
+            repaint();
+            return;
+        }
+    }
     if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
     const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
