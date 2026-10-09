@@ -88,7 +88,9 @@ void MainComponent::paint(juce::Graphics& g)
     drawTrackArea(g, bounds);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    if (showStepSequencer && dockStepSequencerMode)
+    if (dockStepSequencerMode && (selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst))
+        drawMidiStepSequencer(g, mixer);
+    else if (showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, mixer);
     else
         drawMixer(g, mixer);
@@ -372,9 +374,76 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
 
 }
 
+void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    g.fillAll(juce::Colour(0xff101b2a));
+    const int midiIndex = selectedTrack - getAudioTrackCount();
+    auto* pattern = getMidiStepSequencer(midiIndex);
+    if (!pattern) return;
+    const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(16.0f, juce::Font::bold));
+    g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
+    auto& bank = midiStepSequencers[(size_t)midiIndex];
+    for (int i = 0; i < 8; ++i)
+    {
+        auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
+                                      juce::jmax(1, width / 9 - 5), 29);
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+        g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        g.setColour(juce::Colours::white);
+        g.drawText("P" + juce::String(i + 1), r, juce::Justification::centred);
+    }
+    const int steps = juce::jlimit(1, 16, pattern->stepCount);
+    const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
+    for (int i = 0; i < steps; ++i)
+    {
+        auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
+        g.setColour(pattern->steps[(size_t)i].enabled ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
+        g.fillRoundedRectangle(r.toFloat(), 4.0f);
+        g.setColour(juce::Colours::white);
+        g.drawText(juce::String(i + 1), r, juce::Justification::centred);
+    }
+    g.setColour(juce::Colour(0xffa3b7cc));
+    g.setFont(juce::Font(12.0f));
+    g.drawText("Patterns MIDI indépendants - édition sans modifier le Piano Roll",
+               left, area.getY() + 161, width, 24, juce::Justification::left);
+}
+
+void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
+{
+    const int midiIndex = selectedTrack - getAudioTrackCount();
+    auto* pattern = getMidiStepSequencer(midiIndex);
+    if (!pattern) return;
+    const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
+    auto& bank = midiStepSequencers[(size_t)midiIndex];
+    for (int i = 0; i < 8; ++i)
+    {
+        auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
+                                      juce::jmax(1, width / 9 - 5), 29);
+        if (r.contains(point)) { bank.activePattern = i; repaint(); return; }
+    }
+    const int steps = juce::jlimit(1, 16, pattern->stepCount);
+    const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
+    for (int i = 0; i < steps; ++i)
+    {
+        auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
+        if (r.contains(point))
+        {
+            pattern->steps[(size_t)i].enabled = !pattern->steps[(size_t)i].enabled;
+            pattern->enabled = true;
+            repaint();
+            return;
+        }
+    }
+}
+
 void MainComponent::clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
 {
-    handleStepSequencerClick(point, area);
+    if (selectedTrack >= getAudioTrackCount() && selectedTrack < getAudioTrackCount() + getMidiTrackCount())
+        clickMidiStepSequencer(point, area);
+    else
+        handleStepSequencerClick(point, area);
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
