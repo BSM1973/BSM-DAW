@@ -163,6 +163,22 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
                 se->setAttribute("microTiming", (double) st.microTiming); se->setAttribute("chord", (int) st.chord);
             }
         }
+        for (const auto& clip : bank.timelineClips)
+        {
+            auto* ce = track->createNewChildElement("TimelineClip");
+            ce->setAttribute("name", clip.name);
+            ce->setAttribute("startSeconds", clip.startSeconds);
+            ce->setAttribute("lengthSeconds", clip.lengthSeconds);
+            for (const auto& note : clip.notes)
+            {
+                auto* ne = ce->createNewChildElement("Note");
+                ne->setAttribute("startTick", (double) note.startTick);
+                ne->setAttribute("lengthTicks", (double) note.lengthTicks);
+                ne->setAttribute("pitch", (int) note.pitch);
+                ne->setAttribute("velocity", (int) note.velocity);
+                ne->setAttribute("channel", (int) note.channel);
+            }
+        }
     }
 }
 
@@ -221,7 +237,39 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             }
             restored.patterns[(size_t) pi] = p;
         }
-        instrumentStepSequencers[(size_t) lane] = restored;
+        restored.timelineClips.clear();
+        for (auto* ce = track->getFirstChildElement(); ce; ce = ce->getNextElement())
+        {
+            if (ce->getTagName() != "TimelineClip") continue;
+            if (restored.timelineClips.size() >= 2048) break;
+            InstrumentStepSequencerBank::TimelinePatternClip clip;
+            clip.name = ce->getStringAttribute("name", "Pattern").trim().substring(0, 64);
+            if (clip.name.isEmpty()) clip.name = "Pattern";
+            clip.startSeconds = ce->getDoubleAttribute("startSeconds", 0.0);
+            clip.lengthSeconds = ce->getDoubleAttribute("lengthSeconds", 0.0);
+            if (!std::isfinite(clip.startSeconds) || !std::isfinite(clip.lengthSeconds)
+                || clip.startSeconds < 0.0 || clip.lengthSeconds <= 0.0) continue;
+            for (auto* ne = ce->getFirstChildElement(); ne; ne = ne->getNextElement())
+            {
+                if (ne->getTagName() != "Note") continue;
+                if (clip.notes.size() >= 8192) break;
+                const double start = ne->getDoubleAttribute("startTick", -1.0);
+                const double length = ne->getDoubleAttribute("lengthTicks", -1.0);
+                if (!std::isfinite(start) || !std::isfinite(length) || start < 0.0
+                    || length < 1.0 || start > 1.0e12 || length > 1.0e12) continue;
+                MidiEngine::NoteEvent note;
+                note.startTick = (std::int64_t) std::llround(start);
+                note.lengthTicks = (std::int64_t) std::llround(length);
+                note.pitch = (std::uint8_t) juce::jlimit(0, 127, ne->getIntAttribute("pitch", 60));
+                note.velocity = (std::uint8_t) juce::jlimit(1, 127, ne->getIntAttribute("velocity", 100));
+                note.channel = (std::uint8_t) juce::jlimit(1, 16, ne->getIntAttribute("channel", 1));
+                clip.notes.push_back(note);
+            }
+            restored.timelineClips.push_back(std::move(clip));
+        }
+        instrumentStepSequencers[(size_t) lane] = std::move(restored);
         publishInstrumentStepSequencer(lane);
+        if (!instrumentStepSequencers[(size_t) lane].timelineClips.empty())
+            publishInstrumentArrangementClips(lane);
     }
 }
