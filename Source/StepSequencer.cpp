@@ -269,7 +269,6 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
         }
         instrumentStepSequencers[(size_t) lane] = std::move(restored);
         publishInstrumentStepSequencer(lane);
-        if (!instrumentStepSequencers[(size_t) lane].timelineClips.empty())
-            publishInstrumentArrangementClips(lane);
+        publishInstrumentArrangementClips(lane);
     }
 }
