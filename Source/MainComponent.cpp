@@ -444,7 +444,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                                (float) r.getBottom() - 5.0f);
         }
         g.setColour(inCycle ? juce::Colours::white : juce::Colour(0xff758395));
-        g.drawText(juce::String(firstStep + i + 1), r, juce::Justification::centred);
+        g.setFont(juce::Font(cellWidth < 25 ? 10.0f : 12.0f, juce::Font::bold));
+        g.drawFittedText(juce::String(firstStep + i + 1), r.reduced(1, 0),
+                         juce::Justification::centred, 1);
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
