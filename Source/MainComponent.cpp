@@ -439,7 +439,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
-    g.drawText("Piano Roll préservé jusqu'à l'export explicite",
+    g.drawText("Pattern P" + juce::String(bank.activePattern + 1)
+                   + "  |  " + juce::String(pattern->cycleSteps) + " pas"
+                   + "  |  Piano Roll indépendant",
                left, area.getY() + 197, width, 20, juce::Justification::left);
 }
 
