@@ -378,6 +378,14 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
 {
     g.setColour(juce::Colour(0xff101b2a));
     g.fillRect(area);
+    if (area.getWidth() < 520 || area.getHeight() < 220)
+    {
+        g.setColour(juce::Colour(0xffa3b7cc));
+        g.setFont(juce::Font(13.0f));
+        g.drawFittedText("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI",
+                         area.reduced(12), juce::Justification::centred, 2);
+        return;
+    }
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
