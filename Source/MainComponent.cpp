@@ -467,9 +467,9 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
         if (pageRect.contains(point))
         {
+            // Page navigation is visual only: merely inspecting steps 49-64
+            // must not silently expand the musical length of the Pattern.
             stepSequencerPage = pageIndex;
-            pattern->stepCount = juce::jmax(pattern->stepCount, (pageIndex + 1) * 16);
-            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
             repaint();
             return;
         }
