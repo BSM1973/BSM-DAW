@@ -185,6 +185,13 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
 void MainComponent::loadStepSequencers(const juce::XmlElement& root)
 {
     const auto* all = root.getChildByName("StepSequencers");
+    // Always discard the previous project's arrangement, including legacy projects
+    // which do not contain the StepSequencers XML section.
+    for (size_t lane = 0; lane < instrumentStepSequencers.size(); ++lane)
+    {
+        instrumentStepSequencers[lane].timelineClips.clear();
+        publishInstrumentArrangementClips((int) lane);
+    }
     if (all == nullptr) return;
     for (auto* track = all->getFirstChildElement(); track; track = track->getNextElement())
     {
