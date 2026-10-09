@@ -167,8 +167,12 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
         {
             auto* ce = track->createNewChildElement("TimelineClip");
             ce->setAttribute("name", clip.name);
+            // Store musical coordinates alongside legacy seconds. Ticks preserve
+            // the exact Pattern placement when a project is reopened at its BPM.
             ce->setAttribute("startSeconds", clip.startSeconds);
             ce->setAttribute("lengthSeconds", clip.lengthSeconds);
+            ce->setAttribute("startTick", (double) MidiEngine::secondsToTick(clip.startSeconds, tempoBpm));
+            ce->setAttribute("lengthTicks", (double) MidiEngine::secondsToTick(clip.lengthSeconds, tempoBpm));
             for (const auto& note : clip.notes)
             {
                 auto* ne = ce->createNewChildElement("Note");
@@ -254,6 +258,18 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             if (clip.name.isEmpty()) clip.name = "Pattern";
             clip.startSeconds = ce->getDoubleAttribute("startSeconds", 0.0);
             clip.lengthSeconds = ce->getDoubleAttribute("lengthSeconds", 0.0);
+            // Prefer the musical coordinates for new projects; older projects
+            // still load from their original seconds attributes unchanged.
+            if (ce->hasAttribute("startTick") && ce->hasAttribute("lengthTicks"))
+            {
+                const double startTick = ce->getDoubleAttribute("startTick", -1.0);
+                const double lengthTicks = ce->getDoubleAttribute("lengthTicks", -1.0);
+                if (!std::isfinite(startTick) || !std::isfinite(lengthTicks)
+                    || startTick < 0.0 || lengthTicks < 1.0
+                    || startTick > 1.0e12 || lengthTicks > 1.0e12) continue;
+                clip.startSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(startTick), tempoBpm);
+                clip.lengthSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(lengthTicks), tempoBpm);
+            }
             if (!std::isfinite(clip.startSeconds) || !std::isfinite(clip.lengthSeconds)
                 || clip.startSeconds < 0.0 || clip.lengthSeconds <= 0.0) continue;
             for (auto* ne = ce->getFirstChildElement(); ne; ne = ne->getNextElement())
