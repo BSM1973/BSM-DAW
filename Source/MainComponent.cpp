@@ -414,7 +414,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
             g.fillEllipse((float) r.getRight() - 9.0f, (float) r.getY() + 4.0f, 5.0f, 5.0f);
         }
         g.setColour(juce::Colours::white);
-        g.drawText("P" + juce::String(i + 1), r, juce::Justification::centred);
+        g.setFont(juce::Font(r.getWidth() < 42 ? 10.0f : 12.0f, juce::Font::bold));
+        g.drawFittedText("P" + juce::String(i + 1), r.reduced(2, 0),
+                         juce::Justification::centred, 1);
     }
     const int steps = 16;
     const int page = juce::jlimit(0, 3, stepSequencerPage);
