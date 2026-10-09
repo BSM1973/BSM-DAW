@@ -396,8 +396,10 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
-        auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
-                                      juce::jmax(1, width / 9 - 5), 29);
+        const int bankStart = i * width / 8;
+        const int bankEnd = (i + 1) * width / 8;
+        auto r = juce::Rectangle<int>(left + bankStart, area.getY() + 48,
+                                      juce::jmax(1, bankEnd - bankStart - 5), 29);
         const auto& bankPattern = bank.patterns[(size_t) i];
         const int bankCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
                                                bankPattern.cycleSteps);
@@ -530,8 +532,10 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
-        auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
-                                      juce::jmax(1, width / 9 - 5), 29);
+        const int bankStart = i * width / 8;
+        const int bankEnd = (i + 1) * width / 8;
+        auto r = juce::Rectangle<int>(left + bankStart, area.getY() + 48,
+                                      juce::jmax(1, bankEnd - bankStart - 5), 29);
         if (r.contains(point))
         {
             bank.activePattern = i;
