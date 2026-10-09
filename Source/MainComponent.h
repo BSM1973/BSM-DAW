@@ -154,7 +154,9 @@ public:
         auto* pattern = getInstrumentStepSequencer(instrumentIndex);
         if (pattern == nullptr) return false;
         const auto notes = LibertyStepSequencer::render(*pattern);
-        if (notes.empty()) return false;
+        // The project loader restores at most 8192 notes per Pattern clip.
+        // Reject oversized renders instead of silently truncating on reopen.
+        if (notes.empty() || notes.size() > 8192) return false;
         const auto lengthTicks = LibertyStepSequencer::getCycleLengthTicks(*pattern);
         if (lengthTicks <= 0) return false;
         auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
