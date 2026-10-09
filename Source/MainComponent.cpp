@@ -69,6 +69,7 @@ MainComponent::MainComponent()
     pendingAudioStartSeconds.resize((size_t) audioEngine.getAudioTrackCount());
     pendingAudioWarpStates.resize((size_t) audioEngine.getAudioTrackCount());
     instrumentStepSequencers.resize((size_t) dynamicInstrumentTrackCount);
+    midiStepSequencers.resize((size_t) dynamicMidiTrackCount);
     audioEngine.initialise();
     projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
