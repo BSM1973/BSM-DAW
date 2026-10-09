@@ -62,8 +62,15 @@ void MainComponent::editTempo()
                         auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
                         for (auto& clip : clips)
                         {
-                            clip.startSeconds *= tempoRatio;
-                            clip.lengthSeconds *= tempoRatio;
+                            // Convert through integer MIDI ticks instead of repeatedly
+                            // multiplying floating-point seconds. This prevents gradual
+                            // musical drift after many back-and-forth tempo changes.
+                            const auto startTick = juce::jmax<std::int64_t>(
+                                0, MidiEngine::secondsToTick(clip.startSeconds, oldTempo));
+                            const auto lengthTicks = juce::jmax<std::int64_t>(
+                                1, MidiEngine::secondsToTick(clip.lengthSeconds, oldTempo));
+                            clip.startSeconds = MidiEngine::tickToSeconds(startTick, value);
+                            clip.lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, value);
                         }
                         if (!clips.empty())
                             publishInstrumentArrangementClips(instrumentIndex);
