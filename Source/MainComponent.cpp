@@ -458,11 +458,15 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
     const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
-    g.setColour(pattern->enabled ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+    const int playableCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->cycleSteps);
+    const bool hasPlayableNotes = std::any_of(pattern->steps.begin(),
+        pattern->steps.begin() + playableCycleSteps,
+        [](const auto& step) { return step.enabled; });
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
-    g.setColour(pattern->enabled ? juce::Colours::white : juce::Colour(0xff8293a6));
+    g.setColour(hasPlayableNotes ? juce::Colours::white : juce::Colour(0xff8293a6));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawText(pattern->enabled ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
+    g.drawText(hasPlayableNotes ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
                exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
@@ -503,11 +507,17 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         // Never create a timeline clip from an empty or disabled bank.
         // In particular, inactive notes outside the cycle must not be
         // mistaken for a playable Pattern.
-        if (!pattern->enabled)
+        const int playableCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                                   pattern->cycleSteps);
+        const bool hasPlayableNotes = std::any_of(
+            pattern->steps.begin(), pattern->steps.begin() + playableCycleSteps,
+            [](const auto& step) { return step.enabled; });
+        if (!hasPlayableNotes)
         {
             repaint();
             return;
         }
+        pattern->enabled = true;
         const auto notes = LibertyStepSequencer::render(*pattern);
         if (!notes.empty())
         {
