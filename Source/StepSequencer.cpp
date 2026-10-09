@@ -215,7 +215,11 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             p.stepCount = juce::jlimit(1, LibertyStepSequencer::maxSteps, pe->getIntAttribute("stepCount", p.stepCount));
             p.cycleSteps = juce::jlimit(1, p.stepCount, pe->getIntAttribute("cycleSteps", p.cycleSteps));
             const double ticks = pe->getDoubleAttribute("stepTicks", (double) p.stepTicks);
-            if (std::isfinite(ticks) && ticks >= 1.0 && ticks <= (double) std::numeric_limits<std::int64_t>::max()) p.stepTicks = (std::int64_t) std::llround(ticks);
+            // Limit malformed step durations before render multiplies them by
+            // rate modifiers, cycle length, ratchets and ping-pong positions.
+            // Values outside the safe musical range retain the default step.
+            if (std::isfinite(ticks) && ticks >= 1.0 && ticks <= 1.0e9)
+                p.stepTicks = (std::int64_t) std::llround(ticks);
             p.rateModifier = (std::uint8_t) juce::jlimit(0, 2, pe->getIntAttribute("rateModifier", p.rateModifier));
             p.direction = (LibertyStepSequencer::Direction) juce::jlimit(0, 3, pe->getIntAttribute("direction", (int)p.direction));
             p.swing = (float) juce::jlimit(0.0, 0.75, pe->getDoubleAttribute("swing", p.swing));
