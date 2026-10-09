@@ -451,6 +451,14 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
     if (exportButton.contains(point))
     {
+        // Never create a timeline clip from an empty or disabled bank.
+        // In particular, inactive notes outside the cycle must not be
+        // mistaken for a playable Pattern.
+        if (!pattern->enabled)
+        {
+            repaint();
+            return;
+        }
         const auto notes = LibertyStepSequencer::render(*pattern);
         if (!notes.empty())
         {
