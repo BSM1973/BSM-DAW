@@ -775,6 +775,40 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
     return false;
 }
 
+void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    const auto p = event.getPosition();
+    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
+    const int rowH = getLibertyTrackRowHeight();
+    const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
+    const int instrumentIndex = logicalRow - getAudioTrackCount() - getMidiTrackCount();
+    if (instrumentIndex < 0 || instrumentIndex >= (int) instrumentStepSequencers.size()) return;
+    auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+    for (int i = (int) clips.size() - 1; i >= 0; --i)
+    {
+        auto& clip = clips[(size_t) i];
+        const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+        const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+        if (p.x < left || p.x >= left + width) continue;
+        juce::AlertWindow renameDialog("Rename Pattern Clip", "Enter a name for this clip:",
+                                        juce::AlertWindow::NoIcon);
+        renameDialog.addTextEditor("name", clip.name, "Clip name:");
+        renameDialog.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        renameDialog.addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        if (renameDialog.runModalLoop() == 1)
+        {
+            const auto name = renameDialog.getTextEditorContents("name").trim();
+            if (name.isNotEmpty())
+            {
+                clip.name = name.substring(0, 64);
+                repaint();
+            }
+        }
+        return;
+    }
+}
+
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
