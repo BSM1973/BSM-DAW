@@ -1203,7 +1203,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
 
     if (p.y >= getMixerTop() && dockStepSequencerMode)
+    {
         handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
+        return;
+    }
 
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
