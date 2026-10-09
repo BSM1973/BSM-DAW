@@ -96,7 +96,7 @@ void MainComponent::paint(juce::Graphics& g)
                      && selectedTrack < instrumentFirst;
     if (isMidi || showStepSequencer)
     {
-        const auto tabs = juce::Rectangle<int>(juce::jmax(8, getWidth() - 254),
+        auto tabs = juce::Rectangle<int>(juce::jmax(8, getWidth() - 254),
                                                mixer.getY() + 7, 244, 28);
         const auto piano = tabs.removeFromLeft(118);
         const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
