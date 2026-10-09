@@ -51,6 +51,23 @@ void MainComponent::editTempo()
                 {
                     const double tempoRatio = oldTempo / value;
                     scaleLibertyMultiMidiClipsForTempoChange(*this, tempoRatio);
+                    // Keep existing Step Sequencer Pattern clips anchored to their
+                    // musical timeline positions and lengths when the BPM changes.
+                    // Clip notes remain in MIDI ticks; only their timeline seconds
+                    // need scaling before republishing to the instrument engine.
+                    for (int instrumentIndex = 0;
+                         instrumentIndex < (int) instrumentStepSequencers.size();
+                         ++instrumentIndex)
+                    {
+                        auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                        for (auto& clip : clips)
+                        {
+                            clip.startSeconds *= tempoRatio;
+                            clip.lengthSeconds *= tempoRatio;
+                        }
+                        if (!clips.empty())
+                            publishInstrumentArrangementClips(instrumentIndex);
+                    }
                     audioEngine.setCurrentTimeSeconds(transportBeforeTempoChange * tempoRatio);
                     if (wasPlayingBeforeTempoChange)
                         audioEngine.setPlaying(true);
