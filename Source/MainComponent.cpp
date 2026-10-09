@@ -110,7 +110,60 @@ void MainComponent::paint(juce::Graphics& g)
         };
         drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
+        if (showStepSequencer && dockStepSequencerMode)
+        {
+            const auto detach = juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), mixer.getY() + 7, 106, 28);
+            g.setColour(juce::Colour(0xff253344));
+            g.fillRoundedRectangle(detach.toFloat(), 5.0f);
+            g.setColour(juce::Colours::white);
+            g.drawText("DÉTACHER", detach, juce::Justification::centred);
+        }
     }
+}
+
+namespace
+{
+class FloatingStepSequencerContent final : public juce::Component, private juce::Timer
+{
+public:
+    explicit FloatingStepSequencerContent(MainComponent& main) : owner(main)
+    {
+        startTimerHz(15);
+    }
+    void paint(juce::Graphics& g) override
+    {
+        owner.paintFloatingStepSequencer(g, getLocalBounds());
+    }
+private:
+    void timerCallback() override { repaint(); }
+    MainComponent& owner;
+};
+
+class FloatingStepSequencerWindow final : public juce::DocumentWindow
+{
+public:
+    explicit FloatingStepSequencerWindow(MainComponent& main)
+        : juce::DocumentWindow("Liberty - Step Sequencer", juce::Colour(0xff101b2a),
+                               juce::DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new FloatingStepSequencerContent(main), true);
+        setResizable(true, true);
+        setResizeLimits(760, 220, 2200, 700);
+        centreWithSize(1200, 320);
+        setVisible(true);
+    }
+    void closeButtonPressed() override { setVisible(false); }
+};
+std::unique_ptr<FloatingStepSequencerWindow> floatingStepSequencerWindow;
+}
+
+void MainComponent::showFloatingStepSequencer()
+{
+    if (!floatingStepSequencerWindow)
+        floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
+    floatingStepSequencerWindow->setVisible(true);
+    floatingStepSequencerWindow->toFront(true);
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
@@ -800,6 +853,13 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
+        && juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), getMixerTop() + 7, 106, 28).contains(p))
+    {
+        showFloatingStepSequencer();
+        return;
+    }
     const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool selectedMidi = selectedTrack >= getAudioTrackCount()
                            && selectedTrack < dockInstrumentFirst;
