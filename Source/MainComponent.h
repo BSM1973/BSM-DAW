@@ -158,6 +158,9 @@ public:
         const auto lengthTicks = LibertyStepSequencer::getCycleLengthTicks(*pattern);
         if (lengthTicks <= 0) return false;
         auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
+        // Keep the same bound as project loading. Without this guard, a long
+        // session could create clips that would silently disappear on reopen.
+        if (bank.timelineClips.size() >= 2048) return false;
         InstrumentStepSequencerBank::TimelinePatternClip clip;
         // Use the same integer MIDI-tick snapping as Pattern drag/move.
         constexpr auto sixteenthTicks = MidiEngine::ticksPerQuarterNote / 4;
