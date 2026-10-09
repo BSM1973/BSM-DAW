@@ -483,6 +483,8 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
         if (r.contains(point))
         {
+            pattern->stepCount = juce::jmax(pattern->stepCount, firstStep + i + 1);
+            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
             pattern->steps[(size_t)(firstStep + i)].enabled = !pattern->steps[(size_t)(firstStep + i)].enabled;
             pattern->enabled = true;
             repaint();
