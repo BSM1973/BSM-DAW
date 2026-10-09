@@ -67,6 +67,12 @@ public:
         return additionalMidiClipLengthSeconds[(size_t)(track - 1)];
     }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
+    // Shared drawing entry point for the detachable Step Sequencer window.
+    void paintFloatingStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
+    {
+        drawStepSequencerDock(g, area);
+    }
+    void showFloatingStepSequencer();
     int addAudioTrack()
     {
         const int index = audioEngine.addAudioTrack();
