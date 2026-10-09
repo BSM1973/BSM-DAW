@@ -506,7 +506,11 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
                 pattern->stepCount = juce::jmax(pattern->stepCount, firstStep + i + 1);
                 pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
             }
-            pattern->enabled = true;
+            // A bank with no enabled notes should not be exported as an
+            // active Pattern; preserve its length for later editing.
+            pattern->enabled = std::any_of(pattern->steps.begin(),
+                                           pattern->steps.begin() + pattern->stepCount,
+                                           [](const auto& candidate) { return candidate.enabled; });
             repaint();
             return;
         }
