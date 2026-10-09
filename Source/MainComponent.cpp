@@ -1228,10 +1228,16 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
             {
                 const double deltaSeconds = ((double) event.position.x - (double) dragStartMouseX)
                                             / getLibertyTimelinePixelsPerSecond();
-                const double beat = 60.0 / juce::jmax(1.0, tempoBpm);
-                const double sixteenth = beat / 4.0;
                 const double target = juce::jmax(0.0, dragStartSeconds + deltaSeconds);
-                clips[(size_t) draggedPatternClip].startSeconds = std::round(target / sixteenth) * sixteenth;
+                // Snap by integer MIDI ticks so dragging and tempo changes share
+                // the same musical coordinate system (1/16 = 240 ticks).
+                constexpr auto sixteenthTicks = MidiEngine::ticksPerQuarterNote / 4;
+                const auto targetTick = juce::jmax<std::int64_t>(
+                    0, MidiEngine::secondsToTick(target, tempoBpm));
+                const auto snappedTick = ((targetTick + sixteenthTicks / 2) / sixteenthTicks)
+                                         * sixteenthTicks;
+                clips[(size_t) draggedPatternClip].startSeconds =
+                    MidiEngine::tickToSeconds(snappedTick, tempoBpm);
                 repaint();
             }
         }
