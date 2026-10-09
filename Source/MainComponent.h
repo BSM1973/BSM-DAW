@@ -70,7 +70,21 @@ public:
     // Shared drawing entry point for the detachable Step Sequencer window.
     void paintFloatingStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
     {
-        drawStepSequencerDock(g, area);
+        const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+        if (selectedTrack >= instrumentFirst
+            && selectedTrack < instrumentFirst + getInstrumentTrackCount())
+            drawStepSequencerDock(g, area);
+        else
+        {
+            g.fillAll(juce::Colour(0xff101b2a));
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(17.0f, juce::Font::bold));
+            g.drawText("STEP SEQUENCER", area.removeFromTop(65), juce::Justification::centred);
+            g.setColour(juce::Colour(0xffa3b7cc));
+            g.setFont(juce::Font(14.0f));
+            g.drawText("Sélectionnez une piste Instrument pour éditer ses Patterns.",
+                       area, juce::Justification::centred);
+        }
     }
     void showFloatingStepSequencer();
     void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
