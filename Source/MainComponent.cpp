@@ -390,9 +390,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     {
         auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
                                       juce::jmax(1, width / 9 - 5), 29);
-        const bool hasNotes = std::any_of(bank.patterns[(size_t) i].steps.begin(),
-                                          bank.patterns[(size_t) i].steps.begin()
-                                              + bank.patterns[(size_t) i].stepCount,
+        const auto& bankPattern = bank.patterns[(size_t) i];
+        const int bankCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                               bankPattern.cycleSteps);
+        const bool hasNotes = std::any_of(bankPattern.steps.begin(),
+                                          bankPattern.steps.begin() + bankCycleSteps,
                                           [](const auto& step) { return step.enabled; });
         g.setColour(i == bank.activePattern ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
