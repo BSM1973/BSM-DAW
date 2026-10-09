@@ -389,6 +389,13 @@ bool MainComponent::resetProjectState()
         audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
     dynamicMidiTrackCount = 1;
     dynamicInstrumentTrackCount = 1;
+    // A new project must not inherit Step Sequencer banks from the old one.
+    midiStepSequencers.clear();
+    midiStepSequencers.resize(1);
+    instrumentStepSequencers.clear();
+    instrumentStepSequencers.resize(1);
+    stepSequencerPage = 0;
+    stepSequencerSelectedStep = 0;
     trackScrollRows = 0;
     waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
     waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
