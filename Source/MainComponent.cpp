@@ -378,7 +378,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
 {
     g.setColour(juce::Colour(0xff101b2a));
     g.fillRect(area);
-    if (area.getWidth() < 520 || area.getHeight() < 220)
+    if (area.getWidth() < 360 || area.getHeight() < 220)
     {
         g.setColour(juce::Colour(0xffa3b7cc));
         g.setFont(juce::Font(13.0f));
@@ -448,7 +448,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
-    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
     g.setColour(pattern->enabled ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
     g.setColour(pattern->enabled ? juce::Colours::white : juce::Colour(0xff8293a6));
@@ -457,7 +457,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * juce::jmax(38, (width - 190) / 4), area.getY() + 161, juce::jmax(34, (width - 190) / 4 - 4), 29);
         g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
@@ -480,13 +480,13 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
 
 void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
 {
-    if (!area.contains(point) || area.getWidth() < 520 || area.getHeight() < 220)
+    if (!area.contains(point) || area.getWidth() < 360 || area.getHeight() < 220)
         return;
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
     const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
-    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(190, width), 29);
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
     if (exportButton.contains(point))
     {
         // Never create a timeline clip from an empty or disabled bank.
@@ -510,7 +510,7 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     }
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * juce::jmax(38, (width - 190) / 4), area.getY() + 161, juce::jmax(34, (width - 190) / 4 - 4), 29);
         if (pageRect.contains(point))
         {
             // Page navigation is visual only: merely inspecting steps 49-64
