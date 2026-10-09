@@ -276,6 +276,13 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             }
             if (!std::isfinite(clip.startSeconds) || !std::isfinite(clip.lengthSeconds)
                 || clip.startSeconds < 0.0 || clip.lengthSeconds <= 0.0) continue;
+            // Reject timeline values that cannot be represented safely as MIDI
+            // ticks. This also guards against damaged legacy seconds values.
+            constexpr double maxTimelineTicks = 1.0e12;
+            const double maxTimelineSeconds =
+                MidiEngine::tickToSeconds((std::int64_t) maxTimelineTicks, tempoBpm);
+            if (clip.startSeconds > maxTimelineSeconds
+                || clip.lengthSeconds > maxTimelineSeconds) continue;
             for (auto* ne = ce->getFirstChildElement(); ne; ne = ne->getNextElement())
             {
                 if (ne->getTagName() != "Note") continue;
