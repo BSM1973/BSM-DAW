@@ -204,14 +204,22 @@ void AudioEngine::setInstrumentArrangementClips(int instrumentTrack,
         snapshot = std::make_shared<InstrumentNoteSnapshot>();
         for (const auto& clip : clips)
         {
-            if (clip.lengthSeconds <= 0.0) continue;
+            if (!std::isfinite(clip.startSeconds) || !std::isfinite(clip.lengthSeconds)
+                || clip.startSeconds < 0.0 || clip.lengthSeconds <= 0.0) continue;
+            const double clipEnd = clip.startSeconds + clip.lengthSeconds;
+            if (!std::isfinite(clipEnd)) continue;
             for (const auto& note : clip.notes)
             {
+                if (note.startTick < 0 || note.lengthTicks <= 0
+                    || note.startTick > std::numeric_limits<std::int64_t>::max() - note.lengthTicks)
+                    continue;
                 InstrumentPlaybackNote playbackNote;
                 playbackNote.startSeconds = clip.startSeconds + MidiEngine::tickToSeconds(note.startTick, rate);
-                playbackNote.endSeconds = juce::jmin(clip.startSeconds + clip.lengthSeconds,
+                if (!std::isfinite(playbackNote.startSeconds) || playbackNote.startSeconds >= clipEnd) continue;
+                playbackNote.endSeconds = juce::jmin(clipEnd,
                     clip.startSeconds + MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate));
-                if (playbackNote.endSeconds <= playbackNote.startSeconds) continue;
+                if (!std::isfinite(playbackNote.endSeconds)
+                    || playbackNote.endSeconds <= playbackNote.startSeconds) continue;
                 playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
                 playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
                 playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
