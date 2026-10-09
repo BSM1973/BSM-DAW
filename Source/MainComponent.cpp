@@ -1062,40 +1062,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    const auto p = event.getPosition();
-    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
-        && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
-        && juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), getMixerTop() + 7, 106, 28).contains(p))
-    {
-        showFloatingStepSequencer();
-        return;
-    }
-    const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
-    const bool selectedMidi = selectedTrack >= getAudioTrackCount()
-                           && selectedTrack < dockInstrumentFirst;
-    const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
-                                 && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
-    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 7
-        && p.y < getMixerTop() + 35)
-    {
-        const int tabX = juce::jmax(8, getWidth() - 254);
-        if (p.x >= tabX && p.x < tabX + 118)
-        {
-            dockStepSequencerMode = false;
-            openLibertyMidiEditor(*this);
-            repaint();
-            return;
-        }
-        if (p.x >= tabX + 126 && p.x < tabX + 244)
-        {
-            // MIDI-track Pattern playback needs its own routing and persistence;
-            // do not pretend the instrument sequencer edits the selected MIDI track.
-            if (selectedInstrument) dockStepSequencerMode = true;
-            repaint();
-            return;
-        }
-    }
-    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
+    const auto p = event.getPosition();    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
     const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
     const int instrumentIndex = logicalRow - getAudioTrackCount() - getMidiTrackCount();
@@ -1135,6 +1102,39 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
+        && juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), getMixerTop() + 7, 106, 28).contains(p))
+    {
+        showFloatingStepSequencer();
+        return;
+    }
+    const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool selectedMidi = selectedTrack >= getAudioTrackCount()
+                           && selectedTrack < dockInstrumentFirst;
+    const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
+                                 && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 7
+        && p.y < getMixerTop() + 35)
+    {
+        const int tabX = juce::jmax(8, getWidth() - 254);
+        if (p.x >= tabX && p.x < tabX + 118)
+        {
+            dockStepSequencerMode = false;
+            openLibertyMidiEditor(*this);
+            repaint();
+            return;
+        }
+        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        {
+            // MIDI-track Pattern playback needs its own routing and persistence;
+            // do not pretend the instrument sequencer edits the selected MIDI track.
+            if (selectedInstrument) dockStepSequencerMode = true;
+            repaint();
+            return;
+        }
+    }
+
     const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
                                       && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
