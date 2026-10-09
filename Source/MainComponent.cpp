@@ -384,18 +384,6 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colours::white);
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
-    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
-    {
-        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 161, 47, 29);
-        if (pageRect.contains(point))
-        {
-            stepSequencerPage = pageIndex;
-            pattern->stepCount = juce::jmax(pattern->stepCount, (pageIndex + 1) * 16);
-            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
-            repaint();
-            return;
-        }
-    }
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
