@@ -417,10 +417,13 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     const int steps = 16;
     const int page = juce::jlimit(0, 3, stepSequencerPage);
     const int firstStep = page * 16;
-    const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
+    const int gap = 4, availableCellsWidth = width - (steps - 1) * gap;
     for (int i = 0; i < steps; ++i)
     {
-        auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
+        const int cellStart = (i * availableCellsWidth) / steps;
+        const int cellEnd = ((i + 1) * availableCellsWidth) / steps;
+        const int cellWidth = cellEnd - cellStart;
+        auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
         const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
         const bool inCycle = firstStep + i < pattern->cycleSteps;
         g.setColour(active ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
@@ -541,10 +544,13 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     const int steps = 16;
     const int page = juce::jlimit(0, 3, stepSequencerPage);
     const int firstStep = page * 16;
-    const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
+    const int gap = 4, availableCellsWidth = width - (steps - 1) * gap;
     for (int i = 0; i < steps; ++i)
     {
-        auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
+        const int cellStart = (i * availableCellsWidth) / steps;
+        const int cellEnd = ((i + 1) * availableCellsWidth) / steps;
+        const int cellWidth = cellEnd - cellStart;
+        auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
         if (r.contains(point))
         {
             auto& step = pattern->steps[(size_t)(firstStep + i)];
