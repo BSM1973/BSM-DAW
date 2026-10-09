@@ -459,7 +459,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * juce::jmax(38, (width - 190) / 4), area.getY() + 161, juce::jmax(34, (width - 190) / 4 - 4), 29);
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
         g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
@@ -514,7 +514,7 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     }
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * juce::jmax(38, (width - 190) / 4), area.getY() + 161, juce::jmax(34, (width - 190) / 4 - 4), 29);
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
         if (pageRect.contains(point))
         {
             // Page navigation is visual only: merely inspecting steps 49-64
