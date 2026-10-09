@@ -1417,11 +1417,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
             if (trackMuted || (anyPlaybackSolo && !trackSolo)) continue;
+            // Arrangement notes already contain absolute timeline positions.
+            // The independent Step Sequencer preview uses its own note snapshot
+            // and duration, never a fabricated one-second arrangement length.
             const auto arrangementNotes = std::atomic_load(&state.arrangementSnapshot);
             const auto noteSnapshot = arrangementNotes != nullptr ? arrangementNotes : std::atomic_load(&state.noteSnapshot);
-            const auto clipStart=arrangementNotes != nullptr ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
-            const auto clipLength=arrangementNotes != nullptr ? 1.0 : state.clipLengthSeconds.load(std::memory_order_relaxed);
-            if (!hasInstrument || noteSnapshot == nullptr || noteSnapshot->notes.empty() || clipLength<=0.0) continue;
+            const auto clipStart = arrangementNotes != nullptr ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
+            if (!hasInstrument || noteSnapshot == nullptr || noteSnapshot->notes.empty()) continue;
+            if (arrangementNotes == nullptr && state.clipLengthSeconds.load(std::memory_order_relaxed) <= 0.0) continue;
             juce::MidiBuffer midi;
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
