@@ -465,7 +465,14 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     {
         auto r = juce::Rectangle<int>(left + i * juce::jmax(1, width / 9), area.getY() + 48,
                                       juce::jmax(1, width / 9 - 5), 29);
-        if (r.contains(point)) { bank.activePattern = i; repaint(); return; }
+        if (r.contains(point))
+        {
+            bank.activePattern = i;
+            stepSequencerPage = 0;
+            stepSequencerSelectedStep = 0;
+            repaint();
+            return;
+        }
     }
     const int steps = 16;
     const int page = juce::jlimit(0, 3, stepSequencerPage);
