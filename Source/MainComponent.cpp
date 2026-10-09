@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "MidiEditor.h"
+void closeFloatingStepSequencerWindow();
 void resizeLibertyDynamicTrackController(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
 void clearLibertyAudioClipResizeSource(AudioEngine&, int);
@@ -74,7 +75,7 @@ MainComponent::MainComponent()
     startTimerHz(30);
 }
 
-MainComponent::~MainComponent() = default;
+MainComponent::~MainComponent() { closeFloatingStepSequencerWindow(); }
 
 void MainComponent::paint(juce::Graphics& g)
 {
@@ -157,6 +158,8 @@ public:
 };
 std::unique_ptr<FloatingStepSequencerWindow> floatingStepSequencerWindow;
 }
+
+void closeFloatingStepSequencerWindow() { floatingStepSequencerWindow.reset(); }
 
 void MainComponent::showFloatingStepSequencer()
 {
