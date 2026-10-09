@@ -208,6 +208,14 @@ juce::String MainComponent::getProjectStateSignature() const
     for (const auto& note : midiEngine.getNotesCopy())
         signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ';';
 
+    // Step Sequencer Patterns and their timeline clips are part of the project.
+    // Include their serialized state so editing, moving, creating or renaming a
+    // Pattern correctly triggers the unsaved-changes confirmation.
+    juce::XmlElement stepSequencerState("Signature");
+    saveStepSequencers(stepSequencerState);
+    signature << "|stepSequencersHash="
+              << juce::String::toHexString((juce::int64) stepSequencerState.toString().hashCode64());
+
     return signature;
 }
 
