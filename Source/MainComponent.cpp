@@ -472,6 +472,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
 
 void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
 {
+    if (!area.contains(point)) return;
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
