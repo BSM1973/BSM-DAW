@@ -425,6 +425,14 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
             g.setColour(juce::Colour(0xff79b9d1));
             g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.2f);
         }
+        if (i > 0 && i % 4 == 0)
+        {
+            // A subtle bar-group separator helps reading 16-step pages.
+            g.setColour(juce::Colour(0xff54758b));
+            const float markerX = (float) r.getX() - 2.0f;
+            g.drawVerticalLine((int) markerX, (float) r.getY() + 5.0f,
+                               (float) r.getBottom() - 5.0f);
+        }
         g.setColour(inCycle ? juce::Colours::white : juce::Colour(0xff758395));
         g.drawText(juce::String(firstStep + i + 1), r, juce::Justification::centred);
     }
