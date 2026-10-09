@@ -791,20 +791,26 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
         const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
         const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
         if (p.x < left || p.x >= left + width) continue;
-        juce::AlertWindow renameDialog("Rename Pattern Clip", "Enter a name for this clip:",
-                                        juce::AlertWindow::NoIcon);
-        renameDialog.addTextEditor("name", clip.name, "Clip name:");
-        renameDialog.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-        renameDialog.addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
-        if (renameDialog.runModalLoop() == 1)
-        {
-            const auto name = renameDialog.getTextEditorContents("name").trim();
-            if (name.isNotEmpty())
+        auto* renameDialog = new juce::AlertWindow("Rename Pattern Clip", "Enter a name for this clip:",
+                                                     juce::AlertWindow::NoIcon);
+        renameDialog->addTextEditor("name", clip.name, "Clip name:");
+        renameDialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        renameDialog->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        renameDialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safeThis, instrumentIndex, i, renameDialog](int result)
             {
-                clip.name = name.substring(0, 64);
-                repaint();
-            }
-        }
+                if (result != 1 || safeThis == nullptr) return;
+                if (instrumentIndex < 0 || instrumentIndex >= (int) safeThis->instrumentStepSequencers.size()) return;
+                auto& savedClips = safeThis->instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                if (i < 0 || i >= (int) savedClips.size()) return;
+                const auto name = renameDialog->getTextEditorContents("name").trim();
+                if (name.isNotEmpty())
+                {
+                    savedClips[(size_t) i].name = name.substring(0, 64);
+                    safeThis->repaint();
+                }
+            }), true);
         return;
     }
 }
