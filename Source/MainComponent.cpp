@@ -156,11 +156,29 @@ public:
         setContentOwned(new FloatingStepSequencerContent(main), true);
         setResizable(true, true);
         setResizeLimits(760, 220, 2200, 700);
-        centreWithSize(1200, 320);
+        if (lastFloatingStepSequencerBounds.isEmpty())
+            centreWithSize(1200, 320);
+        else
+            setBounds(lastFloatingStepSequencerBounds);
         setVisible(true);
     }
     void closeButtonPressed() override { setVisible(false); }
+    void moved() override { rememberBounds(); }
+    void resized() override
+    {
+        juce::DocumentWindow::resized();
+        rememberBounds();
+    }
+private:
+    void rememberBounds()
+    {
+        if (getWidth() >= 760 && getHeight() >= 220)
+            lastFloatingStepSequencerBounds = getBounds();
+    }
+public:
+    static juce::Rectangle<int> lastFloatingStepSequencerBounds;
 };
+juce::Rectangle<int> FloatingStepSequencerWindow::lastFloatingStepSequencerBounds;
 std::unique_ptr<FloatingStepSequencerWindow> floatingStepSequencerWindow;
 }
 
