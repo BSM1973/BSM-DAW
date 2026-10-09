@@ -429,7 +429,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.drawText("CRÉER CLIP MIDI", exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 161, 47, 29);
+        const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
         g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
@@ -464,7 +464,7 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     }
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
-        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 161, 47, 29);
+        const auto pageRect = juce::Rectangle<int>(left + 210 + pageIndex * 72, area.getY() + 161, 67, 29);
         if (pageRect.contains(point))
         {
             stepSequencerPage = pageIndex;
