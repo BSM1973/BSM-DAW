@@ -184,6 +184,41 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
             }
         }
     }
+    auto* midiAll = root.createNewChildElement("MidiStepSequencers");
+    for (size_t lane = 0; lane < midiStepSequencers.size(); ++lane)
+    {
+        const auto& bank = midiStepSequencers[lane];
+        auto* track = midiAll->createNewChildElement("Track");
+        track->setAttribute("lane", (int) lane);
+        track->setAttribute("activePattern", juce::jlimit(0, 7, bank.activePattern));
+        for (int pi = 0; pi < 8; ++pi)
+        {
+            const auto& p = bank.patterns[(size_t) pi];
+            auto* pe = track->createNewChildElement("Pattern");
+            pe->setAttribute("index", pi); pe->setAttribute("enabled", p.enabled);
+            pe->setAttribute("stepCount", p.stepCount); pe->setAttribute("cycleSteps", p.cycleSteps);
+            pe->setAttribute("stepTicks", (double) p.stepTicks); pe->setAttribute("rateModifier", (int) p.rateModifier);
+            pe->setAttribute("direction", (int) p.direction); pe->setAttribute("swing", (double) p.swing);
+            pe->setAttribute("root", (int) p.root); pe->setAttribute("scale", (int) p.scale);
+            pe->setAttribute("transpose", p.transpose); pe->setAttribute("octaveShift", p.octaveShift);
+            pe->setAttribute("humanize", (double) p.humanize); pe->setAttribute("euclideanPulses", p.euclideanPulses);
+            pe->setAttribute("euclideanRotation", p.euclideanRotation); pe->setAttribute("velocityLaneSteps", p.velocityLaneSteps);
+            pe->setAttribute("gateLaneSteps", p.gateLaneSteps); pe->setAttribute("probabilityLaneSteps", p.probabilityLaneSteps);
+            pe->setAttribute("ratchetLaneSteps", p.ratchetLaneSteps);
+            for (int si = 0; si < LibertyStepSequencer::maxSteps; ++si)
+            {
+                const auto& st = p.steps[(size_t) si];
+                auto* se = pe->createNewChildElement("Step"); se->setAttribute("index", si);
+                se->setAttribute("enabled", st.enabled); se->setAttribute("pitch", (int) st.pitch);
+                se->setAttribute("velocity", (int) st.velocity); se->setAttribute("channel", (int) st.channel);
+                se->setAttribute("gate", (double) st.gate); se->setAttribute("probability", (int) st.probability);
+                se->setAttribute("ratchet", (int) st.ratchet); se->setAttribute("tie", st.tie);
+                se->setAttribute("accent", st.accent); se->setAttribute("octave", st.octave);
+                se->setAttribute("microTiming", (double) st.microTiming); se->setAttribute("chord", (int) st.chord);
+            }
+        }
+    }
+
 }
 
 void MainComponent::loadStepSequencers(const juce::XmlElement& root)
