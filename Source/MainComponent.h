@@ -73,6 +73,8 @@ public:
         drawStepSequencerDock(g, area);
     }
     void showFloatingStepSequencer();
+    void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
+    void handleStepSequencerClick(juce::Point<int> point, juce::Rectangle<int> area);
     int addAudioTrack()
     {
         const int index = audioEngine.addAudioTrack();
