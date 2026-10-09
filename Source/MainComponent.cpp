@@ -384,6 +384,18 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colours::white);
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
+    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
+    {
+        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 48, 47, 29);
+        if (pageRect.contains(point))
+        {
+            stepSequencerPage = pageIndex;
+            pattern->stepCount = juce::jmax(pattern->stepCount, (pageIndex + 1) * 16);
+            pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
+            repaint();
+            return;
+        }
+    }
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
@@ -394,15 +406,17 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         g.setColour(juce::Colours::white);
         g.drawText("P" + juce::String(i + 1), r, juce::Justification::centred);
     }
-    const int steps = juce::jlimit(1, 16, pattern->stepCount);
+    const int steps = 16;
+    const int page = juce::jlimit(0, 3, stepSequencerPage);
+    const int firstStep = page * 16;
     const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
     for (int i = 0; i < steps; ++i)
     {
         auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
-        g.setColour(pattern->steps[(size_t)i].enabled ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
+        g.setColour(pattern->steps[(size_t)(firstStep + i)].enabled ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         g.setColour(juce::Colours::white);
-        g.drawText(juce::String(i + 1), r, juce::Justification::centred);
+        g.drawText(juce::String(firstStep + i + 1), r, juce::Justification::centred);
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
@@ -412,6 +426,14 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colours::white);
     g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.drawText("CRÉER CLIP MIDI", exportButton, juce::Justification::centred);
+    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
+    {
+        const auto pageRect = juce::Rectangle<int>(left + 225 + pageIndex * 52, area.getY() + 48, 47, 29);
+        g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+        g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
+        g.setColour(juce::Colours::white);
+        g.drawText(juce::String(pageIndex + 1), pageRect, juce::Justification::centred);
+    }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
     g.drawText("Piano Roll préservé jusqu'à l'export explicite",
@@ -445,14 +467,16 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
                                       juce::jmax(1, width / 9 - 5), 29);
         if (r.contains(point)) { bank.activePattern = i; repaint(); return; }
     }
-    const int steps = juce::jlimit(1, 16, pattern->stepCount);
+    const int steps = 16;
+    const int page = juce::jlimit(0, 3, stepSequencerPage);
+    const int firstStep = page * 16;
     const int gap = 4, cellWidth = juce::jmax(1, (width - (steps - 1) * gap) / steps);
     for (int i = 0; i < steps; ++i)
     {
         auto r = juce::Rectangle<int>(left + i * (cellWidth + gap), area.getY() + 95, cellWidth, 52);
         if (r.contains(point))
         {
-            pattern->steps[(size_t)i].enabled = !pattern->steps[(size_t)i].enabled;
+            pattern->steps[(size_t)(firstStep + i)].enabled = !pattern->steps[(size_t)(firstStep + i)].enabled;
             pattern->enabled = true;
             repaint();
             return;
