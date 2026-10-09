@@ -299,6 +299,9 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 note.channel = (std::uint8_t) juce::jlimit(1, 16, ne->getIntAttribute("channel", 1));
                 clip.notes.push_back(note);
             }
+            // A Pattern clip with no valid MIDI notes cannot play. Skip
+            // malformed or empty clip data instead of restoring a silent block.
+            if (clip.notes.empty()) continue;
             restored.timelineClips.push_back(std::move(clip));
         }
         instrumentStepSequencers[(size_t) lane] = std::move(restored);
