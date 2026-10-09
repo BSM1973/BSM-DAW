@@ -456,8 +456,12 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     }
     g.setColour(juce::Colour(0xffa3b7cc));
     g.setFont(juce::Font(12.0f));
+    const int activeSteps = (int) std::count_if(
+        pattern->steps.begin(), pattern->steps.begin() + pattern->cycleSteps,
+        [](const auto& step) { return step.enabled; });
     g.drawText("Pattern P" + juce::String(bank.activePattern + 1)
                    + "  |  " + juce::String(pattern->cycleSteps) + " pas"
+                   + "  |  " + juce::String(activeSteps) + " notes"
                    + "  |  Piano Roll indépendant",
                left, area.getY() + 197, width, 20, juce::Justification::left);
 }
