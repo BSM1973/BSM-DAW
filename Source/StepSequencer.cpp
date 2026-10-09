@@ -264,11 +264,15 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             {
                 const double startTick = ce->getDoubleAttribute("startTick", -1.0);
                 const double lengthTicks = ce->getDoubleAttribute("lengthTicks", -1.0);
-                if (!std::isfinite(startTick) || !std::isfinite(lengthTicks)
-                    || startTick < 0.0 || lengthTicks < 1.0
-                    || startTick > 1.0e12 || lengthTicks > 1.0e12) continue;
-                clip.startSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(startTick), tempoBpm);
-                clip.lengthSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(lengthTicks), tempoBpm);
+                // A damaged or partially written tick pair should not erase a
+                // valid clip: fall back to the legacy seconds attributes.
+                if (std::isfinite(startTick) && std::isfinite(lengthTicks)
+                    && startTick >= 0.0 && lengthTicks >= 1.0
+                    && startTick <= 1.0e12 && lengthTicks <= 1.0e12)
+                {
+                    clip.startSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(startTick), tempoBpm);
+                    clip.lengthSeconds = MidiEngine::tickToSeconds((std::int64_t) std::llround(lengthTicks), tempoBpm);
+                }
             }
             if (!std::isfinite(clip.startSeconds) || !std::isfinite(clip.lengthSeconds)
                 || clip.startSeconds < 0.0 || clip.lengthSeconds <= 0.0) continue;
