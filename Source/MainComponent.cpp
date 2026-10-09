@@ -135,6 +135,11 @@ public:
     {
         owner.paintFloatingStepSequencer(g, getLocalBounds());
     }
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        owner.clickFloatingStepSequencer(event.getPosition(), getLocalBounds());
+        repaint();
+    }
 private:
     void timerCallback() override { repaint(); }
     MainComponent& owner;
@@ -167,6 +172,190 @@ void MainComponent::showFloatingStepSequencer()
         floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
     floatingStepSequencerWindow->setVisible(true);
     floatingStepSequencerWindow->toFront(true);
+}
+
+void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
+{
+    const int audioTrackCount = getAudioTrackCount();
+    const int midiTrackCount = getMidiTrackCount();
+    const int instrumentTrackCount = getInstrumentTrackCount();
+    // Step Sequencer hit-test for the selected Instrument row.
+    {
+        if (p.y >= area.getY())
+        {
+            const int logicalRow = selectedTrack;
+            const int instrumentFirst = audioTrackCount + midiTrackCount;
+            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)
+            {
+                const int instrumentIndex = logicalRow - instrumentFirst;
+                if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
+                {
+                    auto panel = area;
+                    const int dockInset = 8;
+                    panel = panel.reduced(dockInset, 6);
+                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
+                    {
+                        const int availableWidth = juce::jmax(1, panel.getWidth());
+                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
+                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
+                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
+                    };
+                    const int titleWidth = 132;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
+                    auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, 30);
+                    if (seqPlay.contains(p))
+                    {
+                        if (audioEngine.isStepPreviewPlaying()) audioEngine.setStepPreview(instrumentIndex, false);
+                        else if (!audioEngine.isPlaying()) audioEngine.setStepPreview(instrumentIndex, true);
+                        repaint(); return;
+                    }
+                    if (onOff.contains(p))
+                    {
+                        pattern->enabled = !pattern->enabled;
+                        publishInstrumentStepSequencer(instrumentIndex);
+                        repaint();
+                        return;
+                    }
+                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
+                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
+                    for (int s = 0; s < 16; ++s)
+                    {
+                        const int absoluteStep = firstStep + s;
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
+                        if (pad.contains(p) && absoluteStep < pattern->stepCount)
+                        {
+                            stepSequencerSelectedStep = absoluteStep;
+                            pattern->steps[(size_t)absoluteStep].enabled = !pattern->steps[(size_t)absoluteStep].enabled;
+                            publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                        }
+                    }
+                    const int controlsY = panel.getY() + 42;
+                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16)).contains(p); };
+                    int cx = panel.getX();
+                    const int counts[] = {16,32,64};
+                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=(n == 2 ? 42 : 34); }
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
+                    for (int r=0;r<5;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
+                    for (int m=0;m<3;++m) { if(hit(cx,34)) { pattern->rateModifier=(std::uint8_t)m; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=38; }
+                    if (hit(cx,44)) { pattern->direction=(LibertyStepSequencer::Direction)(((int)pattern->direction+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=48;
+                    if (hit(cx,62)) { pattern->swing = pattern->swing >= 0.50f ? 0.0f : pattern->swing + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    cx += 68;
+                    const int pages = juce::jmax(1,(pattern->stepCount+15)/16);
+                    for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
+                    const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
+                    auto& editStep = pattern->steps[(size_t)selectedStep];
+                    const int editY = controlsY + 36;
+                    auto editHit = [&](int x, int w) { return stretchedControl(x, w, editY, 26, 780).contains(p); };
+                    int ex = panel.getX() + 56;
+                    if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
+                    if (editHit(ex,54)) { editStep.velocity = (std::uint8_t)(editStep.velocity >= 127 ? 20 : juce::jmin(127, (int)editStep.velocity + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 58;
+                    if (editHit(ex,66)) { editStep.gate = editStep.gate >= 1.0f ? 0.10f : juce::jmin(1.0f, editStep.gate + 0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
+                    if (editHit(ex,66)) { editStep.probability = (std::uint8_t)(editStep.probability >= 100 ? 10 : juce::jmin(100, (int)editStep.probability + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
+                    if (editHit(ex,62)) { editStep.ratchet = (std::uint8_t)(editStep.ratchet >= 8 ? 1 : editStep.ratchet + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 66;
+                    if (editHit(ex,38)) { editStep.accent = !editStep.accent; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
+                    if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
+                    if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
+                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
+                    if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
+                    if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    const int actionY = editY + 36;
+                    auto actionHit = [&](int x, int w) { return stretchedControl(x, w, actionY, 26, 1260).contains(p); };
+                    int ax = panel.getX();
+                    if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
+                    if (actionHit(ax,58))
+                    {
+                        for (int s=0;s<pattern->stepCount;++s)
+                        {
+                            auto& st=pattern->steps[(size_t)s];
+                            const unsigned h=(unsigned)(s*1664525u+1013904223u);
+                            st.enabled=(h%100u)<55u; st.velocity=(std::uint8_t)(70u+(h%58u)); st.probability=(std::uint8_t)(70u+(h%31u));
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 62;
+                    if (actionHit(ax,62)) { std::reverse(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 66;
+                    if (actionHit(ax,56))
+                    {
+                        if(pattern->stepCount>1) std::rotate(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount-1, pattern->steps.begin()+pattern->stepCount);
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 60;
+                    if (actionHit(ax,72))
+                    {
+                        const int half=pattern->stepCount/2;
+                        if(half>0) for(int s=0;s<half && s+half<pattern->stepCount;++s) pattern->steps[(size_t)(s+half)]=pattern->steps[(size_t)s];
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 80;
+                    if (actionHit(ax,52)) { if (commitInstrumentStepSequencerToMidiClip(instrumentIndex, juce::jlimit(0, juce::jmax(0, getMidiTrackCount() - 1), stepSequencerMidiTarget))) repaint(); return; } ax += 56;
+                    if (actionHit(ax,58)) { draggingStepSequencerPattern=true; draggedStepSequencerInstrument=instrumentIndex; repaint(); return; } ax += 62;
+                    if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
+                    if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
+                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,52)) { pattern->octaveShift=pattern->octaveShift>=4 ? -4 : pattern->octaveShift+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 56;
+                    if (actionHit(ax,60)) { pattern->humanize=pattern->humanize>=1.0f ? 0.0f : juce::jmin(1.0f,pattern->humanize+0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 64;
+                    if (actionHit(ax,68))
+                    {
+                        pattern->euclideanPulses = pattern->euclideanPulses >= pattern->stepCount ? 1 : pattern->euclideanPulses + 1;
+                        const int pulses = juce::jlimit(1, pattern->stepCount, pattern->euclideanPulses);
+                        for (int s=0; s<pattern->stepCount; ++s)
+                        {
+                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
+                            pattern->steps[(size_t)s].enabled = ((rotated * pulses) % pattern->stepCount) < pulses;
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 72;
+                    if (actionHit(ax,70))
+                    {
+                        pattern->euclideanRotation = (pattern->euclideanRotation + 1) % juce::jmax(1,pattern->stepCount);
+                        const int pulses=juce::jlimit(1,pattern->stepCount,pattern->euclideanPulses);
+                        for(int s=0;s<pattern->stepCount;++s)
+                        {
+                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
+                            pattern->steps[(size_t)s].enabled=((rotated*pulses)%pattern->stepCount)<pulses;
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    } ax += 74;
+                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,42)) { pattern->velocityLaneSteps=pattern->velocityLaneSteps>=pattern->cycleSteps?1:pattern->velocityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->gateLaneSteps=pattern->gateLaneSteps>=pattern->cycleSteps?1:pattern->gateLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->probabilityLaneSteps=pattern->probabilityLaneSteps>=pattern->cycleSteps?1:pattern->probabilityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->ratchetLaneSteps=pattern->ratchetLaneSteps>=pattern->cycleSteps?1:pattern->ratchetLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 46;
+                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
+                    if (createClipButton.contains(p))
+                    {
+                        createInstrumentPatternClip(instrumentIndex);
+                        return;
+                    }
+                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
+                    {
+                        for (int bankIndex=0; bankIndex<8; ++bankIndex)
+                        {
+                            const int gap = 5;
+                            const int width = juce::jmax(1, (panel.getWidth() - 7 * gap) / 8);
+                            const auto patRect = juce::Rectangle<int>(panel.getX() + bankIndex * (width + gap), panel.getBottom() - 30, width, 28);
+                            if (patRect.contains(p))
+                            {
+                                instrumentStepSequencers[(size_t)instrumentIndex].activePattern = bankIndex;
+                                stepSequencerPage = 0; stepSequencerSelectedStep = 0;
+                                publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                            }
+                            ax += 48;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+void MainComponent::clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
+{
+    handleStepSequencerClick(point, area);
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
@@ -1013,177 +1202,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // Step Sequencer hit-test for the selected Instrument row.
-    {
-        if (p.y >= getMixerTop())
-        {
-            const int logicalRow = selectedTrack;
-            const int instrumentFirst = audioTrackCount + midiTrackCount;
-            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)
-            {
-                const int instrumentIndex = logicalRow - instrumentFirst;
-                if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
-                {
-                    auto panel = juce::Rectangle<int>(0, getMixerTop(), getWidth(), juce::jmax(1, mixerHeight));
-                    const int dockInset = 8;
-                    panel = panel.reduced(dockInset, 6);
-                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
-                    {
-                        const int availableWidth = juce::jmax(1, panel.getWidth());
-                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
-                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
-                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
-                    };
-                    const int titleWidth = 132;
-                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
-                    auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, 30);
-                    if (seqPlay.contains(p))
-                    {
-                        if (audioEngine.isStepPreviewPlaying()) audioEngine.setStepPreview(instrumentIndex, false);
-                        else if (!audioEngine.isPlaying()) audioEngine.setStepPreview(instrumentIndex, true);
-                        repaint(); return;
-                    }
-                    if (onOff.contains(p))
-                    {
-                        pattern->enabled = !pattern->enabled;
-                        publishInstrumentStepSequencer(instrumentIndex);
-                        repaint();
-                        return;
-                    }
-                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
-                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
-                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
-                    for (int s = 0; s < 16; ++s)
-                    {
-                        const int absoluteStep = firstStep + s;
-                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
-                        if (pad.contains(p) && absoluteStep < pattern->stepCount)
-                        {
-                            stepSequencerSelectedStep = absoluteStep;
-                            pattern->steps[(size_t)absoluteStep].enabled = !pattern->steps[(size_t)absoluteStep].enabled;
-                            publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                        }
-                    }
-                    const int controlsY = panel.getY() + 42;
-                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16)).contains(p); };
-                    int cx = panel.getX();
-                    const int counts[] = {16,32,64};
-                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=(n == 2 ? 42 : 34); }
-                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
-                    for (int r=0;r<5;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
-                    for (int m=0;m<3;++m) { if(hit(cx,34)) { pattern->rateModifier=(std::uint8_t)m; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=38; }
-                    if (hit(cx,44)) { pattern->direction=(LibertyStepSequencer::Direction)(((int)pattern->direction+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=48;
-                    if (hit(cx,62)) { pattern->swing = pattern->swing >= 0.50f ? 0.0f : pattern->swing + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    cx += 68;
-                    const int pages = juce::jmax(1,(pattern->stepCount+15)/16);
-                    for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
-                    const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
-                    auto& editStep = pattern->steps[(size_t)selectedStep];
-                    const int editY = controlsY + 36;
-                    auto editHit = [&](int x, int w) { return stretchedControl(x, w, editY, 26, 780).contains(p); };
-                    int ex = panel.getX() + 56;
-                    if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
-                    if (editHit(ex,54)) { editStep.velocity = (std::uint8_t)(editStep.velocity >= 127 ? 20 : juce::jmin(127, (int)editStep.velocity + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 58;
-                    if (editHit(ex,66)) { editStep.gate = editStep.gate >= 1.0f ? 0.10f : juce::jmin(1.0f, editStep.gate + 0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
-                    if (editHit(ex,66)) { editStep.probability = (std::uint8_t)(editStep.probability >= 100 ? 10 : juce::jmin(100, (int)editStep.probability + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
-                    if (editHit(ex,62)) { editStep.ratchet = (std::uint8_t)(editStep.ratchet >= 8 ? 1 : editStep.ratchet + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 66;
-                    if (editHit(ex,38)) { editStep.accent = !editStep.accent; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
-                    if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
-                    if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
-                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
-                    if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
-                    if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    const int actionY = editY + 36;
-                    auto actionHit = [&](int x, int w) { return stretchedControl(x, w, actionY, 26, 1260).contains(p); };
-                    int ax = panel.getX();
-                    if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
-                    if (actionHit(ax,58))
-                    {
-                        for (int s=0;s<pattern->stepCount;++s)
-                        {
-                            auto& st=pattern->steps[(size_t)s];
-                            const unsigned h=(unsigned)(s*1664525u+1013904223u);
-                            st.enabled=(h%100u)<55u; st.velocity=(std::uint8_t)(70u+(h%58u)); st.probability=(std::uint8_t)(70u+(h%31u));
-                        }
-                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    }
-                    ax += 62;
-                    if (actionHit(ax,62)) { std::reverse(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 66;
-                    if (actionHit(ax,56))
-                    {
-                        if(pattern->stepCount>1) std::rotate(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount-1, pattern->steps.begin()+pattern->stepCount);
-                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    }
-                    ax += 60;
-                    if (actionHit(ax,72))
-                    {
-                        const int half=pattern->stepCount/2;
-                        if(half>0) for(int s=0;s<half && s+half<pattern->stepCount;++s) pattern->steps[(size_t)(s+half)]=pattern->steps[(size_t)s];
-                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    }
-                    ax += 80;
-                    if (actionHit(ax,52)) { if (commitInstrumentStepSequencerToMidiClip(instrumentIndex, juce::jlimit(0, juce::jmax(0, getMidiTrackCount() - 1), stepSequencerMidiTarget))) repaint(); return; } ax += 56;
-                    if (actionHit(ax,58)) { draggingStepSequencerPattern=true; draggedStepSequencerInstrument=instrumentIndex; repaint(); return; } ax += 62;
-                    if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
-                    if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
-                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
-                    if (actionHit(ax,52)) { pattern->octaveShift=pattern->octaveShift>=4 ? -4 : pattern->octaveShift+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 56;
-                    if (actionHit(ax,60)) { pattern->humanize=pattern->humanize>=1.0f ? 0.0f : juce::jmin(1.0f,pattern->humanize+0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 64;
-                    if (actionHit(ax,68))
-                    {
-                        pattern->euclideanPulses = pattern->euclideanPulses >= pattern->stepCount ? 1 : pattern->euclideanPulses + 1;
-                        const int pulses = juce::jlimit(1, pattern->stepCount, pattern->euclideanPulses);
-                        for (int s=0; s<pattern->stepCount; ++s)
-                        {
-                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
-                            pattern->steps[(size_t)s].enabled = ((rotated * pulses) % pattern->stepCount) < pulses;
-                        }
-                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    }
-                    ax += 72;
-                    if (actionHit(ax,70))
-                    {
-                        pattern->euclideanRotation = (pattern->euclideanRotation + 1) % juce::jmax(1,pattern->stepCount);
-                        const int pulses=juce::jlimit(1,pattern->stepCount,pattern->euclideanPulses);
-                        for(int s=0;s<pattern->stepCount;++s)
-                        {
-                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
-                            pattern->steps[(size_t)s].enabled=((rotated*pulses)%pattern->stepCount)<pulses;
-                        }
-                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                    } ax += 74;
-                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
-                    if (actionHit(ax,42)) { pattern->velocityLaneSteps=pattern->velocityLaneSteps>=pattern->cycleSteps?1:pattern->velocityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
-                    if (actionHit(ax,42)) { pattern->gateLaneSteps=pattern->gateLaneSteps>=pattern->cycleSteps?1:pattern->gateLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
-                    if (actionHit(ax,42)) { pattern->probabilityLaneSteps=pattern->probabilityLaneSteps>=pattern->cycleSteps?1:pattern->probabilityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
-                    if (actionHit(ax,42)) { pattern->ratchetLaneSteps=pattern->ratchetLaneSteps>=pattern->cycleSteps?1:pattern->ratchetLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
-                    ax += 46;
-                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
-                    if (createClipButton.contains(p))
-                    {
-                        createInstrumentPatternClip(instrumentIndex);
-                        return;
-                    }
-                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
-                    {
-                        for (int bankIndex=0; bankIndex<8; ++bankIndex)
-                        {
-                            const int gap = 5;
-                            const int width = juce::jmax(1, (panel.getWidth() - 7 * gap) / 8);
-                            const auto patRect = juce::Rectangle<int>(panel.getX() + bankIndex * (width + gap), panel.getBottom() - 30, width, 28);
-                            if (patRect.contains(p))
-                            {
-                                instrumentStepSequencers[(size_t)instrumentIndex].activePattern = bankIndex;
-                                stepSequencerPage = 0; stepSequencerSelectedStep = 0;
-                                publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
-                            }
-                            ax += 48;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    if (p.y >= getMixerTop() && dockStepSequencerMode)
+        handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
 
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
