@@ -1199,7 +1199,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             // MIDI-track Pattern playback needs its own routing and persistence;
             // do not pretend the instrument sequencer edits the selected MIDI track.
-            if (selectedInstrument) dockStepSequencerMode = true;
+            if (selectedInstrument || selectedMidi) dockStepSequencerMode = true;
             repaint();
             return;
         }
@@ -1295,6 +1295,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (p.y >= getMixerTop() && dockStepSequencerMode && instrumentDockSelected)
     {
         handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
+        return;
+    }
+    const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
+    if (p.y >= getMixerTop() && dockStepSequencerMode && midiDockSelected)
+    {
+        clickMidiStepSequencer(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
         return;
     }
 
