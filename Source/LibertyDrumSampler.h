@@ -27,6 +27,7 @@ public:
         std::atomic<float> startFraction { 0.0f };
         std::atomic<float> endFraction { 1.0f };
         std::atomic<int> chokeGroup { 0 };
+        std::atomic<float> chokeFadeMs { 8.0f };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -89,6 +90,7 @@ public:
             node->setAttribute("start", (double)pad.startFraction.load());
             node->setAttribute("end", (double)pad.endFraction.load());
             node->setAttribute("chokeGroup", pad.chokeGroup.load());
+            node->setAttribute("chokeFadeMs", (double)pad.chokeFadeMs.load());
         }
         return kit;
     }
@@ -109,6 +111,7 @@ public:
             setPadTrim(i, (float)node->getDoubleAttribute("start", 0.0),
                           (float)node->getDoubleAttribute("end", 1.0));
             setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
+            setPadChokeFade(i, (float)node->getDoubleAttribute("chokeFadeMs", 8.0));
         }
         return true;
     }
@@ -199,6 +202,7 @@ public:
             dst.startFraction.store(src.startFraction.load());
             dst.endFraction.store(src.endFraction.load());
             dst.chokeGroup.store(src.chokeGroup.load());
+            dst.chokeFadeMs.store(src.chokeFadeMs.load());
         }
         // Active voices keep their immutable sample buffers until they finish.
         return true;
@@ -219,7 +223,12 @@ public:
                         if (activeVoice.active && activeVoice.chokeGroup == group)
                         {
                             // A short release avoids clicks from abrupt hi-hat choking.
-                            activeVoice.releaseSamplesRemaining = juce::jmax(1, (int)(outputRate * 0.008));
+                            const int requested = juce::jmax(1, (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
+                            if (activeVoice.releaseSamplesRemaining == 0 || requested < activeVoice.releaseSamplesRemaining)
+                            {
+                                activeVoice.releaseSamplesRemaining = requested;
+                                activeVoice.releaseSamplesTotal = requested;
+                            }
                         }
                 auto audio = std::atomic_load(&pads[(size_t)i].audio);
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
@@ -244,7 +253,7 @@ public:
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
-                          pads[(size_t)i].chokeGroup.load(), 0};
+                          pads[(size_t)i].chokeGroup.load(), 0, 0};
                 return;
             }
     }
@@ -268,6 +277,11 @@ public:
         }
         if (cursor < output.getNumSamples())
             render(output, cursor, output.getNumSamples() - cursor);
+    }
+    void setPadChokeFade(int index, float milliseconds) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].chokeFadeMs.store(juce::jlimit(1.0f, 100.0f, milliseconds));
     }
     void setPadChokeGroup(int index, int group) noexcept
     {
@@ -317,7 +331,7 @@ public:
                     const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - voice.pan)
                                                        : juce::jmin(1.0f, 1.0f + voice.pan);
                     const float releaseGain = voice.releaseSamplesRemaining > 0
-                        ? juce::jlimit(0.0f, 1.0f, (float)voice.releaseSamplesRemaining / juce::jmax(1.0f, (float)(outputRate * 0.008)))
+                        ? juce::jlimit(0.0f, 1.0f, (float)voice.releaseSamplesRemaining / juce::jmax(1.0f, (float)voice.releaseSamplesTotal))
                         : 1.0f;
                     output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain * releaseGain);
                 }
@@ -348,6 +362,7 @@ private:
         uint64_t sequence = 0;
         int chokeGroup = 0;
         int releaseSamplesRemaining = 0;
+        int releaseSamplesTotal = 0;
     };
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
