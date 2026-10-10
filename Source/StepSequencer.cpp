@@ -115,7 +115,12 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             {
                 MidiEngine::NoteEvent note;
                 note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-                note.lengthTicks = hasTieContinuation ? effectiveStepTicks * tiedSteps : gateTicks;
+                const auto cycleEndTick = startTick + (std::int64_t)outputCount * effectiveStepTicks;
+                if (note.startTick >= cycleEndTick)
+                    continue;
+                note.lengthTicks = std::min<std::int64_t>(
+                    hasTieContinuation ? effectiveStepTicks * tiedSteps : gateTicks,
+                    cycleEndTick - note.startTick);
                 note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
                 note.velocity = (std::uint8_t)velocity;
                 note.channel = (std::uint8_t)std::clamp((int)step.channel, 1, 16);
