@@ -26,6 +26,7 @@ public:
         std::atomic<float> pitchSemitones { 0.0f };
         std::atomic<float> startFraction { 0.0f };
         std::atomic<float> endFraction { 1.0f };
+        std::atomic<int> chokeGroup { 0 };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -87,6 +88,7 @@ public:
             node->setAttribute("pitch", (double)pad.pitchSemitones.load());
             node->setAttribute("start", (double)pad.startFraction.load());
             node->setAttribute("end", (double)pad.endFraction.load());
+            node->setAttribute("chokeGroup", pad.chokeGroup.load());
         }
         return kit;
     }
@@ -106,6 +108,7 @@ public:
             setPadPitch(i, (float)node->getDoubleAttribute("pitch", 0.0));
             setPadTrim(i, (float)node->getDoubleAttribute("start", 0.0),
                           (float)node->getDoubleAttribute("end", 1.0));
+            setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
         }
         return true;
     }
@@ -195,6 +198,7 @@ public:
             dst.pitchSemitones.store(src.pitchSemitones.load());
             dst.startFraction.store(src.startFraction.load());
             dst.endFraction.store(src.endFraction.load());
+            dst.chokeGroup.store(src.chokeGroup.load());
         }
         // Active voices keep their immutable sample buffers until they finish.
         return true;
@@ -209,6 +213,14 @@ public:
         for (int i = 0; i < padCount; ++i)
             if (pads[(size_t)i].midiNote == note)
             {
+                const int group = pads[(size_t)i].chokeGroup.load();
+                if (group > 0)
+                    for (auto& activeVoice : voices)
+                        if (activeVoice.active && activeVoice.chokeGroup == group)
+                        {
+                            activeVoice.active = false;
+                            activeVoice.audio.reset();
+                        }
                 auto audio = std::atomic_load(&pads[(size_t)i].audio);
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
                 // Prefer an idle voice; when polyphony is exhausted, steal the
@@ -231,7 +243,8 @@ public:
                 *voice = {true, i, (double)juce::jlimit(0, frames - 1, (int)(start * (frames - 1))),
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
-                          pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence};
+                          pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
+                          pads[(size_t)i].chokeGroup.load()};
                 return;
             }
     }
@@ -255,6 +268,11 @@ public:
         }
         if (cursor < output.getNumSamples())
             render(output, cursor, output.getNumSamples() - cursor);
+    }
+    void setPadChokeGroup(int index, int group) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].chokeGroup.store(juce::jlimit(0, 8, group));
     }
     void setPadGain(int index, float gain) noexcept
     {
@@ -319,6 +337,7 @@ private:
         float pan = 0.0f;
         float pitchSemitones = 0.0f;
         uint64_t sequence = 0;
+        int chokeGroup = 0;
     };
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
