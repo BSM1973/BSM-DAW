@@ -1480,6 +1480,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             {
                 instrumentBus.setSize(2, numSamples, false, true, true);
                 instrumentBus.clear();
+                nativeDrums->processAuditions();
                 nativeDrums->renderMidi(instrumentBus, midi);
                 const float gain = state.gain.load(std::memory_order_relaxed);
                 const float pan = state.pan.load(std::memory_order_relaxed);
