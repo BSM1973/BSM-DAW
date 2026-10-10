@@ -258,7 +258,8 @@ int main()
     { fixture.deleteFile(); return 35; }
     // Reject malformed pad identifiers without altering the loaded kit.
     for (const auto& invalidIndex : { juce::String("abc"), juce::String("-1"),
-                                      juce::String("16"), juce::String("0x1") })
+                                      juce::String("16"), juce::String("0x1"),
+                                      juce::String("999999999999999999999999") })
     {
         const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
             .getNonexistentChildFile("liberty-bad-index", ".xml");
