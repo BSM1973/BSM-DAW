@@ -260,26 +260,30 @@ public:
         for (int i = 0; i < padCount; ++i)
             if (pads[(size_t)i].midiNote == note)
             {
+                // An empty pad must not silence other pads in its choke group.
+                auto audio = std::atomic_load(&pads[(size_t)i].audio);
+                if (audio == nullptr || audio->getNumSamples() == 0) return;
                 const int group = pads[(size_t)i].chokeGroup.load();
                 if (group > 0)
                     for (auto& activeVoice : voices)
                         if (activeVoice.active && activeVoice.chokeGroup == group)
                         {
-                            // A short release avoids clicks from abrupt hi-hat choking.
-                            const int requested = juce::jmax(1, (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
-                            if (activeVoice.releaseSamplesRemaining == 0 || requested < activeVoice.releaseSamplesRemaining)
+                            const int requested = juce::jmax(1,
+                                (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
+                            if (activeVoice.releaseSamplesRemaining == 0
+                                || requested < activeVoice.releaseSamplesRemaining)
                             {
-                                if (activeVoice.releaseSamplesRemaining == 0)
-                                    activeVoice.releaseStartLevel = envelopeAtAge(activeVoice, outputRate);
-                                else
-                                    activeVoice.releaseStartLevel *= (float)activeVoice.releaseSamplesRemaining
+                                // Preserve the instantaneous gain when shortening a release.
+                                const float currentLevel = activeVoice.releaseSamplesRemaining == 0
+                                    ? envelopeAtAge(activeVoice, outputRate)
+                                    : activeVoice.releaseStartLevel
+                                        * (float)activeVoice.releaseSamplesRemaining
                                         / juce::jmax(1, activeVoice.releaseSamplesTotal);
+                                activeVoice.releaseStartLevel = currentLevel;
                                 activeVoice.releaseSamplesRemaining = requested;
                                 activeVoice.releaseSamplesTotal = requested;
                             }
                         }
-                auto audio = std::atomic_load(&pads[(size_t)i].audio);
-                if (audio == nullptr || audio->getNumSamples() == 0) return;
                 // Prefer an idle voice; when polyphony is exhausted, steal the
                 // oldest active voice instead of repeatedly cutting voice zero.
                 auto* voice = &voices[0];
