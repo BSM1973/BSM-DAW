@@ -64,6 +64,56 @@ int main()
         for (int frame = 0; frame < output.getNumSamples(); ++frame)
             if (!std::isfinite(output.getSample(channel, frame))) return 7;
 
+    // Generate a deterministic WAV fixture and test actual playback gain.
+    const auto fixture = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-drum-smoke", ".wav");
+    {
+        juce::WavAudioFormat format;
+        std::unique_ptr<juce::FileOutputStream> stream(fixture.createOutputStream());
+        if (!stream) return 8;
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            format.createWriterFor(stream.get(), 48000.0, 1, 16, {}, 0));
+        if (!writer) return 9;
+        stream.release();
+        juce::AudioBuffer<float> tone(1, 4800);
+        for (int i = 0; i < tone.getNumSamples(); ++i)
+            tone.setSample(0, i, 0.5f);
+        if (!writer->writeFromAudioSampleBuffer(tone, 0, tone.getNumSamples())) return 10;
+    }
+    LibertyDrumSampler sounding;
+    sounding.prepare(48000.0);
+    if (!sounding.loadPad(0, fixture)) { fixture.deleteFile(); return 11; }
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> audible(2, 256);
+    audible.clear();
+    juce::MidiBuffer hit;
+    hit.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    sounding.renderMidi(audible, hit);
+    if (!near(audible.getSample(0, 100), 0.5f, 0.003f)) { fixture.deleteFile(); return 12; }
+
+    // Attack should ramp from silence toward the sample's nominal level.
+    sounding.reset();
+    sounding.setPadEnvelope(0, 4.0f, 0.0f, 1.0f, 8.0f);
+    audible.clear();
+    sounding.renderMidi(audible, hit);
+    if (std::abs(audible.getSample(0, 0)) > 0.003f
+        || !(audible.getSample(0, 150) > audible.getSample(0, 40)))
+    { fixture.deleteFile(); return 13; }
+
+    // Gate note-off must attenuate the held voice after release time.
+    sounding.reset();
+    sounding.setPadGateMode(0, true);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 2.0f);
+    audible.clear();
+    juce::MidiBuffer gate;
+    gate.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    gate.addEvent(juce::MidiMessage::noteOff(1, 36), 32);
+    sounding.renderMidi(audible, gate);
+    if (!(audible.getSample(0, 40) > 0.0f)
+        || std::abs(audible.getSample(0, 180)) > 0.003f)
+    { fixture.deleteFile(); return 14; }
+    fixture.deleteFile();
+
     std::cout << "Drum Sampler smoke tests passed\n";
     return 0;
 }
