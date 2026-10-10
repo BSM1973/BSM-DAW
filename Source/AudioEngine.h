@@ -26,6 +26,10 @@ public:
     {
         std::atomic_store(&drumSampler, std::move(sampler));
     }
+    std::shared_ptr<LibertyDrumSampler> getDrumSampler() const noexcept
+    {
+        return std::atomic_load(&drumSampler);
+    }
     void setDrumSamplerTrack(int track) noexcept { drumSamplerTrack.store(track, std::memory_order_release); }
     bool initialise();
     void shutdown();
