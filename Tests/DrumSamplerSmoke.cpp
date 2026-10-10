@@ -276,7 +276,7 @@ int main()
     }
     // Non-finite envelope and gain parameters must not poison the live kit.
     for (const auto& invalidValue : { juce::String("nan"), juce::String("inf"),
-                                       juce::String("-inf") })
+                                       juce::String("-inf"), juce::String("1e100") })
     {
         const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
             .getNonexistentChildFile("liberty-nonfinite-kit", ".xml");
