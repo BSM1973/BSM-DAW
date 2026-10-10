@@ -88,19 +88,21 @@ void MainComponent::paint(juce::Graphics& g)
     drawTrackArea(g, bounds);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    if (dockStepSequencerMode && (selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst))
-        drawMidiStepSequencer(g, mixer);
+    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
+    const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36) : mixer;
+    if (dockStepSequencerMode && isMidiDockTrack)
+        drawMidiStepSequencer(g, editorArea);
     else if (showStepSequencer && dockStepSequencerMode)
-        drawStepSequencerDock(g, mixer);
+        drawStepSequencerDock(g, editorArea);
     else
-        drawMixer(g, mixer);
+        drawMixer(g, editorArea);
 
     // Shared editor navigation for MIDI and instrument tracks.
     const bool isMidi = selectedTrack >= getAudioTrackCount()
                      && selectedTrack < instrumentFirst;
     if (isMidi || showStepSequencer)
     {
-        auto tabs = juce::Rectangle<int>(8, mixer.getY() - 35, 244, 28);
+        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 244, 28);
         const auto piano = tabs.removeFromLeft(118);
         const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
@@ -115,7 +117,7 @@ void MainComponent::paint(juce::Graphics& g)
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
         if (showStepSequencer && dockStepSequencerMode)
         {
-            const auto detach = juce::Rectangle<int>(260, mixer.getY() - 35, 106, 28);
+            const auto detach = juce::Rectangle<int>(260, mixer.getY() + 4, 106, 28);
             g.setColour(juce::Colour(0xff253344));
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
             g.setColour(juce::Colours::white);
@@ -1329,7 +1331,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const auto p = event.getPosition();
     if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
-        && juce::Rectangle<int>(260, getMixerTop() - 35, 106, 28).contains(p))
+        && juce::Rectangle<int>(260, getMixerTop() + 4, 106, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
@@ -1339,8 +1341,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                            && selectedTrack < dockInstrumentFirst;
     const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
                                  && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
-    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() - 35
-        && p.y < getMixerTop() - 7)
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 4
+        && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
         if (p.x >= tabX && p.x < tabX + 118)
@@ -1449,14 +1451,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
     if (p.y >= getMixerTop() && dockStepSequencerMode && instrumentDockSelected)
     {
-        handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
+        handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
         return;
     }
     const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
     if (p.y >= getMixerTop() && dockStepSequencerMode && midiDockSelected)
     {
-        clickMidiStepSequencer(p, juce::Rectangle<int>(0, getMixerTop(), getWidth(), mixerHeight));
+        clickMidiStepSequencer(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
         return;
     }
 
