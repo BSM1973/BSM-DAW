@@ -218,8 +218,8 @@ public:
                     for (auto& activeVoice : voices)
                         if (activeVoice.active && activeVoice.chokeGroup == group)
                         {
-                            activeVoice.active = false;
-                            activeVoice.audio.reset();
+                            // A short release avoids clicks from abrupt hi-hat choking.
+                            activeVoice.releaseSamplesRemaining = juce::jmax(1, (int)(outputRate * 0.008));
                         }
                 auto audio = std::atomic_load(&pads[(size_t)i].audio);
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
@@ -244,7 +244,7 @@ public:
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
-                          pads[(size_t)i].chokeGroup.load()};
+                          pads[(size_t)i].chokeGroup.load(), 0};
                 return;
             }
     }
@@ -316,7 +316,16 @@ public:
                     const float b = voice.audio->getSample(source, next);
                     const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - voice.pan)
                                                        : juce::jmin(1.0f, 1.0f + voice.pan);
-                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain);
+                    const float releaseGain = voice.releaseSamplesRemaining > 0
+                        ? juce::jlimit(0.0f, 1.0f, (float)voice.releaseSamplesRemaining / juce::jmax(1.0f, (float)(outputRate * 0.008)))
+                        : 1.0f;
+                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain * releaseGain);
+                }
+                if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
+                {
+                    voice.active = false;
+                    voice.audio.reset();
+                    continue;
                 }
                 voice.position += (voice.sourceRate / outputRate)
                     * std::pow(2.0, (double)voice.pitchSemitones / 12.0);
@@ -338,6 +347,7 @@ private:
         float pitchSemitones = 0.0f;
         uint64_t sequence = 0;
         int chokeGroup = 0;
+        int releaseSamplesRemaining = 0;
     };
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
