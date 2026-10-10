@@ -333,7 +333,10 @@ int main()
                                  { "gain", "-0.1" }, { "pan", "1.5" },
                                  { "pitch", "25" }, { "start", "1" },
                                  { "end", "0" }, { "sustain", "1.1" },
-                                 { "attackMs", "-1" } })
+                                 { "attackMs", "-1" }, { "attackMs", "2001" },
+                                 { "decayMs", "2001" }, { "releaseMs", "0" },
+                                 { "releaseMs", "5001" }, { "chokeFadeMs", "0" },
+                                 { "chokeFadeMs", "101" } })
     {
         const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
             .getNonexistentChildFile("liberty-out-of-range", ".xml");
