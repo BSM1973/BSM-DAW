@@ -118,7 +118,14 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             for (int chordIndex=0; chordIndex<chordNotes; ++chordIndex)
             {
                 MidiEngine::NoteEvent note;
-                note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
+                const auto nominalTick = startTick + (std::int64_t)i * effectiveStepTicks
+                                       + (std::int64_t)r * subdivision;
+                const auto timingOffset = swingOffset + microOffset + humanOffset;
+                // Saturate at the cycle boundary before applying timing offsets.
+                // This prevents negative timing shifts from escaping the Pattern.
+                const auto safeOffset = std::clamp<std::int64_t>(
+                    timingOffset, startTick - nominalTick, cycleEndTick - nominalTick);
+                note.startTick = nominalTick + safeOffset;
                 if (note.startTick >= cycleEndTick)
                     continue;
                 note.lengthTicks = std::min<std::int64_t>(
