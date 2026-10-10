@@ -369,6 +369,32 @@ int main()
             || !near(protectedKit.getPad(0).gain.load(), 0.75f))
         { fixture.deleteFile(); return 47; }
     }
+    // Atomic multi-pad import: a valid first pad must not be committed if
+    // a later pad is malformed. Preserve all existing pad settings and audio.
+    const auto partial = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-partial-kit", ".xml");
+    {
+        juce::XmlElement kit("LibertyDrumKit");
+        auto* first = kit.createNewChildElement("Pad");
+        first->setAttribute("index", 0);
+        first->setAttribute("file", fixture.getFullPathName());
+        first->setAttribute("gain", 0.25);
+        auto* second = kit.createNewChildElement("Pad");
+        second->setAttribute("index", 1);
+        second->setAttribute("file", "missing-audio-file.wav");
+        if (!kit.writeTo(partial)) { fixture.deleteFile(); return 48; }
+    }
+    const bool partialImported = protectedKit.importPortableKit(partial);
+    partial.deleteFile();
+    if (partialImported || !protectedKit.hasSample(0)
+        || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 49; }
+    juce::AudioBuffer<float> stillWorking(2, 128);
+    stillWorking.clear();
+    protectedKit.reset();
+    protectedKit.renderMidi(stillWorking, hit);
+    if (!near(stillWorking.getSample(0, 80), 0.375f, 0.003f))
+    { fixture.deleteFile(); return 50; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
