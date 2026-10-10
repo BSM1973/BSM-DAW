@@ -311,7 +311,9 @@ int main()
     // Integer-only pad settings must reject invalid and out-of-range values.
     for (const auto& invalid : { std::pair<const char*, const char*> { "chokeGroup", "9" },
                                  { "chokeGroup", "-1" }, { "chokeGroup", "2.5" },
-                                 { "gateMode", "2" }, { "gateMode", "true" } })
+                                 { "gateMode", "2" }, { "gateMode", "true" },
+                                 { "chokeGroup", "999999999999999999" },
+                                 { "gateMode", "999999999999999999" } })
     {
         const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
             .getNonexistentChildFile("liberty-invalid-pad-mode", ".xml");
