@@ -175,6 +175,34 @@ int main()
     const float expectedStolen = 0.5f * ((33.0f * 34.0f / 2.0f) - 1.0f) / 127.0f;
     if (!near(polyOutput.getSample(0, 10), expectedStolen, 0.02f))
     { fixture.deleteFile(); return 19; }
+    // Replacing a kit while a voice is sounding must not invalidate its audio.
+    sounding.reset();
+    sounding.setPadGain(0, 1.0f);
+    sounding.setPadChokeGroup(0, 0);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> beforeSwap(2, 128);
+    beforeSwap.clear();
+    sounding.renderMidi(beforeSwap, hit);
+    if (!near(beforeSwap.getSample(0, 100), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 20; }
+
+    // Importing an empty kit replaces pad audio but active voices retain a shared buffer.
+    const auto manifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-empty-kit", ".xml");
+    {
+        juce::XmlElement emptyKit("LibertyDrumKit");
+        emptyKit.setAttribute("version", 1);
+        if (!emptyKit.writeTo(manifest)) { fixture.deleteFile(); return 21; }
+    }
+    if (!sounding.importPortableKit(manifest))
+    { manifest.deleteFile(); fixture.deleteFile(); return 22; }
+    manifest.deleteFile();
+    if (sounding.hasSample(0)) { fixture.deleteFile(); return 23; }
+    juce::AudioBuffer<float> afterSwap(2, 128);
+    afterSwap.clear();
+    sounding.renderMidi(afterSwap, juce::MidiBuffer{});
+    if (!near(afterSwap.getSample(0, 50), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 24; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
