@@ -221,7 +221,12 @@ public:
             dst.sustain.store(src.sustain.load());
             dst.releaseMs.store(src.releaseMs.load());
         }
-        // Active voices keep their immutable sample buffers until they finish.
+        // Existing voices retain their decoded audio and their original envelope.
+        // Mark notes as released before switching kits so a later Note Off
+        // cannot inadvertently release a newly-triggered voice.
+        for (auto& voice : voices)
+            if (voice.active)
+                voice.noteReleased = true;
         return true;
     }
     bool hasSample(int index) const noexcept
