@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <memory>
 #include <vector>
@@ -46,6 +47,10 @@ public:
         pads[(size_t)index].name = file.getFileNameWithoutExtension();
         return true;
     }
+    bool hasSample(int index) const noexcept
+    {
+        return index >= 0 && index < padCount && pads[(size_t)index].audio.getNumSamples() > 0;
+    }
     void noteOn(int note, float velocity) noexcept
     {
         if (velocity <= 0.0f) return;
@@ -90,4 +95,69 @@ private:
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
     double outputRate = 44100.0;
+};
+
+
+// First visual prototype. Owned by the message thread; audio integration is next.
+class LibertyDrumSamplerPanel final : public juce::Component
+{
+public:
+    explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine)
+    {
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+        {
+            auto& button = pads[(size_t)i];
+            button.setButtonText("PAD " + juce::String(i + 1));
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff253c4a));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            button.onClick = [this, i] { selectedPad = i; sampler.noteOn(36 + i, 1.0f); };
+            addAndMakeVisible(button);
+        }
+        loadButton.setButtonText("CHARGER SAMPLE");
+        loadButton.onClick = [this]
+        {
+            const int padIndex = selectedPad;
+            chooser = std::make_unique<juce::FileChooser>("Charger un sample de batterie", juce::File{}, "*.wav;*.aif;*.aiff");
+            chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this), padIndex](const juce::FileChooser& dialog)
+                {
+                    if (safe == nullptr) return;
+                    if (safe->sampler.loadPad(padIndex, dialog.getResult()))
+                        safe->refreshLabels();
+                });
+        };
+        addAndMakeVisible(loadButton);
+        refreshLabels();
+    }
+    void resized() override
+    {
+        const int margin = 12;
+        const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 78 - margin * 5) / 4);
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+            pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
+                                     40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
+        loadButton.setBounds(margin, getHeight() - 32, juce::jmin(180, getWidth() - 2 * margin), 25);
+    }
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xff121c27));
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(18.0f, juce::Font::bold));
+        g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
+    }
+private:
+    void refreshLabels()
+    {
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+        {
+            pads[(size_t)i].setButtonText(sampler.hasSample(i) ? sampler.getPad(i).name
+                                                               : "PAD " + juce::String(i + 1));
+        }
+    }
+    LibertyDrumSampler& sampler;
+    std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
+    juce::TextButton loadButton;
+    int selectedPad = 0;
+    std::unique_ptr<juce::FileChooser> chooser;
 };
