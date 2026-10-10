@@ -20,3 +20,14 @@ target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 target_compile_definitions(BSM_DAW PRIVATE JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1 SIGNALSMITH_USE_ACCELERATE=1)
 target_link_libraries(BSM_DAW PRIVATE juce::juce_audio_basics juce::juce_audio_devices juce::juce_audio_formats juce::juce_audio_processors juce::juce_audio_utils juce::juce_dsp juce::juce_core juce::juce_data_structures juce::juce_events juce::juce_graphics juce::juce_gui_basics juce::juce_gui_extra signalsmith-stretch)
 juce_generate_juce_header(BSM_DAW)
+# Lightweight headless regression coverage for the Drum Sampler.
+juce_add_console_app(LibertyDrumSamplerSmoke PRODUCT_NAME "Liberty Drum Sampler Smoke")
+target_sources(LibertyDrumSamplerSmoke PRIVATE Tests/DrumSamplerSmoke.cpp)
+target_include_directories(LibertyDrumSamplerSmoke PRIVATE Source)
+target_compile_features(LibertyDrumSamplerSmoke PRIVATE cxx_std_17)
+target_compile_definitions(LibertyDrumSamplerSmoke PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(LibertyDrumSamplerSmoke PRIVATE
+    juce::juce_audio_basics juce::juce_audio_formats juce::juce_gui_basics
+    juce::juce_core juce::juce_events juce::juce_graphics)
+enable_testing()
+add_test(NAME DrumSamplerSmoke COMMAND LibertyDrumSamplerSmoke)
