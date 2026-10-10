@@ -27,6 +27,10 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
                                   : pattern.rateModifier == 2 ? std::max<std::int64_t>(1, baseStepTicks * 3 / 2)
                                   : baseStepTicks;
     const int outputCount = pattern.direction == Direction::PingPong && count > 1 ? count * 2 - 2 : count;
+    const auto cycleLengthTicks = getCycleLengthTicks(pattern);
+    if (cycleLengthTicks <= 0 || startTick > std::numeric_limits<std::int64_t>::max() - cycleLengthTicks)
+        return notes;
+    const auto cycleEndTick = startTick + cycleLengthTicks;
     try { notes.reserve((size_t) outputCount * 4u); } catch (...) { return {}; }
     auto sourceIndexForPosition = [&](int position)
     {
@@ -115,7 +119,6 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             {
                 MidiEngine::NoteEvent note;
                 note.startTick = std::max<std::int64_t>(startTick, startTick + (std::int64_t)i * effectiveStepTicks + swingOffset + microOffset + humanOffset + (std::int64_t)r * subdivision);
-                const auto cycleEndTick = startTick + (std::int64_t)outputCount * effectiveStepTicks;
                 if (note.startTick >= cycleEndTick)
                     continue;
                 note.lengthTicks = std::min<std::int64_t>(
