@@ -31,6 +31,7 @@ public:
         return std::atomic_load(&drumSampler);
     }
     void setDrumSamplerTrack(int track) noexcept { drumSamplerTrack.store(track, std::memory_order_release); }
+    int getDrumSamplerTrack() const noexcept { return drumSamplerTrack.load(std::memory_order_acquire); }
     bool initialise();
     void shutdown();
 
