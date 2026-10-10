@@ -75,8 +75,8 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         }
         const bool hasTieContinuation = tiedSteps > 1;
         const int ratchets = hasTieContinuation ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
-        // Distribute ratchets by proportional tick positions so the final
-        // subdivision also fits when stepTicks is not divisible by ratchets.
+        // Each ratchet receives its proportional slice of the step, including
+        // remainder ticks when the step length is not divisible by ratchets.
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.octaveShift, -4, 4) * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
@@ -120,8 +120,10 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             for (int chordIndex=0; chordIndex<chordNotes; ++chordIndex)
             {
                 MidiEngine::NoteEvent note;
+                const auto ratchetStart = (effectiveStepTicks * r) / ratchets;
+                const auto ratchetEnd = (effectiveStepTicks * (r + 1)) / ratchets;
                 const auto nominalTick = startTick + (std::int64_t)i * effectiveStepTicks
-                                       + (std::int64_t)r * subdivision;
+                                       + ratchetStart;
                 const auto timingOffset = swingOffset + microOffset + humanOffset;
                 // Saturate at the cycle boundary before applying timing offsets.
                 // This prevents negative timing shifts from escaping the Pattern.
@@ -134,7 +136,11 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
                 if (remainingTicks <= 0)
                     continue;
                 note.lengthTicks = std::clamp<std::int64_t>(
-                    hasTieContinuation ? effectiveStepTicks * tiedSteps : gateTicks,
+                    hasTieContinuation ? effectiveStepTicks * tiedSteps
+                                       : std::max<std::int64_t>(1,
+                                           (std::int64_t)std::llround(
+                                               (double)(ratchetEnd - ratchetStart)
+                                               * std::clamp((double)gateStep.gate, 0.01, 1.0))),
                     1, remainingTicks);
                 note.pitch = (std::uint8_t)std::clamp(pitch + intervals[chordIndex], MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
                 note.velocity = (std::uint8_t)velocity;
