@@ -544,6 +544,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         }
         auto* drum = project.createNewChildElement("DrumSampler");
         drum->setAttribute("kitFile", kitFile.getFileName());
+        drum->setAttribute("instrumentTrack", audioEngine.getDrumSamplerTrack());
     }
 
     auto* midi = project.createNewChildElement("MIDI");
@@ -868,7 +869,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (sampler->importPortableKit(kitFile))
         {
             audioEngine.setDrumSampler(sampler);
-            audioEngine.setDrumSamplerTrack(-1);
+            audioEngine.setDrumSamplerTrack(drum->getIntAttribute("instrumentTrack", -1));
         }
         else
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
