@@ -171,7 +171,7 @@ public:
             button.setButtonText("PAD " + juce::String(i + 1));
             button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff253c4a));
             button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            button.onClick = [this, i] { selectedPad = i; sampler.auditionPad(i, 1.0f); };
+            button.onClick = [this, i] { selectedPad = i; updateControls(); sampler.auditionPad(i, 1.0f); };
             addAndMakeVisible(button);
         }
         loadButton.setButtonText("CHARGER SAMPLE");
@@ -188,7 +188,24 @@ public:
                 });
         };
         addAndMakeVisible(loadButton);
+        gainSlider.setRange(0.0, 2.0, 0.01);
+        gainSlider.setValue(1.0, juce::dontSendNotification);
+        gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+        gainSlider.onValueChange = [this] { sampler.setPadGain(selectedPad, (float)gainSlider.getValue()); };
+        addAndMakeVisible(gainSlider);
+        panSlider.setRange(-1.0, 1.0, 0.01);
+        panSlider.setValue(0.0, juce::dontSendNotification);
+        panSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+        panSlider.onValueChange = [this] { sampler.setPadPan(selectedPad, (float)panSlider.getValue()); };
+        addAndMakeVisible(panSlider);
+        gainLabel.setText("GAIN", juce::dontSendNotification);
+        panLabel.setText("PAN", juce::dontSendNotification);
+        gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        panLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(gainLabel);
+        addAndMakeVisible(panLabel);
         refreshLabels();
+        updateControls();
     }
     bool isInterestedInFileDrag(const juce::StringArray& files) override
     {
@@ -218,6 +235,7 @@ public:
             if (sampler.loadPad(destination, file))
             {
                 selectedPad = destination;
+                updateControls();
                 refreshLabels();
                 repaint();
             }
@@ -228,11 +246,16 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 78 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 150 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
-        loadButton.setBounds(margin, getHeight() - 32, juce::jmin(180, getWidth() - 2 * margin), 25);
+        loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
+        const int controlTop = getHeight() - 103;
+        gainLabel.setBounds(margin, controlTop, 48, 25);
+        gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
+        panLabel.setBounds(margin, controlTop + 31, 48, 25);
+        panSlider.setBounds(margin + 48, controlTop + 31, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
     }
     void paint(juce::Graphics& g) override
     {
@@ -242,6 +265,12 @@ public:
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
     }
 private:
+    void updateControls()
+    {
+        const auto& pad = sampler.getPad(selectedPad);
+        gainSlider.setValue(pad.gain.load(), juce::dontSendNotification);
+        panSlider.setValue(pad.pan.load(), juce::dontSendNotification);
+    }
     void refreshLabels()
     {
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
@@ -253,6 +282,8 @@ private:
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton;
+    juce::Slider gainSlider, panSlider;
+    juce::Label gainLabel, panLabel;
     int selectedPad = 0;
     std::unique_ptr<juce::FileChooser> chooser;
 };
