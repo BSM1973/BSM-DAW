@@ -77,7 +77,6 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const int ratchets = hasTieContinuation ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
         // Each ratchet receives its proportional slice of the step, including
         // remainder ticks when the step length is not divisible by ratchets.
-        const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.octaveShift, -4, 4) * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
         if (pattern.scale != Scale::Off)
@@ -104,7 +103,6 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         const int velocity = std::clamp((int)velocityStep.velocity + (step.accent ? 18 : 0) + velocityJitter, 1, 127);
         const auto microOffset = (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)step.microTiming, -0.5, 0.5));
         const auto humanOffset = (std::int64_t)std::llround((((int)(humanHash % 2001u) - 1000) / 1000.0) * human * (double)effectiveStepTicks * 0.10);
-        const auto gateTicks = std::max<std::int64_t>(1, (std::int64_t)std::llround((double)subdivision * std::clamp((double)gateStep.gate, 0.01, 1.0)));
         int intervals[4] = {0, 0, 0, 0};
         int chordNotes = 1;
         switch (step.chord)
