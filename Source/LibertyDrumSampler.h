@@ -8,6 +8,7 @@
 #include <vector>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <atomic>
 
 // Liberty Drum Sampler: first milestone, 16 velocity-sensitive one-shot pads.
@@ -219,7 +220,9 @@ public:
                 char* end = nullptr;
                 const double parsed = std::strtod(utf8, &end);
                 // Reject partially parsed numbers (e.g. "12abc"), not just NaN.
-                if (end == utf8 || *end != '\0' || !std::isfinite(parsed))
+                if (end == utf8 || *end != '\0' || !std::isfinite(parsed)
+                    || parsed > std::numeric_limits<float>::max()
+                    || parsed < -std::numeric_limits<float>::max())
                     return false;
             }
             for (const auto* attribute : { "chokeGroup", "gateMode" })
