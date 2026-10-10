@@ -238,6 +238,24 @@ int main()
     malformed.deleteFile();
     if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
     { fixture.deleteFile(); return 32; }
+    // Duplicate pad indices must be rejected atomically.
+    const auto duplicate = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-duplicate-kit", ".xml");
+    {
+        juce::XmlElement duplicateKit("LibertyDrumKit");
+        for (int n = 0; n < 2; ++n)
+        {
+            auto* pad = duplicateKit.createNewChildElement("Pad");
+            pad->setAttribute("index", 0);
+            pad->setAttribute("file", fixture.getFullPathName());
+        }
+        if (!duplicateKit.writeTo(duplicate)) { fixture.deleteFile(); return 33; }
+    }
+    if (protectedKit.importPortableKit(duplicate))
+    { duplicate.deleteFile(); fixture.deleteFile(); return 34; }
+    duplicate.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 35; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
