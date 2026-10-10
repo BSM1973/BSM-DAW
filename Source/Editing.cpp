@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "LibertyDrumSampler.h"
 #include <set>
 
 namespace
@@ -65,6 +66,35 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     const bool isS = (keyCode == 's' || keyCode == 'S');
     const bool isO = (keyCode == 'o' || keyCode == 'O');
     const bool isN = (keyCode == 'n' || keyCode == 'N');
+
+    // Drum Sampler development preview (Cmd/Ctrl+Shift+D).
+    // This is deliberately independent of the live audio engine until
+    // realtime-safe sample publication and instrument-track routing are ready.
+    if (commandOrControl && modifiers.isShiftDown()
+        && (keyCode == 'd' || keyCode == 'D'))
+    {
+        struct DrumSamplerPreview final : juce::Component
+        {
+            LibertyDrumSampler sampler;
+            LibertyDrumSamplerPanel panel { sampler };
+            DrumSamplerPreview()
+            {
+                addAndMakeVisible(panel);
+                setSize(610, 510);
+            }
+            void resized() override { panel.setBounds(getLocalBounds()); }
+        };
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Liberty Drum Sampler - Apercu";
+        options.dialogBackgroundColour = juce::Colour(0xff121c27);
+        options.content.setOwned(new DrumSamplerPreview());
+        options.componentToCentreAround = this;
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.launchAsync();
+        return true;
+    }
 
     if (commandOrControl)
     {
