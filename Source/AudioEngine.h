@@ -4,6 +4,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include "MidiEngine.h"
+#include "LibertyDrumSampler.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -21,6 +22,10 @@ public:
     AudioEngine();
     ~AudioEngine() override;
 
+    void setDrumSampler(std::shared_ptr<LibertyDrumSampler> sampler) noexcept
+    {
+        std::atomic_store(&drumSampler, std::move(sampler));
+    }
     bool initialise();
     void shutdown();
 
@@ -296,6 +301,7 @@ private:
     bool isValidTrackIndex(int trackIndex) const noexcept { return trackIndex >= 0 && trackIndex < (int) tracks.size(); }
     std::int64_t getProjectLengthSamples() const noexcept;
 
+    std::shared_ptr<LibertyDrumSampler> drumSampler;
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
     std::shared_ptr<juce::AudioBuffer<float>> diagnosticPublishedBuffer;
