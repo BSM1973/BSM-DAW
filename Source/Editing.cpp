@@ -78,20 +78,29 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
             AudioEngine& audio;
             std::shared_ptr<LibertyDrumSampler> sampler = std::make_shared<LibertyDrumSampler>();
             LibertyDrumSamplerPanel panel { *sampler };
-            explicit DrumSamplerPreview(AudioEngine& engine) : audio(engine)
+            explicit DrumSamplerPreview(AudioEngine& engine, int instrumentIndex) : audio(engine)
             {
                 sampler->prepare(juce::jmax(1.0, audio.getSampleRate()));
+                audio.setDrumSamplerTrack(instrumentIndex);
                 audio.setDrumSampler(sampler);
                 addAndMakeVisible(panel);
                 setSize(610, 510);
             }
-            ~DrumSamplerPreview() override { audio.setDrumSampler({}); }
+            ~DrumSamplerPreview() override
+            {
+                audio.setDrumSamplerTrack(-1);
+                audio.setDrumSampler({});
+            }
             void resized() override { panel.setBounds(getLocalBounds()); }
         };
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "Liberty Drum Sampler - Apercu";
         options.dialogBackgroundColour = juce::Colour(0xff121c27);
-        options.content.setOwned(new DrumSamplerPreview(audioEngine));
+        const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+        const int instrumentIndex = selectedTrack >= instrumentFirst
+            && selectedTrack < instrumentFirst + getInstrumentTrackCount()
+            ? selectedTrack - instrumentFirst : -1;
+        options.content.setOwned(new DrumSamplerPreview(audioEngine, instrumentIndex));
         options.componentToCentreAround = this;
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
