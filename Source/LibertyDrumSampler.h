@@ -33,6 +33,22 @@ public:
         formats.registerBasicFormats();
     }
     void prepare(double rate) noexcept { outputRate = rate > 0 ? rate : 44100.0; reset(); }
+    // UI threads queue auditions; the audio callback owns the voices.
+    void auditionPad(int index, float velocity = 1.0f) noexcept
+    {
+        if (index >= 0 && index < padCount)
+        {
+            pendingVelocity[(size_t)index].store(juce::jlimit(0.0f, 1.0f, velocity), std::memory_order_relaxed);
+            pendingTriggers.fetch_or(static_cast<unsigned int>(1u << index), std::memory_order_release);
+        }
+    }
+    void processAuditions() noexcept
+    {
+        const auto triggered = pendingTriggers.exchange(0, std::memory_order_acquire);
+        for (int i = 0; i < padCount; ++i)
+            if ((triggered & (1u << i)) != 0)
+                noteOn(36 + i, pendingVelocity[(size_t)i].load(std::memory_order_relaxed));
+    }
     void reset() noexcept { for (auto& voice : voices) voice.active = false; }
     bool loadPad(int index, const juce::File& file)
     {
@@ -71,6 +87,7 @@ public:
     // Call this from the audio thread; pad loading must be stopped while rendering.
     void renderMidi(juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi) noexcept
     {
+        processAuditions();
         int cursor = 0;
         for (const auto metadata : midi)
         {
@@ -136,6 +153,8 @@ private:
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
+    std::atomic<unsigned int> pendingTriggers { 0 };
+    std::array<std::atomic<float>, padCount> pendingVelocity {};
     double outputRate = 44100.0;
 };
 
@@ -152,7 +171,7 @@ public:
             button.setButtonText("PAD " + juce::String(i + 1));
             button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff253c4a));
             button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            button.onClick = [this, i] { selectedPad = i; sampler.noteOn(36 + i, 1.0f); };
+            button.onClick = [this, i] { selectedPad = i; sampler.auditionPad(i, 1.0f); };
             addAndMakeVisible(button);
         }
         loadButton.setButtonText("CHARGER SAMPLE");
