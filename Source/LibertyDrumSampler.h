@@ -119,6 +119,11 @@ public:
         const auto samplesFolder = folder.getChildFile(manifestFile.getFileNameWithoutExtension() + "_samples");
         if (!samplesFolder.createDirectory()) return false;
         auto kit = createKitXml();
+        std::vector<std::pair<juce::File, juce::File>> staged;
+        auto rollback = [&]
+        {
+            for (const auto& files : staged) files.first.deleteFile();
+        };
         for (auto* node : kit->getChildIterator())
         {
             if (!node->hasTagName("Pad")) continue;
@@ -127,13 +132,30 @@ public:
             const auto path = pads[(size_t)index].sourcePath;
             if (path.isEmpty()) continue;
             const juce::File original(path);
-            if (!original.existsAsFile()) return false;
+            if (!original.existsAsFile()) { rollback(); return false; }
             const auto destination = samplesFolder.getChildFile("pad_"
                 + juce::String(index + 1).paddedLeft('0', 2) + original.getFileExtension());
-            if (original != destination && !original.copyFileTo(destination)) return false;
+            if (original != destination)
+            {
+                const auto temp = destination.getSiblingFile(destination.getFileName() + ".tmp");
+                if (temp.existsAsFile()) temp.deleteFile();
+                if (!original.copyFileTo(temp)) { rollback(); return false; }
+                staged.emplace_back(temp, destination);
+            }
             node->setAttribute("file", destination.getRelativePathFrom(folder));
         }
-        return kit->writeTo(manifestFile);
+        // Do not publish the manifest until all samples have been copied.
+        for (const auto& files : staged)
+        {
+            if (!files.first.replaceFileIn(files.second))
+            {
+                rollback();
+                return false;
+            }
+        }
+        juce::TemporaryFile temporaryManifest(manifestFile);
+        if (!kit->writeTo(temporaryManifest.getFile())) return false;
+        return temporaryManifest.overwriteTargetFileWithTemporary();
     }
     bool importPortableKit(const juce::File& manifestFile)
     {
