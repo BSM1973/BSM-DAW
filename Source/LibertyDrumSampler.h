@@ -129,7 +129,7 @@ private:
 
 
 // First visual prototype. Owned by the message thread; audio integration is next.
-class LibertyDrumSamplerPanel final : public juce::Component
+class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
 {
 public:
     explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine)
@@ -158,6 +158,40 @@ public:
         };
         addAndMakeVisible(loadButton);
         refreshLabels();
+    }
+    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    {
+        for (const auto& path : files)
+        {
+            const auto extension = juce::File(path).getFileExtension().toLowerCase();
+            if (extension == ".wav" || extension == ".aif" || extension == ".aiff")
+                return true;
+        }
+        return false;
+    }
+    void filesDropped(const juce::StringArray& files, int x, int y) override
+    {
+        int destination = selectedPad;
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+            if (pads[(size_t)i].getBounds().contains(x, y))
+            {
+                destination = i;
+                break;
+            }
+        for (const auto& path : files)
+        {
+            const juce::File file(path);
+            const auto extension = file.getFileExtension().toLowerCase();
+            if (extension != ".wav" && extension != ".aif" && extension != ".aiff")
+                continue;
+            if (sampler.loadPad(destination, file))
+            {
+                selectedPad = destination;
+                refreshLabels();
+                repaint();
+            }
+            break;
+        }
     }
     void resized() override
     {
