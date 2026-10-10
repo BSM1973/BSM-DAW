@@ -109,6 +109,46 @@ public:
         }
         return true;
     }
+    // Export a portable kit: copy referenced samples next to the kit manifest.
+    // The original sample files are never modified.
+    bool exportPortableKit(const juce::File& manifestFile)
+    {
+        if (manifestFile.getFileExtension().toLowerCase() != ".xml") return false;
+        const auto folder = manifestFile.getParentDirectory();
+        if (!folder.createDirectory()) return false;
+        const auto samplesFolder = folder.getChildFile(manifestFile.getFileNameWithoutExtension() + "_samples");
+        if (!samplesFolder.createDirectory()) return false;
+        auto kit = createKitXml();
+        for (auto* node : kit->getChildIterator())
+        {
+            if (!node->hasTagName("Pad")) continue;
+            const int index = node->getIntAttribute("index", -1);
+            if (index < 0 || index >= padCount) continue;
+            const auto path = pads[(size_t)index].sourcePath;
+            if (path.isEmpty()) continue;
+            const juce::File original(path);
+            if (!original.existsAsFile()) return false;
+            const auto destination = samplesFolder.getChildFile("pad_"
+                + juce::String(index + 1).paddedLeft('0', 2) + original.getFileExtension());
+            if (original != destination && !original.copyFileTo(destination)) return false;
+            node->setAttribute("file", destination.getRelativePathFrom(folder));
+        }
+        return kit->writeTo(manifestFile);
+    }
+    bool importPortableKit(const juce::File& manifestFile)
+    {
+        const auto xml = juce::XmlDocument::parse(manifestFile);
+        if (xml == nullptr || !xml->hasTagName("LibertyDrumKit")) return false;
+        // Resolve relative paths against the kit manifest, not the current working directory.
+        for (auto* node : xml->getChildIterator())
+        {
+            if (!node->hasTagName("Pad")) continue;
+            const auto path = node->getStringAttribute("file");
+            if (path.isNotEmpty() && !juce::File::isAbsolutePath(path))
+                node->setAttribute("file", manifestFile.getParentDirectory().getChildFile(path).getFullPathName());
+        }
+        return restoreKitXml(*xml);
+    }
     bool hasSample(int index) const noexcept
     {
         return index >= 0 && index < padCount && std::atomic_load(&pads[(size_t)index].audio) != nullptr;
