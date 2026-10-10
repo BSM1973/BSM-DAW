@@ -453,7 +453,26 @@ int main()
     importedRoundtrip.renderMidi(roundtripAudio, hit);
     if (std::abs(roundtripAudio.getSample(0, 80)) < 0.01f)
     { exportFolder.deleteRecursively(); fixture.deleteFile(); return 58; }
-    exportFolder.deleteRecursively();
+    // A portable kit must survive moving its entire folder, because the
+    // manifest references samples relative to its own location.
+    const auto relocatedFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-relocated-kit", "");
+    if (!exportFolder.moveFileTo(relocatedFolder))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 59; }
+    const auto relocatedManifest = relocatedFolder.getChildFile("roundtrip.xml");
+    LibertyDrumSampler relocatedKit;
+    relocatedKit.prepare(48000.0);
+    if (!relocatedKit.importPortableKit(relocatedManifest)
+        || !relocatedKit.hasSample(0)
+        || !near(relocatedKit.getPad(0).gain.load(), 0.8f)
+        || !near(relocatedKit.getPad(0).pan.load(), -0.25f))
+    { relocatedFolder.deleteRecursively(); fixture.deleteFile(); return 60; }
+    juce::AudioBuffer<float> relocatedAudio(2, 128);
+    relocatedAudio.clear();
+    relocatedKit.renderMidi(relocatedAudio, hit);
+    if (std::abs(relocatedAudio.getSample(0, 80)) < 0.01f)
+    { relocatedFolder.deleteRecursively(); fixture.deleteFile(); return 61; }
+    relocatedFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
