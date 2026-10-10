@@ -517,7 +517,9 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
             repaint();
             return;
         }
-        pattern->enabled = true;
+        // Reconcile the legacy enabled flag only after verifying playable notes.
+        // This also makes the rendered clip independent of a stale saved flag.
+        pattern->enabled = hasPlayableNotes;
         const auto notes = LibertyStepSequencer::render(*pattern);
         if (!notes.empty())
         {
