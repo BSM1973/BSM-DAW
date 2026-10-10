@@ -395,6 +395,26 @@ int main()
     protectedKit.renderMidi(stillWorking, hit);
     if (!near(stillWorking.getSample(0, 80), 0.375f, 0.003f))
     { fixture.deleteFile(); return 50; }
+    // A later pad with an invalid audio setting must also abort the whole
+    // import, even if the preceding pad was valid and changed its gain.
+    const auto invalidSecond = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-invalid-second-pad", ".xml");
+    {
+        juce::XmlElement kit("LibertyDrumKit");
+        auto* first = kit.createNewChildElement("Pad");
+        first->setAttribute("index", 0);
+        first->setAttribute("file", fixture.getFullPathName());
+        first->setAttribute("gain", 0.25);
+        auto* second = kit.createNewChildElement("Pad");
+        second->setAttribute("index", 1);
+        second->setAttribute("gain", "not-a-number");
+        if (!kit.writeTo(invalidSecond)) { fixture.deleteFile(); return 51; }
+    }
+    const bool invalidSecondImported = protectedKit.importPortableKit(invalidSecond);
+    invalidSecond.deleteFile();
+    if (invalidSecondImported || !protectedKit.hasSample(0)
+        || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 52; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
