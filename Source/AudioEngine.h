@@ -26,6 +26,7 @@ public:
     {
         std::atomic_store(&drumSampler, std::move(sampler));
     }
+    void setDrumSamplerTrack(int track) noexcept { drumSamplerTrack.store(track, std::memory_order_release); }
     bool initialise();
     void shutdown();
 
@@ -302,6 +303,7 @@ private:
     std::int64_t getProjectLengthSamples() const noexcept;
 
     std::shared_ptr<LibertyDrumSampler> drumSampler;
+    std::atomic<int> drumSamplerTrack { -1 };
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
     std::shared_ptr<juce::AudioBuffer<float>> diagnosticPublishedBuffer;
