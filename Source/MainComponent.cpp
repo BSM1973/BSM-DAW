@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
 void closeFloatingStepSequencerWindow();
 void resizeLibertyDynamicTrackController(MainComponent*);
