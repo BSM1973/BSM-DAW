@@ -1148,6 +1148,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     // arrangement transport is stopped. This is not yet track routing.
     if (auto sampler = std::atomic_load(&drumSampler))
     {
+        if (!playing.load(std::memory_order_relaxed) || drumSamplerTrack.load(std::memory_order_acquire) < 0)
+        {
         sampler->processAuditions();
         if (numOutputChannels > 0 && numSamples > 0)
         {
@@ -1158,6 +1160,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 if (outputChannelData[ch] != nullptr)
                     juce::FloatVectorOperations::add(outputChannelData[ch],
                         drumBus.getReadPointer(ch), numSamples);
+        }
         }
     }
 
@@ -1421,7 +1424,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
             const bool trackMuted = midiLaneMuted || state.muted.load(std::memory_order_relaxed);
             const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
-            const bool hasInstrument = pluginHost.hasInstrumentForTrack(instrumentTrack);
+            const auto nativeDrums = instrumentTrack == drumSamplerTrack.load(std::memory_order_acquire)
+                ? std::atomic_load(&drumSampler) : std::shared_ptr<LibertyDrumSampler>{};
+            const bool hasInstrument = nativeDrums != nullptr || pluginHost.hasInstrumentForTrack(instrumentTrack);
             if (panicInstruments && hasInstrument)
             {
                 juce::MidiBuffer panicMidi;
@@ -1463,9 +1468,24 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
             juce::AudioBuffer<float> instrumentBus;
-            if (pluginHost.renderInstrumentForTrack(instrumentTrack, instrumentBus, numSamples, midi,
+            bool instrumentRendered = false;
+            if (nativeDrums != nullptr)
+            {
+                instrumentBus.setSize(2, numSamples, false, true, true);
+                instrumentBus.clear();
+                if (panicInstruments) nativeDrums->reset();
+                nativeDrums->renderMidi(instrumentBus, midi);
+                const float gain = state.gain.load(std::memory_order_relaxed);
+                const float pan = state.pan.load(std::memory_order_relaxed);
+                instrumentBus.applyGain(0, 0, numSamples, gain * juce::jmin(1.0f, 1.0f - pan));
+                instrumentBus.applyGain(1, 0, numSamples, gain * juce::jmin(1.0f, 1.0f + pan));
+                instrumentRendered = true;
+            }
+            else
+                instrumentRendered = pluginHost.renderInstrumentForTrack(instrumentTrack, instrumentBus, numSamples, midi,
                                                     state.gain.load(std::memory_order_relaxed),
-                                                    state.pan.load(std::memory_order_relaxed)))
+                                                    state.pan.load(std::memory_order_relaxed));
+            if (instrumentRendered)
             {
                 for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
                 {
