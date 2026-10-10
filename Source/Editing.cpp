@@ -75,19 +75,23 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     {
         struct DrumSamplerPreview final : juce::Component
         {
-            LibertyDrumSampler sampler;
-            LibertyDrumSamplerPanel panel { sampler };
-            DrumSamplerPreview()
+            AudioEngine& audio;
+            std::shared_ptr<LibertyDrumSampler> sampler = std::make_shared<LibertyDrumSampler>();
+            LibertyDrumSamplerPanel panel { *sampler };
+            explicit DrumSamplerPreview(AudioEngine& engine) : audio(engine)
             {
+                sampler->prepare(juce::jmax(1.0, audio.getSampleRate()));
+                audio.setDrumSampler(sampler);
                 addAndMakeVisible(panel);
                 setSize(610, 510);
             }
+            ~DrumSamplerPreview() override { audio.setDrumSampler({}); }
             void resized() override { panel.setBounds(getLocalBounds()); }
         };
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "Liberty Drum Sampler - Apercu";
         options.dialogBackgroundColour = juce::Colour(0xff121c27);
-        options.content.setOwned(new DrumSamplerPreview());
+        options.content.setOwned(new DrumSamplerPreview(audioEngine));
         options.componentToCentreAround = this;
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;
