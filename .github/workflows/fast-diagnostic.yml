@@ -50,6 +50,9 @@ jobs:
           cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
           ccache --show-stats
 
+      - name: Run Drum Sampler regression tests
+        run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
+
       - name: Verify application bundle
         run: |
           APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
