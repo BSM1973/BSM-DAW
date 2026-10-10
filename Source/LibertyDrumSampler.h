@@ -602,6 +602,13 @@ public:
         chokeFadeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
         chokeFadeSlider.onValueChange = [this] { sampler.setPadChokeFade(selectedPad, (float)chokeFadeSlider.getValue()); };
         addAndMakeVisible(chokeFadeSlider);
+        playModeLabel.setText("MODE", juce::dontSendNotification);
+        playModeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(playModeLabel);
+        playModeSelector.addItem("ONE SHOT", 1);
+        playModeSelector.addItem("GATE", 2);
+        playModeSelector.onChange = [this] { sampler.setPadGateMode(selectedPad, playModeSelector.getSelectedId() == 2); };
+        addAndMakeVisible(playModeSelector);
         gainLabel.setText("GAIN", juce::dontSendNotification);
         panLabel.setText("PAN", juce::dontSendNotification);
         gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -651,15 +658,15 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 355 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 386 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
         exportButton.setBounds(margin + 190, getHeight() - 34, 150, 25);
         importButton.setBounds(margin + 350, getHeight() - 34, 150, 25);
-        const int controlTop = getHeight() - 227;
-        waveform.setBounds(margin, getHeight() - 315, getWidth() - margin * 2, 76);
+        const int controlTop = getHeight() - 258;
+        waveform.setBounds(margin, getHeight() - 346, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
@@ -674,6 +681,8 @@ public:
         chokeSelector.setBounds(margin + 56, controlTop + 155, 160, 25);
         chokeFadeLabel.setBounds(margin, controlTop + 186, 72, 25);
         chokeFadeSlider.setBounds(margin + 72, controlTop + 186, juce::jmax(80, getWidth() - margin * 2 - 72), 25);
+        playModeLabel.setBounds(margin, controlTop + 217, 56, 25);
+        playModeSelector.setBounds(margin + 56, controlTop + 217, 160, 25);
     }
     void paint(juce::Graphics& g) override
     {
@@ -705,6 +714,7 @@ private:
         endSlider.setValue(pad.endFraction.load() * 100.0f, juce::dontSendNotification);
         chokeSelector.setSelectedId(pad.chokeGroup.load() + 1, juce::dontSendNotification);
         chokeFadeSlider.setValue(pad.chokeFadeMs.load(), juce::dontSendNotification);
+        playModeSelector.setSelectedId(pad.gateMode.load() ? 2 : 1, juce::dontSendNotification);
     }
     void refreshLabels()
     {
@@ -723,6 +733,8 @@ private:
     juce::ComboBox chokeSelector;
     juce::Slider chokeFadeSlider;
     juce::Label chokeFadeLabel;
+    juce::ComboBox playModeSelector;
+    juce::Label playModeLabel;
     int selectedPad = 0;
     std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };
