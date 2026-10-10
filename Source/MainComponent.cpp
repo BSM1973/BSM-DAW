@@ -1329,6 +1329,43 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+
+    // Pattern clips take priority over timeline creation and editor shortcuts.
+    // A second click is handled by mouseDoubleClick (rename), never by clip creation.
+    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows()
+                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+        const int instrumentIndex = row - instrumentFirst;
+        if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+        {
+            auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            for (int clipIndex = (int) clips.size() - 1; clipIndex >= 0; --clipIndex)
+            {
+                const auto& clip = clips[(size_t) clipIndex];
+                const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                if (p.x < left || p.x >= left + width) continue;
+                selectedTrack = row;
+                if (event.getNumberOfClicks() == 1)
+                {
+                    draggedPatternInstrument = instrumentIndex;
+                    draggedPatternClip = clipIndex;
+                    dragStartMouseX = (float) p.x;
+                    dragStartSeconds = clip.startSeconds;
+                }
+                else
+                {
+                    draggedPatternInstrument = -1;
+                    draggedPatternClip = -1;
+                }
+                repaint();
+                return;
+            }
+        }
+    }
     if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
         && juce::Rectangle<int>(260, getMixerTop() + 4, 106, 28).contains(p))
