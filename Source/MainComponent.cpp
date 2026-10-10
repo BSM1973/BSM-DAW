@@ -525,7 +525,7 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
         if (!notes.empty())
         {
             const double lengthSeconds = MidiEngine::tickToSeconds(
-                LibertyStepSequencer::getCycleLengthTicks(*pattern), tempoBpm);
+                LibertyStepSequencer::getCycleLengthTicks(exportPattern), tempoBpm);
             commitLibertySequencerMidiClip(*this, notes, midiIndex,
                                            playheadSeconds, juce::jmax(0.01, lengthSeconds));
         }
