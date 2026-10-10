@@ -233,8 +233,10 @@ public:
                     || (key == "start" && (parsed < 0.0 || parsed > 0.99))
                     || (key == "end" && (parsed < 0.01 || parsed > 1.0))
                     || (key == "sustain" && (parsed < 0.0 || parsed > 1.0))
-                    || ((key == "attackMs" || key == "decayMs"
-                         || key == "releaseMs" || key == "chokeFadeMs") && parsed < 0.0))
+                    || ((key == "attackMs" || key == "decayMs")
+                        && (parsed < 0.0 || parsed > 2000.0))
+                    || (key == "releaseMs" && (parsed < 1.0 || parsed > 5000.0))
+                    || (key == "chokeFadeMs" && (parsed < 1.0 || parsed > 100.0)))
                     return false;
             }
             // Validate trim endpoints together: each is individually in range,
