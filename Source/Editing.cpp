@@ -76,21 +76,23 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
         struct DrumSamplerPreview final : juce::Component
         {
             AudioEngine& audio;
-            std::shared_ptr<LibertyDrumSampler> sampler = std::make_shared<LibertyDrumSampler>();
-            LibertyDrumSamplerPanel panel { *sampler };
-            explicit DrumSamplerPreview(AudioEngine& engine, int instrumentIndex) : audio(engine)
+            std::shared_ptr<LibertyDrumSampler> sampler;
+            LibertyDrumSamplerPanel panel;
+            explicit DrumSamplerPreview(AudioEngine& engine, int instrumentIndex)
+                : audio(engine),
+                  sampler(audio.getDrumSampler() != nullptr ? audio.getDrumSampler() : std::make_shared<LibertyDrumSampler>()),
+                  panel(*sampler)
             {
-                sampler->prepare(juce::jmax(1.0, audio.getSampleRate()));
-                audio.setDrumSamplerTrack(instrumentIndex);
-                audio.setDrumSampler(sampler);
+                if (audio.getDrumSampler() == nullptr)
+                {
+                    sampler->prepare(juce::jmax(1.0, audio.getSampleRate()));
+                    audio.setDrumSampler(sampler);
+                }
+                if (instrumentIndex >= 0) audio.setDrumSamplerTrack(instrumentIndex);
                 addAndMakeVisible(panel);
                 setSize(610, 510);
             }
-            ~DrumSamplerPreview() override
-            {
-                audio.setDrumSamplerTrack(-1);
-                audio.setDrumSampler({});
-            }
+            ~DrumSamplerPreview() override = default;
             void resized() override { panel.setBounds(getLocalBounds()); }
         };
         juce::DialogWindow::LaunchOptions options;
