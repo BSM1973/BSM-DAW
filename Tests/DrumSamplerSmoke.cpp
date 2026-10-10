@@ -149,6 +149,32 @@ int main()
     sounding.renderMidi(emptyOutput, emptyMidi);
     if (!near(emptyOutput.getSample(0, 200), 0.5f, 0.003f))
     { fixture.deleteFile(); return 17; }
+    // With 32 active voices, the 33rd hit must replace the oldest voice.
+    // Unique velocities make an incorrect voice-stealing policy measurable.
+    sounding.reset();
+    sounding.setPadChokeGroup(0, 0);
+    sounding.setPadGain(0, 1.0f);
+    sounding.setPadGateMode(0, false);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> polyOutput(2, 64);
+    juce::MidiBuffer polyMidi;
+    for (int velocity = 1; velocity <= 32; ++velocity)
+        polyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)velocity), 0);
+    polyOutput.clear();
+    sounding.renderMidi(polyOutput, polyMidi);
+    const float expected32 = 0.5f * (32.0f * 33.0f / 2.0f) / 127.0f;
+    if (!near(polyOutput.getSample(0, 10), expected32, 0.02f))
+    { fixture.deleteFile(); return 18; }
+
+    sounding.reset();
+    polyMidi.clear();
+    for (int velocity = 1; velocity <= 33; ++velocity)
+        polyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)velocity), 0);
+    polyOutput.clear();
+    sounding.renderMidi(polyOutput, polyMidi);
+    const float expectedStolen = 0.5f * ((33.0f * 34.0f / 2.0f) - 1.0f) / 127.0f;
+    if (!near(polyOutput.getSample(0, 10), expectedStolen, 0.02f))
+    { fixture.deleteFile(); return 19; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
