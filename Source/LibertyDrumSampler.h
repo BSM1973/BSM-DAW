@@ -237,6 +237,12 @@ public:
                          || key == "releaseMs" || key == "chokeFadeMs") && parsed < 0.0))
                     return false;
             }
+            // Validate trim endpoints together: each is individually in range,
+            // but the playback window must still span at least one percent.
+            const double trimStart = node->getDoubleAttribute("start", 0.0);
+            const double trimEnd = node->getDoubleAttribute("end", 1.0);
+            if (trimEnd - trimStart < 0.01 - 1.0e-7)
+                return false;
             for (const auto* attribute : { "chokeGroup", "gateMode" })
             {
                 if (!node->hasAttribute(attribute)) continue;
