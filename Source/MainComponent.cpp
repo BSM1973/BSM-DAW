@@ -1287,6 +1287,39 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
     return false;
 }
 
+void MainComponent::mouseMove(const juce::MouseEvent& event)
+{
+    const auto p = event.getPosition();
+    bool overPatternClip = false;
+    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows()
+                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int instrumentIndex = row - getAudioTrackCount() - getMidiTrackCount();
+        if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+        {
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            for (const auto& clip : instrumentStepSequencers[(size_t) instrumentIndex].timelineClips)
+            {
+                const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                if (clip.lengthSeconds > 0.0 && p.x >= left && p.x < left + width)
+                {
+                    overPatternClip = true;
+                    break;
+                }
+            }
+        }
+    }
+    setMouseCursor(overPatternClip ? juce::MouseCursor::DraggingHandCursor
+                                   : juce::MouseCursor::NormalCursor);
+}
+
+void MainComponent::mouseExit(const juce::MouseEvent&)
+{
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
