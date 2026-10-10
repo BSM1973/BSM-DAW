@@ -211,14 +211,27 @@ public:
             {
                 auto audio = std::atomic_load(&pads[(size_t)i].audio);
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
+                // Prefer an idle voice; when polyphony is exhausted, steal the
+                // oldest active voice instead of repeatedly cutting voice zero.
                 auto* voice = &voices[0];
-                for (auto& candidate : voices) if (!candidate.active) { voice = &candidate; break; }
+                bool foundIdle = false;
+                for (auto& candidate : voices)
+                    if (!candidate.active)
+                    {
+                        voice = &candidate;
+                        foundIdle = true;
+                        break;
+                    }
+                if (!foundIdle)
+                    for (auto& candidate : voices)
+                        if (candidate.sequence < voice->sequence)
+                            voice = &candidate;
                 const int frames = audio->getNumSamples();
                 const float start = pads[(size_t)i].startFraction.load();
                 *voice = {true, i, (double)juce::jlimit(0, frames - 1, (int)(start * (frames - 1))),
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
-                          pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load()};
+                          pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence};
                 return;
             }
     }
@@ -305,7 +318,9 @@ private:
         float gain = 1.0f;
         float pan = 0.0f;
         float pitchSemitones = 0.0f;
+        uint64_t sequence = 0;
     };
+    uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
