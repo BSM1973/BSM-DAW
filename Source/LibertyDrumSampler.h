@@ -221,6 +221,17 @@ public:
                 if (end == utf8 || *end != '\0' || !std::isfinite(parsed))
                     return false;
             }
+            for (const auto* attribute : { "chokeGroup", "gateMode" })
+            {
+                if (!node->hasAttribute(attribute)) continue;
+                const auto value = node->getStringAttribute(attribute).trim();
+                if (value.isEmpty() || !value.containsOnly("0123456789"))
+                    return false;
+                const int parsed = value.getIntValue();
+                if ((juce::String(attribute) == "chokeGroup" && parsed > 8)
+                    || (juce::String(attribute) == "gateMode" && parsed > 1))
+                    return false;
+            }
             const auto path = node->getStringAttribute("file");
             if (path.isNotEmpty() && !candidate.loadPad(index, juce::File(path)))
                 return false;
