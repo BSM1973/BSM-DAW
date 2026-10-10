@@ -473,6 +473,34 @@ int main()
     if (std::abs(relocatedAudio.getSample(0, 80)) < 0.01f)
     { relocatedFolder.deleteRecursively(); fixture.deleteFile(); return 61; }
     relocatedFolder.deleteRecursively();
+    // Multiple pads must receive unique sample destinations and round-trip.
+    const auto multiFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-multipad-export", "");
+    if (!multiFolder.createDirectory()) { fixture.deleteFile(); return 62; }
+    const auto secondFixture = multiFolder.getChildFile("another-sample.wav");
+    if (!fixture.copyFileTo(secondFixture))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 63; }
+    LibertyDrumSampler multiSource;
+    multiSource.prepare(48000.0);
+    if (!multiSource.loadPad(0, fixture) || !multiSource.loadPad(1, secondFixture))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 64; }
+    multiSource.setPadGain(0, 0.6f);
+    multiSource.setPadGain(1, 0.9f);
+    const auto multiManifest = multiFolder.getChildFile("multi.xml");
+    if (!multiSource.exportPortableKit(multiManifest))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 65; }
+    const auto sampleDir = multiFolder.getChildFile("multi_samples");
+    if (!sampleDir.getChildFile("pad_01.wav").existsAsFile()
+        || !sampleDir.getChildFile("pad_02.wav").existsAsFile())
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 66; }
+    LibertyDrumSampler multiImported;
+    multiImported.prepare(48000.0);
+    if (!multiImported.importPortableKit(multiManifest)
+        || !multiImported.hasSample(0) || !multiImported.hasSample(1)
+        || !near(multiImported.getPad(0).gain.load(), 0.6f)
+        || !near(multiImported.getPad(1).gain.load(), 0.9f))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 67; }
+    multiFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
