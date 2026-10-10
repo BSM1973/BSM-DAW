@@ -121,7 +121,7 @@ void MainComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour(0xff253344));
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
             g.setColour(juce::Colours::white);
-            g.drawText("DÉTACHER", detach, juce::Justification::centred);
+            g.drawText(juce::String::fromUTF8("D\xC3\x89TACHER"), detach, juce::Justification::centred);
         }
     }
 }
