@@ -532,6 +532,20 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     project.setAttribute("instrumentMuted", audioEngine.isInstrumentTrackMuted());
     project.setAttribute("instrumentSolo", audioEngine.isInstrumentTrackSolo());
 
+    // Keep the native drum kit alongside the project, with portable sample copies.
+    if (auto drumSampler = audioEngine.getDrumSampler())
+    {
+        const auto kitFile = file.getSiblingFile(file.getFileNameWithoutExtension() + "_DrumKit.xml");
+        if (!drumSampler->exportPortableKit(kitFile))
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - Project Save", "Could not export the Drum Sampler kit and samples.", "OK");
+            return false;
+        }
+        auto* drum = project.createNewChildElement("DrumSampler");
+        drum->setAttribute("kitFile", kitFile.getFileName());
+    }
+
     auto* midi = project.createNewChildElement("MIDI");
     midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
     midi->setAttribute("track", 0);
@@ -842,6 +856,23 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                                                "Liberty could not reset the instrument engine because memory is unavailable.",
                                                "OK");
         return false;
+    }
+
+    // Restore the sampler only after project reset, so a previous project's kit
+    // cannot leak into the newly opened session.
+    if (auto* drum = project->getChildByName("DrumSampler"))
+    {
+        const auto kitFile = file.getSiblingFile(drum->getStringAttribute("kitFile"));
+        auto sampler = std::make_shared<LibertyDrumSampler>();
+        sampler->prepare(juce::jmax(1.0, audioEngine.getSampleRate()));
+        if (sampler->importPortableKit(kitFile))
+        {
+            audioEngine.setDrumSampler(sampler);
+            audioEngine.setDrumSamplerTrack(-1);
+        }
+        else
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - Project Open", "The Drum Sampler kit could not be restored.", "OK");
     }
 
     constexpr int maxRestoredTracksPerType = 512;
