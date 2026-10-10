@@ -100,8 +100,7 @@ void MainComponent::paint(juce::Graphics& g)
                      && selectedTrack < instrumentFirst;
     if (isMidi || showStepSequencer)
     {
-        auto tabs = juce::Rectangle<int>(juce::jmax(8, getWidth() - 254),
-                                               mixer.getY() + 7, 244, 28);
+        auto tabs = juce::Rectangle<int>(8, mixer.getY() - 35, 244, 28);
         const auto piano = tabs.removeFromLeft(118);
         const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
@@ -116,7 +115,7 @@ void MainComponent::paint(juce::Graphics& g)
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
         if (showStepSequencer && dockStepSequencerMode)
         {
-            const auto detach = juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), mixer.getY() + 7, 106, 28);
+            const auto detach = juce::Rectangle<int>(260, mixer.getY() - 35, 106, 28);
             g.setColour(juce::Colour(0xff253344));
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
             g.setColour(juce::Colours::white);
@@ -1330,7 +1329,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const auto p = event.getPosition();
     if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
-        && juce::Rectangle<int>(juce::jmax(8, getWidth() - 370), getMixerTop() + 7, 106, 28).contains(p))
+        && juce::Rectangle<int>(260, getMixerTop() - 35, 106, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
@@ -1340,10 +1339,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                            && selectedTrack < dockInstrumentFirst;
     const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
                                  && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
-    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 7
-        && p.y < getMixerTop() + 35)
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() - 35
+        && p.y < getMixerTop() - 7)
     {
-        const int tabX = juce::jmax(8, getWidth() - 254);
+        const int tabX = 8;
         if (p.x >= tabX && p.x < tabX + 118)
         {
             dockStepSequencerMode = false;
@@ -1464,6 +1463,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
+        if (selectedTrack != track) dockStepSequencerMode = false;
         selectedTrack = track;
         if (isPointInsideAudioClip(track, p))
         {
@@ -1559,6 +1559,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
         if (logicalRow >= midiFirst && logicalRow < totalRows)
         {
+            if (selectedTrack != logicalRow) dockStepSequencerMode = false;
             selectedTrack = logicalRow;
             if (logicalRow >= instrumentFirst && p.x >= headerW)
             {
