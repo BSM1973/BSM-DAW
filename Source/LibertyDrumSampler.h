@@ -186,6 +186,31 @@ class LibertyDrumWaveform final : public juce::Component
 public:
     explicit LibertyDrumWaveform(LibertyDrumSampler& engine) : sampler(engine) {}
     void selectPad(int index) { selectedPad = index; repaint(); }
+    std::function<void()> onTrimChanged;
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (!sampler.hasSample(selectedPad) || getWidth() <= 0) return;
+        const auto& pad = sampler.getPad(selectedPad);
+        const float x = juce::jlimit(0.0f, 1.0f, (float)event.x / (float)getWidth());
+        const float start = pad.startFraction.load();
+        const float end = pad.endFraction.load();
+        draggingStart = std::abs(x - start) <= std::abs(x - end);
+        mouseDrag(event);
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (!sampler.hasSample(selectedPad) || getWidth() <= 0) return;
+        const auto& pad = sampler.getPad(selectedPad);
+        const float x = juce::jlimit(0.0f, 1.0f, (float)event.x / (float)getWidth());
+        if (draggingStart)
+            sampler.setPadTrim(selectedPad, juce::jmin(x, pad.endFraction.load() - 0.01f),
+                               pad.endFraction.load());
+        else
+            sampler.setPadTrim(selectedPad, pad.startFraction.load(),
+                               juce::jmax(x, pad.startFraction.load() + 0.01f));
+        if (onTrimChanged) onTrimChanged();
+        repaint();
+    }
     void paint(juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat();
@@ -228,6 +253,7 @@ public:
 private:
     LibertyDrumSampler& sampler;
     int selectedPad = 0;
+    bool draggingStart = true;
 };
 
 class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
@@ -259,6 +285,7 @@ public:
         };
         addAndMakeVisible(loadButton);
         addAndMakeVisible(waveform);
+        waveform.onTrimChanged = [this] { updateControls(); };
         gainSlider.setRange(0.0, 2.0, 0.01);
         gainSlider.setValue(1.0, juce::dontSendNotification);
         gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
