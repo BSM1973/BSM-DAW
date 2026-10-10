@@ -190,11 +190,16 @@ public:
         // Validate and decode the entire kit before changing any live pad.
         LibertyDrumSampler candidate;
         candidate.prepare(outputRate);
+        std::array<bool, padCount> seenPads {};
         for (auto* node : xml->getChildIterator())
         {
             if (!node->hasTagName("Pad")) continue;
             const int index = node->getIntAttribute("index", -1);
-            if (index < 0 || index >= padCount) return false;
+            // Duplicate entries are ambiguous and must not silently overwrite
+            // previously validated samples or pad parameters.
+            if (index < 0 || index >= padCount || seenPads[(size_t)index])
+                return false;
+            seenPads[(size_t)index] = true;
             const auto path = node->getStringAttribute("file");
             if (path.isNotEmpty() && !candidate.loadPad(index, juce::File(path)))
                 return false;
