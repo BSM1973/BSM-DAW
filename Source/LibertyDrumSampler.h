@@ -533,6 +533,17 @@ public:
             label->setColour(juce::Label::textColourId, juce::Colours::white);
             addAndMakeVisible(*label);
         }
+        chokeLabel.setText("CHOKE", juce::dontSendNotification);
+        chokeLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(chokeLabel);
+        chokeSelector.addItem("OFF", 1);
+        for (int group = 1; group <= 8; ++group)
+            chokeSelector.addItem("GROUPE " + juce::String(group), group + 1);
+        chokeSelector.onChange = [this]
+        {
+            sampler.setPadChokeGroup(selectedPad, chokeSelector.getSelectedId() - 1);
+        };
+        addAndMakeVisible(chokeSelector);
         gainLabel.setText("GAIN", juce::dontSendNotification);
         panLabel.setText("PAN", juce::dontSendNotification);
         gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -601,6 +612,8 @@ public:
         startSlider.setBounds(margin + 48, controlTop + 93, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         endLabel.setBounds(margin, controlTop + 124, 48, 25);
         endSlider.setBounds(margin + 48, controlTop + 124, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
+        chokeLabel.setBounds(margin, controlTop + 155, 56, 25);
+        chokeSelector.setBounds(margin + 56, controlTop + 155, 160, 25);
     }
     void paint(juce::Graphics& g) override
     {
@@ -630,6 +643,7 @@ private:
         pitchSlider.setValue(pad.pitchSemitones.load(), juce::dontSendNotification);
         startSlider.setValue(pad.startFraction.load() * 100.0f, juce::dontSendNotification);
         endSlider.setValue(pad.endFraction.load() * 100.0f, juce::dontSendNotification);
+        chokeSelector.setSelectedId(pad.chokeGroup.load() + 1, juce::dontSendNotification);
     }
     void refreshLabels()
     {
@@ -644,7 +658,8 @@ private:
     juce::TextButton loadButton, exportButton, importButton;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
-    juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel;
+    juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
+    juce::ComboBox chokeSelector;
     int selectedPad = 0;
     std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };
