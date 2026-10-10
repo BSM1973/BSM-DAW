@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 #include <cmath>
+#include <cstdlib>
 #include <atomic>
 
 // Liberty Drum Sampler: first milestone, 16 velocity-sensitive one-shot pads.
@@ -211,8 +212,13 @@ public:
                                            "sustain", "releaseMs" })
             {
                 if (!node->hasAttribute(attribute)) continue;
-                const auto value = node->getStringAttribute(attribute);
-                if (value.trim().isEmpty() || !std::isfinite(value.getDoubleValue()))
+                const auto value = node->getStringAttribute(attribute).trim();
+                if (value.isEmpty()) return false;
+                const auto utf8 = value.toRawUTF8();
+                char* end = nullptr;
+                const double parsed = std::strtod(utf8, &end);
+                // Reject partially parsed numbers (e.g. "12abc"), not just NaN.
+                if (end == utf8 || *end != '\0' || !std::isfinite(parsed))
                     return false;
             }
             const auto path = node->getStringAttribute("file");
