@@ -28,6 +28,7 @@ public:
         std::atomic<float> endFraction { 1.0f };
         std::atomic<int> chokeGroup { 0 };
         std::atomic<float> chokeFadeMs { 8.0f };
+        std::atomic<bool> gateMode { false };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -91,6 +92,7 @@ public:
             node->setAttribute("end", (double)pad.endFraction.load());
             node->setAttribute("chokeGroup", pad.chokeGroup.load());
             node->setAttribute("chokeFadeMs", (double)pad.chokeFadeMs.load());
+            node->setAttribute("gateMode", pad.gateMode.load() ? 1 : 0);
         }
         return kit;
     }
@@ -112,6 +114,7 @@ public:
                           (float)node->getDoubleAttribute("end", 1.0));
             setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
             setPadChokeFade(i, (float)node->getDoubleAttribute("chokeFadeMs", 8.0));
+            setPadGateMode(i, node->getIntAttribute("gateMode", 0) != 0);
         }
         return true;
     }
@@ -203,6 +206,7 @@ public:
             dst.endFraction.store(src.endFraction.load());
             dst.chokeGroup.store(src.chokeGroup.load());
             dst.chokeFadeMs.store(src.chokeFadeMs.load());
+            dst.gateMode.store(src.gateMode.load());
         }
         // Active voices keep their immutable sample buffers until they finish.
         return true;
@@ -210,6 +214,19 @@ public:
     bool hasSample(int index) const noexcept
     {
         return index >= 0 && index < padCount && std::atomic_load(&pads[(size_t)index].audio) != nullptr;
+    }
+    void noteOff(int note) noexcept
+    {
+        for (auto& voice : voices)
+            if (voice.active && voice.midiNote == note && voice.gateMode)
+            {
+                const int release = juce::jmax(1, (int)(outputRate * 0.008));
+                if (voice.releaseSamplesRemaining == 0 || release < voice.releaseSamplesRemaining)
+                {
+                    voice.releaseSamplesRemaining = release;
+                    voice.releaseSamplesTotal = release;
+                }
+            }
     }
     void noteOn(int note, float velocity) noexcept
     {
@@ -253,7 +270,7 @@ public:
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
-                          pads[(size_t)i].chokeGroup.load(), 0, 0};
+                          pads[(size_t)i].chokeGroup.load(), 0, 0, note, pads[(size_t)i].gateMode.load()};
                 return;
             }
     }
@@ -271,12 +288,19 @@ public:
             const auto message = metadata.getMessage();
             if (message.isNoteOn())
                 noteOn(message.getNoteNumber(), message.getFloatVelocity());
+            else if (message.isNoteOff())
+                noteOff(message.getNoteNumber());
             else if (message.isAllSoundOff() || message.isAllNotesOff())
                 reset();
             cursor = juce::jmax(cursor, offset);
         }
         if (cursor < output.getNumSamples())
             render(output, cursor, output.getNumSamples() - cursor);
+    }
+    void setPadGateMode(int index, bool enabled) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].gateMode.store(enabled);
     }
     void setPadChokeFade(int index, float milliseconds) noexcept
     {
@@ -363,6 +387,8 @@ private:
         int chokeGroup = 0;
         int releaseSamplesRemaining = 0;
         int releaseSamplesTotal = 0;
+        int midiNote = -1;
+        bool gateMode = false;
     };
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
