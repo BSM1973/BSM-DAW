@@ -1,5 +1,17 @@
 #include "MainComponent.h"
 
+bool commitLibertyAudioClipResize(MainComponent& owner,
+                                  int trackIndex,
+                                  double requestedStartSeconds,
+                                  double requestedLengthSeconds,
+                                  bool preservePitchStretch,
+                                  bool resizeLeft,
+                                  juce::String& error);
+
+void syncLibertyMultiMidiPlayback(MainComponent& owner);
+void scaleLibertyMultiMidiClipsForTempoChange(MainComponent& owner, double ratio);
+bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error, bool restorePlaying);
+
 void MainComponent::editTempo()
 {
     auto* alert = new juce::AlertWindow("BSM DAW - Tempo", "Enter tempo (BPM):", juce::MessageBoxIconType::NoIcon);
@@ -13,7 +25,62 @@ void MainComponent::editTempo()
             const double value = alert->getTextEditorContents("tempo").getDoubleValue();
             if (value >= 20.0 && value <= 300.0)
             {
+                const double oldTempo = juce::jmax(1.0, tempoBpm);
+                const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
+                const bool wasPlayingBeforeTempoChange = audioEngine.isPlaying();
+                if (std::abs(value - oldTempo) > 0.000001)
+                {
+                    // Audio clips are treated as musical clips: their number of measures stays fixed.
+                    // Example in 4/4: 4 measures at 120 BPM = 8 s, and become 12 s at 80 BPM.
+                    // Signalsmith Stretch is used through commitLibertyAudioClipResize(), with pitch preserved.
+                    const double tempoRatio = oldTempo / value;
+                    juce::String stretchError;
+                    if (!commitLibertyAudioTempoChange(*this, tempoRatio, stretchError, false))
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                               "Liberty - Tempo Stretch",
+                                                               stretchError,
+                                                               "OK");
+                        delete alert;
+                        repaint();
+                        return;
+                    }
+                }
                 tempoBpm = value;
+                if (std::abs(value - oldTempo) > 0.000001)
+                {
+                    const double tempoRatio = oldTempo / value;
+                    scaleLibertyMultiMidiClipsForTempoChange(*this, tempoRatio);
+                    // Keep existing Step Sequencer Pattern clips anchored to their
+                    // musical timeline positions and lengths when the BPM changes.
+                    // Clip notes remain in MIDI ticks; only their timeline seconds
+                    // need scaling before republishing to the instrument engine.
+                    for (int instrumentIndex = 0;
+                         instrumentIndex < (int) instrumentStepSequencers.size();
+                         ++instrumentIndex)
+                    {
+                        auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                        for (auto& clip : clips)
+                        {
+                            // Convert through integer MIDI ticks instead of repeatedly
+                            // multiplying floating-point seconds. This prevents gradual
+                            // musical drift after many back-and-forth tempo changes.
+                            const auto startTick = juce::jmax<std::int64_t>(
+                                0, MidiEngine::secondsToTick(clip.startSeconds, oldTempo));
+                            const auto lengthTicks = juce::jmax<std::int64_t>(
+                                1, MidiEngine::secondsToTick(clip.lengthSeconds, oldTempo));
+                            clip.startSeconds = MidiEngine::tickToSeconds(startTick, value);
+                            clip.lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, value);
+                        }
+                        if (!clips.empty())
+                            publishInstrumentArrangementClips(instrumentIndex);
+                    }
+                    audioEngine.setCurrentTimeSeconds(transportBeforeTempoChange * tempoRatio);
+                    if (wasPlayingBeforeTempoChange)
+                        audioEngine.setPlaying(true);
+                }
+                else
+                    syncLibertyMultiMidiPlayback(*this);
                 tempoControls.refresh();
             }
         }

@@ -1,0 +1,508 @@
+#include "LibertyDrumSampler.h"
+#include <juce_core/juce_core.h>
+#include <cmath>
+#include <iostream>
+
+static bool near(float actual, float expected, float tolerance = 0.002f)
+{
+    return std::abs(actual - expected) <= tolerance;
+}
+
+int main()
+{
+    LibertyDrumSampler sampler;
+    sampler.prepare(48000.0);
+    sampler.setPadChokeGroup(0, 3);
+    sampler.setPadChokeFade(0, 17.0f);
+    sampler.setPadGateMode(0, true);
+    sampler.setPadEnvelope(0, 25.0f, 120.0f, 0.35f, 250.0f);
+    auto kit = sampler.createKitXml();
+    if (kit == nullptr) return 1;
+
+    LibertyDrumSampler restored;
+    restored.prepare(48000.0);
+    if (!restored.restoreKitXml(*kit)) return 2;
+    const auto& pad = restored.getPad(0);
+    if (pad.chokeGroup.load() != 3 || !near(pad.chokeFadeMs.load(), 17.0f)
+        || !pad.gateMode.load() || !near(pad.attackMs.load(), 25.0f)
+        || !near(pad.decayMs.load(), 120.0f)
+        || !near(pad.sustain.load(), 0.35f)
+        || !near(pad.releaseMs.load(), 250.0f)) return 3;
+
+    // Older manifests without ADSR or gate attributes must restore defaults.
+    auto legacy = sampler.createKitXml();
+    if (legacy == nullptr) return 4;
+    for (auto* node : legacy->getChildIterator())
+        if (node->hasTagName("Pad"))
+        {
+            node->removeAttribute("chokeFadeMs");
+            node->removeAttribute("gateMode");
+            node->removeAttribute("attackMs");
+            node->removeAttribute("decayMs");
+            node->removeAttribute("sustain");
+            node->removeAttribute("releaseMs");
+        }
+    LibertyDrumSampler older;
+    older.prepare(48000.0);
+    if (!older.restoreKitXml(*legacy)) return 5;
+    const auto& defaults = older.getPad(0);
+    if (!near(defaults.chokeFadeMs.load(), 8.0f) || defaults.gateMode.load()
+        || !near(defaults.attackMs.load(), 0.0f)
+        || !near(defaults.decayMs.load(), 0.0f)
+        || !near(defaults.sustain.load(), 1.0f)
+        || !near(defaults.releaseMs.load(), 8.0f)) return 6;
+
+    juce::AudioBuffer<float> output(2, 512);
+    output.clear();
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)100), 0);
+    midi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)100), 40);
+    midi.addEvent(juce::MidiMessage::noteOff(1, 36), 80);
+    midi.addEvent(juce::MidiMessage::noteOff(1, 36), 120);
+    restored.renderMidi(output, midi);
+    for (int channel = 0; channel < output.getNumChannels(); ++channel)
+        for (int frame = 0; frame < output.getNumSamples(); ++frame)
+            if (!std::isfinite(output.getSample(channel, frame))) return 7;
+
+    // Generate a deterministic WAV fixture and test actual playback gain.
+    const auto fixture = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-drum-smoke", ".wav");
+    {
+        juce::WavAudioFormat format;
+        std::unique_ptr<juce::FileOutputStream> stream(fixture.createOutputStream());
+        if (!stream) return 8;
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            format.createWriterFor(stream.get(), 48000.0, 1, 16, {}, 0));
+        if (!writer) return 9;
+        stream.release();
+        juce::AudioBuffer<float> tone(1, 4800);
+        for (int i = 0; i < tone.getNumSamples(); ++i)
+            tone.setSample(0, i, 0.5f);
+        if (!writer->writeFromAudioSampleBuffer(tone, 0, tone.getNumSamples())) return 10;
+    }
+    LibertyDrumSampler sounding;
+    sounding.prepare(48000.0);
+    if (!sounding.loadPad(0, fixture)) { fixture.deleteFile(); return 11; }
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> audible(2, 256);
+    audible.clear();
+    juce::MidiBuffer hit;
+    hit.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    sounding.renderMidi(audible, hit);
+    if (!near(audible.getSample(0, 100), 0.5f, 0.003f)) { fixture.deleteFile(); return 12; }
+
+    // Attack should ramp from silence toward the sample's nominal level.
+    sounding.reset();
+    sounding.setPadEnvelope(0, 4.0f, 0.0f, 1.0f, 8.0f);
+    audible.clear();
+    sounding.renderMidi(audible, hit);
+    if (std::abs(audible.getSample(0, 0)) > 0.003f
+        || !(audible.getSample(0, 150) > audible.getSample(0, 40)))
+    { fixture.deleteFile(); return 13; }
+
+    // Gate note-off must attenuate the held voice after release time.
+    sounding.reset();
+    sounding.setPadGateMode(0, true);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 2.0f);
+    audible.clear();
+    juce::MidiBuffer gate;
+    gate.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    gate.addEvent(juce::MidiMessage::noteOff(1, 36), 32);
+    sounding.renderMidi(audible, gate);
+    if (!(audible.getSample(0, 40) > 0.0f)
+        || std::abs(audible.getSample(0, 180)) > 0.003f)
+    { fixture.deleteFile(); return 14; }
+    // A second hit in the same choke group must fade the first hit smoothly.
+    sounding.reset();
+    if (!sounding.loadPad(1, fixture)) { fixture.deleteFile(); return 15; }
+    sounding.setPadGateMode(0, false);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    sounding.setPadEnvelope(1, 0.0f, 0.0f, 1.0f, 8.0f);
+    sounding.setPadChokeGroup(0, 1);
+    sounding.setPadChokeGroup(1, 1);
+    sounding.setPadChokeFade(1, 2.0f);
+    sounding.setPadGain(1, 0.0f); // Silent trigger isolates the outgoing voice.
+    juce::AudioBuffer<float> chokeOutput(2, 320);
+    chokeOutput.clear();
+    juce::MidiBuffer chokeMidi;
+    chokeMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    chokeMidi.addEvent(juce::MidiMessage::noteOn(1, 37, (juce::uint8)127), 100);
+    sounding.renderMidi(chokeOutput, chokeMidi);
+    const float beforeChoke = chokeOutput.getSample(0, 99);
+    const float startChoke = chokeOutput.getSample(0, 100);
+    const float midChoke = chokeOutput.getSample(0, 145);
+    const float endChoke = chokeOutput.getSample(0, 210);
+    if (!near(beforeChoke, 0.5f, 0.003f)
+        || std::abs(startChoke - beforeChoke) > 0.015f
+        || !(midChoke > 0.0f && midChoke < startChoke)
+        || std::abs(endChoke) > 0.003f)
+    { fixture.deleteFile(); return 16; }
+
+    // Triggering an empty pad must not choke an audible voice.
+    sounding.reset();
+    sounding.setPadChokeGroup(2, 1);
+    juce::AudioBuffer<float> emptyOutput(2, 256);
+    emptyOutput.clear();
+    juce::MidiBuffer emptyMidi;
+    emptyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    emptyMidi.addEvent(juce::MidiMessage::noteOn(1, 38, (juce::uint8)127), 100);
+    sounding.renderMidi(emptyOutput, emptyMidi);
+    if (!near(emptyOutput.getSample(0, 200), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 17; }
+    // With 32 active voices, the 33rd hit must replace the oldest voice.
+    // Unique velocities make an incorrect voice-stealing policy measurable.
+    sounding.reset();
+    sounding.setPadChokeGroup(0, 0);
+    sounding.setPadGain(0, 1.0f);
+    sounding.setPadGateMode(0, false);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> polyOutput(2, 64);
+    juce::MidiBuffer polyMidi;
+    for (int velocity = 1; velocity <= 32; ++velocity)
+        polyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)velocity), 0);
+    polyOutput.clear();
+    sounding.renderMidi(polyOutput, polyMidi);
+    const float expected32 = 0.5f * (32.0f * 33.0f / 2.0f) / 127.0f;
+    if (!near(polyOutput.getSample(0, 10), expected32, 0.02f))
+    { fixture.deleteFile(); return 18; }
+
+    sounding.reset();
+    polyMidi.clear();
+    for (int velocity = 1; velocity <= 33; ++velocity)
+        polyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)velocity), 0);
+    polyOutput.clear();
+    sounding.renderMidi(polyOutput, polyMidi);
+    const float expectedStolen = 0.5f * ((33.0f * 34.0f / 2.0f) - 1.0f) / 127.0f;
+    if (!near(polyOutput.getSample(0, 10), expectedStolen, 0.02f))
+    { fixture.deleteFile(); return 19; }
+    // Replacing a kit while a voice is sounding must not invalidate its audio.
+    sounding.reset();
+    sounding.setPadGain(0, 1.0f);
+    sounding.setPadChokeGroup(0, 0);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> beforeSwap(2, 128);
+    beforeSwap.clear();
+    sounding.renderMidi(beforeSwap, hit);
+    if (!near(beforeSwap.getSample(0, 100), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 20; }
+
+    // Importing an empty kit replaces pad audio but active voices retain a shared buffer.
+    const auto manifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-empty-kit", ".xml");
+    {
+        juce::XmlElement emptyKit("LibertyDrumKit");
+        emptyKit.setAttribute("version", 1);
+        if (!emptyKit.writeTo(manifest)) { fixture.deleteFile(); return 21; }
+    }
+    if (!sounding.importPortableKit(manifest))
+    { manifest.deleteFile(); fixture.deleteFile(); return 22; }
+    manifest.deleteFile();
+    if (sounding.hasSample(0)) { fixture.deleteFile(); return 23; }
+    juce::AudioBuffer<float> afterSwap(2, 128);
+    afterSwap.clear();
+    sounding.renderMidi(afterSwap, juce::MidiBuffer{});
+    if (!near(afterSwap.getSample(0, 50), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 24; }
+    // Invalid kit imports must not replace a functioning kit or silence playback.
+    LibertyDrumSampler protectedKit;
+    protectedKit.prepare(48000.0);
+    if (!protectedKit.loadPad(0, fixture)) { fixture.deleteFile(); return 25; }
+    protectedKit.setPadGain(0, 0.75f);
+    const auto badManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-invalid-kit", ".xml");
+    {
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("file", "missing-sample-does-not-exist.wav");
+        if (!invalidKit.writeTo(badManifest)) { fixture.deleteFile(); return 26; }
+    }
+    if (protectedKit.importPortableKit(badManifest))
+    { badManifest.deleteFile(); fixture.deleteFile(); return 27; }
+    badManifest.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 28; }
+    juce::AudioBuffer<float> retained(2, 128);
+    retained.clear();
+    protectedKit.renderMidi(retained, hit);
+    if (!near(retained.getSample(0, 80), 0.375f, 0.003f))
+    { fixture.deleteFile(); return 29; }
+
+    // A malformed document must be rejected without touching the live kit.
+    const auto malformed = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-malformed-kit", ".xml");
+    if (!malformed.replaceWithText("<LibertyDrumKit><Pad"))
+    { fixture.deleteFile(); return 30; }
+    if (protectedKit.importPortableKit(malformed))
+    { malformed.deleteFile(); fixture.deleteFile(); return 31; }
+    malformed.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 32; }
+    // Duplicate pad indices must be rejected atomically.
+    const auto duplicate = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-duplicate-kit", ".xml");
+    {
+        juce::XmlElement duplicateKit("LibertyDrumKit");
+        for (int n = 0; n < 2; ++n)
+        {
+            auto* pad = duplicateKit.createNewChildElement("Pad");
+            pad->setAttribute("index", 0);
+            pad->setAttribute("file", fixture.getFullPathName());
+        }
+        if (!duplicateKit.writeTo(duplicate)) { fixture.deleteFile(); return 33; }
+    }
+    if (protectedKit.importPortableKit(duplicate))
+    { duplicate.deleteFile(); fixture.deleteFile(); return 34; }
+    duplicate.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 35; }
+    // Reject malformed pad identifiers without altering the loaded kit.
+    for (const auto& invalidIndex : { juce::String("abc"), juce::String("-1"),
+                                      juce::String("16"), juce::String("0x1"),
+                                      juce::String("999999999999999999999999") })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-bad-index", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", invalidIndex);
+        pad->setAttribute("file", fixture.getFullPathName());
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 36; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 37; }
+    }
+    // Non-finite envelope and gain parameters must not poison the live kit.
+    for (const auto& invalidValue : { juce::String("nan"), juce::String("inf"),
+                                       juce::String("-inf"), juce::String("1e100") })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-nonfinite-kit", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("gain", invalidValue);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 38; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 39; }
+    }
+    // Numeric attributes must parse completely, not silently become zero.
+    for (const auto& invalidValue : { juce::String("abc"), juce::String("12xyz"),
+                                       juce::String("1.2.3") })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-malformed-gain", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("gain", invalidValue);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 40; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 41; }
+    }
+    // Integer-only pad settings must reject invalid and out-of-range values.
+    for (const auto& invalid : { std::pair<const char*, const char*> { "chokeGroup", "9" },
+                                 { "chokeGroup", "-1" }, { "chokeGroup", "2.5" },
+                                 { "gateMode", "2" }, { "gateMode", "true" },
+                                 { "chokeGroup", "999999999999999999" },
+                                 { "gateMode", "999999999999999999" } })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-invalid-pad-mode", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute(invalid.first, invalid.second);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 42; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 43; }
+    }
+    // A valid number outside an audio control's supported range is still invalid.
+    for (const auto& invalid : { std::pair<const char*, const char*> { "gain", "3" },
+                                 { "gain", "-0.1" }, { "pan", "1.5" },
+                                 { "pitch", "25" }, { "start", "1" },
+                                 { "end", "0" }, { "sustain", "1.1" },
+                                 { "attackMs", "-1" }, { "attackMs", "2001" },
+                                 { "decayMs", "2001" }, { "releaseMs", "0" },
+                                 { "releaseMs", "5001" }, { "chokeFadeMs", "0" },
+                                 { "chokeFadeMs", "101" } })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-out-of-range", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute(invalid.first, invalid.second);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 44; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 45; }
+    }
+    // Individually valid trim endpoints must also define a usable interval.
+    for (const auto& trim : { std::pair<double, double> { 0.8, 0.4 },
+                              { 0.5, 0.5 }, { 0.50, 0.505 } })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-invalid-trim", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("start", trim.first);
+        pad->setAttribute("end", trim.second);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 46; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 47; }
+    }
+    // Atomic multi-pad import: a valid first pad must not be committed if
+    // a later pad is malformed. Preserve all existing pad settings and audio.
+    const auto partial = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-partial-kit", ".xml");
+    {
+        juce::XmlElement kit("LibertyDrumKit");
+        auto* first = kit.createNewChildElement("Pad");
+        first->setAttribute("index", 0);
+        first->setAttribute("file", fixture.getFullPathName());
+        first->setAttribute("gain", 0.25);
+        auto* second = kit.createNewChildElement("Pad");
+        second->setAttribute("index", 1);
+        second->setAttribute("file", "missing-audio-file.wav");
+        if (!kit.writeTo(partial)) { fixture.deleteFile(); return 48; }
+    }
+    const bool partialImported = protectedKit.importPortableKit(partial);
+    partial.deleteFile();
+    if (partialImported || !protectedKit.hasSample(0)
+        || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 49; }
+    juce::AudioBuffer<float> stillWorking(2, 128);
+    stillWorking.clear();
+    protectedKit.reset();
+    protectedKit.renderMidi(stillWorking, hit);
+    if (!near(stillWorking.getSample(0, 80), 0.375f, 0.003f))
+    { fixture.deleteFile(); return 50; }
+    // A later pad with an invalid audio setting must also abort the whole
+    // import, even if the preceding pad was valid and changed its gain.
+    const auto invalidSecond = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-invalid-second-pad", ".xml");
+    {
+        juce::XmlElement kit("LibertyDrumKit");
+        auto* first = kit.createNewChildElement("Pad");
+        first->setAttribute("index", 0);
+        first->setAttribute("file", fixture.getFullPathName());
+        first->setAttribute("gain", 0.25);
+        auto* second = kit.createNewChildElement("Pad");
+        second->setAttribute("index", 1);
+        second->setAttribute("gain", "not-a-number");
+        if (!kit.writeTo(invalidSecond)) { fixture.deleteFile(); return 51; }
+    }
+    const bool invalidSecondImported = protectedKit.importPortableKit(invalidSecond);
+    invalidSecond.deleteFile();
+    if (invalidSecondImported || !protectedKit.hasSample(0)
+        || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 52; }
+    // Portable kit round-trip must preserve sample data and pad controls.
+    const auto exportFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-roundtrip", "");
+    if (!exportFolder.createDirectory()) { fixture.deleteFile(); return 53; }
+    const auto exportedManifest = exportFolder.getChildFile("roundtrip.xml");
+    LibertyDrumSampler exportSource;
+    exportSource.prepare(48000.0);
+    if (!exportSource.loadPad(0, fixture)) { exportFolder.deleteRecursively(); fixture.deleteFile(); return 54; }
+    exportSource.setPadGain(0, 0.8f);
+    exportSource.setPadPan(0, -0.25f);
+    exportSource.setPadPitch(0, 5.0f);
+    exportSource.setPadChokeGroup(0, 2);
+    exportSource.setPadChokeFade(0, 18.0f);
+    exportSource.setPadGateMode(0, true);
+    exportSource.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 80.0f);
+    if (!exportSource.exportPortableKit(exportedManifest)
+        || !exportedManifest.existsAsFile())
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 55; }
+    LibertyDrumSampler importedRoundtrip;
+    importedRoundtrip.prepare(48000.0);
+    if (!importedRoundtrip.importPortableKit(exportedManifest)
+        || !importedRoundtrip.hasSample(0))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 56; }
+    const auto& roundtripPad = importedRoundtrip.getPad(0);
+    if (!near(roundtripPad.gain.load(), 0.8f)
+        || !near(roundtripPad.pan.load(), -0.25f)
+        || !near(roundtripPad.pitchSemitones.load(), 5.0f)
+        || roundtripPad.chokeGroup.load() != 2
+        || !near(roundtripPad.chokeFadeMs.load(), 18.0f)
+        || !roundtripPad.gateMode.load()
+        || !near(roundtripPad.releaseMs.load(), 80.0f))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 57; }
+    importedRoundtrip.reset();
+    juce::AudioBuffer<float> roundtripAudio(2, 128);
+    roundtripAudio.clear();
+    importedRoundtrip.renderMidi(roundtripAudio, hit);
+    if (std::abs(roundtripAudio.getSample(0, 80)) < 0.01f)
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 58; }
+    // A portable kit must survive moving its entire folder, because the
+    // manifest references samples relative to its own location.
+    const auto relocatedFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-relocated-kit", "");
+    if (!exportFolder.moveFileTo(relocatedFolder))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 59; }
+    const auto relocatedManifest = relocatedFolder.getChildFile("roundtrip.xml");
+    LibertyDrumSampler relocatedKit;
+    relocatedKit.prepare(48000.0);
+    if (!relocatedKit.importPortableKit(relocatedManifest)
+        || !relocatedKit.hasSample(0)
+        || !near(relocatedKit.getPad(0).gain.load(), 0.8f)
+        || !near(relocatedKit.getPad(0).pan.load(), -0.25f))
+    { relocatedFolder.deleteRecursively(); fixture.deleteFile(); return 60; }
+    juce::AudioBuffer<float> relocatedAudio(2, 128);
+    relocatedAudio.clear();
+    relocatedKit.renderMidi(relocatedAudio, hit);
+    if (std::abs(relocatedAudio.getSample(0, 80)) < 0.01f)
+    { relocatedFolder.deleteRecursively(); fixture.deleteFile(); return 61; }
+    relocatedFolder.deleteRecursively();
+    // Multiple pads must receive unique sample destinations and round-trip.
+    const auto multiFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-multipad-export", "");
+    if (!multiFolder.createDirectory()) { fixture.deleteFile(); return 62; }
+    const auto secondFixture = multiFolder.getChildFile("another-sample.wav");
+    if (!fixture.copyFileTo(secondFixture))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 63; }
+    LibertyDrumSampler multiSource;
+    multiSource.prepare(48000.0);
+    if (!multiSource.loadPad(0, fixture) || !multiSource.loadPad(1, secondFixture))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 64; }
+    multiSource.setPadGain(0, 0.6f);
+    multiSource.setPadGain(1, 0.9f);
+    const auto multiManifest = multiFolder.getChildFile("multi.xml");
+    if (!multiSource.exportPortableKit(multiManifest))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 65; }
+    const auto sampleDir = multiFolder.getChildFile("multi_samples");
+    if (!sampleDir.getChildFile("pad_01.wav").existsAsFile()
+        || !sampleDir.getChildFile("pad_02.wav").existsAsFile())
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 66; }
+    LibertyDrumSampler multiImported;
+    multiImported.prepare(48000.0);
+    if (!multiImported.importPortableKit(multiManifest)
+        || !multiImported.hasSample(0) || !multiImported.hasSample(1)
+        || !near(multiImported.getPad(0).gain.load(), 0.6f)
+        || !near(multiImported.getPad(1).gain.load(), 0.9f))
+    { multiFolder.deleteRecursively(); fixture.deleteFile(); return 67; }
+    multiFolder.deleteRecursively();
+    fixture.deleteFile();
+
+    std::cout << "Drum Sampler smoke tests passed\n";
+    return 0;
+}
