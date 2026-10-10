@@ -517,10 +517,11 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
             repaint();
             return;
         }
-        // Reconcile the legacy enabled flag only after verifying playable notes.
-        // This also makes the rendered clip independent of a stale saved flag.
-        pattern->enabled = hasPlayableNotes;
-        const auto notes = LibertyStepSequencer::render(*pattern);
+        // Render from a temporary normalized copy: exporting must not mutate
+        // the saved Pattern or mark the project dirty just by clicking Export.
+        auto exportPattern = *pattern;
+        exportPattern.enabled = true;
+        const auto notes = LibertyStepSequencer::render(exportPattern);
         if (!notes.empty())
         {
             const double lengthSeconds = MidiEngine::tickToSeconds(
