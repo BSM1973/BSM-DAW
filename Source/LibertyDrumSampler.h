@@ -301,7 +301,7 @@ public:
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
-                          pads[(size_t)i].chokeGroup.load(), 0, 0, note, pads[(size_t)i].gateMode.load(),
+                          pads[(size_t)i].chokeGroup.load(), 0, 0, 1.0f, note, pads[(size_t)i].gateMode.load(),
                           false, 0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
                           pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
                 return;
