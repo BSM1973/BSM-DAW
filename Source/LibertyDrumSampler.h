@@ -196,7 +196,7 @@ public:
             dst.startFraction.store(src.startFraction.load());
             dst.endFraction.store(src.endFraction.load());
         }
-        reset();
+        // Active voices keep their immutable sample buffers until they finish.
         return true;
     }
     bool hasSample(int index) const noexcept
@@ -216,7 +216,9 @@ public:
                 const int frames = audio->getNumSamples();
                 const float start = pads[(size_t)i].startFraction.load();
                 *voice = {true, i, (double)juce::jlimit(0, frames - 1, (int)(start * (frames - 1))),
-                          juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load()};
+                          juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
+                          pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
+                          pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load()};
                 return;
             }
     }
@@ -272,9 +274,8 @@ public:
             for (auto& voice : voices)
             {
                 if (!voice.active) continue;
-                const auto& pad = pads[(size_t)voice.pad];
                 const int frame = (int)voice.position;
-                if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * pad.endFraction.load())) { voice.active = false; voice.audio.reset(); continue; }
+                if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * voice.endFraction)) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
                 const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
                 for (int channel = 0; channel < output.getNumChannels(); ++channel)
@@ -282,12 +283,12 @@ public:
                     const int source = juce::jmin(channel, voice.audio->getNumChannels() - 1);
                     const float a = voice.audio->getSample(source, frame);
                     const float b = voice.audio->getSample(source, next);
-                    const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - pad.pan.load())
-                                                       : juce::jmin(1.0f, 1.0f + pad.pan.load());
-                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * pad.gain.load() * panGain);
+                    const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - voice.pan)
+                                                       : juce::jmin(1.0f, 1.0f + voice.pan);
+                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain);
                 }
                 voice.position += (voice.sourceRate / outputRate)
-                    * std::pow(2.0, (double)pad.pitchSemitones.load() / 12.0);
+                    * std::pow(2.0, (double)voice.pitchSemitones / 12.0);
             }
     }
     const Pad& getPad(int index) const noexcept { return pads[(size_t)juce::jlimit(0, padCount-1, index)]; }
@@ -300,6 +301,10 @@ private:
         float velocity = 1;
         std::shared_ptr<const juce::AudioBuffer<float>> audio;
         double sourceRate = 44100.0;
+        float endFraction = 1.0f;
+        float gain = 1.0f;
+        float pan = 0.0f;
+        float pitchSemitones = 0.0f;
     };
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
