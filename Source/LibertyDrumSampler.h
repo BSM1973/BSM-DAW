@@ -235,8 +235,8 @@ public:
     }
     void noteOff(int note) noexcept
     {
-        // A Note Off releases only the oldest still-held instance of this note.
-        // Repeated hits must not all be silenced by a single MIDI Note Off.
+        // Pair overlapping note-ons with note-offs in trigger order.
+        // Voices which have finished or have been stolen cannot consume a note-off.
         Voice* oldestHeld = nullptr;
         for (auto& voice : voices)
             if (voice.active && voice.midiNote == note && voice.gateMode
@@ -250,11 +250,12 @@ public:
         if (oldestHeld->releaseSamplesRemaining == 0
             || release < oldestHeld->releaseSamplesRemaining)
         {
-            if (oldestHeld->releaseSamplesRemaining == 0)
-                oldestHeld->releaseStartLevel = envelopeAtAge(*oldestHeld, outputRate);
-            else
-                oldestHeld->releaseStartLevel *= (float)oldestHeld->releaseSamplesRemaining
+            const float currentLevel = oldestHeld->releaseSamplesRemaining == 0
+                ? envelopeAtAge(*oldestHeld, outputRate)
+                : oldestHeld->releaseStartLevel
+                    * (float)oldestHeld->releaseSamplesRemaining
                     / juce::jmax(1, oldestHeld->releaseSamplesTotal);
+            oldestHeld->releaseStartLevel = currentLevel;
             oldestHeld->releaseSamplesRemaining = release;
             oldestHeld->releaseSamplesTotal = release;
         }
