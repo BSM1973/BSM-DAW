@@ -245,6 +245,11 @@ public:
         if (oldestHeld->releaseSamplesRemaining == 0
             || release < oldestHeld->releaseSamplesRemaining)
         {
+            if (oldestHeld->releaseSamplesRemaining == 0)
+                oldestHeld->releaseStartLevel = envelopeAtAge(*oldestHeld, outputRate);
+            else
+                oldestHeld->releaseStartLevel *= (float)oldestHeld->releaseSamplesRemaining
+                    / juce::jmax(1, oldestHeld->releaseSamplesTotal);
             oldestHeld->releaseSamplesRemaining = release;
             oldestHeld->releaseSamplesTotal = release;
         }
@@ -264,6 +269,11 @@ public:
                             const int requested = juce::jmax(1, (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
                             if (activeVoice.releaseSamplesRemaining == 0 || requested < activeVoice.releaseSamplesRemaining)
                             {
+                                if (activeVoice.releaseSamplesRemaining == 0)
+                                    activeVoice.releaseStartLevel = envelopeAtAge(activeVoice, outputRate);
+                                else
+                                    activeVoice.releaseStartLevel *= (float)activeVoice.releaseSamplesRemaining
+                                        / juce::jmax(1, activeVoice.releaseSamplesTotal);
                                 activeVoice.releaseSamplesRemaining = requested;
                                 activeVoice.releaseSamplesTotal = requested;
                             }
@@ -379,15 +389,9 @@ public:
                 if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * voice.endFraction)) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
                 const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
-                const double attackFrames = outputRate * voice.attackMs / 1000.0;
-                const double decayFrames = outputRate * voice.decayMs / 1000.0;
-                float envelope = 1.0f;
-                if (attackFrames > 0.0 && voice.ageSamples < attackFrames)
-                    envelope = (float)(voice.ageSamples / attackFrames);
-                else if (decayFrames > 0.0 && voice.ageSamples < attackFrames + decayFrames)
-                    envelope = 1.0f - (1.0f - voice.sustain) * (float)((voice.ageSamples - attackFrames) / decayFrames);
-                else
-                    envelope = voice.sustain;
+                const float envelope = voice.releaseSamplesRemaining > 0
+                    ? voice.releaseStartLevel
+                    : envelopeAtAge(voice, outputRate);
                 for (int channel = 0; channel < output.getNumChannels(); ++channel)
                 {
                     const int source = juce::jmin(channel, voice.audio->getNumChannels() - 1);
@@ -429,12 +433,24 @@ private:
         int chokeGroup = 0;
         int releaseSamplesRemaining = 0;
         int releaseSamplesTotal = 0;
+        float releaseStartLevel = 1.0f;
         int midiNote = -1;
         bool gateMode = false;
         bool noteReleased = false;
         int64_t ageSamples = 0;
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
     };
+    static float envelopeAtAge(const Voice& voice, double rate) noexcept
+    {
+        const double attack = rate * voice.attackMs / 1000.0;
+        const double decay = rate * voice.decayMs / 1000.0;
+        if (attack > 0.0 && voice.ageSamples < attack)
+            return (float)(voice.ageSamples / attack);
+        if (decay > 0.0 && voice.ageSamples < attack + decay)
+            return 1.0f - (1.0f - voice.sustain)
+                * (float)((voice.ageSamples - attack) / decay);
+        return voice.sustain;
+    }
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
