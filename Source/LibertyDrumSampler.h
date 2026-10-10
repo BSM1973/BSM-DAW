@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <cmath>
+#include <atomic>
 
 // Liberty Drum Sampler: first milestone, 16 velocity-sensitive one-shot pads.
 // Prepare and load on the message thread, then render on the audio thread.
@@ -16,10 +17,10 @@ public:
     struct Pad
     {
         juce::String name;
-        juce::AudioBuffer<float> audio;
+        std::shared_ptr<const juce::AudioBuffer<float>> audio;
         double sourceRate = 44100.0;
-        float gain = 1.0f;
-        float pan = 0.0f;
+        std::atomic<float> gain { 1.0f };
+        std::atomic<float> pan { 0.0f };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -42,24 +43,27 @@ public:
         juce::AudioBuffer<float> loaded(juce::jlimit(1, 2, (int)reader->numChannels),
                                         (int)reader->lengthInSamples);
         if (!reader->read(&loaded, 0, loaded.getNumSamples(), 0, true, true)) return false;
-        pads[(size_t)index].audio = std::move(loaded);
+        auto published = std::make_shared<const juce::AudioBuffer<float>>(std::move(loaded));
+        std::atomic_store(&pads[(size_t)index].audio, std::move(published));
         pads[(size_t)index].sourceRate = reader->sampleRate;
         pads[(size_t)index].name = file.getFileNameWithoutExtension();
         return true;
     }
     bool hasSample(int index) const noexcept
     {
-        return index >= 0 && index < padCount && pads[(size_t)index].audio.getNumSamples() > 0;
+        return index >= 0 && index < padCount && std::atomic_load(&pads[(size_t)index].audio) != nullptr;
     }
     void noteOn(int note, float velocity) noexcept
     {
         if (velocity <= 0.0f) return;
         for (int i = 0; i < padCount; ++i)
-            if (pads[(size_t)i].midiNote == note && pads[(size_t)i].audio.getNumSamples() > 0)
+            if (pads[(size_t)i].midiNote == note)
             {
+                auto audio = std::atomic_load(&pads[(size_t)i].audio);
+                if (audio == nullptr || audio->getNumSamples() == 0) return;
                 auto* voice = &voices[0];
                 for (auto& candidate : voices) if (!candidate.active) { voice = &candidate; break; }
-                *voice = {true, i, 0.0, juce::jlimit(0.0f, 1.0f, velocity)};
+                *voice = {true, i, 0.0, juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate};
                 return;
             }
     }
@@ -86,12 +90,12 @@ public:
     void setPadGain(int index, float gain) noexcept
     {
         if (index >= 0 && index < padCount)
-            pads[(size_t)index].gain = juce::jlimit(0.0f, 2.0f, gain);
+            pads[(size_t)index].gain.store(juce::jlimit(0.0f, 2.0f, gain));
     }
     void setPadPan(int index, float pan) noexcept
     {
         if (index >= 0 && index < padCount)
-            pads[(size_t)index].pan = juce::jlimit(-1.0f, 1.0f, pan);
+            pads[(size_t)index].pan.store(juce::jlimit(-1.0f, 1.0f, pan));
     }
     void render(juce::AudioBuffer<float>& output, int start, int count) noexcept
     {
@@ -103,24 +107,32 @@ public:
                 if (!voice.active) continue;
                 const auto& pad = pads[(size_t)voice.pad];
                 const int frame = (int)voice.position;
-                if (frame >= pad.audio.getNumSamples()) { voice.active = false; continue; }
+                if (voice.audio == nullptr || frame >= voice.audio->getNumSamples()) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
-                const int next = juce::jmin(frame + 1, pad.audio.getNumSamples() - 1);
+                const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
                 for (int channel = 0; channel < output.getNumChannels(); ++channel)
                 {
-                    const int source = juce::jmin(channel, pad.audio.getNumChannels() - 1);
-                    const float a = pad.audio.getSample(source, frame);
-                    const float b = pad.audio.getSample(source, next);
-                    const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - pad.pan)
+                    const int source = juce::jmin(channel, voice.audio->getNumChannels() - 1);
+                    const float a = voice.audio->getSample(source, frame);
+                    const float b = voice.audio->getSample(source, next);
+                    const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - pad.pan.load())
                                                        : juce::jmin(1.0f, 1.0f + pad.pan);
-                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * pad.gain * panGain);
+                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * pad.gain.load() * panGain);
                 }
-                voice.position += pad.sourceRate / outputRate;
+                voice.position += voice.sourceRate / outputRate;
             }
     }
     const Pad& getPad(int index) const noexcept { return pads[(size_t)juce::jlimit(0, padCount-1, index)]; }
 private:
-    struct Voice { bool active = false; int pad = 0; double position = 0; float velocity = 1; };
+    struct Voice
+    {
+        bool active = false;
+        int pad = 0;
+        double position = 0;
+        float velocity = 1;
+        std::shared_ptr<const juce::AudioBuffer<float>> audio;
+        double sourceRate = 44100.0;
+    };
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
