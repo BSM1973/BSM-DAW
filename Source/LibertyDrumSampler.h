@@ -169,7 +169,35 @@ public:
             if (path.isNotEmpty() && !juce::File::isAbsolutePath(path))
                 node->setAttribute("file", manifestFile.getParentDirectory().getChildFile(path).getFullPathName());
         }
-        return restoreKitXml(*xml);
+        // Validate and decode the entire kit before changing any live pad.
+        LibertyDrumSampler candidate;
+        candidate.prepare(outputRate);
+        for (auto* node : xml->getChildIterator())
+        {
+            if (!node->hasTagName("Pad")) continue;
+            const int index = node->getIntAttribute("index", -1);
+            if (index < 0 || index >= padCount) return false;
+            const auto path = node->getStringAttribute("file");
+            if (path.isNotEmpty() && !candidate.loadPad(index, juce::File(path)))
+                return false;
+        }
+        if (!candidate.restoreKitXml(*xml)) return false;
+        for (int i = 0; i < padCount; ++i)
+        {
+            auto& dst = pads[(size_t)i];
+            const auto& src = candidate.pads[(size_t)i];
+            std::atomic_store(&dst.audio, std::atomic_load(&src.audio));
+            dst.name = src.name;
+            dst.sourcePath = src.sourcePath;
+            dst.sourceRate.store(src.sourceRate.load());
+            dst.gain.store(src.gain.load());
+            dst.pan.store(src.pan.load());
+            dst.pitchSemitones.store(src.pitchSemitones.load());
+            dst.startFraction.store(src.startFraction.load());
+            dst.endFraction.store(src.endFraction.load());
+        }
+        reset();
+        return true;
     }
     bool hasSample(int index) const noexcept
     {
