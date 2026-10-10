@@ -224,6 +224,18 @@ public:
                     || parsed > std::numeric_limits<float>::max()
                     || parsed < -std::numeric_limits<float>::max())
                     return false;
+                const juce::String key(attribute);
+                // Reject out-of-range settings rather than silently clamping a
+                // damaged manifest to a different, unintended sound.
+                if ((key == "gain" && (parsed < 0.0 || parsed > 2.0))
+                    || (key == "pan" && (parsed < -1.0 || parsed > 1.0))
+                    || (key == "pitch" && (parsed < -24.0 || parsed > 24.0))
+                    || (key == "start" && (parsed < 0.0 || parsed > 0.99))
+                    || (key == "end" && (parsed < 0.01 || parsed > 1.0))
+                    || (key == "sustain" && (parsed < 0.0 || parsed > 1.0))
+                    || ((key == "attackMs" || key == "decayMs"
+                         || key == "releaseMs" || key == "chokeFadeMs") && parsed < 0.0))
+                    return false;
             }
             for (const auto* attribute : { "chokeGroup", "gateMode" })
             {
