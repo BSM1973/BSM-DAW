@@ -1447,11 +1447,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto arrangementNotes = std::atomic_load(&state.arrangementSnapshot);
             const auto noteSnapshot = arrangementNotes != nullptr ? arrangementNotes : std::atomic_load(&state.noteSnapshot);
             const auto clipStart = arrangementNotes != nullptr ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
-            if (!hasInstrument || noteSnapshot == nullptr || noteSnapshot->notes.empty()) continue;
-            if (arrangementNotes == nullptr && state.clipLengthSeconds.load(std::memory_order_relaxed) <= 0.0) continue;
+            if (!hasInstrument) continue;
+            // Native drum voices are one-shots: keep rendering their tails and
+            // queued pad auditions even in blocks with no scheduled MIDI notes.
+            if (nativeDrums == nullptr && (noteSnapshot == nullptr || noteSnapshot->notes.empty())) continue;
+            if (nativeDrums == nullptr && arrangementNotes == nullptr
+                && state.clipLengthSeconds.load(std::memory_order_relaxed) <= 0.0) continue;
             juce::MidiBuffer midi;
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
+            if (noteSnapshot != nullptr)
             for (const auto& note : noteSnapshot->notes)
             {
                 const auto absoluteStart=clipStart+note.startSeconds;
