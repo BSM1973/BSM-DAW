@@ -1427,7 +1427,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto nativeDrums = instrumentTrack == drumSamplerTrack.load(std::memory_order_acquire)
                 ? std::atomic_load(&drumSampler) : std::shared_ptr<LibertyDrumSampler>{};
             const bool hasInstrument = nativeDrums != nullptr || pluginHost.hasInstrumentForTrack(instrumentTrack);
-            if (panicInstruments && hasInstrument)
+            if (panicInstruments && nativeDrums != nullptr)
+                nativeDrums->reset();
+            if (panicInstruments && nativeDrums == nullptr && hasInstrument)
             {
                 juce::MidiBuffer panicMidi;
                 for (int channel = 1; channel <= 16; ++channel)
@@ -1473,7 +1475,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             {
                 instrumentBus.setSize(2, numSamples, false, true, true);
                 instrumentBus.clear();
-                if (panicInstruments) nativeDrums->reset();
                 nativeDrums->renderMidi(instrumentBus, midi);
                 const float gain = state.gain.load(std::memory_order_relaxed);
                 const float pan = state.pan.load(std::memory_order_relaxed);
