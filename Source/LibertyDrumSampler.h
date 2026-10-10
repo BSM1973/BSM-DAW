@@ -21,6 +21,7 @@ public:
         std::atomic<double> sourceRate { 44100.0 };
         std::atomic<float> gain { 1.0f };
         std::atomic<float> pan { 0.0f };
+        std::atomic<float> pitchSemitones { 0.0f };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -114,6 +115,11 @@ public:
         if (index >= 0 && index < padCount)
             pads[(size_t)index].pan.store(juce::jlimit(-1.0f, 1.0f, pan));
     }
+    void setPadPitch(int index, float semitones) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].pitchSemitones.store(juce::jlimit(-24.0f, 24.0f, semitones));
+    }
     void render(juce::AudioBuffer<float>& output, int start, int count) noexcept
     {
         if (output.getNumChannels() < 1 || count <= 0) return;
@@ -136,7 +142,8 @@ public:
                                                        : juce::jmin(1.0f, 1.0f + pad.pan.load());
                     output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * pad.gain.load() * panGain);
                 }
-                voice.position += voice.sourceRate / outputRate;
+                voice.position += (voice.sourceRate / outputRate)
+                    * std::pow(2.0, (double)pad.pitchSemitones.load() / 12.0);
             }
     }
     const Pad& getPad(int index) const noexcept { return pads[(size_t)juce::jlimit(0, padCount-1, index)]; }
@@ -198,6 +205,14 @@ public:
         panSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
         panSlider.onValueChange = [this] { sampler.setPadPan(selectedPad, (float)panSlider.getValue()); };
         addAndMakeVisible(panSlider);
+        pitchSlider.setRange(-24.0, 24.0, 1.0);
+        pitchSlider.setValue(0.0, juce::dontSendNotification);
+        pitchSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+        pitchSlider.onValueChange = [this] { sampler.setPadPitch(selectedPad, (float)pitchSlider.getValue()); };
+        addAndMakeVisible(pitchSlider);
+        pitchLabel.setText("PITCH", juce::dontSendNotification);
+        pitchLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        addAndMakeVisible(pitchLabel);
         gainLabel.setText("GAIN", juce::dontSendNotification);
         panLabel.setText("PAN", juce::dontSendNotification);
         gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -246,16 +261,18 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 150 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 181 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
-        const int controlTop = getHeight() - 103;
+        const int controlTop = getHeight() - 134;
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
         panSlider.setBounds(margin + 48, controlTop + 31, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
+        pitchLabel.setBounds(margin, controlTop + 62, 48, 25);
+        pitchSlider.setBounds(margin + 48, controlTop + 62, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
     }
     void paint(juce::Graphics& g) override
     {
@@ -270,6 +287,7 @@ private:
         const auto& pad = sampler.getPad(selectedPad);
         gainSlider.setValue(pad.gain.load(), juce::dontSendNotification);
         panSlider.setValue(pad.pan.load(), juce::dontSendNotification);
+        pitchSlider.setValue(pad.pitchSemitones.load(), juce::dontSendNotification);
     }
     void refreshLabels()
     {
@@ -282,8 +300,8 @@ private:
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton;
-    juce::Slider gainSlider, panSlider;
-    juce::Label gainLabel, panLabel;
+    juce::Slider gainSlider, panSlider, pitchSlider;
+    juce::Label gainLabel, panLabel, pitchLabel;
     int selectedPad = 0;
     std::unique_ptr<juce::FileChooser> chooser;
 };
