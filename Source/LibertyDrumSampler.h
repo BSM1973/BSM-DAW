@@ -63,6 +63,36 @@ public:
                 return;
             }
     }
+    // Render sample-accurate MIDI events within the host's audio block.
+    // Call this from the audio thread; pad loading must be stopped while rendering.
+    void renderMidi(juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi) noexcept
+    {
+        int cursor = 0;
+        for (const auto metadata : midi)
+        {
+            const int offset = juce::jlimit(0, output.getNumSamples(), metadata.samplePosition);
+            if (offset > cursor)
+                render(output, cursor, offset - cursor);
+            const auto message = metadata.getMessage();
+            if (message.isNoteOn())
+                noteOn(message.getNoteNumber(), message.getFloatVelocity());
+            else if (message.isAllSoundOff() || message.isAllNotesOff())
+                reset();
+            cursor = juce::jmax(cursor, offset);
+        }
+        if (cursor < output.getNumSamples())
+            render(output, cursor, output.getNumSamples() - cursor);
+    }
+    void setPadGain(int index, float gain) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].gain = juce::jlimit(0.0f, 2.0f, gain);
+    }
+    void setPadPan(int index, float pan) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].pan = juce::jlimit(-1.0f, 1.0f, pan);
+    }
     void render(juce::AudioBuffer<float>& output, int start, int count) noexcept
     {
         if (output.getNumChannels() < 1 || count <= 0) return;
