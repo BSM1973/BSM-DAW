@@ -1144,6 +1144,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
+    // Drum Sampler audition bus. Runs on the audio callback, even while
+    // arrangement transport is stopped. This is not yet track routing.
+    if (auto sampler = std::atomic_load(&drumSampler))
+    {
+        sampler->processAuditions();
+        if (numOutputChannels > 0 && numSamples > 0)
+        {
+            juce::AudioBuffer<float> drumBus(juce::jmin(2, numOutputChannels), numSamples);
+            drumBus.clear();
+            sampler->render(drumBus, 0, numSamples);
+            for (int ch = 0; ch < drumBus.getNumChannels(); ++ch)
+                if (outputChannelData[ch] != nullptr)
+                    juce::FloatVectorOperations::add(outputChannelData[ch],
+                        drumBus.getReadPointer(ch), numSamples);
+        }
+    }
+
     if (inputMonitoringEnabled.load(std::memory_order_acquire) && inputChannelData != nullptr && numInputChannels > 0)
     {
         const int left = juce::jlimit(0, numInputChannels - 1, monitorInputLeft.load(std::memory_order_relaxed));
