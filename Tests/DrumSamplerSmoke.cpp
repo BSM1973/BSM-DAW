@@ -328,6 +328,26 @@ int main()
             || !near(protectedKit.getPad(0).gain.load(), 0.75f))
         { fixture.deleteFile(); return 43; }
     }
+    // A valid number outside an audio control's supported range is still invalid.
+    for (const auto& invalid : { std::pair<const char*, const char*> { "gain", "3" },
+                                 { "gain", "-0.1" }, { "pan", "1.5" },
+                                 { "pitch", "25" }, { "start", "1" },
+                                 { "end", "0" }, { "sustain", "1.1" },
+                                 { "attackMs", "-1" } })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-out-of-range", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute(invalid.first, invalid.second);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 44; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 45; }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
