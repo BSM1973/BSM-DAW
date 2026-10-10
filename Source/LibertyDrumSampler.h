@@ -29,6 +29,7 @@ public:
         std::atomic<int> chokeGroup { 0 };
         std::atomic<float> chokeFadeMs { 8.0f };
         std::atomic<bool> gateMode { false };
+        std::atomic<float> attackMs { 0.0f }, decayMs { 0.0f }, sustain { 1.0f }, releaseMs { 8.0f };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -93,6 +94,10 @@ public:
             node->setAttribute("chokeGroup", pad.chokeGroup.load());
             node->setAttribute("chokeFadeMs", (double)pad.chokeFadeMs.load());
             node->setAttribute("gateMode", pad.gateMode.load() ? 1 : 0);
+            node->setAttribute("attackMs", (double)pad.attackMs.load());
+            node->setAttribute("decayMs", (double)pad.decayMs.load());
+            node->setAttribute("sustain", (double)pad.sustain.load());
+            node->setAttribute("releaseMs", (double)pad.releaseMs.load());
         }
         return kit;
     }
@@ -115,6 +120,10 @@ public:
             setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
             setPadChokeFade(i, (float)node->getDoubleAttribute("chokeFadeMs", 8.0));
             setPadGateMode(i, node->getIntAttribute("gateMode", 0) != 0);
+            setPadEnvelope(i, (float)node->getDoubleAttribute("attackMs", 0.0),
+                           (float)node->getDoubleAttribute("decayMs", 0.0),
+                           (float)node->getDoubleAttribute("sustain", 1.0),
+                           (float)node->getDoubleAttribute("releaseMs", 8.0));
         }
         return true;
     }
@@ -207,6 +216,10 @@ public:
             dst.chokeGroup.store(src.chokeGroup.load());
             dst.chokeFadeMs.store(src.chokeFadeMs.load());
             dst.gateMode.store(src.gateMode.load());
+            dst.attackMs.store(src.attackMs.load());
+            dst.decayMs.store(src.decayMs.load());
+            dst.sustain.store(src.sustain.load());
+            dst.releaseMs.store(src.releaseMs.load());
         }
         // Active voices keep their immutable sample buffers until they finish.
         return true;
@@ -220,7 +233,7 @@ public:
         for (auto& voice : voices)
             if (voice.active && voice.midiNote == note && voice.gateMode)
             {
-                const int release = juce::jmax(1, (int)(outputRate * 0.008));
+                const int release = juce::jmax(1, (int)(outputRate * voice.releaseMs / 1000.0));
                 if (voice.releaseSamplesRemaining == 0 || release < voice.releaseSamplesRemaining)
                 {
                     voice.releaseSamplesRemaining = release;
@@ -270,7 +283,9 @@ public:
                           juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load(),
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
-                          pads[(size_t)i].chokeGroup.load(), 0, 0, note, pads[(size_t)i].gateMode.load()};
+                          pads[(size_t)i].chokeGroup.load(), 0, 0, note, pads[(size_t)i].gateMode.load(),
+                          0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
+                          pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
                 return;
             }
     }
@@ -296,6 +311,15 @@ public:
         }
         if (cursor < output.getNumSamples())
             render(output, cursor, output.getNumSamples() - cursor);
+    }
+    void setPadEnvelope(int index, float attack, float decay, float sustainLevel, float release) noexcept
+    {
+        if (index < 0 || index >= padCount) return;
+        auto& pad = pads[(size_t)index];
+        pad.attackMs.store(juce::jlimit(0.0f, 2000.0f, attack));
+        pad.decayMs.store(juce::jlimit(0.0f, 2000.0f, decay));
+        pad.sustain.store(juce::jlimit(0.0f, 1.0f, sustainLevel));
+        pad.releaseMs.store(juce::jlimit(1.0f, 5000.0f, release));
     }
     void setPadGateMode(int index, bool enabled) noexcept
     {
@@ -347,6 +371,15 @@ public:
                 if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * voice.endFraction)) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
                 const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
+                const double attackFrames = outputRate * voice.attackMs / 1000.0;
+                const double decayFrames = outputRate * voice.decayMs / 1000.0;
+                float envelope = 1.0f;
+                if (attackFrames > 0.0 && voice.ageSamples < attackFrames)
+                    envelope = (float)(voice.ageSamples / attackFrames);
+                else if (decayFrames > 0.0 && voice.ageSamples < attackFrames + decayFrames)
+                    envelope = 1.0f - (1.0f - voice.sustain) * (float)((voice.ageSamples - attackFrames) / decayFrames);
+                else
+                    envelope = voice.sustain;
                 for (int channel = 0; channel < output.getNumChannels(); ++channel)
                 {
                     const int source = juce::jmin(channel, voice.audio->getNumChannels() - 1);
@@ -357,7 +390,7 @@ public:
                     const float releaseGain = voice.releaseSamplesRemaining > 0
                         ? juce::jlimit(0.0f, 1.0f, (float)voice.releaseSamplesRemaining / juce::jmax(1.0f, (float)voice.releaseSamplesTotal))
                         : 1.0f;
-                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain * releaseGain);
+                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
                 {
@@ -365,6 +398,7 @@ public:
                     voice.audio.reset();
                     continue;
                 }
+                ++voice.ageSamples;
                 voice.position += (voice.sourceRate / outputRate)
                     * std::pow(2.0, (double)voice.pitchSemitones / 12.0);
             }
@@ -389,6 +423,8 @@ private:
         int releaseSamplesTotal = 0;
         int midiNote = -1;
         bool gateMode = false;
+        int64_t ageSamples = 0;
+        float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
     };
     uint64_t voiceSequence = 0;
     juce::AudioFormatManager formats;
