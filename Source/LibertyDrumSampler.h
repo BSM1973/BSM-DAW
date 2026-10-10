@@ -230,16 +230,24 @@ public:
     }
     void noteOff(int note) noexcept
     {
+        // A Note Off releases only the oldest still-held instance of this note.
+        // Repeated hits must not all be silenced by a single MIDI Note Off.
+        Voice* oldestHeld = nullptr;
         for (auto& voice : voices)
-            if (voice.active && voice.midiNote == note && voice.gateMode)
-            {
-                const int release = juce::jmax(1, (int)(outputRate * voice.releaseMs / 1000.0));
-                if (voice.releaseSamplesRemaining == 0 || release < voice.releaseSamplesRemaining)
-                {
-                    voice.releaseSamplesRemaining = release;
-                    voice.releaseSamplesTotal = release;
-                }
-            }
+            if (voice.active && voice.midiNote == note && voice.gateMode
+                && !voice.noteReleased
+                && (oldestHeld == nullptr || voice.sequence < oldestHeld->sequence))
+                oldestHeld = &voice;
+
+        if (oldestHeld == nullptr) return;
+        oldestHeld->noteReleased = true;
+        const int release = juce::jmax(1, (int)(outputRate * oldestHeld->releaseMs / 1000.0));
+        if (oldestHeld->releaseSamplesRemaining == 0
+            || release < oldestHeld->releaseSamplesRemaining)
+        {
+            oldestHeld->releaseSamplesRemaining = release;
+            oldestHeld->releaseSamplesTotal = release;
+        }
     }
     void noteOn(int note, float velocity) noexcept
     {
@@ -284,7 +292,7 @@ public:
                           pads[(size_t)i].endFraction.load(), pads[(size_t)i].gain.load(),
                           pads[(size_t)i].pan.load(), pads[(size_t)i].pitchSemitones.load(), ++voiceSequence,
                           pads[(size_t)i].chokeGroup.load(), 0, 0, note, pads[(size_t)i].gateMode.load(),
-                          0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
+                          false, 0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
                           pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
                 return;
             }
@@ -423,6 +431,7 @@ private:
         int releaseSamplesTotal = 0;
         int midiNote = -1;
         bool gateMode = false;
+        bool noteReleased = false;
         int64_t ageSamples = 0;
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
     };
