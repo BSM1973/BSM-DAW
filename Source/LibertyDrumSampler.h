@@ -645,6 +645,21 @@ public:
         playModeSelector.addItem("GATE", 2);
         playModeSelector.onChange = [this] { sampler.setPadGateMode(selectedPad, playModeSelector.getSelectedId() == 2); };
         addAndMakeVisible(playModeSelector);
+        const char* names[] = { "ATTACK", "DECAY", "SUSTAIN", "RELEASE" };
+        const double maximums[] = { 2000.0, 2000.0, 100.0, 5000.0 };
+        const double defaults[] = { 0.0, 0.0, 100.0, 8.0 };
+        for (int k = 0; k < 4; ++k)
+        {
+            adsrLabels[(size_t)k].setText(names[k], juce::dontSendNotification);
+            adsrLabels[(size_t)k].setColour(juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible(adsrLabels[(size_t)k]);
+            auto& slider = adsrSliders[(size_t)k];
+            slider.setRange(k == 3 ? 1.0 : 0.0, maximums[k], k == 2 ? 1.0 : 1.0);
+            slider.setValue(defaults[k], juce::dontSendNotification);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+            slider.onValueChange = [this] { applyEnvelope(); };
+            addAndMakeVisible(slider);
+        }
         gainLabel.setText("GAIN", juce::dontSendNotification);
         panLabel.setText("PAN", juce::dontSendNotification);
         gainLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -694,15 +709,15 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 386 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 510 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
         exportButton.setBounds(margin + 190, getHeight() - 34, 150, 25);
         importButton.setBounds(margin + 350, getHeight() - 34, 150, 25);
-        const int controlTop = getHeight() - 258;
-        waveform.setBounds(margin, getHeight() - 346, getWidth() - margin * 2, 76);
+        const int controlTop = getHeight() - 382;
+        waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
@@ -719,6 +734,12 @@ public:
         chokeFadeSlider.setBounds(margin + 72, controlTop + 186, juce::jmax(80, getWidth() - margin * 2 - 72), 25);
         playModeLabel.setBounds(margin, controlTop + 217, 56, 25);
         playModeSelector.setBounds(margin + 56, controlTop + 217, 160, 25);
+        for (int k = 0; k < 4; ++k)
+        {
+            adsrLabels[(size_t)k].setBounds(margin, controlTop + 248 + 31 * k, 72, 25);
+            adsrSliders[(size_t)k].setBounds(margin + 72, controlTop + 248 + 31 * k,
+                juce::jmax(80, getWidth() - margin * 2 - 72), 25);
+        }
     }
     void paint(juce::Graphics& g) override
     {
@@ -728,6 +749,12 @@ public:
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
     }
 private:
+    void applyEnvelope()
+    {
+        sampler.setPadEnvelope(selectedPad, (float)adsrSliders[0].getValue(),
+            (float)adsrSliders[1].getValue(), (float)adsrSliders[2].getValue() / 100.0f,
+            (float)adsrSliders[3].getValue());
+    }
     void applyTrim()
     {
         auto start = (float)startSlider.getValue() / 100.0f;
@@ -751,6 +778,9 @@ private:
         chokeSelector.setSelectedId(pad.chokeGroup.load() + 1, juce::dontSendNotification);
         chokeFadeSlider.setValue(pad.chokeFadeMs.load(), juce::dontSendNotification);
         playModeSelector.setSelectedId(pad.gateMode.load() ? 2 : 1, juce::dontSendNotification);
+        const double values[] = { pad.attackMs.load(), pad.decayMs.load(), pad.sustain.load() * 100.0, pad.releaseMs.load() };
+        for (int k = 0; k < 4; ++k)
+            adsrSliders[(size_t)k].setValue(values[k], juce::dontSendNotification);
     }
     void refreshLabels()
     {
@@ -771,6 +801,8 @@ private:
     juce::Label chokeFadeLabel;
     juce::ComboBox playModeSelector;
     juce::Label playModeLabel;
+    std::array<juce::Slider, 4> adsrSliders;
+    std::array<juce::Label, 4> adsrLabels;
     int selectedPad = 0;
     std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };
