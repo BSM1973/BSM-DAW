@@ -112,6 +112,43 @@ int main()
     if (!(audible.getSample(0, 40) > 0.0f)
         || std::abs(audible.getSample(0, 180)) > 0.003f)
     { fixture.deleteFile(); return 14; }
+    // A second hit in the same choke group must fade the first hit smoothly.
+    sounding.reset();
+    if (!sounding.loadPad(1, fixture)) { fixture.deleteFile(); return 15; }
+    sounding.setPadGateMode(0, false);
+    sounding.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    sounding.setPadEnvelope(1, 0.0f, 0.0f, 1.0f, 8.0f);
+    sounding.setPadChokeGroup(0, 1);
+    sounding.setPadChokeGroup(1, 1);
+    sounding.setPadChokeFade(1, 2.0f);
+    sounding.setPadGain(1, 0.0f); // Silent trigger isolates the outgoing voice.
+    juce::AudioBuffer<float> chokeOutput(2, 320);
+    chokeOutput.clear();
+    juce::MidiBuffer chokeMidi;
+    chokeMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    chokeMidi.addEvent(juce::MidiMessage::noteOn(1, 37, (juce::uint8)127), 100);
+    sounding.renderMidi(chokeOutput, chokeMidi);
+    const float beforeChoke = chokeOutput.getSample(0, 99);
+    const float startChoke = chokeOutput.getSample(0, 100);
+    const float midChoke = chokeOutput.getSample(0, 145);
+    const float endChoke = chokeOutput.getSample(0, 210);
+    if (!near(beforeChoke, 0.5f, 0.003f)
+        || std::abs(startChoke - beforeChoke) > 0.015f
+        || !(midChoke > 0.0f && midChoke < startChoke)
+        || std::abs(endChoke) > 0.003f)
+    { fixture.deleteFile(); return 16; }
+
+    // Triggering an empty pad must not choke an audible voice.
+    sounding.reset();
+    sounding.setPadChokeGroup(2, 1);
+    juce::AudioBuffer<float> emptyOutput(2, 256);
+    emptyOutput.clear();
+    juce::MidiBuffer emptyMidi;
+    emptyMidi.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+    emptyMidi.addEvent(juce::MidiMessage::noteOn(1, 38, (juce::uint8)127), 100);
+    sounding.renderMidi(emptyOutput, emptyMidi);
+    if (!near(emptyOutput.getSample(0, 200), 0.5f, 0.003f))
+    { fixture.deleteFile(); return 17; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
