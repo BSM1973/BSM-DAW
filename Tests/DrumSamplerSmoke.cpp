@@ -273,6 +273,23 @@ int main()
             || !near(protectedKit.getPad(0).gain.load(), 0.75f))
         { fixture.deleteFile(); return 37; }
     }
+    // Non-finite envelope and gain parameters must not poison the live kit.
+    for (const auto& invalidValue : { juce::String("nan"), juce::String("inf"),
+                                       juce::String("-inf") })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-nonfinite-kit", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("gain", invalidValue);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 38; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 39; }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
