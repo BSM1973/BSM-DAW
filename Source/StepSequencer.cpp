@@ -75,6 +75,8 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
         }
         const bool hasTieContinuation = tiedSteps > 1;
         const int ratchets = hasTieContinuation ? 1 : std::clamp<int>(ratchetStep.ratchet, 1, 8);
+        // Distribute ratchets by proportional tick positions so the final
+        // subdivision also fits when stepTicks is not divisible by ratchets.
         const auto subdivision = std::max<std::int64_t>(1, effectiveStepTicks / ratchets);
         const auto swingOffset = (i & 1) ? (std::int64_t)std::llround((double)effectiveStepTicks * std::clamp((double)pattern.swing, 0.0, 0.75) * 0.5) : 0;
         int pitch = std::clamp((int)step.pitch + step.octave * 12 + std::clamp(pattern.octaveShift, -4, 4) * 12 + std::clamp(pattern.transpose, -12, 12), MidiEngine::minMidiNote, MidiEngine::maxMidiNote);
