@@ -22,6 +22,8 @@ public:
         std::atomic<float> gain { 1.0f };
         std::atomic<float> pan { 0.0f };
         std::atomic<float> pitchSemitones { 0.0f };
+        std::atomic<float> startFraction { 0.0f };
+        std::atomic<float> endFraction { 1.0f };
         int midiNote = 36;
     };
     LibertyDrumSampler()
@@ -80,7 +82,10 @@ public:
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
                 auto* voice = &voices[0];
                 for (auto& candidate : voices) if (!candidate.active) { voice = &candidate; break; }
-                *voice = {true, i, 0.0, juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load()};
+                const int frames = audio->getNumSamples();
+                const float start = pads[(size_t)i].startFraction.load();
+                *voice = {true, i, (double)juce::jlimit(0, frames - 1, (int)(start * (frames - 1))),
+                          juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load()};
                 return;
             }
     }
@@ -120,6 +125,14 @@ public:
         if (index >= 0 && index < padCount)
             pads[(size_t)index].pitchSemitones.store(juce::jlimit(-24.0f, 24.0f, semitones));
     }
+    void setPadTrim(int index, float start, float end) noexcept
+    {
+        if (index < 0 || index >= padCount) return;
+        const float safeStart = juce::jlimit(0.0f, 0.99f, start);
+        const float safeEnd = juce::jlimit(safeStart + 0.01f, 1.0f, end);
+        pads[(size_t)index].startFraction.store(safeStart);
+        pads[(size_t)index].endFraction.store(safeEnd);
+    }
     void render(juce::AudioBuffer<float>& output, int start, int count) noexcept
     {
         if (output.getNumChannels() < 1 || count <= 0) return;
@@ -130,7 +143,7 @@ public:
                 if (!voice.active) continue;
                 const auto& pad = pads[(size_t)voice.pad];
                 const int frame = (int)voice.position;
-                if (voice.audio == nullptr || frame >= voice.audio->getNumSamples()) { voice.active = false; voice.audio.reset(); continue; }
+                if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * pad.endFraction.load())) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
                 const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
                 for (int channel = 0; channel < output.getNumChannels(); ++channel)
