@@ -194,6 +194,10 @@ public:
         for (auto* node : xml->getChildIterator())
         {
             if (!node->hasTagName("Pad")) continue;
+            // A missing or non-numeric index must never default to pad zero.
+            const auto indexText = node->getStringAttribute("index");
+            if (indexText.isEmpty() || !indexText.containsOnly("0123456789"))
+                return false;
             const int index = node->getIntAttribute("index", -1);
             // Duplicate entries are ambiguous and must not silently overwrite
             // previously validated samples or pad parameters.
