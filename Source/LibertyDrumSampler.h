@@ -180,10 +180,60 @@ private:
 
 
 // First visual prototype. Owned by the message thread; audio integration is next.
+// Read-only waveform overview for the selected drum pad.
+class LibertyDrumWaveform final : public juce::Component
+{
+public:
+    explicit LibertyDrumWaveform(LibertyDrumSampler& engine) : sampler(engine) {}
+    void selectPad(int index) { selectedPad = index; repaint(); }
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        g.setColour(juce::Colour(0xff0a111a));
+        g.fillRoundedRectangle(bounds, 5.0f);
+        const auto& pad = sampler.getPad(selectedPad);
+        const auto audio = std::atomic_load(&pad.audio);
+        if (audio == nullptr || audio->getNumSamples() == 0)
+        {
+            g.setColour(juce::Colours::grey);
+            g.drawFittedText("CHARGER UN SAMPLE POUR VOIR SA FORME D'ONDE",
+                             getLocalBounds(), juce::Justification::centred, 1);
+            return;
+        }
+        const int width = getWidth();
+        const float mid = getHeight() * 0.5f;
+        const float amplitude = juce::jmax(1.0f, mid - 5.0f);
+        const int frames = audio->getNumSamples();
+        g.setColour(juce::Colour(0xff4fc4b5));
+        for (int x = 0; x < width; ++x)
+        {
+            const int begin = (int)((int64_t)x * frames / juce::jmax(1, width));
+            const int finish = juce::jmin(frames, (int)((int64_t)(x + 1) * frames / juce::jmax(1, width)));
+            float peak = 0.0f;
+            for (int n = begin; n < finish; ++n)
+                for (int ch = 0; ch < audio->getNumChannels(); ++ch)
+                    peak = juce::jmax(peak, std::abs(audio->getSample(ch, n)));
+            const float height = juce::jmin(1.0f, peak) * amplitude;
+            g.drawVerticalLine(x, mid - height, mid + height);
+        }
+        const float start = pad.startFraction.load();
+        const float end = pad.endFraction.load();
+        g.setColour(juce::Colour(0x880a111a));
+        g.fillRect(0.0f, 0.0f, bounds.getWidth() * start, bounds.getHeight());
+        g.fillRect(bounds.getWidth() * end, 0.0f, bounds.getWidth() * (1.0f - end), bounds.getHeight());
+        g.setColour(juce::Colour(0xffffb454));
+        g.drawVerticalLine((int)(bounds.getWidth() * start), 0.0f, bounds.getHeight());
+        g.drawVerticalLine(juce::jmin(width - 1, (int)(bounds.getWidth() * end)), 0.0f, bounds.getHeight());
+    }
+private:
+    LibertyDrumSampler& sampler;
+    int selectedPad = 0;
+};
+
 class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
 {
 public:
-    explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine)
+    explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine), waveform(engine)
     {
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
         {
@@ -191,7 +241,7 @@ public:
             button.setButtonText("PAD " + juce::String(i + 1));
             button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff253c4a));
             button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-            button.onClick = [this, i] { selectedPad = i; updateControls(); sampler.auditionPad(i, 1.0f); };
+            button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); };
             addAndMakeVisible(button);
         }
         loadButton.setButtonText("CHARGER SAMPLE");
@@ -208,6 +258,7 @@ public:
                 });
         };
         addAndMakeVisible(loadButton);
+        addAndMakeVisible(waveform);
         gainSlider.setRange(0.0, 2.0, 0.01);
         gainSlider.setValue(1.0, juce::dontSendNotification);
         gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
@@ -283,6 +334,7 @@ public:
                 selectedPad = destination;
                 updateControls();
                 refreshLabels();
+                waveform.selectPad(selectedPad);
                 repaint();
             }
             break;
@@ -292,12 +344,13 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 243 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(1, (getHeight() - 324 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
         const int controlTop = getHeight() - 196;
+        waveform.setBounds(margin, getHeight() - 284, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
@@ -327,6 +380,7 @@ private:
             endSlider.setValue(end * 100.0f, juce::dontSendNotification);
         }
         sampler.setPadTrim(selectedPad, start, end);
+        waveform.repaint();
     }
     void updateControls()
     {
@@ -348,6 +402,7 @@ private:
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton;
+    LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel;
     int selectedPad = 0;
