@@ -18,7 +18,7 @@ public:
     {
         juce::String name;
         std::shared_ptr<const juce::AudioBuffer<float>> audio;
-        double sourceRate = 44100.0;
+        std::atomic<double> sourceRate { 44100.0 };
         std::atomic<float> gain { 1.0f };
         std::atomic<float> pan { 0.0f };
         int midiNote = 36;
@@ -45,7 +45,7 @@ public:
         if (!reader->read(&loaded, 0, loaded.getNumSamples(), 0, true, true)) return false;
         auto published = std::make_shared<const juce::AudioBuffer<float>>(std::move(loaded));
         std::atomic_store(&pads[(size_t)index].audio, std::move(published));
-        pads[(size_t)index].sourceRate = reader->sampleRate;
+        pads[(size_t)index].sourceRate.store(reader->sampleRate);
         pads[(size_t)index].name = file.getFileNameWithoutExtension();
         return true;
     }
@@ -63,7 +63,7 @@ public:
                 if (audio == nullptr || audio->getNumSamples() == 0) return;
                 auto* voice = &voices[0];
                 for (auto& candidate : voices) if (!candidate.active) { voice = &candidate; break; }
-                *voice = {true, i, 0.0, juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate};
+                *voice = {true, i, 0.0, juce::jlimit(0.0f, 1.0f, velocity), std::move(audio), pads[(size_t)i].sourceRate.load()};
                 return;
             }
     }
@@ -116,7 +116,7 @@ public:
                     const float a = voice.audio->getSample(source, frame);
                     const float b = voice.audio->getSample(source, next);
                     const float panGain = channel == 0 ? juce::jmin(1.0f, 1.0f - pad.pan.load())
-                                                       : juce::jmin(1.0f, 1.0f + pad.pan);
+                                                       : juce::jmin(1.0f, 1.0f + pad.pan.load());
                     output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * pad.gain.load() * panGain);
                 }
                 voice.position += voice.sourceRate / outputRate;
