@@ -365,6 +365,47 @@ public:
                 });
         };
         addAndMakeVisible(loadButton);
+        exportButton.setButtonText("EXPORTER KIT");
+        exportButton.onClick = [this]
+        {
+            kitChooser = std::make_unique<juce::FileChooser>("Exporter le kit Liberty",
+                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("LibertyDrumKit.xml"),
+                "*.xml");
+            kitChooser->launchAsync(juce::FileBrowserComponent::saveMode
+                                       | juce::FileBrowserComponent::canSelectFiles
+                                       | juce::FileBrowserComponent::warnAboutOverwriting,
+                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this)](const juce::FileChooser& chooser)
+                {
+                    if (safe == nullptr) return;
+                    const auto target = chooser.getResult();
+                    if (target != juce::File{} && !safe->sampler.exportPortableKit(target))
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                            "Export du kit", "Impossible de copier les samples ou de sauvegarder le kit.");
+                });
+        };
+        addAndMakeVisible(exportButton);
+        importButton.setButtonText("IMPORTER KIT");
+        importButton.onClick = [this]
+        {
+            kitChooser = std::make_unique<juce::FileChooser>("Importer un kit Liberty", juce::File{}, "*.xml");
+            kitChooser->launchAsync(juce::FileBrowserComponent::openMode
+                                       | juce::FileBrowserComponent::canSelectFiles,
+                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this)](const juce::FileChooser& chooser)
+                {
+                    if (safe == nullptr) return;
+                    const auto target = chooser.getResult();
+                    if (target != juce::File{} && safe->sampler.importPortableKit(target))
+                    {
+                        safe->refreshLabels();
+                        safe->updateControls();
+                        safe->waveform.repaint();
+                    }
+                    else if (target != juce::File{})
+                        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                            "Import du kit", "Fichier de kit invalide.");
+                });
+        };
+        addAndMakeVisible(importButton);
         addAndMakeVisible(waveform);
         waveform.onTrimChanged = [this] { updateControls(); };
         gainSlider.setRange(0.0, 2.0, 0.01);
@@ -457,6 +498,8 @@ public:
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
+        exportButton.setBounds(margin + 190, getHeight() - 34, 150, 25);
+        importButton.setBounds(margin + 350, getHeight() - 34, 150, 25);
         const int controlTop = getHeight() - 196;
         waveform.setBounds(margin, getHeight() - 284, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
@@ -509,10 +552,10 @@ private:
     }
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
-    juce::TextButton loadButton;
+    juce::TextButton loadButton, exportButton, importButton;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel;
     int selectedPad = 0;
-    std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };
