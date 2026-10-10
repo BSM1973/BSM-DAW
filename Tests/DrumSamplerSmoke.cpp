@@ -348,6 +348,24 @@ int main()
             || !near(protectedKit.getPad(0).gain.load(), 0.75f))
         { fixture.deleteFile(); return 45; }
     }
+    // Individually valid trim endpoints must also define a usable interval.
+    for (const auto& trim : { std::pair<double, double> { 0.8, 0.4 },
+                              { 0.5, 0.5 }, { 0.50, 0.505 } })
+    {
+        const auto invalidManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+            .getNonexistentChildFile("liberty-invalid-trim", ".xml");
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("start", trim.first);
+        pad->setAttribute("end", trim.second);
+        if (!invalidKit.writeTo(invalidManifest)) { fixture.deleteFile(); return 46; }
+        const bool imported = protectedKit.importPortableKit(invalidManifest);
+        invalidManifest.deleteFile();
+        if (imported || !protectedKit.hasSample(0)
+            || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+        { fixture.deleteFile(); return 47; }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
