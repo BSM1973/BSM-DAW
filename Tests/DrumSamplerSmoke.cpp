@@ -415,6 +415,45 @@ int main()
     if (invalidSecondImported || !protectedKit.hasSample(0)
         || !near(protectedKit.getPad(0).gain.load(), 0.75f))
     { fixture.deleteFile(); return 52; }
+    // Portable kit round-trip must preserve sample data and pad controls.
+    const auto exportFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-roundtrip", "");
+    if (!exportFolder.createDirectory()) { fixture.deleteFile(); return 53; }
+    const auto exportedManifest = exportFolder.getChildFile("roundtrip.xml");
+    LibertyDrumSampler exportSource;
+    exportSource.prepare(48000.0);
+    if (!exportSource.loadPad(0, fixture)) { exportFolder.deleteRecursively(); fixture.deleteFile(); return 54; }
+    exportSource.setPadGain(0, 0.8f);
+    exportSource.setPadPan(0, -0.25f);
+    exportSource.setPadPitch(0, 5.0f);
+    exportSource.setPadChokeGroup(0, 2);
+    exportSource.setPadChokeFade(0, 18.0f);
+    exportSource.setPadGateMode(0, true);
+    exportSource.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 80.0f);
+    if (!exportSource.exportPortableKit(exportedManifest)
+        || !exportedManifest.existsAsFile())
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 55; }
+    LibertyDrumSampler importedRoundtrip;
+    importedRoundtrip.prepare(48000.0);
+    if (!importedRoundtrip.importPortableKit(exportedManifest)
+        || !importedRoundtrip.hasSample(0))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 56; }
+    const auto& roundtripPad = importedRoundtrip.getPad(0);
+    if (!near(roundtripPad.gain.load(), 0.8f)
+        || !near(roundtripPad.pan.load(), -0.25f)
+        || !near(roundtripPad.pitchSemitones.load(), 5.0f)
+        || roundtripPad.chokeGroup.load() != 2
+        || !near(roundtripPad.chokeFadeMs.load(), 18.0f)
+        || !roundtripPad.gateMode.load()
+        || !near(roundtripPad.releaseMs.load(), 80.0f))
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 57; }
+    importedRoundtrip.reset();
+    juce::AudioBuffer<float> roundtripAudio(2, 128);
+    roundtripAudio.clear();
+    importedRoundtrip.renderMidi(roundtripAudio, hit);
+    if (std::abs(roundtripAudio.getSample(0, 80)) < 0.01f)
+    { exportFolder.deleteRecursively(); fixture.deleteFile(); return 58; }
+    exportFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
