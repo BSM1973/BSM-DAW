@@ -204,6 +204,17 @@ public:
             if (index < 0 || index >= padCount || seenPads[(size_t)index])
                 return false;
             seenPads[(size_t)index] = true;
+            // Reject non-finite numeric settings before publishing any pad.
+            // NaN/Infinity can otherwise propagate into pitch, envelope or output gain.
+            for (const auto* attribute : { "gain", "pan", "pitch", "start", "end",
+                                           "chokeFadeMs", "attackMs", "decayMs",
+                                           "sustain", "releaseMs" })
+            {
+                if (!node->hasAttribute(attribute)) continue;
+                const auto value = node->getStringAttribute(attribute);
+                if (value.trim().isEmpty() || !std::isfinite(value.getDoubleValue()))
+                    return false;
+            }
             const auto path = node->getStringAttribute("file");
             if (path.isNotEmpty() && !candidate.loadPad(index, juce::File(path)))
                 return false;
