@@ -203,6 +203,41 @@ int main()
     sounding.renderMidi(afterSwap, juce::MidiBuffer{});
     if (!near(afterSwap.getSample(0, 50), 0.5f, 0.003f))
     { fixture.deleteFile(); return 24; }
+    // Invalid kit imports must not replace a functioning kit or silence playback.
+    LibertyDrumSampler protectedKit;
+    protectedKit.prepare(48000.0);
+    if (!protectedKit.loadPad(0, fixture)) { fixture.deleteFile(); return 25; }
+    protectedKit.setPadGain(0, 0.75f);
+    const auto badManifest = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-invalid-kit", ".xml");
+    {
+        juce::XmlElement invalidKit("LibertyDrumKit");
+        auto* pad = invalidKit.createNewChildElement("Pad");
+        pad->setAttribute("index", 0);
+        pad->setAttribute("file", "missing-sample-does-not-exist.wav");
+        if (!invalidKit.writeTo(badManifest)) { fixture.deleteFile(); return 26; }
+    }
+    if (protectedKit.importPortableKit(badManifest))
+    { badManifest.deleteFile(); fixture.deleteFile(); return 27; }
+    badManifest.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 28; }
+    juce::AudioBuffer<float> retained(2, 128);
+    retained.clear();
+    protectedKit.renderMidi(retained, hit);
+    if (!near(retained.getSample(0, 80), 0.375f, 0.003f))
+    { fixture.deleteFile(); return 29; }
+
+    // A malformed document must be rejected without touching the live kit.
+    const auto malformed = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-malformed-kit", ".xml");
+    if (!malformed.replaceWithText("<LibertyDrumKit><Pad"))
+    { fixture.deleteFile(); return 30; }
+    if (protectedKit.importPortableKit(malformed))
+    { malformed.deleteFile(); fixture.deleteFile(); return 31; }
+    malformed.deleteFile();
+    if (!protectedKit.hasSample(0) || !near(protectedKit.getPad(0).gain.load(), 0.75f))
+    { fixture.deleteFile(); return 32; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
