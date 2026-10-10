@@ -2,6 +2,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_core/juce_core.h>
 #include <array>
 #include <memory>
 #include <vector>
@@ -17,6 +18,7 @@ public:
     struct Pad
     {
         juce::String name;
+        juce::String sourcePath;
         std::shared_ptr<const juce::AudioBuffer<float>> audio;
         std::atomic<double> sourceRate { 44100.0 };
         std::atomic<float> gain { 1.0f };
@@ -66,6 +68,45 @@ public:
         std::atomic_store(&pads[(size_t)index].audio, std::move(published));
         pads[(size_t)index].sourceRate.store(reader->sampleRate);
         pads[(size_t)index].name = file.getFileNameWithoutExtension();
+        pads[(size_t)index].sourcePath = file.getFullPathName();
+        return true;
+    }
+    // Serializable kit description; sample audio remains in external WAV/AIFF files.
+    std::unique_ptr<juce::XmlElement> createKitXml() const
+    {
+        auto kit = std::make_unique<juce::XmlElement>("LibertyDrumKit");
+        kit->setAttribute("version", 1);
+        for (int i = 0; i < padCount; ++i)
+        {
+            const auto& pad = pads[(size_t)i];
+            auto* node = kit->createNewChildElement("Pad");
+            node->setAttribute("index", i);
+            node->setAttribute("file", pad.sourcePath);
+            node->setAttribute("gain", (double)pad.gain.load());
+            node->setAttribute("pan", (double)pad.pan.load());
+            node->setAttribute("pitch", (double)pad.pitchSemitones.load());
+            node->setAttribute("start", (double)pad.startFraction.load());
+            node->setAttribute("end", (double)pad.endFraction.load());
+        }
+        return kit;
+    }
+    bool restoreKitXml(const juce::XmlElement& kit)
+    {
+        if (!kit.hasTagName("LibertyDrumKit")) return false;
+        for (auto* node : kit.getChildIterator())
+        {
+            if (!node->hasTagName("Pad")) continue;
+            const int i = node->getIntAttribute("index", -1);
+            if (i < 0 || i >= padCount) continue;
+            const auto path = node->getStringAttribute("file");
+            if (path.isNotEmpty())
+                loadPad(i, juce::File(path));
+            setPadGain(i, (float)node->getDoubleAttribute("gain", 1.0));
+            setPadPan(i, (float)node->getDoubleAttribute("pan", 0.0));
+            setPadPitch(i, (float)node->getDoubleAttribute("pitch", 0.0));
+            setPadTrim(i, (float)node->getDoubleAttribute("start", 0.0),
+                          (float)node->getDoubleAttribute("end", 1.0));
+        }
         return true;
     }
     bool hasSample(int index) const noexcept
