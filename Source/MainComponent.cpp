@@ -1683,6 +1683,15 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
     if (draggingStepSequencerPattern)
     {
         const auto p = event.getPosition();
+        // A pattern drop must originate from an actual drag. A plain click,
+        // including either click of a double-click, must not create a clip.
+        if (event.getDistanceFromDragStart() < 5)
+        {
+            draggingStepSequencerPattern = false;
+            draggedStepSequencerInstrument = -1;
+            repaint();
+            return;
+        }
         const int rowH = getLibertyTrackRowHeight();
         const int rowOffset = p.y - getArrangeTop();
         if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= 210)
@@ -1708,7 +1717,8 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         repaint();
         return;
     }
-    if (draggedPatternInstrument >= 0)
+    if (draggedPatternInstrument >= 0 && draggedPatternClip >= 0
+        && event.getDistanceFromDragStart() >= 3)
         publishInstrumentArrangementClips(draggedPatternInstrument);
     draggedPatternInstrument = -1;
     draggedPatternClip = -1;
