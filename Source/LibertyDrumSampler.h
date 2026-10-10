@@ -226,7 +226,9 @@ public:
             {
                 if (!node->hasAttribute(attribute)) continue;
                 const auto value = node->getStringAttribute(attribute).trim();
-                if (value.isEmpty() || !value.containsOnly("0123456789"))
+                // Both settings are single-digit enumerations: avoid overflow
+                // and accidental acceptance of huge numeric strings.
+                if (value.length() != 1 || !value.containsOnly("0123456789"))
                     return false;
                 const int parsed = value.getIntValue();
                 if ((juce::String(attribute) == "chokeGroup" && parsed > 8)
