@@ -518,6 +518,26 @@ int main()
         || missingManifest.existsAsFile())
     { missingFolder.deleteRecursively(); fixture.deleteFile(); return 71; }
     missingFolder.deleteRecursively();
+    // If the second source disappears, the staged copy for the first pad
+    // must be removed and no manifest should be published.
+    const auto stagedFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-staged-rollback", "");
+    if (!stagedFolder.createDirectory()) { fixture.deleteFile(); return 72; }
+    const auto disappearing = stagedFolder.getChildFile("disappearing.wav");
+    if (!fixture.copyFileTo(disappearing))
+    { stagedFolder.deleteRecursively(); fixture.deleteFile(); return 73; }
+    LibertyDrumSampler stagedSource;
+    stagedSource.prepare(48000.0);
+    if (!stagedSource.loadPad(0, fixture) || !stagedSource.loadPad(1, disappearing))
+    { stagedFolder.deleteRecursively(); fixture.deleteFile(); return 74; }
+    disappearing.deleteFile();
+    const auto stagedManifest = stagedFolder.getChildFile("staged.xml");
+    const auto stagedTemp = stagedFolder.getChildFile("staged_samples")
+        .getChildFile("pad_01.wav.tmp");
+    if (stagedSource.exportPortableKit(stagedManifest)
+        || stagedManifest.existsAsFile() || stagedTemp.existsAsFile())
+    { stagedFolder.deleteRecursively(); fixture.deleteFile(); return 75; }
+    stagedFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
