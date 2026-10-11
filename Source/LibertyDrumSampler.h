@@ -840,10 +840,16 @@ public:
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         // Actions live above the waveform, never on top of the last ADSR row.
         const int actionsTop = getHeight() - 510;
-        loadButton.setBounds(margin, actionsTop, 170, 28);
-        stopButton.setBounds(margin + 180, actionsTop, 110, 28);
-        exportButton.setBounds(margin + 300, actionsTop, 150, 28);
-        importButton.setBounds(margin + 460, actionsTop, 150, 28);
+        // Keep kit actions inside the panel even when the window is narrower.
+        // The waveform begins 40 px below this row.
+        const int actionGap = 8;
+        const int availableWidth = juce::jmax(0, getWidth() - margin * 2);
+        const int actionWidth = juce::jmax(0, (availableWidth - actionGap * 3) / 4);
+        const int lastActionWidth = juce::jmax(0, availableWidth - 3 * (actionWidth + actionGap));
+        loadButton.setBounds(margin, actionsTop, actionWidth, 28);
+        stopButton.setBounds(margin + actionWidth + actionGap, actionsTop, actionWidth, 28);
+        exportButton.setBounds(margin + 2 * (actionWidth + actionGap), actionsTop, actionWidth, 28);
+        importButton.setBounds(margin + 3 * (actionWidth + actionGap), actionsTop, lastActionWidth, 28);
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
