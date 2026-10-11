@@ -28,6 +28,7 @@ public:
         std::atomic<float> pitchSemitones { 0.0f };
         std::atomic<float> startFraction { 0.0f };
         std::atomic<float> endFraction { 1.0f };
+        std::atomic<bool> loopEnabled { false };
         std::atomic<int> chokeGroup { 0 };
         std::atomic<float> chokeFadeMs { 8.0f };
         std::atomic<bool> gateMode { false };
@@ -117,6 +118,7 @@ public:
             node->setAttribute("pitch", (double)pad.pitchSemitones.load());
             node->setAttribute("start", (double)pad.startFraction.load());
             node->setAttribute("end", (double)pad.endFraction.load());
+            node->setAttribute("loopEnabled", pad.loopEnabled.load() ? 1 : 0);
             node->setAttribute("chokeGroup", pad.chokeGroup.load());
             node->setAttribute("chokeFadeMs", (double)pad.chokeFadeMs.load());
             node->setAttribute("gateMode", pad.gateMode.load() ? 1 : 0);
@@ -143,6 +145,7 @@ public:
             setPadPitch(i, (float)node->getDoubleAttribute("pitch", 0.0));
             setPadTrim(i, (float)node->getDoubleAttribute("start", 0.0),
                           (float)node->getDoubleAttribute("end", 1.0));
+            setPadLoop(i, node->getIntAttribute("loopEnabled", 0) != 0);
             setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
             setPadChokeFade(i, (float)node->getDoubleAttribute("chokeFadeMs", 8.0));
             setPadGateMode(i, node->getIntAttribute("gateMode", 0) != 0);
@@ -300,6 +303,7 @@ public:
             dst.pitchSemitones.store(src.pitchSemitones.load());
             dst.startFraction.store(src.startFraction.load());
             dst.endFraction.store(src.endFraction.load());
+            dst.loopEnabled.store(src.loopEnabled.load());
             dst.chokeGroup.store(src.chokeGroup.load());
             dst.chokeFadeMs.store(src.chokeFadeMs.load());
             dst.gateMode.store(src.gateMode.load());
@@ -474,6 +478,10 @@ public:
         if (index >= 0 && index < padCount)
             pads[(size_t)index].pitchSemitones.store(juce::jlimit(-24.0f, 24.0f, semitones));
     }
+    void setPadLoop(int index, bool enabled) noexcept
+    {
+        if (index >= 0 && index < padCount) pads[(size_t)index].loopEnabled.store(enabled);
+    }
     void setPadTrim(int index, float start, float end) noexcept
     {
         if (index < 0 || index >= padCount) return;
@@ -502,6 +510,17 @@ public:
                 voice.decayMs = livePad.decayMs.load(std::memory_order_relaxed);
                 voice.sustain = livePad.sustain.load(std::memory_order_relaxed);
                 voice.releaseMs = livePad.releaseMs.load(std::memory_order_relaxed);
+                // Wrap the current voice inside the live trim markers, without retriggering.
+                if (voice.audio != nullptr && livePad.loopEnabled.load(std::memory_order_relaxed))
+                {
+                    const int frames = voice.audio->getNumSamples();
+                    const double loopStart = juce::jlimit(0.0, (double)frames - 1.0,
+                        (double)livePad.startFraction.load(std::memory_order_relaxed) * frames);
+                    const double loopEnd = juce::jlimit(loopStart + 1.0, (double)frames,
+                        (double)voice.endFraction * frames);
+                    if (voice.position >= loopEnd)
+                        voice.position = loopStart + std::fmod(voice.position - loopStart, loopEnd - loopStart);
+                }
                 const int frame = (int)voice.position;
                 if (voice.audio != nullptr && voice.audio->getNumSamples() > 0)
                     playbackPositions[(size_t)voice.pad].store(
@@ -717,6 +736,10 @@ public:
         stopButton.setButtonText("STOP PAD");
         stopButton.onClick = [this] { sampler.stopPad(selectedPad); };
         addAndMakeVisible(stopButton);
+        loopButton.setButtonText("LOOP START / END");
+        loopButton.setClickingTogglesState(true);
+        loopButton.onClick = [this] { sampler.setPadLoop(selectedPad, loopButton.getToggleState()); };
+        addAndMakeVisible(loopButton);
         exportButton.setButtonText("EXPORTER KIT");
         exportButton.onClick = [this]
         {
@@ -908,6 +931,7 @@ public:
         importButton.setBounds(margin + 3 * (actionWidth + actionGap), actionsTop, lastActionWidth, 28);
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
+        loopButton.setBounds(margin, getHeight() - 392, juce::jmin(190, availableWidth), 26);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
@@ -960,6 +984,7 @@ private:
     void updateControls()
     {
         const auto& pad = sampler.getPad(selectedPad);
+        loopButton.setToggleState(pad.loopEnabled.load(), juce::dontSendNotification);
         gainSlider.setValue(pad.gain.load(), juce::dontSendNotification);
         panSlider.setValue(pad.pan.load(), juce::dontSendNotification);
         pitchSlider.setValue(pad.pitchSemitones.load(), juce::dontSendNotification);
@@ -982,7 +1007,7 @@ private:
     }
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
-    juce::TextButton loadButton, stopButton, exportButton, importButton;
+    juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
