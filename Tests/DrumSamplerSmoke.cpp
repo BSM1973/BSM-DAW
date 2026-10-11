@@ -572,9 +572,11 @@ int main()
     juce::AudioBuffer<float> firstHit(2, 128), repeatedHit(2, 128);
     firstHit.clear();
     repeatedHit.clear();
-    retrigger.noteOn(36, 1.0f);
+    retrigger.auditionPad(0, 1.0f);
+    retrigger.processAuditions();
     retrigger.render(firstHit, 0, 128);
-    retrigger.noteOn(36, 1.0f);
+    retrigger.auditionPad(0, 1.0f);
+    retrigger.processAuditions();
     retrigger.render(repeatedHit, 0, 128);
     if (!near(firstHit.getSample(0, 80), repeatedHit.getSample(0, 80), 0.003f))
     { fixture.deleteFile(); return fail(81); }
