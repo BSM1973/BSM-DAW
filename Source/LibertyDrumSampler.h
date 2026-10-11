@@ -29,6 +29,7 @@ public:
         std::atomic<float> startFraction { 0.0f };
         std::atomic<float> endFraction { 1.0f };
         std::atomic<bool> loopEnabled { false };
+        std::atomic<int> colourArgb { (int)0xff253c4a };
         std::atomic<int> chokeGroup { 0 };
         std::atomic<float> chokeFadeMs { 8.0f };
         std::atomic<bool> gateMode { false };
@@ -119,6 +120,7 @@ public:
             node->setAttribute("start", (double)pad.startFraction.load());
             node->setAttribute("end", (double)pad.endFraction.load());
             node->setAttribute("loopEnabled", pad.loopEnabled.load() ? 1 : 0);
+            node->setAttribute("colour", juce::String::toHexString(pad.colourArgb.load()));
             node->setAttribute("chokeGroup", pad.chokeGroup.load());
             node->setAttribute("chokeFadeMs", (double)pad.chokeFadeMs.load());
             node->setAttribute("gateMode", pad.gateMode.load() ? 1 : 0);
@@ -146,6 +148,10 @@ public:
             setPadTrim(i, (float)node->getDoubleAttribute("start", 0.0),
                           (float)node->getDoubleAttribute("end", 1.0));
             setPadLoop(i, node->getIntAttribute("loopEnabled", 0) != 0);
+            const auto colourText = node->getStringAttribute("colour");
+            if (colourText.isNotEmpty() && colourText.length() == 8
+                && colourText.containsOnly("0123456789abcdefABCDEF"))
+                setPadColour(i, (int)colourText.getHexValue32());
             setPadChokeGroup(i, node->getIntAttribute("chokeGroup", 0));
             setPadChokeFade(i, (float)node->getDoubleAttribute("chokeFadeMs", 8.0));
             setPadGateMode(i, node->getIntAttribute("gateMode", 0) != 0);
@@ -304,6 +310,7 @@ public:
             dst.startFraction.store(src.startFraction.load());
             dst.endFraction.store(src.endFraction.load());
             dst.loopEnabled.store(src.loopEnabled.load());
+            dst.colourArgb.store(src.colourArgb.load());
             dst.chokeGroup.store(src.chokeGroup.load());
             dst.chokeFadeMs.store(src.chokeFadeMs.load());
             dst.gateMode.store(src.gateMode.load());
@@ -477,6 +484,11 @@ public:
     {
         if (index >= 0 && index < padCount)
             pads[(size_t)index].pitchSemitones.store(juce::jlimit(-24.0f, 24.0f, semitones));
+    }
+    void setPadColour(int index, int argb) noexcept
+    {
+        if (index >= 0 && index < padCount)
+            pads[(size_t)index].colourArgb.store((int)(0xff000000u | ((unsigned int)argb & 0x00ffffffu)));
     }
     void setPadLoop(int index, bool enabled) noexcept
     {
@@ -705,7 +717,7 @@ private:
     float viewSpan = 1.0f;
 };
 
-class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
+class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget, private juce::ChangeListener
 {
 public:
     explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine), waveform(engine)
@@ -714,7 +726,7 @@ public:
         {
             auto& button = pads[(size_t)i];
             button.setButtonText("PAD " + juce::String(i + 1));
-            button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff253c4a));
+            button.setColour(juce::TextButton::buttonColourId, juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load()));
             button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); };
             addAndMakeVisible(button);
@@ -733,6 +745,18 @@ public:
                 });
         };
         addAndMakeVisible(loadButton);
+        colourButton.setButtonText("COULEUR PAD");
+        colourButton.onClick = [this]
+        {
+            auto selector = std::make_unique<juce::ColourSelector>(juce::ColourSelector::showColourAtTop
+                | juce::ColourSelector::showSliders | juce::ColourSelector::showColourspace);
+            selector->setCurrentColour(juce::Colour((juce::uint32)sampler.getPad(selectedPad).colourArgb.load()));
+            selector->setSize(340, 360);
+            selector->addChangeListener(this);
+            colourEditingPad = selectedPad;
+            juce::CallOutBox::launchAsynchronously(std::move(selector), colourButton.getScreenBounds(), nullptr);
+        };
+        addAndMakeVisible(colourButton);
         stopButton.setButtonText("STOP PAD");
         stopButton.onClick = [this] { sampler.stopPad(selectedPad); };
         addAndMakeVisible(stopButton);
@@ -932,6 +956,7 @@ public:
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
         loopButton.setBounds(margin, getHeight() - 392, juce::jmin(190, availableWidth), 26);
+        colourButton.setBounds(margin + 198, getHeight() - 392, juce::jmin(160, juce::jmax(0, availableWidth - 198)), 26);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
@@ -963,6 +988,21 @@ public:
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
     }
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override
+    {
+        if (auto* selector = dynamic_cast<juce::ColourSelector*>(source))
+        {
+            const auto colour = selector->getCurrentColour();
+            sampler.setPadColour(colourEditingPad, (int)colour.getARGB());
+            refreshPadColours();
+        }
+    }
+    void refreshPadColours()
+    {
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+            pads[(size_t)i].setColour(juce::TextButton::buttonColourId,
+                juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load()));
+    }
     void applyEnvelope()
     {
         sampler.setPadEnvelope(selectedPad, (float)adsrSliders[0].getValue(),
@@ -999,6 +1039,7 @@ private:
     }
     void refreshLabels()
     {
+        refreshPadColours();
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
         {
             pads[(size_t)i].setButtonText(sampler.hasSample(i) ? sampler.getPad(i).name
@@ -1007,7 +1048,8 @@ private:
     }
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
-    juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton;
+    juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton, colourButton;
+    int colourEditingPad = 0;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
