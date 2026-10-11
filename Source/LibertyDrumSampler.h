@@ -833,13 +833,18 @@ public:
     void resized() override
     {
         const int margin = 12;
+        // Reserve a fixed lower section for the waveform, kit actions and ADSR.
+        // Derive the four pad rows from the actual space above that section.
+        const int actionsTop = getHeight() - 510;
+        const int padTop = 40 + margin;
+        const int padBottom = actionsTop - margin;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(36, (getHeight() - 560 - margin * 5) / 4);
+        const int padAreaHeight = juce::jmax(0, padBottom - padTop);
+        const int cellHeight = juce::jmax(0, (padAreaHeight - margin * 3) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
-                                     40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
+                                     padTop + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
         // Actions live above the waveform, never on top of the last ADSR row.
-        const int actionsTop = getHeight() - 510;
         // Keep kit actions inside the panel even when the window is narrower.
         // The waveform begins 40 px below this row.
         const int actionGap = 8;
