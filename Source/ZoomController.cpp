@@ -20,6 +20,19 @@ float applyWheelZoom(float current, float delta, float minimum, float maximum)
     return juce::jlimit(minimum, maximum, current * factor);
 }
 
+// Floating instrument windows own their wheel interactions. In particular,
+// Drum Sampler waveform zoom must never modify the arrange timeline zoom.
+bool isInsideDrumSampler(juce::Component* component)
+{
+    while (component != nullptr)
+    {
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(component))
+            return window->getName().startsWithIgnoreCase("Liberty - Drum Sampler");
+        component = component->getParentComponent();
+    }
+    return false;
+}
+
 bool isInsideMidiEditor(juce::Component* component)
 {
     while (component != nullptr)
@@ -68,7 +81,8 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
-        if (isInsideScrollableBrowserContent(event.eventComponent))
+        if (isInsideDrumSampler(event.eventComponent)
+            || isInsideScrollableBrowserContent(event.eventComponent))
             return;
 
         const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
