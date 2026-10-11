@@ -481,6 +481,17 @@ public:
             for (auto& voice : voices)
             {
                 if (!voice.active) continue;
+                // Read current pad controls while the voice is playing: moving a
+                // slider must not require retriggering a long sample or loop.
+                const auto& livePad = pads[(size_t)voice.pad];
+                voice.gain = livePad.gain.load(std::memory_order_relaxed);
+                voice.pan = livePad.pan.load(std::memory_order_relaxed);
+                voice.pitchSemitones = livePad.pitchSemitones.load(std::memory_order_relaxed);
+                voice.endFraction = livePad.endFraction.load(std::memory_order_relaxed);
+                voice.attackMs = livePad.attackMs.load(std::memory_order_relaxed);
+                voice.decayMs = livePad.decayMs.load(std::memory_order_relaxed);
+                voice.sustain = livePad.sustain.load(std::memory_order_relaxed);
+                voice.releaseMs = livePad.releaseMs.load(std::memory_order_relaxed);
                 const int frame = (int)voice.position;
                 if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * voice.endFraction)) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
