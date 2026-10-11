@@ -947,7 +947,7 @@ public:
         const int margin = 12;
         // Reserve a fixed lower section for the waveform, kit actions and ADSR.
         // Derive the four pad rows from the actual space above that section.
-        const int actionsTop = getHeight() - 510;
+        const int actionsTop = getHeight() - 550;
         const int padTop = 40 + margin;
         const int padBottom = actionsTop - margin;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
@@ -969,9 +969,9 @@ public:
         importButton.setBounds(margin + 3 * (actionWidth + actionGap), actionsTop, lastActionWidth, 28);
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
-        // Waveform ends at height - 394; controls start at height - 382.
-        // Put the action buttons in the reserved strip above the waveform,
-        // so neither button can overlap GAIN or the waveform itself.
+        // Three distinct rows: kit actions (-550..-522), pad actions
+        // (-516..-490), waveform (-470..-394), then GAIN (-382).
+        // Never place interactive buttons inside the waveform component.
         const int loopActionsY = actionsTop + 34;
         loopButton.setBounds(margin, loopActionsY, juce::jmin(190, availableWidth), 26);
         colourButton.setBounds(margin + 198, loopActionsY, juce::jmin(160, juce::jmax(0, availableWidth - 198)), 26);
