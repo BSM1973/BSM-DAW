@@ -75,7 +75,16 @@ public:
             if ((triggered & (1u << i)) != 0)
                 noteOn(36 + i, pendingVelocity[(size_t)i].load(std::memory_order_relaxed), true);
     }
-    void reset() noexcept { for (auto& voice : voices) voice.active = false; }
+    void reset() noexcept
+    {
+        for (auto& voice : voices) voice.active = false;
+        for (auto& position : playbackPositions) position.store(-1.0f, std::memory_order_relaxed);
+    }
+    float getPlaybackPosition(int index) const noexcept
+    {
+        return index >= 0 && index < padCount
+            ? playbackPositions[(size_t)index].load(std::memory_order_relaxed) : -1.0f;
+    }
     bool loadPad(int index, const juce::File& file)
     {
         if (index < 0 || index >= padCount || !file.existsAsFile()) return false;
@@ -477,6 +486,7 @@ public:
     {
         if (output.getNumChannels() < 1 || count <= 0) return;
         const int end = juce::jmin(output.getNumSamples(), start + count);
+        for (auto& position : playbackPositions) position.store(-1.0f, std::memory_order_relaxed);
         for (int n = juce::jmax(0, start); n < end; ++n)
             for (auto& voice : voices)
             {
@@ -493,6 +503,9 @@ public:
                 voice.sustain = livePad.sustain.load(std::memory_order_relaxed);
                 voice.releaseMs = livePad.releaseMs.load(std::memory_order_relaxed);
                 const int frame = (int)voice.position;
+                if (voice.audio != nullptr && voice.audio->getNumSamples() > 0)
+                    playbackPositions[(size_t)voice.pad].store(
+                        (float)(voice.position / voice.audio->getNumSamples()), std::memory_order_relaxed);
                 if (voice.audio == nullptr || frame >= (int)(voice.audio->getNumSamples() * voice.endFraction)) { voice.active = false; voice.audio.reset(); continue; }
                 const float fraction = (float)(voice.position - frame);
                 const int next = juce::jmin(frame + 1, voice.audio->getNumSamples() - 1);
@@ -565,18 +578,20 @@ private:
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::array<std::atomic<float>, padCount> pendingVelocity {};
+    std::array<std::atomic<float>, padCount> playbackPositions {};
     double outputRate = 44100.0;
 };
 
 
 // First visual prototype. Owned by the message thread; audio integration is next.
 // Read-only waveform overview for the selected drum pad.
-class LibertyDrumWaveform final : public juce::Component
+class LibertyDrumWaveform final : public juce::Component, private juce::Timer
 {
 public:
-    explicit LibertyDrumWaveform(LibertyDrumSampler& engine) : sampler(engine) {}
+    explicit LibertyDrumWaveform(LibertyDrumSampler& engine) : sampler(engine) { startTimerHz(30); }
     void selectPad(int index) { selectedPad = index; viewStart = 0.0f; viewSpan = 1.0f; repaint(); }
     std::function<void()> onTrimChanged;
+    void timerCallback() override { repaint(); }
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
         if (!sampler.hasSample(selectedPad) || getWidth() <= 0 || wheel.deltaY == 0.0f) return;
@@ -654,6 +669,14 @@ public:
             g.drawVerticalLine((int)startX, 0.0f, bounds.getHeight());
         if (endX >= 0.0f && endX < bounds.getWidth())
             g.drawVerticalLine((int)endX, 0.0f, bounds.getHeight());
+        // The playhead uses the same zoom/scroll coordinates as the waveform.
+        const float playback = sampler.getPlaybackPosition(selectedPad);
+        const float playX = (playback - viewStart) / viewSpan * bounds.getWidth();
+        if (playback >= 0.0f && playX >= 0.0f && playX < bounds.getWidth())
+        {
+            g.setColour(juce::Colour(0xffff674f));
+            g.drawVerticalLine((int)playX, 0.0f, bounds.getHeight());
+        }
     }
 private:
     LibertyDrumSampler& sampler;
