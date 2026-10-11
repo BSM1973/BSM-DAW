@@ -558,6 +558,26 @@ int main()
         || preserveManifest.loadFileAsString() != originalManifest)
     { preserveFolder.deleteRecursively(); fixture.deleteFile(); return 79; }
     preserveFolder.deleteRecursively();
+    // Repeated pad hits restart long samples without stacking their audio.
+    LibertyDrumSampler retrigger;
+    retrigger.prepare(48000.0);
+    if (!retrigger.loadPad(0, fixture)) { fixture.deleteFile(); return 80; }
+    retrigger.setPadEnvelope(0, 0.0f, 0.0f, 1.0f, 8.0f);
+    juce::AudioBuffer<float> firstHit(2, 128), repeatedHit(2, 128);
+    firstHit.clear();
+    repeatedHit.clear();
+    retrigger.noteOn(36, 1.0f);
+    retrigger.render(firstHit, 0, 128);
+    retrigger.noteOn(36, 1.0f);
+    retrigger.render(repeatedHit, 0, 128);
+    if (!near(firstHit.getSample(0, 80), repeatedHit.getSample(0, 80), 0.003f))
+    { fixture.deleteFile(); return 81; }
+    retrigger.stopPad(0);
+    juce::AudioBuffer<float> stoppedHit(2, 128);
+    stoppedHit.clear();
+    retrigger.renderMidi(stoppedHit, juce::MidiBuffer{});
+    if (std::abs(stoppedHit.getSample(0, 80)) > 0.003f)
+    { fixture.deleteFile(); return 82; }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
