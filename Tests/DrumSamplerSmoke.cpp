@@ -538,6 +538,26 @@ int main()
         || stagedManifest.existsAsFile() || stagedTemp.existsAsFile())
     { stagedFolder.deleteRecursively(); fixture.deleteFile(); return 75; }
     stagedFolder.deleteRecursively();
+    // Failed re-export must not overwrite an existing, previously valid manifest.
+    const auto preserveFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-preserve-export", "");
+    if (!preserveFolder.createDirectory()) { fixture.deleteFile(); return 76; }
+    const auto preserveManifest = preserveFolder.getChildFile("kit.xml");
+    LibertyDrumSampler preserveSource;
+    preserveSource.prepare(48000.0);
+    if (!preserveSource.loadPad(0, fixture)
+        || !preserveSource.exportPortableKit(preserveManifest))
+    { preserveFolder.deleteRecursively(); fixture.deleteFile(); return 77; }
+    const auto originalManifest = preserveManifest.loadFileAsString();
+    const auto disappearingAgain = preserveFolder.getChildFile("vanishing.wav");
+    if (!fixture.copyFileTo(disappearingAgain)
+        || !preserveSource.loadPad(1, disappearingAgain))
+    { preserveFolder.deleteRecursively(); fixture.deleteFile(); return 78; }
+    disappearingAgain.deleteFile();
+    if (preserveSource.exportPortableKit(preserveManifest)
+        || preserveManifest.loadFileAsString() != originalManifest)
+    { preserveFolder.deleteRecursively(); fixture.deleteFile(); return 79; }
+    preserveFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
