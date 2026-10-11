@@ -65,7 +65,7 @@ public:
     {
         const auto stops = pendingStops.exchange(0, std::memory_order_acquire);
         for (auto& voice : voices)
-            if (voice.active && (stops & (1u << voice.padIndex)) != 0)
+            if (voice.active && (stops & (1u << voice.pad)) != 0)
             {
                 voice.active = false;
                 voice.audio.reset();
@@ -371,7 +371,7 @@ public:
                 // Retriggering a pad restarts its sample instead of stacking
                 // another long loop over the previous playback.
                 for (auto& previous : voices)
-                    if (previous.active && previous.padIndex == i)
+                    if (previous.active && previous.pad == i)
                     {
                         previous.active = false;
                         previous.audio.reset();
