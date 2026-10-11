@@ -2,6 +2,8 @@
 #include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
 void closeFloatingStepSequencerWindow();
+void closeFloatingDrumSamplerWindow();
+void showFloatingDrumSamplerWindow(AudioEngine&);
 void resizeLibertyDynamicTrackController(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
 void clearLibertyAudioClipResizeSource(AudioEngine&, int);
@@ -72,12 +74,13 @@ MainComponent::MainComponent()
     instrumentStepSequencers.resize((size_t) dynamicInstrumentTrackCount);
     midiStepSequencers.resize((size_t) dynamicMidiTrackCount);
     audioEngine.initialise();
+    audioEngine.setDrumSampler(std::make_shared<LibertyDrumSampler>());
     projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 
-MainComponent::~MainComponent() { closeFloatingStepSequencerWindow(); }
+MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
 void MainComponent::paint(juce::Graphics& g)
 {
@@ -116,6 +119,7 @@ void MainComponent::paint(juce::Graphics& g)
         };
         drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
+        drawTab(juce::Rectangle<int>(376, mixer.getY() + 4, 148, 28), "DRUM SAMPLER", false);
         if (showStepSequencer && dockStepSequencerMode)
         {
             const auto detach = juce::Rectangle<int>(260, mixer.getY() + 4, 106, 28);
@@ -188,6 +192,34 @@ std::unique_ptr<FloatingStepSequencerWindow> floatingStepSequencerWindow;
 }
 
 void closeFloatingStepSequencerWindow() { floatingStepSequencerWindow.reset(); }
+class FloatingDrumSamplerWindow final : public juce::DocumentWindow
+{
+public:
+    explicit FloatingDrumSamplerWindow(LibertyDrumSampler& sampler)
+        : juce::DocumentWindow("Liberty - Drum Sampler", juce::Colour(0xff121c27),
+                               juce::DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new LibertyDrumSamplerPanel(sampler), true);
+        setResizable(true, true);
+        setResizeLimits(740, 760, 2200, 1600);
+        centreWithSize(1050, 950);
+    }
+    void closeButtonPressed() override { setVisible(false); }
+};
+std::unique_ptr<FloatingDrumSamplerWindow> floatingDrumSamplerWindow;
+
+
+void closeFloatingDrumSamplerWindow() { floatingDrumSamplerWindow.reset(); }
+void showFloatingDrumSamplerWindow(AudioEngine& engine)
+{
+    auto sampler = engine.getDrumSampler();
+    if (!sampler) return;
+    if (!floatingDrumSamplerWindow)
+        floatingDrumSamplerWindow = std::make_unique<FloatingDrumSamplerWindow>(*sampler);
+    floatingDrumSamplerWindow->setVisible(true);
+    floatingDrumSamplerWindow->toFront(true);
+}
 
 void MainComponent::showFloatingStepSequencer()
 {
@@ -1406,6 +1438,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     {
         showFloatingStepSequencer();
         return;
+    }
+    if (juce::Rectangle<int>(376, getMixerTop() + 4, 148, 28).contains(p))
+    {
+        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+        if (selectedTrack >= getAudioTrackCount()
+            && selectedTrack < firstInstrument + getInstrumentTrackCount())
+        {
+            showFloatingDrumSamplerWindow(audioEngine);
+            return;
+        }
     }
     const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool selectedMidi = selectedTrack >= getAudioTrackCount()
