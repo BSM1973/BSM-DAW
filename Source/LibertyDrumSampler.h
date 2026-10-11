@@ -564,13 +564,23 @@ class LibertyDrumWaveform final : public juce::Component
 {
 public:
     explicit LibertyDrumWaveform(LibertyDrumSampler& engine) : sampler(engine) {}
-    void selectPad(int index) { selectedPad = index; repaint(); }
+    void selectPad(int index) { selectedPad = index; viewStart = 0.0f; viewSpan = 1.0f; repaint(); }
     std::function<void()> onTrimChanged;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+    {
+        if (!sampler.hasSample(selectedPad) || getWidth() <= 0 || wheel.deltaY == 0.0f) return;
+        const float cursor = juce::jlimit(0.0f, 1.0f, (float)event.x / (float)getWidth());
+        const float anchor = viewStart + cursor * viewSpan;
+        const float factor = std::pow(1.2f, -wheel.deltaY * 4.0f);
+        viewSpan = juce::jlimit(0.005f, 1.0f, viewSpan * factor);
+        viewStart = juce::jlimit(0.0f, 1.0f - viewSpan, anchor - cursor * viewSpan);
+        repaint();
+    }
     void mouseDown(const juce::MouseEvent& event) override
     {
         if (!sampler.hasSample(selectedPad) || getWidth() <= 0) return;
         const auto& pad = sampler.getPad(selectedPad);
-        const float x = juce::jlimit(0.0f, 1.0f, (float)event.x / (float)getWidth());
+        const float x = juce::jlimit(0.0f, 1.0f, viewStart + (float)event.x / (float)getWidth() * viewSpan);
         const float start = pad.startFraction.load();
         const float end = pad.endFraction.load();
         draggingStart = std::abs(x - start) <= std::abs(x - end);
@@ -580,7 +590,7 @@ public:
     {
         if (!sampler.hasSample(selectedPad) || getWidth() <= 0) return;
         const auto& pad = sampler.getPad(selectedPad);
-        const float x = juce::jlimit(0.0f, 1.0f, (float)event.x / (float)getWidth());
+        const float x = juce::jlimit(0.0f, 1.0f, viewStart + (float)event.x / (float)getWidth() * viewSpan);
         if (draggingStart)
             sampler.setPadTrim(selectedPad, juce::jmin(x, pad.endFraction.load() - 0.01f),
                                pad.endFraction.load());
@@ -611,8 +621,8 @@ public:
         g.setColour(juce::Colour(0xff4fc4b5));
         for (int x = 0; x < width; ++x)
         {
-            const int begin = (int)((int64_t)x * frames / juce::jmax(1, width));
-            const int finish = juce::jmin(frames, (int)((int64_t)(x + 1) * frames / juce::jmax(1, width)));
+            const int begin = juce::jlimit(0, frames, (int)((viewStart + (float)x / juce::jmax(1, width) * viewSpan) * frames));
+            const int finish = juce::jlimit(begin, frames, (int)std::ceil((viewStart + (float)(x + 1) / juce::jmax(1, width) * viewSpan) * frames));
             float peak = 0.0f;
             for (int n = begin; n < finish; ++n)
                 for (int ch = 0; ch < audio->getNumChannels(); ++ch)
@@ -623,16 +633,23 @@ public:
         const float start = pad.startFraction.load();
         const float end = pad.endFraction.load();
         g.setColour(juce::Colour(0x880a111a));
-        g.fillRect(0.0f, 0.0f, bounds.getWidth() * start, bounds.getHeight());
-        g.fillRect(bounds.getWidth() * end, 0.0f, bounds.getWidth() * (1.0f - end), bounds.getHeight());
+        const float startX = (start - viewStart) / viewSpan * bounds.getWidth();
+        const float endX = (end - viewStart) / viewSpan * bounds.getWidth();
+        g.fillRect(0.0f, 0.0f, juce::jlimit(0.0f, bounds.getWidth(), startX), bounds.getHeight());
+        const float endShade = juce::jlimit(0.0f, bounds.getWidth(), endX);
+        g.fillRect(endShade, 0.0f, bounds.getWidth() - endShade, bounds.getHeight());
         g.setColour(juce::Colour(0xffffb454));
-        g.drawVerticalLine((int)(bounds.getWidth() * start), 0.0f, bounds.getHeight());
-        g.drawVerticalLine(juce::jmin(width - 1, (int)(bounds.getWidth() * end)), 0.0f, bounds.getHeight());
+        if (startX >= 0.0f && startX < bounds.getWidth())
+            g.drawVerticalLine((int)startX, 0.0f, bounds.getHeight());
+        if (endX >= 0.0f && endX < bounds.getWidth())
+            g.drawVerticalLine((int)endX, 0.0f, bounds.getHeight());
     }
 private:
     LibertyDrumSampler& sampler;
     int selectedPad = 0;
     bool draggingStart = true;
+    float viewStart = 0.0f;
+    float viewSpan = 1.0f;
 };
 
 class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
