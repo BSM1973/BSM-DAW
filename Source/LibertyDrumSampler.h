@@ -103,6 +103,78 @@ public:
         pads[(size_t)index].sourcePath = file.getFullPathName();
         return true;
     }
+    // Self-contained synthesized factory sounds: no external sample files required.
+    // Acoustic-style timbres are approximations until licensed recordings are bundled.
+    bool loadFactoryKit(int kitIndex)
+    {
+        if (kitIndex < 0 || kitIndex >= 10) return false;
+        static constexpr const char* instruments[16] = {
+            "KICK", "SNARE", "CLAP", "CLOSED HAT", "OPEN HAT", "LOW TOM",
+            "MID TOM", "HIGH TOM", "RIM", "SHAKER", "PERC 1", "PERC 2",
+            "CRASH", "RIDE", "FX", "SUB KICK" };
+        const double sr = 44100.0;
+        const double pi = juce::MathConstants<double>::pi;
+        for (int padIndex = 0; padIndex < padCount; ++padIndex)
+        {
+            const int category = padIndex;
+            const double duration = category == 4 || category == 12 || category == 13 ? 1.0
+                : category == 15 ? 0.8 : category >= 5 && category <= 7 ? 0.55 : 0.35;
+            const int length = (int)(sr * duration);
+            juce::AudioBuffer<float> generated(1, length);
+            juce::Random random(0x5a17 + kitIndex * 137 + padIndex * 31);
+            double phase = 0.0;
+            for (int n = 0; n < length; ++n)
+            {
+                const double t = n / sr;
+                const double progress = t / duration;
+                const double noise = random.nextFloat() * 2.0 - 1.0;
+                double value = 0.0;
+                if (category == 0 || category == 15)
+                {
+                    const double base = category == 15 ? 44.0 : 52.0 + kitIndex * 2.0;
+                    phase += 2.0 * pi * (base + 125.0 * std::exp(-t * 38.0)) / sr;
+                    value = std::sin(phase) * std::exp(-t * (category == 15 ? 5.0 : 14.0));
+                }
+                else if (category == 1 || category == 2 || category == 8)
+                {
+                    phase += 2.0 * pi * (category == 8 ? 900.0 : 185.0) / sr;
+                    const double decay = category == 8 ? 50.0 : (category == 2 ? 24.0 : 17.0);
+                    value = (noise * 0.8 + std::sin(phase) * 0.2) * std::exp(-t * decay);
+                    if (category == 2) value *= (0.6 + 0.4 * std::sin(2.0 * pi * 28.0 * t));
+                }
+                else if (category == 5 || category == 6 || category == 7)
+                {
+                    const double freq = (category == 5 ? 115.0 : category == 6 ? 175.0 : 245.0) * (1.0 + 0.02 * kitIndex);
+                    phase += 2.0 * pi * (freq + 90.0 * std::exp(-t * 18.0)) / sr;
+                    value = (std::sin(phase) + 0.18 * noise) * std::exp(-t * 11.0);
+                }
+                else
+                {
+                    const double decay = category == 4 || category == 12 || category == 13 ? 5.0 : 29.0;
+                    // Differentiated metallic/noisy percussion timbres.
+                    phase += 2.0 * pi * (4300.0 + category * 160.0 + kitIndex * 35.0) / sr;
+                    value = (0.75 * noise + 0.25 * std::sin(phase)) * std::exp(-t * decay);
+                }
+                const double attack = juce::jmin(1.0, t * 2500.0);
+                generated.setSample(0, n, (float)juce::jlimit(-1.0, 1.0, value * attack * (0.7 + 0.03 * kitIndex)));
+            }
+            auto& pad = pads[(size_t)padIndex];
+            std::atomic_store(&pad.audio, std::make_shared<const juce::AudioBuffer<float>>(std::move(generated)));
+            pad.sourceRate.store(sr);
+            pad.name = instruments[padIndex];
+            pad.sourcePath.clear();
+            pad.gain.store(1.0f);
+            pad.pan.store(0.0f);
+            pad.pitchSemitones.store(0.0f);
+            pad.startFraction.store(0.0f);
+            pad.endFraction.store(1.0f);
+            pad.loopEnabled.store(false);
+            pad.colourArgb.store((int)(padIndex < 3 ? 0xffbb5147u : padIndex < 5 ? 0xffd8a343u
+                : padIndex < 8 ? 0xff3b91a8u : padIndex < 12 ? 0xff7c65bbu : 0xff477a67u));
+        }
+        reset();
+        return true;
+    }
     // Serializable kit description; sample audio remains in external WAV/AIFF files.
     std::unique_ptr<juce::XmlElement> createKitXml() const
     {
@@ -819,6 +891,24 @@ public:
                 });
         };
         addAndMakeVisible(importButton);
+        factorySelector.addItem("FACTORY KITS", 1);
+        const char* factoryNames[] = { "HIP-HOP", "ACOUSTIC", "ROCK", "METAL", "ELECTRO",
+            "REGGAE", "POP", "ORIENTAL", "FUNK", "TRAP" };
+        for (int i = 0; i < 10; ++i) factorySelector.addItem(factoryNames[i], i + 2);
+        factorySelector.setSelectedId(1, juce::dontSendNotification);
+        factorySelector.onChange = [this]
+        {
+            const int kitIndex = factorySelector.getSelectedId() - 2;
+            if (kitIndex >= 0 && sampler.loadFactoryKit(kitIndex))
+            {
+                selectedPad = 0;
+                refreshLabels();
+                updateControls();
+                waveform.selectPad(selectedPad);
+                waveform.repaint();
+            }
+        };
+        addAndMakeVisible(factorySelector);
         addAndMakeVisible(waveform);
         waveform.onTrimChanged = [this] { updateControls(); };
         gainSlider.setRange(0.0, 2.0, 0.01);
@@ -948,6 +1038,7 @@ public:
         // Reserve a fixed lower section for the waveform, kit actions and ADSR.
         // Derive the four pad rows from the actual space above that section.
         const int actionsTop = getHeight() - 550;
+        factorySelector.setBounds(juce::jmax(margin, getWidth() - 226), 8, 214, 28);
         const int padTop = 40 + margin;
         const int padBottom = actionsTop - margin;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
@@ -1062,6 +1153,7 @@ private:
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton, colourButton;
+    juce::ComboBox factorySelector;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
