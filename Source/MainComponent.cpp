@@ -74,7 +74,10 @@ MainComponent::MainComponent()
     instrumentStepSequencers.resize((size_t) dynamicInstrumentTrackCount);
     midiStepSequencers.resize((size_t) dynamicMidiTrackCount);
     audioEngine.initialise();
-    audioEngine.setDrumSampler(std::make_shared<LibertyDrumSampler>());
+    auto drumSampler = std::make_shared<LibertyDrumSampler>();
+    drumSampler->prepare(audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr
+        ? audioEngine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 44100.0);
+    audioEngine.setDrumSampler(std::move(drumSampler));
     projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
