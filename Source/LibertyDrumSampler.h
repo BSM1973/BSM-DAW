@@ -53,8 +53,23 @@ public:
             pendingTriggers.fetch_or(static_cast<unsigned int>(1u << index), std::memory_order_release);
         }
     }
+    void stopPad(int index) noexcept
+    {
+        if (index >= 0 && index < padCount)
+        {
+            pendingTriggers.fetch_and(~(1u << index), std::memory_order_acq_rel);
+            pendingStops.fetch_or(1u << index, std::memory_order_release);
+        }
+    }
     void processAuditions() noexcept
     {
+        const auto stops = pendingStops.exchange(0, std::memory_order_acquire);
+        for (auto& voice : voices)
+            if (voice.active && (stops & (1u << voice.padIndex)) != 0)
+            {
+                voice.active = false;
+                voice.audio.reset();
+            }
         const auto triggered = pendingTriggers.exchange(0, std::memory_order_acquire);
         for (int i = 0; i < padCount; ++i)
             if ((triggered & (1u << i)) != 0)
@@ -353,6 +368,14 @@ public:
                                 activeVoice.releaseSamplesTotal = requested;
                             }
                         }
+                // Retriggering a pad restarts its sample instead of stacking
+                // another long loop over the previous playback.
+                for (auto& previous : voices)
+                    if (previous.active && previous.padIndex == i)
+                    {
+                        previous.active = false;
+                        previous.audio.reset();
+                    }
                 // Prefer an idle voice; when polyphony is exhausted, steal the
                 // oldest active voice instead of repeatedly cutting voice zero.
                 auto* voice = &voices[0];
@@ -529,6 +552,7 @@ private:
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
     std::atomic<unsigned int> pendingTriggers { 0 };
+    std::atomic<unsigned int> pendingStops { 0 };
     std::array<std::atomic<float>, padCount> pendingVelocity {};
     double outputRate = 44100.0;
 };
@@ -639,6 +663,9 @@ public:
                 });
         };
         addAndMakeVisible(loadButton);
+        stopButton.setButtonText("STOP PAD");
+        stopButton.onClick = [this] { sampler.stopPad(selectedPad); };
+        addAndMakeVisible(stopButton);
         exportButton.setButtonText("EXPORTER KIT");
         exportButton.onClick = [this]
         {
@@ -807,13 +834,16 @@ public:
     {
         const int margin = 12;
         const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int cellHeight = juce::jmax(1, (getHeight() - 510 - margin * 5) / 4);
+        const int cellHeight = juce::jmax(36, (getHeight() - 545 - margin * 5) / 4);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
             pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
                                      40 + margin + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
-        loadButton.setBounds(margin, getHeight() - 34, juce::jmin(180, getWidth() - 2 * margin), 25);
-        exportButton.setBounds(margin + 190, getHeight() - 34, 150, 25);
-        importButton.setBounds(margin + 350, getHeight() - 34, 150, 25);
+        // Actions live above the waveform, never on top of the last ADSR row.
+        const int actionsTop = getHeight() - 510;
+        loadButton.setBounds(margin, actionsTop, 170, 28);
+        stopButton.setBounds(margin + 180, actionsTop, 110, 28);
+        exportButton.setBounds(margin + 300, actionsTop, 150, 28);
+        importButton.setBounds(margin + 460, actionsTop, 150, 28);
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
         gainLabel.setBounds(margin, controlTop, 48, 25);
@@ -890,7 +920,7 @@ private:
     }
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
-    juce::TextButton loadButton, exportButton, importButton;
+    juce::TextButton loadButton, stopButton, exportButton, importButton;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
