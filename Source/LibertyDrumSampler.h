@@ -73,7 +73,7 @@ public:
         const auto triggered = pendingTriggers.exchange(0, std::memory_order_acquire);
         for (int i = 0; i < padCount; ++i)
             if ((triggered & (1u << i)) != 0)
-                noteOn(36 + i, pendingVelocity[(size_t)i].load(std::memory_order_relaxed));
+                noteOn(36 + i, pendingVelocity[(size_t)i].load(std::memory_order_relaxed), true);
     }
     void reset() noexcept { for (auto& voice : voices) voice.active = false; }
     bool loadPad(int index, const juce::File& file)
@@ -338,7 +338,7 @@ public:
             oldestHeld->releaseSamplesTotal = release;
         }
     }
-    void noteOn(int note, float velocity) noexcept
+    void noteOn(int note, float velocity, bool restartPad = false) noexcept
     {
         if (velocity <= 0.0f) return;
         for (int i = 0; i < padCount; ++i)
@@ -371,7 +371,7 @@ public:
                 // Retriggering a pad restarts its sample instead of stacking
                 // another long loop over the previous playback.
                 for (auto& previous : voices)
-                    if (previous.active && previous.pad == i)
+                    if (restartPad && previous.active && previous.pad == i)
                     {
                         previous.active = false;
                         previous.audio.reset();
