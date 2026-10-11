@@ -501,6 +501,23 @@ int main()
         || !near(multiImported.getPad(1).gain.load(), 0.9f))
     { multiFolder.deleteRecursively(); fixture.deleteFile(); return 67; }
     multiFolder.deleteRecursively();
+    // A missing source sample must fail export without publishing a manifest.
+    const auto missingFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("liberty-missing-export", "");
+    if (!missingFolder.createDirectory()) { fixture.deleteFile(); return 68; }
+    const auto transientSample = missingFolder.getChildFile("transient.wav");
+    if (!fixture.copyFileTo(transientSample))
+    { missingFolder.deleteRecursively(); fixture.deleteFile(); return 69; }
+    LibertyDrumSampler missingSource;
+    missingSource.prepare(48000.0);
+    if (!missingSource.loadPad(0, transientSample))
+    { missingFolder.deleteRecursively(); fixture.deleteFile(); return 70; }
+    transientSample.deleteFile();
+    const auto missingManifest = missingFolder.getChildFile("should-not-exist.xml");
+    if (missingSource.exportPortableKit(missingManifest)
+        || missingManifest.existsAsFile())
+    { missingFolder.deleteRecursively(); fixture.deleteFile(); return 71; }
+    missingFolder.deleteRecursively();
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\n";
