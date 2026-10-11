@@ -973,8 +973,12 @@ public:
         // (-516..-490), waveform (-470..-394), then GAIN (-382).
         // Never place interactive buttons inside the waveform component.
         const int loopActionsY = actionsTop + 34;
-        loopButton.setBounds(margin, loopActionsY, juce::jmin(190, availableWidth), 26);
-        colourButton.setBounds(margin + 198, loopActionsY, juce::jmin(160, juce::jmax(0, availableWidth - 198)), 26);
+        const int padActionGap = 8;
+        const int loopWidth = juce::jmin(190, juce::jmax(0, (availableWidth - padActionGap) / 2));
+        const int colourWidth = juce::jmin(160, juce::jmax(0, availableWidth - padActionGap - loopWidth));
+        const int padActionLeft = margin + (availableWidth - loopWidth - padActionGap - colourWidth) / 2;
+        loopButton.setBounds(padActionLeft, loopActionsY, loopWidth, 26);
+        colourButton.setBounds(padActionLeft + loopWidth + padActionGap, loopActionsY, colourWidth, 26);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
