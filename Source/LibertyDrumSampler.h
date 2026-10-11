@@ -969,8 +969,12 @@ public:
         importButton.setBounds(margin + 3 * (actionWidth + actionGap), actionsTop, lastActionWidth, 28);
         const int controlTop = getHeight() - 382;
         waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
-        loopButton.setBounds(margin, getHeight() - 392, juce::jmin(190, availableWidth), 26);
-        colourButton.setBounds(margin + 198, getHeight() - 392, juce::jmin(160, juce::jmax(0, availableWidth - 198)), 26);
+        // Waveform ends at height - 394; controls start at height - 382.
+        // Put the action buttons in the reserved strip above the waveform,
+        // so neither button can overlap GAIN or the waveform itself.
+        const int loopActionsY = actionsTop + 34;
+        loopButton.setBounds(margin, loopActionsY, juce::jmin(190, availableWidth), 26);
+        colourButton.setBounds(margin + 198, loopActionsY, juce::jmin(160, juce::jmax(0, availableWidth - 198)), 26);
         gainLabel.setBounds(margin, controlTop, 48, 25);
         gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
         panLabel.setBounds(margin, controlTop + 31, 48, 25);
