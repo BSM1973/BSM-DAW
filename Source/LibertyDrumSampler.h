@@ -717,7 +717,7 @@ private:
     float viewSpan = 1.0f;
 };
 
-class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget, private juce::ChangeListener
+class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
 {
 public:
     explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine), waveform(engine)
@@ -748,13 +748,27 @@ public:
         colourButton.setButtonText("COULEUR PAD");
         colourButton.onClick = [this]
         {
-            auto selector = std::make_unique<juce::ColourSelector>(juce::ColourSelector::showColourAtTop
-                | juce::ColourSelector::showSliders | juce::ColourSelector::showColourspace);
-            selector->setCurrentColour(juce::Colour((juce::uint32)sampler.getPad(selectedPad).colourArgb.load()));
-            selector->setSize(340, 360);
-            selector->addChangeListener(this);
-            colourEditingPad = selectedPad;
-            juce::CallOutBox::launchAsynchronously(std::move(selector), colourButton.getScreenBounds(), nullptr);
+            const int padIndex = selectedPad;
+            const std::array<juce::uint32, 16> palette {{
+                0xff253c4a, 0xffe74c3c, 0xffe67e22, 0xfff1c40f,
+                0xff2ecc71, 0xff16a085, 0xff3498db, 0xff2980b9,
+                0xff9b59b6, 0xffe84393, 0xff95a5a6, 0xffecf0f1,
+                0xff7f8c8d, 0xff1abc9c, 0xffd35400, 0xffc0392b
+            }};
+            juce::PopupMenu menu;
+            const char* names[] = { "BLEU ARDOISE", "ROUGE", "ORANGE", "JAUNE",
+                "VERT", "TURQUOISE", "BLEU", "BLEU PROFOND", "VIOLET", "ROSE",
+                "GRIS CLAIR", "BLANC", "GRIS", "MENTHE", "CUIVRE", "BORDEAUX" };
+            for (int i = 0; i < (int)palette.size(); ++i)
+                menu.addItem(i + 1, names[i], true,
+                    (juce::uint32)sampler.getPad(padIndex).colourArgb.load() == palette[(size_t)i]);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&colourButton),
+                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this), padIndex, palette](int choice)
+                {
+                    if (safe == nullptr || choice < 1 || choice > (int)palette.size()) return;
+                    safe->sampler.setPadColour(padIndex, (int)palette[(size_t)(choice - 1)]);
+                    safe->refreshPadColours();
+                });
         };
         addAndMakeVisible(colourButton);
         stopButton.setButtonText("STOP PAD");
@@ -988,15 +1002,6 @@ public:
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
     }
 private:
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override
-    {
-        if (auto* selector = dynamic_cast<juce::ColourSelector*>(source))
-        {
-            const auto colour = selector->getCurrentColour();
-            sampler.setPadColour(colourEditingPad, (int)colour.getARGB());
-            refreshPadColours();
-        }
-    }
     void refreshPadColours()
     {
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
@@ -1049,7 +1054,6 @@ private:
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton, colourButton;
-    int colourEditingPad = 0;
     LibertyDrumWaveform waveform;
     juce::Slider gainSlider, panSlider, pitchSlider, startSlider, endSlider;
     juce::Label gainLabel, panLabel, pitchLabel, startLabel, endLabel, chokeLabel;
