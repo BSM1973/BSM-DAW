@@ -580,7 +580,8 @@ public:
     {
         if (velocity <= 0.0f) return;
         for (int i = 0; i < padCount; ++i)
-            if (pads[(size_t)i].midiNote == note)
+            if (pads[(size_t)i].midiNote == note
+                || (i == 4 && note == 52 && pads[(size_t)i].factoryTone.load()))
             {
                 // An empty pad must not silence other pads in its choke group.
                 auto audio = std::atomic_load(&pads[(size_t)i].audio);
@@ -646,6 +647,9 @@ public:
                           false, 0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
                           pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
                 voice->factoryTone = pads[(size_t)i].factoryTone.load();
+                // MIDI 52 adds a semi-open factory hi-hat articulation
+                // without consuming or remapping any of the 16 pads.
+                voice->semiOpenHat = (i == 4 && note == 52 && voice->factoryTone);
                 // Deterministic four-step timbre cycle, independent for each pad.
                 // Keep imported samples bit-identical to the original playback path.
                 if (voice->factoryTone)
@@ -843,7 +847,11 @@ public:
                             * (1.0 - (double)voice.velocity)
                             / juce::jmax(1.0, outputRate * decaySeconds))
                         : 1.0f;
-                    output.addSample(channel, n, shapedSample * softDamping * voice.velocity * voice.gain * panGain * releaseGain * envelope);
+                    const float articulationDamping = voice.semiOpenHat
+                        ? (float)std::exp(-(double)voice.ageSamples
+                            / juce::jmax(1.0, outputRate * 0.115))
+                        : 1.0f;
+                    output.addSample(channel, n, shapedSample * softDamping * articulationDamping * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
                 {
@@ -883,6 +891,7 @@ private:
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
         std::array<float, 2> toneState {};
         bool factoryTone = false;
+        bool semiOpenHat = false;
         float toneVariation = 0.0f;
         float pitchVariationSemitones = 0.0f;
     };
