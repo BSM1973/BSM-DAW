@@ -631,6 +631,14 @@ public:
                           false, 0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
                           pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
                 voice->factoryTone = pads[(size_t)i].factoryTone.load();
+                // Deterministic four-step timbre cycle, independent for each pad.
+                // Keep imported samples bit-identical to the original playback path.
+                if (voice->factoryTone)
+                {
+                    const unsigned int step = factoryHitCounters[(size_t)i]++ % 4u;
+                    static constexpr float variations[4] = { 0.0f, -0.07f, 0.045f, -0.025f };
+                    voice->toneVariation = variations[step];
+                }
                 return;
             }
     }
@@ -780,7 +788,9 @@ public:
                         || instrument == 12 || instrument == 13)
                         ? voice.velocity * voice.velocity * voice.velocity
                         : voice.velocity * voice.velocity;
-                    const float brightness = minimumBrightness + (1.0f - minimumBrightness) * velocityCurve;
+                    const float brightness = juce::jlimit(0.015f, 1.0f,
+                        minimumBrightness + (1.0f - minimumBrightness) * velocityCurve
+                        + (voice.factoryTone ? voice.toneVariation : 0.0f));
                     auto& filtered = voice.toneState[(size_t)filterChannel];
                     filtered += brightness * (rawSample - filtered);
                     const float shapedSample = voice.factoryTone ? filtered : rawSample;
@@ -823,6 +833,7 @@ private:
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
         std::array<float, 2> toneState {};
         bool factoryTone = false;
+        float toneVariation = 0.0f;
     };
     static float envelopeAtAge(const Voice& voice, double rate) noexcept
     {
@@ -839,6 +850,7 @@ private:
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
+    std::array<unsigned int, padCount> factoryHitCounters {};
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::atomic<bool> pendingStopAll { false };
