@@ -238,6 +238,7 @@ public:
             const auto& pad = pads[(size_t)i];
             auto* node = kit->createNewChildElement("Pad");
             node->setAttribute("index", i);
+            node->setAttribute("name", pad.name);
             node->setAttribute("file", pad.sourcePath);
             node->setAttribute("gain", (double)pad.gain.load());
             node->setAttribute("pan", (double)pad.pan.load());
@@ -267,6 +268,9 @@ public:
             const auto path = node->getStringAttribute("file");
             if (path.isNotEmpty())
                 loadPad(i, juce::File(path));
+            const auto restoredName = node->getStringAttribute("name");
+            if (restoredName.isNotEmpty())
+                pads[(size_t)i].name = restoredName.substring(0, 80);
             setPadGain(i, (float)node->getDoubleAttribute("gain", 1.0));
             setPadPan(i, (float)node->getDoubleAttribute("pan", 0.0));
             setPadPitch(i, (float)node->getDoubleAttribute("pitch", 0.0));
