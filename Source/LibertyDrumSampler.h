@@ -228,6 +228,34 @@ public:
             std::atomic_store(&pad.audio, std::make_shared<const juce::AudioBuffer<float>>(std::move(generated)));
             pad.sourceRate.store(sr);
             pad.name = instruments[padIndex];
+            // Instrument labels reflect the selected genre, not only the generic
+            // synthesis category. MIDI note assignments remain unchanged.
+            if (kitIndex == 7)
+            {
+                static constexpr const char* orientalNames[16] = {
+                    "DOUM", "TEK", "KA", "RIQ CLOSED", "RIQ OPEN", "DARBUKA LOW",
+                    "DARBUKA MID", "DARBUKA HIGH", "RIM TEK", "SHAKER", "DOUMBEK",
+                    "FRAME DRUM", "ZILLS", "RIQ JINGLE", "PERC FX", "BASS DOUM" };
+                pad.name = orientalNames[padIndex];
+            }
+            else if (kitIndex == 9)
+            {
+                static constexpr const char* trapNames[16] = {
+                    "808 KICK", "TRAP SNARE", "TRAP CLAP", "HAT CLOSED", "HAT OPEN",
+                    "808 TOM LOW", "808 TOM MID", "808 TOM HIGH", "RIM", "HAT ROLL",
+                    "PERC A", "PERC B", "CRASH", "METAL", "RISER FX", "808 SUB" };
+                pad.name = trapNames[padIndex];
+            }
+            else if (kitIndex == 5)
+            {
+                static constexpr const char* reggaeNames[16] = {
+                    "ONE DROP KICK", "CROSS STICK", "CLAP", "CLOSED HAT", "OPEN HAT",
+                    "LOW TOM", "MID TOM", "HIGH TOM", "RIMSHOT", "SHAKER",
+                    "BONGO LOW", "BONGO HIGH", "CRASH", "RIDE", "DUB FX", "SUB KICK" };
+                pad.name = reggaeNames[padIndex];
+            }
+            else if (kitIndex == 3 && padIndex == 15) pad.name = "DOUBLE KICK";
+            else if (kitIndex == 4 && padIndex == 15) pad.name = "SYNTH KICK";
             pad.sourcePath.clear();
             pad.gain.store(1.0f);
             pad.pan.store(0.0f);
