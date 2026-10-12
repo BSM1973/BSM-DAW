@@ -65,6 +65,17 @@ public:
     }
     void processAuditions() noexcept
     {
+        if (pendingStopAll.exchange(false, std::memory_order_acq_rel))
+        {
+            pendingTriggers.store(0, std::memory_order_release);
+            for (auto& voice : voices)
+            {
+                voice.active = false;
+                voice.audio.reset();
+            }
+            for (auto& position : playbackPositions)
+                position.store(-1.0f, std::memory_order_relaxed);
+        }
         const auto stops = pendingStops.exchange(0, std::memory_order_acquire);
         for (auto& voice : voices)
             if (voice.active && (stops & (1u << voice.pad)) != 0)
@@ -203,7 +214,9 @@ public:
             pad.colourArgb.store((int)(padIndex < 3 ? 0xffbb5147u : padIndex < 5 ? 0xffd8a343u
                 : padIndex < 8 ? 0xff3b91a8u : padIndex < 12 ? 0xff7c65bbu : 0xff477a67u));
         }
-        reset();
+        // Stop voices on the audio thread, not from the UI thread.
+        pendingTriggers.store(0, std::memory_order_release);
+        pendingStopAll.store(true, std::memory_order_release);
         return true;
     }
     // Serializable kit description; sample audio remains in external WAV/AIFF files.
@@ -736,6 +749,7 @@ private:
     std::array<Voice, 32> voices{};
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
+    std::atomic<bool> pendingStopAll { false };
     std::array<std::atomic<float>, padCount> pendingVelocity {};
     std::array<std::atomic<float>, padCount> playbackPositions {};
     double outputRate = 44100.0;
