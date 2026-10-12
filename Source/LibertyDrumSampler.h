@@ -642,6 +642,10 @@ public:
                     const unsigned int step = factoryHitCounters[(size_t)i].fetch_add(1u, std::memory_order_relaxed) % 4u;
                     static constexpr float variations[4] = { 0.0f, -0.07f, 0.045f, -0.025f };
                     voice->toneVariation = variations[step];
+                    // Subtle pitch offsets (cents), captured per hit so a
+                    // sounding voice never changes pitch mid-note.
+                    static constexpr float pitchCents[4] = { 0.0f, -3.0f, 2.0f, -1.5f };
+                    voice->pitchVariationSemitones = pitchCents[step] / 100.0f;
                 }
                 return;
             }
@@ -808,7 +812,8 @@ public:
                 }
                 ++voice.ageSamples;
                 voice.position += (voice.sourceRate / outputRate)
-                    * std::pow(2.0, (double)voice.pitchSemitones / 12.0);
+                    * std::pow(2.0, ((double)voice.pitchSemitones
+                        + (double)voice.pitchVariationSemitones) / 12.0);
             }
     }
     const Pad& getPad(int index) const noexcept { return pads[(size_t)juce::jlimit(0, padCount-1, index)]; }
@@ -838,6 +843,7 @@ private:
         std::array<float, 2> toneState {};
         bool factoryTone = false;
         float toneVariation = 0.0f;
+        float pitchVariationSemitones = 0.0f;
     };
     static float envelopeAtAge(const Voice& voice, double rate) noexcept
     {
