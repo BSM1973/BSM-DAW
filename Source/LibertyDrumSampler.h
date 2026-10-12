@@ -809,7 +809,17 @@ public:
                     const float attackAmount = 0.10f + 0.40f * layerBlend;
                     const float layered = filtered * (1.0f - attackAmount)
                         + rawSample * attackAmount;
-                    const float shapedSample = voice.factoryTone ? layered : rawSample;
+                    // Brief attack emphasis on stronger synthesized hits.
+                    // Exponential decay prevents the extra transient from
+                    // affecting the body and tail of the drum.
+                    const float transientWeight = voice.factoryTone
+                        ? juce::jmax(0.0f, (voice.velocity - 0.45f) / 0.55f)
+                            * (float)std::exp(-(double)voice.ageSamples
+                                / juce::jmax(1.0, outputRate * 0.009))
+                        : 0.0f;
+                    const float shapedSample = voice.factoryTone
+                        ? layered + 0.16f * transientWeight * (rawSample - filtered)
+                        : rawSample;
                     output.addSample(channel, n, shapedSample * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
