@@ -278,6 +278,10 @@ public:
             pad.colourArgb.store((int)(padIndex < 3 ? 0xffbb5147u : padIndex < 5 ? 0xffd8a343u
                 : padIndex < 8 ? 0xff3b91a8u : padIndex < 12 ? 0xff7c65bbu : 0xff477a67u));
         }
+        // Restart each pad's deterministic timbre cycle for the new kit.
+        // Atomics avoid a data race with the audio callback.
+        for (auto& counter : factoryHitCounters)
+            counter.store(0u, std::memory_order_relaxed);
         // Stop voices on the audio thread, not from the UI thread.
         pendingTriggers.store(0, std::memory_order_release);
         pendingStopAll.store(true, std::memory_order_release);
@@ -635,7 +639,7 @@ public:
                 // Keep imported samples bit-identical to the original playback path.
                 if (voice->factoryTone)
                 {
-                    const unsigned int step = factoryHitCounters[(size_t)i]++ % 4u;
+                    const unsigned int step = factoryHitCounters[(size_t)i].fetch_add(1u, std::memory_order_relaxed) % 4u;
                     static constexpr float variations[4] = { 0.0f, -0.07f, 0.045f, -0.025f };
                     voice->toneVariation = variations[step];
                 }
@@ -850,7 +854,7 @@ private:
     juce::AudioFormatManager formats;
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
-    std::array<unsigned int, padCount> factoryHitCounters {};
+    std::array<std::atomic<unsigned int>, padCount> factoryHitCounters {};
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::atomic<bool> pendingStopAll { false };
