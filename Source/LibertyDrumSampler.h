@@ -820,7 +820,19 @@ public:
                     const float shapedSample = voice.factoryTone
                         ? layered + 0.16f * transientWeight * (rawSample - filtered)
                         : rawSample;
-                    output.addSample(channel, n, shapedSample * voice.velocity * voice.gain * panGain * releaseGain * envelope);
+                    // Softer factory cymbal and hat hits decay sooner. The
+                    // envelope is per voice, preserving independent overlaps.
+                    const bool factoryMetal = voice.factoryTone
+                        && (instrument == 3 || instrument == 4
+                            || instrument == 12 || instrument == 13);
+                    const double decaySeconds = instrument == 3 ? 0.055
+                        : instrument == 4 ? 0.28 : instrument == 12 ? 0.65 : 0.85;
+                    const float softDamping = factoryMetal
+                        ? (float)std::exp(-(double)voice.ageSamples
+                            * (1.0 - (double)voice.velocity)
+                            / juce::jmax(1.0, outputRate * decaySeconds))
+                        : 1.0f;
+                    output.addSample(channel, n, shapedSample * softDamping * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
                 {
