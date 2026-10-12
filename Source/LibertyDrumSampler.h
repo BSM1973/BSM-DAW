@@ -163,7 +163,11 @@ public:
                 }
                 else
                 {
-                    const double decay = category == 4 || category == 12 || category == 13 ? 5.0 : 29.0;
+                    // Closed hats have a short pedal-damped envelope; open
+                    // hats ring longer, with genre-specific decay character.
+                    const double decay = category == 3 ? (kitIndex == 8 ? 43.0 : 34.0)
+                        : category == 4 ? (kitIndex == 3 ? 4.0 : 6.0)
+                        : category == 12 || category == 13 ? 5.0 : 29.0;
                     // Differentiated metallic/noisy percussion timbres.
                     phase += 2.0 * pi * (4300.0 + category * 160.0 + kitIndex * 35.0) / sr;
                     value = (0.75 * noise + 0.25 * std::sin(phase)) * std::exp(-t * decay);
