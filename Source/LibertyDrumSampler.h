@@ -598,8 +598,13 @@ public:
                                 && (i == 3 || i == 4);
                             if (factoryHatTrigger && i == 4 && activeVoice.pad == 3)
                                 continue;
+                            // Closing a semi-open hat uses a slightly longer
+                            // pedal transition than closing a fully open hat.
+                            const float fadeMs = factoryHatTrigger && i == 3
+                                && activeVoice.semiOpenHat ? 7.0f
+                                : pads[(size_t)i].chokeFadeMs.load();
                             const int requested = juce::jmax(1,
-                                (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
+                                (int)(outputRate * fadeMs / 1000.0));
                             if (activeVoice.releaseSamplesRemaining == 0
                                 || requested < activeVoice.releaseSamplesRemaining)
                             {
