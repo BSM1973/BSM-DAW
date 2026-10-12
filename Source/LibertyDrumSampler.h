@@ -30,6 +30,7 @@ public:
         std::atomic<float> endFraction { 1.0f };
         std::atomic<bool> loopEnabled { false };
         std::atomic<int> colourArgb { (int)0xff253c4a };
+        std::atomic<bool> factoryTone { false };
         std::atomic<int> chokeGroup { 0 };
         std::atomic<float> chokeFadeMs { 8.0f };
         std::atomic<bool> gateMode { false };
@@ -112,6 +113,7 @@ public:
         pads[(size_t)index].sourceRate.store(reader->sampleRate);
         pads[(size_t)index].name = file.getFileNameWithoutExtension();
         pads[(size_t)index].sourcePath = file.getFullPathName();
+        pads[(size_t)index].factoryTone.store(false);
         return true;
     }
     // Self-contained synthesized factory sounds: no external sample files required.
@@ -257,6 +259,7 @@ public:
             else if (kitIndex == 3 && padIndex == 15) pad.name = "DOUBLE KICK";
             else if (kitIndex == 4 && padIndex == 15) pad.name = "SYNTH KICK";
             pad.sourcePath.clear();
+            pad.factoryTone.store(true);
             pad.gain.store(1.0f);
             pad.pan.store(0.0f);
             pad.pitchSemitones.store(0.0f);
@@ -517,6 +520,7 @@ public:
             dst.endFraction.store(src.endFraction.load());
             dst.loopEnabled.store(src.loopEnabled.load());
             dst.colourArgb.store(src.colourArgb.load());
+            dst.factoryTone.store(src.factoryTone.load());
             dst.chokeGroup.store(src.chokeGroup.load());
             dst.chokeFadeMs.store(src.chokeFadeMs.load());
             dst.gateMode.store(src.gateMode.load());
@@ -626,6 +630,7 @@ public:
                           pads[(size_t)i].chokeGroup.load(), 0, 0, 1.0f, note, pads[(size_t)i].gateMode.load(),
                           false, 0, pads[(size_t)i].attackMs.load(), pads[(size_t)i].decayMs.load(),
                           pads[(size_t)i].sustain.load(), pads[(size_t)i].releaseMs.load()};
+                voice->factoryTone = pads[(size_t)i].factoryTone.load();
                 return;
             }
     }
@@ -767,7 +772,8 @@ public:
                     const float brightness = 0.08f + 0.92f * voice.velocity * voice.velocity;
                     auto& filtered = voice.toneState[(size_t)filterChannel];
                     filtered += brightness * (rawSample - filtered);
-                    output.addSample(channel, n, filtered * voice.velocity * voice.gain * panGain * releaseGain * envelope);
+                    const float shapedSample = voice.factoryTone ? filtered : rawSample;
+                    output.addSample(channel, n, shapedSample * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
                 {
@@ -805,6 +811,7 @@ private:
         int64_t ageSamples = 0;
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
         std::array<float, 2> toneState {};
+        bool factoryTone = false;
     };
     static float envelopeAtAge(const Voice& voice, double rate) noexcept
     {
