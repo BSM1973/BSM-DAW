@@ -255,7 +255,32 @@ public:
             const int index = node->getIntAttribute("index", -1);
             if (index < 0 || index >= padCount) continue;
             const auto path = pads[(size_t)index].sourcePath;
-            if (path.isEmpty()) continue;
+            if (path.isEmpty())
+            {
+                // Factory kits contain decoded audio in memory, not source files.
+                // Materialize that audio as a portable WAV alongside the manifest.
+                const auto audio = std::atomic_load(&pads[(size_t)index].audio);
+                if (audio == nullptr) continue;
+                const auto destination = samplesFolder.getChildFile("pad_"
+                    + juce::String(index + 1).paddedLeft('0', 2) + ".wav");
+                const auto temp = destination.getSiblingFile(destination.getFileName() + ".tmp");
+                if (temp.existsAsFile()) temp.deleteFile();
+                auto stream = std::unique_ptr<juce::FileOutputStream>(temp.createOutputStream());
+                if (!stream || !stream->openedOk()) { rollback(); return false; }
+                juce::WavAudioFormat wav;
+                const auto rate = pads[(size_t)index].sourceRate.load();
+                auto writer = std::unique_ptr<juce::AudioFormatWriter>(wav.createWriterFor(
+                    stream.get(), rate > 0.0 ? rate : 44100.0,
+                    (unsigned int)audio->getNumChannels(), 24, {}, 0));
+                if (!writer) { stream.reset(); temp.deleteFile(); rollback(); return false; }
+                stream.release(); // Writer owns the output stream.
+                const bool written = writer->writeFromAudioSampleBuffer(*audio, 0, audio->getNumSamples());
+                writer.reset();
+                if (!written) { temp.deleteFile(); rollback(); return false; }
+                staged.emplace_back(temp, destination);
+                node->setAttribute("file", destination.getRelativePathFrom(folder));
+                continue;
+            }
             const juce::File original(path);
             if (!original.existsAsFile()) { rollback(); return false; }
             const auto destination = samplesFolder.getChildFile("pad_"
