@@ -801,7 +801,15 @@ public:
                         + (voice.factoryTone ? voice.toneVariation : 0.0f));
                     auto& filtered = voice.toneState[(size_t)filterChannel];
                     filtered += brightness * (rawSample - filtered);
-                    const float shapedSample = voice.factoryTone ? filtered : rawSample;
+                    // Three synthetic velocity layers: soft favors the filtered
+                    // body, medium blends body/attack, hard retains more attack.
+                    // Interpolation avoids abrupt timbral jumps at boundaries.
+                    const float layerBlend = juce::jlimit(0.0f, 1.0f,
+                        (voice.velocity - 0.30f) / 0.60f);
+                    const float attackAmount = 0.10f + 0.40f * layerBlend;
+                    const float layered = filtered * (1.0f - attackAmount)
+                        + rawSample * attackAmount;
+                    const float shapedSample = voice.factoryTone ? layered : rawSample;
                     output.addSample(channel, n, shapedSample * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
