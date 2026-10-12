@@ -211,6 +211,15 @@ public:
             pad.startFraction.store(0.0f);
             pad.endFraction.store(1.0f);
             pad.loopEnabled.store(false);
+            // Factory kit loading must not inherit envelopes or choke settings
+            // from a previously edited or imported kit.
+            pad.chokeGroup.store(padIndex == 3 || padIndex == 4 ? 1 : 0);
+            pad.chokeFadeMs.store(8.0f);
+            pad.gateMode.store(false);
+            pad.attackMs.store(0.0f);
+            pad.decayMs.store(0.0f);
+            pad.sustain.store(1.0f);
+            pad.releaseMs.store(8.0f);
             pad.colourArgb.store((int)(padIndex < 3 ? 0xffbb5147u : padIndex < 5 ? 0xffd8a343u
                 : padIndex < 8 ? 0xff3b91a8u : padIndex < 12 ? 0xff7c65bbu : 0xff477a67u));
         }
