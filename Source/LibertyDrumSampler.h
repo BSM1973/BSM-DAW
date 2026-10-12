@@ -769,7 +769,18 @@ public:
                     // have fewer highs, strong hits retain their transients.
                     // Filter state belongs to the voice (no cross-pad bleed).
                     const int filterChannel = juce::jmin(channel, 1);
-                    const float brightness = 0.08f + 0.92f * voice.velocity * voice.velocity;
+                    // Low drums retain their fundamental on soft hits; hats and
+                    // cymbals respond more strongly in the high frequencies.
+                    const int instrument = voice.pad;
+                    const float minimumBrightness = (instrument == 0 || instrument == 15) ? 0.40f
+                        : (instrument >= 5 && instrument <= 7) ? 0.28f
+                        : (instrument == 3 || instrument == 4 || instrument == 12 || instrument == 13) ? 0.045f
+                        : 0.12f;
+                    const float velocityCurve = (instrument == 3 || instrument == 4
+                        || instrument == 12 || instrument == 13)
+                        ? voice.velocity * voice.velocity * voice.velocity
+                        : voice.velocity * voice.velocity;
+                    const float brightness = minimumBrightness + (1.0f - minimumBrightness) * velocityCurve;
                     auto& filtered = voice.toneState[(size_t)filterChannel];
                     filtered += brightness * (rawSample - filtered);
                     const float shapedSample = voice.factoryTone ? filtered : rawSample;
