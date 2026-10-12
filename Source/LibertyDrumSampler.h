@@ -269,7 +269,7 @@ public:
             // Factory kit loading must not inherit envelopes or choke settings
             // from a previously edited or imported kit.
             pad.chokeGroup.store(padIndex == 3 || padIndex == 4 ? 1 : 0);
-            pad.chokeFadeMs.store(8.0f);
+            pad.chokeFadeMs.store(padIndex == 3 ? 5.0f : 8.0f);
             pad.gateMode.store(false);
             pad.attackMs.store(0.0f);
             pad.decayMs.store(0.0f);
@@ -586,6 +586,13 @@ public:
                     for (auto& activeVoice : voices)
                         if (activeVoice.active && activeVoice.chokeGroup == group)
                         {
+                            // Factory hats behave like a pedal: a closed hat
+                            // chokes an open hat, but an open hat must not
+                            // prematurely silence a preceding closed hit.
+                            const bool factoryHatTrigger = pads[(size_t)i].factoryTone.load()
+                                && (i == 3 || i == 4);
+                            if (factoryHatTrigger && i == 4 && activeVoice.pad == 3)
+                                continue;
                             const int requested = juce::jmax(1,
                                 (int)(outputRate * pads[(size_t)i].chokeFadeMs.load() / 1000.0));
                             if (activeVoice.releaseSamplesRemaining == 0
