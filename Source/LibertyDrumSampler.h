@@ -155,6 +155,37 @@ public:
                     phase += 2.0 * pi * (4300.0 + category * 160.0 + kitIndex * 35.0) / sr;
                     value = (0.75 * noise + 0.25 * std::sin(phase)) * std::exp(-t * decay);
                 }
+                // Per-style timbre: acoustic families emphasize resonant drums;
+                // electronic styles emphasize sub, metallic hats and saturation.
+                const bool electronic = kitIndex == 0 || kitIndex == 4 || kitIndex == 9;
+                const bool heavy = kitIndex == 2 || kitIndex == 3;
+                if (category == 0 || category == 15)
+                {
+                    if (electronic)
+                        value += 0.28 * std::sin(phase * 0.5) * std::exp(-t * (kitIndex == 9 ? 3.0 : 8.0));
+                    if (heavy)
+                        value += 0.16 * noise * std::exp(-t * 110.0);
+                    if (kitIndex == 5) value *= 0.78; // Reggae: softer, rounder kick.
+                }
+                else if (category == 1 || category == 2 || category == 8)
+                {
+                    if (kitIndex == 3) value += 0.20 * noise * std::exp(-t * 33.0);
+                    if (kitIndex == 8) value *= 0.72; // Funk: tight, dry snare.
+                    if (kitIndex == 7) value += 0.25 * std::sin(phase * 2.4) * std::exp(-t * 27.0);
+                    if (kitIndex == 9 && category == 2) value *= 1.3;
+                }
+                else if (category == 3 || category == 4 || category == 9)
+                {
+                    if (kitIndex == 9) value *= 0.65 + 0.35 * std::sin(2.0 * pi * 55.0 * t);
+                    if (kitIndex == 4) value += 0.15 * std::sin(phase * 1.7) * std::exp(-t * 20.0);
+                }
+                else if (kitIndex == 7 && category >= 10 && category <= 13)
+                {
+                    // Oriental: resonant hand-drum and jingling percussion character.
+                    value = 0.55 * value + 0.4 * std::sin(phase * (category == 10 ? 0.27 : 0.53))
+                        * std::exp(-t * (category == 10 ? 13.0 : 24.0));
+                }
+                if (electronic) value = std::tanh(value * (kitIndex == 4 ? 2.0 : 1.55));
                 const double attack = juce::jmin(1.0, t * 2500.0);
                 generated.setSample(0, n, (float)juce::jlimit(-1.0, 1.0, value * attack * (0.7 + 0.03 * kitIndex)));
             }
