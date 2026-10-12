@@ -196,6 +196,30 @@ public:
                     value = 0.55 * value + 0.4 * std::sin(phase * (category == 10 ? 0.27 : 0.53))
                         * std::exp(-t * (category == 10 ? 13.0 : 24.0));
                 }
+                if (!electronic)
+                {
+                    // Acoustic-inspired layering: drumhead resonance, snare wires,
+                    // and inharmonic cymbal partials, with genre-dependent damping.
+                    if (category == 1)
+                    {
+                        const double body = std::sin(2.0 * pi * (172.0 + 60.0 * std::exp(-t * 24.0)) * t);
+                        const double wires = noise * std::exp(-t * (kitIndex == 8 ? 33.0 : 16.0));
+                        value = 0.50 * value + 0.28 * body * std::exp(-t * 19.0) + 0.22 * wires;
+                    }
+                    else if (category >= 5 && category <= 7)
+                    {
+                        const double fundamental = category == 5 ? 106.0 : category == 6 ? 155.0 : 217.0;
+                        value += 0.22 * std::sin(2.0 * pi * fundamental * 1.51 * t)
+                            * std::exp(-t * (kitIndex == 3 ? 7.0 : 11.0));
+                    }
+                    else if (category == 12 || category == 13)
+                    {
+                        const double metallic = std::sin(2.0 * pi * 1731.0 * t)
+                            + 0.6 * std::sin(2.0 * pi * 2879.0 * t)
+                            + 0.35 * std::sin(2.0 * pi * 4177.0 * t);
+                        value = 0.62 * value + 0.13 * metallic * std::exp(-t * 3.8);
+                    }
+                }
                 if (electronic) value = std::tanh(value * (kitIndex == 4 ? 2.0 : 1.55));
                 const double attack = juce::jmin(1.0, t * 2500.0);
                 generated.setSample(0, n, (float)juce::jlimit(-1.0, 1.0, value * attack * (0.7 + 0.03 * kitIndex)));
