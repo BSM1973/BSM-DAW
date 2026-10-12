@@ -759,7 +759,15 @@ public:
                     const float releaseGain = voice.releaseSamplesRemaining > 0
                         ? juce::jlimit(0.0f, 1.0f, (float)voice.releaseSamplesRemaining / juce::jmax(1.0f, (float)voice.releaseSamplesTotal))
                         : 1.0f;
-                    output.addSample(channel, n, (a + (b - a) * fraction) * voice.velocity * voice.gain * panGain * releaseGain * envelope);
+                    const float rawSample = a + (b - a) * fraction;
+                    // Velocity-sensitive one-pole tone shaping: gentle hits
+                    // have fewer highs, strong hits retain their transients.
+                    // Filter state belongs to the voice (no cross-pad bleed).
+                    const int filterChannel = juce::jmin(channel, 1);
+                    const float brightness = 0.08f + 0.92f * voice.velocity * voice.velocity;
+                    auto& filtered = voice.toneState[(size_t)filterChannel];
+                    filtered += brightness * (rawSample - filtered);
+                    output.addSample(channel, n, filtered * voice.velocity * voice.gain * panGain * releaseGain * envelope);
                 }
                 if (voice.releaseSamplesRemaining > 0 && --voice.releaseSamplesRemaining == 0)
                 {
@@ -796,6 +804,7 @@ private:
         bool noteReleased = false;
         int64_t ageSamples = 0;
         float attackMs = 0.0f, decayMs = 0.0f, sustain = 1.0f, releaseMs = 8.0f;
+        std::array<float, 2> toneState {};
     };
     static float envelopeAtAge(const Voice& voice, double rate) noexcept
     {
