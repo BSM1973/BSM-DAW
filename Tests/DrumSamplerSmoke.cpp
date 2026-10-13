@@ -663,7 +663,11 @@ int main()
     openAfterClosed.addEvent(juce::MidiMessage::noteOn(1, 40, (juce::uint8)127), 100);
     closedReference.clear();
     factoryHats.renderMidi(closedReference, closedNote);
-    factoryHats.reset();
+    // Reloading the same factory kit resets its deterministic round-robin
+    // counters, so both comparisons use the identical closed-hat variation.
+    if (!factoryHats.loadFactoryKit(0))
+    { fixture.deleteFile(); return fail(93); }
+    factoryHats.setPadGain(4, 0.0f);
     closedThenOpen.clear();
     factoryHats.renderMidi(closedThenOpen, openAfterClosed);
     double closedDifference = 0.0, closedTailEnergy = 0.0;
