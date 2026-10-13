@@ -650,6 +650,34 @@ int main()
     if (!(preFadeEnergy > 0.0 && midFadeEnergy > 0.0
           && tailFadeEnergy < midFadeEnergy * 0.01))
     { fixture.deleteFile(); return fail(90); }
+    // Opening the factory hat must not choke a closed-hat voice.
+    // Compare the closed-only tail with the same hit followed by a
+    // silent open-hat trigger; both should retain the same tail.
+    factoryHats.reset();
+    factoryHats.setPadGain(3, 1.0f);
+    factoryHats.setPadGain(4, 0.0f);
+    juce::AudioBuffer<float> closedReference(2, 1200), closedThenOpen(2, 1200);
+    juce::MidiBuffer closedNote, openAfterClosed;
+    closedNote.addEvent(juce::MidiMessage::noteOn(1, 39, (juce::uint8)127), 0);
+    openAfterClosed.addEvent(juce::MidiMessage::noteOn(1, 39, (juce::uint8)127), 0);
+    openAfterClosed.addEvent(juce::MidiMessage::noteOn(1, 40, (juce::uint8)127), 100);
+    closedReference.clear();
+    factoryHats.renderMidi(closedReference, closedNote);
+    factoryHats.reset();
+    closedThenOpen.clear();
+    factoryHats.renderMidi(closedThenOpen, openAfterClosed);
+    double closedDifference = 0.0, closedTailEnergy = 0.0;
+    for (int frame = 100; frame < closedReference.getNumSamples(); ++frame)
+    {
+        const double reference = closedReference.getSample(0, frame);
+        const double withOpen = closedThenOpen.getSample(0, frame);
+        if (!std::isfinite(reference) || !std::isfinite(withOpen))
+        { fixture.deleteFile(); return fail(91); }
+        closedDifference += std::abs(reference - withOpen);
+        closedTailEnergy += reference * reference;
+    }
+    if (!(closedTailEnergy > 0.0 && closedDifference < 0.001))
+    { fixture.deleteFile(); return fail(92); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
