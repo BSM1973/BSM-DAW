@@ -712,6 +712,9 @@ int main()
     { fixture.deleteFile(); return fail(96); }
     if (factoryHats.getPad(4).factoryTone.load())
     { fixture.deleteFile(); return fail(97); }
+    // Previous choke tests deliberately muted this pad; restore its gain
+    // before asserting that the replacement WAV remains audible.
+    factoryHats.setPadGain(4, 1.0f);
     juce::AudioBuffer<float> replacedAlias(2, 256), replacedNormal(2, 256);
     replacedAlias.clear();
     factoryHats.renderMidi(replacedAlias, semiNote);
