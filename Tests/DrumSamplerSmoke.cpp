@@ -668,6 +668,11 @@ int main()
     if (!factoryHats.loadFactoryKit(0))
     { fixture.deleteFile(); return fail(93); }
     factoryHats.setPadGain(4, 0.0f);
+    // Kit changes queue a stop-all command, consumed on the next render.
+    // Flush it before the comparison so the first MIDI hit is not cleared.
+    juce::AudioBuffer<float> kitFlush(2, 64);
+    kitFlush.clear();
+    factoryHats.renderMidi(kitFlush, juce::MidiBuffer{});
     closedThenOpen.clear();
     factoryHats.renderMidi(closedThenOpen, openAfterClosed);
     double closedDifference = 0.0, closedTailEnergy = 0.0;
