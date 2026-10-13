@@ -690,6 +690,21 @@ int main()
     if (!(referenceEnergy > 1.0e-10
         && protectedEnergy > referenceEnergy * 0.10))
     { fixture.deleteFile(); return fail(92); }
+    // The protected closed hat must also retain measurable energy later
+    // in its tail, rather than only immediately after the open trigger.
+    double laterReferenceEnergy = 0.0, laterProtectedEnergy = 0.0;
+    for (int frame = 500; frame < 850; ++frame)
+    {
+        const double reference = closedReference.getSample(0, frame);
+        const double withOpen = closedThenOpen.getSample(0, frame);
+        if (!std::isfinite(reference) || !std::isfinite(withOpen))
+        { fixture.deleteFile(); return fail(94); }
+        laterReferenceEnergy += reference * reference;
+        laterProtectedEnergy += withOpen * withOpen;
+    }
+    if (!(laterReferenceEnergy > 1.0e-12
+        && laterProtectedEnergy > laterReferenceEnergy * 0.10))
+    { fixture.deleteFile(); return fail(95); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
