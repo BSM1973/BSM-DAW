@@ -628,6 +628,28 @@ int main()
     importedHats.renderMidi(importedAlias, semiNote);
     if (!near(importedAlias.getSample(0, 100), 0.0f, 0.0001f))
     { fixture.deleteFile(); return fail(88); }
+    // A closed factory hat must fade an already ringing semi-open hat
+    // smoothly. Mute the new closed hit to isolate the outgoing voice.
+    factoryHats.reset();
+    factoryHats.setPadGain(3, 0.0f);
+    juce::AudioBuffer<float> pedalFade(2, 2400);
+    pedalFade.clear();
+    juce::MidiBuffer pedalMidi;
+    pedalMidi.addEvent(juce::MidiMessage::noteOn(1, 52, (juce::uint8)127), 0);
+    pedalMidi.addEvent(juce::MidiMessage::noteOn(1, 39, (juce::uint8)127), 800);
+    factoryHats.renderMidi(pedalFade, pedalMidi);
+    double preFadeEnergy = 0.0, midFadeEnergy = 0.0, tailFadeEnergy = 0.0;
+    for (int frame = 0; frame < pedalFade.getNumSamples(); ++frame)
+    {
+        const double value = pedalFade.getSample(0, frame);
+        if (!std::isfinite(value)) { fixture.deleteFile(); return fail(89); }
+        if (frame >= 700 && frame < 800) preFadeEnergy += value * value;
+        if (frame >= 950 && frame < 1050) midFadeEnergy += value * value;
+        if (frame >= 1300 && frame < 1400) tailFadeEnergy += value * value;
+    }
+    if (!(preFadeEnergy > 0.0 && midFadeEnergy > 0.0
+          && tailFadeEnergy < midFadeEnergy * 0.01))
+    { fixture.deleteFile(); return fail(90); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
