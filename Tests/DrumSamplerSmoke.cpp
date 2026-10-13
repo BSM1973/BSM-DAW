@@ -586,8 +586,50 @@ int main()
     retrigger.renderMidi(stoppedHit, juce::MidiBuffer{});
     if (std::abs(stoppedHit.getSample(0, 80)) > 0.003f)
     { fixture.deleteFile(); return fail(82); }
+    // Factory hi-hat MIDI 52 must produce an audible semi-open articulation
+    // while the ordinary open-hat pad remains mapped to MIDI 40.
+    LibertyDrumSampler factoryHats;
+    factoryHats.prepare(48000.0);
+    if (!factoryHats.loadFactoryKit(0)) { fixture.deleteFile(); return fail(83); }
+    if (factoryHats.getPad(4).midiNote != 40
+        || !factoryHats.getPad(4).factoryTone.load())
+    { fixture.deleteFile(); return fail(84); }
+    juce::AudioBuffer<float> semiHat(2, 2048), openHat(2, 2048);
+    juce::MidiBuffer semiNote, openNote;
+    semiNote.addEvent(juce::MidiMessage::noteOn(1, 52, (juce::uint8)110), 0);
+    openNote.addEvent(juce::MidiMessage::noteOn(1, 40, (juce::uint8)110), 0);
+    semiHat.clear();
+    factoryHats.renderMidi(semiHat, semiNote);
+    factoryHats.reset();
+    openHat.clear();
+    factoryHats.renderMidi(openHat, openNote);
+    double semiEnergy = 0.0, openEnergy = 0.0;
+    for (int frame = 0; frame < semiHat.getNumSamples(); ++frame)
+    {
+        const float semi = semiHat.getSample(0, frame);
+        const float open = openHat.getSample(0, frame);
+        if (!std::isfinite(semi) || !std::isfinite(open))
+        { fixture.deleteFile(); return fail(85); }
+        if (frame >= 1024)
+        {
+            semiEnergy += (double)semi * semi;
+            openEnergy += (double)open * open;
+        }
+    }
+    if (!(semiEnergy > 0.0 && openEnergy > semiEnergy))
+    { fixture.deleteFile(); return fail(86); }
+    // Imported pads must never acquire the factory-only MIDI 52 alias.
+    LibertyDrumSampler importedHats;
+    importedHats.prepare(48000.0);
+    if (!importedHats.loadPad(4, fixture))
+    { fixture.deleteFile(); return fail(87); }
+    juce::AudioBuffer<float> importedAlias(2, 256);
+    importedAlias.clear();
+    importedHats.renderMidi(importedAlias, semiNote);
+    if (!near(importedAlias.getSample(0, 100), 0.0f, 0.0001f))
+    { fixture.deleteFile(); return fail(88); }
     fixture.deleteFile();
 
-    std::cout << "Drum Sampler smoke tests passed\n";
+    std::cout << "Drum Sampler smoke tests passed\\n";
     return 0;
 }
