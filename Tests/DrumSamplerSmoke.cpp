@@ -794,6 +794,28 @@ int main()
         }
         if (!(playbackEnergy > 1.0e-10))
         { fixture.deleteFile(); return fail(108); }
+        // Exercise every factory pad, not just the kick. Each pad should
+        // produce finite, non-silent output with its assigned MIDI note.
+        for (int padIndex = 0; padIndex < LibertyDrumSampler::padCount; ++padIndex)
+        {
+            allFactoryKits.reset();
+            juce::AudioBuffer<float> padPlayback(2, 2048);
+            padPlayback.clear();
+            juce::MidiBuffer padHit;
+            const int note = allFactoryKits.getPad(padIndex).midiNote;
+            padHit.addEvent(juce::MidiMessage::noteOn(1, note, (juce::uint8)127), 0);
+            allFactoryKits.renderMidi(padPlayback, padHit);
+            double padEnergy = 0.0;
+            for (int frame = 0; frame < padPlayback.getNumSamples(); ++frame)
+            {
+                const double sample = padPlayback.getSample(0, frame);
+                if (!std::isfinite(sample))
+                { fixture.deleteFile(); return fail(109); }
+                padEnergy += sample * sample;
+            }
+            if (!(padEnergy > 1.0e-12))
+            { fixture.deleteFile(); return fail(110); }
+        }
     }
     fixture.deleteFile();
 
