@@ -775,6 +775,25 @@ int main()
             || !near(allFactoryKits.getPad(3).chokeFadeMs.load(), 5.0f)
             || allFactoryKits.getPad(4).midiNote != 40)
         { fixture.deleteFile(); return fail(106); }
+        // Factory kit switching queues a stop; flush before triggering.
+        juce::AudioBuffer<float> flush(2, 64);
+        flush.clear();
+        allFactoryKits.renderMidi(flush, juce::MidiBuffer{});
+        juce::AudioBuffer<float> factoryPlayback(2, 1024);
+        factoryPlayback.clear();
+        juce::MidiBuffer factoryKick;
+        factoryKick.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)127), 0);
+        allFactoryKits.renderMidi(factoryPlayback, factoryKick);
+        double playbackEnergy = 0.0;
+        for (int frame = 0; frame < factoryPlayback.getNumSamples(); ++frame)
+        {
+            const double sample = factoryPlayback.getSample(0, frame);
+            if (!std::isfinite(sample))
+            { fixture.deleteFile(); return fail(107); }
+            playbackEnergy += sample * sample;
+        }
+        if (!(playbackEnergy > 1.0e-10))
+        { fixture.deleteFile(); return fail(108); }
     }
     fixture.deleteFile();
 
