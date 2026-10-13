@@ -733,6 +733,25 @@ int main()
     }
     if (!(aliasEnergy < 1.0e-12 && normalEnergy > 1.0e-10))
     { fixture.deleteFile(); return fail(99); }
+    // Returning to a factory kit must restore the MIDI 52 articulation
+    // after the pad has been replaced with a user WAV.
+    if (!factoryHats.loadFactoryKit(0))
+    { fixture.deleteFile(); return fail(100); }
+    if (!factoryHats.getPad(4).factoryTone.load()
+        || factoryHats.getPad(4).midiNote != 40)
+    { fixture.deleteFile(); return fail(101); }
+    juce::AudioBuffer<float> factoryRestored(2, 1024);
+    factoryRestored.clear();
+    factoryHats.renderMidi(factoryRestored, semiNote);
+    double restoredEnergy = 0.0;
+    for (int frame = 0; frame < factoryRestored.getNumSamples(); ++frame)
+    {
+        const double sample = factoryRestored.getSample(0, frame);
+        if (!std::isfinite(sample)) { fixture.deleteFile(); return fail(102); }
+        restoredEnergy += sample * sample;
+    }
+    if (!(restoredEnergy > 1.0e-10))
+    { fixture.deleteFile(); return fail(103); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
