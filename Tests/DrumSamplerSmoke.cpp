@@ -817,6 +817,37 @@ int main()
             { fixture.deleteFile(); return fail(110); }
         }
     }
+    // Verify factory velocity response on kick, snare and cymbal.
+    // Reloading the same kit before each render resets round-robin tone
+    // variation so the comparison isolates the velocity difference.
+    for (int instrument : { 0, 1, 12 })
+    {
+        double energies[2] {};
+        for (int level = 0; level < 2; ++level)
+        {
+            if (!allFactoryKits.loadFactoryKit(0))
+            { fixture.deleteFile(); return fail(111); }
+            juce::AudioBuffer<float> flush(2, 32);
+            flush.clear();
+            allFactoryKits.renderMidi(flush, juce::MidiBuffer{});
+            juce::AudioBuffer<float> velocityOutput(2, 2048);
+            velocityOutput.clear();
+            juce::MidiBuffer velocityHit;
+            velocityHit.addEvent(juce::MidiMessage::noteOn(
+                1, allFactoryKits.getPad(instrument).midiNote,
+                (juce::uint8)(level == 0 ? 35 : 120)), 0);
+            allFactoryKits.renderMidi(velocityOutput, velocityHit);
+            for (int frame = 0; frame < velocityOutput.getNumSamples(); ++frame)
+            {
+                const double sample = velocityOutput.getSample(0, frame);
+                if (!std::isfinite(sample))
+                { fixture.deleteFile(); return fail(112); }
+                energies[level] += sample * sample;
+            }
+        }
+        if (!(energies[0] > 1.0e-12 && energies[1] > energies[0]))
+        { fixture.deleteFile(); return fail(113); }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
