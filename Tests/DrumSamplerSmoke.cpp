@@ -752,6 +752,30 @@ int main()
     }
     if (!(restoredEnergy > 1.0e-10))
     { fixture.deleteFile(); return fail(103); }
+    // Every factory genre must populate all 16 pads and restore the
+    // factory hat choke configuration, regardless of previous user edits.
+    LibertyDrumSampler allFactoryKits;
+    allFactoryKits.prepare(48000.0);
+    for (int kitIndex = 0; kitIndex < 10; ++kitIndex)
+    {
+        allFactoryKits.setPadChokeGroup(3, 7);
+        allFactoryKits.setPadChokeGroup(4, 8);
+        allFactoryKits.setPadChokeFade(3, 35.0f);
+        if (!allFactoryKits.loadFactoryKit(kitIndex))
+        { fixture.deleteFile(); return fail(104); }
+        for (int padIndex = 0; padIndex < LibertyDrumSampler::padCount; ++padIndex)
+        {
+            const auto& factoryPad = allFactoryKits.getPad(padIndex);
+            if (!factoryPad.factoryTone.load()
+                || std::atomic_load(&factoryPad.audio) == nullptr)
+            { fixture.deleteFile(); return fail(105); }
+        }
+        if (allFactoryKits.getPad(3).chokeGroup.load() != 1
+            || allFactoryKits.getPad(4).chokeGroup.load() != 1
+            || !near(allFactoryKits.getPad(3).chokeFadeMs.load(), 5.0f)
+            || allFactoryKits.getPad(4).midiNote != 40)
+        { fixture.deleteFile(); return fail(106); }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
