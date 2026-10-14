@@ -903,6 +903,32 @@ int main()
         if (!(energy[side] > energy[1 - side] && energy[side] > 1.0e-12))
         { fixture.deleteFile(); return fail(119); }
     }
+    // Pad gain must affect the audible factory signal, independently
+    // of the velocity-sensitive timbre processing.
+    double gainEnergy[2] {};
+    for (int level = 0; level < 2; ++level)
+    {
+        if (!allFactoryKits.loadFactoryKit(0))
+        { fixture.deleteFile(); return fail(120); }
+        allFactoryKits.setPadGain(0, level == 0 ? 0.25f : 1.0f);
+        juce::AudioBuffer<float> gainFlush(2, 64);
+        gainFlush.clear();
+        allFactoryKits.renderMidi(gainFlush, juce::MidiBuffer{});
+        juce::AudioBuffer<float> gainOutput(2, 2048);
+        gainOutput.clear();
+        juce::MidiBuffer gainHit;
+        gainHit.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)100), 0);
+        allFactoryKits.renderMidi(gainOutput, gainHit);
+        for (int frame = 0; frame < gainOutput.getNumSamples(); ++frame)
+        {
+            const double sample = gainOutput.getSample(0, frame);
+            if (!std::isfinite(sample))
+            { fixture.deleteFile(); return fail(121); }
+            gainEnergy[level] += sample * sample;
+        }
+    }
+    if (!(gainEnergy[0] > 1.0e-12 && gainEnergy[1] > gainEnergy[0]))
+    { fixture.deleteFile(); return fail(122); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
