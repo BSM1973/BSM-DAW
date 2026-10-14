@@ -1038,7 +1038,9 @@ public:
             auto& button = pads[(size_t)i];
             button.setButtonText("PAD " + juce::String(i + 1));
             button.setColour(juce::TextButton::buttonColourId, juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load()));
-            button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
+            button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
+            button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
             button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); };
             addAndMakeVisible(button);
         }
@@ -1232,6 +1234,16 @@ public:
         panLabel.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(gainLabel);
         addAndMakeVisible(panLabel);
+        // Obsidian action controls: retain the original click targets and layout.
+        for (auto* action : { &loadButton, &stopButton, &exportButton, &importButton,
+                              &loopButton, &colourButton })
+        {
+            action->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+            action->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
+            action->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
+            action->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        }
+        stopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff513039));
         refreshLabels();
         updateControls();
     }
@@ -1334,10 +1346,19 @@ public:
     }
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff121c27));
-        g.setColour(juce::Colours::white);
+        juce::ColourGradient background(juce::Colour(0xff202c37), 0.0f, 0.0f,
+                                         juce::Colour(0xff0b0f14), 0.0f, (float)getHeight(), false);
+        g.setGradientFill(background);
+        g.fillAll();
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 2);
+        g.setColour(juce::Colour(0xffe8eff7));
         g.setFont(juce::Font(18.0f, juce::Font::bold));
-        g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 24, 26, juce::Justification::centredLeft);
+        g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 250, 26, juce::Justification::centredLeft);
+        const int actionsTop = getHeight() - 550;
+        g.setColour(juce::Colour(0xff344452));
+        g.fillRect(12, actionsTop - 7, juce::jmax(0, getWidth() - 24), 1);
+        g.fillRect(12, getHeight() - 390, juce::jmax(0, getWidth() - 24), 1);
     }
 private:
     void refreshPadColours()
