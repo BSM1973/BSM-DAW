@@ -848,6 +848,33 @@ int main()
         if (!(energies[0] > 1.0e-12 && energies[1] > energies[0]))
         { fixture.deleteFile(); return fail(113); }
     }
+    // Factory playback must produce valid audio on both stereo channels.
+    // Check a representative instrument in each of the ten genres.
+    for (int kitIndex = 0; kitIndex < 10; ++kitIndex)
+    {
+        if (!allFactoryKits.loadFactoryKit(kitIndex))
+        { fixture.deleteFile(); return fail(114); }
+        juce::AudioBuffer<float> flush(2, 32);
+        flush.clear();
+        allFactoryKits.renderMidi(flush, juce::MidiBuffer{});
+        juce::AudioBuffer<float> stereoOutput(2, 2048);
+        stereoOutput.clear();
+        juce::MidiBuffer stereoHit;
+        stereoHit.addEvent(juce::MidiMessage::noteOn(
+            1, allFactoryKits.getPad(0).midiNote, (juce::uint8)100), 0);
+        allFactoryKits.renderMidi(stereoOutput, stereoHit);
+        double channelEnergy[2] {};
+        for (int channel = 0; channel < 2; ++channel)
+            for (int frame = 0; frame < stereoOutput.getNumSamples(); ++frame)
+            {
+                const double sample = stereoOutput.getSample(channel, frame);
+                if (!std::isfinite(sample))
+                { fixture.deleteFile(); return fail(115); }
+                channelEnergy[channel] += sample * sample;
+            }
+        if (!(channelEnergy[0] > 1.0e-12 && channelEnergy[1] > 1.0e-12))
+        { fixture.deleteFile(); return fail(116); }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
