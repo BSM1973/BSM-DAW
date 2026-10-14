@@ -114,9 +114,14 @@ void MainComponent::paint(juce::Graphics& g)
         const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
         {
-            g.setColour(active ? juce::Colour(0xff286c9a) : juce::Colour(0xff253344));
+            g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
             g.fillRoundedRectangle(rect.toFloat(), 5.0f);
-            g.setColour(juce::Colours::white);
+            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff344452));
+            g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 5.0f, active ? 1.5f : 1.0f);
+            if (active)
+                g.fillRoundedRectangle((float)rect.getX() + 8.0f, (float)rect.getBottom() - 3.0f,
+                                       (float)juce::jmax(1, rect.getWidth() - 16), 2.0f, 1.0f);
+            g.setColour(active ? juce::Colour(0xffe8eff7) : juce::Colour(0xffb5c3d1));
             g.setFont(juce::Font(12.0f, juce::Font::bold));
             g.drawText(label, rect, juce::Justification::centred);
         };
@@ -127,8 +132,10 @@ void MainComponent::paint(juce::Graphics& g)
         if (showStepSequencer && dockStepSequencerMode)
         {
             const auto detach = juce::Rectangle<int>(416, mixer.getY() + 4, 106, 28);
-            g.setColour(juce::Colour(0xff253344));
+            g.setColour(juce::Colour(0xff202c37));
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
+            g.setColour(juce::Colour(0xff344452));
+            g.drawRoundedRectangle(detach.toFloat().reduced(0.5f), 5.0f, 1.0f);
             g.setColour(juce::Colours::white);
             g.drawText(juce::String::fromUTF8("D\xC3\x89TACHER"), detach, juce::Justification::centred);
         }
