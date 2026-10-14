@@ -364,7 +364,10 @@ public:
     {
         setOpaque(true);
         setInterceptsMouseClicks(true, true);
-        setAlwaysOnTop(true);
+        // PERFORM is a normal page, not a floating overlay. The Browser
+        // and its resize handle own the always-on-top layer.
+        // Giving this full-screen page the same priority hides the handle
+        // and makes its blue grip appear to flicker during page updates.
         clipButtons.resize((size_t)trackCount());
         stopTrackButtons.resize((size_t)trackCount());
         trackHeaders.resize((size_t)trackCount());
