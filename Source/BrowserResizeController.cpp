@@ -52,7 +52,6 @@ public:
     explicit ResizeHandle(BrowserResizeController& controllerIn) : controller(controllerIn)
     {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        setAlwaysOnTop(true);
     }
 
     void paint(juce::Graphics& g) override
@@ -87,7 +86,8 @@ public:
         }
 
         handle.setVisible(false);
-        owner.addAndMakeVisible(handle);
+        // Attach the resize grip to the Browser itself once discovered.
+        // A separate MainComponent sibling competed with PERFORM's layers.
     }
 
     ~BrowserResizeController() override { shutdown(); }
@@ -136,6 +136,7 @@ private:
 
         browserPanel->addComponentListener(this);
         browserPanel->setAlwaysOnTop(true);
+        browserPanel->addAndMakeVisible(handle);
         applyBounds();
     }
 
@@ -160,12 +161,12 @@ private:
             browserPanel->setBounds(wanted);
         }
 
-        const auto gripBounds = juce::Rectangle<int>(wanted.getX() - 5,
-                                                      wanted.getY(), 10, wanted.getHeight());
+        // Browser-local coordinates keep the grip in the same compositing
+        // layer as its parent, independent of PERFORM page repainting.
+        const auto gripBounds = juce::Rectangle<int>(0, 0, 10, wanted.getHeight());
         if (handle.getBounds() != gripBounds)
             handle.setBounds(gripBounds);
-        // The grip is a persistent overlay. Do not hide/show it during
-        // transient Browser layout changes; that flashes the cyan line.
+        // The grip stays attached to the Browser; no sibling z-order churn.
         if (!handle.isVisible())
             handle.setVisible(true);
     }
