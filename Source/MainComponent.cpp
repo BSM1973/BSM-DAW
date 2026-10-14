@@ -876,11 +876,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 
 void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    juce::ColourGradient dockGradient(juce::Colour(0xff1d2b3d), (float)area.getX(), (float)area.getY(),
-                                      juce::Colour(0xff0c1420), (float)area.getX(), (float)area.getBottom(), false);
+    juce::ColourGradient dockGradient(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+                                      juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
     g.setGradientFill(dockGradient);
     g.fillRect(area);
-    g.setColour(juce::Colour(0xff4d789e));
+    g.setColour(juce::Colour(0xff54d6dc));
     g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const int instrumentIndex = selectedTrack - instrumentFirst;
@@ -905,7 +905,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
-                    g.setColour(pattern->enabled ? juce::Colour(0xff177c70) : juce::Colour(0xff303d4d));
+                    g.setColour(pattern->enabled ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
                     if (pattern->enabled)
                     {
@@ -913,15 +913,15 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.fillRoundedRectangle((float)onOff.getX() + 4.0f, (float)onOff.getY() + 3.0f,
                                                (float)juce::jmax(1, onOff.getWidth() - 8), 4.0f, 2.0f);
                     }
-                    g.setColour(pattern->enabled ? juce::Colour(0xff5de0b9) : juce::Colour(0xff607187));
+                    g.setColour(pattern->enabled ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                     g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
                     g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, onOff.getHeight());
                     const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
-                    g.setColour(previewActive ? juce::Colour(0xff286c9a) : juce::Colour(0xff273e55));
+                    g.setColour(previewActive ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
-                    g.setColour(previewActive ? juce::Colour(0xff83d8ff) : juce::Colour(0xff638aa9));
+                    g.setColour(previewActive ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                     g.drawRoundedRectangle(seqPlay.toFloat(), 7.0f, 1.2f);
                     g.setColour(juce::Colours::white);
                     g.setFont(juce::Font(9.0f, juce::Font::bold));
@@ -935,7 +935,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
-                        g.setColour(active ? juce::Colour(0xff438cff) : (availableStep ? juce::Colour(0xff28394d) : juce::Colour(0xff111823)));
+                        g.setColour(active ? juce::Colour(0xff328f9a) : (availableStep ? juce::Colour(0xff25323e) : juce::Colour(0xff111922)));
                         g.fillRoundedRectangle(pad.toFloat(), 6.0f);
                         if (active)
                         {
@@ -945,36 +945,36 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         }
                         if (s % 4 == 0)
                         {
-                            g.setColour(active ? juce::Colour(0xffd1e9ff) : juce::Colour(0xff6689af));
+                            g.setColour(active ? juce::Colour(0xffe8eff7) : juce::Colour(0xff667d8d));
                             g.fillRoundedRectangle((float)pad.getX() + 2.0f, (float)pad.getY() + 4.0f,
                                                    2.0f, (float)juce::jmax(1, pad.getHeight() - 8), 1.0f);
                         }
-                        g.setColour((s % 4) == 0 ? juce::Colour(0xff93a9c5) : juce::Colour(0xff496078));
+                        g.setColour((s % 4) == 0 ? juce::Colour(0xffb5c3d1) : juce::Colour(0xff344452));
                         g.drawRoundedRectangle(pad.toFloat(), 6.0f, 1.0f);
                         if (active)
                         {
-                            g.setColour(juce::Colour(0xff9ac8ff));
+                            g.setColour(juce::Colour(0xff54d6dc));
                             g.fillRoundedRectangle((float)pad.getX() + 5.0f, (float)pad.getBottom() - 4.0f,
                                                    (float)juce::jmax(1, pad.getWidth() - 10), 2.0f, 1.0f);
                         }
-                        g.setColour(active ? juce::Colours::white : (availableStep ? juce::Colour(0xffc3d6e9) : juce::Colour(0xff647184)));
+                        g.setColour(active ? juce::Colours::white : (availableStep ? juce::Colour(0xffd1dce7) : juce::Colour(0xff667d8d)));
                         g.setFont(juce::Font(10.5f, juce::Font::bold));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
                     const int controlsY = panel.getY() + 42;
-                    g.setColour(juce::Colour(0xff35495f));
+                    g.setColour(juce::Colour(0xff344452));
                     g.fillRect(panel.getX(), controlsY - 7, panel.getWidth(), 1);
-                    g.setColour(juce::Colour(0xff243448));
+                    g.setColour(juce::Colour(0xff202c37));
                     g.fillRect(panel.getX(), controlsY + 30, panel.getWidth(), 1);
                     g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16));
-                        g.setColour(active ? juce::Colour(0xff2a639a) : juce::Colour(0xff263343)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
-                        if (active) { g.setColour(juce::Colour(0xff84c1ff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
-                        g.setColour(active ? juce::Colour(0xff9acaff) : juce::Colour(0xff50677e));
+                        g.setColour(active ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        if (active) { g.setColour(juce::Colour(0xff54d6dc)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
+                        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
-                        g.setColour(active ? juce::Colours::white : juce::Colour(0xffcad8e7));
+                        g.setColour(active ? juce::Colours::white : juce::Colour(0xffd1dce7));
                         g.setFont(juce::Font(9.0f, juce::Font::bold));
                         g.drawText(text, r, juce::Justification::centred);
                     };
