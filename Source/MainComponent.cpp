@@ -696,7 +696,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
         g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::outline)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::text));
+        g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
 
@@ -708,18 +709,18 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
 
     const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
-    g.setColour(juce::Colour(0xff252a31));
+    g.setColour(juce::Colour(0xff0b0f14));
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff454b54));
+    g.setColour(juce::Colour(LibertyProTransport::outline));
     g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
     g.setColour(juce::Colour(LibertyProTransport::text));
     g.setFont(juce::Font(14.0f));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
-    g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
+    g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(LibertyProTransport::muted)); g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 }
 
