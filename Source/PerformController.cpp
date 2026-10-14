@@ -930,7 +930,9 @@ public:
         mixOverlay.setVisible(shouldShow);
         performButton.setColour(juce::TextButton::buttonColourId,
                                 shouldShow ? juce::Colour(0xff315f7a) : juce::Colour(0xff252a31));
-        if (shouldShow) view.toFront(false);
+        // The Browser is an always-on-top sibling. Raising PERFORM again
+        // here can reorder its header and cause a visible flash.
+        // PerformView already raises itself once when becoming visible.
         arrangeOverlay.toFront(false);
         mixOverlay.toFront(false);
         performButton.toFront(false);
