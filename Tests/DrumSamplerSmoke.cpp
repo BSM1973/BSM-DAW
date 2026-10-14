@@ -929,6 +929,38 @@ int main()
     }
     if (!(gainEnergy[0] > 1.0e-12 && gainEnergy[1] > gainEnergy[0]))
     { fixture.deleteFile(); return fail(122); }
+    // Reset must silence a sustained factory cymbal immediately,
+    // including after the voice has already started rendering.
+    if (!allFactoryKits.loadFactoryKit(0))
+    { fixture.deleteFile(); return fail(123); }
+    juce::AudioBuffer<float> resetFlush(2, 64);
+    resetFlush.clear();
+    allFactoryKits.renderMidi(resetFlush, juce::MidiBuffer{});
+    juce::AudioBuffer<float> cymbalBeforeReset(2, 512);
+    cymbalBeforeReset.clear();
+    juce::MidiBuffer cymbalHit;
+    cymbalHit.addEvent(juce::MidiMessage::noteOn(
+        1, allFactoryKits.getPad(12).midiNote, (juce::uint8)120), 0);
+    allFactoryKits.renderMidi(cymbalBeforeReset, cymbalHit);
+    double cymbalEnergy = 0.0;
+    for (int frame = 0; frame < cymbalBeforeReset.getNumSamples(); ++frame)
+    {
+        const double sample = cymbalBeforeReset.getSample(0, frame);
+        if (!std::isfinite(sample))
+        { fixture.deleteFile(); return fail(124); }
+        cymbalEnergy += sample * sample;
+    }
+    if (!(cymbalEnergy > 1.0e-12))
+    { fixture.deleteFile(); return fail(125); }
+    allFactoryKits.reset();
+    juce::AudioBuffer<float> cymbalAfterReset(2, 1024);
+    cymbalAfterReset.clear();
+    allFactoryKits.renderMidi(cymbalAfterReset, juce::MidiBuffer{});
+    for (int channel = 0; channel < 2; ++channel)
+        for (int frame = 0; frame < cymbalAfterReset.getNumSamples(); ++frame)
+            if (!std::isfinite(cymbalAfterReset.getSample(channel, frame))
+                || std::abs(cymbalAfterReset.getSample(channel, frame)) > 1.0e-8f)
+            { fixture.deleteFile(); return fail(126); }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
