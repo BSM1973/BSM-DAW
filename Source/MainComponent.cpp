@@ -739,18 +739,18 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 
     auto ruler = area.removeFromTop(rulerH);
     auto rows = area;
-    g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler);
-    g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW));
-    g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
+    g.setColour(juce::Colour(0xff18212b)); g.fillRect(ruler);
+    g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
+    g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
 
-    g.setColour(juce::Colour(0xff353b44));
+    g.setColour(juce::Colour(0xff344452));
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
         const int x = headerW + (int)std::round(measureIndex * pixelsPerMeasure);
         if (x >= getWidth()) break;
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
     }
-    g.setColour(juce::Colour(0xff777f89)); g.setFont(juce::Font(11.0f));
+    g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(11.0f));
     for (int i = 0; i < 100; ++i)
     {
         const int x = headerW + (int)std::round(i * pixelsPerMeasure);
@@ -768,7 +768,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         auto row = juce::Rectangle<int>(rows.getX(), rows.getY() + visibleIndex * rowH, rows.getWidth(), rowH);
         if (row.getY() >= rows.getBottom()) break;
         row = row.getIntersection(rows);
-        g.setColour(logicalRow % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
+        g.setColour(logicalRow % 2 ? juce::Colour(0xff111922) : juce::Colour(0xff141e28)); g.fillRect(row);
         auto header = row.withWidth(headerW);
         bool selected = false;
         juce::String title;
@@ -777,21 +777,21 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const int i = logicalRow;
             selected = selectedTrack == i;
             title = "Audio " + juce::String(i + 1);
-            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff294b55) : juce::Colour(0xff202c37)); g.fillRect(header);
             auto clip = row.withTrimmedLeft(headerW + 20).reduced(4);
             if (audioEngine.hasAudioFile(i))
             {
                 clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
                 clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
-                g.setColour(selected ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
+                g.setColour(selected ? juce::Colour(0xff315b74) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(juce::Colour(0xff7bbbd7)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
                     const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
                     const int points=(int)waveformMin[(size_t)i].size(); juce::Path waveform;
                     for(int p=0;p<points;++p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);const auto y=(float)centreY-waveformMax[(size_t)i][(size_t)p]*amplitude;if(p==0)waveform.startNewSubPath(x,y);else waveform.lineTo(x,y);}
                     for(int p=points-1;p>=0;--p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);waveform.lineTo(x,(float)centreY-waveformMin[(size_t)i][(size_t)p]*amplitude);}
-                    waveform.closeSubPath(); g.setColour(juce::Colour(0xff9fc7e8)); g.fillPath(waveform);
+                    waveform.closeSubPath(); g.setColour(juce::Colour(0xffb7e2f2)); g.fillPath(waveform);
                 }
                 g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             }
@@ -801,17 +801,23 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const int i = logicalRow - audioCount;
             title = "MIDI " + juce::String(i + 1);
             selected = selectedTrack == audioCount + i;
-            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff294b55) : juce::Colour(0xff202c37)); g.fillRect(header);
         }
         else
         {
             const int i = logicalRow - audioCount - midiCount;
             title = "Instrument " + juce::String(i + 1);
             selected = selectedTrack == audioCount + midiCount + i;
-            g.setColour(selected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff294b55) : juce::Colour(0xff202c37)); g.fillRect(header);
 
         }
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        g.setColour(juce::Colour(0xffe8eff7)); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        if (selected)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRect(header.getX(), header.getY(), 3, header.getHeight());
+        }
+        g.setColour(juce::Colour(0xffe8eff7));
         g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
         // Draw the timeline grid inside EVERY visible row, including the
         // final clipped row immediately above the mixer.  Previously the only
@@ -820,7 +826,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         {
             const juce::Graphics::ScopedSaveState rowGridState(g);
             g.reduceClipRegion(row.withTrimmedLeft(headerW));
-            g.setColour(juce::Colour(0xff252b33));
+            g.setColour(juce::Colour(0xff202c37));
             // Uniform 1/16 Arrange grid on every row, including the final clipped row.
             constexpr int subdivisions = 16;
             const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
@@ -830,7 +836,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 if (x >= row.getRight()) break;
                 if (x < headerW) continue;
                 const bool measureLine = (subdivisionIndex % subdivisions) == 0;
-                g.setColour(measureLine ? juce::Colour(0xff3b424c) : juce::Colour(0xff252b33));
+                g.setColour(measureLine ? juce::Colour(0xff344452) : juce::Colour(0xff202c37));
                 g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
             }
         }
@@ -849,9 +855,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                     .getIntersection(row.withTrimmedLeft(headerW));
                     if (!clip.isEmpty())
                     {
-                        g.setColour(juce::Colour(0xff265c65));
+                        g.setColour(juce::Colour(0xff23545b));
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                        g.setColour(juce::Colour(0xff75d6db));
+                        g.setColour(juce::Colour(0xff54d6dc));
                         g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
                         g.setColour(juce::Colours::white);
                         g.setFont(juce::Font(11.0f, juce::Font::bold));
@@ -860,12 +866,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 }
             }
         }
-        g.setColour(juce::Colour(0xff2c323a)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
+        g.setColour(juce::Colour(0xff344452)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
     }
 
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
     if (playheadX >= headerW && playheadX <= (float)getWidth())
-    { g.setColour(juce::Colours::white); g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),2.0f); }
+    { g.setColour(juce::Colour(0xffe4a85e)); g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),2.0f); }
 }
 
 void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int> area)
