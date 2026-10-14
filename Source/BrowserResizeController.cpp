@@ -160,12 +160,14 @@ private:
             browserPanel->setBounds(wanted);
         }
 
-        handle.setBounds(wanted.getX() - 5, wanted.getY(), 10, wanted.getHeight());
+        const auto gripBounds = juce::Rectangle<int>(wanted.getX() - 5,
+                                                      wanted.getY(), 10, wanted.getHeight());
+        if (handle.getBounds() != gripBounds)
+            handle.setBounds(gripBounds);
+        // The grip is a persistent overlay. Do not hide/show it during
+        // transient Browser layout changes; that flashes the cyan line.
         if (!handle.isVisible())
-        {
             handle.setVisible(true);
-            handle.toFront(false);
-        }
     }
 
     void componentMovedOrResized(juce::Component&, bool, bool) override
