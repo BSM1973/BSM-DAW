@@ -953,12 +953,9 @@ private:
         arrangeOverlay.setBounds(1055, 8, 88, 26);
         mixOverlay.setBounds(1147, 8, 112, 26);
         performButton.setBounds(1263, 8, 94, 26);
-        if (performVisible)
-        {
-            arrangeOverlay.toFront(false);
-            mixOverlay.toFront(false);
-        }
-        performButton.toFront(false);
+        // Page controls are raised on mode activation, not on every timer
+        // tick. Constantly changing sibling z-order makes the Browser header
+        // and its resize handle flash while PERFORM is visible.
     }
 
     MainComponent& owner;
