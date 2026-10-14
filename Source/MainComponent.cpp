@@ -640,10 +640,22 @@ void MainComponent::clickFloatingStepSequencer(juce::Point<int> point, juce::Rec
         handleStepSequencerClick(point, area);
 }
 
+// Liberty Pro / Obsidian: transport palette is intentionally local to the
+// drawing layer. Keep all existing hit rectangles and transport behaviour.
+namespace LibertyProTransport
+{
+constexpr juce::uint32 surface = 0xff18212b;
+constexpr juce::uint32 outline = 0xff344452;
+constexpr juce::uint32 button = 0xff25323e;
+constexpr juce::uint32 accent = 0xff54d6dc;
+constexpr juce::uint32 text = 0xffe8eff7;
+constexpr juce::uint32 muted = 0xffb5c3d1;
+}
+
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
-    g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
+    g.setColour(juce::Colour(LibertyProTransport::surface)); g.fillRect(area);
+    g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
 
     const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
     juce::ignoreUnused(logoArea);
@@ -664,8 +676,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.strokePath(wave, juce::PathStrokeType(2.0f));
 
     const juce::ColourGradient audioBarsGradient(
-        juce::Colour(0xff72d8f5), 18.0f, 18.0f,
-        juce::Colour(0xff4f82ff), 40.0f, 40.0f, false);
+        juce::Colour(LibertyProTransport::accent), 18.0f, 18.0f,
+        juce::Colour(0xff277eaa), 40.0f, 40.0f, false);
     g.setGradientFill(audioBarsGradient);
     g.fillRoundedRectangle(18.0f, 25.0f, 3.5f, 14.0f, 1.5f);
     g.fillRoundedRectangle(24.0f, 21.0f, 3.5f, 18.0f, 1.5f);
@@ -682,8 +694,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     for (int i = 0; i < 5; ++i)
     {
         auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
-        g.setColour(i == 2 && isPlaying ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
+        g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::outline)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
         g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
@@ -700,7 +712,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
     g.setColour(juce::Colour(0xff454b54));
     g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
-    g.setColour(juce::Colour(0xffc9cdd3));
+    g.setColour(juce::Colour(LibertyProTransport::text));
     g.setFont(juce::Font(14.0f));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
