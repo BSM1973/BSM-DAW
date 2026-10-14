@@ -848,7 +848,8 @@ private:
         if (!performVisible) return;
         const auto wanted = juce::Rectangle<int>(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
         if (getBounds() != wanted) setBounds(wanted);
-        toFront(false);
+        // Keep z-order stable while PERFORM is running. Repeated toFront()
+        // competes with the Browser's always-on-top layer and causes flicker.
         refreshClipLabels();
         repaint();
     }
