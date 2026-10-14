@@ -875,6 +875,34 @@ int main()
         if (!(channelEnergy[0] > 1.0e-12 && channelEnergy[1] > 1.0e-12))
         { fixture.deleteFile(); return fail(116); }
     }
+    // Verify that the pad pan control routes factory playback toward
+    // the requested stereo side rather than only checking both outputs.
+    if (!allFactoryKits.loadFactoryKit(0))
+    { fixture.deleteFile(); return fail(117); }
+    juce::AudioBuffer<float> panFlush(2, 64);
+    panFlush.clear();
+    allFactoryKits.renderMidi(panFlush, juce::MidiBuffer{});
+    for (int side = 0; side < 2; ++side)
+    {
+        allFactoryKits.reset();
+        allFactoryKits.setPadPan(0, side == 0 ? -1.0f : 1.0f);
+        juce::AudioBuffer<float> panOutput(2, 2048);
+        panOutput.clear();
+        juce::MidiBuffer panHit;
+        panHit.addEvent(juce::MidiMessage::noteOn(1, 36, (juce::uint8)110), 0);
+        allFactoryKits.renderMidi(panOutput, panHit);
+        double energy[2] {};
+        for (int channel = 0; channel < 2; ++channel)
+            for (int frame = 0; frame < panOutput.getNumSamples(); ++frame)
+            {
+                const double sample = panOutput.getSample(channel, frame);
+                if (!std::isfinite(sample))
+                { fixture.deleteFile(); return fail(118); }
+                energy[channel] += sample * sample;
+            }
+        if (!(energy[side] > energy[1 - side] && energy[side] > 1.0e-12))
+        { fixture.deleteFile(); return fail(119); }
+    }
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
