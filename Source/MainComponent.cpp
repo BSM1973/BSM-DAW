@@ -1065,7 +1065,9 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     auto drawEdit = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, editY, 26, 780);
-                        g.setColour(active ? juce::Colour(0xff654ca3) : juce::Colour(0xff273143)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(active ? juce::Colour(0xff594780) : juce::Colour(0xff273143)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.12f : 0.045f));
+                        g.fillRoundedRectangle(r.toFloat().withHeight(4.0f), 3.0f);
                         if (active) { g.setColour(juce::Colour(0xffc4adff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xffc2aaff) : juce::Colour(0xff53647d));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
