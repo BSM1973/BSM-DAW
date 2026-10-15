@@ -250,8 +250,11 @@ public:
         const int playheadX = grid.getX() + (int)std::llround((double)playbackTick * pixelsPerTick);
         if (playheadX >= grid.getX() && playheadX <= grid.getRight())
         {
-            g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xfff3f6fa) : juce::Colour(0xffb5c3d1));
-            g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 2.0f);
+            g.setColour(juce::Colour(0xffe4a85e).withAlpha(0.20f));
+            g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 4.0f);
+            g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xffffc06b) : juce::Colour(0xffb5c3d1));
+            g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 1.5f);
+            g.fillRoundedRectangle((float)playheadX - 3.0f, (float)rulerHeight - 5.0f, 6.0f, 5.0f, 1.5f);
         }
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
