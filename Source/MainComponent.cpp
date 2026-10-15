@@ -830,11 +830,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
 
-    g.setColour(juce::Colour(0xff344452));
+    // Four-bar anchors stand out while intermediate measure lines recede.
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
         const int x = headerW + (int)std::round(measureIndex * pixelsPerMeasure);
         if (x >= getWidth()) break;
+        g.setColour(measureIndex % 4 == 0 ? juce::Colour(0xff526475)
+                                          : juce::Colour(0xff2b3946));
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
     }
     // Measure numbers are clearer at bar-group boundaries, subdued elsewhere.
