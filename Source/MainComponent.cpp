@@ -775,8 +775,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
     g.setColour(juce::Colour(0xff0b0f14));
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
-    g.setColour(juce::Colour(LibertyProTransport::outline));
-    g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.5f));
+    g.drawRoundedRectangle(positionBox.toFloat().reduced(0.5f), 5.0f, 1.0f);
     g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
     g.fillRoundedRectangle((float)positionBox.getX() + 8.0f, (float)positionBox.getBottom() - 3.0f,
                            (float)positionBox.getWidth() - 16.0f, 2.0f, 1.0f);
@@ -789,8 +789,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto musicInfo = juce::Rectangle<int>(836, 34, 82, 36);
     g.setColour(juce::Colour(0xff0b0f14));
     g.fillRoundedRectangle(musicInfo.toFloat(), 5.0f);
-    g.setColour(juce::Colour(LibertyProTransport::outline));
-    g.drawRoundedRectangle(musicInfo.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
+    g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 5.0f, 1.0f);
     g.setColour(juce::Colour(0xffb5c3d1));
     g.setFont(juce::Font(9.0f, juce::Font::bold));
     g.drawText("BPM   /   SIGN", musicInfo.getX() + 4, musicInfo.getY() + 2,
