@@ -1098,6 +1098,10 @@ public:
         addAndMakeVisible(stopButton);
         loopButton.setButtonText("LOOP START / END");
         loopButton.setClickingTogglesState(true);
+        loopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+        loopButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
+        loopButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        loopButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         loopButton.onClick = [this] { sampler.setPadLoop(selectedPad, loopButton.getToggleState()); };
         addAndMakeVisible(loopButton);
         exportButton.setButtonText("EXPORTER KIT");
