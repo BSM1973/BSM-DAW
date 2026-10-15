@@ -981,7 +981,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.setColour(selected ? juce::Colour(0xff2b6168)
                                              : juce::Colour(0xff1c3b44));
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                        g.setColour(selected ? juce::Colour(0xff74e1e5)
+                        g.setColour(selected ? juce::Colour(0xff8ae9eb)
                                              : juce::Colour(0xff408d98));
                         g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
                         g.setColour(selected ? juce::Colour(0xfff0fafb)
