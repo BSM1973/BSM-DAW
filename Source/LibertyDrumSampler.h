@@ -971,13 +971,19 @@ public:
     void paint(juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colour(0xff0a111a));
+        juce::ColourGradient surface(juce::Colour(0xff18212b), 0.0f, 0.0f,
+                                      juce::Colour(0xff0b0f14), 0.0f, bounds.getBottom(), false);
+        g.setGradientFill(surface);
         g.fillRoundedRectangle(bounds, 5.0f);
+        g.setColour(juce::Colour(0xff344452));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(juce::Colour(0xff344452).withAlpha(0.55f));
+        g.drawHorizontalLine(getHeight() / 2, 4.0f, (float)juce::jmax(4, getWidth() - 4));
         const auto& pad = sampler.getPad(selectedPad);
         const auto audio = std::atomic_load(&pad.audio);
         if (audio == nullptr || audio->getNumSamples() == 0)
         {
-            g.setColour(juce::Colours::grey);
+            g.setColour(juce::Colour(0xffb5c3d1));
             g.drawFittedText("CHARGER UN SAMPLE POUR VOIR SA FORME D'ONDE",
                              getLocalBounds(), juce::Justification::centred, 1);
             return;
@@ -986,7 +992,7 @@ public:
         const float mid = getHeight() * 0.5f;
         const float amplitude = juce::jmax(1.0f, mid - 5.0f);
         const int frames = audio->getNumSamples();
-        g.setColour(juce::Colour(0xff4fc4b5));
+        g.setColour(juce::Colour(0xff54d6dc));
         for (int x = 0; x < width; ++x)
         {
             const int begin = juce::jlimit(0, frames, (int)((viewStart + (float)x / juce::jmax(1, width) * viewSpan) * frames));
@@ -1000,13 +1006,13 @@ public:
         }
         const float start = pad.startFraction.load();
         const float end = pad.endFraction.load();
-        g.setColour(juce::Colour(0x880a111a));
+        g.setColour(juce::Colour(0x990b0f14));
         const float startX = (start - viewStart) / viewSpan * bounds.getWidth();
         const float endX = (end - viewStart) / viewSpan * bounds.getWidth();
         g.fillRect(0.0f, 0.0f, juce::jlimit(0.0f, bounds.getWidth(), startX), bounds.getHeight());
         const float endShade = juce::jlimit(0.0f, bounds.getWidth(), endX);
         g.fillRect(endShade, 0.0f, bounds.getWidth() - endShade, bounds.getHeight());
-        g.setColour(juce::Colour(0xffffb454));
+        g.setColour(juce::Colour(0xffe4a85e));
         if (startX >= 0.0f && startX < bounds.getWidth())
             g.drawVerticalLine((int)startX, 0.0f, bounds.getHeight());
         if (endX >= 0.0f && endX < bounds.getWidth())
@@ -1016,7 +1022,7 @@ public:
         const float playX = (playback - viewStart) / viewSpan * bounds.getWidth();
         if (playback >= 0.0f && playX >= 0.0f && playX < bounds.getWidth())
         {
-            g.setColour(juce::Colour(0xffff674f));
+            g.setColour(juce::Colour(0xffe8eff7));
             g.drawVerticalLine((int)playX, 0.0f, bounds.getHeight());
         }
     }
