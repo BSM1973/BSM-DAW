@@ -466,6 +466,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                                           [](const auto& step) { return step.enabled; });
         g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        if (i == bank.activePattern)
+        {
+            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        }
         if (hasNotes)
         {
             g.setColour(juce::Colour(0xff54d6dc));
