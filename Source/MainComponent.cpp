@@ -889,7 +889,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             {
                 clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
                 clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
-                g.setColour(selected ? juce::Colour(0xff315b74) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(selected ? juce::Colour(0xff37677c) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
                 g.setColour(selected ? juce::Colour(0xff8ed9e4)
                                      : juce::Colour(0xff5b8fa7));
                 g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, 1.0f);
