@@ -982,6 +982,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
                     g.setColour(previewActive ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(previewActive ? 0.12f : 0.045f));
+                    g.fillRoundedRectangle(seqPlay.toFloat().withHeight(4.0f), 3.0f);
                     g.setColour(previewActive ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                     g.drawRoundedRectangle(seqPlay.toFloat(), 7.0f, 1.2f);
                     if (previewActive)
