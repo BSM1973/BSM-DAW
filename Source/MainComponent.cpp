@@ -502,8 +502,10 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         }
         if (i % 4 == 0)
         {
-            g.setColour(juce::Colour(0xff54d6dc));
-            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.2f);
+            // Group downbeats remain legible, but out-of-cycle cells recede.
+            g.setColour(inCycle ? juce::Colour(0xff54d6dc).withAlpha(0.75f)
+                                : juce::Colour(0xff526475).withAlpha(0.45f));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
         }
         if (i > 0 && i % 4 == 0)
         {
