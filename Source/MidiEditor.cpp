@@ -57,11 +57,11 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff15181d));
-        g.setColour(juce::Colour(0xff3a414a));
+        g.fillAll(juce::Colour(0xff18212b));
+        g.setColour(juce::Colour(0xff344452));
         g.drawHorizontalLine(0, 0.0f, (float)getWidth());
 
-        g.setColour(juce::Colour(0xff8b929b));
+        g.setColour(juce::Colour(0xffb5c3d1));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.drawText("VELOCITY", 8, 8, pianoKeyWidth - 16, 16, juce::Justification::centredLeft);
 
@@ -86,9 +86,9 @@ public:
                                                 (int)std::llround((double)note.velocity / 127.0 * usableHeight));
             const auto bar = juce::Rectangle<int>(x, getHeight() - barHeight - 8, barWidth, barHeight);
 
-            g.setColour(juce::Colour(0xff63c7e8));
+            g.setColour(juce::Colour(0xff54d6dc));
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
-            g.setColour(juce::Colour(0xffaee8fa));
+            g.setColour(juce::Colour(0xffb6f2f2));
             g.drawRoundedRectangle(bar.toFloat(), 2.0f, 1.0f);
         }
     }
@@ -215,18 +215,18 @@ public:
         const double pixelsPerTick = getPixelsPerTick();
         const int keyHeight = currentKeyHeight();
 
-        g.setColour(juce::Colour(0xff15181d)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
-        g.setColour(juce::Colour(0xff20242b)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
+        g.setColour(juce::Colour(0xff18212b)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
+        g.setColour(juce::Colour(0xff202c37)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
         for (std::int64_t t = 0; t <= clipLengthTicks; t += gridTicks)
         {
             const int x = grid.getX() + (int)std::llround((double)t * pixelsPerTick);
             if (x > grid.getRight()) break;
             const bool measure = ticksPerMeasure > 0 && t % ticksPerMeasure == 0;
             const bool beat = t % MidiEngine::ticksPerQuarterNote == 0;
-            g.setColour(measure ? juce::Colour(0xff4b525c) : beat ? juce::Colour(0xff343a43) : juce::Colour(0xff252a31));
+            g.setColour(measure ? juce::Colour(0xff49606c) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff25323e));
             g.drawVerticalLine(x, (float)rulerHeight, (float)grid.getBottom());
         }
-        g.setColour(juce::Colour(0xff747b85)); g.setFont(juce::Font(10.0f));
+        g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(10.0f));
         const auto measureCount = ticksPerMeasure > 0 ? (int)((clipLengthTicks + ticksPerMeasure - 1) / ticksPerMeasure) : 1;
         for (int m = 0; m < measureCount; ++m)
         {
@@ -250,7 +250,7 @@ public:
         const int playheadX = grid.getX() + (int)std::llround((double)playbackTick * pixelsPerTick);
         if (playheadX >= grid.getX() && playheadX <= grid.getRight())
         {
-            g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xfff3f6fa) : juce::Colour(0xff8b929b));
+            g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xfff3f6fa) : juce::Colour(0xffb5c3d1));
             g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 2.0f);
         }
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
