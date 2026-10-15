@@ -934,8 +934,13 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                                       juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
     g.setGradientFill(dockGradient);
     g.fillRect(area);
-    g.setColour(juce::Colour(0xff54d6dc));
+    g.setColour(juce::Colour(0xff070b10));
     g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
+    g.setColour(juce::Colour(0xff344452));
+    g.fillRect(area.getX(), area.getY() + 2, area.getWidth(), 1);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
+    g.fillRect(area.getX() + 8, area.getY() + 2,
+               juce::jmax(0, juce::jmin(144, area.getWidth() - 16)), 1);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const int instrumentIndex = selectedTrack - instrumentFirst;
     if (instrumentIndex < 0 || instrumentIndex >= getInstrumentTrackCount()) return;
