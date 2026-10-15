@@ -1411,9 +1411,11 @@ public:
         g.setColour(juce::Colour(0xff344452));
         g.fillRect(12, actionsTop - 7, innerWidth, 1);
         g.fillRect(12, getHeight() - 390, innerWidth, 1);
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
-        g.fillRect(12, actionsTop - 7, juce::jmin(54, innerWidth), 2);
-        g.fillRect(12, getHeight() - 390, juce::jmin(54, innerWidth), 2);
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.58f));
+        g.fillRect(12, actionsTop - 7, juce::jmin(72, innerWidth), 1);
+        // Violet distinguishes waveform editing from the kit action strip.
+        g.setColour(juce::Colour(0xffc4adff).withAlpha(0.32f));
+        g.fillRect(12, getHeight() - 390, juce::jmin(72, innerWidth), 1);
         // Keep section labels away from pads and editable controls.
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.setColour(juce::Colour(0xffb5c3d1));
