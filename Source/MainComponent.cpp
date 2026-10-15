@@ -1131,10 +1131,15 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     ax += 46;
                     // Dedicated instrument-lane clip creation, separate from MIDI export.
                     const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
-                    g.setColour(juce::Colour(0xff255a69));
+                    g.setColour(juce::Colour(0xff23535d));
                     g.fillRoundedRectangle(createClipButton.toFloat(), 5.0f);
-                    g.setColour(juce::Colour(0xff6dd6db));
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.12f));
+                    g.fillRoundedRectangle(createClipButton.toFloat().withHeight(4.0f), 3.0f);
+                    g.setColour(juce::Colour(0xff54d6dc));
                     g.drawRoundedRectangle(createClipButton.toFloat(), 5.0f, 1.2f);
+                    g.fillRoundedRectangle((float)createClipButton.getX() + 8.0f,
+                                           (float)createClipButton.getBottom() - 3.0f,
+                                           (float)juce::jmax(1, createClipButton.getWidth() - 16), 2.0f, 1.0f);
                     g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.setColour(juce::Colours::white);
                     g.drawText("CREATE PATTERN CLIP", createClipButton, juce::Justification::centred);
