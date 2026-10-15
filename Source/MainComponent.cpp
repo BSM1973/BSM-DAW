@@ -1041,8 +1041,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.35f));
                     g.fillRect(panel.getX(), controlsY - 7,
                                juce::jmax(0, juce::jmin(96, panel.getWidth())), 1);
-                    g.setColour(juce::Colour(0xff202c37));
+                    g.setColour(juce::Colour(0xff344452).withAlpha(0.75f));
                     g.fillRect(panel.getX(), controlsY + 30, panel.getWidth(), 1);
+                    g.setColour(juce::Colour(0xffc4adff).withAlpha(0.28f));
+                    g.fillRect(panel.getX(), controlsY + 30,
+                               juce::jmax(0, juce::jmin(72, panel.getWidth())), 1);
+                    g.setColour(juce::Colour(0xff344452).withAlpha(0.75f));
                     g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
