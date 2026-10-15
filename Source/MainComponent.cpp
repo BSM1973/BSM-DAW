@@ -791,7 +791,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(musicInfo.toFloat(), 5.0f);
     g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
     g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(juce::Colour(0xffb5c3d1));
+    // Secondary label recedes while numeric tempo and meter remain prominent.
+    g.setColour(juce::Colour(0xff8d9eae));
     g.setFont(juce::Font(9.0f, juce::Font::bold));
     g.drawText("BPM   /   SIGN", musicInfo.getX() + 4, musicInfo.getY() + 2,
                musicInfo.getWidth() - 8, 12, juce::Justification::centred);
