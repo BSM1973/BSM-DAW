@@ -1406,9 +1406,21 @@ public:
         g.setFont(juce::Font(18.0f, juce::Font::bold));
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 250, 26, juce::Justification::centredLeft);
         const int actionsTop = getHeight() - 550;
+        const int innerWidth = juce::jmax(0, getWidth() - 24);
+        // Section dividers sit in existing non-interactive gaps.
         g.setColour(juce::Colour(0xff344452));
-        g.fillRect(12, actionsTop - 7, juce::jmax(0, getWidth() - 24), 1);
-        g.fillRect(12, getHeight() - 390, juce::jmax(0, getWidth() - 24), 1);
+        g.fillRect(12, actionsTop - 7, innerWidth, 1);
+        g.fillRect(12, getHeight() - 390, innerWidth, 1);
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
+        g.fillRect(12, actionsTop - 7, juce::jmin(54, innerWidth), 2);
+        g.fillRect(12, getHeight() - 390, juce::jmin(54, innerWidth), 2);
+        // Keep section labels away from pads and editable controls.
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.setColour(juce::Colour(0xffb5c3d1));
+        g.drawText("PADS  /  16 VOICES", 12, 39, juce::jmax(0, getWidth() - 250), 12,
+                   juce::Justification::centredLeft);
+        g.drawText("SAMPLE  /  WAVEFORM", 12, getHeight() - 486, innerWidth, 13,
+                   juce::Justification::centredLeft);
     }
 private:
     void refreshPadColours()
