@@ -1273,7 +1273,7 @@ public:
             slider->setColour(juce::Slider::thumbColourId, juce::Colour(0xffe8eff7));
             slider->setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffe8eff7));
             slider->setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff111922));
-            slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff344452));
+            slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff526475));
         }
         for (auto& slider : adsrSliders)
         {
@@ -1282,7 +1282,7 @@ public:
             slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffe8eff7));
             slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffe8eff7));
             slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff111922));
-            slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff344452));
+            slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff526475));
         }
         for (auto* selector : { &factorySelector, &chokeSelector, &playModeSelector })
         {
