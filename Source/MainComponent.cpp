@@ -780,7 +780,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
     g.fillRoundedRectangle((float)positionBox.getX() + 8.0f, (float)positionBox.getBottom() - 3.0f,
                            (float)positionBox.getWidth() - 16.0f, 2.0f, 1.0f);
-    g.setColour(juce::Colour(0xffe8eff7));
+    // Musical position is the primary transport readout.
+    g.setColour(juce::Colour(0xffe9f9fa));
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
