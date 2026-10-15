@@ -432,11 +432,13 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
 
 void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(juce::Colour(0xff101b2a));
+    juce::ColourGradient surface(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+                                 juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    g.setGradientFill(surface);
     g.fillRect(area);
     if (area.getWidth() < 360 || area.getHeight() < 220)
     {
-        g.setColour(juce::Colour(0xffa3b7cc));
+        g.setColour(juce::Colour(0xffb5c3d1));
         g.setFont(juce::Font(13.0f));
         g.drawFittedText("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI",
                          area.reduced(12), juce::Justification::centred, 2);
@@ -462,11 +464,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         const bool hasNotes = std::any_of(bankPattern.steps.begin(),
                                           bankPattern.steps.begin() + bankCycleSteps,
                                           [](const auto& step) { return step.enabled; });
-        g.setColour(i == bank.activePattern ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
         if (hasNotes)
         {
-            g.setColour(juce::Colour(0xff30b79b));
+            g.setColour(juce::Colour(0xff54d6dc));
             g.fillEllipse((float) r.getRight() - 9.0f, (float) r.getY() + 4.0f, 5.0f, 5.0f);
         }
         g.setColour(juce::Colours::white);
@@ -486,7 +488,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
         const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
         const bool inCycle = firstStep + i < pattern->cycleSteps;
-        g.setColour(active ? juce::Colour(0xff30b79b) : juce::Colour(0xff2a394d));
+        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff25323e));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         if (!inCycle)
         {
@@ -495,7 +497,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         }
         if (i % 4 == 0)
         {
-            g.setColour(juce::Colour(0xff79b9d1));
+            g.setColour(juce::Colour(0xff54d6dc));
             g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.2f);
         }
         if (i > 0 && i % 4 == 0)
@@ -511,14 +513,14 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         g.drawFittedText(juce::String(firstStep + i + 1), r.reduced(1, 0),
                          juce::Justification::centred, 1);
     }
-    g.setColour(juce::Colour(0xffa3b7cc));
+    g.setColour(juce::Colour(0xffb5c3d1));
     g.setFont(juce::Font(12.0f));
     const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
     const int playableCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->cycleSteps);
     const bool hasPlayableNotes = std::any_of(pattern->steps.begin(),
         pattern->steps.begin() + playableCycleSteps,
         [](const auto& step) { return step.enabled; });
-    g.setColour(hasPlayableNotes ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
     g.setColour(hasPlayableNotes ? juce::Colours::white : juce::Colour(0xff8293a6));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
@@ -527,7 +529,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
         const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
-        g.setColour(pageIndex == page ? juce::Colour(0xff287d9d) : juce::Colour(0xff263748));
+        g.setColour(pageIndex == page ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         g.setColour(juce::Colours::white);
         const bool compactPageButton = pageRect.getWidth() < 60;
@@ -535,7 +537,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                                           : juce::String(pageIndex * 16 + 1) + "-" + juce::String((pageIndex + 1) * 16),
                          pageRect.reduced(2, 0), juce::Justification::centred, 1);
     }
-    g.setColour(juce::Colour(0xffa3b7cc));
+    g.setColour(juce::Colour(0xffb5c3d1));
     g.setFont(juce::Font(12.0f));
     const int safeCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
                                            pattern->cycleSteps);
