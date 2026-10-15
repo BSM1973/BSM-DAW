@@ -241,8 +241,8 @@ public:
             const int y = rulerHeight + (visibleKeys - 1 - row) * keyHeight;
             const auto key = juce::Rectangle<int>(0, y, pianoKeyWidth, keyHeight);
             const bool black = isBlackKey(note);
-            g.setColour(black ? juce::Colour(0xff171a1f) : juce::Colour(0xffd6d9de)); g.fillRect(key);
-            g.setColour(black ? juce::Colour(0xff303640) : juce::Colour(0xff777d86)); g.drawRect(key, 1);
+            g.setColour(black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea)); g.fillRect(key);
+            g.setColour(black ? juce::Colour(0xff344452) : juce::Colour(0xff83929f)); g.drawRect(key, 1);
             if (!black) { g.setColour(juce::Colour(0xff2b3037)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
         }
 
@@ -264,8 +264,12 @@ public:
             if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
-            g.setColour(active ? juce::Colour(0xff72d8f5) : juce::Colour(0xff4f82ff)); g.fillRoundedRectangle(r.toFloat(), 3.0f);
-            g.setColour(active ? juce::Colours::white : juce::Colour(0xff9fd8f5)); g.drawRoundedRectangle(r.toFloat(), 3.0f, 1.0f);
+            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff315b74));
+            g.fillRoundedRectangle(r.toFloat(), 3.0f);
+            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.10f));
+            g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
+            g.setColour(active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff7bbbd7));
+            g.drawRoundedRectangle(r.toFloat(), 3.0f, active ? 1.5f : 1.0f);
         }
     }
 
