@@ -493,13 +493,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
         const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
         const bool inCycle = firstStep + i < pattern->cycleSteps;
-        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff25323e));
+        // Three visual levels: playable notes, empty steps and steps outside the cycle.
+        g.setColour(!inCycle ? juce::Colour(0xff1b2530)
+                             : active ? juce::Colour(0xff54d6dc)
+                                      : juce::Colour(0xff2b3946));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
-        if (!inCycle)
-        {
-            g.setColour(juce::Colour(0x880a101a));
-            g.fillRoundedRectangle(r.toFloat(), 4.0f);
-        }
         if (i % 4 == 0)
         {
             // Group downbeats remain legible, but out-of-cycle cells recede.
