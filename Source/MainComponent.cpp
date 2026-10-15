@@ -804,7 +804,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
-    g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
+    g.drawRoundedRectangle(settingsButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
     g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 }
