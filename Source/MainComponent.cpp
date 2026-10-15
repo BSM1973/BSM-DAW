@@ -876,7 +876,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
                 clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
                 g.setColour(selected ? juce::Colour(0xff315b74) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                g.setColour(juce::Colour(0xff7bbbd7)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
+                g.setColour(selected ? juce::Colour(0xff8ed9e4)
+                                     : juce::Colour(0xff5b8fa7));
+                g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, 1.0f);
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
                     const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
