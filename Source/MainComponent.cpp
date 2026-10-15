@@ -960,9 +960,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     {
                         g.setColour(juce::Colour(0xff23545b));
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                        g.setColour(juce::Colour(0xff54d6dc));
+                        g.setColour(selected ? juce::Colour(0xff74e1e5)
+                                             : juce::Colour(0xff408d98));
                         g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
-                        g.setColour(juce::Colours::white);
+                        g.setColour(selected ? juce::Colour(0xfff0fafb)
+                                             : juce::Colour(0xffc1d4e0));
                         g.setFont(juce::Font(11.0f, juce::Font::bold));
                         g.drawText(patternClip.name, clip.reduced(7, 2), juce::Justification::centredLeft, true);
                     }
