@@ -1290,16 +1290,8 @@ public:
             selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff344452));
             selector->setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
         }
-        // Obsidian action controls: retain the original click targets and layout.
-        for (auto* action : { &loadButton, &stopButton, &exportButton, &importButton,
-                              &loopButton, &colourButton })
-        {
-            action->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
-            action->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
-            action->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
-            action->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        }
-        stopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff513039));
+        // Action colours are configured beside each button above, so their
+        // individual Obsidian states are not overwritten by a shared palette.
         refreshLabels();
         updateControls();
     }
