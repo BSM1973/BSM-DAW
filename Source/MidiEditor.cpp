@@ -223,8 +223,13 @@ public:
             if (x > grid.getRight()) break;
             const bool measure = ticksPerMeasure > 0 && t % ticksPerMeasure == 0;
             const bool beat = t % MidiEngine::ticksPerQuarterNote == 0;
-            g.setColour(measure ? juce::Colour(0xff49606c) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff25323e));
+            g.setColour(measure ? juce::Colour(0xff56717e) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff1c2832));
             g.drawVerticalLine(x, (float)rulerHeight, (float)grid.getBottom());
+            if (measure)
+            {
+                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.55f));
+                g.fillRect(x, rulerHeight, 1, 6);
+            }
         }
         g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(10.0f));
         const auto measureCount = ticksPerMeasure > 0 ? (int)((clipLengthTicks + ticksPerMeasure - 1) / ticksPerMeasure) : 1;
