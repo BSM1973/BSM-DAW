@@ -1401,8 +1401,11 @@ public:
                 g.drawRoundedRectangle(bounds.expanded(5.0f), 10.0f, 1.0f);
             }
         }
-        g.setColour(juce::Colour(0xff54d6dc));
-        g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 2);
+        // Restrained Obsidian header: graphite baseline and short turquoise accent.
+        g.setColour(juce::Colour(0xff344452));
+        g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 1);
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.72f));
+        g.fillRect(12, 36, juce::jmax(0, juce::jmin(104, getWidth() - 24)), 1);
         g.setColour(juce::Colour(0xffe8eff7));
         g.setFont(juce::Font(18.0f, juce::Font::bold));
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 250, 26, juce::Justification::centredLeft);
