@@ -1092,6 +1092,9 @@ public:
         addAndMakeVisible(colourButton);
         stopButton.setButtonText("STOP PAD");
         stopButton.onClick = [this] { sampler.stopPad(selectedPad); };
+        stopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3b3038));
+        stopButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff59404b));
+        stopButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xfff0dce3));
         addAndMakeVisible(stopButton);
         loopButton.setButtonText("LOOP START / END");
         loopButton.setClickingTogglesState(true);
