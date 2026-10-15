@@ -755,7 +755,10 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
             g.fillRoundedRectangle((float)r.getX() + 9.0f, (float)r.getBottom() - 3.0f,
                                    (float)r.getWidth() - 18.0f, 2.0f, 1.0f);
         }
-        g.setColour(juce::Colour(i == 2 ? LibertyProTransport::accent : LibertyProTransport::text));
+        // Keep the transport label legible against the active teal PLAY/STOP surface.
+        g.setColour(i == 2 && isPlaying ? juce::Colour(0xfff0fbfc)
+                                       : juce::Colour(i == 2 ? LibertyProTransport::accent
+                                                             : LibertyProTransport::text));
         g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
