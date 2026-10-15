@@ -887,7 +887,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     for(int p=points-1;p>=0;--p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);waveform.lineTo(x,(float)centreY-waveformMin[(size_t)i][(size_t)p]*amplitude);}
                     waveform.closeSubPath(); g.setColour(juce::Colour(0xffb7e2f2)); g.fillPath(waveform);
                 }
-                g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
+                // File names follow the same selected/inactive hierarchy as track headers.
+                g.setColour(selected ? juce::Colour(0xfff0fafb)
+                                     : juce::Colour(0xffc1d4e0));
+                g.setFont(juce::Font(11.0f));
+                g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             }
         }
         else if (logicalRow < audioCount + midiCount)
