@@ -709,8 +709,15 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.055f));
         g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(7.0f, (float)r.getHeight())), 4.0f);
-        g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::outline)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
-        g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::text));
+        g.setColour(juce::Colour(i == 2 ? LibertyProTransport::accent : LibertyProTransport::outline));
+        g.drawRoundedRectangle(r.toFloat(), 5.0f, i == 2 ? 1.5f : 1.0f);
+        if (i == 2)
+        {
+            g.setColour(juce::Colour(LibertyProTransport::accent).withAlpha(isPlaying ? 0.95f : 0.65f));
+            g.fillRoundedRectangle((float)r.getX() + 9.0f, (float)r.getBottom() - 3.0f,
+                                   (float)r.getWidth() - 18.0f, 2.0f, 1.0f);
+        }
+        g.setColour(juce::Colour(i == 2 ? LibertyProTransport::accent : LibertyProTransport::text));
         g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
