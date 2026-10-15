@@ -829,9 +829,6 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff18212b)); g.fillRect(ruler);
     g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
-    // Header-to-timeline seam remains visible over alternating track rows.
-    g.setColour(juce::Colour(0xff40515f));
-    g.drawVerticalLine(headerW - 1, (float)rows.getY(), (float)rows.getBottom());
     // Thin boundary keeps the time ruler distinct from the track canvas.
     g.setColour(juce::Colour(0xff344452));
     g.drawHorizontalLine(ruler.getBottom() - 1, (float)area.getX(), (float)area.getRight());
@@ -990,6 +987,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                      : juce::Colour(0xff2b3946));
         g.drawHorizontalLine(row.getBottom() - 1, 0.0f, (float)getWidth());
     }
+
+    // Paint the seam after row backgrounds so it remains visible across every track.
+    g.setColour(juce::Colour(0xff40515f));
+    g.drawVerticalLine(headerW - 1, (float)rows.getY(), (float)rows.getBottom());
 
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
     if (playheadX >= headerW && playheadX <= (float)getWidth())
