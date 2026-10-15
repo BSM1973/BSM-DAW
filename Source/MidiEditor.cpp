@@ -58,8 +58,12 @@ public:
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff18212b));
+        g.setColour(juce::Colour(0xff070b10));
+        g.fillRect(0, 0, getWidth(), 2);
         g.setColour(juce::Colour(0xff344452));
-        g.drawHorizontalLine(0, 0.0f, (float)getWidth());
+        g.drawHorizontalLine(2, 0.0f, (float)getWidth());
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.65f));
+        g.fillRect(0, 2, juce::jmin(pianoKeyWidth, getWidth()), 1);
 
         g.setColour(juce::Colour(0xffb5c3d1));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
@@ -86,9 +90,11 @@ public:
                                                 (int)std::llround((double)note.velocity / 127.0 * usableHeight));
             const auto bar = juce::Rectangle<int>(x, getHeight() - barHeight - 8, barWidth, barHeight);
 
-            g.setColour(juce::Colour(0xff54d6dc));
+            g.setColour(juce::Colour(0xff315b74));
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
-            g.setColour(juce::Colour(0xffb6f2f2));
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(bar.toFloat().reduced(1.0f, 0.0f), 2.0f);
+            g.setColour(juce::Colour(0xffb6f2f2).withAlpha(0.85f));
             g.drawRoundedRectangle(bar.toFloat(), 2.0f, 1.0f);
         }
     }
