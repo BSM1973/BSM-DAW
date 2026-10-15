@@ -826,7 +826,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 
     auto ruler = area.removeFromTop(rulerH);
     auto rows = area;
-    g.setColour(juce::Colour(0xff18212b)); g.fillRect(ruler);
+    // Deeper Obsidian ruler surface improves label and playhead contrast.
+    g.setColour(juce::Colour(0xff141e28)); g.fillRect(ruler);
     g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
     // Thin boundary keeps the time ruler distinct from the track canvas.
