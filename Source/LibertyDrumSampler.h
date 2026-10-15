@@ -1264,6 +1264,12 @@ public:
         panLabel.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(gainLabel);
         addAndMakeVisible(panLabel);
+        // Secondary parameter captions are softer than editable values.
+        for (auto* label : { &gainLabel, &panLabel, &pitchLabel, &startLabel,
+                             &endLabel, &chokeLabel, &chokeFadeLabel, &playModeLabel })
+            label->setColour(juce::Label::textColourId, juce::Colour(0xffb9c8d6));
+        for (auto& label : adsrLabels)
+            label.setColour(juce::Label::textColourId, juce::Colour(0xffb9c8d6));
         // Shared Obsidian control palette, without changing slider values or callbacks.
         for (auto* slider : { &gainSlider, &panSlider, &pitchSlider, &startSlider,
                               &endSlider, &chokeFadeSlider })
