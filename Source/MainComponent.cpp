@@ -870,7 +870,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         auto row = juce::Rectangle<int>(rows.getX(), rows.getY() + visibleIndex * rowH, rows.getWidth(), rowH);
         if (row.getY() >= rows.getBottom()) break;
         row = row.getIntersection(rows);
-        g.setColour(logicalRow % 2 ? juce::Colour(0xff111922) : juce::Colour(0xff141e28)); g.fillRect(row);
+        // Restrained alternating Obsidian lanes keep clips visually dominant.
+        g.setColour(logicalRow % 2 ? juce::Colour(0xff101821)
+                                   : juce::Colour(0xff151f29));
+        g.fillRect(row);
         auto header = row.withWidth(headerW);
         bool selected = false;
         juce::String title;
