@@ -831,6 +831,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     // Distinct graphite corner anchors the track headers against the ruler.
     g.setColour(juce::Colour(0xff1d2a35));
     g.fillRect(ruler.withWidth(headerW));
+    // Continue the header/timeline seam through the ruler corner.
+    g.setColour(juce::Colour(0xff40515f));
+    g.drawVerticalLine(headerW - 1, (float)ruler.getY(), (float)ruler.getBottom());
     g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
     // Thin boundary keeps the time ruler distinct from the track canvas.
