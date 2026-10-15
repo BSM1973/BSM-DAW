@@ -1240,6 +1240,33 @@ public:
         panLabel.setColour(juce::Label::textColourId, juce::Colours::white);
         addAndMakeVisible(gainLabel);
         addAndMakeVisible(panLabel);
+        // Shared Obsidian control palette, without changing slider values or callbacks.
+        for (auto* slider : { &gainSlider, &panSlider, &pitchSlider, &startSlider,
+                              &endSlider, &chokeFadeSlider })
+        {
+            slider->setColour(juce::Slider::backgroundColourId, juce::Colour(0xff25323e));
+            slider->setColour(juce::Slider::trackColourId, juce::Colour(0xff54d6dc));
+            slider->setColour(juce::Slider::thumbColourId, juce::Colour(0xffe8eff7));
+            slider->setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffe8eff7));
+            slider->setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff111922));
+            slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff344452));
+        }
+        for (auto& slider : adsrSliders)
+        {
+            slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff25323e));
+            slider.setColour(juce::Slider::trackColourId, juce::Colour(0xff54d6dc));
+            slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffe8eff7));
+            slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffe8eff7));
+            slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff111922));
+            slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff344452));
+        }
+        for (auto* selector : { &factorySelector, &chokeSelector, &playModeSelector })
+        {
+            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff25323e));
+            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffe8eff7));
+            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff344452));
+            selector->setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
+        }
         // Obsidian action controls: retain the original click targets and layout.
         for (auto* action : { &loadButton, &stopButton, &exportButton, &importButton,
                               &loopButton, &colourButton })
