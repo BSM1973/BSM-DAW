@@ -882,7 +882,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const int i = logicalRow;
             selected = selectedTrack == i;
             title = "Audio " + juce::String(i + 1);
-            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff202c37)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
             auto clip = row.withTrimmedLeft(headerW + 20).reduced(4);
             if (audioEngine.hasAudioFile(i))
             {
@@ -915,14 +915,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const int i = logicalRow - audioCount;
             title = "MIDI " + juce::String(i + 1);
             selected = selectedTrack == audioCount + i;
-            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff202c37)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
         }
         else
         {
             const int i = logicalRow - audioCount - midiCount;
             title = "Instrument " + juce::String(i + 1);
             selected = selectedTrack == audioCount + midiCount + i;
-            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff202c37)); g.fillRect(header);
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
 
         }
         g.setColour(juce::Colour(0xffe8eff7)); g.setFont(juce::Font(14.0f, juce::Font::bold));
