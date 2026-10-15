@@ -93,6 +93,14 @@ void MainComponent::paint(juce::Graphics& g)
     auto mixer = bounds.removeFromBottom(mixerHeight);
     drawTransport(g, transport);
     drawTrackArea(g, bounds);
+    // Visual dock boundary only; leave editor and tab hit areas unchanged.
+    g.setColour(juce::Colour(0xff070b10));
+    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
+    g.setColour(juce::Colour(0xff344452));
+    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 1);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
+    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
+               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
