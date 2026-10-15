@@ -1093,6 +1093,10 @@ public:
                     safe->refreshPadColours();
                 });
         };
+        colourButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+        colourButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
+        colourButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        colourButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(colourButton);
         stopButton.setButtonText("STOP PAD");
         stopButton.onClick = [this] { sampler.stopPad(selectedPad); };
