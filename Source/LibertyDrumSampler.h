@@ -1392,11 +1392,12 @@ public:
             const auto padColour = juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load());
             g.setColour(juce::Colour(0xff070b10));
             g.fillRoundedRectangle(bounds.expanded(3.0f), 8.0f);
-            g.setColour(active ? juce::Colour(0xff54d6dc) : padColour.withAlpha(0.55f));
-            g.drawRoundedRectangle(bounds.expanded(active ? 3.0f : 2.0f), 8.0f, active ? 2.5f : 1.0f);
+            // Selected pads receive a crisp turquoise edge; custom pad colours remain visible.
+            g.setColour(active ? juce::Colour(0xff54d6dc).withAlpha(0.92f) : padColour.withAlpha(0.42f));
+            g.drawRoundedRectangle(bounds.expanded(active ? 3.0f : 2.0f), 8.0f, active ? 2.0f : 1.0f);
             if (active)
             {
-                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.28f));
+                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.18f));
                 g.drawRoundedRectangle(bounds.expanded(5.0f), 10.0f, 1.0f);
             }
         }
