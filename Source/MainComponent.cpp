@@ -958,7 +958,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                     .getIntersection(row.withTrimmedLeft(headerW));
                     if (!clip.isEmpty())
                     {
-                        g.setColour(juce::Colour(0xff23545b));
+                        g.setColour(selected ? juce::Colour(0xff23545b)
+                                             : juce::Colour(0xff1c3b44));
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
                         g.setColour(selected ? juce::Colour(0xff74e1e5)
                                              : juce::Colour(0xff408d98));
