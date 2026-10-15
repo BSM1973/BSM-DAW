@@ -909,7 +909,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.setColour(juce::Colour(0xff54d6dc));
             g.fillRect(header.getX(), header.getY(), 3, header.getHeight());
         }
-        g.setColour(juce::Colour(0xffe8eff7));
+        // Selected track labels carry stronger contrast than inactive headers.
+        g.setColour(selected ? juce::Colour(0xfff0fafb)
+                             : juce::Colour(0xffb5c3d1));
         g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
         // Draw the timeline grid inside EVERY visible row, including the
         // final clipped row immediately above the mixer.  Previously the only
