@@ -1048,6 +1048,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                                juce::jmax(0, juce::jmin(72, panel.getWidth())), 1);
                     g.setColour(juce::Colour(0xff344452).withAlpha(0.75f));
                     g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
+                    // Subtle graphite end-cap completes the editor group without competing with its violet header.
+                    g.setColour(juce::Colour(0xff728394).withAlpha(0.22f));
+                    g.fillRect(panel.getX(), controlsY + 66,
+                               juce::jmax(0, juce::jmin(48, panel.getWidth())), 1);
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16));
