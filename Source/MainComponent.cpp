@@ -958,7 +958,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 }
             }
         }
-        g.setColour(juce::Colour(0xff344452)); g.drawHorizontalLine(row.getBottom()-1, 0.0f, (float)getWidth());
+        // Stronger dividers only where the next track changes category.
+        const int nextRow = logicalRow + 1;
+        const bool categoryBoundary = (nextRow == audioCount && midiCount + instrumentCount > 0)
+                                   || (nextRow == audioCount + midiCount && instrumentCount > 0);
+        g.setColour(categoryBoundary ? juce::Colour(0xff526475)
+                                     : juce::Colour(0xff2b3946));
+        g.drawHorizontalLine(row.getBottom() - 1, 0.0f, (float)getWidth());
     }
 
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
