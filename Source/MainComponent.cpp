@@ -727,14 +727,17 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
     g.setColour(juce::Colour(LibertyProTransport::outline));
     g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
-    g.setColour(juce::Colour(LibertyProTransport::text));
-    g.setFont(juce::Font(14.0f));
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
+    g.fillRoundedRectangle((float)positionBox.getX() + 8.0f, (float)positionBox.getBottom() - 3.0f,
+                           (float)positionBox.getWidth() - 16.0f, 2.0f, 1.0f);
+    g.setColour(juce::Colour(0xffe8eff7));
+    g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
     g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
-    g.setColour(juce::Colour(LibertyProTransport::muted)); g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(11.0f, juce::Font::bold));
     g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 }
 
