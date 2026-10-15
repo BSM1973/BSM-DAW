@@ -536,6 +536,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
         g.setColour(pageIndex == page ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
+        if (pageIndex == page)
+        {
+            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
+            g.drawRoundedRectangle(pageRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        }
         g.setColour(juce::Colours::white);
         const bool compactPageButton = pageRect.getWidth() < 60;
         g.drawFittedText(compactPageButton ? "P" + juce::String(pageIndex + 1)
