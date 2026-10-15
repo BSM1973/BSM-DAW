@@ -997,7 +997,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         const bool categoryBoundary = (nextRow == audioCount && midiCount + instrumentCount > 0)
                                    || (nextRow == audioCount + midiCount && instrumentCount > 0);
         g.setColour(categoryBoundary ? juce::Colour(0xff526475)
-                                     : juce::Colour(0xff2b3946));
+                                     : selected ? juce::Colour(0xff45616a)
+                                                : juce::Colour(0xff2b3946));
         g.drawHorizontalLine(row.getBottom() - 1, 0.0f, (float)getWidth());
     }
 
