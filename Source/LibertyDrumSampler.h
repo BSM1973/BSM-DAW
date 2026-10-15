@@ -1063,6 +1063,10 @@ public:
                         safe->refreshLabels();
                 });
         };
+        loadButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+        loadButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
+        loadButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        loadButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(loadButton);
         colourButton.setButtonText("COULEUR PAD");
         colourButton.onClick = [this]
@@ -1122,6 +1126,10 @@ public:
                             "Export du kit", "Impossible de copier les samples ou de sauvegarder le kit.");
                 });
         };
+        exportButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+        exportButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
+        exportButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        exportButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(exportButton);
         importButton.setButtonText("IMPORTER KIT");
         importButton.onClick = [this]
@@ -1144,6 +1152,10 @@ public:
                             "Import du kit", "Fichier de kit invalide.");
                 });
         };
+        importButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
+        importButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
+        importButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        importButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(importButton);
         factorySelector.addItem("FACTORY KITS", 1);
         const char* factoryNames[] = { "HIP-HOP", "ACOUSTIC", "ROCK", "METAL", "ELECTRO",
