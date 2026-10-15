@@ -994,11 +994,11 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
-                        g.setColour(active ? juce::Colour(0xff328f9a) : (availableStep ? juce::Colour(0xff25323e) : juce::Colour(0xff111922)));
+                        g.setColour(active ? juce::Colour(0xff235d68) : (availableStep ? juce::Colour(0xff25323e) : juce::Colour(0xff111922)));
                         g.fillRoundedRectangle(pad.toFloat(), 6.0f);
                         if (active)
                         {
-                            g.setColour(juce::Colour(0x334db5ff));
+                            g.setColour(juce::Colour(0x4454d6dc));
                             g.fillRoundedRectangle((float)pad.getX() + 2.0f, (float)pad.getY() + 2.0f,
                                                    (float)juce::jmax(1, pad.getWidth() - 4), 5.0f, 2.0f);
                         }
