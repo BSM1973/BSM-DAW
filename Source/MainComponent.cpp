@@ -1146,15 +1146,15 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             const auto patRect = wideRow(bankIndex, 8, panel.getBottom() - 30, 28);
                             ax = patRect.getX();
                             const bool selectedPattern = bankIndex == activePattern;
-                            g.setColour(selectedPattern ? juce::Colour(0xff294c79) : juce::Colour(0xff263445));
+                            g.setColour(selectedPattern ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
                             g.fillRoundedRectangle(patRect.toFloat(), 6.0f);
                             if (selectedPattern)
                             {
-                                g.setColour(juce::Colour(0x444e9cff));
+                                g.setColour(juce::Colour(0x4454d6dc));
                                 g.fillRoundedRectangle((float)patRect.getX() + 3.0f, (float)patRect.getY() + 2.0f,
                                                        (float)juce::jmax(1, patRect.getWidth() - 6), 5.0f, 2.0f);
                             }
-                            g.setColour(selectedPattern ? juce::Colour(0xff79b4ff) : juce::Colour(0xff43576e));
+                            g.setColour(selectedPattern ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                             g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
                             g.setColour(selectedPattern ? juce::Colour(0xfff2f8ff) : juce::Colour(0xffb7c7d9));
                             g.setFont(juce::Font(11.0f, juce::Font::bold));
@@ -1162,7 +1162,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             if (bankIndex == activePattern)
                             {
                                 auto active = patRect;
-                                g.setColour(juce::Colour(0xff9acbff));
+                                g.setColour(juce::Colour(0xffb6f2f2));
                                 g.fillRoundedRectangle((float)active.getX() + 9.0f, (float)active.getBottom() - 4.0f,
                                                        (float)juce::jmax(1, active.getWidth() - 18), 2.0f, 1.0f);
                             }
