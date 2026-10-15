@@ -1306,8 +1306,8 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         const int sourceIndex = isAudio ? channel : (channel - audioTracks);
 
         auto c = juce::Rectangle<int>(220 + channel * 125, area.getY() + 12, 116, area.getHeight() - 22);
-        g.setColour(master ? juce::Colour(0xff1b2027)
-                           : (isInstrument ? juce::Colour(0xff182128) : juce::Colour(0xff171b20)));
+        g.setColour(master ? juce::Colour(0xff26313d)
+                           : (isInstrument ? juce::Colour(0xff1d303b) : juce::Colour(0xff1c2732)));
         g.fillRoundedRectangle(c.toFloat(), 5.0f);
         g.setColour(isInstrument ? juce::Colour(0xff31546a) : juce::Colour(0xff343a44));
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
