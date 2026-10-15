@@ -1041,7 +1041,7 @@ public:
             button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
             button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-            button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); };
+            button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); repaint(); };
             addAndMakeVisible(button);
         }
         loadButton.setButtonText("CHARGER SAMPLE");
@@ -1350,6 +1350,23 @@ public:
                                          juce::Colour(0xff0b0f14), 0.0f, (float)getHeight(), false);
         g.setGradientFill(background);
         g.fillAll();
+        // Draw depth behind the existing TextButtons without changing hitboxes.
+        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+        {
+            const auto bounds = pads[(size_t)i].getBounds().toFloat();
+            if (bounds.isEmpty()) continue;
+            const bool active = i == selectedPad;
+            const auto padColour = juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load());
+            g.setColour(juce::Colour(0xff070b10));
+            g.fillRoundedRectangle(bounds.expanded(3.0f), 8.0f);
+            g.setColour(active ? juce::Colour(0xff54d6dc) : padColour.withAlpha(0.55f));
+            g.drawRoundedRectangle(bounds.expanded(active ? 3.0f : 2.0f), 8.0f, active ? 2.5f : 1.0f);
+            if (active)
+            {
+                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.28f));
+                g.drawRoundedRectangle(bounds.expanded(5.0f), 10.0f, 1.0f);
+            }
+        }
         g.setColour(juce::Colour(0xff54d6dc));
         g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 2);
         g.setColour(juce::Colour(0xffe8eff7));
