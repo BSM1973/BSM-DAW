@@ -661,8 +661,13 @@ constexpr juce::uint32 muted = 0xffb5c3d1;
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(juce::Colour(LibertyProTransport::surface)); g.fillRect(area);
+    juce::ColourGradient transportSurface(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+                                          juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    g.setGradientFill(transportSurface);
+    g.fillRect(area);
     g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.45f));
+    g.fillRect(area.getX(), area.getBottom() - 2, juce::jmin(182, area.getWidth()), 1);
 
     const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
     juce::ignoreUnused(logoArea);
@@ -702,6 +707,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     {
         auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
         g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.055f));
+        g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(7.0f, (float)r.getHeight())), 4.0f);
         g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::outline)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
         g.setColour(juce::Colour(i == 2 && isPlaying ? LibertyProTransport::accent : LibertyProTransport::text));
         g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
