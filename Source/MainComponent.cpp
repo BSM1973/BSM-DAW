@@ -829,6 +829,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff18212b)); g.fillRect(ruler);
     g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
     g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
+    // Header-to-timeline seam remains visible over alternating track rows.
+    g.setColour(juce::Colour(0xff40515f));
+    g.drawVerticalLine(headerW - 1, (float)rows.getY(), (float)rows.getBottom());
     // Thin boundary keeps the time ruler distinct from the track canvas.
     g.setColour(juce::Colour(0xff344452));
     g.drawHorizontalLine(ruler.getBottom() - 1, (float)area.getX(), (float)area.getRight());
