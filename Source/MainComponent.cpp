@@ -954,8 +954,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 const bool measureLine = (subdivisionIndex % subdivisions) == 0;
                 const bool beatLine = (subdivisionIndex % 4) == 0;
                 // Visual hierarchy only: bar > quarter-note beat > sixteenth subdivision.
-                g.setColour(measureLine ? juce::Colour(0xff445968)
-                                        : beatLine ? juce::Colour(0xff2c3b49)
+                g.setColour(measureLine ? (selected ? juce::Colour(0xff526b78)
+                                                    : juce::Colour(0xff445968))
+                                        : beatLine ? (selected ? juce::Colour(0xff344b59)
+                                                               : juce::Colour(0xff2c3b49))
                                                    : juce::Colour(0xff202c37));
                 g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
             }
