@@ -1291,7 +1291,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
 }
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
+    // Obsidian mixer surface matches the arranger without altering strip geometry.
+    g.setColour(juce::Colour(0xff101821)); g.fillRect(area);
 
     const int audioTracks = getAudioTrackCount();
     const int instrumentTracks = getInstrumentTrackCount();
