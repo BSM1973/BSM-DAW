@@ -837,11 +837,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         if (x >= getWidth()) break;
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
     }
-    g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(11.0f));
+    // Measure numbers are clearer at bar-group boundaries, subdued elsewhere.
+    g.setFont(juce::Font(11.0f));
     for (int i = 0; i < 100; ++i)
     {
         const int x = headerW + (int)std::round(i * pixelsPerMeasure);
         if (x >= getWidth()) break;
+        g.setColour(i % 4 == 0 ? juce::Colour(0xffdce8f0)
+                               : juce::Colour(0xff8fa3b5));
         g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
     }
 
