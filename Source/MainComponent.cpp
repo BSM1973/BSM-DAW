@@ -734,6 +734,23 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
+    // Read-only musical context: no new hit targets or transport behaviour.
+    const auto musicInfo = juce::Rectangle<int>(836, 34, 82, 36);
+    g.setColour(juce::Colour(0xff0b0f14));
+    g.fillRoundedRectangle(musicInfo.toFloat(), 5.0f);
+    g.setColour(juce::Colour(LibertyProTransport::outline));
+    g.drawRoundedRectangle(musicInfo.toFloat(), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xffb5c3d1));
+    g.setFont(juce::Font(9.0f, juce::Font::bold));
+    g.drawText("BPM   /   SIGN", musicInfo.getX() + 4, musicInfo.getY() + 2,
+               musicInfo.getWidth() - 8, 12, juce::Justification::centred);
+    g.setColour(juce::Colour(0xffe8eff7));
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText(juce::String(tempoBpm, 0) + "  " + juce::String(timeSignatureNumerator)
+               + "/" + juce::String(timeSignatureDenominator),
+               musicInfo.getX() + 3, musicInfo.getY() + 16, musicInfo.getWidth() - 6, 17,
+               juce::Justification::centred);
+
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
     g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawRoundedRectangle(settingsButton.toFloat(), 5.0f, 1.0f);
