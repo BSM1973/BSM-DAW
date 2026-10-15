@@ -964,11 +964,11 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     };
                     const int titleWidth = 132;
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
-                    g.setColour(pattern->enabled ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e));
+                    g.setColour(pattern->enabled ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
                     if (pattern->enabled)
                     {
-                        g.setColour(juce::Colour(0x4465f5c9));
+                        g.setColour(juce::Colour(0x4454d6dc));
                         g.fillRoundedRectangle((float)onOff.getX() + 4.0f, (float)onOff.getY() + 3.0f,
                                                (float)juce::jmax(1, onOff.getWidth() - 8), 4.0f, 2.0f);
                     }
@@ -978,10 +978,16 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, onOff.getHeight());
                     const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
-                    g.setColour(previewActive ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e));
+                    g.setColour(previewActive ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
                     g.setColour(previewActive ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                     g.drawRoundedRectangle(seqPlay.toFloat(), 7.0f, 1.2f);
+                    if (previewActive)
+                    {
+                        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.85f));
+                        g.fillRoundedRectangle((float)seqPlay.getX() + 7.0f, (float)seqPlay.getBottom() - 4.0f,
+                                               (float)juce::jmax(1, seqPlay.getWidth() - 14), 2.0f, 1.0f);
+                    }
                     g.setColour(juce::Colours::white);
                     g.setFont(juce::Font(9.0f, juce::Font::bold));
                     g.drawText(previewActive ? "STOP" : "PLAY", seqPlay, juce::Justification::centred);
@@ -1029,7 +1035,7 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     auto drawControl = [&](juce::String text, int x, int w, bool active)
                     {
                         auto r = stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16));
-                        g.setColour(active ? juce::Colour(0xff206b70) : juce::Colour(0xff25323e)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
                         if (active) { g.setColour(juce::Colour(0xff54d6dc)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
                         g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
