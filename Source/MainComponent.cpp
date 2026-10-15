@@ -124,6 +124,8 @@ void MainComponent::paint(juce::Graphics& g)
         {
             g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
             g.fillRoundedRectangle(rect.toFloat(), 5.0f);
+            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.11f : 0.045f));
+            g.fillRoundedRectangle(rect.toFloat().withHeight(6.0f), 4.0f);
             g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff344452));
             g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 5.0f, active ? 1.5f : 1.0f);
             if (active)
@@ -144,7 +146,8 @@ void MainComponent::paint(juce::Graphics& g)
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
             g.setColour(juce::Colour(0xff344452));
             g.drawRoundedRectangle(detach.toFloat().reduced(0.5f), 5.0f, 1.0f);
-            g.setColour(juce::Colours::white);
+            g.setColour(juce::Colour(0xffb5c3d1));
+            g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText(juce::String::fromUTF8("D\xC3\x89TACHER"), detach, juce::Justification::centred);
         }
     }
