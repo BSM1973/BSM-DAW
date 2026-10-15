@@ -966,6 +966,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
                     g.setColour(pattern->enabled ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
                     g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(pattern->enabled ? 0.12f : 0.045f));
+                    g.fillRoundedRectangle(onOff.toFloat().withHeight(4.0f), 3.0f);
                     if (pattern->enabled)
                     {
                         g.setColour(juce::Colour(0x4454d6dc));
