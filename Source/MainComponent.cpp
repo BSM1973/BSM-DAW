@@ -747,8 +747,10 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.055f));
         g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(7.0f, (float)r.getHeight())), 4.0f);
-        g.setColour(juce::Colour(i == 2 ? LibertyProTransport::accent : LibertyProTransport::outline));
-        g.drawRoundedRectangle(r.toFloat(), 5.0f, i == 2 ? 1.5f : 1.0f);
+        // Primary transport action carries the accent; navigation stays graphite.
+        g.setColour(i == 2 ? juce::Colour(LibertyProTransport::accent)
+                           : juce::Colour(0xff526475).withAlpha(0.8f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, i == 2 ? 1.5f : 1.0f);
         if (i == 2)
         {
             g.setColour(juce::Colour(LibertyProTransport::accent).withAlpha(isPlaying ? 0.95f : 0.65f));
