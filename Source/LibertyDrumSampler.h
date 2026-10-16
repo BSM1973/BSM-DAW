@@ -1456,7 +1456,8 @@ public:
         g.setColour(juce::Colour(0xff344452));
         g.fillRect(12, actionsTop - 7, innerWidth, 1);
         g.fillRect(12, getHeight() - 390, innerWidth, 1);
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.58f));
+        // Match the kit-action divider to the restrained Obsidian turquoise accents.
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.68f));
         g.fillRect(12, actionsTop - 7, juce::jmin(72, innerWidth), 1);
         // Violet distinguishes waveform editing from the kit action strip.
         // The waveform section accent remains subtle but legible against graphite.
