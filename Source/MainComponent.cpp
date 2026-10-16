@@ -1270,7 +1270,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                                            (float)createClipButton.getBottom() - 3.0f,
                                            (float)juce::jmax(1, createClipButton.getWidth() - 16), 2.0f, 1.0f);
                     g.setFont(juce::Font(10.0f, juce::Font::bold));
-                    g.setColour(juce::Colours::white);
+                    // Obsidian clip creation follows the MIDI clip action hierarchy.
+                    g.setColour(juce::Colour(0xffeffcfd));
                     g.drawText("CREATE PATTERN CLIP", createClipButton, juce::Justification::centred);
                     if ((size_t)instrumentIndex < instrumentStepSequencers.size())
                     {
