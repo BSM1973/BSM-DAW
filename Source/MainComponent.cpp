@@ -1067,7 +1067,9 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                     }
                     g.setColour(pattern->enabled ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
                     g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
-                    g.setColour(juce::Colours::white); g.setFont(juce::Font(10.0f, juce::Font::bold));
+                    // Obsidian enabled-state text remains clear without overpowering the dock.
+                    g.setColour(pattern->enabled ? juce::Colour(0xffeffcfd) : juce::Colour(0xffaabfcb));
+                    g.setFont(juce::Font(10.0f, juce::Font::bold));
                     g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
                     const auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, onOff.getHeight());
                     const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
