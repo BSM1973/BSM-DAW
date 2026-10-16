@@ -1098,7 +1098,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
                         const bool availableStep = absoluteStep < pattern->stepCount;
                         const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
-                        g.setColour(active ? juce::Colour(0xff235d68) : (availableStep ? juce::Colour(0xff25323e) : juce::Colour(0xff111922)));
+                        // Obsidian step hierarchy: active, available and out-of-pattern cells.
+                        g.setColour(active ? juce::Colour(0xff286674)
+                                           : (availableStep ? juce::Colour(0xff304452)
+                                                            : juce::Colour(0xff18222c)));
                         g.fillRoundedRectangle(pad.toFloat(), 6.0f);
                         if (availableStep)
                         {
