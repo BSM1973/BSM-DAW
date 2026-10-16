@@ -457,6 +457,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colour(0xffb8e8ec));
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
+    // Quiet Obsidian header seam separates the title from pattern banks.
+    g.setColour(juce::Colour(0xff48606d).withAlpha(0.50f));
+    g.fillRect(left, area.getY() + 41, width, 1);
     auto& bank = midiStepSequencers[(size_t)midiIndex];
     for (int i = 0; i < 8; ++i)
     {
