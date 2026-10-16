@@ -494,9 +494,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
         const bool inCycle = firstStep + i < pattern->cycleSteps;
         // Three visual levels: playable notes, empty steps and steps outside the cycle.
-        g.setColour(!inCycle ? juce::Colour(0xff1b2530)
+        g.setColour(!inCycle ? juce::Colour(0xff18222c)
                              : active ? juce::Colour(0xff54d6dc)
-                                      : juce::Colour(0xff2b3946));
+                                      : juce::Colour(0xff304452));
         g.fillRoundedRectangle(r.toFloat(), 4.0f);
         if (i % 4 == 0)
         {
