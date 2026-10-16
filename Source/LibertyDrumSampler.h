@@ -1304,8 +1304,8 @@ public:
         for (auto* selector : { &factorySelector, &chokeSelector, &playModeSelector })
         {
             selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff25323e));
-            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffe8eff7));
-            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff526475));
+            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffd9f3f5));
+            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff48606d));
             selector->setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
         }
         // Action colours are configured beside each button above, so their
