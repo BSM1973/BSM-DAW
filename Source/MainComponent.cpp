@@ -531,12 +531,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         [](const auto& step) { return step.enabled; });
     g.setColour(hasPlayableNotes ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
-    if (hasPlayableNotes)
-    {
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
-        g.drawRoundedRectangle(exportButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    }
-    g.setColour(hasPlayableNotes ? juce::Colours::white : juce::Colour(0xff8293a6));
+    // Obsidian clip action: an available pattern is accented, an empty one recedes.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                 : juce::Colour(0xff48606d).withAlpha(0.70f));
+    g.drawRoundedRectangle(exportButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    g.setColour(hasPlayableNotes ? juce::Colour(0xffeffcfd) : juce::Colour(0xff91a5b3));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.drawText(hasPlayableNotes ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
                exportButton, juce::Justification::centred);
