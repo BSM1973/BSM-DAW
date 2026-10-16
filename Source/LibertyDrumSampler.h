@@ -979,7 +979,7 @@ public:
         g.setColour(juce::Colour(0xff48606d));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
         // Subdued centre reference stays visible without competing with the waveform.
-        g.setColour(juce::Colour(0xff728394).withAlpha(0.28f));
+        g.setColour(juce::Colour(0xff91bbc3).withAlpha(0.34f));
         g.drawHorizontalLine(getHeight() / 2, 4.0f, (float)juce::jmax(4, getWidth() - 4));
         const auto& pad = sampler.getPad(selectedPad);
         const auto audio = std::atomic_load(&pad.audio);
