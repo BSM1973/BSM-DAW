@@ -146,9 +146,10 @@ void MainComponent::paint(juce::Graphics& g)
             const auto detach = juce::Rectangle<int>(416, mixer.getY() + 4, 106, 28);
             g.setColour(juce::Colour(0xff202c37));
             g.fillRoundedRectangle(detach.toFloat(), 5.0f);
-            g.setColour(juce::Colour(0xff344452));
+            // Match secondary dock actions to the Obsidian inactive-tab palette.
+            g.setColour(juce::Colour(0xff48606d));
             g.drawRoundedRectangle(detach.toFloat().reduced(0.5f), 5.0f, 1.0f);
-            g.setColour(juce::Colour(0xffb5c3d1));
+            g.setColour(juce::Colour(0xffc2d8e2));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText(juce::String::fromUTF8("D\xC3\x89TACHER"), detach, juce::Justification::centred);
         }
