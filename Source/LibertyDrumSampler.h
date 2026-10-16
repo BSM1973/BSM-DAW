@@ -1133,7 +1133,7 @@ public:
         };
         exportButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
         exportButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
-        exportButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        exportButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc2d8e2));
         exportButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(exportButton);
         importButton.setButtonText("IMPORTER KIT");
@@ -1159,7 +1159,7 @@ public:
         };
         importButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
         importButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
-        importButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        importButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc2d8e2));
         importButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(importButton);
         factorySelector.addItem("FACTORY KITS", 1);
