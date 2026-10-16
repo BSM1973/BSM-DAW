@@ -223,7 +223,8 @@ public:
         const int keyHeight = currentKeyHeight();
 
         g.setColour(juce::Colour(0xff18212b)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
-        g.setColour(juce::Colour(0xff202c37)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
+        // Deep Obsidian ruler surface separates measure labels from MIDI note rows.
+        g.setColour(juce::Colour(0xff141e28)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
         for (std::int64_t t = 0; t <= clipLengthTicks; t += gridTicks)
         {
             const int x = grid.getX() + (int)std::llround((double)t * pixelsPerTick);
