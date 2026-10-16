@@ -260,7 +260,8 @@ public:
             g.setColour(black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea)); g.fillRect(key);
             // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
             g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
-            if (!black) { g.setColour(juce::Colour(0xff2b3037)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
+            // Darker Obsidian note labels stay legible on light piano keys.
+            if (!black) { g.setColour(juce::Colour(0xff17242e)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
         }
 
         // Crisp Obsidian seam between keyboard and note grid; no geometry changes.
