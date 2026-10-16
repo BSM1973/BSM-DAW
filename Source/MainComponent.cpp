@@ -1289,9 +1289,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                                 g.fillRoundedRectangle((float)patRect.getX() + 3.0f, (float)patRect.getY() + 2.0f,
                                                        (float)juce::jmax(1, patRect.getWidth() - 6), 5.0f, 2.0f);
                             }
-                            g.setColour(selectedPattern ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
+                            // Obsidian pattern banks match the MIDI P1-P8 focus hierarchy.
+                            g.setColour(selectedPattern ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
                             g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
-                            g.setColour(selectedPattern ? juce::Colour(0xfff2f8ff) : juce::Colour(0xffb7c7d9));
+                            g.setColour(selectedPattern ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
                             g.setFont(juce::Font(11.0f, juce::Font::bold));
                             g.drawText("PAT " + juce::String(bankIndex + 1), patRect, juce::Justification::centred);
                             if (bankIndex == activePattern)
