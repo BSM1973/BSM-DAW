@@ -1198,7 +1198,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         // Obsidian note editing: violet selection with a legible slate idle edge.
                         g.setColour(active ? juce::Colour(0xffc2aaff) : juce::Colour(0xff68788f));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
-                        g.setColour(active ? juce::Colour(0xfff8f0ff) : juce::Colour(0xffd5dcec));
+                        // Obsidian note editor: brighter violet-white focus, quieter idle labels.
+                        g.setColour(active ? juce::Colour(0xfff8f0ff) : juce::Colour(0xffbfc9dc));
                         g.setFont(juce::Font(9.0f, juce::Font::bold));
                         g.drawText(text, r, juce::Justification::centred);
                     };
