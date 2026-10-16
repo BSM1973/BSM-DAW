@@ -1436,7 +1436,8 @@ public:
             g.drawRoundedRectangle(bounds.expanded(active ? 3.0f : 2.0f), 8.0f, active ? 2.0f : 1.0f);
             if (active)
             {
-                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.18f));
+                // Slightly clearer outer selection halo; no pad geometry changes.
+                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.26f));
                 g.drawRoundedRectangle(bounds.expanded(5.0f), 10.0f, 1.0f);
             }
         }
