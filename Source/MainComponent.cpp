@@ -1317,7 +1317,10 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         const juce::String channelName = master ? "MASTER"
                                                 : (isAudio ? "Audio " + juce::String(sourceIndex + 1)
                                                            : "Instrument " + juce::String(sourceIndex + 1));
-        g.setColour(juce::Colours::white);
+        // Mixer strip titles follow the Obsidian channel hierarchy.
+        g.setColour(master ? juce::Colour(0xfff0fafb)
+                           : (isInstrument ? juce::Colour(0xffb8e8ec)
+                                           : juce::Colour(0xffd1e0e9)));
         g.setFont(juce::Font(12.0f, juce::Font::bold));
         g.drawText(channelName, c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
 
