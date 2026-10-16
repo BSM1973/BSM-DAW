@@ -566,7 +566,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(juce::Colour(0xff54d6dc));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.drawText(patternCaption, left, infoY, 28, 20, juce::Justification::left);
-    g.setColour(juce::Colour(0xffb5c3d1));
+    // Secondary pattern metadata stays legible against the Obsidian dock.
+    g.setColour(juce::Colour(0xffc2d8e2));
     g.setFont(juce::Font(12.0f));
     g.drawFittedText(juce::String(safeCycleSteps) + " pas  |  "
                          + juce::String(activeSteps) + " notes  |  Piano Roll indépendant",
