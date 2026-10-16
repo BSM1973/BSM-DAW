@@ -1380,8 +1380,11 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f), fader.getX() + 1.0f, fader.getRight() - 1.0f);
 
         const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
-        g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f));
+        // Obsidian mixer readouts: prioritize gain, keep pan as secondary metadata.
+        g.setFont(juce::Font(10.0f));
+        g.setColour(master ? juce::Colour(0xffd9f3f5) : juce::Colour(0xffc2d8e2));
         g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
+        g.setColour(master ? juce::Colour(0xff91bbc3) : juce::Colour(0xff829eae));
         g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN " + juce::String(audioEngine.getInstrumentTrackPan(sourceIndex), 2)),
                    c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
