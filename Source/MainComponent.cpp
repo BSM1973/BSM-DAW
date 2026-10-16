@@ -1085,7 +1085,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.fillRoundedRectangle((float)seqPlay.getX() + 7.0f, (float)seqPlay.getBottom() - 4.0f,
                                                (float)juce::jmax(1, seqPlay.getWidth() - 14), 2.0f, 1.0f);
                     }
-                    g.setColour(juce::Colours::white);
+                    // Obsidian preview transport: active STOP is crisp, idle PLAY stays secondary.
+                    g.setColour(previewActive ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
                     g.setFont(juce::Font(9.0f, juce::Font::bold));
                     g.drawText(previewActive ? "STOP" : "PLAY", seqPlay, juce::Justification::centred);
                     const int available = juce::jmax(0, panel.getWidth() - titleWidth);
