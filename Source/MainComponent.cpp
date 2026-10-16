@@ -1313,6 +1313,13 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
                            : (isInstrument ? juce::Colour(0xff427887)
                                            : juce::Colour(0xff405361)));
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+        // A restrained turquoise header accent distinguishes the master bus.
+        if (master)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(juce::Rectangle<float>((float)c.getX() + 12.0f, (float)c.getY() + 3.0f,
+                                                         (float)c.getWidth() - 24.0f, 2.0f), 1.0f);
+        }
 
         const juce::String channelName = master ? "MASTER"
                                                 : (isAudio ? "Audio " + juce::String(sourceIndex + 1)
