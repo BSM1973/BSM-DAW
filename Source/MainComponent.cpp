@@ -1336,7 +1336,10 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
             g.setColour(muted ? juce::Colour(0xffb15358) : juce::Colour(0xff253540)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
             g.setColour(solo ? juce::Colour(0xffa18a3e) : juce::Colour(0xff253540)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setColour(muted ? juce::Colour(0xffd57c80) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
+            g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
             g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
         }
         else if (isInstrument)
@@ -1347,7 +1350,10 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             const bool solo = audioEngine.isInstrumentTrackSolo(sourceIndex);
             g.setColour(muted ? juce::Colour(0xffb15358) : juce::Colour(0xff253540)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
             g.setColour(solo ? juce::Colour(0xffa18a3e) : juce::Colour(0xff253540)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setColour(muted ? juce::Colour(0xffd57c80) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
+            g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
             g.setColour(juce::Colour(0xff9fc7e8)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
         }
 
