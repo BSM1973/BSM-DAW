@@ -1013,7 +1013,8 @@ public:
         g.fillRect(0.0f, 0.0f, juce::jlimit(0.0f, bounds.getWidth(), startX), bounds.getHeight());
         const float endShade = juce::jlimit(0.0f, bounds.getWidth(), endX);
         g.fillRect(endShade, 0.0f, bounds.getWidth() - endShade, bounds.getHeight());
-        g.setColour(juce::Colour(0xffe4a85e));
+        // Amber trim markers remain legible over dense waveforms.
+        g.setColour(juce::Colour(0xffffc078));
         if (startX >= 0.0f && startX < bounds.getWidth())
             g.drawVerticalLine((int)startX, 0.0f, bounds.getHeight());
         if (endX >= 0.0f && endX < bounds.getWidth())
