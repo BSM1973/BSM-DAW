@@ -506,8 +506,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         if (i % 4 == 0)
         {
             // Group downbeats remain legible, but out-of-cycle cells recede.
-            g.setColour(inCycle ? juce::Colour(0xff54d6dc).withAlpha(0.75f)
-                                : juce::Colour(0xff526475).withAlpha(0.45f));
+            // Obsidian downbeat outline: focused in-cycle, quiet outside the pattern.
+            g.setColour(inCycle ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                : juce::Colour(0xff48606d).withAlpha(0.40f));
             g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
         }
         if (i > 0 && i % 4 == 0)
