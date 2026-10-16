@@ -1023,7 +1023,8 @@ public:
         const float playX = (playback - viewStart) / viewSpan * bounds.getWidth();
         if (playback >= 0.0f && playX >= 0.0f && playX < bounds.getWidth())
         {
-            g.setColour(juce::Colour(0xffe8eff7));
+            // Bright cyan-white playhead remains distinct from amber trim markers.
+            g.setColour(juce::Colour(0xffd9f3f5));
             g.drawVerticalLine((int)playX, 0.0f, bounds.getHeight());
         }
     }
