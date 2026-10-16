@@ -1373,7 +1373,11 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : audioEngine.getInstrumentTrackGain(sourceIndex));
         const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
         const auto knobY = fader.getBottom() - normalized * fader.getHeight();
-        g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
+        // Metallic Obsidian fader cap; preserve the existing handle geometry.
+        g.setColour(master ? juce::Colour(0xffc6e7ed) : juce::Colour(0xffb8c9d3));
+        g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
+        g.setColour(master ? juce::Colour(0xfff0fbfd) : juce::Colour(0xffe2edf2));
+        g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f), fader.getX() + 1.0f, fader.getRight() - 1.0f);
 
         const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
         g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f));
