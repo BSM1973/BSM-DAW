@@ -294,7 +294,8 @@ public:
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.10f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
-            g.setColour(active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff7bbbd7));
+            // Defined idle-note outlines improve separation without changing active playback styling.
+            g.setColour(active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
             g.drawRoundedRectangle(r.toFloat(), 3.0f, active ? 1.5f : 1.0f);
         }
     }
