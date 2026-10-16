@@ -522,7 +522,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                                (float) r.getBottom() - 5.0f);
         }
         // Downbeat numbers read first on empty cells; active notes retain dark ink.
-        g.setColour(!inCycle ? juce::Colour(0xff748597)
+        // Out-of-cycle labels follow the subdued Obsidian secondary-text palette.
+        g.setColour(!inCycle ? juce::Colour(0xff667d8d)
                              : active ? juce::Colour(0xff10242b)
                                       : (i % 4 == 0) ? juce::Colour(0xffeffcfd)
                                                      : juce::Colour(0xffdce6ee));
