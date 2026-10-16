@@ -1214,6 +1214,10 @@ public:
         for (auto* slider : { &startSlider, &endSlider })
         {
             slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+            // Obsidian trim readouts match gain, pan and pitch without changing ranges.
+            slider->setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffd9f3f5));
+            slider->setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff101821));
+            slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff48606d));
             addAndMakeVisible(*slider);
         }
         startSlider.onValueChange = [this] { applyTrim(); };
