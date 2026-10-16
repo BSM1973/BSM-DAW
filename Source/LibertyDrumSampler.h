@@ -1185,6 +1185,13 @@ public:
         gainSlider.setRange(0.0, 2.0, 0.01);
         gainSlider.setValue(1.0, juce::dontSendNotification);
         gainSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 22);
+        // Obsidian parameter readouts: consistent bright values on deep graphite.
+        for (auto* slider : { &gainSlider, &panSlider, &pitchSlider })
+        {
+            slider->setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffd9f3f5));
+            slider->setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff101821));
+            slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colour(0xff48606d));
+        }
         gainSlider.onValueChange = [this] { sampler.setPadGain(selectedPad, (float)gainSlider.getValue()); };
         addAndMakeVisible(gainSlider);
         panSlider.setRange(-1.0, 1.0, 0.01);
