@@ -442,7 +442,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.fillRect(area);
     if (area.getWidth() < 360 || area.getHeight() < 220)
     {
-        g.setColour(juce::Colour(0xffb5c3d1));
+        // Obsidian resize hint remains legible in compact floating windows.
+        g.setColour(juce::Colour(0xffc2d8e2));
         g.setFont(juce::Font(13.0f));
         g.drawFittedText("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI",
                          area.reduced(12), juce::Justification::centred, 2);
