@@ -126,7 +126,8 @@ void MainComponent::paint(juce::Graphics& g)
             g.fillRoundedRectangle(rect.toFloat(), 5.0f);
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.11f : 0.045f));
             g.fillRoundedRectangle(rect.toFloat().withHeight(6.0f), 4.0f);
-            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff344452));
+            // Distinct inactive outlines improve dock navigation on graphite surfaces.
+            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
             g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 5.0f, active ? 1.5f : 1.0f);
             if (active)
                 g.fillRoundedRectangle((float)rect.getX() + 8.0f, (float)rect.getBottom() - 3.0f,
