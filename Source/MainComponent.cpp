@@ -435,7 +435,8 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
 
 void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    juce::ColourGradient surface(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+    // Obsidian editor surface matches the graphite hierarchy of the floating dock.
+    juce::ColourGradient surface(juce::Colour(0xff1b2833), (float)area.getX(), (float)area.getY(),
                                  juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
     g.setGradientFill(surface);
     g.fillRect(area);
