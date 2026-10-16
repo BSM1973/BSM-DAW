@@ -539,7 +539,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     const bool hasPlayableNotes = std::any_of(pattern->steps.begin(),
         pattern->steps.begin() + playableCycleSteps,
         [](const auto& step) { return step.enabled; });
-    g.setColour(hasPlayableNotes ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
+    // Empty-pattern action shares the subdued graphite surface of inactive banks.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
     g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
     // Obsidian clip action: an available pattern is accented, an empty one recedes.
     g.setColour(hasPlayableNotes ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
