@@ -470,7 +470,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         const bool hasNotes = std::any_of(bankPattern.steps.begin(),
                                           bankPattern.steps.begin() + bankCycleSteps,
                                           [](const auto& step) { return step.enabled; });
-        g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
+        // Obsidian bank surfaces match inactive MIDI page navigation.
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
         // Every pattern bank has a defined edge; selection keeps the turquoise focus.
         g.setColour(i == bank.activePattern ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
