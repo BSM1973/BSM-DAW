@@ -65,7 +65,8 @@ public:
         g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.65f));
         g.fillRect(0, 2, juce::jmin(pianoKeyWidth, getWidth()), 1);
 
-        g.setColour(juce::Colour(0xffb5c3d1));
+        // Obsidian velocity-lane heading matches the clear dock title hierarchy.
+        g.setColour(juce::Colour(0xffb8e8ec));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.drawText("VELOCITY", 8, 8, pianoKeyWidth - 16, 16, juce::Justification::centredLeft);
 
