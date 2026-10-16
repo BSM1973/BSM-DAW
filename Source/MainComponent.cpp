@@ -540,7 +540,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     g.setColour(hasPlayableNotes ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
                                  : juce::Colour(0xff48606d).withAlpha(0.70f));
     g.drawRoundedRectangle(exportButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(hasPlayableNotes ? juce::Colour(0xffeffcfd) : juce::Colour(0xff91a5b3));
+    // Empty-pattern status stays readable without competing with the enabled action.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
     g.drawText(hasPlayableNotes ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
                exportButton, juce::Justification::centred);
