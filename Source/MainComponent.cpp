@@ -513,8 +513,9 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         if (i > 0 && i % 4 == 0)
         {
             // Bar-group markers recede when the following group is outside the cycle.
-            g.setColour(inCycle ? juce::Colour(0xff54758b)
-                                : juce::Colour(0xff344452).withAlpha(0.55f));
+            // Obsidian rhythmic group markers: clearer in-cycle, subdued beyond cycle.
+            g.setColour(inCycle ? juce::Colour(0xff91bbc3).withAlpha(0.70f)
+                                : juce::Colour(0xff48606d).withAlpha(0.45f));
             const float markerX = (float) r.getX() - 2.0f;
             g.drawVerticalLine((int) markerX, (float) r.getY() + 5.0f,
                                (float) r.getBottom() - 5.0f);
