@@ -521,10 +521,11 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
             g.drawVerticalLine((int) markerX, (float) r.getY() + 5.0f,
                                (float) r.getBottom() - 5.0f);
         }
-        // Dark ink on turquoise active steps, light text on graphite cells.
+        // Downbeat numbers read first on empty cells; active notes retain dark ink.
         g.setColour(!inCycle ? juce::Colour(0xff748597)
                              : active ? juce::Colour(0xff10242b)
-                                      : juce::Colour(0xffdce6ee));
+                                      : (i % 4 == 0) ? juce::Colour(0xffeffcfd)
+                                                     : juce::Colour(0xffdce6ee));
         g.setFont(juce::Font(cellWidth < 25 ? 10.0f : 12.0f, juce::Font::bold));
         g.drawFittedText(juce::String(firstStep + i + 1), r.reduced(1, 0),
                          juce::Justification::centred, 1);
