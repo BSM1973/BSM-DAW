@@ -1066,7 +1066,7 @@ public:
         };
         loadButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
         loadButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
-        loadButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        loadButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc2d8e2));
         loadButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(loadButton);
         colourButton.setButtonText("COULEUR PAD");
@@ -1096,7 +1096,7 @@ public:
         };
         colourButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
         colourButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff344452));
-        colourButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
+        colourButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc2d8e2));
         colourButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(colourButton);
         stopButton.setButtonText("STOP PAD");
@@ -1110,7 +1110,7 @@ public:
         loopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25323e));
         loopButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
         loopButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd1dce7));
-        loopButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        loopButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
         loopButton.onClick = [this] { sampler.setPadLoop(selectedPad, loopButton.getToggleState()); };
         addAndMakeVisible(loopButton);
         exportButton.setButtonText("EXPORTER KIT");
