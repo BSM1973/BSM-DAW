@@ -1401,8 +1401,9 @@ public:
     }
     void paint(juce::Graphics& g) override
     {
-        juce::ColourGradient background(juce::Colour(0xff202c37), 0.0f, 0.0f,
-                                         juce::Colour(0xff0b0f14), 0.0f, (float)getHeight(), false);
+        // Obsidian drum panel: deeper graphite to match the arranger and mixer.
+        juce::ColourGradient background(juce::Colour(0xff1b2833), 0.0f, 0.0f,
+                                         juce::Colour(0xff101821), 0.0f, (float)getHeight(), false);
         g.setGradientFill(background);
         g.fillAll();
         // Draw depth behind the existing TextButtons without changing hitboxes.
