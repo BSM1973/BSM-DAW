@@ -1446,7 +1446,8 @@ public:
         g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 1);
         g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.72f));
         g.fillRect(12, 36, juce::jmax(0, juce::jmin(104, getWidth() - 24)), 1);
-        g.setColour(juce::Colour(0xffe8eff7));
+        // Main panel title follows the Obsidian high-contrast heading palette.
+        g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(18.0f, juce::Font::bold));
         g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 250, 26, juce::Justification::centredLeft);
         const int actionsTop = getHeight() - 550;
