@@ -289,7 +289,8 @@ public:
             if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
-            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff315b74));
+            // Obsidian MIDI notes: brighter idle blue, clear turquoise playback state.
+            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.10f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
