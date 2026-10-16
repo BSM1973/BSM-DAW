@@ -1049,9 +1049,9 @@ public:
             auto& button = pads[(size_t)i];
             button.setButtonText("PAD " + juce::String(i + 1));
             button.setColour(juce::TextButton::buttonColourId, juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load()));
-            button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
+            button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9f3f5));
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
-            button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            button.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
             button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); repaint(); };
             addAndMakeVisible(button);
         }
