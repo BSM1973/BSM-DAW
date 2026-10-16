@@ -467,17 +467,16 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
                                           [](const auto& step) { return step.enabled; });
         g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        if (i == bank.activePattern)
-        {
-            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
-            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
-        }
+        // Every pattern bank has a defined edge; selection keeps the turquoise focus.
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                            : juce::Colour(0xff48606d).withAlpha(0.85f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
         if (hasNotes)
         {
             g.setColour(juce::Colour(0xff54d6dc));
             g.fillEllipse((float) r.getRight() - 9.0f, (float) r.getY() + 4.0f, 5.0f, 5.0f);
         }
-        g.setColour(juce::Colours::white);
+        g.setColour(i == bank.activePattern ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(r.getWidth() < 42 ? 10.0f : 12.0f, juce::Font::bold));
         g.drawFittedText("P" + juce::String(i + 1), r.reduced(2, 0),
                          juce::Justification::centred, 1);
