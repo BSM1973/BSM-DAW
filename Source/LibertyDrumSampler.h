@@ -1463,9 +1463,11 @@ public:
         g.fillRect(12, getHeight() - 390, juce::jmin(72, innerWidth), 1);
         // Keep section labels away from pads and editable controls.
         g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.setColour(juce::Colour(0xffb5c3d1));
+        g.setColour(juce::Colour(0xffc2d8e2));
         g.drawText("PADS  /  16 VOICES", 12, 39, juce::jmax(0, getWidth() - 250), 12,
                    juce::Justification::centredLeft);
+        // Subtle violet identifies the sample-editing section without altering its layout.
+        g.setColour(juce::Colour(0xffc4adff));
         g.drawText("SAMPLE  /  WAVEFORM", 12, getHeight() - 486, innerWidth, 13,
                    juce::Justification::centredLeft);
     }
