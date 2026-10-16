@@ -1225,11 +1225,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.setColour(juce::Colour(0xff3b5362));
                         g.fillRoundedRectangle((float)r.getX() + 2.0f, (float)r.getY() + 2.0f,
                                                (float)juce::jmax(1, r.getWidth() - 4), 2.0f, 1.0f);
-                        g.setColour(juce::Colour(0xff667d8d)); g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
+                        // Obsidian action row: readable graphite edges without a selection accent.
+                        g.setColour(juce::Colour(0xff48606d)); g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
                         g.setColour(juce::Colour(0xff172433));
                         g.fillRoundedRectangle((float)r.getX() + 6.0f, (float)r.getBottom() - 3.0f,
                                                (float)juce::jmax(1, r.getWidth() - 12), 1.0f, 0.5f);
-                        g.setColour(juce::Colour(0xffe7f0fa));
+                        g.setColour(juce::Colour(0xffc2d8e2));
                         g.setFont(juce::Font(9.0f, juce::Font::bold));
                         g.drawText(text, r, juce::Justification::centred);
                     };
