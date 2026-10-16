@@ -222,7 +222,8 @@ public:
         const double pixelsPerTick = getPixelsPerTick();
         const int keyHeight = currentKeyHeight();
 
-        g.setColour(juce::Colour(0xff18212b)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
+        // Obsidian keyboard/ruler corner mirrors the arranger section hierarchy.
+        g.setColour(juce::Colour(0xff1d2a35)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
         // Deep Obsidian ruler surface separates measure labels from MIDI note rows.
         g.setColour(juce::Colour(0xff141e28)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
         for (std::int64_t t = 0; t <= clipLengthTicks; t += gridTicks)
