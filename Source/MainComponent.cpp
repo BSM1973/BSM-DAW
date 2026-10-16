@@ -1163,7 +1163,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.11f : 0.045f));
                         g.fillRoundedRectangle(r.toFloat().withHeight(4.0f), 3.0f);
                         if (active) { g.setColour(juce::Colour(0xff54d6dc)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
-                        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
+                        // Obsidian rhythm controls: clear selection edge and restrained idle border.
+                        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
                         // Obsidian rhythm controls: selected settings read brighter than idle ones.
                         g.setColour(active ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
