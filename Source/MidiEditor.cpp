@@ -239,7 +239,8 @@ public:
                 g.fillRect(x, rulerHeight, 1, 6);
             }
         }
-        g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(10.0f));
+        // Measure numbers stay crisp against the dark Obsidian ruler.
+        g.setColour(juce::Colour(0xffdceef1)); g.setFont(juce::Font(10.0f));
         const auto measureCount = ticksPerMeasure > 0 ? (int)((clipLengthTicks + ticksPerMeasure - 1) / ticksPerMeasure) : 1;
         for (int m = 0; m < measureCount; ++m)
         {
