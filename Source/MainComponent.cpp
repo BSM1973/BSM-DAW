@@ -1309,7 +1309,9 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(master ? juce::Colour(0xff26313d)
                            : (isInstrument ? juce::Colour(0xff1d303b) : juce::Colour(0xff1c2732)));
         g.fillRoundedRectangle(c.toFloat(), 5.0f);
-        g.setColour(isInstrument ? juce::Colour(0xff31546a) : juce::Colour(0xff343a44));
+        g.setColour(master ? juce::Colour(0xff607989)
+                           : (isInstrument ? juce::Colour(0xff427887)
+                                           : juce::Colour(0xff405361)));
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
 
         const juce::String channelName = master ? "MASTER"
