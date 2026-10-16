@@ -183,7 +183,7 @@ class FloatingStepSequencerWindow final : public juce::DocumentWindow
 {
 public:
     explicit FloatingStepSequencerWindow(MainComponent& main)
-        : juce::DocumentWindow("Liberty - Step Sequencer", juce::Colour(0xff101b2a),
+        : juce::DocumentWindow("Liberty - Step Sequencer", juce::Colour(0xff101821),
                                juce::DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar(true);
