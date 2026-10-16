@@ -552,7 +552,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {
         const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
-        g.setColour(pageIndex == page ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
+        // Inactive page surfaces match the Obsidian MIDI editor graphite.
+        g.setColour(pageIndex == page ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
         g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
         // Obsidian page navigation: inactive pages remain outlined and legible.
         g.setColour(pageIndex == page ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
