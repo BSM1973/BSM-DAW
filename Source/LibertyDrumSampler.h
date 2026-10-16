@@ -1007,7 +1007,8 @@ public:
         }
         const float start = pad.startFraction.load();
         const float end = pad.endFraction.load();
-        g.setColour(juce::Colour(0x990b0f14));
+        // Stronger graphite veil distinguishes excluded audio from the playable region.
+        g.setColour(juce::Colour(0xb30b0f14));
         const float startX = (start - viewStart) / viewSpan * bounds.getWidth();
         const float endX = (end - viewStart) / viewSpan * bounds.getWidth();
         g.fillRect(0.0f, 0.0f, juce::jlimit(0.0f, bounds.getWidth(), startX), bounds.getHeight());
