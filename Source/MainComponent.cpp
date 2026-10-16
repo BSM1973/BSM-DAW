@@ -1120,7 +1120,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             g.fillRoundedRectangle((float)pad.getX() + 2.0f, (float)pad.getY() + 4.0f,
                                                    2.0f, (float)juce::jmax(1, pad.getHeight() - 8), 1.0f);
                         }
-                        g.setColour((s % 4) == 0 ? juce::Colour(0xffb5c3d1) : juce::Colour(0xff344452));
+                        // Four-step accents follow the playable range; inactive cells recede.
+                        g.setColour(!availableStep ? juce::Colour(0xff344452)
+                                                   : (s % 4) == 0 ? juce::Colour(0xff91bbc3)
+                                                                  : juce::Colour(0xff48606d));
                         g.drawRoundedRectangle(pad.toFloat(), 6.0f, 1.0f);
                         if (active)
                         {
