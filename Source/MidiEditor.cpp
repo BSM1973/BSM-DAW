@@ -230,7 +230,8 @@ public:
             if (x > grid.getRight()) break;
             const bool measure = ticksPerMeasure > 0 && t % ticksPerMeasure == 0;
             const bool beat = t % MidiEngine::ticksPerQuarterNote == 0;
-            g.setColour(measure ? juce::Colour(0xff56717e) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff1c2832));
+            // Obsidian Piano Roll: measure lines lead, beats and subdivisions recede.
+            g.setColour(measure ? juce::Colour(0xff688996) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff1c2832));
             g.drawVerticalLine(x, (float)rulerHeight, (float)grid.getBottom());
             if (measure)
             {
