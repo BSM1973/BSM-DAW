@@ -1195,7 +1195,8 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                         g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.12f : 0.045f));
                         g.fillRoundedRectangle(r.toFloat().withHeight(4.0f), 3.0f);
                         if (active) { g.setColour(juce::Colour(0xffc4adff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
-                        g.setColour(active ? juce::Colour(0xffc2aaff) : juce::Colour(0xff53647d));
+                        // Obsidian note editing: violet selection with a legible slate idle edge.
+                        g.setColour(active ? juce::Colour(0xffc2aaff) : juce::Colour(0xff68788f));
                         g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
                         g.setColour(active ? juce::Colour(0xfff8f0ff) : juce::Colour(0xffd5dcec));
                         g.setFont(juce::Font(9.0f, juce::Font::bold));
