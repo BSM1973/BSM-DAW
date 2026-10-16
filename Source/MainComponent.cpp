@@ -1367,7 +1367,8 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
         auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
-        g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
+        // Deep graphite fader rail complements the Obsidian mixer strips.
+        g.setColour(juce::Colour(0xff0c1720)); g.fillRoundedRectangle(fader, 3.0f);
 
         const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : audioEngine.getInstrumentTrackGain(sourceIndex));
         const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
