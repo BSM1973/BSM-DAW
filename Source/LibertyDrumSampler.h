@@ -975,7 +975,8 @@ public:
                                       juce::Colour(0xff0b0f14), 0.0f, bounds.getBottom(), false);
         g.setGradientFill(surface);
         g.fillRoundedRectangle(bounds, 5.0f);
-        g.setColour(juce::Colour(0xff344452));
+        // Defined Obsidian frame separates the sample editor from its host panel.
+        g.setColour(juce::Colour(0xff48606d));
         g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
         // Subdued centre reference stays visible without competing with the waveform.
         g.setColour(juce::Colour(0xff728394).withAlpha(0.28f));
