@@ -131,7 +131,8 @@ void MainComponent::paint(juce::Graphics& g)
             if (active)
                 g.fillRoundedRectangle((float)rect.getX() + 8.0f, (float)rect.getBottom() - 3.0f,
                                        (float)juce::jmax(1, rect.getWidth() - 16), 2.0f, 1.0f);
-            g.setColour(active ? juce::Colour(0xffe8eff7) : juce::Colour(0xffb5c3d1));
+            // Obsidian dock tabs: selected editor reads first, inactive tabs remain clear.
+            g.setColour(active ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
             g.setFont(juce::Font(12.0f, juce::Font::bold));
             g.drawText(label, rect, juce::Justification::centred);
         };
