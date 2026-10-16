@@ -1340,7 +1340,11 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
             g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
             g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
-            g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+            g.setColour(muted ? juce::Colour(0xfffdf4f4) : juce::Colour(0xffb9ceda));
+            g.drawText("M", mute, juce::Justification::centred);
+            g.setColour(solo ? juce::Colour(0xfffff7db) : juce::Colour(0xffb9ceda));
+            g.drawText("S", soloButton, juce::Justification::centred);
         }
         else if (isInstrument)
         {
@@ -1354,7 +1358,11 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
             g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
             g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
-            g.setColour(juce::Colour(0xff9fc7e8)); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred);
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+            g.setColour(muted ? juce::Colour(0xfffdf4f4) : juce::Colour(0xffb9ceda));
+            g.drawText("M", mute, juce::Justification::centred);
+            g.setColour(solo ? juce::Colour(0xfffff7db) : juce::Colour(0xffb9ceda));
+            g.drawText("S", soloButton, juce::Justification::centred);
         }
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
