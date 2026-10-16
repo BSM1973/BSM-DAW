@@ -258,7 +258,8 @@ public:
             const auto key = juce::Rectangle<int>(0, y, pianoKeyWidth, keyHeight);
             const bool black = isBlackKey(note);
             g.setColour(black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea)); g.fillRect(key);
-            g.setColour(black ? juce::Colour(0xff344452) : juce::Colour(0xff83929f)); g.drawRect(key, 1);
+            // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
+            g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
             if (!black) { g.setColour(juce::Colour(0xff2b3037)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
         }
 
