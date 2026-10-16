@@ -448,7 +448,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
     const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
-    g.setColour(juce::Colours::white);
+    // Obsidian dock title echoes the selected-pattern turquoise hierarchy.
+    g.setColour(juce::Colour(0xffb8e8ec));
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
     auto& bank = midiStepSequencers[(size_t)midiIndex];
