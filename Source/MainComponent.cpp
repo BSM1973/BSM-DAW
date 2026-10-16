@@ -1306,6 +1306,14 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         const int sourceIndex = isAudio ? channel : (channel - audioTracks);
 
         auto c = juce::Rectangle<int>(220 + channel * 125, area.getY() + 12, 116, area.getHeight() - 22);
+        // Group dividers occupy the existing inter-strip gutter only.
+        if ((isInstrument && sourceIndex == 0) || master)
+        {
+            g.setColour(master ? juce::Colour(0xff54d6dc).withAlpha(0.48f)
+                               : juce::Colour(0xff427887).withAlpha(0.60f));
+            const int separatorX = c.getX() - 5;
+            g.drawVerticalLine(separatorX, (float)c.getY() + 9.0f, (float)c.getBottom() - 9.0f);
+        }
         g.setColour(master ? juce::Colour(0xff26313d)
                            : (isInstrument ? juce::Colour(0xff1d303b) : juce::Colour(0xff1c2732)));
         g.fillRoundedRectangle(c.toFloat(), 5.0f);
