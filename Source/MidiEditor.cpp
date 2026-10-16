@@ -262,6 +262,10 @@ public:
             if (!black) { g.setColour(juce::Colour(0xff2b3037)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
         }
 
+        // Crisp Obsidian seam between keyboard and note grid; no geometry changes.
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(pianoKeyWidth - 1, 0, 1, velocityAreaY);
+
         const auto playbackTick = MidiEngine::secondsToTick(owner.getMidiEngine().getPlaybackPositionSeconds(), owner.getTempoBpm());
         const int playheadX = grid.getX() + (int)std::llround((double)playbackTick * pixelsPerTick);
         if (playheadX >= grid.getX() && playheadX <= grid.getRight())
