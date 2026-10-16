@@ -1131,7 +1131,11 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
                             g.fillRoundedRectangle((float)pad.getX() + 5.0f, (float)pad.getBottom() - 4.0f,
                                                    (float)juce::jmax(1, pad.getWidth() - 10), 2.0f, 1.0f);
                         }
-                        g.setColour(active ? juce::Colours::white : (availableStep ? juce::Colour(0xffd1dce7) : juce::Colour(0xff667d8d)));
+                        // Obsidian step numbers: notes, group downbeats and out-of-range steps.
+                        g.setColour(!availableStep ? juce::Colour(0xff667d8d)
+                                                   : active ? juce::Colour(0xffeffcfd)
+                                                            : (s % 4) == 0 ? juce::Colour(0xffdceef1)
+                                                                           : juce::Colour(0xffb9ccd6));
                         g.setFont(juce::Font(10.5f, juce::Font::bold));
                         g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
                     }
