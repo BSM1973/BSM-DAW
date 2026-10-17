@@ -716,8 +716,8 @@ constexpr juce::uint32 muted = 0xffb5c3d1;
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    juce::ColourGradient transportSurface(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
-                                          juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    juce::ColourGradient transportSurface(LibertyUI::Colour::surface, (float)area.getX(), (float)area.getY(),
+                                          LibertyUI::Colour::canvas, (float)area.getX(), (float)area.getBottom(), false);
     g.setGradientFill(transportSurface);
     g.fillRect(area);
     g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
