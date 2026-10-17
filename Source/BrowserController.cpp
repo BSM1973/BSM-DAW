@@ -51,6 +51,9 @@ public:
             // Obsidian graphite manufacturer headers; preserve the gold-toned favourites surface.
             g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b2833));
             g.fillRect(0, 0, width, height);
+            // A one-pixel graphite rule separates manufacturer groups without changing layout.
+            g.setColour(fav ? juce::Colour(0xff655331) : juce::Colour(0xff40515f));
+            g.fillRect(0, height - 1, width, 1);
             // Obsidian manufacturer headings use muted turquoise; favourites keep gold.
             g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xffb8e8ec));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
