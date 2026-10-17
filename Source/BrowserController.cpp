@@ -268,6 +268,8 @@ public:
             // Obsidian One Knob action buttons use the shared graphite and cyan palette.
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb8e8ec));
+            b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
+            b->setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
             addAndMakeVisible(*b);
         }
         chorusButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::chorus); };
