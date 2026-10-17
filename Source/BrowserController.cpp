@@ -48,7 +48,8 @@ public:
         if (kind == Kind::manufacturer)
         {
             const bool fav = label == "FAVORIS";
-            g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b222a));
+            // Obsidian graphite manufacturer headers; preserve the gold-toned favourites surface.
+            g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b2833));
             g.fillRect(0, 0, width, height);
             // Obsidian manufacturer headings use muted turquoise; favourites keep gold.
             g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xffb8e8ec));
