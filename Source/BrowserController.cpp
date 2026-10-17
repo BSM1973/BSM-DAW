@@ -301,7 +301,8 @@ public:
         // Obsidian browser edge matches the graphite dividers throughout Liberty.
         g.setColour(juce::Colour(0xff40515f));
         g.drawVerticalLine(0, 0.0f, (float)getHeight());
-        g.setColour(juce::Colours::white);
+        // Obsidian soft-white title matches primary labels across Liberty Pro.
+        g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff20252c));
