@@ -66,7 +66,8 @@ public:
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
-        g.setColour(juce::Colour(0xff8f98a3));
+        // Obsidian secondary metadata stays readable without competing with plugin names.
+        g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
         g.drawText(description.pluginFormatName + "  " + (description.isInstrument ? "INSTRUMENT" : "FX"),
                    4, 20, width - 8, 14, juce::Justification::centredLeft, true);
