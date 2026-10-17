@@ -3,6 +3,7 @@
 #undef private
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
+#include "LibertyDesignSystem.h"
 void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -364,12 +365,12 @@ public:
     void paint(juce::Graphics& g) override
     {
         // Obsidian deep graphite aligns the browser with mixer and editor panels.
-        g.fillAll(juce::Colour(0xff101821));
+        g.fillAll(LibertyUI::Colour::panel);
         // Obsidian browser edge matches the graphite dividers throughout Liberty.
         g.setColour(juce::Colour(0xff40515f));
         g.drawVerticalLine(0, 0.0f, (float)getHeight());
         // Obsidian soft-white title matches primary labels across Liberty Pro.
-        g.setColour(juce::Colour(0xffeffcfd));
+        g.setColour(LibertyUI::Colour::textPrimary);
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
         // Obsidian separator clearly distinguishes browser controls from the plugin list.
@@ -385,7 +386,7 @@ public:
             g.drawText("ONE KNOB FX", 22, 172, getWidth() - 34, 20, juce::Justification::centredLeft);
         }
         // Obsidian secondary label improves category hint legibility on deep graphite.
-        g.setColour(juce::Colour(0xffb9ccd6));
+        g.setColour(LibertyUI::Colour::textMuted);
         g.setFont(juce::Font(9.0f));
         g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18, juce::Justification::centredLeft, true);
     }
