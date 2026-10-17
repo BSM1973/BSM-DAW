@@ -97,7 +97,8 @@ public:
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
             g.setColour(juce::Colour(0xff54d6dc));
             g.fillRoundedRectangle(bar.toFloat().reduced(1.0f, 0.0f), 2.0f);
-            g.setColour(juce::Colour(0xffb6f2f2).withAlpha(0.85f));
+            // Slightly brighter Obsidian turquoise outline defines each velocity bar.
+            g.setColour(juce::Colour(0xffb6f2f2).withAlpha(0.95f));
             g.drawRoundedRectangle(bar.toFloat(), 2.0f, 1.0f);
         }
     }
