@@ -132,8 +132,9 @@ public:
         owner.addAndMakeVisible(toggleButton);
 
         closeButton.setButtonText("CLOSE");
-        closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-        closeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        // Obsidian close control uses the same graphite surface and soft-white labels.
+        closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        closeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         closeButton.onClick = [this]
         {
             toggleButton.setToggleState(false, juce::dontSendNotification);
