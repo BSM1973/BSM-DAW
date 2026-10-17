@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
+#include "LibertyDesignSystem.h"
 void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
 void showFloatingDrumSamplerWindow(AudioEngine&);
@@ -88,7 +89,8 @@ MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatin
 void MainComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
-    g.fillAll(juce::Colour(0xff0b0d10));
+    // Liberty Pro design system: shared canvas across transport, arrange and dock.
+    g.fillAll(LibertyUI::Colour::canvas);
     auto transport = bounds.removeFromTop(transportHeight);
     auto mixer = bounds.removeFromBottom(mixerHeight);
     drawTransport(g, transport);
