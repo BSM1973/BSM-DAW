@@ -314,13 +314,23 @@ private:
                 g.setFont(juce::Font(19.0f, juce::Font::bold));
                 g.drawFittedText("AUDIO SETTINGS", 56, 100, juce::jmax(0, w - 78), 42,
                                  juce::Justification::centredLeft, 1);
+                // A dedicated recessed bay for the live device selector.
+                // The selector remains an actual JUCE child component on top.
+                const auto deviceBay = juce::Rectangle<float>(18.0f, 173.0f,
+                    (float) juce::jmax(0, w - 36),
+                    (float) juce::jmax(0, getHeight() - 190));
+                g.setColour(juce::Colour(0xff141e28));
+                g.fillRoundedRectangle(deviceBay, 11.0f);
+                g.setColour(juce::Colour(0xff314553));
+                g.drawRoundedRectangle(deviceBay.reduced(0.5f), 11.0f, 1.0f);
+
             }
 
             void resized() override
             {
                 // Preserve the fully operational JUCE audio-device selector.
-                selector->setBounds(18, 178, juce::jmax(0, getWidth() - 36),
-                                    juce::jmax(0, getHeight() - 196));
+                selector->setBounds(30, 187, juce::jmax(0, getWidth() - 60),
+                                    juce::jmax(0, getHeight() - 218));
             }
         private:
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
