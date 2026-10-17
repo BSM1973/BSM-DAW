@@ -323,6 +323,15 @@ private:
                 g.fillRoundedRectangle(deviceBay, 11.0f);
                 g.setColour(juce::Colour(0xff314553));
                 g.drawRoundedRectangle(deviceBay.reduced(0.5f), 11.0f, 1.0f);
+                // Bottom accent is inside the bay, away from all interactive controls.
+                const float railY = (float) getHeight() - 20.0f;
+                if (railY > deviceBay.getY() + 24.0f)
+                {
+                    g.setColour(juce::Colour(0xff65e0dc).withAlpha(0.45f));
+                    g.fillRoundedRectangle(36.0f, railY,
+                        (float) juce::jmax(0, juce::jmin(112, w - 72)), 2.0f, 1.0f);
+                }
+
 
             }
 
@@ -342,6 +351,7 @@ private:
             setUsingNativeTitleBar(true);
             setContentOwned(new AudioSettingsContent(engine), true);
             setResizable(true, true);
+            setResizeLimits(560, 460, 1400, 1000);
             centreWithSize(680, 540);
             setVisible(false);
         }
