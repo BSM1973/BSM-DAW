@@ -122,10 +122,11 @@ public:
 
         toggleButton.setButtonText("BROWSER");
         toggleButton.setAlwaysOnTop(true);
-        toggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-        toggleButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
-        toggleButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        toggleButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        // Obsidian browser toggle matches category controls in both states.
+        toggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        toggleButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
+        toggleButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb9ccd6));
+        toggleButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
         toggleButton.setClickingTogglesState(true);
         toggleButton.setToggleState(false, juce::dontSendNotification);
         toggleButton.onClick = [this] { setBrowserOpen(toggleButton.getToggleState()); };
