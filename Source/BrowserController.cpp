@@ -308,7 +308,8 @@ public:
         // Obsidian separator clearly distinguishes browser controls from the plugin list.
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(0, 100, getWidth(), 1);
-        g.setColour(juce::Colour(0xff8f98a3));
+        // Obsidian secondary label improves category hint legibility on deep graphite.
+        g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
         g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18, juce::Justification::centredLeft, true);
     }
