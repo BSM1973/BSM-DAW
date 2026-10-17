@@ -50,7 +50,8 @@ public:
             const bool fav = label == "FAVORIS";
             g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b222a));
             g.fillRect(0, 0, width, height);
-            g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xff72d8f5));
+            // Obsidian manufacturer headings use muted turquoise; favourites keep gold.
+            g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xffb8e8ec));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText(label, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
             return;
