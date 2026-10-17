@@ -166,7 +166,8 @@ public:
         addAndMakeVisible(pluginTree);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
-        spliceTitle.setColour(juce::Label::textColourId, juce::Colours::white);
+        // Obsidian primary text keeps the Splice heading consistent with Browser tabs.
+        spliceTitle.setColour(juce::Label::textColourId, juce::Colour(0xffeffcfd));
         spliceTitle.setFont(juce::Font(14.0f, juce::Font::bold));
         addAndMakeVisible(spliceTitle);
         spliceInfo.setText("Splice Sounds - charge le plugin officiel AU/VST3 dans Liberty pour l'interface complète.", juce::dontSendNotification);
