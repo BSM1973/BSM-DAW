@@ -336,6 +336,15 @@ public:
         // Obsidian separator clearly distinguishes browser controls from the plugin list.
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(0, 100, getWidth(), 1);
+        if (category == Category::plugins)
+        {
+            // Actual in-app One Knob section header, rather than a mockup-only label.
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(12.0f, 177.0f, 3.0f, 10.0f, 1.5f);
+            g.setColour(juce::Colour(0xffb8e8ec));
+            g.setFont(juce::Font(11.0f, juce::Font::bold));
+            g.drawText("ONE KNOB FX", 22, 172, getWidth() - 34, 20, juce::Justification::centredLeft);
+        }
         // Obsidian secondary label improves category hint legibility on deep graphite.
         g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
@@ -360,14 +369,14 @@ public:
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
         clearBlacklistButton.setBounds(14 + (getWidth() - 24) / 2, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
-        const int oneKnobY = 172;
+        const int oneKnobY = 192;
         const int oneKnobW = juce::jmax(54, (getWidth() - 26) / 4);
         juce::TextButton* oneKnobButtons[] = { &chorusButton, &flangerButton, &phaserButton, &tremoloButton,
             &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
         for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
-        pluginTree.setBounds(10, 354, getWidth() - 20, juce::jmax(40, getHeight() - 456));
+        pluginTree.setBounds(10, 374, getWidth() - 20, juce::jmax(40, getHeight() - 476));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
         favouritePluginButton.setBounds(10, controlsY, w, 28);
