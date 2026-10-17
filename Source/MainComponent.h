@@ -271,14 +271,65 @@ public:
 private:
     class AudioSettingsWindow final : public juce::DocumentWindow
     {
+        class AudioSettingsContent final : public juce::Component
+        {
+        public:
+            explicit AudioSettingsContent(AudioEngine& engine)
+            {
+                selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
+                    engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false);
+                addAndMakeVisible(*selector);
+                setSize(680, 540);
+            }
+
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xff0f141b));
+                const int w = getWidth();
+                g.setColour(juce::Colour(0xff65e0dc));
+                // Sliders icon, entirely inside its own 28px-wide region.
+                for (int i = 0; i < 2; ++i)
+                {
+                    const float y = 31.0f + (float)i * 12.0f;
+                    g.drawLine(20.0f, y, 43.0f, y, 2.0f);
+                    g.fillEllipse((i == 0 ? 32.0f : 25.0f), y - 3.0f, 6.0f, 6.0f);
+                }
+                g.setColour(juce::Colour(0xfff0f6f8));
+                g.setFont(juce::Font(22.0f, juce::Font::plain));
+                g.drawFittedText("PARAMÈTRES AUDIO", 55, 17, juce::jmax(0, w - 70), 43,
+                                 juce::Justification::centredLeft, 1);
+
+                const auto panel = juce::Rectangle<float>(18.0f, 80.0f,
+                                                           (float)juce::jmax(0, w - 36), 80.0f);
+                g.setColour(juce::Colour(0xff1d2935));
+                g.fillRoundedRectangle(panel, 11.0f);
+                g.setColour(juce::Colour(0xff314553));
+                g.drawRoundedRectangle(panel.reduced(0.5f), 11.0f, 1.2f);
+                g.setColour(juce::Colour(0xff65e0dc));
+                g.fillRoundedRectangle(38.0f, 107.0f, 4.0f, 27.0f, 2.0f);
+                g.setColour(juce::Colour(0xfff0f6f8));
+                g.setFont(juce::Font(19.0f, juce::Font::bold));
+                g.drawFittedText("AUDIO SETTINGS", 56, 100, juce::jmax(0, w - 78), 42,
+                                 juce::Justification::centredLeft, 1);
+            }
+
+            void resized() override
+            {
+                // Preserve the fully operational JUCE audio-device selector.
+                selector->setBounds(18, 178, juce::jmax(0, getWidth() - 36),
+                                    juce::jmax(0, getHeight() - 196));
+            }
+        private:
+            std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
+        };
     public:
         explicit AudioSettingsWindow(AudioEngine& engine)
-            : juce::DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff15181d), juce::DocumentWindow::closeButton)
+            : juce::DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff0f141b), juce::DocumentWindow::closeButton)
         {
             setUsingNativeTitleBar(true);
-            setContentOwned(new juce::AudioDeviceSelectorComponent(engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false), true);
+            setContentOwned(new AudioSettingsContent(engine), true);
             setResizable(true, true);
-            centreWithSize(620, 500);
+            centreWithSize(680, 540);
             setVisible(false);
         }
         void closeButtonPressed() override { setVisible(false); }
