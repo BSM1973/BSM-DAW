@@ -150,7 +150,8 @@ public:
 
         pluginTree.setRootItemVisible(false);
         pluginTree.setMultiSelectEnabled(false);
-        pluginTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff111419));
+        // Keep the plugin list surface continuous with the Obsidian browser panel.
+        pluginTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101821));
         pluginTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff303842));
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
         addAndMakeVisible(pluginTree);
