@@ -265,8 +265,9 @@ public:
         clearOneKnobButton.setButtonText("1K OFF");
         for (auto* b : { &chorusButton, &flangerButton, &phaserButton, &tremoloButton, &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton, &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton })
         {
-            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff16303b));
-            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff72d8f5));
+            // Obsidian One Knob action buttons use the shared graphite and cyan palette.
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb8e8ec));
             addAndMakeVisible(*b);
         }
         chorusButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::chorus); };
