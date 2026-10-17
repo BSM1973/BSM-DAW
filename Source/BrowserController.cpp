@@ -58,7 +58,8 @@ public:
 
         if (isSelected())
         {
-            g.setColour(juce::Colour(0xff244f63));
+            // Obsidian selection uses the same deep turquoise as selected arranger rows.
+            g.setColour(juce::Colour(0xff23434c));
             g.fillRect(0, 0, width, height);
         }
 
