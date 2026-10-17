@@ -63,7 +63,8 @@ public:
             g.fillRect(0, 0, width, height);
         }
 
-        g.setColour(juce::Colours::white);
+        // Obsidian soft white keeps plugin names prominent without harsh pure white.
+        g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
         // Obsidian secondary metadata stays readable without competing with plugin names.
