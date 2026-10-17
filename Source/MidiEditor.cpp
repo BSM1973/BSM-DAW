@@ -60,7 +60,8 @@ public:
         g.fillAll(juce::Colour(0xff18212b));
         g.setColour(juce::Colour(0xff070b10));
         g.fillRect(0, 0, getWidth(), 2);
-        g.setColour(juce::Colour(0xff344452));
+        // Obsidian separator keeps the velocity editor distinct from the note grid.
+        g.setColour(juce::Colour(0xff48606d));
         g.drawHorizontalLine(2, 0.0f, (float)getWidth());
         g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.65f));
         g.fillRect(0, 2, juce::jmin(pianoKeyWidth, getWidth()), 1);
