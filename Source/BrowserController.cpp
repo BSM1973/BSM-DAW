@@ -351,6 +351,35 @@ public:
         g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18, juce::Justification::centredLeft, true);
     }
 
+    void paintOverChildren(juce::Graphics& g) override
+    {
+        if (category != Category::plugins) return;
+
+        // Actual vector icons painted in Liberty, not a design-only illustration.
+        juce::TextButton* buttons[] = { &chorusButton, &flangerButton, &phaserButton, &tremoloButton,
+            &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
+            &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton,
+            &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
+        for (int i = 0; i < 20; ++i)
+        {
+            const auto bounds = buttons[i]->getBounds();
+            if (! buttons[i]->isVisible() || bounds.getWidth() < 85) continue;
+            const float x = (float) bounds.getX() + 11.0f;
+            const float y = (float) bounds.getCentreY();
+            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.85f));
+            g.drawEllipse(x - 6.0f, y - 6.0f, 12.0f, 12.0f, 1.0f);
+            juce::Path wave;
+            for (int n = 0; n <= 12; ++n)
+            {
+                const float px = x - 4.0f + (float)n * (8.0f / 12.0f);
+                const float py = y - std::sin((float)n * (0.6f + (float)(i % 4) * 0.12f)) * 2.4f;
+                if (n == 0) wave.startNewSubPath(px, py);
+                else wave.lineTo(px, py);
+            }
+            g.strokePath(wave, juce::PathStrokeType(1.1f));
+        }
+    }
+
     void resized() override
     {
         closeButton.setBounds(getWidth() - 72, 8, 62, 26);
