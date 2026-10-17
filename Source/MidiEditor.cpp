@@ -278,6 +278,8 @@ public:
             // Obsidian transport marker stays warm orange, with a softer idle state.
             g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xffffc06b) : juce::Colour(0xffc99255));
             g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 1.5f);
+            // Fixed Obsidian orange keeps the ruler playhead marker identifiable at rest.
+            g.setColour(juce::Colour(0xffe4a85e));
             g.fillRoundedRectangle((float)playheadX - 3.0f, (float)rulerHeight - 5.0f, 6.0f, 5.0f, 1.5f);
         }
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
