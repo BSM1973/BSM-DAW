@@ -188,7 +188,8 @@ public:
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
             // Obsidian muted blue-grey keeps inactive category labels readable.
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb9ccd6));
-            b->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+            // Obsidian soft white completes the active category typography.
+            b->setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
             b->setClickingTogglesState(false);
             addAndMakeVisible(*b);
         }
