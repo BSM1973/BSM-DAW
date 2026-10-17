@@ -724,38 +724,37 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.45f));
     g.fillRect(area.getX(), area.getBottom() - 2, juce::jmin(182, area.getWidth()), 1);
 
-    const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
-    juce::ignoreUnused(logoArea);
+    // LIBERTY PRO 2.0: a modern, custom vector brand panel replacing the old
+    // scripted logo. Everything is drawn inside the existing 182 x 66 region.
+    const auto brandPanel = juce::Rectangle<float>(8.0f, 8.0f, 178.0f, 60.0f);
+    g.setColour(LibertyUI::Colour::surface);
+    g.fillRoundedRectangle(brandPanel, 10.0f);
+    g.setColour(LibertyUI::Colour::divider);
+    g.drawRoundedRectangle(brandPanel.reduced(0.5f), 10.0f, 1.0f);
+    g.setColour(LibertyUI::Colour::accent);
+    g.fillRoundedRectangle(15.0f, 17.0f, 3.0f, 42.0f, 1.5f);
 
-    g.setColour(juce::Colours::white);
-    juce::Path emblem;
-    emblem.addEllipse(10.0f, 10.0f, 44.0f, 44.0f);
-    g.strokePath(emblem, juce::PathStrokeType(2.0f));
-    juce::Path wing;
-    wing.startNewSubPath(16.0f, 43.0f);
-    wing.cubicTo(23.0f, 34.0f, 27.0f, 20.0f, 34.0f, 14.0f);
-    wing.cubicTo(36.0f, 27.0f, 41.0f, 35.0f, 50.0f, 38.0f);
-    g.strokePath(wing, juce::PathStrokeType(2.6f));
-    juce::Path wave;
-    wave.startNewSubPath(14.0f, 39.0f);
-    wave.cubicTo(21.0f, 45.0f, 29.0f, 45.0f, 36.0f, 39.0f);
-    wave.cubicTo(41.0f, 34.0f, 47.0f, 33.0f, 52.0f, 35.0f);
-    g.strokePath(wave, juce::PathStrokeType(2.0f));
+    // Signal emblem has a reserved 34px region and never touches the wordmark.
+    juce::Path signal;
+    signal.startNewSubPath(26.0f, 41.0f);
+    signal.lineTo(30.0f, 41.0f);
+    signal.lineTo(34.0f, 30.0f);
+    signal.lineTo(39.0f, 48.0f);
+    signal.lineTo(44.0f, 35.0f);
+    signal.lineTo(49.0f, 41.0f);
+    signal.lineTo(54.0f, 41.0f);
+    g.setColour(LibertyUI::Colour::accent);
+    g.strokePath(signal, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
 
-    const juce::ColourGradient audioBarsGradient(
-        juce::Colour(LibertyProTransport::accent), 18.0f, 18.0f,
-        juce::Colour(0xff277eaa), 40.0f, 40.0f, false);
-    g.setGradientFill(audioBarsGradient);
-    g.fillRoundedRectangle(18.0f, 25.0f, 3.5f, 14.0f, 1.5f);
-    g.fillRoundedRectangle(24.0f, 21.0f, 3.5f, 18.0f, 1.5f);
-    g.fillRoundedRectangle(30.0f, 18.0f, 3.5f, 21.0f, 1.5f);
-    g.fillRoundedRectangle(36.0f, 23.0f, 3.5f, 16.0f, 1.5f);
-
-    auto libertyFont = juce::Font("Brush Script MT", 50.0f, juce::Font::plain);
-    libertyFont.setPreferredFallbackFamilies({ "Snell Roundhand", "Apple Chancery", "URW Chancery L", "Cursive" });
-    g.setColour(juce::Colours::white);
-    g.setFont(libertyFont);
-    g.drawText("Liberty", 58, 5, 120, 56, juce::Justification::left);
+    g.setColour(LibertyUI::Colour::textPrimary);
+    g.setFont(juce::Font(23.0f, juce::Font::bold));
+    g.drawFittedText("LIBERTY", juce::Rectangle<int>(62, 17, 116, 29),
+                     juce::Justification::centredLeft, 1);
+    g.setColour(LibertyUI::Colour::textMuted);
+    g.setFont(juce::Font(9.0f, juce::Font::bold));
+    g.drawFittedText("PRO  /  DIGITAL AUDIO", juce::Rectangle<int>(63, 47, 115, 13),
+                     juce::Justification::centredLeft, 1);
 
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
     // Hit targets remain exactly 56 x 28 at the existing coordinates.
