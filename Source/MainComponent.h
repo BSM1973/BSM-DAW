@@ -298,7 +298,7 @@ private:
                 g.setFont(juce::Font(22.0f, juce::Font::plain));
                 // Use a Unicode code point for È, independent of source-file encoding.
                 const juce::String heading = juce::String("PARAM")
-                    + juce::String::charToString((juce_wchar) 0x00C8) + "TRES AUDIO";
+                    + juce::String::charToString((juce::juce_wchar) 0x00C8) + "TRES AUDIO";
                 g.drawFittedText(heading, 55, 17, juce::jmax(0, w - 70), 43,
                                  juce::Justification::centredLeft, 1);
 
