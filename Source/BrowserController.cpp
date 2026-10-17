@@ -225,8 +225,9 @@ public:
         for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
                          &loadPluginButton, &openPluginButton, &unloadPluginButton })
         {
-            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-            b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            // Obsidian plugin actions share the graphite surface and soft-white typography.
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
             addAndMakeVisible(*b);
         }
 
