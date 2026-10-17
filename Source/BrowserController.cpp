@@ -184,7 +184,8 @@ public:
         {
             // Obsidian inactive category surface matches browser manufacturer headers.
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
-            b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff315f7a));
+            // Obsidian active category surface matches selected step-sequencer accents.
+            b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
             b->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
             b->setClickingTogglesState(false);
