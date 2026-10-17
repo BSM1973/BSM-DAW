@@ -57,7 +57,8 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff18212b));
+        // Obsidian deep graphite aligns the velocity editor with the dock surfaces.
+        g.fillAll(juce::Colour(0xff101821));
         g.setColour(juce::Colour(0xff070b10));
         g.fillRect(0, 0, getWidth(), 2);
         // Obsidian separator keeps the velocity editor distinct from the note grid.
