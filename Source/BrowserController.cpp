@@ -305,7 +305,8 @@ public:
         g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(15.0f, juce::Font::bold));
         g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff20252c));
+        // Obsidian separator clearly distinguishes browser controls from the plugin list.
+        g.setColour(juce::Colour(0xff40515f));
         g.fillRect(0, 100, getWidth(), 1);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(9.0f));
