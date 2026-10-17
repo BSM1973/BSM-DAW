@@ -756,6 +756,17 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.drawFittedText("PRO  /  DIGITAL AUDIO", juce::Rectangle<int>(63, 47, 115, 13),
                      juce::Justification::centredLeft, 1);
 
+    // Transport 2.0: a distinct command deck, drawn behind the existing
+    // five interactive controls. The deck stays inside x=205..533, y=31..73.
+    // No hit-test logic is changed; this is a purely visual grouping layer.
+    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 328.0f, 42.0f);
+    g.setColour(LibertyUI::Colour::canvas);
+    g.fillRoundedRectangle(commandDeck, 11.0f);
+    g.setColour(LibertyUI::Colour::divider);
+    g.drawRoundedRectangle(commandDeck.reduced(0.5f), 11.0f, 1.0f);
+    g.setColour(LibertyUI::Colour::accent.withAlpha(0.8f));
+    g.fillRoundedRectangle(276.0f, 70.0f, 180.0f, 2.0f, 1.0f);
+
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
     // Hit targets remain exactly 56 x 28 at the existing coordinates.
     const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
