@@ -64,7 +64,8 @@ public:
         // Obsidian separator keeps the velocity editor distinct from the note grid.
         g.setColour(juce::Colour(0xff48606d));
         g.drawHorizontalLine(2, 0.0f, (float)getWidth());
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.65f));
+        // Clear turquoise section accent without changing the velocity lane geometry.
+        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.80f));
         g.fillRect(0, 2, juce::jmin(pianoKeyWidth, getWidth()), 1);
 
         // Obsidian velocity-lane heading matches the clear dock title hierarchy.
