@@ -282,7 +282,8 @@ public:
         softClipButton.onClick = [this] { loadOneKnob(LibertyOneKnobRack::Type::softClip); };
         clearOneKnobButton.onClick = [this] { clearOneKnob(); };
 
-        pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffaab2bc));
+        // Obsidian secondary text aligns plugin status with browser hints.
+        pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffb9ccd6));
         pluginStatus.setFont(juce::Font(10.0f));
         pluginStatus.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(pluginStatus);
