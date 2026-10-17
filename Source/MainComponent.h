@@ -273,13 +273,44 @@ private:
     {
         class AudioSettingsContent final : public juce::Component
         {
+        class AudioControlsLookAndFeel final : public juce::LookAndFeel_V4
+        {
+        public:
+            AudioControlsLookAndFeel()
+            {
+                setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1d2935));
+                setColour(juce::ComboBox::textColourId, juce::Colour(0xfff0f6f8));
+                setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff314553));
+                setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff65e0dc));
+                setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d2935));
+                setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
+                setColour(juce::TextButton::textColourOffId, juce::Colour(0xfff0f6f8));
+                setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+                setColour(juce::Label::textColourId, juce::Colour(0xffd6e4ed));
+                setColour(juce::ToggleButton::textColourId, juce::Colour(0xffd6e4ed));
+                setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff141e28));
+                setColour(juce::ListBox::outlineColourId, juce::Colour(0xff314553));
+                setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff1d2935));
+                setColour(juce::PopupMenu::textColourId, juce::Colour(0xfff0f6f8));
+                setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff286674));
+                setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+            }
+        };
+        AudioControlsLookAndFeel controlsLookAndFeel;
         public:
             explicit AudioSettingsContent(AudioEngine& engine)
             {
                 selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
                     engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false);
+                selector->setLookAndFeel(&controlsLookAndFeel);
                 addAndMakeVisible(*selector);
                 setSize(680, 540);
+            }
+
+            ~AudioSettingsContent() override
+            {
+                // Disconnect before the look-and-feel member is destroyed.
+                selector->setLookAndFeel(nullptr);
             }
 
             void paint(juce::Graphics& g) override
