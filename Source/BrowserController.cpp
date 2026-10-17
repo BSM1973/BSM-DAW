@@ -296,7 +296,8 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff101318));
+        // Obsidian deep graphite aligns the browser with mixer and editor panels.
+        g.fillAll(juce::Colour(0xff101821));
         g.setColour(juce::Colour(0xff3b424c));
         g.drawVerticalLine(0, 0.0f, (float)getHeight());
         g.setColour(juce::Colours::white);
