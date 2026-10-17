@@ -295,6 +295,26 @@ private:
                 setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff286674));
                 setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
             }
+
+            void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
+                              int, int, int, int, juce::ComboBox& box) override
+            {
+                auto bounds = juce::Rectangle<float>(0.5f, 0.5f,
+                    (float) juce::jmax(0, width - 1), (float) juce::jmax(0, height - 1));
+                g.setColour(juce::Colour(isButtonDown ? 0xff263c49 : 0xff1d2935));
+                g.fillRoundedRectangle(bounds, 7.0f);
+                g.setColour(juce::Colour(box.hasKeyboardFocus(true) ? 0xff65e0dc : 0xff314553));
+                g.drawRoundedRectangle(bounds, 7.0f, 1.2f);
+                const float cx = (float) width - 17.0f;
+                const float cy = (float) height * 0.5f;
+                juce::Path arrow;
+                arrow.startNewSubPath(cx - 4.0f, cy - 2.0f);
+                arrow.lineTo(cx, cy + 2.0f);
+                arrow.lineTo(cx + 4.0f, cy - 2.0f);
+                g.setColour(juce::Colour(0xff65e0dc));
+                g.strokePath(arrow, juce::PathStrokeType(1.8f,
+                    juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            }
         };
         AudioControlsLookAndFeel controlsLookAndFeel;
         public:
