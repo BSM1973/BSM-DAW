@@ -108,6 +108,45 @@ private:
     std::function<void(const juce::PluginDescription&)> toggleFavourite;
 };
 
+// One Knob controls reserve separate rectangles for their icon and label.
+// Never paint icons over JUCE's centred default TextButton text.
+class OneKnobButton final : public juce::TextButton
+{
+public:
+    void paintButton(juce::Graphics& g, bool isOver, bool isDown) override
+    {
+        const auto area = getLocalBounds().toFloat().reduced(0.8f);
+        const auto background = getToggleState() ? juce::Colour(0xff286674)
+                                                  : juce::Colour(0xff1b2833);
+        g.setColour(background.brighter(isDown ? 0.12f : (isOver ? 0.06f : 0.0f)));
+        g.fillRoundedRectangle(area, 5.0f);
+        g.setColour(juce::Colour(0xff40515f));
+        g.drawRoundedRectangle(area, 5.0f, 1.0f);
+
+        const int width = getWidth();
+        const int iconSpace = width >= 112 ? 25 : (width >= 82 ? 20 : 0);
+        if (iconSpace > 0)
+        {
+            const float cx = (float)iconSpace * 0.48f;
+            const float cy = (float)getHeight() * 0.5f;
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.drawEllipse(cx - 5.0f, cy - 5.0f, 10.0f, 10.0f, 1.0f);
+            juce::Path wave;
+            wave.startNewSubPath(cx - 3.5f, cy);
+            wave.lineTo(cx - 1.5f, cy - 2.0f);
+            wave.lineTo(cx + 0.5f, cy + 2.0f);
+            wave.lineTo(cx + 3.5f, cy);
+            g.strokePath(wave, juce::PathStrokeType(1.0f));
+        }
+
+        // The label is clipped to its own region; the icon cannot overlap it.
+        auto textArea = getLocalBounds().withTrimmedLeft(iconSpace + 2).reduced(3, 2);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(juce::jlimit(9.0f, 12.0f, (float)width / 11.0f), juce::Font::bold));
+        g.drawFittedText(getButtonText(), textArea, juce::Justification::centred, 1, 0.75f);
+    }
+};
+
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
                            private juce::FileBrowserListener
@@ -349,35 +388,6 @@ public:
         g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
         g.drawText(categoryHint(), 14, getHeight() - 29, getWidth() - 28, 18, juce::Justification::centredLeft, true);
-    }
-
-    void paintOverChildren(juce::Graphics& g) override
-    {
-        if (category != Category::plugins) return;
-
-        // Actual vector icons painted in Liberty, not a design-only illustration.
-        juce::TextButton* buttons[] = { &chorusButton, &flangerButton, &phaserButton, &tremoloButton,
-            &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
-            &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton,
-            &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
-        for (int i = 0; i < 20; ++i)
-        {
-            const auto bounds = buttons[i]->getBounds();
-            if (! buttons[i]->isVisible() || bounds.getWidth() < 85) continue;
-            const float x = (float) bounds.getX() + 11.0f;
-            const float y = (float) bounds.getCentreY();
-            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.85f));
-            g.drawEllipse(x - 6.0f, y - 6.0f, 12.0f, 12.0f, 1.0f);
-            juce::Path wave;
-            for (int n = 0; n <= 12; ++n)
-            {
-                const float px = x - 4.0f + (float)n * (8.0f / 12.0f);
-                const float py = y - std::sin((float)n * (0.6f + (float)(i % 4) * 0.12f)) * 2.4f;
-                if (n == 0) wave.startNewSubPath(px, py);
-                else wave.lineTo(px, py);
-            }
-            g.strokePath(wave, juce::PathStrokeType(1.1f));
-        }
     }
 
     void resized() override
@@ -1011,7 +1021,7 @@ private:
     juce::StringArray favouriteKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
-    juce::TextButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
+    OneKnobButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus, spliceTitle, spliceInfo;
     juce::TextButton spliceOpenPluginButton, spliceScanButton;
     juce::File rootDirectory;
