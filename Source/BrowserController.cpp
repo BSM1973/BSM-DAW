@@ -141,6 +141,9 @@ public:
         };
         addAndMakeVisible(closeButton);
 
+        // Obsidian: distinguish selected files without altering file interactions.
+        fileTree.setColour(juce::DirectoryContentsDisplayComponent::highlightColourId, juce::Colour(0xff23434c));
+        fileTree.setColour(juce::DirectoryContentsDisplayComponent::textColourId, juce::Colour(0xffeffcfd));
         fileTree.setRootItemVisible(false);
         // Obsidian file tree uses the same deep graphite as the plugin browser.
         fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101821));
