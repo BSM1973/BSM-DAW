@@ -757,29 +757,33 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setFont(libertyFont);
     g.drawText("Liberty", 58, 5, 120, 56, juce::Justification::left);
 
+    // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
+    // Hit targets remain exactly 56 x 28 at the existing coordinates.
     const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
     for (int i = 0; i < 5; ++i)
     {
-        auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
-        g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.055f));
-        g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(7.0f, (float)r.getHeight())), 4.0f);
-        // Primary transport action carries the accent; navigation stays graphite.
-        g.setColour(i == 2 ? juce::Colour(LibertyProTransport::accent)
-                           : juce::Colour(0xff526475).withAlpha(0.8f));
-        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, i == 2 ? 1.5f : 1.0f);
-        if (i == 2)
+        const auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
+        const bool primary = (i == 2);
+        const bool playing = primary && isPlaying;
+        const auto face = primary ? (playing ? juce::Colour(0xff177f83) : juce::Colour(0xff24535d))
+                                  : LibertyUI::Colour::surface;
+        g.setColour(face);
+        g.fillRoundedRectangle(r.toFloat(), 7.0f);
+        g.setColour(primary ? LibertyUI::Colour::accent : LibertyUI::Colour::divider);
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 7.0f, primary ? 1.7f : 1.0f);
+
+        if (primary)
         {
-            g.setColour(juce::Colour(LibertyProTransport::accent).withAlpha(isPlaying ? 0.95f : 0.65f));
-            g.fillRoundedRectangle((float)r.getX() + 9.0f, (float)r.getBottom() - 3.0f,
+            // A visible accent rail is contained inside PLAY/STOP's own bounds.
+            g.setColour(LibertyUI::Colour::accent);
+            g.fillRoundedRectangle((float)r.getX() + 9.0f, (float)r.getBottom() - 4.0f,
                                    (float)r.getWidth() - 18.0f, 2.0f, 1.0f);
         }
-        // Keep the transport label legible against the active teal PLAY/STOP surface.
-        g.setColour(i == 2 && isPlaying ? juce::Colour(0xfff0fbfc)
-                                       : juce::Colour(i == 2 ? LibertyProTransport::accent
-                                                             : LibertyProTransport::text));
-        g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
-        g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
+
+        const auto textArea = r.reduced(4, 3);
+        g.setColour(primary ? LibertyUI::Colour::textPrimary : LibertyUI::Colour::textCyan);
+        g.setFont(juce::Font(primary ? 12.0f : 11.0f, juce::Font::bold));
+        g.drawFittedText(playing ? "STOP" : labels[i], textArea, juce::Justification::centred, 1);
     }
 
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
