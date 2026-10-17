@@ -363,7 +363,8 @@ private:
                 g.fillRoundedRectangle(38.0f, 107.0f, 4.0f, 27.0f, 2.0f);
                 g.setColour(juce::Colour(0xfff0f6f8));
                 g.setFont(juce::Font(19.0f, juce::Font::bold));
-                g.drawFittedText("AUDIO SETTINGS", 56, 100, juce::jmax(0, w - 78), 42,
+                const juce::String panelTitle = juce::String("CONFIGURATION AUDIO");
+                g.drawFittedText(panelTitle, 56, 100, juce::jmax(0, w - 78), 42,
                                  juce::Justification::centredLeft, 1);
                 // A dedicated recessed bay for the live device selector.
                 // The selector remains an actual JUCE child component on top.
@@ -397,7 +398,9 @@ private:
         };
     public:
         explicit AudioSettingsWindow(AudioEngine& engine)
-            : juce::DocumentWindow("Liberty - Audio Settings", juce::Colour(0xff0f141b), juce::DocumentWindow::closeButton)
+            : juce::DocumentWindow(juce::String("Liberty - Param")
+                + juce::String::charToString((juce::juce_wchar) 0x00E8)
+                + "tres audio", juce::Colour(0xff0f141b), juce::DocumentWindow::closeButton)
         {
             setUsingNativeTitleBar(true);
             setContentOwned(new AudioSettingsContent(engine), true);
