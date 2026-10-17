@@ -176,6 +176,9 @@ public:
         spliceInfo.setFont(juce::Font(10.0f));
         spliceInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(spliceInfo);
+        // Obsidian primary action for opening the official Splice plugin.
+        spliceOpenPluginButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff286674));
+        spliceOpenPluginButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         spliceOpenPluginButton.setButtonText("OUVRIR SPLICE SOUNDS");
         spliceOpenPluginButton.onClick = [this] { openSpliceSounds(); };
         addAndMakeVisible(spliceOpenPluginButton);
