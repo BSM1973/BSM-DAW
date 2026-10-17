@@ -793,36 +793,34 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
 
+    // Readouts use dedicated, non-overlapping regions. Preserve existing hit targets.
     const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
-    g.setColour(juce::Colour(0xff0b0f14));
-    g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.5f));
-    g.drawRoundedRectangle(positionBox.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
-    g.fillRoundedRectangle((float)positionBox.getX() + 8.0f, (float)positionBox.getBottom() - 3.0f,
-                           (float)positionBox.getWidth() - 16.0f, 2.0f, 1.0f);
-    // Musical position is the primary transport readout.
-    g.setColour(juce::Colour(0xffe9f9fa));
+    g.setColour(LibertyUI::Colour::surface);
+    g.fillRoundedRectangle(positionBox.toFloat(), 7.0f);
+    g.setColour(LibertyUI::Colour::accent);
+    g.drawRoundedRectangle(positionBox.toFloat().reduced(0.5f), 7.0f, 1.3f);
+    g.fillRoundedRectangle((float)positionBox.getX() + 10.0f, (float)positionBox.getBottom() - 4.0f,
+                           (float)positionBox.getWidth() - 20.0f, 2.0f, 1.0f);
+    g.setColour(LibertyUI::Colour::textPrimary);
     g.setFont(juce::Font(16.0f, juce::Font::bold));
-    g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
+    g.drawFittedText(juce::String(measure) + ":" + juce::String(beat),
+                     positionBox.reduced(5, 5), juce::Justification::centred, 1);
 
-    // Read-only musical context: no new hit targets or transport behaviour.
     const auto musicInfo = juce::Rectangle<int>(836, 34, 82, 36);
-    g.setColour(juce::Colour(0xff0b0f14));
-    g.fillRoundedRectangle(musicInfo.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
-    g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    // Secondary label recedes while numeric tempo and meter remain prominent.
-    g.setColour(juce::Colour(0xff8d9eae));
+    g.setColour(LibertyUI::Colour::surface);
+    g.fillRoundedRectangle(musicInfo.toFloat(), 7.0f);
+    g.setColour(LibertyUI::Colour::divider);
+    g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 7.0f, 1.0f);
+    // The caption and value have separate vertical rectangles.
+    g.setColour(LibertyUI::Colour::textMuted);
     g.setFont(juce::Font(9.0f, juce::Font::bold));
-    g.drawText("BPM   /   SIGN", musicInfo.getX() + 4, musicInfo.getY() + 2,
-               musicInfo.getWidth() - 8, 12, juce::Justification::centred);
-    g.setColour(juce::Colour(0xffe8eff7));
+    g.drawFittedText("BPM / SIGN", juce::Rectangle<int>(840, 37, 74, 12),
+                     juce::Justification::centred, 1);
+    g.setColour(LibertyUI::Colour::textPrimary);
     g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawText(juce::String(tempoBpm, 0) + "  " + juce::String(timeSignatureNumerator)
-               + "/" + juce::String(timeSignatureDenominator),
-               musicInfo.getX() + 3, musicInfo.getY() + 16, musicInfo.getWidth() - 6, 17,
-               juce::Justification::centred);
+    g.drawFittedText(juce::String(tempoBpm, 0) + "  " + juce::String(timeSignatureNumerator)
+                     + "/" + juce::String(timeSignatureDenominator),
+                     juce::Rectangle<int>(840, 51, 74, 16), juce::Justification::centred, 1);
 
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
     g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
