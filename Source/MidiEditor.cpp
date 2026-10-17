@@ -61,8 +61,8 @@ public:
         g.fillAll(juce::Colour(0xff101821));
         g.setColour(juce::Colour(0xff070b10));
         g.fillRect(0, 0, getWidth(), 2);
-        // Obsidian separator keeps the velocity editor distinct from the note grid.
-        g.setColour(juce::Colour(0xff48606d));
+        // Match the velocity header divider to the continuous keyboard/grid seam.
+        g.setColour(juce::Colour(0xff40515f));
         g.drawHorizontalLine(2, 0.0f, (float)getWidth());
         // Clear turquoise section accent without changing the velocity lane geometry.
         g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.80f));
