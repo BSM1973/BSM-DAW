@@ -272,7 +272,8 @@ public:
         const int playheadX = grid.getX() + (int)std::llround((double)playbackTick * pixelsPerTick);
         if (playheadX >= grid.getX() && playheadX <= grid.getRight())
         {
-            g.setColour(juce::Colour(0xffe4a85e).withAlpha(0.20f));
+            // Soft Obsidian playhead glow remains readable over dense MIDI notes.
+            g.setColour(juce::Colour(0xffe4a85e).withAlpha(0.26f));
             g.drawLine((float)playheadX, (float)rulerHeight, (float)playheadX, (float)grid.getBottom(), 4.0f);
             // Obsidian transport marker stays warm orange, with a softer idle state.
             g.setColour(owner.getMidiEngine().isPlaying() ? juce::Colour(0xffffc06b) : juce::Colour(0xffc99255));
