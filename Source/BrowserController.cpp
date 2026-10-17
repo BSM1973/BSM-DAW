@@ -186,7 +186,8 @@ public:
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
             // Obsidian active category surface matches selected step-sequencer accents.
             b->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
-            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
+            // Obsidian muted blue-grey keeps inactive category labels readable.
+            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb9ccd6));
             b->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
             b->setClickingTogglesState(false);
             addAndMakeVisible(*b);
