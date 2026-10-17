@@ -66,6 +66,9 @@ public:
             // Obsidian selection uses the same deep turquoise as selected arranger rows.
             g.setColour(juce::Colour(0xff23434c));
             g.fillRect(0, 0, width, height);
+            // Obsidian selection marker stays inside the existing plugin row.
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRect(0, 0, 2, height);
         }
 
         // Obsidian soft white keeps plugin names prominent without harsh pure white.
