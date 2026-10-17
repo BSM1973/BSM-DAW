@@ -182,6 +182,9 @@ public:
         spliceOpenPluginButton.setButtonText("OUVRIR SPLICE SOUNDS");
         spliceOpenPluginButton.onClick = [this] { openSpliceSounds(); };
         addAndMakeVisible(spliceOpenPluginButton);
+        // Obsidian secondary Splice action: subdued graphite, readable blue-grey text.
+        spliceScanButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        spliceScanButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb9ccd6));
         spliceScanButton.setButtonText("SCAN SPLICE");
         spliceScanButton.onClick = [this] { scanPlugins(); };
         addAndMakeVisible(spliceScanButton);
