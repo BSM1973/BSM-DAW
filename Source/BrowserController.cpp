@@ -154,7 +154,8 @@ public:
         pluginTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101821));
         // Obsidian graphite tree guides align with the browser panel dividers.
         pluginTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff40515f));
-        pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
+        // Obsidian turquoise highlights plugin drag-and-drop targets consistently.
+        pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         addAndMakeVisible(pluginTree);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
