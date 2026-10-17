@@ -832,19 +832,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
                      + "/" + juce::String(timeSignatureDenominator),
                      juce::Rectangle<int>(840, 51, 74, 16), juce::Justification::centred, 1);
 
-    // Premium audio settings control: preserve its exact hit rectangle.
-    const auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
-    g.setColour(LibertyUI::Colour::surface);
-    g.fillRoundedRectangle(settingsButton.toFloat(), 7.0f);
-    g.setColour(LibertyUI::Colour::divider);
-    g.drawRoundedRectangle(settingsButton.toFloat().reduced(0.5f), 7.0f, 1.0f);
-    // Reserved left accent strip; the caption starts after it.
-    g.setColour(LibertyUI::Colour::accent);
-    g.fillRoundedRectangle(931.0f, 16.0f, 3.0f, 12.0f, 1.5f);
-    g.setColour(LibertyUI::Colour::textPrimary);
-    g.setFont(juce::Font(10.0f, juce::Font::bold));
-    g.drawFittedText("AUDIO SETTINGS", juce::Rectangle<int>(939, 12, 100, 20),
-                     juce::Justification::centred, 1);
+    // Audio settings is already a real top-bar control elsewhere in Liberty.
+    // Do not paint a duplicate over that control: it hides the real UI and
+    // creates a mismatch between visual layout and hit testing.
 
 }
 
