@@ -103,6 +103,9 @@ public:
             g.setColour(juce::Colour(0xffb6f2f2).withAlpha(0.95f));
             g.drawRoundedRectangle(bar.toFloat(), 2.0f, 1.0f);
         }
+        // Continue the keyboard/grid seam through the velocity lane.
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(pianoKeyWidth - 1, 3, 1, juce::jmax(0, getHeight() - 3));
     }
 
     void mouseDown(const juce::MouseEvent& e) override
