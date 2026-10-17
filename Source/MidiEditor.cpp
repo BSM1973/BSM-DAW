@@ -292,7 +292,8 @@ public:
             // Obsidian MIDI notes: brighter idle blue, clear turquoise playback state.
             g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
-            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.10f));
+            // Subtle Obsidian highlight adds definition to idle MIDI notes.
+            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
             // Defined idle-note outlines improve separation without changing active playback styling.
             g.setColour(active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
