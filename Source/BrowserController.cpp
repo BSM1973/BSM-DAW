@@ -207,8 +207,9 @@ public:
         spliceButton.onClick = [this] { setCategory(Category::splice); };
 
         homeButton.setButtonText("HOME");
-        homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-        homeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        // Obsidian HOME control matches the graphite category surfaces.
+        homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        homeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         homeButton.onClick = [this] { setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory)); };
         addAndMakeVisible(homeButton);
 
