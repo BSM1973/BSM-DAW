@@ -93,7 +93,8 @@ public:
                                                 (int)std::llround((double)note.velocity / 127.0 * usableHeight));
             const auto bar = juce::Rectangle<int>(x, getHeight() - barHeight - 8, barWidth, barHeight);
 
-            g.setColour(juce::Colour(0xff315b74));
+            // Match velocity bar underlay to the Obsidian inactive MIDI note fill.
+            g.setColour(juce::Colour(0xff376d86));
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
             g.setColour(juce::Colour(0xff54d6dc));
             g.fillRoundedRectangle(bar.toFloat().reduced(1.0f, 0.0f), 2.0f);
