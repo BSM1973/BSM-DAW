@@ -144,8 +144,9 @@ public:
         fileTree.setRootItemVisible(false);
         // Obsidian file tree uses the same deep graphite as the plugin browser.
         fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101821));
-        fileTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff3b424c));
-        fileTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff72d8f5));
+        // Match the plugin tree graphite guides and turquoise drop target.
+        fileTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff40515f));
+        fileTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         fileTree.addListener(this);
         addAndMakeVisible(fileTree);
 
