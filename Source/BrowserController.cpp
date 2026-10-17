@@ -170,7 +170,8 @@ public:
         spliceTitle.setFont(juce::Font(14.0f, juce::Font::bold));
         addAndMakeVisible(spliceTitle);
         spliceInfo.setText("Splice Sounds - charge le plugin officiel AU/VST3 dans Liberty pour l'interface complète.", juce::dontSendNotification);
-        spliceInfo.setColour(juce::Label::textColourId, juce::Colour(0xff9aa3ad));
+        // Match Splice help text to Obsidian secondary typography.
+        spliceInfo.setColour(juce::Label::textColourId, juce::Colour(0xffb9ccd6));
         spliceInfo.setFont(juce::Font(10.0f));
         spliceInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(spliceInfo);
