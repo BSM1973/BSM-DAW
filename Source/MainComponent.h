@@ -296,6 +296,50 @@ private:
                 setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
             }
 
+            void drawButtonBackground(juce::Graphics& g, juce::Button& button,
+                                      const juce::Colour&, bool isOver, bool isDown) override
+            {
+                const auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+                const auto fill = isDown ? juce::Colour(0xff286674)
+                    : isOver ? juce::Colour(0xff263c49) : juce::Colour(0xff1d2935);
+                g.setColour(fill);
+                g.fillRoundedRectangle(bounds, 7.0f);
+                g.setColour(juce::Colour(button.hasKeyboardFocus(true)
+                    ? 0xff65e0dc : 0xff314553));
+                g.drawRoundedRectangle(bounds, 7.0f, 1.0f);
+            }
+
+            void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
+                                  bool isOver, bool isDown) override
+            {
+                const auto area = button.getLocalBounds().toFloat();
+                const float side = juce::jmin(18.0f, juce::jmax(0.0f, area.getHeight() - 4.0f));
+                const juce::Rectangle<float> check(2.0f, (area.getHeight() - side) * 0.5f,
+                                                    side, side);
+                g.setColour(button.getToggleState() ? juce::Colour(0xff286674)
+                    : juce::Colour(isDown ? 0xff263c49 : 0xff1d2935));
+                g.fillRoundedRectangle(check, 4.0f);
+                g.setColour(juce::Colour(isOver || button.hasKeyboardFocus(true)
+                    ? 0xff65e0dc : 0xff516878));
+                g.drawRoundedRectangle(check.reduced(0.5f), 4.0f, 1.3f);
+                if (button.getToggleState())
+                {
+                    juce::Path tick;
+                    tick.startNewSubPath(check.getX() + 4.0f, check.getCentreY());
+                    tick.lineTo(check.getX() + 7.5f, check.getBottom() - 4.0f);
+                    tick.lineTo(check.getRight() - 3.0f, check.getY() + 4.0f);
+                    g.setColour(juce::Colour(0xfff0f6f8));
+                    g.strokePath(tick, juce::PathStrokeType(1.8f));
+                }
+                g.setColour(button.findColour(juce::ToggleButton::textColourId));
+                g.setFont(juce::Font(14.0f));
+                g.drawFittedText(button.getButtonText(),
+                    juce::Rectangle<int>((int) (check.getRight() + 8.0f), 0,
+                        juce::jmax(0, button.getWidth() - (int) check.getRight() - 10),
+                        button.getHeight()),
+                    juce::Justification::centredLeft, 1);
+            }
+
             void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
                               int, int, int, int, juce::ComboBox& box) override
             {
