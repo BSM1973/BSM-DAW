@@ -47,7 +47,7 @@ public:
                 menu.addItem(6001, "Aller au d\xC3\xA9" "but", false, false);
                 break;
             case 6:
-                menu.addItem(6501, "Assistant IA", false, false);
+                menu.addItem(6501, "Assistant IA / AI MUSIC");
                 menu.addItem(6502, "Composition IA", false, false);
                 menu.addItem(6503, "Arrangement IA", false, false);
                 menu.addItem(6504, "Analyse musicale IA", false, false);
