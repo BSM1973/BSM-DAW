@@ -948,9 +948,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     g.fillPath(waveform);
                 }
                 // File names follow the same selected/inactive hierarchy as track headers.
-                g.setColour(selected ? juce::Colour(0xfff0fafb)
-                                     : juce::Colour(0xffc1d4e0));
-                g.setFont(juce::Font(11.0f));
+                g.setColour(selected ? juce::Colour(0xfff5fcfd)
+                                     : juce::Colour(0xffd1e2ec));
+                g.setFont(juce::Font(selected ? 11.5f : 11.0f,
+                                     selected ? juce::Font::bold : juce::Font::plain));
                 g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             }
         }
@@ -1071,9 +1072,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.setColour(selected ? juce::Colour(0xffe0ae65)
                                              : juce::Colour(0xffae8954));
                         g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
-                        g.setColour(selected ? juce::Colour(0xfff0fafb)
-                                             : juce::Colour(0xffc1d4e0));
-                        g.setFont(juce::Font(11.0f, juce::Font::bold));
+                        g.setColour(selected ? juce::Colour(0xfff8f2e8)
+                                             : juce::Colour(0xffe2d4bf));
+                        g.setFont(juce::Font(selected ? 11.5f : 11.0f, juce::Font::bold));
                         g.drawText(patternClip.name, clip.reduced(7, 2), juce::Justification::centredLeft, true);
                     }
                 }
