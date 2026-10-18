@@ -72,11 +72,11 @@ public:
     {
         const int w = juce::jmax(0, (getWidth() - 12) / 2);
         harmonize.setBounds(0, 0, w, 30);
-        chordTrack.setBounds(w + 12, 0, getWidth() - w - 12, 30);
+        chordTrack.setBounds(w + 12, 0, juce::jmax(0, getWidth() - w - 12), 30);
         const int vw = juce::jmax(0, (getWidth() - 12) / 3);
         varA.setBounds(0, 40, vw, 30);
         varB.setBounds(vw + 6, 40, vw, 30);
-        varC.setBounds((vw + 6) * 2, 40, getWidth() - (vw + 6) * 2, 30);
+        varC.setBounds((vw + 6) * 2, 40, juce::jmax(0, getWidth() - (vw + 6) * 2), 30);
     }
 
     void updateBounds()
