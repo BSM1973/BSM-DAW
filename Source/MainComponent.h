@@ -294,6 +294,9 @@ private:
                 setColour(juce::PopupMenu::textColourId, juce::Colour(0xfff0f6f8));
                 setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff286674));
                 setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+                setColour(juce::ScrollBar::thumbColourId, juce::Colour(0xff427e89));
+                setColour(juce::ScrollBar::trackColourId, juce::Colour(0xff141e28));
+
             }
 
             void drawButtonBackground(juce::Graphics& g, juce::Button& button,
@@ -370,6 +373,7 @@ private:
                 viewport.setViewedComponent(selector.get(), false);
                 viewport.setScrollBarsShown(true, false);
                 viewport.setScrollBarThickness(7);
+                viewport.setLookAndFeel(&controlsLookAndFeel);
                 addAndMakeVisible(viewport);
                 setSize(760, 650);
             }
@@ -378,6 +382,7 @@ private:
             {
                 // Disconnect before the look-and-feel member is destroyed.
                 viewport.setViewedComponent(nullptr, false);
+                viewport.setLookAndFeel(nullptr);
                 selector->setLookAndFeel(nullptr);
             }
 
