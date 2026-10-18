@@ -1089,8 +1089,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         }
     }
 
-    // Paint the seam after row backgrounds so it remains visible across every track.
-    g.setColour(juce::Colour(0xff40515f));
+    // Two-tone divider gives the header/canvas junction subtle depth
+    // without changing the actual track-header width or hit regions.
+    g.setColour(juce::Colour(0xff09121a).withAlpha(0.72f));
+    g.drawVerticalLine(headerW, (float)rows.getY(), (float)rows.getBottom());
+    g.setColour(juce::Colour(0xff536777).withAlpha(0.88f));
     g.drawVerticalLine(headerW - 1, (float)rows.getY(), (float)rows.getBottom());
 
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
