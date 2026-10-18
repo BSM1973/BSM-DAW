@@ -271,7 +271,7 @@ public:
 private:
     class AudioSettingsWindow final : public juce::DocumentWindow
     {
-        class AudioSettingsContent final : public juce::Component
+        class AudioSettingsContent final : public juce::Component, private juce::Timer
         {
         class AudioControlsLookAndFeel final : public juce::LookAndFeel_V4
         {
@@ -415,11 +415,13 @@ private:
                 viewport.setLookAndFeel(&controlsLookAndFeel);
                 addAndMakeVisible(viewport);
                 setSize(760, 650);
+                startTimerHz(2);
             }
 
             ~AudioSettingsContent() override
             {
                 // Disconnect before the look-and-feel member is destroyed.
+                stopTimer();
                 viewport.setViewedComponent(nullptr, false);
                 viewport.setLookAndFeel(nullptr);
                 selector->setLookAndFeel(nullptr);
@@ -540,6 +542,14 @@ private:
                                  viewport.getViewPositionY()));
             }
         private:
+            void timerCallback() override
+            {
+                // JUCE may rebuild its device controls after hardware changes.
+                // Re-apply only translations of recognised static English labels.
+                if (selector != nullptr && isShowing())
+                    translateAudioControls(*selector);
+            }
+
             juce::Viewport viewport;
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
         };
