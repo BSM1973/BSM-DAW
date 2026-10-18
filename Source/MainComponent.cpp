@@ -974,6 +974,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                  : (logicalRow % 2 == 0 ? juce::Colour(0xff1b2935)
                                                         : juce::Colour(0xff192631)));
             g.fillRect(header);
+            if (selected)
+            {
+                g.setColour(categoryAccent.withAlpha(0.10f));
+                g.fillRect(header.withTrimmedLeft(10));
+                g.setColour(categoryAccent.withAlpha(0.40f));
+                g.drawHorizontalLine(header.getY(), (float) header.getX() + 10.0f,
+                                     (float) header.getRight() - 1.0f);
+            }
             g.setColour(categoryAccent.withAlpha(selected ? 0.95f : 0.65f));
             g.fillRect(header.getX() + 5, header.getY() + 7, 3,
                        juce::jmax(0, header.getHeight() - 14));
