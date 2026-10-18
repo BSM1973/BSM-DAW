@@ -63,30 +63,75 @@ public:
 private:
     MainComponent& owner;
 };
-class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:class MainWindow final:public juce::DocumentWindow,private juce::KeyListener{public:explicit MainWindow(juce::String n):DocumentWindow(std::move(n),juce::Colours::black,DocumentWindow::allButtons){setUsingNativeTitleBar(true);setContentOwned(new MainComponent(),true);
-#if JUCE_MAC
-if(auto* c=dynamic_cast<MainComponent*>(getContentComponent())) {
-    mainMenu = std::make_unique<LibertyMainMenu>(*c);
-    juce::MenuBarModel::setMacMainMenu(mainMenu.get());
-}
-#else
-if(auto* c=dynamic_cast<MainComponent*>(getContentComponent())) {
-    mainMenu = std::make_unique<LibertyMainMenu>(*c);
-    menuBar = std::make_unique<juce::MenuBarComponent>(mainMenu.get());
-    addAndMakeVisible(*menuBar);
-    menuBar->setBounds(0, 0, getWidth(), 24);
-}
-#endif
-centreWithSize(getWidth(),getHeight());setResizable(true,true);addKeyListener(this);setVisible(true);if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))c->grabKeyboardFocus();}~MainWindow()override{
-#if JUCE_MAC
-juce::MenuBarModel::setMacMainMenu(nullptr);
-#endif
-menuBar.reset();
-mainMenu.reset();
-removeKeyListener(this);
-}bool keyPressed(const juce::KeyPress&k,juce::Component*)override{if(handleLibertyMidiNoteSelectionKeyPress(k)||handleLibertyMidiQuantizeKeyPress(k))return true;if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))if(c->keyPressed(k))return true;return true;}bool keyPressed(const juce::KeyPress&k)override{if(handleLibertyMidiNoteSelectionKeyPress(k)||handleLibertyMidiQuantizeKeyPress(k))return true;if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))if(c->keyPressed(k))return true;return DocumentWindow::keyPressed(k);}void requestClose(){if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))c->requestClose([this](bool ok){if(ok)juce::JUCEApplication::getInstance()->quit();});else juce::JUCEApplication::getInstance()->quit();}void closeButtonPressed()override{requestClose();}
+class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
+class LibertyMainContent final : public juce::Component
+{
+public:
+    LibertyMainContent()
+    {
+        editor = std::make_unique<MainComponent>();
+        menuModel = std::make_unique<LibertyMainMenu>(*editor);
+        menuBar = std::make_unique<juce::MenuBarComponent>(menuModel.get());
+        addAndMakeVisible(*menuBar);
+        addAndMakeVisible(*editor);
+        setSize(editor->getWidth(), editor->getHeight() + 30);
+    }
+    MainComponent& getEditor() const { return *editor; }
+    void resized() override
+    {
+        constexpr int menuHeight = 30;
+        menuBar->setBounds(0, 0, getWidth(), menuHeight);
+        editor->setBounds(0, menuHeight, getWidth(),
+                          juce::jmax(0, getHeight() - menuHeight));
+    }
 private:
-std::unique_ptr<LibertyMainMenu> mainMenu;
-std::unique_ptr<juce::MenuBarComponent> menuBar;
-};std::unique_ptr<MainWindow>mainWindow;};
+    std::unique_ptr<MainComponent> editor;
+    std::unique_ptr<LibertyMainMenu> menuModel;
+    std::unique_ptr<juce::MenuBarComponent> menuBar;
+};
+class MainWindow final : public juce::DocumentWindow, private juce::KeyListener
+{
+public:
+    explicit MainWindow(juce::String name)
+        : juce::DocumentWindow(std::move(name), juce::Colours::black,
+                               juce::DocumentWindow::allButtons)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new LibertyMainContent(), true);
+        centreWithSize(getWidth(), getHeight());
+        setResizable(true, true);
+        addKeyListener(this);
+        setVisible(true);
+        editor().grabKeyboardFocus();
+    }
+    ~MainWindow() override { removeKeyListener(this); }
+    bool keyPressed(const juce::KeyPress& key, juce::Component*) override
+    {
+        if (handleLibertyMidiNoteSelectionKeyPress(key)
+            || handleLibertyMidiQuantizeKeyPress(key))
+            return true;
+        return editor().keyPressed(key);
+    }
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (handleLibertyMidiNoteSelectionKeyPress(key)
+            || handleLibertyMidiQuantizeKeyPress(key))
+            return true;
+        return editor().keyPressed(key) || juce::DocumentWindow::keyPressed(key);
+    }
+    void requestClose()
+    {
+        editor().requestClose([this](bool ok)
+        {
+            if (ok) juce::JUCEApplication::getInstance()->quit();
+        });
+    }
+    void closeButtonPressed() override { requestClose(); }
+private:
+    MainComponent& editor() const
+    {
+        return static_cast<LibertyMainContent*>(getContentComponent())->getEditor();
+    }
+};
+std::unique_ptr<MainWindow>mainWindow;};
 START_JUCE_APPLICATION(LibertyApplication)
