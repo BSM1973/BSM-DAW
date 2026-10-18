@@ -1466,6 +1466,7 @@ void MainComponent::timerCallback()
 }
 
 void showLibertyAIMusicPanel(MainComponent&);
+void showLibertyAIComposer2(MainComponent&);
 
 void MainComponent::performMainMenuAction(int commandId)
 {
@@ -1486,6 +1487,7 @@ void MainComponent::performMainMenuAction(int commandId)
             repaint();
             break;
         case 6501: showLibertyAIMusicPanel(*this); break;
+        case 6502: showLibertyAIMusicPanel(*this); showLibertyAIComposer2(*this); break;
         case 7001: openAudioSettings(); break;
         case 8001:
             juce::AlertWindow::showMessageBoxAsync(
