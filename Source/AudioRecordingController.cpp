@@ -40,6 +40,12 @@ public:
         }
 
         recButton.setButtonText("REC");
+        // Existing recording controller remains the only owner of the REC action.
+        // Obsidian styling does not change recording, arming, or audio callbacks.
+        recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff48242c));
+        recButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff71313b));
+        recButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffcbd0));
+        recButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         recButton.setClickingTogglesState(false);
         recButton.setMouseClickGrabsKeyboardFocus(false);
         recButton.onClick = [this] { toggleRecording(); };
@@ -435,7 +441,8 @@ private:
         attachAudioCallback();
 
         owner.audioEngine.setPlaying(true);
-        recButton.setButtonText("STOP");
+        recButton.setButtonText("STOP REC");
+        recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff873340));
         owner.repaint();
     }
 
@@ -460,6 +467,7 @@ private:
         }
 
         recButton.setButtonText("REC");
+        recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff48242c));
         updateMonitoringCallback();
 
         if (!createClip)
