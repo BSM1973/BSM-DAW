@@ -17,14 +17,5 @@ void showLibertyAIMusicPanel(MainComponent& owner)
     auto it = controllers.find(&owner);
     if (it == controllers.end()) return;
     it->second->openPanel();
-    return;
-    // Use the existing AI MUSIC button so its toggle state stays in sync.
-    for (int i = 0; i < owner.getNumChildComponents(); ++i)
-        if (auto* button = dynamic_cast<juce::TextButton*>(owner.getChildComponent(i)))
-            if (button->getButtonText() == "AI MUSIC")
-            {
-                if (!button->getToggleState()) button->triggerClick();
-                return;
-            }
 }
 void shutdownLibertyAIController(){bootstrap.shutdown();}
