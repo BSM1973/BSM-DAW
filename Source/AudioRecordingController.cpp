@@ -24,17 +24,19 @@ public:
         syncTrackControls();
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
-            armButtons[(size_t)i]->setButtonText("ARM");
+            armButtons[(size_t)i]->setButtonText("REC");
+            armButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+            armButtons[(size_t)i]->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffcbd0));
             armButtons[(size_t)i]->setClickingTogglesState(false);
             armButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
             armButtons[(size_t)i]->onClick = [this, i] { armTrack(i); };
             owner.addAndMakeVisible(*armButtons[(size_t)i]);
 
-            monitorButtons[(size_t)i]->setButtonText("MON OFF");
+            monitorButtons[(size_t)i]->setButtonText("MON");
             monitorButtons[(size_t)i]->setClickingTogglesState(true);
             monitorButtons[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);
-            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
+            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+            monitorButtons[(size_t)i]->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff24535d));
             monitorButtons[(size_t)i]->onClick = [this, i] { handleMonitorClick(i); };
             owner.addAndMakeVisible(*monitorButtons[(size_t)i]);
         }
@@ -92,8 +94,8 @@ public:
             const bool visible = y >= 76 + 32 && y < owner.getHeight() - 210;
             armButtons[(size_t)i]->setVisible(visible);
             monitorButtons[(size_t)i]->setVisible(visible);
-            armButtons[(size_t)i]->setBounds(108, y, 46, 22);
-            monitorButtons[(size_t)i]->setBounds(158, y, 48, 22);
+            armButtons[(size_t)i]->setBounds(108, y, 46, 24);
+            monitorButtons[(size_t)i]->setBounds(158, y, 48, 24);
         }
 
         recButton.setBounds(539, 38, 56, 28);
@@ -224,7 +226,9 @@ private:
 
         armedTrack = track;
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
-            armButtons[(size_t)i]->setButtonText(i == armedTrack ? "ARMED" : "ARM");
+            armButtons[(size_t)i]->setButtonText("REC");
+            armButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId,
+                i == armedTrack ? juce::Colour(0xff873340) : juce::Colour(0xff202c37));
 
         owner.selectedTrack = track;
         updateMonitoringCallback();
@@ -591,10 +595,12 @@ public:
         while ((int)armButtons.size() < count)
         {
             const int i = (int)armButtons.size();
-            auto arm = std::make_unique<juce::TextButton>("ARM");
+            auto arm = std::make_unique<juce::TextButton>("REC");
+            arm->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+            arm->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffcbd0));
             arm->setClickingTogglesState(false); arm->setMouseClickGrabsKeyboardFocus(false);
             arm->onClick = [this, i] { armTrack(i); }; owner.addAndMakeVisible(*arm); armButtons.push_back(std::move(arm));
-            auto mon = std::make_unique<juce::TextButton>("MON OFF");
+            auto mon = std::make_unique<juce::TextButton>("MON");
             mon->setClickingTogglesState(true); mon->setMouseClickGrabsKeyboardFocus(false);
             mon->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             mon->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
