@@ -990,9 +990,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.fillRect(header);
             if (selected)
             {
-                g.setColour(categoryAccent.withAlpha(0.10f));
+                // Restrained category tint and a crisp inset edge keep
+                // the active header legible without obscuring its controls.
+                g.setColour(categoryAccent.withAlpha(0.14f));
                 g.fillRect(header.withTrimmedLeft(10));
-                g.setColour(categoryAccent.withAlpha(0.40f));
+                g.setColour(categoryAccent.withAlpha(0.52f));
                 g.drawHorizontalLine(header.getY(), (float) header.getX() + 10.0f,
                                      (float) header.getRight() - 1.0f);
             }
