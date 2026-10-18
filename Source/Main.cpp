@@ -50,7 +50,7 @@ public:
                 menu.addItem(6501, "Assistant IA / AI MUSIC");
                 menu.addItem(6502, "Composition IA / AI Composer 2");
                 menu.addItem(6503, "Arrangement IA / AI Arranger");
-                menu.addItem(6504, "Analyse musicale IA", false, false);
+                menu.addItem(6504, "Analyse musicale IA / AI Song Brain");
                 break;
             case 7:
                 menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
