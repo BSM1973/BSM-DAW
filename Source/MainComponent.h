@@ -480,10 +480,15 @@ private:
                 // instead of clipping controls at smaller window sizes.
                 selector->setSize(juce::jmax(600, availableWidth - 12),
                                   juce::jmax(440, availableHeight));
-                viewport.setViewPosition(juce::jmin(viewport.getViewPositionX(),
-                    juce::jmax(0, selector->getWidth() - availableWidth)),
-                    juce::jmin(viewport.getViewPositionY(),
-                    juce::jmax(0, selector->getHeight() - availableHeight)));
+                // Clamp the scroll offset to the actual visible viewport area,
+                // which may shrink when the vertical scrollbar is displayed.
+                const int visibleWidth = viewport.getViewWidth();
+                const int visibleHeight = viewport.getViewHeight();
+                viewport.setViewPosition(
+                    juce::jlimit(0, juce::jmax(0, selector->getWidth() - visibleWidth),
+                                 viewport.getViewPositionX()),
+                    juce::jlimit(0, juce::jmax(0, selector->getHeight() - visibleHeight),
+                                 viewport.getViewPositionY()));
             }
         private:
             juce::Viewport viewport;
