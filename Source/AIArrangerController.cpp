@@ -26,15 +26,15 @@ public:
         title.setColour(juce::Label::textColourId, juce::Colour(0xff8edcff));
         title.setFont(juce::Font(12.0f, juce::Font::bold));
         addAndMakeVisible(title);
-        addButton(full, "CRÉER UN MORCEAU", [this] { buildSong(false); });
+        addButton(full, juce::String::fromUTF8("CR\xC3""\x89""ER UN MORCEAU"), [this] { buildSong(false); });
         addButton(shortSong, "VERSION COURTE", [this] { buildSong(true); });
-        addButton(intro, "CRÉER INTRO", [this] { makeSection("INTRO", 4, 0.55f, 0); });
-        addButton(chorus, "CRÉER REFRAIN", [this] { makeSection("CHORUS", 8, 1.15f, 12); });
-        addButton(bridge, "CRÉER PONT", [this] { makeSection("BRIDGE", 4, 0.82f, 5); });
+        addButton(intro, juce::String::fromUTF8("CR\xC3""\x89""ER INTRO"), [this] { makeSection("INTRO", 4, 0.55f, 0); });
+        addButton(chorus, juce::String::fromUTF8("CR\xC3""\x89""ER REFRAIN"), [this] { makeSection("CHORUS", 8, 1.15f, 12); });
+        addButton(bridge, juce::String::fromUTF8("CR\xC3""\x89""ER PONT"), [this] { makeSection("BRIDGE", 4, 0.82f, 5); });
         status.setColour(juce::Label::textColourId, juce::Colour(0xffb8c3cf));
         status.setFont(juce::Font(10.0f));
         status.setJustificationType(juce::Justification::topLeft);
-        status.setText("Sélectionnez une idée Instrument/MIDI pour créer les sections du morceau.", juce::dontSendNotification);
+        status.setText(juce::String::fromUTF8("S\xC3""\xA9""lectionnez une id\xC3""\xA9""e Instrument/MIDI pour cr\xC3""\xA9""er les sections du morceau."), juce::dontSendNotification);
         addAndMakeVisible(status);
         setOpaque(true);
     }
@@ -94,13 +94,13 @@ private:
         for(const auto& x:n) owner.midiEngine.addNote(x.startTick,x.lengthTicks,x.pitch,x.velocity,x.channel);
         owner.midiClipStartSeconds=start; owner.midiClipLengthUserDefined=false; owner.updateMidiClipTiming();
         const bool ok=commitLibertyAIGeneratedClip(owner,instrumentTrack);
-        if(ok) status.setText(label+" créé",juce::dontSendNotification);
+        if(ok) status.setText(label+juce::String::fromUTF8(" cr\xC3""\xA9""\xC3""\xA9"""),juce::dontSendNotification);
         return ok;
     }
 
     void makeSection(const juce::String& name,int bars,float energy,int transpose)
     {
-        const auto src=source(); if(src.empty()){status.setText("Aucune idée musicale active.",juce::dontSendNotification);return;}
+        const auto src=source(); if(src.empty()){status.setText(juce::String::fromUTF8("Aucune id\xC3""\xA9""e musicale active."),juce::dontSendNotification);return;}
         const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const auto out=adapt(src,bars,energy,transpose,(unsigned)juce::Time::getMillisecondCounter());
         commitAt(out,owner.midiClipStartSeconds+owner.midiClipLengthSeconds,name,instrumentTrack);
@@ -108,7 +108,7 @@ private:
 
     void buildSong(bool compact)
     {
-        const auto original=source(); if(original.empty()){status.setText("Aucune idée Instrument/MIDI active à arranger.",juce::dontSendNotification);return;}
+        const auto original=source(); if(original.empty()){status.setText(juce::String::fromUTF8("Aucune id\xC3""\xA9""e Instrument/MIDI active \xC3""\xA0"" arranger."),juce::dontSendNotification);return;}
         const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const double base=owner.midiClipStartSeconds;
         const double secondsPerBar=(60.0/juce::jmax(1.0,owner.tempoBpm))*4.0*(4.0/(double)juce::jmax(1,owner.timeSignatureDenominator))*owner.timeSignatureNumerator/4.0;
@@ -122,7 +122,7 @@ private:
             if(commitAt(out,cursor,s.name,instrumentTrack)) ++made;
             cursor += secondsPerBar*(double)s.bars;
         }
-        status.setText("AI ARRANGER: "+juce::String(made)+" sections créées - clips Liberty modifiables",juce::dontSendNotification);
+        status.setText("AI ARRANGER: "+juce::String(made)+juce::String::fromUTF8(" sections cr\xC3""\xA9""\xC3""\xA9""es - clips Liberty modifiables"),juce::dontSendNotification);
         owner.repaint();
     }
 
