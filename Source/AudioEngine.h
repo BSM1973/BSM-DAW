@@ -98,6 +98,11 @@ public:
         instrumentPanicPending.store(true, std::memory_order_release);
     }
     int getMonitoredInstrumentTrack() const noexcept { return monitoredInstrumentTrack.load(std::memory_order_acquire); }
+    struct CapturedMidiEvent { juce::MidiMessage message; double seconds = 0.0; };
+    void beginMidiCapture(int instrumentTrack) noexcept;
+    std::vector<CapturedMidiEvent> endMidiCapture();
+    int getMidiCaptureTrack() const noexcept { return midiCaptureTrack.load(std::memory_order_acquire); }
+
     void setMetronomeEnabled(bool enabled) noexcept { metronomeEnabled.store(enabled, std::memory_order_relaxed); }
     bool isMetronomeEnabled() const noexcept { return metronomeEnabled.load(std::memory_order_relaxed); }
     void setMetronomeTiming(double bpm, int numerator, int denominator) noexcept
@@ -303,6 +308,11 @@ private:
 
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
     juce::MidiMessageCollector liveMidiCollector;
+    juce::CriticalSection midiCaptureLock;
+    std::vector<CapturedMidiEvent> capturedMidiEvents;
+    std::atomic<int> midiCaptureTrack { -1 };
+    double midiCaptureStartMs = 0.0;
+
     std::atomic<int> monitoredInstrumentTrack { -1 };
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                            int numInputChannels,
