@@ -48,7 +48,7 @@ public:
                 break;
             case 6:
                 menu.addItem(6501, "Assistant IA / AI MUSIC");
-                menu.addItem(6502, "Composition IA", false, false);
+                menu.addItem(6502, "Composition IA / AI Composer 2");
                 menu.addItem(6503, "Arrangement IA", false, false);
                 menu.addItem(6504, "Analyse musicale IA", false, false);
                 break;
