@@ -31,6 +31,7 @@ public:
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
+    void performMainMenuAction(int commandId);
     bool hasUnsavedChanges() const;
     void requestClose(std::function<void(bool)> completion);
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
