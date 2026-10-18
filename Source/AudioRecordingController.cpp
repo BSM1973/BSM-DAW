@@ -94,7 +94,7 @@ public:
             monitorButtons[(size_t)i]->setBounds(158, y, 48, 22);
         }
 
-        recButton.setBounds(525, 38, 70, 28);
+        recButton.setBounds(539, 38, 56, 28);
     }
 
 private:
@@ -441,7 +441,7 @@ private:
         attachAudioCallback();
 
         owner.audioEngine.setPlaying(true);
-        recButton.setButtonText("STOP REC");
+        recButton.setButtonText("REC");
         recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff873340));
         owner.repaint();
     }
@@ -544,6 +544,10 @@ public:
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                 "Liberty - Recording", "Recording stopped because audio data could not be written fast enough.", "OK");
         }
+
+        // Transport STOP is authoritative even when recording is active.
+        if (recording && !owner.audioEngine.isPlaying())
+            stopRecording(true);
 
         handleDeviceChange();
         syncTrackControls();
@@ -695,14 +699,18 @@ private:
     {
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
-            if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
-                if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
-                    if (controllers.find(main) == controllers.end())
-                    {
-                        controllers.emplace(main, std::make_unique<LibertyAudioRecordingController>(*main));
-                        stopTimer();
-                        return;
-                    }
+        {
+            auto* topLevel = desktop.getComponent(i);
+            auto* main = dynamic_cast<MainComponent*>(topLevel);
+            if (main == nullptr)
+                if (auto* window = dynamic_cast<juce::DocumentWindow*>(topLevel))
+                    main = dynamic_cast<MainComponent*>(window->getContentComponent());
+            if (main != nullptr && controllers.find(main) == controllers.end())
+            {
+                controllers.emplace(main, std::make_unique<LibertyAudioRecordingController>(*main));
+                return;
+            }
+        }
     }
 
     std::map<MainComponent*, std::unique_ptr<LibertyAudioRecordingController>> controllers;
