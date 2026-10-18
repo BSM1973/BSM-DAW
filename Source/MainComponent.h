@@ -372,7 +372,8 @@ private:
                 selector->setLookAndFeel(&controlsLookAndFeel);
                 viewport.setViewedComponent(selector.get(), false);
                 viewport.setScrollBarsShown(true, false);
-                viewport.setScrollBarThickness(7);
+                viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::nonHover);
+                viewport.setScrollBarThickness(9);
                 viewport.setLookAndFeel(&controlsLookAndFeel);
                 addAndMakeVisible(viewport);
                 setSize(760, 650);
@@ -477,8 +478,12 @@ private:
                 viewport.setBounds(30, 238, availableWidth, availableHeight);
                 // JUCE lays out the audio controls internally; allow scrolling
                 // instead of clipping controls at smaller window sizes.
-                selector->setSize(juce::jmax(600, availableWidth),
+                selector->setSize(juce::jmax(600, availableWidth - 12),
                                   juce::jmax(440, availableHeight));
+                viewport.setViewPosition(juce::jmin(viewport.getViewPositionX(),
+                    juce::jmax(0, selector->getWidth() - availableWidth)),
+                    juce::jmin(viewport.getViewPositionY(),
+                    juce::jmax(0, selector->getHeight() - availableHeight)));
             }
         private:
             juce::Viewport viewport;
