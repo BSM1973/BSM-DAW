@@ -419,6 +419,20 @@ private:
                 g.fillRoundedRectangle(deviceBay, 11.0f);
                 g.setColour(juce::Colour(0xff314553));
                 g.drawRoundedRectangle(deviceBay.reduced(0.5f), 11.0f, 1.0f);
+                // Clearly visible section header, separated from interactive JUCE controls.
+                g.setColour(juce::Colour(0xff65e0dc));
+                g.fillRoundedRectangle(37.0f, 194.0f, 3.0f, 19.0f, 1.5f);
+                g.setColour(juce::Colour(0xffe4f0f5));
+                g.setFont(juce::Font(15.0f, juce::Font::bold));
+                const juce::String deviceHeading = juce::String("P")
+                    + juce::String::charToString((juce::juce_wchar) 0x00C9)
+                    + "RIPH" + juce::String::charToString((juce::juce_wchar) 0x00C9)
+                    + "RIQUES ET LATENCE";
+                g.drawFittedText(deviceHeading, 50, 187,
+                    juce::jmax(0, w - 90), 32, juce::Justification::centredLeft, 1);
+                g.setColour(juce::Colour(0xff314553));
+                g.drawLine(37.0f, 226.0f, (float) juce::jmax(37, w - 37), 226.0f, 1.0f);
+
                 // Bottom accent is inside the bay, away from all interactive controls.
                 const float railY = (float) getHeight() - 20.0f;
                 if (railY > deviceBay.getY() + 24.0f)
@@ -434,8 +448,8 @@ private:
             void resized() override
             {
                 // Preserve the fully operational JUCE audio-device selector.
-                selector->setBounds(30, 187, juce::jmax(0, getWidth() - 60),
-                                    juce::jmax(0, getHeight() - 218));
+                selector->setBounds(30, 238, juce::jmax(0, getWidth() - 60),
+                                    juce::jmax(0, getHeight() - 269));
             }
         private:
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
