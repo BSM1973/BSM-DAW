@@ -11,7 +11,7 @@
 #include <memory>
 #include <vector>
 
-class AudioEngine final : private juce::AudioIODeviceCallback
+class AudioEngine final : private juce::AudioIODeviceCallback, private juce::MidiInputCallback
 {
 public:
     // Legacy visible-row count while the UI is migrated to dynamic tracks.
@@ -92,6 +92,12 @@ public:
         inputMonitoringEnabled.store(enabled, std::memory_order_release);
     }
     bool isInputMonitoringEnabled() const noexcept { return inputMonitoringEnabled.load(std::memory_order_acquire); }
+    void setMonitoredInstrumentTrack(int track) noexcept
+    {
+        monitoredInstrumentTrack.store(track, std::memory_order_release);
+        instrumentPanicPending.store(true, std::memory_order_release);
+    }
+    int getMonitoredInstrumentTrack() const noexcept { return monitoredInstrumentTrack.load(std::memory_order_acquire); }
     void setMetronomeEnabled(bool enabled) noexcept { metronomeEnabled.store(enabled, std::memory_order_relaxed); }
     bool isMetronomeEnabled() const noexcept { return metronomeEnabled.load(std::memory_order_relaxed); }
     void setMetronomeTiming(double bpm, int numerator, int denominator) noexcept
@@ -295,6 +301,9 @@ private:
         std::atomic<bool> solo { false };
     };
 
+    void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
+    juce::MidiMessageCollector liveMidiCollector;
+    std::atomic<int> monitoredInstrumentTrack { -1 };
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
                                            int numInputChannels,
                                            float* const* outputChannelData,
