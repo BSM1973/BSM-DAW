@@ -151,13 +151,15 @@ private:
 
     void handleMonitorClick(int trackIndex)
     {
-        const bool enabled = monitorButtons[(size_t)trackIndex]->getToggleState();
+        const bool enabled = !monitoringEnabled[(size_t)trackIndex]->load(std::memory_order_relaxed);
         for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
         {
             const bool active = enabled && track == trackIndex;
             monitoringEnabled[(size_t)track]->store(active, std::memory_order_relaxed);
             monitorButtons[(size_t)track]->setToggleState(active, juce::dontSendNotification);
-            monitorButtons[(size_t)track]->setButtonText(active ? "MON ON" : "MON OFF");
+            monitorButtons[(size_t)track]->setButtonText("MON");
+            monitorButtons[(size_t)track]->setColour(juce::TextButton::buttonColourId,
+                active ? juce::Colour(0xff24535d) : juce::Colour(0xff202c37));
         }
 
         if (enabled && configureInput())
@@ -173,7 +175,8 @@ private:
         {
             monitoringEnabled[(size_t)trackIndex]->store(false, std::memory_order_relaxed);
             monitorButtons[(size_t)trackIndex]->setToggleState(false, juce::dontSendNotification);
-            monitorButtons[(size_t)trackIndex]->setButtonText("MON OFF");
+            monitorButtons[(size_t)trackIndex]->setButtonText("MON");
+            monitorButtons[(size_t)trackIndex]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
         }
         updateMonitoringCallback();
     }
@@ -184,7 +187,8 @@ private:
         {
             monitoringEnabled[(size_t)track]->store(false, std::memory_order_relaxed);
             monitorButtons[(size_t)track]->setToggleState(false, juce::dontSendNotification);
-            monitorButtons[(size_t)track]->setButtonText("MON OFF");
+            monitorButtons[(size_t)track]->setButtonText("MON");
+            monitorButtons[(size_t)track]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
         }
         owner.audioEngine.setInputMonitoring(false);
     }
@@ -224,7 +228,7 @@ private:
         if (armedTrack != track && isArmedTrackMonitoring())
             clearMonitoringState();
 
-        armedTrack = track;
+        armedTrack = (armedTrack == track ? -1 : track);
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
             armButtons[(size_t)i]->setButtonText("REC");
@@ -603,7 +607,7 @@ public:
             arm->setClickingTogglesState(false); arm->setMouseClickGrabsKeyboardFocus(false);
             arm->onClick = [this, i] { armTrack(i); }; owner.addAndMakeVisible(*arm); armButtons.push_back(std::move(arm));
             auto mon = std::make_unique<juce::TextButton>("MON");
-            mon->setClickingTogglesState(true); mon->setMouseClickGrabsKeyboardFocus(false);
+            mon->setClickingTogglesState(false); mon->setMouseClickGrabsKeyboardFocus(false);
             mon->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
             mon->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff2d6f8f));
             auto state = std::make_unique<std::atomic<bool>>(false);
