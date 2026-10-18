@@ -764,7 +764,11 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.fillRoundedRectangle(commandDeck, 11.0f);
     g.setColour(LibertyUI::Colour::divider);
     g.drawRoundedRectangle(commandDeck.reduced(0.5f), 11.0f, 1.0f);
-    g.setColour(LibertyUI::Colour::accent.withAlpha(0.8f));
+    // Obsidian deck: a restrained top-edge highlight and a quiet lower
+    // cyan guide reinforce the command group without covering controls.
+    g.setColour(juce::Colour(0xff526978).withAlpha(0.65f));
+    g.drawHorizontalLine(32, 218.0f, 520.0f);
+    g.setColour(LibertyUI::Colour::accent.withAlpha(0.62f));
     g.fillRoundedRectangle(276.0f, 70.0f, 180.0f, 2.0f, 1.0f);
 
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
