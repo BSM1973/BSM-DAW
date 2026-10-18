@@ -63,7 +63,7 @@ public:
         varC.onClick = [this] { makeVariation(3); };
 
         panel.addAndMakeVisible(*this);
-        setBounds(20, 452, juce::jmax(280, panel.getWidth() - 40), 76);
+        setBounds(20, 452, juce::jmax(0, panel.getWidth() - 40), 76);
         resized();
         moveStatusBelow();
     }
@@ -81,7 +81,7 @@ public:
 
     void updateBounds()
     {
-        setBounds(20, 452, juce::jmax(280, panel.getWidth() - 40), 76);
+        setBounds(20, 452, juce::jmax(0, panel.getWidth() - 40), 76);
         moveStatusBelow();
     }
 
@@ -98,7 +98,7 @@ private:
     void moveStatusBelow()
     {
         if (auto* status = findStatusLabel(panel))
-            status->setBounds(20, 538, juce::jmax(100, panel.getWidth() - 40), juce::jmax(42, panel.getHeight() - 552));
+            status->setBounds(20, 538, juce::jmax(0, panel.getWidth() - 40), juce::jmax(42, panel.getHeight() - 552));
     }
 
     void replaceMidi(const std::vector<MidiEngine::NoteEvent>& notes)
