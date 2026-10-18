@@ -22,6 +22,7 @@ juce::Component* findAIPanel(MainComponent& owner)
     {
         auto* child = owner.getChildComponent(i);
         if (child == nullptr) continue;
+        if (child->getComponentID() == "liberty-ai-panel") return child;
         for (int j = 0; j < child->getNumChildComponents(); ++j)
             if (auto* label = dynamic_cast<juce::Label*>(child->getChildComponent(j)))
                 if (label->getText() == "LIBERTY MUSIQUE IA" || label->getText() == "LIBERTY AI MUSIC")
@@ -34,7 +35,8 @@ juce::Label* findStatusLabel(juce::Component& panel)
 {
     for (int i = 0; i < panel.getNumChildComponents(); ++i)
         if (auto* label = dynamic_cast<juce::Label*>(panel.getChildComponent(i)))
-            if (label->getText().containsIgnoreCase("Target:") ||
+            if (label->getComponentID() == "liberty-ai-status" ||
+                label->getText().containsIgnoreCase("Target:") ||
                 label->getText().containsIgnoreCase("Cible :") ||
                 label->getText().containsIgnoreCase("generated") ||
                 label->getText().containsIgnoreCase(juce::String::fromUTF8("g\xC3""\xA9""n\xC3""\xA9""r")))
