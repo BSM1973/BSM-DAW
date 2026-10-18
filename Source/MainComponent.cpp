@@ -1058,10 +1058,18 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         const int nextRow = logicalRow + 1;
         const bool categoryBoundary = (nextRow == audioCount && midiCount + instrumentCount > 0)
                                    || (nextRow == audioCount + midiCount && instrumentCount > 0);
+        // Crisp, low-contrast lane dividers; category changes get a stronger cue.
         g.setColour(categoryBoundary ? juce::Colour(0xff526475)
-                                     : selected ? juce::Colour(0xff45616a)
-                                                : juce::Colour(0xff2b3946));
-        g.drawHorizontalLine(row.getBottom() - 1, 0.0f, (float)getWidth());
+                                     : selected ? juce::Colour(0xff3e5963)
+                                                : juce::Colour(0xff263440));
+        g.drawHorizontalLine(row.getBottom() - 1, (float) row.getX(), (float) row.getRight());
+        // Header-only highlight creates a refined inset edge on the selected track.
+        if (selected && row.getHeight() > 2)
+        {
+            g.setColour(juce::Colour(0xff42606a).withAlpha(0.42f));
+            g.drawHorizontalLine(row.getBottom() - 2, (float) row.getX() + 10.0f,
+                                 (float) juce::jmin(row.getRight(), headerW - 2));
+        }
     }
 
     // Paint the seam after row backgrounds so it remains visible across every track.
