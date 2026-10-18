@@ -79,7 +79,7 @@ MainComponent::MainComponent()
     drumSampler->prepare(audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr
         ? audioEngine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 44100.0);
     audioEngine.setDrumSampler(std::move(drumSampler));
-    projectButton = std::make_unique<ProjectButton>(this);
+    initializeProjectTracking(); // Project actions now live in the Fichier menu.
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
