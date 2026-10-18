@@ -1000,8 +1000,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.drawHorizontalLine(header.getY(), (float) header.getX() + 10.0f,
                                      (float) header.getRight() - 1.0f);
             }
-            g.setColour(categoryAccent.withAlpha(selected ? 0.95f : 0.65f));
-            g.fillRect(header.getX() + 5, header.getY() + 7, 3,
+            // Fine two-tone category rail: bright core, soft neighbouring edge.
+            g.setColour(categoryAccent.withAlpha(selected ? 0.22f : 0.12f));
+            g.fillRect(header.getX() + 4, header.getY() + 7, 5,
+                       juce::jmax(0, header.getHeight() - 14));
+            g.setColour(categoryAccent.withAlpha(selected ? 0.98f : 0.72f));
+            g.fillRect(header.getX() + 5, header.getY() + 7, 2,
                        juce::jmax(0, header.getHeight() - 14));
             g.setColour(juce::Colour(0xff344653));
             g.drawVerticalLine(header.getRight() - 1, (float) header.getY(), (float) header.getBottom());
