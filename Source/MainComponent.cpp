@@ -872,9 +872,17 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     {
         const int x = headerW + (int)std::round(measureIndex * pixelsPerMeasure);
         if (x >= getWidth()) break;
-        g.setColour(measureIndex % 4 == 0 ? juce::Colour(0xff526475)
-                                          : juce::Colour(0xff2b3946));
+        const bool fourBarAnchor = (measureIndex % 4) == 0;
+        g.setColour(fourBarAnchor ? juce::Colour(0xff607787)
+                                  : juce::Colour(0xff2b3946));
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
+        // Short ruler-only accent: clear four-bar grouping without extra
+        // vertical weight over clips and waveforms.
+        if (fourBarAnchor && x >= headerW && x < ruler.getRight())
+        {
+            g.setColour(juce::Colour(0xff6db8c5).withAlpha(0.72f));
+            g.fillRect(x, ruler.getBottom() - 5, 2, 4);
+        }
     }
     // Measure numbers are clearer at bar-group boundaries, subdued elsewhere.
     g.setFont(juce::Font(11.0f));
