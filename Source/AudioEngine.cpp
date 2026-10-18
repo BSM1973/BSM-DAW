@@ -27,6 +27,12 @@ bool AudioEngine::initialise()
     if (error.isNotEmpty()) { const juce::ScopedLock lock(stateLock); lastError = error; initialised.store(false); return false; }
     auto* device = deviceManager.getCurrentAudioDevice();
     if (device == nullptr) { const juce::ScopedLock lock(stateLock); lastError = "No audio output device is available."; initialised.store(false); return false; }
+    liveMidiCollector.reset(device->getCurrentSampleRate());
+    for (const auto& midiDevice : juce::MidiInput::getAvailableDevices())
+    {
+        deviceManager.setMidiInputDeviceEnabled(midiDevice.identifier, true);
+        deviceManager.addMidiInputDeviceCallback(midiDevice.identifier, this);
+    }
     deviceManager.addAudioCallback(this);
     { const juce::ScopedLock lock(stateLock); deviceName = device->getName(); lastError.clear(); }
     sampleRate.store(device->getCurrentSampleRate());
@@ -38,8 +44,17 @@ bool AudioEngine::initialise()
     return true;
 }
 
+void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message)
+{
+    if (monitoredInstrumentTrack.load(std::memory_order_acquire) >= 0)
+        liveMidiCollector.addMessageToQueue(message);
+}
+
 void AudioEngine::shutdown()
 {
+    for (const auto& midiDevice : juce::MidiInput::getAvailableDevices())
+        deviceManager.removeMidiInputDeviceCallback(midiDevice.identifier, this);
+    monitoredInstrumentTrack.store(-1, std::memory_order_release);
     instrumentResumePending.store(false, std::memory_order_release);
     instrumentPanicPending.store(false, std::memory_order_release);
     playing.store(false);
