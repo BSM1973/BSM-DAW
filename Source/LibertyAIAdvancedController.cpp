@@ -98,7 +98,7 @@ private:
     void moveStatusBelow()
     {
         if (auto* status = findStatusLabel(panel))
-            status->setBounds(20, 538, juce::jmax(0, panel.getWidth() - 40), juce::jmax(42, panel.getHeight() - 552));
+            status->setBounds(20, 538, juce::jmax(0, panel.getWidth() - 40), 48);
     }
 
     void replaceMidi(const std::vector<MidiEngine::NoteEvent>& notes)
