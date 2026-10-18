@@ -81,7 +81,7 @@ public:
         clearMonitoringState();
         armedTrack = -1;
         for (auto& button : armButtons)
-            if (button) button->setButtonText("ARM");
+            if (button) { button->setButtonText("REC"); button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37)); }
         updateMonitoringCallback();
     }
 
@@ -226,9 +226,11 @@ private:
 
         armedTrack = track;
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
+        {
             armButtons[(size_t)i]->setButtonText("REC");
             armButtons[(size_t)i]->setColour(juce::TextButton::buttonColourId,
                 i == armedTrack ? juce::Colour(0xff873340) : juce::Colour(0xff202c37));
+        }
 
         owner.selectedTrack = track;
         updateMonitoringCallback();
