@@ -129,14 +129,43 @@ private:
     MainComponent& owner; juce::Label title,status; juce::TextButton full,shortSong,intro,chorus,bridge;
 };
 
-class Controller final:private juce::Timer
+class ArrangerWindow final : public juce::DocumentWindow
 {
-public: void openArranger(){if(stopped.load())return;if(auto*p=panel()){if(parent!=p||!arranger){arranger.reset();parent=p;arranger=std::make_unique<AIArranger>(owner);parent->addAndMakeVisible(*arranger);}arranger->setBounds(20,juce::jmax(80,parent->getHeight()-166),juce::jmax(280,parent->getWidth()-40),142);arranger->toFront(false);}} explicit Controller(MainComponent& o):owner(o){startTimerHz(5);} ~Controller()override{shutdown();}
- void shutdown(){if(stopped.exchange(true))return;stopTimer();arranger.reset();}
+public:
+    explicit ArrangerWindow(MainComponent& owner)
+        : juce::DocumentWindow("Liberty - AI Arranger",
+                               juce::Colour(0xff11161c),
+                               juce::DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new AIArranger(owner), true);
+        setResizable(true, false);
+        setResizeLimits(480, 180, 1600, 800);
+        centreWithSize(700, 210);
+    }
+
+    void closeButtonPressed() override { setVisible(false); }
+};
+
+class Controller final
+{
+public:
+    explicit Controller(MainComponent& component) : owner(component) {}
+    ~Controller() { shutdown(); }
+
+    void openArranger()
+    {
+        if (!window)
+            window = std::make_unique<ArrangerWindow>(owner);
+        window->setVisible(true);
+        window->toFront(true);
+    }
+
+    void shutdown() { window.reset(); }
+
 private:
- juce::Component* panel(){for(int i=0;i<owner.getNumChildComponents();++i){auto*c=owner.getChildComponent(i);if(!c)continue;for(int j=0;j<c->getNumChildComponents();++j)if(auto*l=dynamic_cast<juce::Label*>(c->getChildComponent(j)))if(l->getText()=="LIBERTY AI MUSIC")return c;}return nullptr;}
- void timerCallback()override{if(stopped.load())return;auto*p=panel();if(!p)return;if(parent!=p||!arranger){arranger.reset();parent=p;arranger=std::make_unique<AIArranger>(owner);parent->addAndMakeVisible(*arranger);}const int h=142;arranger->setBounds(20,juce::jmax(80,parent->getHeight()-h-24),juce::jmax(280,parent->getWidth()-40),h);}
- MainComponent& owner;juce::Component*parent=nullptr;std::unique_ptr<AIArranger>arranger;std::atomic<bool>stopped{false};
+    MainComponent& owner;
+    std::unique_ptr<ArrangerWindow> window;
 };
 std::map<MainComponent*,std::unique_ptr<Controller>> controllers;
 class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(5);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(controllers.find(m)==controllers.end()){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};
