@@ -94,6 +94,7 @@ public:
     bool isInputMonitoringEnabled() const noexcept { return inputMonitoringEnabled.load(std::memory_order_acquire); }
     void setMonitoredInstrumentTrack(int track) noexcept
     {
+        if (track >= 0 && !ensureInstrumentPlaybackTracks(track + 1)) return;
         monitoredInstrumentTrack.store(track, std::memory_order_release);
         instrumentPanicPending.store(true, std::memory_order_release);
     }
