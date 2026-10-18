@@ -50,9 +50,9 @@ public:
     {
         setup(harmonize, "HARMONISER");
         setup(chordTrack, "PISTE D'ACCORDS");
-        setup(varA, "VAR A");
-        setup(varB, "VAR B");
-        setup(varC, "VAR C");
+        setup(varA, "VARIANTE A");
+        setup(varB, "VARIANTE B");
+        setup(varC, "VARIANTE C");
 
         harmonize.onClick = [this] { makeHarmony(); };
         chordTrack.onClick = [this] { makeChordTrack(); };
