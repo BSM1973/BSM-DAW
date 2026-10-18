@@ -40,8 +40,8 @@ private:
         if (auto* browser = findBrowserPanel(owner))
             if (browser->isVisible() && browser->getWidth() > 0)
                 right = browser->getX();
-        const int available = juce::jmax(300, right - 220);
-        const int width = juce::jmin(panelWidth, available);
+        const int available = juce::jmax(1, right - 220);
+        const int width = juce::jmin(panelWidth, juce::jmin(juce::jmax(300, available), juce::jmax(1, right)));
         const auto bounds = juce::Rectangle<int>(
             juce::jmax(0, right - width), topBarHeight, width,
             juce::jmax(1, owner.getHeight() - topBarHeight));
