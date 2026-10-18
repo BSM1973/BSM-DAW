@@ -22,19 +22,19 @@ class AIArranger final : public juce::Component
 public:
     explicit AIArranger(MainComponent& o) : owner(o)
     {
-        title.setText("AI ARRANGER", juce::dontSendNotification);
+        title.setText("ARRANGEMENT IA", juce::dontSendNotification);
         title.setColour(juce::Label::textColourId, juce::Colour(0xff8edcff));
         title.setFont(juce::Font(12.0f, juce::Font::bold));
         addAndMakeVisible(title);
-        addButton(full, "BUILD SONG", [this] { buildSong(false); });
-        addButton(shortSong, "SHORT SONG", [this] { buildSong(true); });
-        addButton(intro, "MAKE INTRO", [this] { makeSection("INTRO", 4, 0.55f, 0); });
-        addButton(chorus, "MAKE CHORUS", [this] { makeSection("CHORUS", 8, 1.15f, 12); });
-        addButton(bridge, "MAKE BRIDGE", [this] { makeSection("BRIDGE", 4, 0.82f, 5); });
+        addButton(full, "CRÉER UN MORCEAU", [this] { buildSong(false); });
+        addButton(shortSong, "VERSION COURTE", [this] { buildSong(true); });
+        addButton(intro, "CRÉER INTRO", [this] { makeSection("INTRO", 4, 0.55f, 0); });
+        addButton(chorus, "CRÉER REFRAIN", [this] { makeSection("CHORUS", 8, 1.15f, 12); });
+        addButton(bridge, "CRÉER PONT", [this] { makeSection("BRIDGE", 4, 0.82f, 5); });
         status.setColour(juce::Label::textColourId, juce::Colour(0xffb8c3cf));
         status.setFont(juce::Font(10.0f));
         status.setJustificationType(juce::Justification::topLeft);
-        status.setText("Select an Instrument/MIDI idea, then let Liberty build song sections.", juce::dontSendNotification);
+        status.setText("Sélectionnez une idée Instrument/MIDI pour créer les sections du morceau.", juce::dontSendNotification);
         addAndMakeVisible(status);
         setOpaque(true);
     }
@@ -94,13 +94,13 @@ private:
         for(const auto& x:n) owner.midiEngine.addNote(x.startTick,x.lengthTicks,x.pitch,x.velocity,x.channel);
         owner.midiClipStartSeconds=start; owner.midiClipLengthUserDefined=false; owner.updateMidiClipTiming();
         const bool ok=commitLibertyAIGeneratedClip(owner,instrumentTrack);
-        if(ok) status.setText(label+" created",juce::dontSendNotification);
+        if(ok) status.setText(label+" créé",juce::dontSendNotification);
         return ok;
     }
 
     void makeSection(const juce::String& name,int bars,float energy,int transpose)
     {
-        const auto src=source(); if(src.empty()){status.setText("No active musical idea.",juce::dontSendNotification);return;}
+        const auto src=source(); if(src.empty()){status.setText("Aucune idée musicale active.",juce::dontSendNotification);return;}
         const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const auto out=adapt(src,bars,energy,transpose,(unsigned)juce::Time::getMillisecondCounter());
         commitAt(out,owner.midiClipStartSeconds+owner.midiClipLengthSeconds,name,instrumentTrack);
@@ -108,7 +108,7 @@ private:
 
     void buildSong(bool compact)
     {
-        const auto original=source(); if(original.empty()){status.setText("No active Instrument/MIDI idea to arrange.",juce::dontSendNotification);return;}
+        const auto original=source(); if(original.empty()){status.setText("Aucune idée Instrument/MIDI active à arranger.",juce::dontSendNotification);return;}
         const bool instrumentTrack=isLibertyActiveMidiClipInstrument(owner);
         const double base=owner.midiClipStartSeconds;
         const double secondsPerBar=(60.0/juce::jmax(1.0,owner.tempoBpm))*4.0*(4.0/(double)juce::jmax(1,owner.timeSignatureDenominator))*owner.timeSignatureNumerator/4.0;
@@ -122,7 +122,7 @@ private:
             if(commitAt(out,cursor,s.name,instrumentTrack)) ++made;
             cursor += secondsPerBar*(double)s.bars;
         }
-        status.setText("AI ARRANGER: "+juce::String(made)+" sections created - editable Liberty clips",juce::dontSendNotification);
+        status.setText("AI ARRANGER: "+juce::String(made)+" sections créées - clips Liberty modifiables",juce::dontSendNotification);
         owner.repaint();
     }
 
@@ -133,7 +133,7 @@ class ArrangerWindow final : public juce::DocumentWindow
 {
 public:
     explicit ArrangerWindow(MainComponent& owner)
-        : juce::DocumentWindow("Liberty - AI Arranger",
+        : juce::DocumentWindow("Liberty - Arrangement IA",
                                juce::Colour(0xff11161c),
                                juce::DocumentWindow::closeButton)
     {
