@@ -963,6 +963,23 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.fillRoundedRectangle((float)header.getX() + 8.0f,
                                (float)header.getY() + 12.0f, 3.0f,
                                (float)juce::jmax(0, header.getHeight() - 24), 1.5f);
+        // Obsidian Pro: category accent and subtle selected-track surface.
+        const juce::Colour categoryAccent = logicalRow < audioCount ? juce::Colour(0xff55b9d8)
+                                           : logicalRow < audioCount + midiCount ? juce::Colour(0xffae91ed)
+                                                                                 : juce::Colour(0xffe0ae65);
+        {
+            const juce::Graphics::ScopedSaveState headerState(g);
+            g.reduceClipRegion(header);
+            g.setColour(selected ? juce::Colour(0xff29414b)
+                                 : (logicalRow % 2 == 0 ? juce::Colour(0xff1b2935)
+                                                        : juce::Colour(0xff192631)));
+            g.fillRect(header);
+            g.setColour(categoryAccent.withAlpha(selected ? 0.95f : 0.65f));
+            g.fillRect(header.getX() + 5, header.getY() + 7, 3,
+                       juce::jmax(0, header.getHeight() - 14));
+            g.setColour(juce::Colour(0xff344653));
+            g.drawVerticalLine(header.getRight() - 1, (float) header.getY(), (float) header.getBottom());
+        }
         g.setColour(juce::Colour(0xffe8eff7)); g.setFont(juce::Font(14.0f, juce::Font::bold));
         if (selected)
         {
