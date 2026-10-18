@@ -432,6 +432,21 @@ private:
                     juce::jmax(0, w - 90), 32, juce::Justification::centredLeft, 1);
                 g.setColour(juce::Colour(0xff314553));
                 g.drawLine(37.0f, 226.0f, (float) juce::jmax(37, w - 37), 226.0f, 1.0f);
+                // An unobtrusive footer makes use of the empty area below the
+                // JUCE selector without drawing over its interactive controls.
+                const float footerY = (float) getHeight() - 53.0f;
+                if (footerY > 400.0f)
+                {
+                    g.setColour(juce::Colour(0xff314553));
+                    g.drawLine(37.0f, footerY - 12.0f,
+                               (float) juce::jmax(37, w - 37), footerY - 12.0f, 1.0f);
+                    g.setColour(juce::Colour(0xff91a8b7));
+                    g.setFont(juce::Font(12.0f));
+                    g.drawFittedText("LIBERTY  /  AUDIO ENGINE", 39, (int) footerY,
+                        juce::jmax(0, w - 78), 20,
+                        juce::Justification::centredLeft, 1);
+                }
+
 
                 // Bottom accent is inside the bay, away from all interactive controls.
                 const float railY = (float) getHeight() - 20.0f;
@@ -449,7 +464,7 @@ private:
             {
                 // Preserve the fully operational JUCE audio-device selector.
                 selector->setBounds(30, 238, juce::jmax(0, getWidth() - 60),
-                                    juce::jmax(0, getHeight() - 269));
+                                    juce::jmax(0, getHeight() - 319));
             }
         private:
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
