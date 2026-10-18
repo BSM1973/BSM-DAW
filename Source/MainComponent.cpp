@@ -13,6 +13,7 @@ void resizeLibertyMixConsole(MainComponent*);
 void resizeLibertyBrowserResizeController(MainComponent*);
 void resizeLibertyMultiMidiClipController(MainComponent*);
 void ensureLibertyAudioRecordingController(MainComponent*);
+void ensureLibertyBrowserController(MainComponent*);
 bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
@@ -1594,6 +1595,7 @@ void MainComponent::timerCallback()
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
     ensureLibertyAudioRecordingController(this);
+    ensureLibertyBrowserController(this);
     const auto newPlayhead = audioEngine.getCurrentTimeSeconds();
     const bool newPlaying = audioEngine.isPlaying();
     const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
