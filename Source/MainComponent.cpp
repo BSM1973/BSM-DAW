@@ -1017,8 +1017,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.fillRect(header.getX(), header.getY(), 3, header.getHeight());
         }
         // Selected track labels carry stronger contrast than inactive headers.
-        g.setColour(selected ? juce::Colour(0xfff0fafb)
-                             : juce::Colour(0xffb5c3d1));
+        g.setColour(selected ? juce::Colour(0xfff4fbfc)
+                             : juce::Colour(0xffc0ceda));
+        g.setFont(juce::Font(selected ? 14.0f : 13.5f,
+                             selected ? juce::Font::bold : juce::Font::plain));
         g.drawFittedText(title, header.getX() + 18, header.getY() + 8, juce::jmax(0, header.getWidth() - 28), juce::jmax(0, juce::jmin(24, header.getHeight() - 8)), juce::Justification::centredLeft, 1, 0.85f);
         // Draw the timeline grid inside EVERY visible row, including the
         // final clipped row immediately above the mixer.  Previously the only
