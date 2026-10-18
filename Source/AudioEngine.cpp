@@ -1215,7 +1215,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
     }
 
-    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0)
+    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0
+        && monitoredInstrumentTrack.load(std::memory_order_acquire) < 0)
     {
         // Audition only the selected instrument, leaving arrangement time untouched.
         const auto previewTrack = stepPreviewTrack.load(std::memory_order_acquire);
