@@ -70,7 +70,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const int instrumentTrack = getLibertyActiveInstrumentClipLane(owner);
     if (instrumentTrack < 0)
     {
-        resultMessage = "Selectionne d'abord un clip Instrument actif a rendre.";
+        resultMessage = juce::String::fromUTF8("S\xC3""\xA9""lectionnez d'abord un clip Instrument actif \xC3""\xA0"" convertir en audio.");
         return false;
     }
     if (!host.hasInstrumentForTrack(instrumentTrack))
@@ -82,7 +82,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const auto notes = owner.midiEngine.getNotesCopy();
     if (notes.empty())
     {
-        resultMessage = "Aucun clip Instrument actif a rendre.";
+        resultMessage = juce::String::fromUTF8("Aucun clip Instrument actif \xC3""\xA0"" convertir.");
         return false;
     }
 
@@ -103,7 +103,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const double sampleRate = owner.audioEngine.getSampleRate();
     if (sampleRate <= 0.0)
     {
-        resultMessage = "Aucun peripherique audio disponible pour le rendu AI.";
+        resultMessage = juce::String::fromUTF8("Aucun p\xC3""\xA9""riph\xC3""\xA9""rique audio disponible pour le rendu IA.");
         return false;
     }
 
@@ -149,7 +149,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         || totalSamplesExact <= 0.0
         || totalSamplesExact > (double) maxLoadableSamples)
     {
-        resultMessage = "Le clip Instrument est trop long pour etre rendu et charge en piste Audio.";
+        resultMessage = juce::String::fromUTF8("Le clip Instrument est trop long pour \xC3""\xAA""tre converti en piste Audio.");
         return false;
     }
     const std::int64_t totalSamples = juce::jmax<std::int64_t>(1, (std::int64_t)std::ceil(totalSamplesExact));
@@ -160,7 +160,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const auto directoryResult = renderDirectory.createDirectory();
     if (directoryResult.failed() || !renderDirectory.isDirectory())
     {
-        resultMessage = "Impossible de creer le dossier AI Renders.";
+        resultMessage = juce::String::fromUTF8("Impossible de cr\xC3""\xA9""er le dossier des rendus IA.");
         return false;
     }
     const auto bytesFree = renderDirectory.getBytesFreeOnVolume();
@@ -178,7 +178,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         || clipEndSamplesExact < 0.0
         || clipEndSamplesExact > (double) std::numeric_limits<std::int64_t>::max())
     {
-        resultMessage = "La duree du clip Instrument est invalide.";
+        resultMessage = juce::String::fromUTF8("La dur\xC3""\xA9""e du clip Instrument est invalide.");
         return false;
     }
     const std::int64_t clipEndSample = (std::int64_t)std::llround(clipEndSamplesExact);
@@ -193,7 +193,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     {
         silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
-        resultMessage = "Impossible de creer le fichier temporaire AI Render.";
+        resultMessage = juce::String::fromUTF8("Impossible de cr\xC3""\xA9""er le fichier temporaire de rendu IA.");
         return false;
     }
     std::unique_ptr<juce::AudioFormatWriter> tempWriter(wav.createWriterFor(tempStream.get(), sampleRate, 2, 32, {}, 0));
@@ -201,7 +201,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     {
         silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
-        resultMessage = "Impossible de creer le writer temporaire AI Render.";
+        resultMessage = juce::String::fromUTF8("Impossible de cr\xC3""\xA9""er l'\xC3""\xA9""criture temporaire du rendu IA.");
         return false;
     }
     tempStream.release();
@@ -284,7 +284,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             tempWriter.reset();
             silenceInstrumentState(host, instrumentTrack, blockSize, true);
             tempFile.deleteFile();
-            resultMessage = "Echec de l'ecriture du rendu audio temporaire.";
+            resultMessage = juce::String::fromUTF8("\xC3""\x89""chec de l'\xC3""\xA9""criture du rendu audio temporaire.");
             return false;
         }
         writePos += num;
@@ -304,7 +304,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     {
         silenceInstrumentState(host, instrumentTrack, blockSize, true);
         tempFile.deleteFile();
-        resultMessage = "Impossible de relire le rendu audio temporaire.";
+        resultMessage = juce::String::fromUTF8("Impossible de relire le rendu audio temporaire.");
         return false;
     }
 
@@ -316,7 +316,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         silenceInstrumentState(host, instrumentTrack, blockSize, true);
         file.deleteFile();
         tempFile.deleteFile();
-        resultMessage = "Impossible de creer le fichier AI Render.";
+        resultMessage = juce::String::fromUTF8("Impossible de cr\xC3""\xA9""er le fichier du rendu IA.");
         return false;
     }
 
@@ -344,7 +344,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             silenceInstrumentState(host, instrumentTrack, blockSize, true);
             file.deleteFile();
             tempFile.deleteFile();
-            resultMessage = "Echec de la relecture du rendu audio temporaire.";
+            resultMessage = juce::String::fromUTF8("\xC3""\x89""chec de la relecture du rendu audio temporaire.");
             return false;
         }
         if (renderGain < 1.0f)
@@ -356,7 +356,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             silenceInstrumentState(host, instrumentTrack, blockSize, true);
             file.deleteFile();
             tempFile.deleteFile();
-            resultMessage = "Echec de l'ecriture du rendu audio.";
+            resultMessage = juce::String::fromUTF8("\xC3""\x89""chec de l'\xC3""\xA9""criture du rendu audio.");
             return false;
         }
         readPos += num;
@@ -397,7 +397,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     owner.selectedTrack = targetTrack;
     owner.repaint();
 
-    resultMessage = "AI Render securise sur Audio " + juce::String(targetTrack + 1)
-                  + " - source Instrument mutee - " + file.getFileName();
+    resultMessage = juce::String::fromUTF8("Rendu IA s\xC3""\xA9""curis\xC3""\xA9"" sur Audio ") + juce::String(targetTrack + 1)
+                  + juce::String::fromUTF8(" - source Instrument mise en sourdine - ") + file.getFileName();
     return true;
 }
