@@ -587,9 +587,9 @@ private:
             tempoButton.setButtonText("120.00 BPM"); meterButton.setButtonText("4/4");
             for (auto* button : { &tempoButton, &meterButton })
             {
-                button->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff252a31));
-                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffc9cdd3));
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1c2b36));
+                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff294653));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe2f3f5));
                 button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
                 button->setMouseClickGrabsKeyboardFocus(false); addAndMakeVisible(button);
             }
