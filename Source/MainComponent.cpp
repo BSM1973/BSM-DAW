@@ -1083,8 +1083,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
     if (playheadX >= headerW && playheadX <= (float)getWidth())
     {
-        g.setColour(juce::Colour(0xffe4a85e));
-        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f);
+        // Subtle halo separates the transport cursor from dense clip waveforms.
+        g.setColour(juce::Colour(0xffe4a85e).withAlpha(0.18f));
+        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 5.0f);
+        g.setColour(juce::Colour(0xfff2bb73));
+        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 1.5f);
         // Small ruler-only locator; the transport position and hit areas are unchanged.
         juce::Path playheadMarker;
         playheadMarker.addTriangle(playheadX - 5.0f, (float)ruler.getY() + 2.0f,
