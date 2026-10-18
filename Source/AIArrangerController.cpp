@@ -131,11 +131,11 @@ private:
 
 class Controller final:private juce::Timer
 {
-public: explicit Controller(MainComponent& o):owner(o){startTimerHz(5);} ~Controller()override{shutdown();}
+public: void openArranger(){if(stopped.load())return;if(auto*p=panel()){if(parent!=p||!arranger){arranger.reset();parent=p;arranger=std::make_unique<AIArranger>(owner);parent->addAndMakeVisible(*arranger);}arranger->setBounds(20,juce::jmax(80,parent->getHeight()-166),juce::jmax(280,parent->getWidth()-40),142);arranger->toFront(false);}} explicit Controller(MainComponent& o):owner(o){startTimerHz(5);} ~Controller()override{shutdown();}
  void shutdown(){if(stopped.exchange(true))return;stopTimer();arranger.reset();}
 private:
  juce::Component* panel(){for(int i=0;i<owner.getNumChildComponents();++i){auto*c=owner.getChildComponent(i);if(!c)continue;for(int j=0;j<c->getNumChildComponents();++j)if(auto*l=dynamic_cast<juce::Label*>(c->getChildComponent(j)))if(l->getText()=="LIBERTY AI MUSIC")return c;}return nullptr;}
- void timerCallback()override{if(stopped.load())return;auto*p=panel();if(!p)return;if(parent!=p||!arranger){arranger.reset();parent=p;arranger=std::make_unique<AIArranger>(owner);parent->addAndMakeVisible(*arranger);}const int h=142;arranger->setBounds(20,juce::jmax(760,parent->getHeight()-h-16),juce::jmax(280,parent->getWidth()-40),h);}
+ void timerCallback()override{if(stopped.load())return;auto*p=panel();if(!p)return;if(parent!=p||!arranger){arranger.reset();parent=p;arranger=std::make_unique<AIArranger>(owner);parent->addAndMakeVisible(*arranger);}const int h=142;arranger->setBounds(20,juce::jmax(80,parent->getHeight()-h-24),juce::jmax(280,parent->getWidth()-40),h);}
  MainComponent& owner;juce::Component*parent=nullptr;std::unique_ptr<AIArranger>arranger;std::atomic<bool>stopped{false};
 };
 std::map<MainComponent*,std::unique_ptr<Controller>> controllers;
@@ -143,3 +143,11 @@ class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(5);}~B
 Bootstrap bootstrap;
 }
 void shutdownLibertyAIArrangerController(){bootstrap.shutdown();}
+
+void showLibertyAIArranger(MainComponent& owner)
+{
+    auto it = controllers.find(&owner);
+    if (it == controllers.end())
+        it = controllers.emplace(&owner, std::make_unique<Controller>(owner)).first;
+    it->second->openArranger();
+}
