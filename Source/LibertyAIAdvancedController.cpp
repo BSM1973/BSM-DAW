@@ -45,8 +45,8 @@ public:
     AdvancedAIControls(MainComponent& ownerIn, juce::Component& panelIn)
         : owner(ownerIn), panel(panelIn)
     {
-        setup(harmonize, "HARMONIZE");
-        setup(chordTrack, "CHORD TRACK");
+        setup(harmonize, "HARMONISER");
+        setup(chordTrack, "PISTE D'ACCORDS");
         setup(varA, "VAR A");
         setup(varB, "VAR B");
         setup(varC, "VAR C");
