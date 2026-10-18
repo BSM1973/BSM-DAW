@@ -23,6 +23,8 @@ public:
     void openPanel()
     {
         if (stopped.load()) return;
+        panel.getProperties().set("liberty-ai-scroll", 0);
+        panel.resized();
         panel.setVisible(true);
         panel.toFront(false);
     }
