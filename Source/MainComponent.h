@@ -478,8 +478,8 @@ private:
             setUsingNativeTitleBar(true);
             setContentOwned(new AudioSettingsContent(engine), true);
             setResizable(true, true);
-            setResizeLimits(560, 460, 1400, 1000);
-            centreWithSize(680, 540);
+            setResizeLimits(680, 620, 1400, 1100);
+            centreWithSize(760, 650);
             setVisible(false);
         }
         void closeButtonPressed() override { setVisible(false); }
