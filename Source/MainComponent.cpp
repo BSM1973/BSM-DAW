@@ -927,8 +927,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     for(int p=0;p<points;++p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);const auto y=(float)centreY-waveformMax[(size_t)i][(size_t)p]*amplitude;if(p==0)waveform.startNewSubPath(x,y);else waveform.lineTo(x,y);}
                     for(int p=points-1;p>=0;--p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);waveform.lineTo(x,(float)centreY-waveformMin[(size_t)i][(size_t)p]*amplitude);}
                     waveform.closeSubPath();
-                    g.setColour(selected ? juce::Colour(0xffb7eaf3)
-                                         : juce::Colour(0xff83b7ca));
+                    // A soft underlay adds depth without altering waveform geometry.
+                    g.setColour(juce::Colour(0xff0c2432).withAlpha(0.30f));
+                    g.fillPath(waveform);
+                    g.setColour(selected ? juce::Colour(0xffc3f1f6)
+                                         : juce::Colour(0xff92c5d5));
                     g.fillPath(waveform);
                 }
                 // File names follow the same selected/inactive hierarchy as track headers.
