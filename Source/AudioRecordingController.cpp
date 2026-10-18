@@ -151,34 +151,38 @@ private:
 
     void handleMonitorClick(int trackIndex)
     {
-        const bool enabled = !monitoringEnabled[(size_t)trackIndex]->load(std::memory_order_relaxed);
-        for (int track = 0; track < (int) monitoringEnabled.size(); ++track)
+        const bool enable = !monitoringEnabled[(size_t)trackIndex]->load(std::memory_order_relaxed);
+        if (enable && !configureInput())
         {
-            const bool active = enabled && track == trackIndex;
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - Monitoring",
+                "Aucune entree audio disponible. Verifiez le peripherique et ses entrees dans les reglages audio.", "OK");
+            return;
+        }
+
+        for (int track = 0; track < (int)monitoringEnabled.size(); ++track)
+        {
+            const bool active = enable && track == trackIndex;
             monitoringEnabled[(size_t)track]->store(active, std::memory_order_relaxed);
-            monitorButtons[(size_t)track]->setToggleState(active, juce::dontSendNotification);
             monitorButtons[(size_t)track]->setButtonText("MON");
             monitorButtons[(size_t)track]->setColour(juce::TextButton::buttonColourId,
                 active ? juce::Colour(0xff24535d) : juce::Colour(0xff202c37));
+            monitorButtons[(size_t)track]->setColour(juce::TextButton::textColourOffId,
+                active ? juce::Colours::white : juce::Colour(0xffd6e5ee));
         }
 
-        if (enabled && configureInput())
+        if (enable)
         {
             const int left = inputIndices.empty() ? 0 : inputIndices[0];
             const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
             owner.audioEngine.setInputMonitoring(true, left, right);
-            return;
         }
-
-        owner.audioEngine.setInputMonitoring(false);
-        if (enabled)
+        else
         {
-            monitoringEnabled[(size_t)trackIndex]->store(false, std::memory_order_relaxed);
-            monitorButtons[(size_t)trackIndex]->setToggleState(false, juce::dontSendNotification);
-            monitorButtons[(size_t)trackIndex]->setButtonText("MON");
-            monitorButtons[(size_t)trackIndex]->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+            owner.audioEngine.setInputMonitoring(false);
+            updateMonitoringCallback();
         }
-        updateMonitoringCallback();
+        owner.repaint();
     }
 
     void clearMonitoringState()
