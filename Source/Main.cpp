@@ -47,10 +47,10 @@ public:
                 menu.addItem(6001, "Aller au d\xC3\xA9" "but", false, false);
                 break;
             case 6:
-                menu.addItem(6501, "Assistant IA / AI MUSIC");
-                menu.addItem(6502, "Composition IA / AI Composer 2");
-                menu.addItem(6503, "Arrangement IA / AI Arranger");
-                menu.addItem(6504, "Analyse musicale IA / AI Song Brain");
+                menu.addItem(6501, "Assistant musical IA");
+                menu.addItem(6502, "Composition IA");
+                menu.addItem(6503, "Arrangement IA");
+                menu.addItem(6504, "Analyse musicale IA");
                 break;
             case 7:
                 menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
