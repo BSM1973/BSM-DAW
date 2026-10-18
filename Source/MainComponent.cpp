@@ -1465,6 +1465,35 @@ void MainComponent::timerCallback()
         repaint(0, transportHeight, getWidth(), juce::jmax(0, getHeight() - transportHeight));
 }
 
+void MainComponent::performMainMenuAction(int commandId)
+{
+    switch (commandId)
+    {
+        case 1001: newProject(); break;
+        case 1002: openProject(); break;
+        case 1003: saveProject(); break;
+        case 1004: saveProjectAs(); break;
+        case 4001:
+            isPlaying = !audioEngine.isPlaying();
+            audioEngine.setPlaying(isPlaying);
+            repaint();
+            break;
+        case 4002:
+            isPlaying = false;
+            audioEngine.setPlaying(false);
+            repaint();
+            break;
+        case 7001: openAudioSettings(); break;
+        case 8001:
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::InfoIcon,
+                "Liberty",
+                "Liberty DAW - BSM Studio Music");
+            break;
+        default: break;
+    }
+}
+
 void MainComponent::openAudioSettings()
 {
     if (audioSettingsWindow == nullptr) audioSettingsWindow = std::make_unique<AudioSettingsWindow>(audioEngine);
