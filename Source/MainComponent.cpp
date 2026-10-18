@@ -1020,11 +1020,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 const bool measureLine = (subdivisionIndex % subdivisions) == 0;
                 const bool beatLine = (subdivisionIndex % 4) == 0;
                 // Visual hierarchy only: bar > quarter-note beat > sixteenth subdivision.
-                g.setColour(measureLine ? (selected ? juce::Colour(0xff526b78)
-                                                    : juce::Colour(0xff445968))
-                                        : beatLine ? (selected ? juce::Colour(0xff344b59)
-                                                               : juce::Colour(0xff2c3b49))
-                                                   : juce::Colour(0xff202c37));
+                g.setColour(measureLine ? (selected ? juce::Colour(0xff66818e)
+                                                    : juce::Colour(0xff526777))
+                                        : beatLine ? (selected ? juce::Colour(0xff3b5360)
+                                                               : juce::Colour(0xff30414e))
+                                                   : (selected ? juce::Colour(0xff253743)
+                                                               : juce::Colour(0xff202c37)));
                 g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
             }
         }
