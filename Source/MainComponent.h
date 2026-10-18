@@ -388,6 +388,14 @@ private:
                             label->setText("Sortie MIDI :", juce::dontSendNotification);
                         else if (original == "Active output channels:")
                             label->setText("Canaux de sortie :", juce::dontSendNotification);
+                        else if (original == "Active input channels:")
+                            label->setText(juce::String("Canaux d'entr")
+                                + juce::String::charToString((juce::juce_wchar) 0x00E9)
+                                + "e :", juce::dontSendNotification);
+                        else if (original == "MIDI Input:")
+                            label->setText(juce::String("Entr")
+                                + juce::String::charToString((juce::juce_wchar) 0x00E9)
+                                + "e MIDI :", juce::dontSendNotification);
                     }
                     else if (auto* button = dynamic_cast<juce::TextButton*>(child))
                     {
@@ -415,7 +423,7 @@ private:
                 viewport.setLookAndFeel(&controlsLookAndFeel);
                 addAndMakeVisible(viewport);
                 setSize(760, 650);
-                startTimerHz(2);
+                startTimerHz(1);
             }
 
             ~AudioSettingsContent() override
