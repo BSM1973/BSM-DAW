@@ -1596,6 +1596,9 @@ void MainComponent::timerCallback()
     // Do not depend on desktop window discovery or an extra drawn placeholder.
     ensureLibertyAudioRecordingController(this);
     ensureLibertyBrowserController(this);
+    // Keep audio render states allocated for instrument lanes even without MIDI clips.
+    // Otherwise plugin GUI keyboards have no audio processing path at all.
+    audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
     const auto newPlayhead = audioEngine.getCurrentTimeSeconds();
     const bool newPlaying = audioEngine.isPlaying();
     const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
