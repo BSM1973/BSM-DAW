@@ -932,6 +932,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.setColour(selected ? juce::Colour(0xff315e73) : juce::Colour(0xff24475b)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
                 g.setColour(selected ? juce::Colour(0xff89d6e5)
                                      : juce::Colour(0xff5598b3));
+                // Inset selection rim stays inside the clip and preserves hit geometry.
+                if (selected && clip.getWidth() > 8 && clip.getHeight() > 8)
+                {
+                    g.setColour(juce::Colour(0xffb4eaf1).withAlpha(0.22f));
+                    g.drawRoundedRectangle(clip.toFloat().reduced(2.0f), 4.0f, 1.0f);
+                    g.setColour(juce::Colour(0xff89d6e5));
+                }
                 g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
@@ -1071,6 +1078,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
                         g.setColour(selected ? juce::Colour(0xffe0ae65)
                                              : juce::Colour(0xffae8954));
+                        if (selected && clip.getWidth() > 8 && clip.getHeight() > 8)
+                        {
+                            g.setColour(juce::Colour(0xfff3d7a6).withAlpha(0.20f));
+                            g.drawRoundedRectangle(clip.toFloat().reduced(2.0f), 4.0f, 1.0f);
+                            g.setColour(juce::Colour(0xffe0ae65));
+                        }
                         g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
                         g.setColour(selected ? juce::Colour(0xfff8f2e8)
                                              : juce::Colour(0xffe2d4bf));
