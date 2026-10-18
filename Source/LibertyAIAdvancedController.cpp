@@ -258,7 +258,9 @@ private:
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
-                if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                if (auto* content = window->getContentComponent())
+                    for (int childIndex = -1; childIndex < content->getNumChildComponents(); ++childIndex)
+                        if (auto* main = dynamic_cast<MainComponent*>(childIndex < 0 ? content : content->getChildComponent(childIndex)))
                     if (controllers.find(main) == controllers.end())
                     {
                         controllers.emplace(main, std::make_unique<Controller>(*main));
