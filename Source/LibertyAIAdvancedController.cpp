@@ -62,8 +62,8 @@ public:
         varB.onClick = [this] { makeVariation(2); };
         varC.onClick = [this] { makeVariation(3); };
 
-        panel.addAndMakeVisible(*this);
-        setBounds(20, 452, juce::jmax(0, panel.getWidth() - 40), 76);
+        setComponentID("liberty-ai-advanced");panel.addAndMakeVisible(*this);
+        setBounds(20, 452 - (int)panel.getProperties().getWithDefault("liberty-ai-scroll", 0), juce::jmax(0, panel.getWidth() - 40), 76);
         resized();
         moveStatusBelow();
     }
@@ -98,7 +98,7 @@ private:
     void moveStatusBelow()
     {
         if (auto* status = findStatusLabel(panel))
-            status->setBounds(20, 538, juce::jmax(0, panel.getWidth() - 40), 48);
+            status->setBounds(20, 538 - (int)panel.getProperties().getWithDefault("liberty-ai-scroll", 0), juce::jmax(0, panel.getWidth() - 40), 48);
     }
 
     void replaceMidi(const std::vector<MidiEngine::NoteEvent>& notes)
