@@ -24,7 +24,7 @@ juce::Component* findAIPanel(MainComponent& owner)
         if (child == nullptr) continue;
         for (int j = 0; j < child->getNumChildComponents(); ++j)
             if (auto* label = dynamic_cast<juce::Label*>(child->getChildComponent(j)))
-                if (label->getText() == "LIBERTY AI MUSIC")
+                if (label->getText() == "LIBERTY MUSIQUE IA" || label->getText() == "LIBERTY AI MUSIC")
                     return child;
     }
     return nullptr;
