@@ -1297,22 +1297,27 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
         }
-        // MIDI thru must work while the arrangement is stopped.
-        if (liveTrack >= 0 && liveTrack < (int)instrumentPlayback.size())
+        // Always process loaded instrument plugins, including when transport is
+        // stopped. A plugin's own GUI keyboard generates notes internally and
+        // cannot be heard unless its processBlock keeps running.
+        auto& host = LibertyPluginHost::instance();
+        for (int instrumentTrack = 0; instrumentTrack < (int)instrumentPlayback.size(); ++instrumentTrack)
         {
-            auto& state = *instrumentPlayback[(size_t)liveTrack];
-            auto& host = LibertyPluginHost::instance();
-            if (!state.muted.load(std::memory_order_relaxed) && host.hasInstrumentForTrack(liveTrack))
+            auto& state = *instrumentPlayback[(size_t)instrumentTrack];
+            if (state.muted.load(std::memory_order_relaxed)
+                || !host.hasInstrumentForTrack(instrumentTrack))
+                continue;
+            juce::MidiBuffer midi;
+            if (instrumentTrack == liveTrack)
+                midi.addEvents(liveMidi, 0, numSamples, 0);
+            juce::AudioBuffer<float> bus;
+            if (host.renderInstrumentForTrack(instrumentTrack, bus, numSamples, midi,
+                                              state.gain.load(std::memory_order_relaxed),
+                                              state.pan.load(std::memory_order_relaxed)))
             {
-                juce::AudioBuffer<float> bus;
-                if (host.renderInstrumentForTrack(liveTrack, bus, numSamples, liveMidi,
-                                                  state.gain.load(std::memory_order_relaxed),
-                                                  state.pan.load(std::memory_order_relaxed)))
-                {
-                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                        if (outputChannelData[ch] != nullptr)
-                            juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
-                }
+                for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                    if (outputChannelData[ch] != nullptr)
+                        juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
             }
         }
         return;
@@ -1508,9 +1513,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             if (!hasInstrument) continue;
             // Native drum voices are one-shots: keep rendering their tails and
             // queued pad auditions even in blocks with no scheduled MIDI notes.
-            if (nativeDrums == nullptr && (noteSnapshot == nullptr || noteSnapshot->notes.empty()) && instrumentTrack != liveTrack) continue;
-            if (nativeDrums == nullptr && arrangementNotes == nullptr && instrumentTrack != liveTrack
-                && state.clipLengthSeconds.load(std::memory_order_relaxed) <= 0.0) continue;
+            // Process even without arrangement notes: plugin GUI keyboards and release tails need audio callbacks.
+
             juce::MidiBuffer midi;
             if (instrumentTrack == liveTrack)
                 midi.addEvents(liveMidi, 0, numSamples, 0);
