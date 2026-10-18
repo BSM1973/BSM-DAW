@@ -481,8 +481,12 @@ private:
                 // The dialog's minimum width already guarantees sufficient
                 // space for the selector. Fit it to the viewport to avoid
                 // horizontal overflow and reserve room for the scroll bar.
+                // Keep the selector's internal layout tall enough for all
+                // device, channel, sample-rate, buffer and MIDI controls.
+                // A slightly larger content height provides breathing room
+                // without forcing a scrollbar when the window is spacious.
                 selector->setSize(juce::jmax(0, availableWidth - 12),
-                                  juce::jmax(440, availableHeight));
+                                  juce::jmax(440, availableHeight - 4));
                 // Clamp the scroll offset to the actual visible viewport area,
                 // which may shrink when the vertical scrollbar is displayed.
                 const int visibleWidth = viewport.getViewWidth();
