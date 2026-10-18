@@ -114,7 +114,7 @@ private:
         const double secondsPerBar=(60.0/juce::jmax(1.0,owner.tempoBpm))*4.0*(4.0/(double)juce::jmax(1,owner.timeSignatureDenominator))*owner.timeSignatureNumerator/4.0;
         const std::vector<Section> plan = compact
           ? std::vector<Section>{{"INTRO",2,0.55f,0},{"COUPLET",4,0.82f,0},{"REFRAIN",4,1.15f,12},{"COUPLET 2",4,0.9f,0},{"REFRAIN 2",4,1.2f,12},{"FIN",2,0.58f,-12}}
-          : std::vector<Section>{{"INTRO",4,0.52f,0},{"COUPLET 1",8,0.8f,0},{"PRÉ-REFRAIN",4,0.96f,5},{"REFRAIN 1",8,1.16f,12},{"COUPLET 2",8,0.88f,0},{"REFRAIN 2",8,1.2f,12},{"PONT",4,0.76f,5},{"REFRAIN FINAL",8,1.24f,12},{"FIN",4,0.56f,-12}};
+          : std::vector<Section>{{"INTRO",4,0.52f,0},{"COUPLET 1",8,0.8f,0},{juce::String::fromUTF8("PR\xC3""\x89""-REFRAIN"),4,0.96f,5},{"REFRAIN 1",8,1.16f,12},{"COUPLET 2",8,0.88f,0},{"REFRAIN 2",8,1.2f,12},{"PONT",4,0.76f,5},{"REFRAIN FINAL",8,1.24f,12},{"FIN",4,0.56f,-12}};
         double cursor=base; int made=0; unsigned seed=(unsigned)juce::Time::getMillisecondCounter();
         for(size_t i=0;i<plan.size();++i)
         {
