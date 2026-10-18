@@ -1465,6 +1465,8 @@ void MainComponent::timerCallback()
         repaint(0, transportHeight, getWidth(), juce::jmax(0, getHeight() - transportHeight));
 }
 
+void showLibertyAIMusicPanel(MainComponent&);
+
 void MainComponent::performMainMenuAction(int commandId)
 {
     switch (commandId)
@@ -1483,6 +1485,7 @@ void MainComponent::performMainMenuAction(int commandId)
             audioEngine.setPlaying(false);
             repaint();
             break;
+        case 6501: showLibertyAIMusicPanel(*this); break;
         case 7001: openAudioSettings(); break;
         case 8001:
             juce::AlertWindow::showMessageBoxAsync(
