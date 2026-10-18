@@ -882,8 +882,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     {
         const int x = headerW + (int)std::round(i * pixelsPerMeasure);
         if (x >= getWidth()) break;
-        g.setColour(i % 4 == 0 ? juce::Colour(0xffe2f0f3)
-                               : juce::Colour(0xff788d9f));
+        const bool groupStart = (i % 4) == 0;
+        g.setColour(groupStart ? juce::Colour(0xffe8f3f5)
+                               : juce::Colour(0xff8499aa));
+        g.setFont(juce::Font(groupStart ? 12.0f : 11.0f,
+                             groupStart ? juce::Font::bold : juce::Font::plain));
         g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
     }
 
