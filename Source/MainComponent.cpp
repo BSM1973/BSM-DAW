@@ -1049,6 +1049,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.setColour(armed ? juce::Colours::white : juce::Colour(0xffffcbd0));
                 g.setFont(juce::Font(10.0f, juce::Font::bold));
                 g.drawText("REC", recRect, juce::Justification::centred);
+                const bool monitoring = monitoredInstrumentTrack == channel;
+                const auto monRect = juce::Rectangle<int>(header.getX() + 158, header.getY() + 7, 48, 24);
+                g.setColour(monitoring ? juce::Colour(0xff24535d) : juce::Colour(0xff202c37));
+                g.fillRoundedRectangle(monRect.toFloat(), 5.0f);
+                g.setColour(monitoring ? juce::Colour(0xff54d6dc) : juce::Colour(0xff405360));
+                g.drawRoundedRectangle(monRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                g.setColour(monitoring ? juce::Colours::white : juce::Colour(0xffd6e5ee));
+                g.drawText("MON", monRect, juce::Justification::centred);
             }
             auto drawStripButton = [&](juce::Rectangle<int> r, const juce::String& label, bool active, juce::Colour tint)
             {
@@ -2147,6 +2155,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 if (!audioLane && juce::Rectangle<int>(108, rowY + 7, 46, 24).contains(p))
                 {
                     armedInstrumentTrack = (armedInstrumentTrack == channel ? -1 : channel);
+                    selectedTrack = logicalRow;
+                    repaint();
+                    return;
+                }
+                if (!audioLane && juce::Rectangle<int>(158, rowY + 7, 48, 24).contains(p))
+                {
+                    monitoredInstrumentTrack = (monitoredInstrumentTrack == channel ? -1 : channel);
                     selectedTrack = logicalRow;
                     repaint();
                     return;
