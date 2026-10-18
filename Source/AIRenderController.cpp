@@ -75,7 +75,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     }
     if (!host.hasInstrumentForTrack(instrumentTrack))
     {
-        resultMessage = "Charge d'abord un instrument AU/VST3 sur la piste Instrument.";
+        resultMessage = juce::String::fromUTF8("Chargez d'abord un instrument AU/VST3 sur la piste Instrument.");
         return false;
     }
 
@@ -113,7 +113,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
 
     if (!host.beginOfflineInstrumentRender(instrumentTrack))
     {
-        resultMessage = "L'instrument est deja utilise par un rendu offline.";
+        resultMessage = juce::String::fromUTF8("L'instrument est d\xC3""\xA9""j\xC3""\xA0"" utilis\xC3""\xA9"" par un rendu hors ligne.");
         return false;
     }
     struct OfflineRenderGuard
@@ -169,7 +169,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     const auto requiredDiskBytes = totalSamples * simultaneousBytesPerFrame + diskSafetyMargin;
     if (bytesFree >= 0 && requiredDiskBytes > bytesFree)
     {
-        resultMessage = "Espace disque insuffisant pour le rendu AI.";
+        resultMessage = juce::String::fromUTF8("Espace disque insuffisant pour le rendu IA.");
         return false;
     }
 
@@ -256,7 +256,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
             tempWriter.reset();
             silenceInstrumentState(host, instrumentTrack, blockSize, true);
             tempFile.deleteFile();
-            resultMessage = "L'instrument charge n'a pas pu etre rendu.";
+            resultMessage = juce::String::fromUTF8("L'instrument charg\xC3""\xA9"" n'a pas pu \xC3""\xAA""tre converti en audio.");
             return false;
         }
 
@@ -327,7 +327,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
         silenceInstrumentState(host, instrumentTrack, blockSize, true);
         file.deleteFile();
         tempFile.deleteFile();
-        resultMessage = "Impossible de creer le writer WAV.";
+        resultMessage = juce::String::fromUTF8("Impossible de cr\xC3""\xA9""er le fichier WAV.");
         return false;
     }
     stream.release();
@@ -374,7 +374,7 @@ bool renderLibertyAIActiveInstrumentToAudio(MainComponent& owner, juce::String& 
     if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, file, error))
     {
         file.deleteFile();
-        resultMessage = error.isNotEmpty() ? error : "Le rendu WAV n'a pas pu etre charge dans ARRANGE.";
+        resultMessage = error.isNotEmpty() ? error : juce::String::fromUTF8("Le rendu WAV n'a pas pu \xC3""\xAA""tre charg\xC3""\xA9"" dans ARRANGE.");
         return false;
     }
 
