@@ -55,7 +55,8 @@ std::map<MainComponent*,std::unique_ptr<Controller>>controllers;class Bootstrap:
 void showLibertyAIMusicPanel(MainComponent& owner)
 {
     auto it = controllers.find(&owner);
-    if (it == controllers.end()) return;
+    if (it == controllers.end())
+        it = controllers.emplace(&owner, std::make_unique<Controller>(owner)).first;
     it->second->openPanel();
 }
 void shutdownLibertyAIController(){bootstrap.shutdown();}
