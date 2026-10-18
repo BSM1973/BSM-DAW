@@ -756,10 +756,10 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.drawFittedText("PRO  /  DIGITAL AUDIO", juce::Rectangle<int>(63, 47, 115, 13),
                      juce::Justification::centredLeft, 1);
 
-    // Transport 2.0: a distinct command deck, drawn behind the existing
-    // five interactive controls. The deck stays inside x=205..533, y=31..73.
-    // No hit-test logic is changed; this is a purely visual grouping layer.
-    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 328.0f, 42.0f);
+    // Unified transport deck: five transport controls and the existing
+    // interactive BPM/signature component share one Obsidian panel.
+    // The controls retain their exact bounds and callbacks.
+    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 528.0f, 42.0f);
     g.setColour(LibertyUI::Colour::canvas);
     g.fillRoundedRectangle(commandDeck, 11.0f);
     g.setColour(LibertyUI::Colour::divider);
@@ -767,9 +767,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     // Obsidian deck: a restrained top-edge highlight and a quiet lower
     // cyan guide reinforce the command group without covering controls.
     g.setColour(juce::Colour(0xff526978).withAlpha(0.65f));
-    g.drawHorizontalLine(32, 218.0f, 520.0f);
+    g.drawHorizontalLine(32, 218.0f, 720.0f);
     g.setColour(LibertyUI::Colour::accent.withAlpha(0.62f));
-    g.fillRoundedRectangle(276.0f, 70.0f, 180.0f, 2.0f, 1.0f);
+    g.fillRoundedRectangle(276.0f, 70.0f, 380.0f, 2.0f, 1.0f);
 
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
     // Hit targets remain exactly 56 x 28 at the existing coordinates.
