@@ -29,8 +29,8 @@ public:
         addButton(full, juce::String::fromUTF8("CR\xC3""\x89""ER UN MORCEAU"), [this] { buildSong(false); });
         addButton(shortSong, "VERSION COURTE", [this] { buildSong(true); });
         addButton(intro, juce::String::fromUTF8("CR\xC3""\x89""ER INTRO"), [this] { makeSection("INTRO", 4, 0.55f, 0); });
-        addButton(chorus, juce::String::fromUTF8("CR\xC3""\x89""ER REFRAIN"), [this] { makeSection("CHORUS", 8, 1.15f, 12); });
-        addButton(bridge, juce::String::fromUTF8("CR\xC3""\x89""ER PONT"), [this] { makeSection("BRIDGE", 4, 0.82f, 5); });
+        addButton(chorus, juce::String::fromUTF8("CR\xC3""\x89""ER REFRAIN"), [this] { makeSection("REFRAIN", 8, 1.15f, 12); });
+        addButton(bridge, juce::String::fromUTF8("CR\xC3""\x89""ER PONT"), [this] { makeSection("PONT", 4, 0.82f, 5); });
         status.setColour(juce::Label::textColourId, juce::Colour(0xffb8c3cf));
         status.setFont(juce::Font(10.0f));
         status.setJustificationType(juce::Justification::topLeft);
@@ -113,8 +113,8 @@ private:
         const double base=owner.midiClipStartSeconds;
         const double secondsPerBar=(60.0/juce::jmax(1.0,owner.tempoBpm))*4.0*(4.0/(double)juce::jmax(1,owner.timeSignatureDenominator))*owner.timeSignatureNumerator/4.0;
         const std::vector<Section> plan = compact
-          ? std::vector<Section>{{"INTRO",2,0.55f,0},{"VERSE",4,0.82f,0},{"CHORUS",4,1.15f,12},{"VERSE 2",4,0.9f,0},{"CHORUS 2",4,1.2f,12},{"OUTRO",2,0.58f,-12}}
-          : std::vector<Section>{{"INTRO",4,0.52f,0},{"VERSE 1",8,0.8f,0},{"PRE",4,0.96f,5},{"CHORUS 1",8,1.16f,12},{"VERSE 2",8,0.88f,0},{"CHORUS 2",8,1.2f,12},{"BRIDGE",4,0.76f,5},{"FINAL CHORUS",8,1.24f,12},{"OUTRO",4,0.56f,-12}};
+          ? std::vector<Section>{{"INTRO",2,0.55f,0},{"COUPLET",4,0.82f,0},{"REFRAIN",4,1.15f,12},{"COUPLET 2",4,0.9f,0},{"REFRAIN 2",4,1.2f,12},{"FIN",2,0.58f,-12}}
+          : std::vector<Section>{{"INTRO",4,0.52f,0},{"COUPLET 1",8,0.8f,0},{"PRÉ-REFRAIN",4,0.96f,5},{"REFRAIN 1",8,1.16f,12},{"COUPLET 2",8,0.88f,0},{"REFRAIN 2",8,1.2f,12},{"PONT",4,0.76f,5},{"REFRAIN FINAL",8,1.24f,12},{"FIN",4,0.56f,-12}};
         double cursor=base; int made=0; unsigned seed=(unsigned)juce::Time::getMillisecondCounter();
         for(size_t i=0;i<plan.size();++i)
         {
@@ -122,7 +122,7 @@ private:
             if(commitAt(out,cursor,s.name,instrumentTrack)) ++made;
             cursor += secondsPerBar*(double)s.bars;
         }
-        status.setText("AI ARRANGER: "+juce::String(made)+juce::String::fromUTF8(" sections cr\xC3""\xA9""\xC3""\xA9""es - clips Liberty modifiables"),juce::dontSendNotification);
+        status.setText("ARRANGEMENT IA : "+juce::String(made)+juce::String::fromUTF8(" sections cr\xC3""\xA9""\xC3""\xA9""es - clips Liberty modifiables"),juce::dontSendNotification);
         owner.repaint();
     }
 
