@@ -367,13 +367,17 @@ private:
                 selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
                     engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false);
                 selector->setLookAndFeel(&controlsLookAndFeel);
-                addAndMakeVisible(*selector);
-                setSize(680, 540);
+                viewport.setViewedComponent(selector.get(), false);
+                viewport.setScrollBarsShown(true, false);
+                viewport.setScrollBarThickness(7);
+                addAndMakeVisible(viewport);
+                setSize(760, 650);
             }
 
             ~AudioSettingsContent() override
             {
                 // Disconnect before the look-and-feel member is destroyed.
+                viewport.setViewedComponent(nullptr, false);
                 selector->setLookAndFeel(nullptr);
             }
 
@@ -463,10 +467,16 @@ private:
             void resized() override
             {
                 // Preserve the fully operational JUCE audio-device selector.
-                selector->setBounds(30, 238, juce::jmax(0, getWidth() - 60),
-                                    juce::jmax(0, getHeight() - 319));
+                const int availableWidth = juce::jmax(0, getWidth() - 60);
+                const int availableHeight = juce::jmax(0, getHeight() - 319);
+                viewport.setBounds(30, 238, availableWidth, availableHeight);
+                // JUCE lays out the audio controls internally; allow scrolling
+                // instead of clipping controls at smaller window sizes.
+                selector->setSize(juce::jmax(600, availableWidth),
+                                  juce::jmax(440, availableHeight));
             }
         private:
+            juce::Viewport viewport;
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
         };
     public:
