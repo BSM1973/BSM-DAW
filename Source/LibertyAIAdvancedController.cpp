@@ -34,7 +34,7 @@ juce::Label* findStatusLabel(juce::Component& panel)
 {
     for (int i = 0; i < panel.getNumChildComponents(); ++i)
         if (auto* label = dynamic_cast<juce::Label*>(panel.getChildComponent(i)))
-            if ((label->getText().containsIgnoreCase("Target:") || label->getText().containsIgnoreCase("Cible :")) || label->getText().containsIgnoreCase("generated"))
+            if ((label->getText().containsIgnoreCase("Target:") || label->getText().containsIgnoreCase("Cible :")) || (label->getText().containsIgnoreCase("generated") || label->getText().containsIgnoreCase("génér") || label->getText().containsIgnoreCase("g\xC3\xA9n\xC3\xA9r")))
                 return label;
     return nullptr;
 }
