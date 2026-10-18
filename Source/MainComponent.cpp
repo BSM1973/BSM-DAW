@@ -916,10 +916,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             {
                 clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
                 clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
-                g.setColour(selected ? juce::Colour(0xff37677c) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                g.setColour(selected ? juce::Colour(0xff8ed9e4)
-                                     : juce::Colour(0xff5b8fa7));
-                g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                g.setColour(selected ? juce::Colour(0xff315e73) : juce::Colour(0xff24475b)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(selected ? juce::Colour(0xff89d6e5)
+                                     : juce::Colour(0xff5598b3));
+                g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
                     const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
@@ -1040,12 +1040,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                     .getIntersection(row.withTrimmedLeft(headerW));
                     if (!clip.isEmpty())
                     {
-                        g.setColour(selected ? juce::Colour(0xff2b6168)
-                                             : juce::Colour(0xff1c3b44));
+                        g.setColour(selected ? juce::Colour(0xff645034)
+                                             : juce::Colour(0xff463b2c));
                         g.fillRoundedRectangle(clip.toFloat(), 5.0f);
-                        g.setColour(selected ? juce::Colour(0xff8ae9eb)
-                                             : juce::Colour(0xff408d98));
-                        g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
+                        g.setColour(selected ? juce::Colour(0xffe0ae65)
+                                             : juce::Colour(0xffae8954));
+                        g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
                         g.setColour(selected ? juce::Colour(0xfff0fafb)
                                              : juce::Colour(0xffc1d4e0));
                         g.setFont(juce::Font(11.0f, juce::Font::bold));
