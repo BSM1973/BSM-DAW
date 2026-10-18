@@ -153,6 +153,12 @@ class BrowserPanel final : public juce::Component,
                            private juce::FileBrowserListener
 {
 public:
+    void ensureToggleVisible()
+    {
+        toggleButton.setVisible(true);
+        toggleButton.toFront(false);
+    }
+
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
     {
@@ -1061,6 +1067,20 @@ private:
 
 Bootstrap bootstrap;
 }
+
+void ensureLibertyBrowserController(MainComponent* main)
+{
+    if (main == nullptr) return;
+    auto it = browsers.find(main);
+    if (it == browsers.end())
+    {
+        it = browsers.emplace(main, std::make_unique<BrowserPanel>(*main)).first;
+        resizeLibertyBrowserResizeController(main);
+    }
+    if (it != browsers.end() && it->second != nullptr)
+        it->second->ensureToggleVisible();
+}
+
 
 void shutdownLibertyBrowserController()
 {
