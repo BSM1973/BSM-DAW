@@ -13,7 +13,7 @@ public:
     {
         return { "Fichier", juce::String::fromUTF8("\xC3\x89" "dition"),
                  juce::String::fromUTF8("Cr\xC3\xA9" "er"), "Lecture",
-                 "Affichage", "Naviguer", "Options", "Aide" };
+                 "Affichage", "Naviguer", "IA", "Options", "Aide" };
     }
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override
     {
@@ -47,9 +47,15 @@ public:
                 menu.addItem(6001, "Aller au d\xC3\xA9" "but", false, false);
                 break;
             case 6:
-                menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
+                menu.addItem(6501, "Assistant IA", false, false);
+                menu.addItem(6502, "Composition IA", false, false);
+                menu.addItem(6503, "Arrangement IA", false, false);
+                menu.addItem(6504, "Analyse musicale IA", false, false);
                 break;
             case 7:
+                menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
+                break;
+            case 8:
                 menu.addItem(8001, juce::String::fromUTF8("\xC3\x80 propos de Liberty"));
                 break;
             default: break;
