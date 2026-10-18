@@ -43,8 +43,8 @@ private:
         const int available = juce::jmax(1, right - 220);
         const int width = juce::jmin(panelWidth, juce::jmin(juce::jmax(300, available), juce::jmax(1, right)));
         const auto bounds = juce::Rectangle<int>(
-            juce::jmax(0, right - width), topBarHeight, width,
-            juce::jmax(1, owner.getHeight() - topBarHeight));
+            juce::jmax(0, right - width), juce::jmin(topBarHeight, juce::jmax(0, owner.getHeight() - 1)), width,
+            juce::jmax(1, owner.getHeight() - juce::jmin(topBarHeight, juce::jmax(0, owner.getHeight() - 1))));
         if (panel.getBounds() != bounds) panel.setBounds(bounds);
     }
     MainComponent& owner;
