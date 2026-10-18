@@ -908,10 +908,12 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         auto row = juce::Rectangle<int>(rows.getX(), rows.getY() + visibleIndex * rowH, rows.getWidth(), rowH);
         if (row.getY() >= rows.getBottom()) break;
         row = row.getIntersection(rows);
-        // The active lane has a subtle petrol tint; inactive lanes retain Obsidian alternation.
-        g.setColour(logicalRow == selectedTrack ? juce::Colour(0xff192c34)
-                     : logicalRow % 2 ? juce::Colour(0xff101821)
-                                      : juce::Colour(0xff151f29));
+        // Restrained graphite zebra lanes keep large sessions readable.
+        // Selection remains distinct without overpowering clip colours.
+        const bool activeLane = logicalRow == selectedTrack;
+        g.setColour(activeLane ? juce::Colour(0xff1b303a)
+                     : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
+                                            : juce::Colour(0xff111b24)));
         g.fillRect(row);
         auto header = row.withWidth(headerW);
         bool selected = false;
