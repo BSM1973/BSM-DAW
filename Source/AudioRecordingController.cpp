@@ -14,6 +14,7 @@
 #include <vector>
 
 int getLibertyTrackRowHeight() noexcept;
+bool commitLibertyRecordedInstrumentMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 class LibertyAudioRecordingController final : public juce::Component, private juce::Timer
 {
@@ -245,9 +246,74 @@ private:
         owner.repaint();
     }
 
+    void finishMidiRecording()
+    {
+        const int track = owner.audioEngine.getMidiCaptureTrack();
+        if (track < 0) return;
+        auto events = owner.audioEngine.endMidiCapture();
+        owner.audioEngine.setPlaying(false);
+        owner.isPlaying = false;
+        recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff48242c));
+        std::map<std::pair<int,int>, std::pair<double,int>> active;
+        std::vector<MidiEngine::NoteEvent> notes;
+        double lastSeconds = 0.0;
+        const double ticksPerSecond = MidiEngine::ticksPerQuarterNote * juce::jmax(1.0, owner.tempoBpm) / 60.0;
+        for (const auto& event : events)
+        {
+            const auto& m = event.message;
+            const auto key = std::make_pair(m.getChannel(), m.getNoteNumber());
+            lastSeconds = juce::jmax(lastSeconds, event.seconds);
+            if (m.isNoteOn())
+                active[key] = {event.seconds, (int)m.getVelocity()};
+            else if (m.isNoteOff())
+            {
+                auto it = active.find(key);
+                if (it == active.end()) continue;
+                MidiEngine::NoteEvent note;
+                note.startTick = (std::int64_t)std::llround(it->second.first * ticksPerSecond);
+                note.lengthTicks = juce::jmax<std::int64_t>(1, (std::int64_t)std::llround((event.seconds - it->second.first) * ticksPerSecond));
+                note.pitch = (std::uint8_t)m.getNoteNumber();
+                note.channel = (std::uint8_t)m.getChannel();
+                note.velocity = (std::uint8_t)it->second.second;
+                notes.push_back(note);
+                active.erase(it);
+            }
+        }
+        for (const auto& item : active)
+        {
+            MidiEngine::NoteEvent note;
+            note.startTick = (std::int64_t)std::llround(item.second.first * ticksPerSecond);
+            note.lengthTicks = juce::jmax<std::int64_t>(1, (std::int64_t)std::llround((lastSeconds + 0.1 - item.second.first) * ticksPerSecond));
+            note.channel = (std::uint8_t)item.first.first;
+            note.pitch = (std::uint8_t)item.first.second;
+            note.velocity = (std::uint8_t)item.second.second;
+            notes.push_back(note);
+        }
+        if (!notes.empty())
+            commitLibertyRecordedInstrumentMidiClip(owner, notes, track, midiRecordStartSeconds,
+                juce::jmax(0.1, lastSeconds + 0.1));
+        owner.repaint();
+    }
+
     void toggleRecording()
     {
-        recording ? stopRecording(true) : startRecording();
+        if (owner.audioEngine.getMidiCaptureTrack() >= 0)
+        {
+            finishMidiRecording();
+            return;
+        }
+        if (recording) { stopRecording(true); return; }
+        if (owner.armedInstrumentTrack >= 0)
+        {
+            midiRecordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
+            owner.audioEngine.beginMidiCapture(owner.armedInstrumentTrack);
+            owner.audioEngine.setPlaying(true);
+            owner.isPlaying = true;
+            recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff873340));
+            owner.repaint();
+            return;
+        }
+        startRecording();
     }
 
     bool configureInput()
@@ -566,6 +632,8 @@ public:
         // Transport STOP is authoritative even when recording is active.
         if (recording && !owner.audioEngine.isPlaying())
             stopRecording(true);
+        if (owner.audioEngine.getMidiCaptureTrack() >= 0 && !owner.audioEngine.isPlaying())
+            finishMidiRecording();
 
         handleDeviceChange();
         syncTrackControls();
@@ -664,6 +732,7 @@ public:
         captureDeviceSignature();
     }
 
+    double midiRecordStartSeconds = 0.0;
     MainComponent& owner;
     std::vector<std::unique_ptr<juce::TextButton>> armButtons;
     std::vector<std::unique_ptr<juce::TextButton>> monitorButtons;
