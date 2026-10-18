@@ -12,7 +12,7 @@ public:
     juce::StringArray getMenuBarNames() override
     {
         return { "Fichier", juce::String::fromUTF8("\xC3\x89" "dition"),
-                 juce::String::fromUTF8("Cr\xC3\xA9er"), "Lecture",
+                 juce::String::fromUTF8("Cr\xC3\xA9" "er"), "Lecture",
                  "Affichage", "Naviguer", "Options", "Aide" };
     }
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override
@@ -32,8 +32,8 @@ public:
                 menu.addItem(2002, juce::String::fromUTF8("R\xC3\xA9tablir"), false, false);
                 break;
             case 2:
-                menu.addItem(3001, juce::String::fromUTF8("Cr\xC3\xA9er une piste audio"), false, false);
-                menu.addItem(3002, juce::String::fromUTF8("Cr\xC3\xA9er une piste instrument"), false, false);
+                menu.addItem(3001, juce::String::fromUTF8("Cr\xC3\xA9" "er une piste audio"), false, false);
+                menu.addItem(3002, juce::String::fromUTF8("Cr\xC3\xA9" "er une piste instrument"), false, false);
                 break;
             case 3:
                 menu.addItem(4001, owner.isAudioPlaying() ? "Pause" : "Lecture");
@@ -44,7 +44,7 @@ public:
                 menu.addItem(5002, juce::String::fromUTF8("S\xC3\xA9quenceur"), false, false);
                 break;
             case 5:
-                menu.addItem(6001, "Aller au d\xC3\xA9but", false, false);
+                menu.addItem(6001, "Aller au d\xC3\xA9" "but", false, false);
                 break;
             case 6:
                 menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
