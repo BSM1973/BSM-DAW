@@ -485,8 +485,11 @@ private:
                 // device, channel, sample-rate, buffer and MIDI controls.
                 // A slightly larger content height provides breathing room
                 // without forcing a scrollbar when the window is spacious.
+                // JUCE's device selector contains several vertically stacked
+                // controls whose visibility depends on the active device.
+                // Keep enough scrollable content height for the bottom controls.
                 selector->setSize(juce::jmax(0, availableWidth - 12),
-                                  juce::jmax(440, availableHeight - 4));
+                                  juce::jmax(520, availableHeight));
                 // Clamp the scroll offset to the actual visible viewport area,
                 // which may shrink when the vertical scrollbar is displayed.
                 const int visibleWidth = viewport.getViewWidth();
