@@ -1038,6 +1038,18 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             const bool soloed = audioLane ? audioEngine.isTrackSolo(channel) : audioEngine.isInstrumentTrackSolo(channel);
             const float gain = audioLane ? audioEngine.getTrackGain(channel) : audioEngine.getInstrumentTrackGain(channel);
             const int controlsY = header.getY() + 36;
+            if (!audioLane)
+            {
+                const bool armed = armedInstrumentTrack == channel;
+                const auto recRect = juce::Rectangle<int>(header.getX() + 108, header.getY() + 7, 46, 24);
+                g.setColour(armed ? juce::Colour(0xff873340) : juce::Colour(0xff202c37));
+                g.fillRoundedRectangle(recRect.toFloat(), 5.0f);
+                g.setColour(armed ? juce::Colour(0xffff8994) : juce::Colour(0xff405360));
+                g.drawRoundedRectangle(recRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                g.setColour(armed ? juce::Colours::white : juce::Colour(0xffffcbd0));
+                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.drawText("REC", recRect, juce::Justification::centred);
+            }
             auto drawStripButton = [&](juce::Rectangle<int> r, const juce::String& label, bool active, juce::Colour tint)
             {
                 g.setColour(active ? tint.withAlpha(0.38f) : juce::Colour(0xff202c37));
@@ -2132,6 +2144,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             {
                 const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
                 const int controlY = rowY + 36;
+                if (!audioLane && juce::Rectangle<int>(108, rowY + 7, 46, 24).contains(p))
+                {
+                    armedInstrumentTrack = (armedInstrumentTrack == channel ? -1 : channel);
+                    selectedTrack = logicalRow;
+                    repaint();
+                    return;
+                }
                 if (juce::Rectangle<int>(18, controlY, 32, 24).contains(p))
                 {
                     if (audioLane) audioEngine.setTrackMuted(channel, !audioEngine.isTrackMuted(channel));
