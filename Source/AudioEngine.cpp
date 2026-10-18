@@ -44,10 +44,31 @@ bool AudioEngine::initialise()
     return true;
 }
 
+void AudioEngine::beginMidiCapture(int instrumentTrack) noexcept
+{
+    const juce::ScopedLock lock(midiCaptureLock);
+    capturedMidiEvents.clear();
+    midiCaptureStartMs = juce::Time::getMillisecondCounterHiRes();
+    midiCaptureTrack.store(instrumentTrack, std::memory_order_release);
+}
+
+std::vector<AudioEngine::CapturedMidiEvent> AudioEngine::endMidiCapture()
+{
+    const juce::ScopedLock lock(midiCaptureLock);
+    midiCaptureTrack.store(-1, std::memory_order_release);
+    return std::move(capturedMidiEvents);
+}
+
 void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message)
 {
     if (monitoredInstrumentTrack.load(std::memory_order_acquire) >= 0)
         liveMidiCollector.addMessageToQueue(message);
+    if (midiCaptureTrack.load(std::memory_order_acquire) >= 0 && (message.isNoteOn() || message.isNoteOff()))
+    {
+        const juce::ScopedLock lock(midiCaptureLock);
+        if (midiCaptureTrack.load(std::memory_order_relaxed) >= 0)
+            capturedMidiEvents.push_back({message, juce::jmax(0.0, (juce::Time::getMillisecondCounterHiRes() - midiCaptureStartMs) / 1000.0)});
+    }
 }
 
 void AudioEngine::shutdown()
