@@ -953,6 +953,16 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
 
         }
+        // Track-type accent improves scanning without changing hit areas.
+        const juce::Colour typeAccent = logicalRow < audioCount
+            ? juce::Colour(0xff56b5dc)
+            : logicalRow < audioCount + midiCount
+                ? juce::Colour(0xffb99af0)
+                : juce::Colour(0xffe4b76d);
+        g.setColour(typeAccent.withAlpha(selected ? 1.0f : 0.72f));
+        g.fillRoundedRectangle((float)header.getX() + 8.0f,
+                               (float)header.getY() + 12.0f, 3.0f,
+                               (float)juce::jmax(0, header.getHeight() - 24), 1.5f);
         g.setColour(juce::Colour(0xffe8eff7)); g.setFont(juce::Font(14.0f, juce::Font::bold));
         if (selected)
         {
