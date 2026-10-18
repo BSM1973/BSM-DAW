@@ -363,6 +363,41 @@ private:
                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
             }
         };
+        static void translateAudioControls(juce::Component& parent)
+        {
+            for (int i = 0; i < parent.getNumChildComponents(); ++i)
+            {
+                if (auto* child = parent.getChildComponent(i))
+                {
+                    if (auto* label = dynamic_cast<juce::Label*>(child))
+                    {
+                        const auto original = label->getText().trim();
+                        if (original == "Output:")
+                            label->setText("Sortie :", juce::dontSendNotification);
+                        else if (original == "Input:")
+                            label->setText(juce::String("Entr")
+                                + juce::String::charToString((juce::juce_wchar) 0x00E9)
+                                + "e :", juce::dontSendNotification);
+                        else if (original == "Sample rate:")
+                            label->setText(juce::String("Fr")
+                                + juce::String::charToString((juce::juce_wchar) 0x00E9)
+                                + "quence :", juce::dontSendNotification);
+                        else if (original == "Audio buffer size:")
+                            label->setText("Taille du buffer :", juce::dontSendNotification);
+                        else if (original == "MIDI Output:")
+                            label->setText("Sortie MIDI :", juce::dontSendNotification);
+                        else if (original == "Active output channels:")
+                            label->setText("Canaux de sortie :", juce::dontSendNotification);
+                    }
+                    else if (auto* button = dynamic_cast<juce::TextButton*>(child))
+                    {
+                        if (button->getButtonText() == "Test")
+                            button->setButtonText("Tester");
+                    }
+                    translateAudioControls(*child);
+                }
+            }
+        }
         AudioControlsLookAndFeel controlsLookAndFeel;
         public:
             explicit AudioSettingsContent(AudioEngine& engine)
@@ -370,6 +405,9 @@ private:
                 selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
                     engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false);
                 selector->setLookAndFeel(&controlsLookAndFeel);
+                // Localise only known static labels in the JUCE selector.
+                // Device names and dynamic values must never be modified.
+                translateAudioControls(*selector);
                 viewport.setViewedComponent(selector.get(), false);
                 viewport.setScrollBarsShown(true, false);
                 viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::nonHover);
@@ -476,6 +514,7 @@ private:
                 const int availableWidth = juce::jmax(0, getWidth() - 60);
                 const int availableHeight = juce::jmax(0, getHeight() - 319);
                 viewport.setBounds(30, 238, availableWidth, availableHeight);
+                translateAudioControls(*selector);
                 // JUCE lays out the audio controls internally; allow scrolling
                 // instead of clipping controls at smaller window sizes.
                 // The dialog's minimum width already guarantees sufficient
