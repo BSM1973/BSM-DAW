@@ -2162,6 +2162,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 if (!audioLane && juce::Rectangle<int>(158, rowY + 7, 48, 24).contains(p))
                 {
                     monitoredInstrumentTrack = (monitoredInstrumentTrack == channel ? -1 : channel);
+                    audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
                     selectedTrack = logicalRow;
                     repaint();
                     return;
