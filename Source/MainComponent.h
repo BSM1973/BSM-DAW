@@ -478,7 +478,10 @@ private:
                 viewport.setBounds(30, 238, availableWidth, availableHeight);
                 // JUCE lays out the audio controls internally; allow scrolling
                 // instead of clipping controls at smaller window sizes.
-                selector->setSize(juce::jmax(600, availableWidth - 12),
+                // The dialog's minimum width already guarantees sufficient
+                // space for the selector. Fit it to the viewport to avoid
+                // horizontal overflow and reserve room for the scroll bar.
+                selector->setSize(juce::jmax(0, availableWidth - 12),
                                   juce::jmax(440, availableHeight));
                 // Clamp the scroll offset to the actual visible viewport area,
                 // which may shrink when the vertical scrollbar is displayed.
