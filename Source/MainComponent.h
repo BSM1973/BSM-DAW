@@ -585,11 +585,14 @@ private:
         explicit TempoControls(MainComponent* ownerIn) : owner(ownerIn)
         {
             tempoButton.setButtonText("120.00 BPM"); meterButton.setButtonText("4/4");
+            // Same compact segmented transport style as the playback controls.
+            tempoButton.setConnectedEdges(juce::Button::ConnectedOnRight);
+            meterButton.setConnectedEdges(juce::Button::ConnectedOnLeft);
             for (auto* button : { &tempoButton, &meterButton })
             {
-                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1c2b36));
-                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff294653));
-                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe2f3f5));
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff24535d));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe7f0f6));
                 button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
                 button->setMouseClickGrabsKeyboardFocus(false); addAndMakeVisible(button);
             }
@@ -597,7 +600,7 @@ private:
             setBounds(605, 34, 120, 36); owner->addAndMakeVisible(this);
         }
         void refresh() { tempoButton.setButtonText(juce::String(owner->tempoBpm, 2) + " BPM"); meterButton.setButtonText(juce::String(owner->timeSignatureNumerator) + "/" + juce::String(owner->timeSignatureDenominator)); repaint(); }
-        void resized() override { tempoButton.setBounds(0, 0, 80, 36); meterButton.setBounds(80, 0, 40, 36); }
+        void resized() override { tempoButton.setBounds(0, 4, 80, 28); meterButton.setBounds(80, 4, 40, 28); }
     private: MainComponent* owner; juce::TextButton tempoButton; juce::TextButton meterButton;
     };
     class ProjectButton final : public juce::Component
