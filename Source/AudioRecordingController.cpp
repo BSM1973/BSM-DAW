@@ -50,6 +50,8 @@ public:
         recButton.setMouseClickGrabsKeyboardFocus(false);
         recButton.onClick = [this] { toggleRecording(); };
         owner.addAndMakeVisible(recButton);
+        recButton.setBounds(539, 38, 56, 28);
+        recButton.toFront(false);
         startTimerHz(20);
     }
 
@@ -95,6 +97,8 @@ public:
         }
 
         recButton.setBounds(539, 38, 56, 28);
+        recButton.setVisible(true);
+        recButton.toFront(false);
     }
 
 private:
@@ -681,6 +685,13 @@ public:
             }
     }
 
+    void ensureAttached(MainComponent* owner)
+    {
+        if (owner == nullptr || controllers.find(owner) != controllers.end())
+            return;
+        controllers.emplace(owner, std::make_unique<LibertyAudioRecordingController>(*owner));
+    }
+
     void prepareForProjectReset(MainComponent* owner)
     {
         auto it = controllers.find(owner);
@@ -707,7 +718,7 @@ private:
                     main = dynamic_cast<MainComponent*>(window->getContentComponent());
             if (main != nullptr && controllers.find(main) == controllers.end())
             {
-                controllers.emplace(main, std::make_unique<LibertyAudioRecordingController>(*main));
+                ensureAttached(main);
                 return;
             }
         }
@@ -732,4 +743,9 @@ void prepareLibertyAudioRecordingForProjectReset(MainComponent* owner)
 void shutdownLibertyAudioRecordingController()
 {
     libertyAudioRecordingBootstrap.shutdown();
+}
+
+void ensureLibertyAudioRecordingController(MainComponent* owner)
+{
+    libertyAudioRecordingBootstrap.ensureAttached(owner);
 }
