@@ -1027,6 +1027,36 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.setFont(juce::Font(selected ? 14.0f : 13.5f,
                              selected ? juce::Font::bold : juce::Font::plain));
         g.drawFittedText(title, header.getX() + 18, header.getY() + 8, juce::jmax(0, header.getWidth() - 28), juce::jmax(0, juce::jmin(24, header.getHeight() - 8)), juce::Justification::centredLeft, 1, 0.85f);
+        // Obsidian Pro track strip: real M/S switches and live gain for Audio
+        // and Instrument lanes. The audio ARM/MON components occupy the first
+        // row and remain independent of these painted, hit-tested controls.
+        if (logicalRow < audioCount || logicalRow >= audioCount + midiCount)
+        {
+            const bool audioLane = logicalRow < audioCount;
+            const int channel = audioLane ? logicalRow : logicalRow - audioCount - midiCount;
+            const bool muted = audioLane ? audioEngine.isTrackMuted(channel) : audioEngine.isInstrumentTrackMuted(channel);
+            const bool soloed = audioLane ? audioEngine.isTrackSolo(channel) : audioEngine.isInstrumentTrackSolo(channel);
+            const float gain = audioLane ? audioEngine.getTrackGain(channel) : audioEngine.getInstrumentTrackGain(channel);
+            const int controlsY = header.getY() + 36;
+            auto drawStripButton = [&](juce::Rectangle<int> r, const juce::String& label, bool active, juce::Colour tint)
+            {
+                g.setColour(active ? tint.withAlpha(0.38f) : juce::Colour(0xff202c37));
+                g.fillRoundedRectangle(r.toFloat(), 5.0f);
+                g.setColour(active ? tint : juce::Colour(0xff405360));
+                g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                g.setColour(active ? juce::Colours::white : juce::Colour(0xffd6e5ee));
+                g.setFont(juce::Font(10.0f, juce::Font::bold));
+                g.drawText(label, r, juce::Justification::centred);
+            };
+            drawStripButton({header.getX() + 18, controlsY, 32, 24}, "M", muted, juce::Colour(0xffe16a75));
+            drawStripButton({header.getX() + 55, controlsY, 32, 24}, "S", soloed, juce::Colour(0xffe2b65c));
+            const auto gainBar = juce::Rectangle<int>(header.getX() + 94, controlsY + 7, 98, 10);
+            g.setColour(juce::Colour(0xff101b24)); g.fillRoundedRectangle(gainBar.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(gainBar.withWidth(juce::jlimit(0, gainBar.getWidth(), (int)std::round(gain * 0.5f * gainBar.getWidth()))).toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xffa9beca)); g.setFont(juce::Font(9.0f));
+            g.drawText("VOL", header.getX() + 94, controlsY - 7, 42, 12, juce::Justification::centredLeft);
+        }
         // Draw the timeline grid inside EVERY visible row, including the
         // final clipped row immediately above the mixer.  Previously the only
         // vertical lines were painted before the rows; each row background then
@@ -2086,6 +2116,43 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         repaint();
         return;
+    }
+
+    // Restore direct track-header M/S and gain hit targets. These match the
+    // painted controls above; they must precede generic track selection.
+    if (p.x < 210 && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
+        const int instrumentFirst = audioTrackCount + midiTrackCount;
+        if (logicalRow >= 0 && (logicalRow < audioTrackCount || logicalRow >= instrumentFirst))
+        {
+            const bool audioLane = logicalRow < audioTrackCount;
+            const int channel = audioLane ? logicalRow : logicalRow - instrumentFirst;
+            if (channel >= 0 && channel < (audioLane ? audioTrackCount : instrumentTrackCount))
+            {
+                const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
+                const int controlY = rowY + 36;
+                if (juce::Rectangle<int>(18, controlY, 32, 24).contains(p))
+                {
+                    if (audioLane) audioEngine.setTrackMuted(channel, !audioEngine.isTrackMuted(channel));
+                    else audioEngine.setInstrumentTrackMuted(channel, !audioEngine.isInstrumentTrackMuted(channel));
+                    repaint(); return;
+                }
+                if (juce::Rectangle<int>(55, controlY, 32, 24).contains(p))
+                {
+                    if (audioLane) audioEngine.setTrackSolo(channel, !audioEngine.isTrackSolo(channel));
+                    else audioEngine.setInstrumentTrackSolo(channel, !audioEngine.isInstrumentTrackSolo(channel));
+                    repaint(); return;
+                }
+                if (juce::Rectangle<int>(94, controlY + 4, 98, 18).contains(p))
+                {
+                    const float gain = 2.0f * juce::jlimit(0.0f, 1.0f, (float)(p.x - 94) / 98.0f);
+                    if (audioLane) audioEngine.setTrackGain(channel, gain);
+                    else audioEngine.setInstrumentTrackGain(channel, gain);
+                    repaint(); return;
+                }
+            }
+        }
     }
 
     // Select every dynamic MIDI and Instrument row, including after vertical scrolling.
