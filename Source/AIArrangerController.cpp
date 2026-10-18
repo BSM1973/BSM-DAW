@@ -15,7 +15,7 @@ bool isLibertyActiveMidiClipInstrument(MainComponent& owner);
 
 namespace
 {
-struct Section { const char* name; int bars; float energy; int transpose; };
+struct Section { juce::String name; int bars; float energy; int transpose; };
 
 class AIArranger final : public juce::Component
 {
