@@ -8,6 +8,7 @@ void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
 void showFloatingDrumSamplerWindow(AudioEngine&);
 void resizeLibertyDynamicTrackController(MainComponent*);
+void ensureLibertyPageModeCoordinator(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
 void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 
@@ -1634,12 +1635,14 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); repaint(); }
 
 void MainComponent::timerCallback()
 {
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
+    resizeLibertyDynamicTrackController(this);
+    ensureLibertyPageModeCoordinator(this);
     ensureLibertyAudioRecordingController(this);
     ensureLibertyBrowserController(this);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
