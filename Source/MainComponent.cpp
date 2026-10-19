@@ -764,7 +764,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     // Unified transport deck: five transport controls and the existing
     // interactive BPM/signature component share one Obsidian panel.
     // The controls retain their exact bounds and callbacks.
-    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 528.0f, 42.0f);
+    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 632.0f, 42.0f);
     g.setColour(LibertyUI::Colour::canvas);
     g.fillRoundedRectangle(commandDeck, 11.0f);
     g.setColour(LibertyUI::Colour::divider);
@@ -824,22 +824,6 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawFittedText(juce::String(measure) + ":" + juce::String(beat),
                      positionBox.reduced(5, 5), juce::Justification::centred, 1);
-
-    const auto musicInfo = juce::Rectangle<int>(836, 34, 82, 36);
-    g.setColour(LibertyUI::Colour::surface);
-    g.fillRoundedRectangle(musicInfo.toFloat(), 7.0f);
-    g.setColour(LibertyUI::Colour::divider);
-    g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 7.0f, 1.0f);
-    // The caption and value have separate vertical rectangles.
-    g.setColour(LibertyUI::Colour::textMuted);
-    g.setFont(juce::Font(9.0f, juce::Font::bold));
-    g.drawFittedText("BPM / SIGN", juce::Rectangle<int>(840, 37, 74, 12),
-                     juce::Justification::centred, 1);
-    g.setColour(LibertyUI::Colour::textPrimary);
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawFittedText(juce::String(tempoBpm, 0) + "  " + juce::String(timeSignatureNumerator)
-                     + "/" + juce::String(timeSignatureDenominator),
-                     juce::Rectangle<int>(840, 51, 74, 16), juce::Justification::centred, 1);
 
     // Audio settings is already a real top-bar control elsewhere in Liberty.
     // Do not paint a duplicate over that control: it hides the real UI and
