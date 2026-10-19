@@ -1,3 +1,4 @@
+double snapLibertyTimelineTime(double seconds, double bpm) noexcept;
 #include "MainComponent.h"
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
@@ -1163,9 +1164,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 1.5f);
         // Small ruler-only locator; the transport position and hit areas are unchanged.
         juce::Path playheadMarker;
-        playheadMarker.addTriangle(playheadX - 5.0f, (float)ruler.getY() + 2.0f,
-                                   playheadX + 5.0f, (float)ruler.getY() + 2.0f,
-                                   playheadX, (float)ruler.getY() + 10.0f);
+        playheadMarker.addTriangle(playheadX - 10.0f, (float)ruler.getY() + 2.0f,
+                                   playheadX + 10.0f, (float)ruler.getY() + 2.0f,
+                                   playheadX, (float)ruler.getY() + 17.0f);
         g.fillPath(playheadMarker);
     }
     // Render track colours in the main arranger paint pass, above its own
@@ -1957,6 +1958,20 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    // A generous hit target around the ruler locator starts a playhead drag.
+    // Do not let clip selection or the generic ruler seek steal this gesture.
+    if (!event.mods.isPopupMenu() && p.y >= transportHeight
+        && p.y < getArrangeTop() && p.x >= trackHeaderWidth)
+    {
+        const double px = getLibertyTimelinePixelsPerSecond();
+        const double markerX = trackHeaderWidth + playheadSeconds * px;
+        if (std::abs((double)p.x - markerX) <= 15.0)
+        {
+            draggingPlayheadMarker = true;
+            return;
+        }
+    }
+
     // Handle the popup at the owning component, before clip/transport routing.
     // Child overlays may swallow the event, so TrackHeaderMixControls also
     // forwards right-clicks to this same menu entry point.
@@ -2127,7 +2142,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
     {
         const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / pixelsPerSecond);
-        const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
+        const double snappedTime = snapLibertyTimelineTime(rawTime, tempoBpm);
         audioEngine.setCurrentTimeSeconds(snappedTime);
         playheadSeconds = snappedTime;
         repaint();
@@ -2337,6 +2352,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingPlayheadMarker)
+    {
+        const double rawTime = juce::jmax(0.0, ((double)event.position.x - trackHeaderWidth)
+                                              / getLibertyTimelinePixelsPerSecond());
+        const double nextTime = snapLibertyTimelineTime(rawTime, tempoBpm);
+        audioEngine.setCurrentTimeSeconds(nextTime);
+        playheadSeconds = nextTime;
+        repaint();
+        return;
+    }
+
     if (headerGainDragTrack >= 0)
     {
         const int audioCount = getAudioTrackCount();
@@ -2388,6 +2414,12 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingPlayheadMarker)
+    {
+        draggingPlayheadMarker = false;
+        return;
+    }
+
     if (headerGainDragTrack >= 0) { headerGainDragTrack = -1; return; }
     if (draggingStepSequencerPattern)
     {
