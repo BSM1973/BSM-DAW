@@ -1,5 +1,5 @@
-void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 #include "MainComponent.h"
+void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 #include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
 #include "LibertyDesignSystem.h"
