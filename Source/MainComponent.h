@@ -14,6 +14,9 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <cmath>
 
 int getLibertyTrackRowHeight() noexcept;
+class MainComponent;
+void refreshLibertyRecordingTrackLayout(MainComponent* owner);
+void refreshLibertyTrackHeaderMixLayout(MainComponent* owner);
 bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 class MainComponent final : public juce::Component,
@@ -234,6 +237,8 @@ public:
         if ((size_t) logicalRow >= individualTrackHeights.size())
             individualTrackHeights.resize((size_t) logicalRow + 1, 0);
         individualTrackHeights[(size_t) logicalRow] = juce::jlimit(32, 240, pixels);
+        refreshLibertyRecordingTrackLayout(this);
+        refreshLibertyTrackHeaderMixLayout(this);
         repaint();
     }
     int getArrangeTrackTop(int logicalRow) const noexcept
