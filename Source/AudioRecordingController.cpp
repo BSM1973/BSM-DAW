@@ -106,6 +106,8 @@ public:
         recButton.toFront(false);
     }
 
+    void triggerPunchRecording() { toggleRecording(); }
+
 private:
     bool isArmedTrackMonitoring() const noexcept
     {
@@ -359,8 +361,6 @@ private:
         startRecording();
         owner.punchRecordingRequested = recording && owner.punchOutEnabled;
     }
-
-    void triggerPunchRecording() { toggleRecording(); }
 
     bool configureInput()
     {
