@@ -248,7 +248,7 @@ int getLibertyTrackRowHeight() noexcept
 {
     // Hard minimum: title/recording row + insert row + mix row, all separated.
     // No UI element is allowed to share the same vertical pixels.
-    return juce::jlimit(128, 240, (int) std::lround(128.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    return juce::jlimit(144, 240, (int) std::lround(144.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
 }
 
 int getLibertyTrackHeightPreset() noexcept { return trackHeightPreset.load(); }
