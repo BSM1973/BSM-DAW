@@ -51,6 +51,19 @@ class MixConsoleController final{public:explicit MixConsoleController(MainCompon
 std::map<MainComponent*,std::unique_ptr<MixConsoleController>>controllers;
 class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(10);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&p:controllers)if(p.second)p.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<MixConsoleController>(*m));stopTimer();break;}}};Bootstrap bootstrap;
 }
+void ensureLibertyMixConsoleController(MainComponent* o)
+{
+    if (o != nullptr && !controllers.count(o))
+        controllers.emplace(o, std::make_unique<MixConsoleController>(*o));
+}
+void showLibertyMixConsolePage(MainComponent* o, bool visible)
+{
+    if (o == nullptr) return;
+    ensureLibertyMixConsoleController(o);
+    auto it = controllers.find(o);
+    if (it != controllers.end() && it->second)
+        it->second->show(visible);
+}
 bool isLibertyMixConsoleVisible(MainComponent*o){auto i=controllers.find(o);return o&&i!=controllers.end()&&i->second&&i->second->isVisible();}
 int getLibertyMixConsolePluginDropTrack(MainComponent*o,juce::Point<int>p,bool i){auto it=controllers.find(o);return o&&it!=controllers.end()&&it->second?it->second->getDropTrack(p,i):-1;} void refreshLibertyMixConsole(MainComponent*o){auto it=controllers.find(o);if(o&&it!=controllers.end()&&it->second)it->second->refresh();} void resizeLibertyMixConsole(MainComponent*o){auto it=controllers.find(o);if(o&&it!=controllers.end()&&it->second)it->second->resizeToOwner();}
 void shutdownLibertyMixConsoleController(){bootstrap.shutdown();}
