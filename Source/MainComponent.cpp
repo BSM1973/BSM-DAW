@@ -1200,8 +1200,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(colour.withAlpha(0.16f));
         g.fillRect(0, y, headerW, juce::jmin(rowH, rows.getBottom() - y));
         g.setColour(colour);
-        g.fillRect(0, y, 6, juce::jmin(rowH, rows.getBottom() - y));
-        g.fillRect(0, y, headerW, 3);
+        // Preserve the original left-edge track-type stripe (drawn earlier).
+        g.fillRect(10, y, 4, juce::jmin(rowH, rows.getBottom() - y));
+        g.fillRect(10, y, headerW - 10, 3);
     }
 
 }
@@ -1527,6 +1528,28 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
                            : (isInstrument ? juce::Colour(0xff427887)
                                            : juce::Colour(0xff405361)));
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+        // Mirror the arranger colour on each audio/instrument mini-mixer strip.
+        // Instrument tracks follow MIDI tracks in the arranger index.
+        if (!master)
+        {
+            const int arrangeTrack = isAudio ? sourceIndex
+                                            : audioTracks + getMidiTrackCount() + sourceIndex;
+            const int colourId = getLibertyTrackColourId(arrangeTrack);
+            constexpr juce::uint32 stripPalette[] = {
+                0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
+                0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
+            };
+            if (colourId > 0 && colourId < 9)
+            {
+                const auto trackColour = juce::Colour(stripPalette[colourId]);
+                g.setColour(trackColour.withAlpha(0.20f));
+                g.fillRoundedRectangle(c.toFloat().reduced(2.0f), 4.0f);
+                g.setColour(trackColour);
+                g.fillRoundedRectangle((float)c.getX() + 3.0f, (float)c.getY() + 3.0f,
+                                       (float)c.getWidth() - 6.0f, 4.0f, 2.0f);
+                g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.5f);
+            }
+        }
         // A restrained turquoise header accent distinguishes the master bus.
         if (master)
         {
