@@ -236,7 +236,8 @@ public:
         if (logicalRow < 0 || logicalRow >= getTotalArrangeTrackCount()) return;
         if ((size_t) logicalRow >= individualTrackHeights.size())
             individualTrackHeights.resize((size_t) logicalRow + 1, 0);
-        individualTrackHeights[(size_t) logicalRow] = juce::jlimit(144, 240, pixels);
+        // Drag below the collapse threshold to retain only the first header row.
+        individualTrackHeights[(size_t) logicalRow] = pixels < 92 ? 38 : juce::jlimit(144, 240, pixels);
         refreshLibertyRecordingTrackLayout(this);
         refreshLibertyTrackHeaderMixLayout(this);
         repaint();
