@@ -55,15 +55,6 @@ public:
         owner.addAndMakeVisible(recButton);
         recButton.setBounds(539, 38, 56, 28);
         recButton.toFront(false);
-        midiInputBox.setTooltip("Entrée MIDI du clavier maître (indépendante de la sortie audio)");
-        midiInputBox.onChange = [this]
-        {
-            const int index = midiInputBox.getSelectedId() - 1;
-            if (index >= 0 && index < (int)midiInputIdentifiers.size())
-                owner.audioEngine.selectMidiInput(midiInputIdentifiers[(size_t)index]);
-        };
-        owner.addAndMakeVisible(midiInputBox);
-        refreshMidiInputs();
         startTimerHz(20);
     }
 
@@ -111,8 +102,6 @@ public:
         recButton.setBounds(539, 38, 56, 28);
         recButton.setVisible(true);
         recButton.toFront(false);
-        midiInputBox.setBounds(600, 38, 195, 28);
-        midiInputBox.setVisible(true);
     }
 
 private:
@@ -312,33 +301,6 @@ private:
                 "Liberty - MIDI REC",
                 "Aucune note MIDI reçue. Sélectionnez l'entrée MIDI du clavier maître, activez REC sur la piste instrument, puis lancez REC dans le transport. Le clavier graphique interne d'un plugin ne transmet pas nécessairement ses notes à Liberty.", "OK");
         owner.repaint();
-    }
-
-    void refreshMidiInputs()
-    {
-        const auto devices = juce::MidiInput::getAvailableDevices();
-        if ((int)midiInputIdentifiers.size() == devices.size())
-        {
-            bool unchanged = true;
-            for (int i = 0; i < devices.size(); ++i)
-                if (midiInputIdentifiers[(size_t)i] != devices[i].identifier) unchanged = false;
-            if (unchanged) return;
-        }
-        midiInputIdentifiers.clear();
-        midiInputBox.clear(juce::dontSendNotification);
-        for (const auto& device : devices)
-        {
-            midiInputIdentifiers.push_back(device.identifier);
-            midiInputBox.addItem(device.name, (int)midiInputIdentifiers.size());
-        }
-        const auto selected = owner.audioEngine.getSelectedMidiInput();
-        for (int i = 0; i < (int)midiInputIdentifiers.size(); ++i)
-            if (midiInputIdentifiers[(size_t)i] == selected)
-                midiInputBox.setSelectedId(i + 1, juce::dontSendNotification);
-        if (devices.isEmpty())
-            midiInputBox.setTextWhenNothingSelected("Aucune entrée MIDI");
-        else if (midiInputBox.getSelectedId() == 0)
-            midiInputBox.setTextWhenNothingSelected("Choisir entrée MIDI");
     }
 
     void toggleRecording()
@@ -686,7 +648,6 @@ public:
             finishMidiRecording();
 
         handleDeviceChange();
-        refreshMidiInputs();
         syncTrackControls();
         resized();
         if (recording)
@@ -789,8 +750,6 @@ public:
     std::vector<std::unique_ptr<juce::TextButton>> monitorButtons;
     std::vector<std::unique_ptr<std::atomic<bool>>> monitoringEnabled;
     juce::TextButton recButton;
-    juce::ComboBox midiInputBox;
-    std::vector<juce::String> midiInputIdentifiers;
     std::vector<int> inputIndices;
     std::unique_ptr<juce::TimeSliceThread> recordingThread;
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> threadedWriter;
