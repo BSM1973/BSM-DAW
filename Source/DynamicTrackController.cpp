@@ -117,6 +117,8 @@ Bootstrap bootstrap;
 void resizeLibertyDynamicTrackController(MainComponent* owner)
 {
     if (owner == nullptr) return;
+    if (controllers.find(owner) == controllers.end())
+        controllers.emplace(owner, std::make_unique<DynamicTrackController>(*owner));
     auto it = controllers.find(owner);
     if (it != controllers.end() && it->second)
         it->second->resizeToOwner();
