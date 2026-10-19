@@ -1014,6 +1014,12 @@ void renderLibertyPerformAudio(AudioEngine* engine, float* const* outputs, int n
         }
 }
 
+void ensureLibertyPerformController(MainComponent* owner)
+{
+    if (owner != nullptr && !controllers.count(owner))
+        controllers.emplace(owner, std::make_unique<PerformController>(*owner));
+}
+
 bool isLibertyPerformVisible(MainComponent* owner)
 {
     if (owner == nullptr) return false;
@@ -1024,6 +1030,7 @@ bool isLibertyPerformVisible(MainComponent* owner)
 void setLibertyPerformVisible(MainComponent* owner, bool shouldShow)
 {
     if (owner == nullptr) return;
+    ensureLibertyPerformController(owner);
     const auto it = controllers.find(owner);
     if (it == controllers.end() || !it->second) return;
     it->second->setPerformVisible(shouldShow);
