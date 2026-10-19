@@ -984,7 +984,7 @@ private:
             if (!isVisible()) setVisible(true);
         }
 
-        const int buttonX = browserOpen ? juce::jmax(8, panelX - 104) : juce::jmax(8, owner.getWidth() - 112);
+        const int buttonX = 527; // Immediately after PERFORMANCE, even when browser is open.
         const auto buttonBounds = juce::Rectangle<int>(buttonX, 4, 112, 25);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
 
