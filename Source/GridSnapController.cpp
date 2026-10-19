@@ -28,3 +28,21 @@ double snapLibertyTimelineTime(double seconds, double bpm) noexcept
                       : i == 4 ? quarter / 8.0 : i == 5 ? quarter / 3.0 : quarter / 6.0;
     return std::round(seconds / step) * step;
 }
+
+// Returns the selected grid interval; OFF leaves transport navigation at one measure.
+double getLibertySnapStepSeconds(double bpm) noexcept
+{
+    const int i = snapIndex.load();
+    if (i == 0) return 0.0;
+    const double q = 60.0 / juce::jmax(1.0, bpm);
+    switch (i)
+    {
+        case 1: return q;
+        case 2: return q / 2.0;
+        case 3: return q / 4.0;
+        case 4: return q / 8.0;
+        case 5: return q / 3.0;
+        case 6: return q / 6.0;
+        default: return q / 4.0;
+    }
+}
