@@ -40,7 +40,7 @@ public:
     double loopStartSeconds = 0.0, loopEndSeconds = 8.0;
     double punchInSeconds = 0.0, punchOutSeconds = 8.0;
     bool loopEnabled = false, punchInEnabled = false, punchOutEnabled = false;
-    bool punchRecordingRequested = false;
+    bool punchRecordingRequested = false, punchWaitingForIn = false;
     int draggingRangeMarker = 0;
     juce::TextButton punchInButton { "IN" }, loopButton { "LOOP" }, punchOutButton { "OUT" };
     bool hasUnsavedChanges() const;
