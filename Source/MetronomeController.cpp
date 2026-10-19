@@ -42,6 +42,11 @@ public:
 
     void paint(juce::Graphics& g) override
     {
+        // The legacy transport layer draws a blue backing underneath this
+        // controller. Cover that backing locally before drawing both controls.
+        // Keep the neutral Obsidian deck visible around the buttons.
+        g.setColour(juce::Colour(0xff151d25));
+        g.fillRoundedRectangle(juce::Rectangle<float>(843.0f, 34.0f, 168.0f, 36.0f), 6.0f);
         const auto b = buttonBounds();
         g.setColour(enabled.load() ? juce::Colour(0xff285d46) : juce::Colour(0xff252a31));
         g.fillRoundedRectangle(b.toFloat(), 5.0f);
