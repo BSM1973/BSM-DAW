@@ -341,6 +341,8 @@ private:
         startRecording();
     }
 
+    void triggerPunchRecording() { toggleRecording(); }
+
     bool configureInput()
     {
         auto& manager = owner.audioEngine.getDeviceManager();
