@@ -12,7 +12,7 @@ namespace
 class TrackHeightIcon final : public juce::Component
 {
 public:
-    TrackHeightIcon() { setMouseCursor(juce::MouseCursor::PointingHandCursor); setTooltip("Hauteur des pistes : étroit / normal / large"); }
+    TrackHeightIcon() { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
     void paint(juce::Graphics& g) override
     {
         const int preset = getLibertyTrackHeightPreset();
