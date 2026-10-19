@@ -50,7 +50,7 @@ public:
          const int logical=logicalTrack(i);
          const int y=owner.getArrangeTrackTop(logical);
          const int rh=owner.getArrangeTrackHeight(logical);
-         if (y+rh<=owner.getArrangeTop() || y>=owner.getMixerTop()) continue;
+         if (rh<132 || y+rh<=owner.getArrangeTop() || y>=owner.getMixerTop()) continue;
          // Three anchored rows: recording, pan/mute/solo, volume.
          g.setColour(juce::Colour(0xff526575).withAlpha(0.50f));
          g.drawHorizontalLine(y+36, 12.0f, (float)owner.trackHeaderWidth-12.0f);
