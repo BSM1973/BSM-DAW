@@ -22,7 +22,7 @@ public:
         {
             const int h = bars[i];
             g.setColour(i == preset ? juce::Colour(0xff54d6dc) : juce::Colour(0xff647c8c));
-            g.fillRoundedRectangle(4.0f + i * 11.0f, 18.0f - h, 7.0f, (float)h, 1.5f);
+            g.fillRoundedRectangle(1.0f + i * 6.0f, 18.0f - h, 5.0f, (float)h, 1.5f);
         }
     }
     void mouseDown(const juce::MouseEvent& e) override
@@ -71,7 +71,7 @@ public:
         addMidi.setBounds(66, 78, 50, 24);
         addInstrument.setBounds(120, 78, 66, 24);
         countLabel.setVisible(false);
-        heightIcon.setBounds(190, 79, 38, 21);
+        heightIcon.setBounds(188, 79, 20, 21);
     }
 public:
     void resizeToOwner() { setBounds(owner.getLocalBounds()); }
