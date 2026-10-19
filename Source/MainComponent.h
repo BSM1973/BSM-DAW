@@ -422,9 +422,20 @@ private:
                         audioEngine.selectMidiInput(midiInputIdentifiers[(size_t)index]);
                 };
                 addAndMakeVisible(midiInputBox);
+                midiOutputLabel.setText("Sortie MIDI :", juce::dontSendNotification);
+                addAndMakeVisible(midiOutputLabel);
+                midiOutputBox.setLookAndFeel(&controlsLookAndFeel);
+                midiOutputBox.onChange = [this]
+                {
+                    const int index = midiOutputBox.getSelectedId() - 1;
+                    if (index >= 0 && index < (int)midiOutputIdentifiers.size())
+                        audioEngine.getDeviceManager().setDefaultMidiOutputDevice(midiOutputIdentifiers[(size_t)index]);
+                };
+                addAndMakeVisible(midiOutputBox);
                 refreshMidiInputs();
+                refreshMidiOutputs();
                 selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
-                    engine.getDeviceManager(), 0, 2, 1, 2, false, true, false, false);
+                    engine.getDeviceManager(), 0, 2, 1, 2, false, false, false, false);
                 selector->setLookAndFeel(&controlsLookAndFeel);
                 // Localise only known static labels in the JUCE selector.
                 // Device names and dynamic values must never be modified.
@@ -447,6 +458,7 @@ private:
                 viewport.setLookAndFeel(nullptr);
                 selector->setLookAndFeel(nullptr);
                 midiInputBox.setLookAndFeel(nullptr);
+                midiOutputBox.setLookAndFeel(nullptr);
             }
 
             void paint(juce::Graphics& g) override
@@ -539,7 +551,9 @@ private:
                 const int availableHeight = juce::jmax(0, getHeight() - 319);
                 midiInputLabel.setBounds(37, 234, 255, 28);
                 midiInputBox.setBounds(300, 234, juce::jmax(160, getWidth() - 340), 28);
-                viewport.setBounds(30, 277, availableWidth, juce::jmax(0, availableHeight - 39));
+                midiOutputLabel.setBounds(37, 270, 255, 28);
+                midiOutputBox.setBounds(300, 270, juce::jmax(160, getWidth() - 340), 28);
+                viewport.setBounds(30, 310, availableWidth, juce::jmax(0, availableHeight - 72));
                 translateAudioControls(*selector);
                 // JUCE lays out the audio controls internally; allow scrolling
                 // instead of clipping controls at smaller window sizes.
@@ -573,6 +587,25 @@ private:
                 if (selector != nullptr && isShowing())
                     translateAudioControls(*selector);
                 refreshMidiInputs();
+                refreshMidiOutputs();
+            }
+
+            void refreshMidiOutputs()
+            {
+                const auto devices = juce::MidiOutput::getAvailableDevices();
+                midiOutputIdentifiers.clear();
+                midiOutputBox.clear(juce::dontSendNotification);
+                for (const auto& device : devices)
+                {
+                    midiOutputIdentifiers.push_back(device.identifier);
+                    midiOutputBox.addItem(device.name, (int)midiOutputIdentifiers.size());
+                }
+                const auto selected = audioEngine.getDeviceManager().getDefaultMidiOutputIdentifier();
+                int selectedId = 0;
+                for (int i = 0; i < (int)midiOutputIdentifiers.size(); ++i)
+                    if (midiOutputIdentifiers[(size_t)i] == selected) selectedId = i + 1;
+                midiOutputBox.setSelectedId(selectedId, juce::dontSendNotification);
+                midiOutputBox.setTextWhenNothingSelected("Choisir une sortie MIDI");
             }
 
             void refreshMidiInputs()
@@ -602,7 +635,10 @@ private:
             AudioEngine& audioEngine;
             juce::Label midiInputLabel;
             juce::ComboBox midiInputBox;
+            juce::Label midiOutputLabel;
+            juce::ComboBox midiOutputBox;
             std::vector<juce::String> midiInputIdentifiers;
+            std::vector<juce::String> midiOutputIdentifiers;
             juce::Viewport viewport;
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
         };
