@@ -291,11 +291,21 @@ private:
         }
         if (!notes.empty())
         {
-            if (!commitLibertyRecordedInstrumentMidiClip(owner, notes, track,
-                    juce::jmax(0.0, midiRecordStartSeconds),
-                    juce::jmax(0.1, lastSeconds + 0.1)))
+            const double start = std::isfinite(midiRecordStartSeconds)
+                ? juce::jmax(0.0, midiRecordStartSeconds) : 0.0;
+            const double length = std::isfinite(lastSeconds)
+                ? juce::jmax(0.1, lastSeconds + 0.1) : 0.1;
+            if (!commitLibertyRecordedInstrumentMidiClip(owner, notes, track, start, length))
+            {
+                juce::String details = "Le moteur a reçu " + juce::String((int)notes.size())
+                    + " notes MIDI, mais le clip n'a pas été créé.\\n"
+                    + "Piste : " + juce::String(track + 1)
+                    + " / " + juce::String(owner.getInstrumentTrackCount())
+                    + " ; position : " + juce::String(start, 3)
+                    + " s ; durée : " + juce::String(length, 3) + " s.";
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                    "Liberty - MIDI REC", "Impossible de créer le clip MIDI sur la piste instrument.", "OK");
+                    "Liberty - MIDI REC", details, "OK");
+            }
         }
         else
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
