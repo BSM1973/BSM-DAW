@@ -301,8 +301,16 @@ private:
             notes.push_back(note);
         }
         if (!notes.empty())
-            commitLibertyRecordedInstrumentMidiClip(owner, notes, track, midiRecordStartSeconds,
-                juce::jmax(0.1, lastSeconds + 0.1));
+        {
+            if (!commitLibertyRecordedInstrumentMidiClip(owner, notes, track, midiRecordStartSeconds,
+                    juce::jmax(0.1, lastSeconds + 0.1)))
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Liberty - MIDI REC", "Impossible de créer le clip MIDI sur la piste instrument.", "OK");
+        }
+        else
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                "Liberty - MIDI REC",
+                "Aucune note MIDI reçue. Sélectionnez l'entrée MIDI du clavier maître, activez REC sur la piste instrument, puis lancez REC dans le transport. Le clavier graphique interne d'un plugin ne transmet pas nécessairement ses notes à Liberty.", "OK");
         owner.repaint();
     }
 
@@ -343,6 +351,10 @@ private:
         if (recording) { stopRecording(true); return; }
         if (owner.armedInstrumentTrack >= 0)
         {
+            // Recording must also monitor the armed instrument so incoming MIDI
+            // is audible and the same selected input is used for capture.
+            owner.monitoredInstrumentTrack = owner.armedInstrumentTrack;
+            owner.audioEngine.setMonitoredInstrumentTrack(owner.armedInstrumentTrack);
             midiRecordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
             owner.audioEngine.beginMidiCapture(owner.armedInstrumentTrack);
             owner.audioEngine.setPlaying(true);
