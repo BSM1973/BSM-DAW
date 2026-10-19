@@ -352,6 +352,14 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
             if (result <= 0 || safeOwner == nullptr) return;
             ensureTrackMetadata(track + 1);
             colourIds[(size_t) track] = result - 1;
+            // The colour layer is a separate child component: repainting
+            // MainComponent alone does not invalidate that layer.
+            auto controller = controllers.find(safeOwner.getComponent());
+            if (controller != controllers.end() && controller->second != nullptr)
+            {
+                controller->second->toFront(false);
+                controller->second->repaint();
+            }
             safeOwner->repaint();
         });
 }
