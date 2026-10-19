@@ -1841,8 +1841,7 @@ void MainComponent::mouseMove(const juce::MouseEvent& event)
     bool overPatternClip = false;
     if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
-        const int row = getTrackScrollRows()
-                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int row = getArrangeTrackAtY(p.y);
         const int instrumentIndex = row - getAudioTrackCount() - getMidiTrackCount();
         if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
         {
@@ -1979,8 +1978,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (event.mods.isPopupMenu() && p.x >= 0 && p.x < 210
         && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
-        const int row = getTrackScrollRows()
-                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int row = getArrangeTrackAtY(p.y);
         if (row >= 0 && row < getTotalArrangeTrackCount())
             showLibertyTrackHeaderColourMenu(*this, event.getScreenPosition(), row);
         return;
@@ -1990,8 +1988,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // A second click is handled by mouseDoubleClick (rename), never by clip creation.
     if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
-        const int row = getTrackScrollRows()
-                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int row = getArrangeTrackAtY(p.y);
         const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
         const int instrumentIndex = row - instrumentFirst;
         if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
