@@ -12,19 +12,9 @@ void syncLibertyMultiMidiPlayback(MainComponent& owner);
 void scaleLibertyMultiMidiClipsForTempoChange(MainComponent& owner, double ratio);
 bool commitLibertyAudioTempoChange(MainComponent& owner, double tempoRatio, juce::String& error, bool restorePlaying);
 
-void MainComponent::editTempo()
+void MainComponent::applyTempoBpm(double value)
 {
-    auto* alert = new juce::AlertWindow("BSM DAW - Tempo", "Enter tempo (BPM):", juce::MessageBoxIconType::NoIcon);
-    alert->addTextEditor("tempo", juce::String(tempoBpm, 2), "BPM:");
-    alert->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result)
-    {
-        if (result == 1)
-        {
-            const double value = alert->getTextEditorContents("tempo").getDoubleValue();
-            if (value >= 20.0 && value <= 300.0)
-            {
+    if (value < 20.0 || value > 300.0) return;
                 const double oldTempo = juce::jmax(1.0, tempoBpm);
                 const double transportBeforeTempoChange = audioEngine.getCurrentTimeSeconds();
                 const bool wasPlayingBeforeTempoChange = audioEngine.isPlaying();
@@ -41,7 +31,6 @@ void MainComponent::editTempo()
                                                                "Liberty - Tempo Stretch",
                                                                stretchError,
                                                                "OK");
-                        delete alert;
                         repaint();
                         return;
                     }
@@ -81,7 +70,24 @@ void MainComponent::editTempo()
                 }
                 else
                     syncLibertyMultiMidiPlayback(*this);
-                tempoControls.refresh();
+    tempoControls.refresh();
+    repaint();
+}
+
+void MainComponent::editTempo()
+{
+    auto* alert = new juce::AlertWindow("BSM DAW - Tempo", "Enter tempo (BPM):", juce::MessageBoxIconType::NoIcon);
+    alert->addTextEditor("tempo", juce::String(tempoBpm, 2), "BPM:");
+    alert->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result)
+    {
+        if (result == 1)
+        {
+            const double value = alert->getTextEditorContents("tempo").getDoubleValue();
+            if (value >= 20.0 && value <= 300.0)
+            {
+                applyTempoBpm(value);
             }
         }
         delete alert;
