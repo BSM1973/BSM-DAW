@@ -36,6 +36,13 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
+    void updateLoopPunchButtons();
+    double loopStartSeconds = 0.0, loopEndSeconds = 8.0;
+    double punchInSeconds = 0.0, punchOutSeconds = 8.0;
+    bool loopEnabled = false, punchInEnabled = false, punchOutEnabled = false;
+    bool punchRecordingRequested = false;
+    int draggingRangeMarker = 0;
+    juce::TextButton punchInButton { "IN" }, loopButton { "LOOP" }, punchOutButton { "OUT" };
     bool hasUnsavedChanges() const;
     void requestClose(std::function<void(bool)> completion);
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -739,7 +746,7 @@ private:
                 button->setMouseClickGrabsKeyboardFocus(false); addAndMakeVisible(button);
             }
             tempoButton.onClick = [this] { owner->editTempo(); }; meterButton.onClick = [this] { owner->editTimeSignature(); };
-            setBounds(605, 34, 120, 36); owner->addAndMakeVisible(this);
+            setBounds(1020, 34, 120, 36); owner->addAndMakeVisible(this);
         }
         void refresh() { tempoButton.setButtonText(juce::String(owner->tempoBpm, 2) + " BPM"); meterButton.setButtonText(juce::String(owner->timeSignatureNumerator) + "/" + juce::String(owner->timeSignatureDenominator)); repaint(); }
         void resized() override { tempoButton.setBounds(0, 4, 80, 28); meterButton.setBounds(80, 4, 40, 28); }
