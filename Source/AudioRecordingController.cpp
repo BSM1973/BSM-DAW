@@ -318,12 +318,28 @@ private:
 
     void toggleRecording()
     {
+        if (owner.punchWaitingForIn)
+        {
+            // A second REC press cancels a pending punch without starting capture.
+            owner.punchWaitingForIn = false;
+            recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff48242c));
+            return;
+        }
+        if (!recording && owner.audioEngine.getMidiCaptureTrack() < 0
+            && owner.punchInEnabled
+            && owner.audioEngine.getCurrentTimeSeconds() < owner.punchInSeconds)
+        {
+            owner.punchWaitingForIn = true;
+            owner.audioEngine.setPlaying(true);
+            recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff725027));
+            return;
+        }
         if (owner.audioEngine.getMidiCaptureTrack() >= 0)
         {
             finishMidiRecording();
             return;
         }
-        if (recording) { stopRecording(true); return; }
+        if (recording) { stopRecording(true); owner.punchRecordingRequested = false; return; }
         if (owner.armedInstrumentTrack >= 0)
         {
             // Recording must also monitor the armed instrument so incoming MIDI
@@ -332,6 +348,7 @@ private:
             owner.audioEngine.setMonitoredInstrumentTrack(owner.armedInstrumentTrack);
             midiRecordStartSeconds = juce::jmax(0.0, owner.audioEngine.getCurrentTimeSeconds());
             owner.audioEngine.beginMidiCapture(owner.armedInstrumentTrack);
+            owner.punchRecordingRequested = owner.punchOutEnabled;
             owner.audioEngine.setPlaying(true);
             owner.isPlaying = true;
             recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff873340));
