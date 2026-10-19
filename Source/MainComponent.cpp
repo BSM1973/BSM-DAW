@@ -1124,7 +1124,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(categoryBoundary ? juce::Colour(0xff526475)
                                      : selected ? juce::Colour(0xff3e5963)
                                                 : juce::Colour(0xff263440));
-        g.drawHorizontalLine(row.getBottom() - 1, (float) row.getX(), (float) row.getRight());
+        // Stronger 3px divider in the track HEADER only; keep the timeline
+        // grid at its original 1px weight and preserve resize hit geometry.
+        const int dividerY = row.getBottom() - 1;
+        g.fillRect(row.getX(), dividerY - 2, headerW, 3);
+        g.drawHorizontalLine(dividerY, (float)headerW, (float)row.getRight());
         // Header-only highlight creates a refined inset edge on the selected track.
         if (selected && row.getHeight() > 2)
         {
