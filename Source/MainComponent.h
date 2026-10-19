@@ -411,7 +411,7 @@ private:
         public:
             explicit AudioSettingsContent(AudioEngine& engine) : audioEngine(engine)
             {
-                midiInputLabel.setText("Entrée MIDI du clavier maître :", juce::dontSendNotification);
+                midiInputLabel.setText(juce::String("Entr") + juce::String::charToString((juce::juce_wchar) 0x00E9) + "e MIDI :", juce::dontSendNotification);
                 midiInputLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe4f0f5));
                 addAndMakeVisible(midiInputLabel);
                 midiInputBox.setLookAndFeel(&controlsLookAndFeel);
