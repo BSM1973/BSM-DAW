@@ -80,6 +80,21 @@ public:
         registered = false;
     }
 
+    // Detect a resize handle by its actual lane boundary, not the lane
+    // returned by hit testing (which can be the NEXT lane at the edge).
+    static int trackAtResizeEdge(MainComponent& owner, juce::Point<int> p)
+    {
+        if (p.x < 0 || p.x >= owner.trackHeaderWidth
+            || p.y < owner.getArrangeTop() || p.y >= owner.getMixerTop())
+            return -1;
+        for (int row = owner.getTrackScrollRows(); row < owner.getTotalArrangeTrackCount(); ++row)
+        {
+            const int bottom = owner.getArrangeTrackTop(row) + owner.getArrangeTrackHeight(row);
+            if (std::abs(p.y - bottom) <= 8) return row;
+            if (bottom > p.y + 8) break;
+        }
+        return -1;
+    }
     void mouseMove(const juce::MouseEvent& event) override
     {
         auto* component = event.eventComponent;
@@ -91,12 +106,8 @@ public:
         }
         if (owner == nullptr) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
-        const int track = owner->getArrangeTrackAtY(p.y);
-        const int boundary = track >= 0 ? owner->getArrangeTrackTop(track) + owner->getArrangeTrackHeight(track) : -1000;
-        if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
-            owner->setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        else if (p.x >= 0 && p.x < 202 && track >= 0
-                 && std::abs(p.y - boundary) <= 7)
+        const int track = trackAtResizeEdge(*owner, p);
+        if (track >= 0)
             owner->setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
         else
             owner->setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -112,9 +123,8 @@ public:
         }
         if (owner == nullptr || event.mods.isPopupMenu()) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
-        const int track = owner->getArrangeTrackAtY(p.y);
-        const int boundary = track >= 0 ? owner->getArrangeTrackTop(track) + owner->getArrangeTrackHeight(track) : -1000;
-        if (p.x >= 0 && p.x < 202 && track >= 0 && std::abs(p.y - boundary) <= 7)
+        const int track = trackAtResizeEdge(*owner, p);
+        if (track >= 0)
         {
             dragMode = 1;
             draggedTrack = track;
