@@ -166,7 +166,7 @@ public:
         thread.startThread();
         loadFavourites();
 
-        toggleButton.setButtonText("BROWSER");
+        toggleButton.setButtonText("NAVIGATEUR");
         toggleButton.setAlwaysOnTop(true);
         // Obsidian browser toggle matches category controls in both states.
         toggleButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
@@ -985,7 +985,7 @@ private:
         }
 
         const int buttonX = browserOpen ? juce::jmax(8, panelX - 104) : juce::jmax(8, owner.getWidth() - 112);
-        const auto buttonBounds = juce::Rectangle<int>(buttonX, 8, 96, 26);
+        const auto buttonBounds = juce::Rectangle<int>(buttonX, 4, 112, 25);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
 
         if (category == Category::plugins || category == Category::splice)
