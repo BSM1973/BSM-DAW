@@ -9,7 +9,7 @@ namespace
 {
 std::atomic<float> timelineHorizontalZoom { 1.0f };
 std::atomic<float> timelineVerticalZoom { 1.0f };
-std::atomic<int> trackHeightPreset { 1 }; // 0 compact, 1 normal, 2 large
+std::atomic<int> trackHeightPreset { 2 }; // 0 compact (row 1), 1 normal (rows 1-2), 2 large (all 3; default)
 std::atomic<float> pianoHorizontalZoom { 1.0f };
 std::atomic<float> pianoVerticalZoom { 1.0f };
 
@@ -256,9 +256,14 @@ float getLibertyTimelineVerticalZoom() noexcept
 
 int getLibertyTrackRowHeight() noexcept
 {
-    // Hard minimum: title/recording row + insert row + mix row, all separated.
-    // No UI element is allowed to share the same vertical pixels.
-    return juce::jlimit(144, 240, (int) std::lround(144.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    // Exact row-based presets. The large three-row layout is the default.
+    switch (trackHeightPreset.load(std::memory_order_relaxed))
+    {
+        case 0: return 38;   // title + REC / MON
+        case 1: return 94;   // title + REC / MON, PAN / M / S
+        default: return juce::jlimit(144, 240,
+            (int)std::lround(144.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    }
 }
 
 int getLibertyTrackHeightPreset() noexcept { return trackHeightPreset.load(); }
@@ -267,8 +272,12 @@ void cycleLibertyTrackHeightPreset()
 {
     const int next = (trackHeightPreset.load() + 1) % 3;
     trackHeightPreset.store(next);
-    constexpr float zoom[] = { 0.625f, 1.0f, 1.75f };
-    timelineVerticalZoom.store(zoom[next]);
+    // Reapply the chosen preset to all tracks, including manually resized ones.
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
+            if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                main->applyArrangeTrackHeightPreset();
     repaintRelevantWindows();
 }
 
