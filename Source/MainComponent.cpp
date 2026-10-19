@@ -1714,6 +1714,12 @@ void MainComponent::timerCallback()
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
     double transportTime = audioEngine.getCurrentTimeSeconds();
+    if (punchWaitingForIn && audioEngine.isPlaying()
+        && transportTime >= punchInSeconds)
+    {
+        punchWaitingForIn = false;
+        triggerLibertyPunchRecording(this);
+    }
     if (punchRecordingRequested && !audioEngine.isPlaying())
         punchRecordingRequested = false;
     if (audioEngine.isPlaying())
@@ -2065,6 +2071,28 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    // Dedicated draggable loop and punch handles on the ruler.
+    if (!event.mods.isPopupMenu() && p.y >= transportHeight
+        && p.y < getArrangeTop() && p.x >= trackHeaderWidth)
+    {
+        const auto markerX = [this](double t)
+        {
+            return trackHeaderWidth + (int)std::lround(t * getLibertyTimelinePixelsPerSecond());
+        };
+        const bool lowerRow = p.y >= transportHeight + 17;
+        if (lowerRow)
+        {
+            if (punchInEnabled && std::abs(p.x - markerX(punchInSeconds)) <= 10)
+                draggingRangeMarker = 3;
+            else if (punchOutEnabled && std::abs(p.x - markerX(punchOutSeconds)) <= 10)
+                draggingRangeMarker = 4;
+        }
+        else if (std::abs(p.x - markerX(loopStartSeconds)) <= 10)
+            draggingRangeMarker = 1;
+        else if (std::abs(p.x - markerX(loopEndSeconds)) <= 10)
+            draggingRangeMarker = 2;
+        if (draggingRangeMarker != 0) return;
+    }
     // A generous hit target around the ruler locator starts a playhead drag.
     // Do not let clip selection or the generic ruler seek steal this gesture.
     if (!event.mods.isPopupMenu() && p.y >= transportHeight
@@ -2461,6 +2489,23 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingRangeMarker != 0)
+    {
+        const double seconds = snapLibertyTimelineTime(
+            juce::jmax(0.0, ((double)event.position.x - trackHeaderWidth)
+                              / getLibertyTimelinePixelsPerSecond()), tempoBpm);
+        const double minimum = 0.01;
+        switch (draggingRangeMarker)
+        {
+            case 1: loopStartSeconds = juce::jmin(seconds, loopEndSeconds - minimum); break;
+            case 2: loopEndSeconds = juce::jmax(seconds, loopStartSeconds + minimum); break;
+            case 3: punchInSeconds = juce::jmin(seconds, punchOutSeconds - minimum); break;
+            case 4: punchOutSeconds = juce::jmax(seconds, punchInSeconds + minimum); break;
+            default: break;
+        }
+        repaint();
+        return;
+    }
     if (draggingPlayheadMarker)
     {
         const double rawTime = juce::jmax(0.0, ((double)event.position.x - trackHeaderWidth)
@@ -2523,6 +2568,11 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingRangeMarker != 0)
+    {
+        draggingRangeMarker = 0;
+        return;
+    }
     if (draggingPlayheadMarker)
     {
         draggingPlayheadMarker = false;
