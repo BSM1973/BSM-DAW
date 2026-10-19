@@ -91,11 +91,12 @@ public:
         }
         if (owner == nullptr) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
-        const int rh = getLibertyTrackRowHeight();
+        const int track = owner->getArrangeTrackAtY(p.y);
+        const int boundary = track >= 0 ? owner->getArrangeTrackTop(track) + owner->getArrangeTrackHeight(track) : -1000;
         if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
             owner->setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        else if (p.x >= 0 && p.x < 202 && p.y >= 108 && p.y < owner->getMixerTop()
-                 && ((p.y - 108) % juce::jmax(1,rh)) >= rh - 6)
+        else if (p.x >= 0 && p.x < 202 && track >= 0
+                 && std::abs(p.y - boundary) <= 7)
             owner->setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
         else
             owner->setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -111,11 +112,14 @@ public:
         }
         if (owner == nullptr || event.mods.isPopupMenu()) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
-        const int rowH = getLibertyTrackRowHeight();
-        if (p.x >= 0 && p.x < 210 && p.y >= 108 && p.y < owner->getMixerTop()
-            && ((p.y - 108) % juce::jmax(1,rowH)) >= rowH - 6)
+        const int track = owner->getArrangeTrackAtY(p.y);
+        const int boundary = track >= 0 ? owner->getArrangeTrackTop(track) + owner->getArrangeTrackHeight(track) : -1000;
+        if (p.x >= 0 && p.x < 202 && track >= 0 && std::abs(p.y - boundary) <= 7)
         {
-            dragMode = 1; dragStart = p.y; initialZoom = timelineVerticalZoom.load();
+            dragMode = 1;
+            draggedTrack = track;
+            dragStart = p.y;
+            initialTrackHeight = owner->getArrangeTrackHeight(track);
         }
         else if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
         {
@@ -134,13 +138,13 @@ public:
         }
         if (owner == nullptr) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
-        if (dragMode == 1)
-            timelineVerticalZoom.store(juce::jlimit(0.58f, 2.5f, initialZoom + (p.y - dragStart) / 96.0f));
+        if (dragMode == 1 && draggedTrack >= 0)
+            owner->setArrangeTrackHeight(draggedTrack, initialTrackHeight + p.y - dragStart);
         else
             timelineHorizontalZoom.store(juce::jlimit(0.08f, 5.0f, initialZoom + (p.x - dragStart) / 160.0f));
         repaintRelevantWindows();
     }
-    void mouseUp(const juce::MouseEvent&) override { dragMode = 0; }
+    void mouseUp(const juce::MouseEvent&) override { dragMode = 0; draggedTrack = -1; }
 
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
@@ -223,6 +227,7 @@ public:
 private:
     bool registered = true;
     int dragMode = 0, dragStart = 0;
+    int draggedTrack = -1, initialTrackHeight = 0;
     float initialZoom = 1.0f;
 };
 
