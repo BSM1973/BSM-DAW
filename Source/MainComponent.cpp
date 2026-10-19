@@ -1,3 +1,4 @@
+void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 #include "MainComponent.h"
 #include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
@@ -1924,6 +1925,18 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    // Handle the popup at the owning component, before clip/transport routing.
+    // Child overlays may swallow the event, so TrackHeaderMixControls also
+    // forwards right-clicks to this same menu entry point.
+    if (event.mods.isPopupMenu() && p.x >= 0 && p.x < 210
+        && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows()
+                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        if (row >= 0 && row < getTotalArrangeTrackCount())
+            showLibertyTrackHeaderColourMenu(*this, event.getScreenPosition(), row);
+        return;
+    }
 
     // Pattern clips take priority over timeline creation and editor shortcuts.
     // A second click is handled by mouseDoubleClick (rename), never by clip creation.
