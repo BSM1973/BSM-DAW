@@ -1,4 +1,5 @@
 double snapLibertyTimelineTime(double seconds, double bpm) noexcept;
+double getLibertySnapStepSeconds(double bpm) noexcept;
 #include "MainComponent.h"
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
@@ -2091,7 +2092,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (previousButton.contains(p))
     {
         const double currentTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds());
-        const double newTime = juce::jmax(0.0, std::ceil((currentTime - 0.000001) / secondsPerMeasure - 1.0e-9) * secondsPerMeasure - secondsPerMeasure);
+        const double snapStep = getLibertySnapStepSeconds(tempoBpm);
+        const double step = snapStep > 0.0 ? snapStep : secondsPerMeasure;
+        const double newTime = juce::jmax(0.0, (std::ceil(currentTime / step - 1.0e-9) - 1.0) * step);
         audioEngine.setCurrentTimeSeconds(newTime);
         playheadSeconds = newTime;
         repaint();
@@ -2109,7 +2112,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (nextButton.contains(p))
     {
         const double currentTime = juce::jmax(0.0, audioEngine.getCurrentTimeSeconds());
-        const double nextMeasure = (std::floor(currentTime / secondsPerMeasure + 1.0e-9) + 1.0) * secondsPerMeasure;
+        const double snapStep = getLibertySnapStepSeconds(tempoBpm);
+        const double step = snapStep > 0.0 ? snapStep : secondsPerMeasure;
+        const double nextMeasure = (std::floor(currentTime / step + 1.0e-9) + 1.0) * step;
         audioEngine.setCurrentTimeSeconds(nextMeasure);
         playheadSeconds = nextMeasure;
         repaint();
