@@ -9,6 +9,7 @@ namespace
 {
 std::atomic<float> timelineHorizontalZoom { 1.0f };
 std::atomic<float> timelineVerticalZoom { 1.0f };
+std::atomic<int> trackHeightPreset { 1 }; // 0 compact, 1 normal, 2 large
 std::atomic<float> pianoHorizontalZoom { 1.0f };
 std::atomic<float> pianoVerticalZoom { 1.0f };
 
@@ -134,7 +135,7 @@ public:
         if (owner == nullptr) return;
         const auto p = event.getEventRelativeTo(owner).getPosition();
         if (dragMode == 1)
-            timelineVerticalZoom.store(juce::jlimit(1.0f, 2.5f, initialZoom + (p.y - dragStart) / 96.0f));
+            timelineVerticalZoom.store(juce::jlimit(0.58f, 2.5f, initialZoom + (p.y - dragStart) / 96.0f));
         else
             timelineHorizontalZoom.store(juce::jlimit(0.08f, 5.0f, initialZoom + (p.x - dragStart) / 160.0f));
         repaintRelevantWindows();
@@ -182,7 +183,7 @@ public:
         else
         {
             if (vertical)
-                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 1.0f, 2.5f));
+                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.58f, 2.5f));
             else
                 timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.08f, 5.0f));
         }
@@ -212,7 +213,18 @@ int getLibertyTrackRowHeight() noexcept
 {
     // Hard minimum: title/recording row + insert row + mix row, all separated.
     // No UI element is allowed to share the same vertical pixels.
-    return juce::jlimit(96, 240, (int) std::lround(96.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    return juce::jlimit(56, 240, (int) std::lround(96.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+}
+
+int getLibertyTrackHeightPreset() noexcept { return trackHeightPreset.load(); }
+
+void cycleLibertyTrackHeightPreset()
+{
+    const int next = (trackHeightPreset.load() + 1) % 3;
+    trackHeightPreset.store(next);
+    constexpr float zoom[] = { 0.625f, 1.0f, 1.75f };
+    timelineVerticalZoom.store(zoom[next]);
+    repaintRelevantWindows();
 }
 
 float getLibertyPianoHorizontalZoom() noexcept
