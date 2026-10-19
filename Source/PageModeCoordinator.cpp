@@ -9,6 +9,9 @@
 bool isLibertyMixConsoleVisible(MainComponent* owner);
 bool isLibertyPerformVisible(MainComponent* owner);
 void setLibertyPerformVisible(MainComponent* owner, bool shouldShow);
+void showLibertyMixConsolePage(MainComponent*, bool);
+void ensureLibertyMixConsoleController(MainComponent*);
+void ensureLibertyPerformController(MainComponent*);
 
 namespace
 {
@@ -26,27 +29,22 @@ public:
 
         captureLegacyButtons();
 
+        // Activate the existing full pages directly, not through hidden legacy buttons.
         arrangeButton.onClick = [this]
         {
-            captureLegacyButtons();
             setLibertyPerformVisible(&owner, false);
-            if (legacyArrange != nullptr) legacyArrange->triggerClick();
+            showLibertyMixConsolePage(&owner, false);
             refresh();
         };
-
         mixButton.onClick = [this]
         {
-            captureLegacyButtons();
             setLibertyPerformVisible(&owner, false);
-            if (legacyMix != nullptr) legacyMix->triggerClick();
+            showLibertyMixConsolePage(&owner, true);
             refresh();
         };
-
         performButton.onClick = [this]
         {
-            captureLegacyButtons();
-            if (isLibertyMixConsoleVisible(&owner) && legacyArrange != nullptr)
-                legacyArrange->triggerClick();
+            showLibertyMixConsolePage(&owner, false);
             setLibertyPerformVisible(&owner, true);
             refresh();
         };
@@ -70,17 +68,8 @@ public:
 
     void setMixVisible(bool shouldShow)
     {
-        captureLegacyButtons();
-        if (shouldShow)
-        {
-            setLibertyPerformVisible(&owner, false);
-            if (legacyMix != nullptr) legacyMix->triggerClick();
-        }
-        else if (isLibertyMixConsoleVisible(&owner))
-        {
-            if (legacyArrange != nullptr) legacyArrange->triggerClick();
-        }
-        refresh();
+        if (shouldShow) mixButton.triggerClick();
+        else arrangeButton.triggerClick();
     }
 
 private:
@@ -123,8 +112,6 @@ private:
 
     void refresh()
     {
-        captureLegacyButtons();
-
         const bool perform = isLibertyPerformVisible(&owner);
         const bool mix = !perform && isLibertyMixConsoleVisible(&owner);
         const bool arrange = !perform && !mix;
@@ -135,12 +122,12 @@ private:
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
-        // Keep page navigation inside the visible transport width.
-        const int navWidth = 88 + 4 + 112 + 4 + 110;
-        const int navX = juce::jmax(8, owner.getWidth() - navWidth - 12);
-        arrangeButton.setBounds(navX, 8, 88, 26);
-        mixButton.setBounds(navX + 92, 8, 112, 26);
-        performButton.setBounds(navX + 208, 8, 110, 26);
+        // Top row, immediately above the PLAY/STOP transport deck (y=31).
+        // Anchor near the transport instead of the far-right edge.
+        const int navX = juce::jlimit(205, juce::jmax(205, owner.getWidth() - 330), 370);
+        arrangeButton.setBounds(navX, 4, 88, 25);
+        mixButton.setBounds(navX + 92, 4, 112, 25);
+        performButton.setBounds(navX + 208, 4, 110, 25);
 
         hideEveryLegacyPageButton();
         arrangeButton.setVisible(true);
