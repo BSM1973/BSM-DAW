@@ -23,7 +23,7 @@ class PageModeCoordinator final : private juce::Timer
 public:
     explicit PageModeCoordinator(MainComponent& ownerIn) : owner(ownerIn)
     {
-        configureButton(arrangeButton, "ARRANGER");
+        configureButton(arrangeButton, "ARRANGE");
         configureButton(mixButton, "MIXCONSOLE");
         configureButton(performButton, "PERFORMANCE");
 
@@ -122,9 +122,9 @@ private:
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
-        // Top row, immediately above the PLAY/STOP transport deck (y=31).
-        // Anchor near the transport instead of the far-right edge.
-        const int navX = juce::jlimit(205, juce::jmax(205, owner.getWidth() - 330), 370);
+        // Navigation starts at the beginning of the transport section, above PLAY.
+        // Reserve the next slot for the NAVIGATEUR toggle.
+        const int navX = 205;
         arrangeButton.setBounds(navX, 4, 88, 25);
         mixButton.setBounds(navX + 92, 4, 112, 25);
         performButton.setBounds(navX + 208, 4, 110, 25);
