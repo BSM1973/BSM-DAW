@@ -28,10 +28,15 @@ bool AudioEngine::initialise()
     auto* device = deviceManager.getCurrentAudioDevice();
     if (device == nullptr) { const juce::ScopedLock lock(stateLock); lastError = "No audio output device is available."; initialised.store(false); return false; }
     liveMidiCollector.reset(device->getCurrentSampleRate());
-    for (const auto& midiDevice : juce::MidiInput::getAvailableDevices())
+    const auto midiDevices = juce::MidiInput::getAvailableDevices();
+    if (selectedMidiInput.isEmpty() && !midiDevices.isEmpty())
+        selectedMidiInput = midiDevices.getFirst().identifier;
+    for (const auto& midiDevice : midiDevices)
     {
-        deviceManager.setMidiInputDeviceEnabled(midiDevice.identifier, true);
-        deviceManager.addMidiInputDeviceCallback(midiDevice.identifier, this);
+        const bool selected = midiDevice.identifier == selectedMidiInput;
+        deviceManager.setMidiInputDeviceEnabled(midiDevice.identifier, selected);
+        if (selected)
+            deviceManager.addMidiInputDeviceCallback(midiDevice.identifier, this);
     }
     deviceManager.addAudioCallback(this);
     { const juce::ScopedLock lock(stateLock); deviceName = device->getName(); lastError.clear(); }
@@ -69,6 +74,20 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMe
         if (midiCaptureTrack.load(std::memory_order_relaxed) >= 0)
             capturedMidiEvents.push_back({message, juce::jmax(0.0, (juce::Time::getMillisecondCounterHiRes() - midiCaptureStartMs) / 1000.0)});
     }
+}
+
+void AudioEngine::selectMidiInput(const juce::String& identifier)
+{
+    if (selectedMidiInput == identifier) return;
+    for (const auto& device : juce::MidiInput::getAvailableDevices())
+    {
+        deviceManager.removeMidiInputDeviceCallback(device.identifier, this);
+        deviceManager.setMidiInputDeviceEnabled(device.identifier, device.identifier == identifier);
+        if (device.identifier == identifier)
+            deviceManager.addMidiInputDeviceCallback(device.identifier, this);
+    }
+    selectedMidiInput = identifier;
+    liveMidiCollector.clear();
 }
 
 void AudioEngine::shutdown()
