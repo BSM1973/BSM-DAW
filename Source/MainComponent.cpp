@@ -2128,21 +2128,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
                 selectedTrack = logicalRow; repaint(); return;
             }
-            if (juce::Rectangle<int>(12,stripY+3,30,24).contains(p))
+            if (juce::Rectangle<int>(18,rowY+36,32,24).contains(p))
             {
                 if (audioLane) audioEngine.setTrackMuted(channel,!audioEngine.isTrackMuted(channel));
                 else audioEngine.setInstrumentTrackMuted(channel,!audioEngine.isInstrumentTrackMuted(channel));
                 repaint(); return;
             }
-            if (juce::Rectangle<int>(46,stripY+3,30,24).contains(p))
+            if (juce::Rectangle<int>(55,rowY+36,32,24).contains(p))
             {
                 if (audioLane) audioEngine.setTrackSolo(channel,!audioEngine.isTrackSolo(channel));
                 else audioEngine.setInstrumentTrackSolo(channel,!audioEngine.isInstrumentTrackSolo(channel));
                 repaint(); return;
             }
-            if (juce::Rectangle<int>(79,stripY+4,88,22).contains(p))
+            if (juce::Rectangle<int>(94,rowY+40,98,22).contains(p))
             {
-                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-79)/88.0f);
+                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-94)/98.0f);
                 if (audioLane) audioEngine.setTrackGain(channel,gain);
                 else audioEngine.setInstrumentTrackGain(channel,gain);
                 headerGainDragTrack = logicalRow;
@@ -2298,7 +2298,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
         const int firstInstrument = audioCount + getMidiTrackCount();
         const bool audio = headerGainDragTrack < audioCount;
         const int channel = audio ? headerGainDragTrack : headerGainDragTrack - firstInstrument;
-        const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(event.position.x-79)/88.0f);
+        const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(event.position.x-94)/98.0f);
         if (audio && channel >= 0 && channel < audioCount) audioEngine.setTrackGain(channel,gain);
         else if (!audio && channel >= 0 && channel < getInstrumentTrackCount()) audioEngine.setInstrumentTrackGain(channel,gain);
         repaint(); return;
