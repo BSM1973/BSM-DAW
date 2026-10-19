@@ -104,8 +104,14 @@ public:
     {
         setUsingNativeTitleBar(true);
         setContentOwned(new LibertyMainContent(), true);
-        centreWithSize(getWidth(), getHeight());
         setResizable(true, true);
+        // Start maximised within the usable desktop area (macOS menu bar
+        // and Dock remain available), like double-clicking the title bar.
+        // Do not use kiosk mode or native fullscreen / a separate Space.
+        setBounds(juce::Desktop::getInstance()
+                      .getDisplays().getPrimaryDisplay()->userArea);
+        setFullScreen(false);
+        setMaximised(true);
         addKeyListener(this);
         setVisible(true);
         editor().grabKeyboardFocus();
