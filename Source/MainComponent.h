@@ -236,7 +236,7 @@ public:
         if (logicalRow < 0 || logicalRow >= getTotalArrangeTrackCount()) return;
         if ((size_t) logicalRow >= individualTrackHeights.size())
             individualTrackHeights.resize((size_t) logicalRow + 1, 0);
-        individualTrackHeights[(size_t) logicalRow] = juce::jlimit(96, 240, pixels);
+        individualTrackHeights[(size_t) logicalRow] = juce::jlimit(128, 240, pixels);
         refreshLibertyRecordingTrackLayout(this);
         refreshLibertyTrackHeaderMixLayout(this);
         repaint();
