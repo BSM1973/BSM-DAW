@@ -1061,12 +1061,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             };
             drawStripButton({header.getX() + 18, controlsY, 32, 24}, "M", muted, juce::Colour(0xffe16a75));
             drawStripButton({header.getX() + 55, controlsY, 32, 24}, "S", soloed, juce::Colour(0xffe2b65c));
-            const auto gainBar = juce::Rectangle<int>(header.getX() + 94, controlsY + 7, 98, 10);
-            g.setColour(juce::Colour(0xff101b24)); g.fillRoundedRectangle(gainBar.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff54d6dc));
-            g.fillRoundedRectangle(gainBar.withWidth(juce::jlimit(0, gainBar.getWidth(), (int)std::round(gain * 0.5f * gainBar.getWidth()))).toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xffa9beca)); g.setFont(juce::Font(9.0f));
-            g.drawText("VOL", header.getX() + 94, controlsY - 7, 42, 12, juce::Justification::centredLeft);
+            // VOL and PAN are real interactive controls rendered by
+            // TrackHeaderMixControls. Avoid painting a second overlapping bar.
         }
         // Draw the timeline grid inside EVERY visible row, including the
         // final clipped row immediately above the mixer.  Previously the only
