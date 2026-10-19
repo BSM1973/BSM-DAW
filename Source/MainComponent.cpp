@@ -2192,54 +2192,49 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    // Restore direct track-header M/S and gain hit targets. These match the
-    // painted controls above; they must precede generic track selection.
+    // Native hit testing is the fallback for all track strips. Coordinates must
+    // match TrackHeaderMixControls exactly; never use the obsolete +36 row.
     if (p.x < 210 && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
         const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
         const int instrumentFirst = audioTrackCount + midiTrackCount;
-        if (logicalRow >= 0 && (logicalRow < audioTrackCount || logicalRow >= instrumentFirst))
+        if (logicalRow >= 0 && (logicalRow < audioTrackCount ||
+                                (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)))
         {
             const bool audioLane = logicalRow < audioTrackCount;
             const int channel = audioLane ? logicalRow : logicalRow - instrumentFirst;
-            if (channel >= 0 && channel < (audioLane ? audioTrackCount : instrumentTrackCount))
+            const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
+            const int stripY = rowY + rowH - 30;
+            if (!audioLane && juce::Rectangle<int>(108,rowY+7,46,24).contains(p))
             {
-                const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
-                const int controlY = rowY + 36;
-                if (!audioLane && juce::Rectangle<int>(108, rowY + 7, 46, 24).contains(p))
-                {
-                    armedInstrumentTrack = (armedInstrumentTrack == channel ? -1 : channel);
-                    selectedTrack = logicalRow;
-                    repaint();
-                    return;
-                }
-                if (!audioLane && juce::Rectangle<int>(158, rowY + 7, 48, 24).contains(p))
-                {
-                    monitoredInstrumentTrack = (monitoredInstrumentTrack == channel ? -1 : channel);
-                    audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
-                    selectedTrack = logicalRow;
-                    repaint();
-                    return;
-                }
-                if (juce::Rectangle<int>(18, controlY, 32, 24).contains(p))
-                {
-                    if (audioLane) audioEngine.setTrackMuted(channel, !audioEngine.isTrackMuted(channel));
-                    else audioEngine.setInstrumentTrackMuted(channel, !audioEngine.isInstrumentTrackMuted(channel));
-                    repaint(); return;
-                }
-                if (juce::Rectangle<int>(55, controlY, 32, 24).contains(p))
-                {
-                    if (audioLane) audioEngine.setTrackSolo(channel, !audioEngine.isTrackSolo(channel));
-                    else audioEngine.setInstrumentTrackSolo(channel, !audioEngine.isInstrumentTrackSolo(channel));
-                    repaint(); return;
-                }
-                if (juce::Rectangle<int>(94, controlY + 4, 98, 18).contains(p))
-                {
-                    const float gain = 2.0f * juce::jlimit(0.0f, 1.0f, (float)(p.x - 94) / 98.0f);
-                    if (audioLane) audioEngine.setTrackGain(channel, gain);
-                    else audioEngine.setInstrumentTrackGain(channel, gain);
-                    repaint(); return;
-                }
+                armedInstrumentTrack = armedInstrumentTrack == channel ? -1 : channel;
+                selectedTrack = logicalRow; repaint(); return;
+            }
+            if (!audioLane && juce::Rectangle<int>(158,rowY+7,48,24).contains(p))
+            {
+                monitoredInstrumentTrack = monitoredInstrumentTrack == channel ? -1 : channel;
+                audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
+                selectedTrack = logicalRow; repaint(); return;
+            }
+            if (juce::Rectangle<int>(12,stripY+3,30,24).contains(p))
+            {
+                if (audioLane) audioEngine.setTrackMuted(channel,!audioEngine.isTrackMuted(channel));
+                else audioEngine.setInstrumentTrackMuted(channel,!audioEngine.isInstrumentTrackMuted(channel));
+                repaint(); return;
+            }
+            if (juce::Rectangle<int>(46,stripY+3,30,24).contains(p))
+            {
+                if (audioLane) audioEngine.setTrackSolo(channel,!audioEngine.isTrackSolo(channel));
+                else audioEngine.setInstrumentTrackSolo(channel,!audioEngine.isInstrumentTrackSolo(channel));
+                repaint(); return;
+            }
+            if (juce::Rectangle<int>(79,stripY+4,88,22).contains(p))
+            {
+                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-79)/88.0f);
+                if (audioLane) audioEngine.setTrackGain(channel,gain);
+                else audioEngine.setInstrumentTrackGain(channel,gain);
+                headerGainDragTrack = logicalRow;
+                repaint(); return;
             }
         }
     }
@@ -2297,6 +2292,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (headerGainDragTrack >= 0)
+    {
+        const int audioCount = getAudioTrackCount();
+        const int firstInstrument = audioCount + getMidiTrackCount();
+        const bool audio = headerGainDragTrack < audioCount;
+        const int channel = audio ? headerGainDragTrack : headerGainDragTrack - firstInstrument;
+        const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(event.position.x-79)/88.0f);
+        if (audio && channel >= 0 && channel < audioCount) audioEngine.setTrackGain(channel,gain);
+        else if (!audio && channel >= 0 && channel < getInstrumentTrackCount()) audioEngine.setInstrumentTrackGain(channel,gain);
+        repaint(); return;
+    }
     if (draggingStepSequencerPattern)
     {
         repaint();
@@ -2337,6 +2343,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (headerGainDragTrack >= 0) { headerGainDragTrack = -1; return; }
     if (draggingStepSequencerPattern)
     {
         const auto p = event.getPosition();
