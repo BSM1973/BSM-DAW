@@ -218,6 +218,7 @@ public:
         repaint();
         return true;
     }
+    bool draggingPlayheadMarker = false;
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
