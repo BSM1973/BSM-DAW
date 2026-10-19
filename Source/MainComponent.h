@@ -279,6 +279,7 @@ public:
     }
 
 private:
+    int headerGainDragTrack = -1;
     class AudioSettingsWindow final : public juce::DocumentWindow
     {
         class AudioSettingsContent final : public juce::Component, private juce::Timer
