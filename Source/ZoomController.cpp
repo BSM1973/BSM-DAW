@@ -79,6 +79,48 @@ public:
         registered = false;
     }
 
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr || event.mods.isPopupMenu()) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        const int rowH = getLibertyTrackRowHeight();
+        if (p.x >= 0 && p.x < 210 && p.y >= 108 && p.y < owner->getMixerTop()
+            && ((p.y - 108) % juce::jmax(1,rowH)) >= rowH - 6)
+        {
+            dragMode = 1; dragStart = p.y; initialZoom = timelineVerticalZoom.load();
+        }
+        else if (p.x >= 204 && p.x <= 216 && p.y >= 76 && p.y < 108)
+        {
+            dragMode = 2; dragStart = p.x; initialZoom = timelineHorizontalZoom.load();
+        }
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (dragMode == 0) return;
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        if (dragMode == 1)
+            timelineVerticalZoom.store(juce::jlimit(1.0f, 2.5f, initialZoom + (p.y - dragStart) / 96.0f));
+        else
+            timelineHorizontalZoom.store(juce::jlimit(0.08f, 5.0f, initialZoom + (p.x - dragStart) / 160.0f));
+        repaintRelevantWindows();
+    }
+    void mouseUp(const juce::MouseEvent&) override { dragMode = 0; }
+
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
         if (isInsideDrumSampler(event.eventComponent)
@@ -120,7 +162,7 @@ public:
         else
         {
             if (vertical)
-                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 1.0f, 1.17f));
+                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 1.0f, 2.5f));
             else
                 timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.08f, 5.0f));
         }
@@ -129,6 +171,8 @@ public:
 
 private:
     bool registered = true;
+    int dragMode = 0, dragStart = 0;
+    float initialZoom = 1.0f;
 };
 
 ZoomMouseListener zoomMouseListener;
@@ -148,7 +192,7 @@ int getLibertyTrackRowHeight() noexcept
 {
     // Hard minimum: title/recording row + insert row + mix row, all separated.
     // No UI element is allowed to share the same vertical pixels.
-    return juce::jlimit(96, 112, (int) std::lround(96.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    return juce::jlimit(96, 240, (int) std::lround(96.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
 }
 
 float getLibertyPianoHorizontalZoom() noexcept
