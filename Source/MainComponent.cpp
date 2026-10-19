@@ -1027,7 +1027,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                              : juce::Colour(0xffc0ceda));
         g.setFont(juce::Font(selected ? 14.0f : 13.5f,
                              selected ? juce::Font::bold : juce::Font::plain));
-        g.drawFittedText(title, header.getX() + 18, header.getY() + 8, juce::jmax(0, header.getWidth() - 28), juce::jmax(0, juce::jmin(24, header.getHeight() - 8)), juce::Justification::centredLeft, 1, 0.85f);
+        g.drawFittedText(getTrackDisplayName(logicalRow), header.getX() + 18, header.getY() + 8, juce::jmax(0, header.getWidth() - 28), juce::jmax(0, juce::jmin(24, header.getHeight() - 8)), juce::Justification::centredLeft, 1, 0.85f);
         // Obsidian Pro track strip: real M/S switches and live gain for Audio
         // and Instrument lanes. The audio ARM/MON components occupy the first
         // row and remain independent of these painted, hit-tested controls.
@@ -1835,6 +1835,55 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
 
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
+    const auto click = event.getPosition();
+    if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int total = getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
+        if (row >= 0 && row < total)
+        {
+            const int y = getArrangeTop() + (row - getTrackScrollRows()) * getLibertyTrackRowHeight();
+            const bool audio = row < getAudioTrackCount();
+            const bool instrument = row >= getAudioTrackCount() + getMidiTrackCount();
+            if ((audio || instrument) && click.y >= y + 36 && click.y < y + 69 && click.x >= 92)
+            {
+                const int channel = audio ? row : row - getAudioTrackCount() - getMidiTrackCount();
+                const float gain = audio ? audioEngine.getTrackGain(channel) : audioEngine.getInstrumentTrackGain(channel);
+                auto* dialog = new juce::AlertWindow("Volume de la piste", "Entrez le niveau en dB (-60 à +6) :", juce::AlertWindow::NoIcon);
+                dialog->addTextEditor("db", juce::String(gain > 0 ? 20.0 * std::log10((double)gain) : -60.0, 1), "dB");
+                dialog->addButton("Annuler", 0);
+                dialog->addButton("Appliquer", 1);
+                juce::Component::SafePointer<MainComponent> safe(this);
+                dialog->enterModalState(true, juce::ModalCallbackFunction::create([safe, audio, channel, dialog](int result)
+                {
+                    if (result != 1 || safe == nullptr) return;
+                    const auto value = dialog->getTextEditorContents("db").trim();
+                    if (!value.containsOnly("0123456789-+., ")) return;
+                    const double db = juce::jlimit(-60.0, 6.0, value.replaceCharacter(',', '.').getDoubleValue());
+                    const float linear = db <= -60.0 ? 0.0f : (float)std::pow(10.0, db / 20.0);
+                    if (audio) safe->audioEngine.setTrackGain(channel, linear);
+                    else safe->audioEngine.setInstrumentTrackGain(channel, linear);
+                    safe->repaint();
+                }), true);
+                return;
+            }
+            if (click.y >= y + 5 && click.y < y + 34 && click.x < 106)
+            {
+                auto* dialog = new juce::AlertWindow("Renommer la piste", "Nouveau nom :", juce::AlertWindow::NoIcon);
+                dialog->addTextEditor("name", getTrackDisplayName(row), "Nom");
+                dialog->addButton("Annuler", 0);
+                dialog->addButton("Renommer", 1);
+                juce::Component::SafePointer<MainComponent> safe(this);
+                dialog->enterModalState(true, juce::ModalCallbackFunction::create([safe, row, dialog](int result)
+                {
+                    if (result != 1 || safe == nullptr) return;
+                    auto name = dialog->getTextEditorContents("name").trim();
+                    if (name.isNotEmpty()) { safe->customTrackNames[row] = name.substring(0, 64); safe->repaint(); }
+                }), true);
+                return;
+            }
+        }
+    }
     const auto p = event.getPosition();    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
     const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
