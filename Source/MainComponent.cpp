@@ -728,7 +728,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
                                           LibertyUI::Colour::canvas, (float)area.getX(), (float)area.getBottom(), false);
     g.setGradientFill(transportSurface);
     g.fillRect(area);
-    g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
+    // Neutral transport bottom border: no blue line beneath the metronome / tap tempo.
+    g.setColour(LibertyUI::Colour::divider);
+    g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
     g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.45f));
     g.fillRect(area.getX(), area.getBottom() - 2, juce::jmin(182, area.getWidth()), 1);
 
