@@ -20,9 +20,9 @@ class PageModeCoordinator final : private juce::Timer
 public:
     explicit PageModeCoordinator(MainComponent& ownerIn) : owner(ownerIn)
     {
-        configureButton(arrangeButton, "ARRANGE");
+        configureButton(arrangeButton, "ARRANGER");
         configureButton(mixButton, "MIXCONSOLE");
-        configureButton(performButton, "PERFORM");
+        configureButton(performButton, "PERFORMANCE");
 
         captureLegacyButtons();
 
@@ -135,9 +135,12 @@ private:
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
-        arrangeButton.setBounds(1055, 8, 88, 26);
-        mixButton.setBounds(1147, 8, 112, 26);
-        performButton.setBounds(1263, 8, 94, 26);
+        // Keep page navigation inside the visible transport width.
+        const int navWidth = 88 + 4 + 112 + 4 + 110;
+        const int navX = juce::jmax(8, owner.getWidth() - navWidth - 12);
+        arrangeButton.setBounds(navX, 8, 88, 26);
+        mixButton.setBounds(navX + 92, 8, 112, 26);
+        performButton.setBounds(navX + 208, 8, 110, 26);
 
         hideEveryLegacyPageButton();
         arrangeButton.setVisible(true);
