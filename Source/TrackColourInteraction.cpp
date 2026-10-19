@@ -58,6 +58,7 @@ public:
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
         owner.addMouseListener(&listener, true);
+        // Also receive clicks on overlay controls and other nested header components.
 
         renameEditor.setVisible(false);
         renameEditor.setSelectAllWhenFocused(true);
@@ -233,7 +234,7 @@ private:
     void showColourMenu(const juce::MouseEvent& event)
     {
         const auto p = event.getPosition();
-        if (p.x < 0 || p.x >= headerW) return;
+        if (p.x < 0 || p.x >= headerW || p.y >= owner.getMixerTop()) return;
         const int rowH = getLibertyTrackRowHeight();
         const int y = p.y - 76 - rulerH;
         if (y < 0) return;
@@ -241,13 +242,11 @@ private:
         const int totalTracks=owner.getTotalArrangeTrackCount(); ensureTrackMetadata(totalTracks);
         if (track < 0 || track >= totalTracks) return;
 
-        const int a=owner.getAudioTrackCount(),m=owner.getMidiTrackCount();
-        if(track<a) owner.selectedTrack=track;
-        else if(track<a+m) owner.selectedTrack=track;
-        else owner.selectedTrack=track;
+        owner.selectedTrack=track;
         owner.repaint();
 
         juce::PopupMenu menu;
+        menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
         for (int id = 0; id < (int)palette.size(); ++id)
             menu.addItem(id + 1, colourNames[id], true, colourIds[(size_t)track] == id);
 
