@@ -1,6 +1,7 @@
 double snapLibertyTimelineTime(double seconds, double bpm) noexcept;
 double getLibertySnapStepSeconds(double bpm) noexcept;
 #include "MainComponent.h"
+void ensureLibertyTrackHeaderMixControls(MainComponent* owner);
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
 #include "LibertyDrumSampler.h"
@@ -1630,6 +1631,7 @@ void MainComponent::timerCallback()
     resizeLibertyDynamicTrackController(this);
     ensureLibertyPageModeCoordinator(this);
     ensureLibertyAudioRecordingController(this);
+    ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
