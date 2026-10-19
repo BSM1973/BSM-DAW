@@ -31,7 +31,7 @@ public:
     }
 };
 
-class DynamicTrackController final : public juce::Component
+class DynamicTrackController final : public juce::Component, private juce::Timer
 {
 public:
     explicit DynamicTrackController(MainComponent& o) : owner(o)
@@ -63,6 +63,7 @@ public:
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
         setBounds(owner.getLocalBounds());
+        startTimerHz(8);
     }
     void resized() override
     {
@@ -74,6 +75,13 @@ public:
     }
 public:
     void resizeToOwner() { setBounds(owner.getLocalBounds()); }
+    void timerCallback() override
+    {
+        if (getBounds() != owner.getLocalBounds()) setBounds(owner.getLocalBounds());
+        // Other full-window overlay controllers can obscure these controls.
+        // Restore their z-order without intercepting clicks outside the controls.
+        toFront(false);
+    }
 private:
     MainComponent& owner;
     juce::TextButton addAudio, addMidi, addInstrument;
