@@ -409,10 +409,22 @@ private:
         }
         AudioControlsLookAndFeel controlsLookAndFeel;
         public:
-            explicit AudioSettingsContent(AudioEngine& engine)
+            explicit AudioSettingsContent(AudioEngine& engine) : audioEngine(engine)
             {
+                midiInputLabel.setText("Entrée MIDI du clavier maître :", juce::dontSendNotification);
+                midiInputLabel.setColour(juce::Label::textColourId, juce::Colour(0xffe4f0f5));
+                addAndMakeVisible(midiInputLabel);
+                midiInputBox.setLookAndFeel(&controlsLookAndFeel);
+                midiInputBox.onChange = [this]
+                {
+                    const int index = midiInputBox.getSelectedId() - 1;
+                    if (index >= 0 && index < (int)midiInputIdentifiers.size())
+                        audioEngine.selectMidiInput(midiInputIdentifiers[(size_t)index]);
+                };
+                addAndMakeVisible(midiInputBox);
+                refreshMidiInputs();
                 selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
-                    engine.getDeviceManager(), 0, 2, 1, 2, false, true, true, false);
+                    engine.getDeviceManager(), 0, 2, 1, 2, false, true, false, false);
                 selector->setLookAndFeel(&controlsLookAndFeel);
                 // Localise only known static labels in the JUCE selector.
                 // Device names and dynamic values must never be modified.
@@ -434,6 +446,7 @@ private:
                 viewport.setViewedComponent(nullptr, false);
                 viewport.setLookAndFeel(nullptr);
                 selector->setLookAndFeel(nullptr);
+                midiInputBox.setLookAndFeel(nullptr);
             }
 
             void paint(juce::Graphics& g) override
@@ -452,7 +465,7 @@ private:
                 g.setFont(juce::Font(22.0f, juce::Font::plain));
                 // Use a Unicode code point for È, independent of source-file encoding.
                 const juce::String heading = juce::String("PARAM")
-                    + juce::String::charToString((juce::juce_wchar) 0x00C8) + "TRES AUDIO";
+                    + juce::String::charToString((juce::juce_wchar) 0x00C8) + "TRES AUDIO ET MIDI";
                 g.drawFittedText(heading, 55, 17, juce::jmax(0, w - 70), 43,
                                  juce::Justification::centredLeft, 1);
 
@@ -466,7 +479,7 @@ private:
                 g.fillRoundedRectangle(38.0f, 107.0f, 4.0f, 27.0f, 2.0f);
                 g.setColour(juce::Colour(0xfff0f6f8));
                 g.setFont(juce::Font(19.0f, juce::Font::bold));
-                const juce::String panelTitle = juce::String("CONFIGURATION AUDIO");
+                const juce::String panelTitle = juce::String("CONFIGURATION AUDIO ET MIDI");
                 g.drawFittedText(panelTitle, 56, 100, juce::jmax(0, w - 78), 42,
                                  juce::Justification::centredLeft, 1);
                 // A dedicated recessed bay for the live device selector.
@@ -524,7 +537,9 @@ private:
                 // Preserve the fully operational JUCE audio-device selector.
                 const int availableWidth = juce::jmax(0, getWidth() - 60);
                 const int availableHeight = juce::jmax(0, getHeight() - 319);
-                viewport.setBounds(30, 238, availableWidth, availableHeight);
+                midiInputLabel.setBounds(37, 234, 255, 28);
+                midiInputBox.setBounds(300, 234, juce::jmax(160, getWidth() - 340), 28);
+                viewport.setBounds(30, 277, availableWidth, juce::jmax(0, availableHeight - 39));
                 translateAudioControls(*selector);
                 // JUCE lays out the audio controls internally; allow scrolling
                 // instead of clipping controls at smaller window sizes.
@@ -557,8 +572,37 @@ private:
                 // Re-apply only translations of recognised static English labels.
                 if (selector != nullptr && isShowing())
                     translateAudioControls(*selector);
+                refreshMidiInputs();
             }
 
+            void refreshMidiInputs()
+            {
+                const auto devices = juce::MidiInput::getAvailableDevices();
+                bool same = (int)midiInputIdentifiers.size() == devices.size();
+                if (same)
+                    for (int i = 0; i < devices.size(); ++i)
+                        if (midiInputIdentifiers[(size_t)i] != devices[i].identifier) same = false;
+                if (!same)
+                {
+                    midiInputIdentifiers.clear();
+                    midiInputBox.clear(juce::dontSendNotification);
+                    for (const auto& device : devices)
+                    {
+                        midiInputIdentifiers.push_back(device.identifier);
+                        midiInputBox.addItem(device.name, (int)midiInputIdentifiers.size());
+                    }
+                }
+                int selectedId = 0;
+                for (int i = 0; i < (int)midiInputIdentifiers.size(); ++i)
+                    if (midiInputIdentifiers[(size_t)i] == audioEngine.getSelectedMidiInput())
+                        selectedId = i + 1;
+                midiInputBox.setSelectedId(selectedId, juce::dontSendNotification);
+                midiInputBox.setTextWhenNothingSelected(devices.isEmpty() ? "Aucune entrée MIDI" : "Choisir une entrée MIDI");
+            }
+            AudioEngine& audioEngine;
+            juce::Label midiInputLabel;
+            juce::ComboBox midiInputBox;
+            std::vector<juce::String> midiInputIdentifiers;
             juce::Viewport viewport;
             std::unique_ptr<juce::AudioDeviceSelectorComponent> selector;
         };
@@ -566,7 +610,7 @@ private:
         explicit AudioSettingsWindow(AudioEngine& engine)
             : juce::DocumentWindow(juce::String("Liberty - Param")
                 + juce::String::charToString((juce::juce_wchar) 0x00E8)
-                + "tres audio", juce::Colour(0xff0f141b), juce::DocumentWindow::closeButton)
+                + "tres audio et MIDI", juce::Colour(0xff0f141b), juce::DocumentWindow::closeButton)
         {
             setUsingNativeTitleBar(true);
             setContentOwned(new AudioSettingsContent(engine), true);
