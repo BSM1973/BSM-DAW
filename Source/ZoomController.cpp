@@ -79,6 +79,26 @@ public:
         registered = false;
     }
 
+    void mouseMove(const juce::MouseEvent& event) override
+    {
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        const int rh = getLibertyTrackRowHeight();
+        if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
+            owner->setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        else if (p.x >= 0 && p.x < 202 && p.y >= 108 && p.y < owner->getMixerTop()
+                 && ((p.y - 108) % juce::jmax(1,rh)) >= rh - 6)
+            owner->setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        else
+            owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
     void mouseDown(const juce::MouseEvent& event) override
     {
         auto* component = event.eventComponent;
@@ -96,7 +116,7 @@ public:
         {
             dragMode = 1; dragStart = p.y; initialZoom = timelineVerticalZoom.load();
         }
-        else if (p.x >= 204 && p.x <= 216 && p.y >= 76 && p.y < 108)
+        else if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
         {
             dragMode = 2; dragStart = p.x; initialZoom = timelineHorizontalZoom.load();
         }
