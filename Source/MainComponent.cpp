@@ -1049,18 +1049,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.setColour(monitoring ? juce::Colours::white : juce::Colour(0xffd6e5ee));
                 g.drawText("MON", monRect, juce::Justification::centred);
             }
-            auto drawStripButton = [&](juce::Rectangle<int> r, const juce::String& label, bool active, juce::Colour tint)
-            {
-                g.setColour(active ? tint.withAlpha(0.38f) : juce::Colour(0xff202c37));
-                g.fillRoundedRectangle(r.toFloat(), 5.0f);
-                g.setColour(active ? tint : juce::Colour(0xff405360));
-                g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
-                g.setColour(active ? juce::Colours::white : juce::Colour(0xffd6e5ee));
-                g.setFont(juce::Font(10.0f, juce::Font::bold));
-                g.drawText(label, r, juce::Justification::centred);
-            };
-            drawStripButton({header.getX() + 18, controlsY, 32, 24}, "M", muted, juce::Colour(0xffe16a75));
-            drawStripButton({header.getX() + 55, controlsY, 32, 24}, "S", soloed, juce::Colour(0xffe2b65c));
+            // Interactive M/S/VOL/PAN controls are rendered by TrackHeaderMixControls.
             // VOL and PAN are real interactive controls rendered by
             // TrackHeaderMixControls. Avoid painting a second overlapping bar.
         }
