@@ -152,6 +152,36 @@ public:
         if (std::abs(delta) < 0.0001f)
             return;
 
+        // Plain wheel over the track headers scrolls track rows only.
+        // Leave timeline wheel zoom/scroll and modifier shortcuts unchanged.
+        if (!isInsideMidiEditor(event.eventComponent) && !event.mods.isCtrlDown()
+            && !event.mods.isCommandDown() && !event.mods.isAltDown()
+            && !event.mods.isShiftDown())
+        {
+            auto* component = event.eventComponent;
+            MainComponent* owner = nullptr;
+            while (component != nullptr)
+            {
+                if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+                component = component->getParentComponent();
+            }
+            if (owner != nullptr)
+            {
+                const auto p = event.getEventRelativeTo(owner).getPosition();
+                if (p.x >= 0 && p.x < MainComponent::trackHeaderWidth
+                    && p.y >= owner->getArrangeTop() && p.y < owner->getMixerTop())
+                {
+                    const int rowH = juce::jmax(1, getLibertyTrackRowHeight());
+                    const int visible = juce::jmax(1, owner->getArrangeRowsBounds().getHeight() / rowH);
+                    const int maxStart = juce::jmax(0, owner->getTotalArrangeTrackCount() - visible);
+                    const int step = juce::jmax(1, (int) std::lround(std::abs(wheel.deltaY) * 3.0f));
+                    const int next = owner->getTrackScrollRows() + (wheel.deltaY > 0.0f ? -step : step);
+                    owner->setTrackScrollRows(juce::jlimit(0, maxStart, next));
+                    return;
+                }
+            }
+        }
+
         if (event.mods.isCtrlDown() && !isInsideMidiEditor(event.eventComponent))
         {
             auto* component = event.eventComponent;
