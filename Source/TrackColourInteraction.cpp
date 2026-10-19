@@ -243,7 +243,7 @@ private:
 
         const int a=owner.getAudioTrackCount(),m=owner.getMidiTrackCount();
         if(track<a) owner.selectedTrack=track;
-        else if(track<a+m) owner.selectMidiTrack();
+        else if(track<a+m) owner.selectedTrack=track;
         else owner.selectedTrack=track;
         owner.repaint();
 
