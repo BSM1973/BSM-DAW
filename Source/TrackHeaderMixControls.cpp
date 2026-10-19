@@ -50,16 +50,19 @@ public:
          const int logical=logicalTrack(i);
          const int y=owner.getArrangeTrackTop(logical);
          const int rh=owner.getArrangeTrackHeight(logical);
-         if (rh<132 || y+rh<=owner.getArrangeTop() || y>=owner.getMixerTop()) continue;
+         if (rh<94 || y+rh<=owner.getArrangeTop() || y>=owner.getMixerTop()) continue;
          // Three anchored rows: recording, pan/mute/solo, volume.
          g.setColour(juce::Colour(0xff526575).withAlpha(0.50f));
          g.drawHorizontalLine(y+36, 12.0f, (float)owner.trackHeaderWidth-12.0f);
-         g.drawHorizontalLine(y+94, 12.0f, (float)owner.trackHeaderWidth-12.0f);
+         if (rh>=132) g.drawHorizontalLine(y+94, 12.0f, (float)owner.trackHeaderWidth-12.0f);
          g.setFont(juce::Font(11.0f,juce::Font::bold));
          g.setColour(juce::Colour(0xffffad53));
          g.drawText("PAN",20,y+47,42,12,juce::Justification::centredLeft);
-         g.setColour(juce::Colour(0xffe1e9f0));
-         g.drawText("VOL",25,y+105,40,18,juce::Justification::centredLeft);
+         if (rh>=132)
+         {
+             g.setColour(juce::Colour(0xffe1e9f0));
+             g.drawText("VOL",25,y+105,40,18,juce::Justification::centredLeft);
+         }
      }
  }
 
@@ -76,11 +79,12 @@ private:
          const int logical=logicalTrack(i);
          const int y=owner.getArrangeTrackTop(logical);
          const int rh=owner.getArrangeTrackHeight(logical);
-         const bool vis=y>=owner.getArrangeTop() && y+132<=owner.getMixerTop() && rh>=132;
-         c.vol->setVisible(vis);c.pan->setVisible(vis);
-         c.mute->setVisible(vis);c.solo->setVisible(vis);
+         const bool middleVisible=y>=owner.getArrangeTop() && y+94<=owner.getMixerTop() && rh>=94;
+         const bool volumeVisible=middleVisible && y+132<=owner.getMixerTop() && rh>=132;
+         c.vol->setVisible(volumeVisible);c.pan->setVisible(middleVisible);
+         c.mute->setVisible(middleVisible);c.solo->setVisible(middleVisible);
          c.mask->setVisible(false);
-         if(!vis)continue;
+         if(!middleVisible)continue;
          c.pan->setBounds(22,y+62,27,27);
          c.mute->setBounds(83,y+57,44,28);
          c.solo->setBounds(136,y+57,44,28);
