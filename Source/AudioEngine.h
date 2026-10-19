@@ -36,6 +36,9 @@ public:
     void shutdown();
 
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
+    // Select a physical MIDI input independently of the audio output device.
+    void selectMidiInput(const juce::String& identifier);
+    juce::String getSelectedMidiInput() const { return selectedMidiInput; }
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
     const juce::AudioDeviceManager& getDeviceManager() const noexcept { return deviceManager; }
     juce::String getDeviceName() const;
@@ -309,6 +312,7 @@ private:
 
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
     juce::MidiMessageCollector liveMidiCollector;
+    juce::String selectedMidiInput;
     juce::CriticalSection midiCaptureLock;
     std::vector<CapturedMidiEvent> capturedMidiEvents;
     std::atomic<int> midiCaptureTrack { -1 };
