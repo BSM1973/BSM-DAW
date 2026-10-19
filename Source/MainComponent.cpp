@@ -1745,7 +1745,7 @@ void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
         return;
     }
 
-    constexpr int headerW = 210;
+    constexpr int headerW = trackHeaderWidth;
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     const double dropStartSeconds = x >= headerW ? juce::jmax(0.0, (x - headerW) / pixelsPerSecond) : 0.0;
 
@@ -1973,7 +1973,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // Handle the popup at the owning component, before clip/transport routing.
     // Child overlays may swallow the event, so TrackHeaderMixControls also
     // forwards right-clicks to this same menu entry point.
-    if (event.mods.isPopupMenu() && p.x >= 0 && p.x < 210
+    if (event.mods.isPopupMenu() && p.x >= 0 && p.x < trackHeaderWidth
         && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
         const int row = getArrangeTrackAtY(p.y);
@@ -2133,7 +2133,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
 
-    constexpr int headerW = 210, rulerH = 32;
+    constexpr int headerW = trackHeaderWidth, rulerH = 32;
     const int audioTrackCount = audioEngine.getAudioTrackCount();
     const int midiTrackCount = getMidiTrackCount();
     const int instrumentTrackCount = getInstrumentTrackCount();
@@ -2166,7 +2166,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     // Native hit testing is the fallback for all track strips. Coordinates must
     // match TrackHeaderMixControls exactly; never use the obsolete +36 row.
-    if (p.x < 210 && p.y >= getArrangeTop() && p.y < getMixerTop())
+    if (p.x < trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
         const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
         const int instrumentFirst = audioTrackCount + midiTrackCount;
@@ -2435,7 +2435,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         }
         const int rowH = getLibertyTrackRowHeight();
         const int rowOffset = p.y - getArrangeTop();
-        if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= 210)
+        if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= trackHeaderWidth)
         {
             const int logicalRow = getTrackScrollRows() + rowOffset / juce::jmax(1, rowH);
             const int midiLane = logicalRow - getAudioTrackCount();
@@ -2443,7 +2443,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
             if ((midiLane >= 0 && midiLane < getMidiTrackCount())
                 || (instrumentLane >= 0 && instrumentLane < getInstrumentTrackCount()))
             {
-                const double dropTime = juce::jmax(0.0, (double)(p.x - 210) / getLibertyTimelinePixelsPerSecond());
+                const double dropTime = juce::jmax(0.0, (double)(p.x - trackHeaderWidth) / getLibertyTimelinePixelsPerSecond());
                 const double oldPlayhead = playheadSeconds;
                 playheadSeconds = dropTime;
                 if (midiLane >= 0 && midiLane < getMidiTrackCount())
