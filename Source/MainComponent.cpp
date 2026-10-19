@@ -1501,6 +1501,20 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
                            : (isInstrument ? juce::Colour(0xff427887)
                                            : juce::Colour(0xff405361)));
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+        // The mini mixer shares the arranger's single selectedTrack index.
+        // Instrument lanes follow MIDI lanes in the arranger.
+        const int dockLogicalTrack = master ? -1
+            : (isAudio ? sourceIndex : audioTracks + getMidiTrackCount() + sourceIndex);
+        const bool dockSelected = !master && selectedTrack == dockLogicalTrack;
+        if (dockSelected)
+        {
+            g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.13f));
+            g.fillRoundedRectangle(c.toFloat().reduced(2.0f), 4.0f);
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.drawRoundedRectangle(c.toFloat().reduced(1.5f), 5.0f, 2.5f);
+            g.fillRoundedRectangle((float)c.getX() + 2.0f, (float)c.getY() + 9.0f,
+                                   3.0f, (float)c.getHeight() - 18.0f, 1.5f);
+        }
         // Mirror the arranger colour on each audio/instrument mini-mixer strip.
         // Instrument tracks follow MIDI tracks in the arranger index.
         if (!master)
@@ -1786,6 +1800,13 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 
         const bool master = channel == channelCount;
         const bool isAudio = channel < audioTracks;
+        if (!master)
+        {
+            const int logical = isAudio ? channel
+                : audioTracks + getMidiTrackCount() + (channel - audioTracks);
+            if (selectedTrack != logical) dockStepSequencerMode = false;
+            selectedTrack = logical;
+        }
 
         if (!master)
         {
