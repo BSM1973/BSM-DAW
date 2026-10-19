@@ -333,6 +333,29 @@ void setLibertyTrackColourId(int track, int colourId)
     colourIds[(size_t)track] = juce::jlimit(0, (int)palette.size() - 1, colourId);
 }
 
+void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> screenPoint, int track)
+{
+    const int total = owner.getTotalArrangeTrackCount();
+    if (track < 0 || track >= total) return;
+    ensureTrackMetadata(total);
+    owner.selectedTrack = track;
+    owner.repaint();
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
+    for (int id = 0; id < (int) palette.size(); ++id)
+        menu.addItem(id + 1, colourNames[id], true, colourIds[(size_t) track] == id);
+    juce::Component::SafePointer<MainComponent> safeOwner(&owner);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(screenPoint, {1, 1})),
+        [safeOwner, track](int result)
+        {
+            if (result <= 0 || safeOwner == nullptr) return;
+            ensureTrackMetadata(track + 1);
+            colourIds[(size_t) track] = result - 1;
+            safeOwner->repaint();
+        });
+}
+
 void resetLibertyTrackColours() { std::fill(colourIds.begin(),colourIds.end(),0); }
 
 juce::String getLibertyTrackName(int track) { if(track<0)return {};ensureTrackMetadata(track+1);return trackNames[(size_t)track]; }
