@@ -2104,6 +2104,53 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
+    // Native hit testing is the fallback for all track strips. Coordinates must
+    // match TrackHeaderMixControls exactly; never use the obsolete +36 row.
+    if (p.x < 210 && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
+        const int instrumentFirst = audioTrackCount + midiTrackCount;
+        if (logicalRow >= 0 && (logicalRow < audioTrackCount ||
+                                (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)))
+        {
+            const bool audioLane = logicalRow < audioTrackCount;
+            const int channel = audioLane ? logicalRow : logicalRow - instrumentFirst;
+            const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
+            const int stripY = rowY + rowH - 30;
+            if (!audioLane && juce::Rectangle<int>(108,rowY+7,46,24).contains(p))
+            {
+                armedInstrumentTrack = armedInstrumentTrack == channel ? -1 : channel;
+                selectedTrack = logicalRow; repaint(); return;
+            }
+            if (!audioLane && juce::Rectangle<int>(158,rowY+7,48,24).contains(p))
+            {
+                monitoredInstrumentTrack = monitoredInstrumentTrack == channel ? -1 : channel;
+                audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
+                selectedTrack = logicalRow; repaint(); return;
+            }
+            if (juce::Rectangle<int>(12,stripY+3,30,24).contains(p))
+            {
+                if (audioLane) audioEngine.setTrackMuted(channel,!audioEngine.isTrackMuted(channel));
+                else audioEngine.setInstrumentTrackMuted(channel,!audioEngine.isInstrumentTrackMuted(channel));
+                repaint(); return;
+            }
+            if (juce::Rectangle<int>(46,stripY+3,30,24).contains(p))
+            {
+                if (audioLane) audioEngine.setTrackSolo(channel,!audioEngine.isTrackSolo(channel));
+                else audioEngine.setInstrumentTrackSolo(channel,!audioEngine.isInstrumentTrackSolo(channel));
+                repaint(); return;
+            }
+            if (juce::Rectangle<int>(79,stripY+4,88,22).contains(p))
+            {
+                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-79)/88.0f);
+                if (audioLane) audioEngine.setTrackGain(channel,gain);
+                else audioEngine.setInstrumentTrackGain(channel,gain);
+                headerGainDragTrack = logicalRow;
+                repaint(); return;
+            }
+        }
+    }
+
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
@@ -2190,53 +2237,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         repaint();
         return;
-    }
-
-    // Native hit testing is the fallback for all track strips. Coordinates must
-    // match TrackHeaderMixControls exactly; never use the obsolete +36 row.
-    if (p.x < 210 && p.y >= getArrangeTop() && p.y < getMixerTop())
-    {
-        const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
-        const int instrumentFirst = audioTrackCount + midiTrackCount;
-        if (logicalRow >= 0 && (logicalRow < audioTrackCount ||
-                                (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)))
-        {
-            const bool audioLane = logicalRow < audioTrackCount;
-            const int channel = audioLane ? logicalRow : logicalRow - instrumentFirst;
-            const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
-            const int stripY = rowY + rowH - 30;
-            if (!audioLane && juce::Rectangle<int>(108,rowY+7,46,24).contains(p))
-            {
-                armedInstrumentTrack = armedInstrumentTrack == channel ? -1 : channel;
-                selectedTrack = logicalRow; repaint(); return;
-            }
-            if (!audioLane && juce::Rectangle<int>(158,rowY+7,48,24).contains(p))
-            {
-                monitoredInstrumentTrack = monitoredInstrumentTrack == channel ? -1 : channel;
-                audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
-                selectedTrack = logicalRow; repaint(); return;
-            }
-            if (juce::Rectangle<int>(12,stripY+3,30,24).contains(p))
-            {
-                if (audioLane) audioEngine.setTrackMuted(channel,!audioEngine.isTrackMuted(channel));
-                else audioEngine.setInstrumentTrackMuted(channel,!audioEngine.isInstrumentTrackMuted(channel));
-                repaint(); return;
-            }
-            if (juce::Rectangle<int>(46,stripY+3,30,24).contains(p))
-            {
-                if (audioLane) audioEngine.setTrackSolo(channel,!audioEngine.isTrackSolo(channel));
-                else audioEngine.setInstrumentTrackSolo(channel,!audioEngine.isInstrumentTrackSolo(channel));
-                repaint(); return;
-            }
-            if (juce::Rectangle<int>(79,stripY+4,88,22).contains(p))
-            {
-                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-79)/88.0f);
-                if (audioLane) audioEngine.setTrackGain(channel,gain);
-                else audioEngine.setInstrumentTrackGain(channel,gain);
-                headerGainDragTrack = logicalRow;
-                repaint(); return;
-            }
-        }
     }
 
     // Select every dynamic MIDI and Instrument row, including after vertical scrolling.
