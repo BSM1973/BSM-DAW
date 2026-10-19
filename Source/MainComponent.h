@@ -218,6 +218,43 @@ public:
         repaint();
         return true;
     }
+    // Per-track heights are indexed by the logical arranger track order.
+    // A zero entry inherits the global default height.
+    std::vector<int> individualTrackHeights;
+    int getArrangeTrackHeight(int logicalRow) const noexcept
+    {
+        if (logicalRow >= 0 && (size_t) logicalRow < individualTrackHeights.size()
+            && individualTrackHeights[(size_t) logicalRow] > 0)
+            return individualTrackHeights[(size_t) logicalRow];
+        return getLibertyTrackRowHeight();
+    }
+    void setArrangeTrackHeight(int logicalRow, int pixels)
+    {
+        if (logicalRow < 0 || logicalRow >= getTotalArrangeTrackCount()) return;
+        if ((size_t) logicalRow >= individualTrackHeights.size())
+            individualTrackHeights.resize((size_t) logicalRow + 1, 0);
+        individualTrackHeights[(size_t) logicalRow] = juce::jlimit(32, 240, pixels);
+        repaint();
+    }
+    int getArrangeTrackTop(int logicalRow) const noexcept
+    {
+        int y = getArrangeTop();
+        const int first = getTrackScrollRows();
+        for (int row = first; row < logicalRow; ++row)
+            y += getArrangeTrackHeight(row);
+        return y;
+    }
+    int getArrangeTrackAtY(int y) const noexcept
+    {
+        if (y < getArrangeTop() || y >= getMixerTop()) return -1;
+        int top = getArrangeTop();
+        for (int row = getTrackScrollRows(); row < getTotalArrangeTrackCount(); ++row)
+        {
+            top += getArrangeTrackHeight(row);
+            if (y < top) return row;
+        }
+        return -1;
+    }
     bool draggingPlayheadMarker = false;
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
     void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
