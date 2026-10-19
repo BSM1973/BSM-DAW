@@ -291,7 +291,8 @@ private:
         }
         if (!notes.empty())
         {
-            if (!commitLibertyRecordedInstrumentMidiClip(owner, notes, track, midiRecordStartSeconds,
+            if (!commitLibertyRecordedInstrumentMidiClip(owner, notes, track,
+                    juce::jmax(0.0, midiRecordStartSeconds),
                     juce::jmax(0.1, lastSeconds + 0.1)))
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                     "Liberty - MIDI REC", "Impossible de créer le clip MIDI sur la piste instrument.", "OK");
@@ -317,7 +318,7 @@ private:
             // is audible and the same selected input is used for capture.
             owner.monitoredInstrumentTrack = owner.armedInstrumentTrack;
             owner.audioEngine.setMonitoredInstrumentTrack(owner.armedInstrumentTrack);
-            midiRecordStartSeconds = owner.audioEngine.getCurrentTimeSeconds();
+            midiRecordStartSeconds = juce::jmax(0.0, owner.audioEngine.getCurrentTimeSeconds());
             owner.audioEngine.beginMidiCapture(owner.armedInstrumentTrack);
             owner.audioEngine.setPlaying(true);
             owner.isPlaying = true;
