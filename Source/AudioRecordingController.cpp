@@ -797,6 +797,14 @@ public:
             }
     }
 
+    void triggerPunch(MainComponent* owner)
+    {
+        ensureAttached(owner);
+        auto it = controllers.find(owner);
+        if (it != controllers.end() && it->second)
+            it->second->triggerPunchRecording();
+    }
+
     void refreshTrackLayout(MainComponent* owner)
     {
         auto it = controllers.find(owner);
@@ -871,4 +879,9 @@ void ensureLibertyAudioRecordingController(MainComponent* owner)
 void refreshLibertyRecordingTrackLayout(MainComponent* owner)
 {
     if (owner != nullptr) libertyAudioRecordingBootstrap.refreshTrackLayout(owner);
+}
+
+void triggerLibertyPunchRecording(MainComponent* owner)
+{
+    if (owner != nullptr) libertyAudioRecordingBootstrap.triggerPunch(owner);
 }
