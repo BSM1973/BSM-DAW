@@ -150,10 +150,10 @@ private:
         auto& desktop = juce::Desktop::getInstance();
         for (int i = 0; i < desktop.getNumComponents(); ++i)
             if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
-                if (auto* main = window->getContentComponent() != nullptr
-                                     ? window->getContentComponent()->findChildComponentOfClass<MainComponent>()
-                                     : nullptr)
-                    if (controllers.find(main) == controllers.end())
+                if (auto* content = window->getContentComponent())
+                    for (int childIndex = 0; childIndex < content->getNumChildComponents(); ++childIndex)
+                        if (auto* main = dynamic_cast<MainComponent*>(content->getChildComponent(childIndex)))
+                            if (controllers.find(main) == controllers.end())
                     {
                         controllers.emplace(main, std::make_unique<MetronomeController>(*main));
                         stopTimer();
