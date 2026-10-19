@@ -87,7 +87,7 @@ void AudioEngine::selectMidiInput(const juce::String& identifier)
             deviceManager.addMidiInputDeviceCallback(device.identifier, this);
     }
     selectedMidiInput = identifier;
-    liveMidiCollector.clear();
+    liveMidiCollector.reset(juce::jmax(1.0, sampleRate.load(std::memory_order_relaxed)));
 }
 
 void AudioEngine::shutdown()
