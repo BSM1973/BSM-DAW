@@ -53,7 +53,7 @@ public:
                 menu.addItem(6504, "Analyse musicale IA");
                 break;
             case 7:
-                menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio..."));
+                menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio et MIDI..."));
                 break;
             case 8:
                 menu.addItem(8001, juce::String::fromUTF8("\xC3\x80 propos de Liberty"));
