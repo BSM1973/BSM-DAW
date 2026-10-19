@@ -253,6 +253,7 @@ private:
         const int track = owner.audioEngine.getMidiCaptureTrack();
         if (track < 0) return;
         auto events = owner.audioEngine.endMidiCapture();
+        owner.punchRecordingRequested = false;
         owner.audioEngine.setPlaying(false);
         owner.isPlaying = false;
         recButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff48242c));
@@ -356,6 +357,7 @@ private:
             return;
         }
         startRecording();
+        owner.punchRecordingRequested = recording && owner.punchOutEnabled;
     }
 
     void triggerPunchRecording() { toggleRecording(); }
@@ -583,6 +585,7 @@ private:
         }
 
         recording = false;
+        owner.punchRecordingRequested = false;
         recordingWriteFailed.store(false, std::memory_order_release);
         owner.audioEngine.setPlaying(false);
         owner.isPlaying = false;
