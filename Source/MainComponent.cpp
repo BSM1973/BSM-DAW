@@ -68,8 +68,54 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
 }
 }
 
+void triggerLibertyPunchRecording(MainComponent*);
+
+void MainComponent::updateLoopPunchButtons()
+{
+    for (auto* b : { &punchInButton, &loopButton, &punchOutButton })
+    {
+        b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
+        b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdbe6ed));
+    }
+    if (punchInEnabled) punchInButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff725027));
+    if (loopEnabled) loopButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff246a58));
+    if (punchOutEnabled) punchOutButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff725027));
+    repaint();
+}
+
 MainComponent::MainComponent()
 {
+    punchInButton.setButtonText("IN");
+    loopButton.setButtonText("LOOP");
+    punchOutButton.setButtonText("OUT");
+    for (auto* b : { &punchInButton, &loopButton, &punchOutButton })
+    {
+        b->setMouseClickGrabsKeyboardFocus(false);
+        addAndMakeVisible(*b);
+    }
+    punchInButton.setBounds(600, 38, 39, 28);
+    loopButton.setBounds(643, 38, 52, 28);
+    punchOutButton.setBounds(699, 38, 39, 28);
+    punchInButton.onClick = [this]
+    {
+        punchInEnabled = !punchInEnabled;
+        if (punchInEnabled) punchInSeconds = juce::jmax(0.0, playheadSeconds);
+        updateLoopPunchButtons();
+    };
+    loopButton.onClick = [this]
+    {
+        loopEnabled = !loopEnabled;
+        if (loopEndSeconds <= loopStartSeconds)
+            loopEndSeconds = loopStartSeconds + 4.0 * 60.0 / juce::jmax(1.0, tempoBpm);
+        updateLoopPunchButtons();
+    };
+    punchOutButton.onClick = [this]
+    {
+        punchOutEnabled = !punchOutEnabled;
+        if (punchOutEnabled) punchOutSeconds = juce::jmax(punchInSeconds + 0.1, playheadSeconds);
+        updateLoopPunchButtons();
+    };
+    updateLoopPunchButtons();
     // Extra height is intentional: six 96+ px track rows plus the mixer must fit
     // without controls colliding or being pushed under the mixer.
     setSize(1440, 980);
@@ -864,6 +910,33 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     g.setColour(juce::Colour(0xff344452));
     g.drawHorizontalLine(ruler.getBottom() - 1, (float)area.getX(), (float)area.getRight());
 
+    // Loop and punch range overlays use the same timeline coordinate as clips.
+    const auto markerX = [headerW, pixelsPerSecond](double seconds)
+    {
+        return headerW + (int)std::lround(seconds * pixelsPerSecond);
+    };
+    if (loopEnabled && loopEndSeconds > loopStartSeconds)
+    {
+        const int left = markerX(loopStartSeconds), right = markerX(loopEndSeconds);
+        g.setColour(juce::Colour(0xff3cbd92).withAlpha(0.12f));
+        g.fillRect(juce::Rectangle<int>(left, ruler.getY(), juce::jmax(0, right - left), ruler.getHeight()));
+    }
+    const auto drawMarker = [&](double seconds, juce::Colour colour, const juce::String& label, int labelY)
+    {
+        const int x = markerX(seconds);
+        if (x < headerW || x >= getWidth()) return;
+        g.setColour(colour);
+        g.fillRect(x - 1, ruler.getY(), 2, ruler.getHeight());
+        g.fillRoundedRectangle((float)x - 10.0f, (float)labelY, 20.0f, 11.0f, 2.0f);
+        g.setColour(juce::Colours::black);
+        g.setFont(juce::Font(8.0f, juce::Font::bold));
+        g.drawText(label, x - 10, labelY, 20, 11, juce::Justification::centred);
+    };
+    drawMarker(loopStartSeconds, juce::Colour(0xff58e2aa), "L", ruler.getY() + 1);
+    drawMarker(loopEndSeconds, juce::Colour(0xff58e2aa), "R", ruler.getY() + 1);
+    if (punchInEnabled) drawMarker(punchInSeconds, juce::Colour(0xffffb95c), "IN", ruler.getY() + 19);
+    if (punchOutEnabled) drawMarker(punchOutSeconds, juce::Colour(0xffffb95c), "OUT", ruler.getY() + 19);
+
     // Four-bar anchors stand out while intermediate measure lines recede.
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
@@ -1640,7 +1713,28 @@ void MainComponent::timerCallback()
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
-    const auto newPlayhead = audioEngine.getCurrentTimeSeconds();
+    double transportTime = audioEngine.getCurrentTimeSeconds();
+    if (punchRecordingRequested && !audioEngine.isPlaying())
+        punchRecordingRequested = false;
+    if (audioEngine.isPlaying())
+    {
+        if (punchRecordingRequested && punchOutEnabled && transportTime >= punchOutSeconds)
+        {
+            triggerLibertyPunchRecording(this);
+            punchRecordingRequested = false;
+            // Existing REC controller stops transport; continue playback outside the punch region.
+            audioEngine.setCurrentTimeSeconds(punchOutSeconds);
+            audioEngine.setPlaying(true);
+            transportTime = punchOutSeconds;
+        }
+        if (loopEnabled && loopEndSeconds > loopStartSeconds
+            && transportTime >= loopEndSeconds)
+        {
+            audioEngine.setCurrentTimeSeconds(loopStartSeconds);
+            transportTime = loopStartSeconds;
+        }
+    }
+    const auto newPlayhead = transportTime;
     const bool newPlaying = audioEngine.isPlaying();
     const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
     playheadSeconds = newPlayhead;
