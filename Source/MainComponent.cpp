@@ -764,7 +764,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     // Unified transport deck: five transport controls and the existing
     // interactive BPM/signature component share one Obsidian panel.
     // The controls retain their exact bounds and callbacks.
-    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 632.0f, 42.0f);
+    const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 728.0f, 42.0f);
     g.setColour(LibertyUI::Colour::canvas);
     g.fillRoundedRectangle(commandDeck, 11.0f);
     g.setColour(LibertyUI::Colour::divider);
