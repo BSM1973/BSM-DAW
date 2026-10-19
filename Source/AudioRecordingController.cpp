@@ -795,6 +795,12 @@ public:
             }
     }
 
+    void refreshTrackLayout(MainComponent* owner)
+    {
+        auto it = controllers.find(owner);
+        if (it != controllers.end() && it->second) it->second->resized();
+    }
+
     void ensureAttached(MainComponent* owner)
     {
         if (owner == nullptr || controllers.find(owner) != controllers.end())
@@ -858,4 +864,9 @@ void shutdownLibertyAudioRecordingController()
 void ensureLibertyAudioRecordingController(MainComponent* owner)
 {
     libertyAudioRecordingBootstrap.ensureAttached(owner);
+}
+
+void refreshLibertyRecordingTrackLayout(MainComponent* owner)
+{
+    if (owner != nullptr) libertyAudioRecordingBootstrap.refreshTrackLayout(owner);
 }
