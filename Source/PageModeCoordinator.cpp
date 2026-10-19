@@ -206,6 +206,13 @@ private:
 Bootstrap bootstrap;
 }
 
+void ensureLibertyPageModeCoordinator(MainComponent* owner)
+{
+    if (owner == nullptr) return;
+    if (coordinators.find(owner) == coordinators.end())
+        coordinators.emplace(owner, std::make_unique<PageModeCoordinator>(*owner));
+}
+
 void setLibertyMixConsoleVisible(MainComponent* owner, bool shouldShow)
 {
     if (owner == nullptr) return;
