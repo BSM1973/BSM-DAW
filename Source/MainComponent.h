@@ -242,6 +242,14 @@ public:
         refreshLibertyTrackHeaderMixLayout(this);
         repaint();
     }
+    // A global preset applies to every track; individual edge resizing remains available.
+    void applyArrangeTrackHeightPreset()
+    {
+        individualTrackHeights.clear();
+        refreshLibertyRecordingTrackLayout(this);
+        refreshLibertyTrackHeaderMixLayout(this);
+        repaint();
+    }
     int getArrangeTrackTop(int logicalRow) const noexcept
     {
         int y = getArrangeTop();
