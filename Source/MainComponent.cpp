@@ -776,8 +776,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     // cyan guide reinforce the command group without covering controls.
     g.setColour(juce::Colour(0xff526978).withAlpha(0.65f));
     g.drawHorizontalLine(32, 218.0f, 720.0f);
-    g.setColour(LibertyUI::Colour::accent.withAlpha(0.62f));
-    g.fillRoundedRectangle(276.0f, 70.0f, 380.0f, 2.0f, 1.0f);
+    // No cyan underline beneath the transport controls.
 
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
     // Hit targets remain exactly 56 x 28 at the existing coordinates.
