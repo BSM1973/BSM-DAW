@@ -88,11 +88,13 @@ public:
 
     void resized() override
     {
-        const int rowH = getLibertyTrackRowHeight();
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
-            const int y = 76 + 32 + (i - owner.getTrackScrollRows()) * rowH + 7;
-            const bool visible = y >= 76 + 32 && y < owner.getHeight() - 210;
+            // Align actual REC/MON buttons with the individual track geometry.
+            const int rowTop = owner.getArrangeTrackTop(i);
+            const int y = rowTop + 7;
+            const bool visible = rowTop >= owner.getArrangeTop()
+                              && y + 24 <= owner.getMixerTop();
             armButtons[(size_t)i]->setVisible(visible);
             monitorButtons[(size_t)i]->setVisible(visible);
             armButtons[(size_t)i]->setBounds(108, y, 46, 24);
