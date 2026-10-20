@@ -430,8 +430,8 @@ bool MainComponent::resetProjectState()
 bool MainComponent::configureStartupTracks(int audioCount, int instrumentCount)
 {
     // Called once from the welcome screen, before the user edits the project.
-    audioCount = juce::jlimit(0, 2, audioCount);
-    instrumentCount = juce::jlimit(0, 2, instrumentCount);
+    audioCount = juce::jlimit(0, 8, audioCount);
+    instrumentCount = juce::jlimit(0, 8, instrumentCount);
     audioEngine.setPlaying(false);
     if (!audioEngine.resetInstrumentPlayback(instrumentCount)) return false;
     while (audioEngine.getAudioTrackCount() > audioCount)
