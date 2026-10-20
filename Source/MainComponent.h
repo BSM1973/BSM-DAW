@@ -382,8 +382,8 @@ public:
         mixerHorizontalOffset = juce::jlimit(0, maximumOffset, mixerHorizontalOffset);
         const bool show = dockMixerMode && maximumOffset > 0;
         mixerHorizontalScrollBar.setVisible(show);
-        mixerHorizontalScrollBar.setBounds(220, getHeight() - 18,
-                                          juce::jmax(0, getWidth() - 228), 14);
+        mixerHorizontalScrollBar.setBounds(220, getHeight() - 13,
+                                          juce::jmax(0, getWidth() - 228), 9);
         mixerHorizontalScrollBar.setRangeLimits(0.0, (double)juce::jmax(contentWidth, viewportWidth));
         mixerHorizontalScrollBar.setCurrentRange((double)mixerHorizontalOffset, (double)viewportWidth,
                                                 juce::dontSendNotification);
