@@ -53,6 +53,19 @@ public:
         recButton.setMouseClickGrabsKeyboardFocus(false);
         recButton.onClick = [this] { toggleRecording(); };
         owner.addAndMakeVisible(recButton);
+        // Fourth row when the track is tall enough; compact fallback on short tracks.
+        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
+        {
+            const int top = owner.getArrangeTrackTop(i);
+            const int height = owner.getArrangeTrackHeight(i);
+            const bool fourthRow = height >= 164;
+            const int selectorY = top + (fourthRow ? 135 : 7);
+            const bool visible = top >= owner.getArrangeTop()
+                && selectorY + 24 <= owner.getMixerTop();
+            inputSelectors[(size_t)i]->setVisible(visible);
+            inputSelectors[(size_t)i]->setBounds(fourthRow ? 95 : 211, selectorY,
+                                                fourthRow ? 220 : 106, 24);
+        }
         recButton.setBounds(539, 38, 56, 28);
         recButton.toFront(false);
         startTimerHz(20);
@@ -394,7 +407,21 @@ private:
 
         if (inputIndices.empty())
             return false;
-
+        if (armedTrack >= 0 && armedTrack < (int)selectedInputModes.size())
+        {
+            const int mode = selectedInputModes[(size_t)armedTrack];
+            if (mode != 0)
+            {
+                const int first = std::abs(mode) - 1;
+                const int second = mode < 0 ? first + 1 : first;
+                if (first >= available || second >= available || !active[first] || !active[second])
+                    return false;
+                inputIndices = { first };
+                if (mode < 0) inputIndices.push_back(second);
+            }
+            else if (inputIndices.size() > 2)
+                inputIndices.resize(2);
+        }
         captureDeviceSignature();
         return true;
     }
@@ -695,6 +722,28 @@ public:
 
     void syncTrackControls()
     {
+        if (auto* device = owner.audioEngine.getDeviceManager().getCurrentAudioDevice())
+        {
+            const auto names = device->getInputChannelNames();
+            if (names != knownInputNames)
+            {
+                knownInputNames = names;
+                for (int i = 0; i < (int)inputSelectors.size(); ++i)
+                {
+                    auto& combo = *inputSelectors[(size_t)i];
+                    combo.clear(juce::dontSendNotification);
+                    combo.addItem("Auto (1-2)", 1000);
+                    for (int ch = 0; ch < names.size(); ++ch)
+                    {
+                        combo.addItem("Mono " + juce::String(ch + 1) + " - " + names[ch], 1001 + ch);
+                        if (ch + 1 < names.size())
+                            combo.addItem("Stéréo " + juce::String(ch + 1) + "-" + juce::String(ch + 2),
+                                          1000 - (ch + 1));
+                    }
+                    combo.setSelectedId(1000 + selectedInputModes[(size_t)i], juce::dontSendNotification);
+                }
+            }
+        }
         const int count = owner.getAudioTrackCount();
 
         if ((int)armButtons.size() > count)
@@ -713,6 +762,8 @@ public:
             {
                 armButtons.pop_back();
                 monitorButtons.pop_back();
+                inputSelectors.pop_back();
+                selectedInputModes.pop_back();
                 monitoringEnabled.pop_back();
             }
         }
@@ -732,6 +783,21 @@ public:
             auto state = std::make_unique<std::atomic<bool>>(false);
             mon->onClick = [this, i] { handleMonitorClick(i); };
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
+            auto selector = std::make_unique<juce::ComboBox>();
+            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff202c37));
+            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffe2edf4));
+            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff42596b));
+            selector->setTooltip("Entrée audio de cette piste : mono ou paire stéréo");
+            selector->onChange = [this, i]
+            {
+                if (i >= (int)inputSelectors.size() || recording) return;
+                selectedInputModes[(size_t)i] = inputSelectors[(size_t)i]->getSelectedId() - 1000;
+                if (armedTrack == i && isArmedTrackMonitoring())
+                    updateMonitoringCallback();
+            };
+            owner.addAndMakeVisible(*selector);
+            inputSelectors.push_back(std::move(selector));
+            selectedInputModes.push_back(0);
         }
     }
 
@@ -783,6 +849,9 @@ public:
     MainComponent& owner;
     std::vector<std::unique_ptr<juce::TextButton>> armButtons;
     std::vector<std::unique_ptr<juce::TextButton>> monitorButtons;
+    std::vector<std::unique_ptr<juce::ComboBox>> inputSelectors;
+    std::vector<int> selectedInputModes; // 0 = default stereo, n = mono n, -n = stereo n/n+1
+    juce::StringArray knownInputNames;
     std::vector<std::unique_ptr<std::atomic<bool>>> monitoringEnabled;
     juce::TextButton recButton;
     std::vector<int> inputIndices;
