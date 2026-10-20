@@ -2071,7 +2071,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 
     for (int channel = 0; channel < channelCount + 1; ++channel)
     {
-        auto c = juce::Rectangle<int>(220 + channel * 125, mixerTop + 12, 116, 188);
+        auto c = juce::Rectangle<int>(220 + channel * 125, mixerTop + 12, 116, juce::jmax(1, getHeight() - mixerTop - 22));
         if (!c.contains(event.getPosition())) continue;
 
         const bool master = channel == channelCount;
@@ -2355,7 +2355,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         openLibertyMidiEditor(*this);
         return;
     }
-    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 124, 28, 28).contains(p))
+    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 44, 28, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
@@ -2379,7 +2379,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (p.y >= getMixerTop() + 12 && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
-        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 124 && p.y < getMixerTop() + 64)
+        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 44 && p.y < getMixerTop() + 64)
         {
             // Reconnect the permanent STEP SEQ button to the existing sequencer.
             // Keep the full 8-pattern/64-step editor and its existing state.
@@ -2427,7 +2427,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
                                       && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
-    if (!stepSequencerDockActive && handleMixerMouse(event)) return;
+    if (p.y >= getMixerTop() && !stepSequencerDockActive && handleMixerMouse(event)) return;
 
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
     const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
@@ -2515,16 +2515,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     const bool instrumentDockSelected = selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
-    if (p.x >= 310 && p.y >= getMixerTop() + 124 && dockStepSequencerMode && instrumentDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 44 && dockStepSequencerMode && instrumentDockSelected)
     {
-        handleStepSequencerClick(p, juce::Rectangle<int>(310, getMixerTop() + 124, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
+        handleStepSequencerClick(p, juce::Rectangle<int>(310, getMixerTop() + 44, juce::jmax(0, getWidth() - 310), mixerHeight - 44));
         return;
     }
     const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
-    if (p.x >= 310 && p.y >= getMixerTop() + 124 && dockStepSequencerMode && midiDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 44 && dockStepSequencerMode && midiDockSelected)
     {
-        clickMidiStepSequencer(p, juce::Rectangle<int>(310, getMixerTop() + 124, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
+        clickMidiStepSequencer(p, juce::Rectangle<int>(310, getMixerTop() + 44, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
         return;
     }
 
