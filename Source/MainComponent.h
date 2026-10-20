@@ -84,8 +84,16 @@ public:
     }
     void selectMidiTrack() noexcept { selectedTrack = -1; repaint(); }
     // Shared drawing entry point for the detachable Step Sequencer window.
+    int floatingStepSequencerTrack = -1;
     void paintFloatingStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
     {
+        // The detached editor owns a snapshot of its source track. Track
+        // selection in ARRANGE must not turn an open editor into an empty view.
+        const int previousTrack = selectedTrack;
+        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+        if (floatingStepSequencerTrack >= getAudioTrackCount()
+            && floatingStepSequencerTrack < firstInstrument + getInstrumentTrackCount())
+            selectedTrack = floatingStepSequencerTrack;
         const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
         if (selectedTrack >= instrumentFirst
             && selectedTrack < instrumentFirst + getInstrumentTrackCount())
@@ -103,6 +111,7 @@ public:
             g.drawText("Sélectionnez une piste Instrument pour éditer ses Patterns.",
                        area, juce::Justification::centred);
         }
+        selectedTrack = previousTrack;
     }
     void paintOverChildren(juce::Graphics& g) override;
     juce::TextButton stepSequencerDockButton { "STEP SEQ" };
