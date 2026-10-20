@@ -130,8 +130,16 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          c.mask->setVisible(false);
          if(c.midiInput)
          {
-             c.midiInput->setVisible(middleVisible);
-             if(middleVisible)c.midiInput->setBounds(12,y+37,owner.trackHeaderWidth-24,19);
+             // The MIDI selector must not depend on the 94px PAN/M-S row:
+             // instrument lanes can be shorter, especially after resizing.
+             const bool midiVisible=y>=owner.getArrangeTop()
+                 && y+56<=owner.getMixerTop() && rh>=56;
+             c.midiInput->setVisible(midiVisible);
+             if(midiVisible)
+             {
+                 c.midiInput->setBounds(12,y+37,owner.trackHeaderWidth-24,19);
+                 c.midiInput->toFront(false);
+             }
          }
          if(!middleVisible)continue;
          c.pan->setBounds(22,y+62,27,27);
