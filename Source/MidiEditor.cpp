@@ -504,13 +504,14 @@ public:
     {
         auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return;
         const auto p = e.getEventRelativeTo(main).getPosition();
-        const int rowH = getLibertyTrackRowHeight();
-        const int top = 76 + 32 + 4 * rowH, height = rowH, headerWidth = 210;
-        if (p.x >= headerWidth && p.y >= top && p.y < top + height)
-        {
-            // Open the editor without discarding the currently selected track.
+        // A global mouse listener must never use a legacy fixed MIDI-lane Y.
+        // Only an actual MIDI track inside the visible arranger may open this editor.
+        if (p.x < main->getTrackHeaderWidth() || p.y < main->getArrangeTop()
+            || p.y >= main->getMixerTop()) return;
+        const int track = main->getArrangeTrackAtY(p.y);
+        const int midiFirst = main->getAudioTrackCount();
+        if (track >= midiFirst && track < midiFirst + main->getMidiTrackCount())
             openLibertyMidiEditor(*main);
-        }
     }
 private: bool registered = true;
 };
