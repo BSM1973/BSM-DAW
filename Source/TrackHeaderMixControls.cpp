@@ -37,11 +37,38 @@ public:
  }
 };
 struct Controls{std::unique_ptr<juce::Slider>vol,pan;std::unique_ptr<juce::TextButton>mute,solo;std::unique_ptr<juce::Component>mask;};
-class TrackHeaderMixControls final:public juce::Component,private juce::Timer{
+class TrackHeaderMixControls final:public juce::Component,private juce::Timer,private juce::MouseListener{
 public:
- explicit TrackHeaderMixControls(MainComponent&o):owner(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);setAlwaysOnTop(true);startTimerHz(12);}
+ explicit TrackHeaderMixControls(MainComponent&o):owner(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
  ~TrackHeaderMixControls()override{shutdown();clear();}
- void shutdown(){if(stopped.exchange(true))return;stopTimer();setVisible(false);}
+ void shutdown(){if(stopped.exchange(true))return;stopTimer();owner.removeMouseListener(this);setVisible(false);}
+ void mouseDown(const juce::MouseEvent& e) override
+ {
+     if (stopped || !e.mods.isLeftButtonDown() || e.mods.isPopupMenu()) return;
+     if (isLibertyMixConsoleVisible(&owner) || isLibertyPerformVisible(&owner)) return;
+     const auto p=e.getEventRelativeTo(&owner).getPosition();
+     if (p.x<0 || p.x>=owner.trackHeaderWidth || p.y<owner.getArrangeTop() || p.y>=owner.getMixerTop()) return;
+     const int logical=owner.getArrangeTrackAtY(p.y);
+     const int firstInstrument=owner.getAudioTrackCount()+owner.getMidiTrackCount();
+     if (logical<firstInstrument || logical>=firstInstrument+owner.getInstrumentTrackCount()) return;
+     // The right-hand blank area must select the instrument even when an
+     // unrelated overlay swallows the ordinary MainComponent mouseDown.
+     // Avoid every active control (REC/MON, M/S, PAN, volume).
+     const int y=owner.getArrangeTrackTop(logical);
+     const int dy=p.y-y;
+     if (dy<0 || dy>=owner.getArrangeTrackHeight(logical)) return;
+     if (dy>=5 && dy<34 && p.x>=90 && p.x<215) return;
+     if (dy>=55 && dy<92 && p.x>=15 && p.x<185) return;
+     if (dy>=100 && dy<130 && p.x>=65 && p.x<235) return;
+     if (owner.selectedTrack!=logical)
+     {
+         owner.dockMixerMode=true;
+         owner.dockStepSequencerMode=false;
+         owner.drumSamplerDockSelected=false;
+     }
+     owner.selectedTrack=logical;
+     owner.repaint();
+ }
  void paint(juce::Graphics&g)override
  {
      g.reduceClipRegion(getLocalBounds());
