@@ -104,6 +104,7 @@ public:
                        area, juce::Justification::centred);
         }
     }
+    void paintOverChildren(juce::Graphics& g) override;
     void drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area);
     void clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void showFloatingStepSequencer();
