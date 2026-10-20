@@ -227,7 +227,12 @@ void MainComponent::paint(juce::Graphics& g)
     auto transport = bounds.removeFromTop(transportHeight);
     auto mixer = bounds.removeFromBottom(juce::jmin(mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
     drawTransport(g, transport);
-    drawTrackArea(g, bounds);
+    {
+        // Clip the complete arranger paint pass, including partially visible track controls.
+        const juce::Graphics::ScopedSaveState arrangeClip(g);
+        g.reduceClipRegion(bounds);
+        drawTrackArea(g, bounds);
+    }
     // Visual dock boundary only; leave editor and tab hit areas unchanged.
     g.setColour(juce::Colour(0xff070b10));
     g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
@@ -2089,7 +2094,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
-    if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 6)
+    if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 9)
     {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
         return;
