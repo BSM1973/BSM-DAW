@@ -173,7 +173,6 @@ void MainComponent::paint(juce::Graphics& g)
                      && selectedTrack < instrumentFirst;
     // The editor tabs must remain reachable even when an Audio track is selected.
     // Previously the STEP SEQ tab disappeared with the selected Instrument track.
-    if (true)
     {
         auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 244, 28);
         const auto piano = tabs.removeFromLeft(118);
@@ -199,7 +198,7 @@ void MainComponent::paint(juce::Graphics& g)
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
         drawTab(juce::Rectangle<int>(seq.getRight() + 8, seq.getY(), 148, seq.getHeight()), "DRUM SAMPLER", false);
-        if (showStepSequencer && dockStepSequencerMode)
+        if ((showStepSequencer || isMidi) && dockStepSequencerMode)
         {
             const auto detach = juce::Rectangle<int>(416, mixer.getY() + 4, 106, 28);
             g.setColour(juce::Colour(0xff202c37));
@@ -2167,7 +2166,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             }
         }
     }
-    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
+    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
         && juce::Rectangle<int>(416, getMixerTop() + 4, 106, 28).contains(p))
     {
