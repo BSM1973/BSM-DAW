@@ -479,8 +479,13 @@ private:
         if (bestRms < 0.00001)
             return false;
 
-        const int leftChannel = order[0];
-        const int rightChannel = channels > 1 ? order[1] : order[0];
+        // A chosen input pair must retain its physical L/R order.
+        const bool explicitSelection = armedTrack >= 0
+            && armedTrack < (int)selectedInputModes.size()
+            && selectedInputModes[(size_t)armedTrack] != 0;
+        const int leftChannel = explicitSelection ? 0 : order[0];
+        const int rightChannel = channels > 1
+            ? (explicitSelection ? 1 : order[1]) : leftChannel;
 
         stereoFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
                          .getNonexistentChildFile("Liberty_Recording_Stereo", ".wav", false);
