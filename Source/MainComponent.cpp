@@ -310,23 +310,21 @@ void MainComponent::paint(juce::Graphics& g)
         };
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode && !drumSamplerActive);
-        // Detach Piano Roll without changing which dock editor is selected.
-        g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 44.0f, 28.0f, 28.0f), 5.0f);
-        g.setColour(juce::Colour(0xffc4e7ee));
-        g.drawRect(180, mixer.getY() + 16, 11, 9, 1);
-        g.drawLine(187.0f, (float)mixer.getY() + 19.0f, 195.0f, (float)mixer.getY() + 11.0f, 1.6f);
-        g.drawLine(190.0f, (float)mixer.getY() + 11.0f, 195.0f, (float)mixer.getY() + 11.0f, 1.6f);
-        g.drawLine(195.0f, (float)mixer.getY() + 11.0f, 195.0f, (float)mixer.getY() + 16.0f, 1.6f);
-        // Same detach icon for the Step Sequencer, directly below Piano Roll.
-        g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 44.0f, 28.0f, 28.0f), 5.0f);
-        g.setColour(juce::Colour(0xffc4e7ee));
-        g.drawRect(180, mixer.getY() + 48, 11, 9, 1);
-        g.drawLine(187.0f, (float)mixer.getY() + 51.0f, 195.0f, (float)mixer.getY() + 43.0f, 1.6f);
-        g.drawLine(190.0f, (float)mixer.getY() + 43.0f, 195.0f, (float)mixer.getY() + 43.0f, 1.6f);
-        g.drawLine(195.0f, (float)mixer.getY() + 43.0f, 195.0f, (float)mixer.getY() + 48.0f, 1.6f);
-        drawTab(seq, "STEP SEQ", dockStepSequencerMode && !drumSamplerActive && (showStepSequencer || isMidi));
+        // Detach icons aligned with their editors (not the Mixer).
+        const auto detachIcon = [&](int top)
+        {
+            const int x = 174, y = mixer.getY() + top;
+            g.setColour(juce::Colour(0xff263644));
+            g.fillRoundedRectangle(juce::Rectangle<float>((float)x, (float)y, 28.0f, 28.0f), 5.0f);
+            g.setColour(juce::Colour(0xffc4e7ee));
+            g.drawRect(x + 6, y + 12, 11, 9, 1);
+            g.drawLine((float)x + 13, (float)y + 15, (float)x + 21, (float)y + 7, 1.6f);
+            g.drawLine((float)x + 16, (float)y + 7, (float)x + 21, (float)y + 7, 1.6f);
+            g.drawLine((float)x + 21, (float)y + 7, (float)x + 21, (float)y + 12, 1.6f);
+        };
+        detachIcon(44);
+        detachIcon(76);
+        drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && !drumSamplerActive && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
         drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
 
