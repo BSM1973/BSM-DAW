@@ -1870,7 +1870,7 @@ void MainComponent::timerCallback()
     dockResizeHandle.toFront(false);
     // Keep mixer hit-testing above overlays that repaint or reorder themselves.
     dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop()));
-    dockMixerInputLayer.setVisible(selectedTrack < getAudioTrackCount()
+    dockMixerInputLayer.setVisible(dockMixerMode
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
     dockResizeHandle.toFront(false);
