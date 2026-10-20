@@ -101,6 +101,20 @@ public:
 
     void resized() override
     {
+        // Audio input selectors are independent child controls; hide them as
+        // soon as their full bounds no longer fit above the dock.
+        for (int i = 0; i < owner.getAudioTrackCount() && i < (int) inputSelectors.size(); ++i)
+        {
+            const int top = owner.getArrangeTrackTop(i);
+            const int height = owner.getArrangeTrackHeight(i);
+            const bool fourthRow = height >= 164;
+            const int selectorY = top + (fourthRow ? 135 : 7);
+            auto& selector = *inputSelectors[(size_t) i];
+            selector.setBounds(fourthRow ? 95 : 211, selectorY,
+                               fourthRow ? 220 : 106, 24);
+            selector.setVisible(top >= owner.getArrangeTop()
+                                && selectorY + 24 <= owner.getMixerTop());
+        }
         for (int i = 0; i < owner.getAudioTrackCount(); ++i)
         {
             // Align actual REC/MON buttons with the individual track geometry.
