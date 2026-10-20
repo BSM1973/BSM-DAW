@@ -2210,6 +2210,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
             }
             dockStepSequencerMode = true;
+            // Always open the existing full editor window as well: the dock
+            // can be hidden by page overlays or reduced by window geometry.
+            showFloatingStepSequencer();
             repaint();
             return;
         }
