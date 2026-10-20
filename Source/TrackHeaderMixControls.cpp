@@ -144,7 +144,7 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              // Match AudioRecordingController::resized(): the ComboBox is
              // an owner child, positioned in owner coordinates every refresh.
              const int selectorY=y+37;
-             c.midiInput->setBounds(12,selectorY,owner.trackHeaderWidth-24,19);
+             c.midiInput->setBounds(211,selectorY,106,19);
              // Both position and parent must match the header overlay.
              // A selector can only appear when its actual hit-tested row is
              // the instrument row it belongs to (never an audio row).
@@ -187,7 +187,7 @@ for(int i=0;i<(int)controls.size();++i)
  if(box->getNumItems()!=devices.size()+1)
  {
   box->clear(juce::dontSendNotification);
-  box->addItem("Toutes",1);
+  box->addItem(juce::String::fromUTF8("Entrées"),1);
   for(int j=0;j<devices.size();++j)box->addItem(devices[j].name,j+2);
  }
  int selected=1;
