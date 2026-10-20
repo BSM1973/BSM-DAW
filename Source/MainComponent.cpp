@@ -85,6 +85,28 @@ void MainComponent::updateLoopPunchButtons()
 
 MainComponent::MainComponent()
 {
+    // Native child button receives clicks even if another controller overlays
+    // the dock; the sequencer itself stays embedded in the original dock.
+    stepSequencerDockButton.setMouseClickGrabsKeyboardFocus(false);
+    stepSequencerDockButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff23535d));
+    stepSequencerDockButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    stepSequencerDockButton.onClick = [this]
+    {
+        const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+        const bool validInstrument = selectedTrack >= instrumentFirst
+            && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+        const bool validMidi = selectedTrack >= getAudioTrackCount()
+            && selectedTrack < instrumentFirst;
+        if (!validInstrument && !validMidi)
+        {
+            if (getInstrumentTrackCount() > 0) selectedTrack = instrumentFirst;
+            else if (getMidiTrackCount() > 0) selectedTrack = getAudioTrackCount();
+            else return;
+        }
+        dockStepSequencerMode = true;
+        repaint();
+    };
+    addAndMakeVisible(stepSequencerDockButton);
     punchInButton.setButtonText("IN");
     loopButton.setButtonText("LOOP");
     punchOutButton.setButtonText("OUT");
@@ -1744,6 +1766,10 @@ void MainComponent::timerCallback()
     ensureLibertyAudioRecordingController(this);
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
+    const int dockY = getMixerTop();
+    stepSequencerDockButton.setBounds(134, dockY + 4, 118, 28);
+    stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
