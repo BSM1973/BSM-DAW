@@ -1660,7 +1660,10 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
 }
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    // Obsidian mixer surface matches the arranger without altering strip geometry.
+    // Reserve the dock navigation column: mixer channels must never paint beneath tabs.
+    area = area.withTrimmedLeft(juce::jmax(0, 220 - area.getX()));
+    g.saveState();
+    g.reduceClipRegion(area.withTrimmedBottom(18));
     g.setColour(juce::Colour(0xff101821)); g.fillRect(area);
 
     const int audioTracks = getAudioTrackCount();
@@ -1808,6 +1811,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN " + juce::String(audioEngine.getInstrumentTrackPan(sourceIndex), 2)),
                    c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
+    g.restoreState();
 }
 
 void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); updateMixerHorizontalScrollBar(); repaint(); }
