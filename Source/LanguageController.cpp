@@ -24,7 +24,44 @@ const Dict enToFr={
 {"COPY","COPIER"},{"PASTE","COLLER"},{"DELETE","SUPPRIMER"},
 {"CLEAR","EFFACER"},{"SAVE","ENREGISTRER"},{"LOAD","CHARGER"},
 {"UNDO","ANNULER"},{"REDO","RÉTABLIR"}};
-juce::String translateExact(const juce::String&s,bool french){if(french){auto i=enToFr.find(s);return i==enToFr.end()?s:i->second;}for(auto&i:enToFr)if(i.second==s)return i.first;return s;}
+juce::String translateExact(const juce::String& s, bool french)
+{
+    // Upgrade labels created before the French accent corrections.
+    static const Dict legacyFrench = {
+        {"REGLAGES AUDIO","RÉGLAGES AUDIO"},
+        {"GENERER","GÉNÉRER"},
+        {"ARPEGER","ARPÉGER"},
+        {"CONTRE-MELODIE","CONTRE-MÉLODIE"},
+        {"AUGMENTER L'ENERGIE","AUGMENTER L'ÉNERGIE"},
+        {"REDUIRE L'ENERGIE","RÉDUIRE L'ÉNERGIE"},
+        {"CREER INTRO","CRÉER INTRO"},
+        {"CREER REFRAIN","CRÉER REFRAIN"},
+        {"CREER PONT","CRÉER PONT"},
+        {"ANALYSER L'IDEE","ANALYSER L'IDÉE"},
+        {"DEVELOPPEMENT INTELLIGENT","DÉVELOPPEMENT INTELLIGENT"},
+        {"MELODIE","MÉLODIE"},
+        {"COMPLEXITE","COMPLEXITÉ"},
+        {"ENERGIE","ÉNERGIE"},
+        {"EPIQUE","ÉPIQUE"},
+        {"MELANCOLIQUE","MÉLANCOLIQUE"},
+        {"CINEMATIQUE","CINÉMATIQUE"},
+        {"ELECTRONIQUE","ÉLECTRONIQUE"},
+        {"SELECTION","SÉLECTION"},
+        {"SELECTION CADRE","SÉLECTION CADRE"},
+        {"ETIRER","ÉTIRER"},
+        {"VELOCITE","VÉLOCITÉ"},
+        {"REINITIALISER WARP","RÉINITIALISER WARP"}
+    };
+    if (french)
+    {
+        if (auto it = enToFr.find(s); it != enToFr.end()) return it->second;
+        if (auto it = legacyFrench.find(s); it != legacyFrench.end()) return it->second;
+        return s;
+    }
+    for (const auto& entry : enToFr)
+        if (entry.second == s) return entry.first;
+    return s;
+}
 void translateTree(juce::Component&c,bool french,juce::Component*skip){if(&c!=skip){if(auto*b=dynamic_cast<juce::Button*>(&c)){auto old=b->getButtonText();auto t=translateExact(old,french);if(t!=old)b->setButtonText(t);}if(auto*l=dynamic_cast<juce::Label*>(&c)){auto old=l->getText();auto t=translateExact(old,french);if(t!=old)l->setText(t,juce::dontSendNotification);}}
 for(int i=0;i<c.getNumChildComponents();++i)if(auto*ch=c.getChildComponent(i))translateTree(*ch,french,skip);c.repaint();}
 class Controller:private juce::Timer{public:explicit Controller(MainComponent&o):owner(o){language.addItem("English",1);language.addItem("Français",2);auto f=file();auto v=f.existsAsFile()?f.loadFileAsString().trim():"English";language.setSelectedId((v=="Francais" || v=="Français")?2:1,juce::dontSendNotification);language.onChange=[this]{apply(true);};owner.addAndMakeVisible(language);startTimerHz(2);apply(false);}~Controller(){shutdown();}void shutdown(){stopTimer();language.setVisible(false);}private:juce::File file()const{return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("BSM").getChildFile("Liberty").getChildFile("Language.txt");}void apply(bool save){bool fr=language.getSelectedId()==2;translateTree(owner,fr,&language);language.setTooltip(fr?"Langue de l'interface Liberty":"Liberty interface language");if(save){auto f=file();f.getParentDirectory().createDirectory();f.replaceWithText(fr?"Français":"English");}}void timerCallback()override{int x=448;language.setBounds(x,8,104,26);language.toFront(false);apply(false);}MainComponent&owner;juce::ComboBox language;};
