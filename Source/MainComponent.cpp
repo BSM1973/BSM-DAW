@@ -171,7 +171,9 @@ void MainComponent::paint(juce::Graphics& g)
     // Shared editor navigation for MIDI and instrument tracks.
     const bool isMidi = selectedTrack >= getAudioTrackCount()
                      && selectedTrack < instrumentFirst;
-    if (isMidi || showStepSequencer)
+    // The editor tabs must remain reachable even when an Audio track is selected.
+    // Previously the STEP SEQ tab disappeared with the selected Instrument track.
+    if (true)
     {
         auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 244, 28);
         const auto piano = tabs.removeFromLeft(118);
@@ -194,7 +196,7 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(label, rect, juce::Justification::centred);
         };
         drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
-        drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
+        drawTab(seq, "STEP SEQ", dockStepSequencerMode && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
         drawTab(juce::Rectangle<int>(seq.getRight() + 8, seq.getY(), 148, seq.getHeight()), "DRUM SAMPLER", false);
         if (showStepSequencer && dockStepSequencerMode)
@@ -2187,6 +2189,32 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                            && selectedTrack < dockInstrumentFirst;
     const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
                                  && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
+    if (p.y >= getMixerTop() + 4 && p.y < getMixerTop() + 32)
+    {
+        const int tabX = 8;
+        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        {
+            // Reconnect the permanent STEP SEQ button to the existing sequencer.
+            // Keep the full 8-pattern/64-step editor and its existing state.
+            if (!selectedMidi && !selectedInstrument)
+            {
+                if (getInstrumentTrackCount() > 0)
+                    selectedTrack = dockInstrumentFirst;
+                else if (getMidiTrackCount() > 0)
+                    selectedTrack = getAudioTrackCount();
+                else
+                {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                        "Liberty - Step Sequencer",
+                        "Ajoutez une piste Instrument ou MIDI pour utiliser le Step Sequencer.", "OK");
+                    return;
+                }
+            }
+            dockStepSequencerMode = true;
+            repaint();
+            return;
+        }
+    }
     if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 4
         && p.y < getMixerTop() + 32)
     {
