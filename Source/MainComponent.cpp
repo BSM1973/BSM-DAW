@@ -175,7 +175,7 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     if (!instrument && !midi) return;
     const auto dock = juce::Rectangle<int>(0, getMixerTop(), getWidth(), getHeight() - getMixerTop());
     if (dock.getHeight() <= 36) return;
-    const auto editor = dock.withTrimmedTop(36);
+    const auto editor = dock.withTrimmedTop(36).withTrimmedLeft(310);
     if (instrument) drawStepSequencerDock(g, editor);
     else drawMidiStepSequencer(g, editor);
     g.setColour(juce::Colour(0xff111c26));
@@ -217,7 +217,7 @@ void MainComponent::paint(juce::Graphics& g)
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
-    const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36) : mixer;
+    const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
     if (dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (showStepSequencer && dockStepSequencerMode)
@@ -232,7 +232,7 @@ void MainComponent::paint(juce::Graphics& g)
     // Previously the STEP SEQ tab disappeared with the selected Instrument track.
     {
         auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 148, 28);
-        const auto piano = tabs.removeFromLeft(118);
+        const auto piano = tabs.removeFromLeft(148);
         const auto seq = juce::Rectangle<int>(8, piano.getY() + 32, 148, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
         {
@@ -2406,16 +2406,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     const bool instrumentDockSelected = selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
-    if (p.y >= getMixerTop() && dockStepSequencerMode && instrumentDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 36 && dockStepSequencerMode && instrumentDockSelected)
     {
-        handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
+        handleStepSequencerClick(p, juce::Rectangle<int>(310, getMixerTop() + 36, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
         return;
     }
     const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
-    if (p.y >= getMixerTop() && dockStepSequencerMode && midiDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 36 && dockStepSequencerMode && midiDockSelected)
     {
-        clickMidiStepSequencer(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
+        clickMidiStepSequencer(p, juce::Rectangle<int>(310, getMixerTop() + 36, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
         return;
     }
 
