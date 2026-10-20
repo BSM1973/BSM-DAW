@@ -131,7 +131,7 @@ public:
             dragStart = p.y;
             initialTrackHeight = owner->getArrangeTrackHeight(track);
         }
-        else if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getMixerTop())
+        else if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getArrangeTop())
         {
             dragMode = 2; dragStart = p.x; initialZoom = timelineHorizontalZoom.load();
         }
