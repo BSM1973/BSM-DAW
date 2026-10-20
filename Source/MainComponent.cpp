@@ -2131,28 +2131,6 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
             const int y = getArrangeTop() + (row - getTrackScrollRows()) * getLibertyTrackRowHeight();
             const bool audio = row < getAudioTrackCount();
             const bool instrument = row >= getAudioTrackCount() + getMidiTrackCount();
-            if ((audio || instrument) && click.y >= y + 36 && click.y < y + 69 && click.x >= 92)
-            {
-                const int channel = audio ? row : row - getAudioTrackCount() - getMidiTrackCount();
-                const float gain = audio ? audioEngine.getTrackGain(channel) : audioEngine.getInstrumentTrackGain(channel);
-                auto* dialog = new juce::AlertWindow("Volume de la piste", "Entrez le niveau en dB (-60 à +6) :", juce::AlertWindow::NoIcon);
-                dialog->addTextEditor("db", juce::String(gain > 0 ? 20.0 * std::log10((double)gain) : -60.0, 1), "dB");
-                dialog->addButton("Annuler", 0);
-                dialog->addButton("Appliquer", 1);
-                juce::Component::SafePointer<MainComponent> safe(this);
-                dialog->enterModalState(true, juce::ModalCallbackFunction::create([safe, audio, channel, dialog](int result)
-                {
-                    if (result != 1 || safe == nullptr) return;
-                    const auto value = dialog->getTextEditorContents("db").trim();
-                    if (!value.containsOnly("0123456789-+., ")) return;
-                    const double db = juce::jlimit(-60.0, 6.0, value.replaceCharacter(',', '.').getDoubleValue());
-                    const float linear = db <= -60.0 ? 0.0f : (float)std::pow(10.0, db / 20.0);
-                    if (audio) safe->audioEngine.setTrackGain(channel, linear);
-                    else safe->audioEngine.setInstrumentTrackGain(channel, linear);
-                    safe->repaint();
-                }), true);
-                return;
-            }
             if (click.y >= y + 5 && click.y < y + 34 && click.x < 106)
             {
                 auto* dialog = new juce::AlertWindow("Renommer la piste", "Nouveau nom :", juce::AlertWindow::NoIcon);
@@ -2505,26 +2483,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
                 selectedTrack = logicalRow; repaint(); return;
             }
-            if (juce::Rectangle<int>(18,rowY+36,32,24).contains(p))
+            // The JUCE TrackHeaderMixControls own Mute, Solo, Volume and Pan.
+            // Legacy rectangles overlapped empty header space and changed gain
+            // when selecting an instrument near SOLO.
+            if (selectedTrack != logicalRow)
             {
-                if (audioLane) audioEngine.setTrackMuted(channel,!audioEngine.isTrackMuted(channel));
-                else audioEngine.setInstrumentTrackMuted(channel,!audioEngine.isInstrumentTrackMuted(channel));
-                repaint(); return;
+                dockStepSequencerMode = false;
+                dockMixerMode = true;
+                drumSamplerDockSelected = false;
             }
-            if (juce::Rectangle<int>(55,rowY+36,32,24).contains(p))
-            {
-                if (audioLane) audioEngine.setTrackSolo(channel,!audioEngine.isTrackSolo(channel));
-                else audioEngine.setInstrumentTrackSolo(channel,!audioEngine.isInstrumentTrackSolo(channel));
-                repaint(); return;
-            }
-            if (juce::Rectangle<int>(94,rowY+40,98,22).contains(p))
-            {
-                const float gain = 2.0f * juce::jlimit(0.0f,1.0f,(float)(p.x-94)/98.0f);
-                if (audioLane) audioEngine.setTrackGain(channel,gain);
-                else audioEngine.setInstrumentTrackGain(channel,gain);
-                headerGainDragTrack = logicalRow;
-                repaint(); return;
-            }
+            selectedTrack = logicalRow;
+            repaint();
+            return;
         }
     }
 
