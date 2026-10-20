@@ -182,58 +182,9 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
-    if (!dockStepSequencerMode || dockMixerMode) return;
-    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
-    const bool instrument = selectedTrack >= instrumentFirst
-        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    const bool midi = selectedTrack >= getAudioTrackCount()
-        && selectedTrack < instrumentFirst;
-    if (!instrument && !midi) return;
-    const auto dock = juce::Rectangle<int>(0, getMixerTop(), getWidth(), getHeight() - getMixerTop());
-    if (dock.getHeight() <= 36) return;
-    const auto editor = dock.withTrimmedTop(36).withTrimmedLeft(310);
-    if (instrument) drawStepSequencerDock(g, editor);
-    else drawMidiStepSequencer(g, editor);
-    g.setColour(juce::Colour(0xff111c26));
-    g.fillRect(0, dock.getY(), 310, dock.getHeight());
-    g.setColour(juce::Colour(0xff344452));
-    g.fillRect(309, dock.getY() + 12, 1, juce::jmax(0, dock.getHeight() - 8));
-    g.setColour(juce::Colour(0xff111c26));
-    g.fillRect(dock.withHeight(36));
-    const auto tab = [&](int x, int w, const juce::String& name, bool active)
-    {
-        auto r = juce::Rectangle<int>(x, dock.getY() + (name == "PIANO ROLL" ? 12 : name == "STEP SEQ" ? 44 : name == "DRUM SAMPLER" ? 76 : 12), w, 28);
-        g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
-        g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
-        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(12.0f, juce::Font::bold));
-        g.drawText(name, r, juce::Justification::centred);
-    };
-    const bool drumActive = isLibertyFloatingDrumSamplerVisible();
-    tab(8, 148, "PIANO ROLL", false);
-    tab(8, 148, "STEP SEQ", !drumActive);
-    tab(8, 148, "DRUM SAMPLER", drumActive);
-    // The detach affordance is a small window-with-arrow icon beside each tab.
-    const auto drawDetachIcon = [&](int y)
-    {
-        auto r = juce::Rectangle<int>(174, dock.getY() + y, 28, 28);
-        g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xff6d9aa9));
-        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
-        g.setColour(juce::Colour(0xffc4e7ee));
-        g.drawRect(r.getX() + 6, r.getY() + 12, 11, 9, 1);
-        g.drawLine((float)r.getX() + 13, (float)r.getY() + 15,
-                   (float)r.getX() + 21, (float)r.getY() + 7, 1.6f);
-        g.drawLine((float)r.getX() + 16, (float)r.getY() + 7,
-                   (float)r.getX() + 21, (float)r.getY() + 7, 1.6f);
-        g.drawLine((float)r.getX() + 21, (float)r.getY() + 7,
-                   (float)r.getX() + 21, (float)r.getY() + 12, 1.6f);
-    };
-    drawDetachIcon(4);
-    drawDetachIcon(36);
+    // Dock navigation is painted once in paint(). Do not overpaint it here:
+    // the old overlay hid MIXER and placed editor buttons on the wrong rows.
+    juce::ignoreUnused(g);
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -310,7 +261,7 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(label, rect, juce::Justification::centred);
         };
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
-        drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode && !drumSamplerActive);
+        drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode);
         // Detach icons aligned with their editors (not the Mixer).
         const auto detachIcon = [&](int top)
         {
@@ -325,9 +276,9 @@ void MainComponent::paint(juce::Graphics& g)
         };
         detachIcon(44);
         detachIcon(76);
-        drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && !drumSamplerActive && (showStepSequencer || isMidi));
+        drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
-        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
+        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", false);
 
     }
 }
@@ -1888,7 +1839,7 @@ void MainComponent::timerCallback()
     stepSequencerDockButton.setColour(juce::TextButton::buttonColourId,
         dockStepSequencerMode && !(isLibertyFloatingDrumSamplerVisible())
             ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
-    stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    stepSequencerDockButton.setVisible(false); // The dock paints and handles its own STEP SEQ tab.
     if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
