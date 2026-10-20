@@ -497,7 +497,8 @@ public:
         const auto p = e.getEventRelativeTo(main).getPosition();
         const int rowH = getLibertyTrackRowHeight();
         const int top = 76 + 32 + 4 * rowH, height = rowH;
-        if (p.y >= top && p.y < top + height) main->selectMidiTrack();
+        // Never clear ARRANGE's selected instrument merely because the user
+        // clicked a legacy fixed-position MIDI lane. The dock owns selection.
     }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
@@ -507,7 +508,7 @@ public:
         const int top = 76 + 32 + 4 * rowH, height = rowH, headerWidth = 210;
         if (p.x >= headerWidth && p.y >= top && p.y < top + height)
         {
-            main->selectMidiTrack();
+            // Open the editor without discarding the currently selected track.
             openLibertyMidiEditor(*main);
         }
     }
