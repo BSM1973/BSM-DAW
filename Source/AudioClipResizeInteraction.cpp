@@ -25,7 +25,7 @@ int getLibertyActiveTool();
 
 namespace
 {
-constexpr int headerWidth = 210;
+constexpr int headerWidth = MainComponent::trackHeaderWidth;
 constexpr int rulerHeight = 32;
 constexpr int handleWidth = 12;
 
@@ -99,9 +99,9 @@ public:
 
         syncHandles();
         const double pps = getLibertyTimelinePixelsPerSecond();
-        const int rowH = getLibertyTrackRowHeight();
+        const int rowH = owner.getArrangeTrackHeight(dragTrack);
         const int x = headerWidth + (int)std::llround(previewStart * pps);
-        const int y = 76 + rulerHeight + (dragTrack - owner.getTrackScrollRows()) * rowH + 4;
+        const int y = owner.getArrangeTrackTop(dragTrack) + 4;
         const int w = juce::jmax(2, (int)std::llround(previewLength * pps));
         const auto r = juce::Rectangle<int>(x, y, w, rowH - 8);
 
@@ -212,13 +212,13 @@ private:
         syncHandles();
 
         const double pps = getLibertyTimelinePixelsPerSecond();
-        const int rowH = getLibertyTrackRowHeight();
-        const int arrangeTop = 76 + rulerHeight;
-        const int arrangeBottom = owner.getHeight() - 210;
+        const int arrangeTop = owner.getArrangeTop();
+        const int arrangeBottom = owner.getMixerTop();
         for (int t = 0; t < owner.getAudioTrackCount(); ++t)
         {
             const int tool = getLibertyActiveTool();
-            const int rowY = arrangeTop + (t - owner.getTrackScrollRows()) * rowH;
+            const int rowY = owner.getArrangeTrackTop(t);
+            const int rowH = owner.getArrangeTrackHeight(t);
             const bool rowVisible = rowY >= arrangeTop && rowY + rowH <= arrangeBottom;
             const bool show = rowVisible && owner.audioEngine.hasAudioFile(t) && owner.selectedTrack == t
                               && dragTrack < 0 && (tool == 4 || tool == 5);
