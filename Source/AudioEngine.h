@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <map>
 #include <vector>
 
 class AudioEngine final : private juce::AudioIODeviceCallback, private juce::MidiInputCallback
