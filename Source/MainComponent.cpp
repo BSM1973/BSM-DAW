@@ -179,6 +179,10 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     if (instrument) drawStepSequencerDock(g, editor);
     else drawMidiStepSequencer(g, editor);
     g.setColour(juce::Colour(0xff111c26));
+    g.fillRect(0, dock.getY(), 310, dock.getHeight());
+    g.setColour(juce::Colour(0xff344452));
+    g.fillRect(309, dock.getY() + 4, 1, juce::jmax(0, dock.getHeight() - 8));
+    g.setColour(juce::Colour(0xff111c26));
     g.fillRect(dock.withHeight(36));
     const auto tab = [&](int x, int w, const juce::String& name, bool active)
     {
