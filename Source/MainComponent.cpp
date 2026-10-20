@@ -819,10 +819,16 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
 
 void MainComponent::clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
 {
-    if (selectedTrack >= getAudioTrackCount() && selectedTrack < getAudioTrackCount() + getMidiTrackCount())
+    const int previousTrack = selectedTrack;
+    const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+    if (floatingStepSequencerTrack >= getAudioTrackCount()
+        && floatingStepSequencerTrack < firstInstrument + getInstrumentTrackCount())
+        selectedTrack = floatingStepSequencerTrack;
+    if (selectedTrack >= getAudioTrackCount() && selectedTrack < firstInstrument)
         clickMidiStepSequencer(point, area);
     else
         handleStepSequencerClick(point, area);
+    selectedTrack = previousTrack;
 }
 
 // Liberty Pro / Obsidian: transport palette is intentionally local to the
