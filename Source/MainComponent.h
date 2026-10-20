@@ -105,6 +105,7 @@ public:
         }
     }
     void paintOverChildren(juce::Graphics& g) override;
+    juce::TextButton stepSequencerDockButton { "STEP SEQ" };
     void drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area);
     void clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void showFloatingStepSequencer();
