@@ -143,8 +143,8 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          {
              // Match AudioRecordingController::resized(): the ComboBox is
              // an owner child, positioned in owner coordinates every refresh.
-             const int selectorY=y+37;
-             c.midiInput->setBounds(211,selectorY,106,19);
+             const int selectorY=y+7;
+             c.midiInput->setBounds(211,selectorY,106,24);
              // Both position and parent must match the header overlay.
              // A selector can only appear when its actual hit-tested row is
              // the instrument row it belongs to (never an audio row).
@@ -159,10 +159,10 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              const bool visible=instrumentInViewport
                  && logical>=firstInstrument
                  && logical>=firstVisible && logical<=lastVisible
-                 && rh>=56 && y>=owner.getArrangeTop()
-                 && selectorY+19<=owner.getMixerTop()
+                 && rh>=31 && y>=owner.getArrangeTop()
+                 && selectorY+24<=owner.getMixerTop()
                  && owner.getArrangeTrackAtY(selectorY)==logical
-                 && owner.getArrangeTrackAtY(selectorY+18)==logical;
+                 && owner.getArrangeTrackAtY(selectorY+23)==logical;
              c.midiInput->setVisible(visible);
          }
          if(!middleVisible)continue;
