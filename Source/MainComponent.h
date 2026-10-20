@@ -323,7 +323,7 @@ public:
         {
             if (owner.dockStepSequencerMode)
                 return false;
-            const int count = owner.getAudioTrackCount() + owner.getInstrumentTrackCount() + 1;
+            const int count = owner.getAudioTrackCount() + 1;
             for (int i = 0; i < count; ++i)
                 if (juce::Rectangle<int>(220 + i * 125, 12, 116, juce::jmax(1, getHeight() - 22)).contains(x, y))
                     return true;
