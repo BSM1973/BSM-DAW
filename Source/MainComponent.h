@@ -313,6 +313,28 @@ public:
             if (onDragDelta) onDragDelta(startScreenY - e.getScreenY());
         }
     };
+    // Dedicated input surface above full-window overlays. It intercepts only
+    // the actual mini-mixer strips, leaving editor tabs and dock resizing free.
+    class DockMixerInputLayer final : public juce::Component
+    {
+    public:
+        explicit DockMixerInputLayer(MainComponent& parent) : owner(parent) { setInterceptsMouseClicks(true, false); }
+        bool hitTest(int x, int y) override
+        {
+            if (owner.dockStepSequencerMode)
+                return false;
+            const int count = owner.getAudioTrackCount() + owner.getInstrumentTrackCount() + 1;
+            for (int i = 0; i < count; ++i)
+                if (juce::Rectangle<int>(220 + i * 125, 12, 116, juce::jmax(1, getHeight() - 22)).contains(x, y))
+                    return true;
+            return false;
+        }
+        void mouseDown(const juce::MouseEvent& e) override { owner.handleMixerMouse(e.getEventRelativeTo(&owner)); }
+        void mouseDrag(const juce::MouseEvent& e) override { owner.handleMixerMouse(e.getEventRelativeTo(&owner)); }
+    private:
+        MainComponent& owner;
+    };
+    DockMixerInputLayer dockMixerInputLayer { *this };
     DockResizeHandle dockResizeHandle;
     int mixerHeight = 246;
     bool draggingDockHeight = false;
