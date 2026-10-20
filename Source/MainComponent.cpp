@@ -266,7 +266,8 @@ void MainComponent::paint(juce::Graphics& g)
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
-    const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
+    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer))
+        ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
     if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
