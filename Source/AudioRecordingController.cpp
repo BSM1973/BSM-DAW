@@ -725,7 +725,7 @@ public:
         if (auto* device = owner.audioEngine.getDeviceManager().getCurrentAudioDevice())
         {
             const auto names = device->getInputChannelNames();
-            if (names != knownInputNames)
+            if (names != knownInputNames || (inputSelectors.size() > 0 && inputSelectors.back()->getNumItems() == 0))
             {
                 knownInputNames = names;
                 for (int i = 0; i < (int)inputSelectors.size(); ++i)
@@ -792,8 +792,12 @@ public:
             {
                 if (i >= (int)inputSelectors.size() || recording) return;
                 selectedInputModes[(size_t)i] = inputSelectors[(size_t)i]->getSelectedId() - 1000;
-                if (armedTrack == i && isArmedTrackMonitoring())
-                    updateMonitoringCallback();
+                if (armedTrack == i && isArmedTrackMonitoring() && configureInput())
+                {
+                    const int left = inputIndices.empty() ? 0 : inputIndices[0];
+                    const int right = inputIndices.size() > 1 ? inputIndices[1] : left;
+                    owner.audioEngine.setInputMonitoring(true, left, right);
+                }
             };
             owner.addAndMakeVisible(*selector);
             inputSelectors.push_back(std::move(selector));
