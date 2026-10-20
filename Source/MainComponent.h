@@ -120,6 +120,7 @@ public:
     void showFloatingStepSequencer();
     void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void handleStepSequencerClick(juce::Point<int> point, juce::Rectangle<int> area);
+    bool configureStartupTracks(int audioCount, int instrumentCount);
     int addAudioTrack()
     {
         const int index = audioEngine.addAudioTrack();
