@@ -175,6 +175,8 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
+bool isLibertyFloatingDrumSamplerVisible() noexcept;
+
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
     if (!dockStepSequencerMode) return;
@@ -206,7 +208,7 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
         g.setFont(juce::Font(12.0f, juce::Font::bold));
         g.drawText(name, r, juce::Justification::centred);
     };
-    const bool drumActive = floatingDrumSamplerWindow != nullptr && floatingDrumSamplerWindow->isVisible();
+    const bool drumActive = isLibertyFloatingDrumSamplerVisible();
     tab(8, 148, "PIANO ROLL", false);
     tab(8, 148, "STEP SEQ", !drumActive);
     tab(8, 148, "DRUM SAMPLER", drumActive);
@@ -276,7 +278,7 @@ void MainComponent::paint(juce::Graphics& g)
     else
         drawMixer(g, editorArea);
 
-    const bool drumSamplerActive = floatingDrumSamplerWindow != nullptr && floatingDrumSamplerWindow->isVisible();
+    const bool drumSamplerActive = isLibertyFloatingDrumSamplerVisible();
     // Shared editor navigation for MIDI and instrument tracks.
     const bool isMidi = selectedTrack >= getAudioTrackCount()
                      && selectedTrack < instrumentFirst;
@@ -407,6 +409,10 @@ public:
 };
 std::unique_ptr<FloatingDrumSamplerWindow> floatingDrumSamplerWindow;
 int floatingDrumSamplerSourceTrack = -1;
+bool isLibertyFloatingDrumSamplerVisible() noexcept
+{
+    return floatingDrumSamplerWindow != nullptr && floatingDrumSamplerWindow->isVisible();
+}
 
 
 void closeFloatingDrumSamplerWindow() { floatingDrumSamplerWindow.reset(); }
@@ -1871,7 +1877,7 @@ void MainComponent::timerCallback()
             && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     stepSequencerDockButton.setBounds(8, dockY + 44, 148, 28);
     stepSequencerDockButton.setColour(juce::TextButton::buttonColourId,
-        dockStepSequencerMode && !(floatingDrumSamplerWindow && floatingDrumSamplerWindow->isVisible())
+        dockStepSequencerMode && !(isLibertyFloatingDrumSamplerVisible())
             ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
     stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
