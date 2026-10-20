@@ -516,6 +516,8 @@ private: bool registered = true;
 
 MidiEditorMouseListener globalMidiEditorMouseListener;
 std::vector<std::unique_ptr<MidiEditorWindow>> midiEditorWindows;
+std::unique_ptr<PianoRoll> dockPianoRoll;
+MainComponent* dockPianoRollOwner = nullptr;
 }
 
 void openLibertyMidiEditor(MainComponent& owner)
@@ -526,6 +528,22 @@ void openLibertyMidiEditor(MainComponent& owner)
 
 void shutdownLibertyMidiEditor()
 {
+    dockPianoRoll.reset();
+    dockPianoRollOwner = nullptr;
     midiEditorWindows.clear();
     globalMidiEditorMouseListener.shutdown();
+}
+
+void layoutLibertyPianoRollDock(MainComponent& owner, juce::Rectangle<int> bounds, bool visible)
+{
+    if (!dockPianoRoll || dockPianoRollOwner != &owner)
+    {
+        dockPianoRoll.reset();
+        dockPianoRollOwner = &owner;
+        dockPianoRoll = std::make_unique<PianoRoll>(owner);
+        owner.addAndMakeVisible(*dockPianoRoll);
+    }
+    dockPianoRoll->setBounds(bounds);
+    dockPianoRoll->setVisible(visible && bounds.getWidth() > 80 && bounds.getHeight() > 120);
+    if (dockPianoRoll->isVisible()) dockPianoRoll->toFront(false);
 }
