@@ -301,7 +301,9 @@ public:
                                juce::DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar(true);
-        setContentOwned(new FloatingStepSequencerContent(main), true);
+        auto* editor = new FloatingStepSequencerContent(main);
+        editor->setSize(1200, 320);
+        setContentOwned(editor, true);
         setResizable(true, true);
         setResizeLimits(760, 220, 2200, 700);
         if (lastFloatingStepSequencerBounds.isEmpty())
