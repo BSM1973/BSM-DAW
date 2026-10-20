@@ -1856,7 +1856,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(!dockStepSequencerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(selectedTrack < getAudioTrackCount() && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -1870,7 +1870,7 @@ void MainComponent::timerCallback()
     dockResizeHandle.toFront(false);
     // Keep mixer hit-testing above overlays that repaint or reorder themselves.
     dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop()));
-    dockMixerInputLayer.setVisible(!dockStepSequencerMode
+    dockMixerInputLayer.setVisible(selectedTrack < getAudioTrackCount()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
     dockResizeHandle.toFront(false);
@@ -2091,6 +2091,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
                 : audioTracks + getMidiTrackCount() + (channel - audioTracks);
             if (selectedTrack != logical) dockStepSequencerMode = false;
             selectedTrack = logical;
+            repaint(); // Selection focus must update even on a plain strip click.
         }
 
         if (!master)
