@@ -112,7 +112,7 @@ if(!isAudio(i))
 {
  c.midiInput=std::make_unique<juce::ComboBox>();
  auto* box=c.midiInput.get();
- box->setTooltip(juce::String::fromUTF8("Entrée MIDI de la piste instrument"));
+ box->setTooltip(juce::String::fromUTF8("Entrée MIDI de la piste instrument (Toutes = tous les périphériques MIDI)"));
  box->onChange=[this,i,box]
  {
   const int t=i-owner.getAudioTrackCount();
@@ -187,7 +187,7 @@ for(int i=0;i<(int)controls.size();++i)
  if(box->getNumItems()!=devices.size()+1)
  {
   box->clear(juce::dontSendNotification);
-  box->addItem(juce::String::fromUTF8("Toutes les entrées MIDI"),1);
+  box->addItem("Toutes",1);
   for(int j=0;j<devices.size();++j)box->addItem(devices[j].name,j+2);
  }
  int selected=1;
