@@ -197,8 +197,15 @@ public:
                 return;
             }
             welcome->setVisible(false);
-            welcome.reset();
-            editor->grabKeyboardFocus();
+            // Defer destruction: this callback runs inside a welcome button's
+            // onClick, so deleting the welcome component here is unsafe.
+            juce::Component::SafePointer<LibertyMainContent> safeThis(this);
+            juce::MessageManager::callAsync([safeThis]
+            {
+                if (safeThis == nullptr) return;
+                safeThis->welcome.reset();
+                safeThis->editor->grabKeyboardFocus();
+            });
         });
         addAndMakeVisible(*welcome);
         welcome->toFront(false);
