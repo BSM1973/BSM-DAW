@@ -225,7 +225,7 @@ void MainComponent::paint(juce::Graphics& g)
     // Liberty Pro design system: shared canvas across transport, arrange and dock.
     g.fillAll(LibertyUI::Colour::canvas);
     auto transport = bounds.removeFromTop(transportHeight);
-    auto mixer = bounds.removeFromBottom(mixerHeight);
+    auto mixer = bounds.removeFromBottom(juce::jmin(mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
     drawTransport(g, transport);
     drawTrackArea(g, bounds);
     // Visual dock boundary only; leave editor and tab hit areas unchanged.
@@ -2089,6 +2089,11 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 6)
+    {
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
     bool overPatternClip = false;
     if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
@@ -2209,6 +2214,14 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    if (!event.mods.isPopupMenu() && std::abs(p.y - getMixerTop()) <= 6)
+    {
+        draggingDockHeight = true;
+        dockDragStartY = p.y;
+        dockDragStartHeight = mixerHeight;
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return;
+    }
     // Dedicated draggable loop and punch handles on the ruler.
     if (!event.mods.isPopupMenu() && p.y >= transportHeight
         && p.y < getArrangeTop() && p.x >= trackHeaderWidth)
@@ -2670,6 +2683,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingDockHeight)
+    {
+        const int maximumHeight = juce::jmax(246, getHeight() - getArrangeTop() - 110);
+        mixerHeight = juce::jlimit(180, maximumHeight,
+            dockDragStartHeight + dockDragStartY - event.getPosition().y);
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        resized();
+        repaint();
+        return;
+    }
     if (draggingRangeMarker != 0)
     {
         const double seconds = snapLibertyTimelineTime(
@@ -2761,6 +2784,12 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingDockHeight)
+    {
+        draggingDockHeight = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        return;
+    }
     if (draggingRangeMarker != 0)
     {
         draggingRangeMarker = 0;
