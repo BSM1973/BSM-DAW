@@ -79,13 +79,15 @@ public:
     {
         setInterceptsMouseClicks(true, true);
         setWantsKeyboardFocus(true);
-        const juce::String names[] = { "CRÉER UNE SESSION VIDE", "CRÉER 2 PISTES AUDIO", "CRÉER 2 INSTRUMENTS" };
+        const juce::String names[] = { "SESSION VIDE", "2 PISTES AUDIO", "2 INSTRUMENTS", "2 AUDIO + 2 INSTRUMENTS", "8 AUDIO + 8 INSTRUMENTS" };
         const juce::String descriptions[] = {
             "Une session vierge. Construisez votre projet librement.",
             "Deux pistes audio prêtes pour enregistrer et mixer.",
-            "Deux pistes d'instruments virtuels et leurs éditeurs."
+            "Deux pistes d'instruments virtuels et leurs éditeurs.",
+            "Deux pistes audio et deux instruments virtuels.",
+            "Huit pistes audio et huit instruments virtuels."
         };
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < 5; ++i)
         {
             auto button = std::make_unique<juce::TextButton>();
             button->setButtonText(names[i]);
@@ -94,7 +96,7 @@ public:
             button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff244653));
             button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff347483));
             button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffbff));
-            button->onClick = [this,i] { if (onChoose) onChoose(i == 1 ? 2 : 0, i == 2 ? 2 : 0); };
+            button->onClick = [this,i] { if (onChoose) onChoose(i == 1 || i == 3 ? 2 : i == 4 ? 8 : 0, i == 2 || i == 3 ? 2 : i == 4 ? 8 : 0); };
             addAndMakeVisible(*button);
             buttons.push_back(std::move(button));
         }
@@ -126,13 +128,15 @@ public:
         g.setColour(juce::Colour(0xff9db6c4));
         g.setFont(juce::Font(13.0f));
         g.drawText("Choisissez votre point de départ", panel.getX()+40, panel.getY()+170, panel.getWidth()-80, 26, juce::Justification::centredLeft);
-        const juce::String titles[] = { "SESSION VIDE", "PISTES AUDIO", "INSTRUMENTS VIRTUELS" };
+        const juce::String titles[] = { "SESSION VIDE", "2 PISTES AUDIO", "2 INSTRUMENTS", "2 AUDIO + 2 INSTRUMENTS", "8 AUDIO + 8 INSTRUMENTS" };
         const juce::String descriptions[] = {
             "Aucune piste. Un espace entièrement libre.",
             "2 pistes audio pour enregistrer et mixer.",
-            "2 pistes d'instruments virtuels pour composer."
+            "2 pistes d'instruments virtuels pour composer.",
+            "2 pistes audio et 2 instruments virtuels.",
+            "8 pistes audio et 8 instruments virtuels."
         };
-        for (int i=0; i<3; ++i)
+        for (int i=0; i<5; ++i)
         {
             auto card = cardBounds(i);
             g.setColour(juce::Colour(0xff1a2c39));
@@ -146,25 +150,25 @@ public:
             g.drawFittedText(titles[i], card.reduced(18).withHeight(64).withTrimmedTop(15), juce::Justification::centredLeft, 2);
             g.setColour(juce::Colour(0xffa4bcc9));
             g.setFont(juce::Font(12.0f));
-            g.drawFittedText(descriptions[i], juce::Rectangle<int>(card.getX()+18,card.getY()+87,card.getWidth()-36,58),juce::Justification::topLeft,3);
+            g.drawFittedText(descriptions[i], juce::Rectangle<int>(card.getX()+18,card.getY()+74,card.getWidth()-36,55),juce::Justification::topLeft,3);
         }
         g.setColour(juce::Colour(0xff6f91a2));
         g.setFont(juce::Font(11.0f));
-        g.drawText("LIBERTY  |  STATION AUDIONUMÉRIQUE",panel.getX()+36,panel.getBottom()-45,panel.getWidth()-72,20,juce::Justification::centred);
+        g.drawText("LIBERTY  |  STATION AUDIONUMÉRIQUE",panel.getX()+36,panel.getBottom()-28,panel.getWidth()-72,20,juce::Justification::centred);
     }
     void resized() override
     {
-        for (int i=0;i<3;++i)
+        for (int i=0;i<5;++i)
         {
             auto card=cardBounds(i);
-            buttons[(size_t)i]->setBounds(card.getX()+14,card.getBottom()-54,card.getWidth()-28,36);
+            buttons[(size_t)i]->setBounds(card.getX()+14,card.getBottom()-48,card.getWidth()-28,36);
         }
     }
 private:
     juce::Rectangle<int> getPanel() const
     {
         const int width=juce::jmin(1000, juce::jmax(540,getWidth()-48));
-        const int height=juce::jmin(570,juce::jmax(420,getHeight()-48));
+        const int height=juce::jmin(720,juce::jmax(540,getHeight()-48));
         return juce::Rectangle<int>(width,height).withCentre(getLocalBounds().getCentre());
     }
     juce::Rectangle<int> cardBounds(int i) const
@@ -172,7 +176,7 @@ private:
         auto p=getPanel();
         const int gap=16, margin=38;
         const int cw=(p.getWidth()-2*margin-2*gap)/3;
-        return {p.getX()+margin+i*(cw+gap),p.getY()+218,cw,235};
+        return {p.getX()+margin+(i%3)*(cw+gap),p.getY()+212+(i/3)*218,cw,200};
     }
     std::function<void(int,int)> onChoose;
     std::vector<std::unique_ptr<juce::TextButton>> buttons;
