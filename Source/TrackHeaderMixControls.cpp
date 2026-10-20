@@ -143,14 +143,16 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          {
              // The MIDI selector must not depend on the 94px PAN/M-S row:
              // instrument lanes can be shorter, especially after resizing.
-             const bool midiVisible=y>=owner.getArrangeTop()
-                 && y+56<=owner.getMixerTop() && rh>=56;
+             // Bind visibility to the actual logical row under the selector.
+             // A scrolled-out instrument must never draw over an audio header.
+             const int selectorY=y+37;
+             const bool midiVisible=logical>=owner.getTrackScrollRows()
+                 && rh>=56
+                 && selectorY>=owner.getArrangeTop()
+                 && selectorY+19<=owner.getMixerTop()
+                 && owner.getArrangeTrackAtY(selectorY+9)==logical;
+             if(midiVisible)c.midiInput->setBounds(12,selectorY,owner.trackHeaderWidth-24,19);
              c.midiInput->setVisible(midiVisible);
-             if(midiVisible)
-             {
-                 c.midiInput->setBounds(12,y+37,owner.trackHeaderWidth-24,19);
-                 c.midiInput->toFront(false);
-             }
          }
          if(!middleVisible)continue;
          c.pan->setBounds(22,y+62,27,27);
