@@ -79,7 +79,7 @@ private:
          const int logical=logicalTrack(i);
          const int y=owner.getArrangeTrackTop(logical);
          const int rh=owner.getArrangeTrackHeight(logical);
-         const bool middleVisible=y>=owner.getArrangeTop() && y+94<=owner.getMixerTop() && rh>=94;
+         const bool middleVisible=logical>=owner.getTrackScrollRows() && y>=owner.getArrangeTop() && y+94<=owner.getMixerTop() && rh>=94;
          const bool volumeVisible=middleVisible && y+132<=owner.getMixerTop() && rh>=132;
          c.vol->setVisible(volumeVisible);c.pan->setVisible(middleVisible);
          c.mute->setVisible(middleVisible);c.solo->setVisible(middleVisible);
