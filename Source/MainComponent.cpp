@@ -1803,6 +1803,14 @@ void MainComponent::timerCallback()
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
     const int dockY = getMixerTop();
+    const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+    const bool editableTrack = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < firstInstrument + getInstrumentTrackCount();
+    layoutLibertyPianoRollDock(*this,
+        juce::Rectangle<int>(310, dockY + 36, juce::jmax(0, getWidth() - 310),
+                             juce::jmax(0, getHeight() - dockY - 36)),
+        !dockStepSequencerMode && editableTrack
+            && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     stepSequencerDockButton.setBounds(8, dockY + 36, 148, 28);
     stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
