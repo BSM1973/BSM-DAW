@@ -427,6 +427,39 @@ bool MainComponent::resetProjectState()
     return true;
 }
 
+bool MainComponent::configureStartupTracks(int audioCount, int instrumentCount)
+{
+    // Called once from the welcome screen, before the user edits the project.
+    audioCount = juce::jlimit(0, 2, audioCount);
+    instrumentCount = juce::jlimit(0, 2, instrumentCount);
+    audioEngine.setPlaying(false);
+    if (!audioEngine.resetInstrumentPlayback(instrumentCount)) return false;
+    while (audioEngine.getAudioTrackCount() > audioCount)
+        if (!audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1)) return false;
+    while (audioEngine.getAudioTrackCount() < audioCount)
+        if (addAudioTrack() < 0) return false;
+    dynamicMidiTrackCount = 0;
+    additionalMidiEngines.clear();
+    additionalMidiClipStartSeconds.clear();
+    additionalMidiClipLengthSeconds.clear();
+    additionalMidiClipLengthUserDefined.clear();
+    midiStepSequencers.clear();
+    midiEngine.clear();
+    dynamicInstrumentTrackCount = instrumentCount;
+    instrumentStepSequencers.clear();
+    instrumentStepSequencers.resize((size_t) instrumentCount);
+    trackScrollRows = 0;
+    selectedTrack = audioCount > 0 ? 0 : (instrumentCount > 0 ? audioCount : -1);
+    dockStepSequencerMode = false;
+    currentProjectFile = juce::File{};
+    refreshLibertyMixConsole(this);
+    refreshLibertyTrackHeaderMixLayout(this);
+    tempoControls.refresh();
+    markProjectClean();
+    repaint();
+    return true;
+}
+
 void MainComponent::newProject()
 {
     confirmBeforeProjectAction([this]
