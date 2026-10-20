@@ -82,8 +82,8 @@ public:
         const juce::String names[] = { "SESSION VIDE", "2 PISTES AUDIO", "2 INSTRUMENTS", "2 AUDIO + 2 INSTRUMENTS", "8 AUDIO + 8 INSTRUMENTS" };
         const juce::String descriptions[] = {
             "Une session vierge. Construisez votre projet librement.",
-            "Deux pistes audio prêtes pour enregistrer et mixer.",
-            "Deux pistes d'instruments virtuels et leurs éditeurs.",
+            juce::String::fromUTF8("Deux pistes audio prêtes pour enregistrer et mixer."),
+            juce::String::fromUTF8("Deux pistes d'instruments virtuels et leurs éditeurs."),
             "Deux pistes audio et deux instruments virtuels.",
             "Huit pistes audio et huit instruments virtuels."
         };
@@ -121,16 +121,16 @@ public:
         g.drawText("LIBERTY", panel.getX()+54, panel.getY()+30, panel.getWidth()-90, 42, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff7acbd6));
         g.setFont(juce::Font(12.0f, juce::Font::bold));
-        g.drawText("VOTRE STUDIO. VOTRE LIBERTÉ.", panel.getX()+39, panel.getY()+86, panel.getWidth()-78, 24, juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("VOTRE STUDIO. VOTRE LIBERTÉ."), panel.getX()+39, panel.getY()+86, panel.getWidth()-78, 24, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffe0edf3));
         g.setFont(juce::Font(22.0f, juce::Font::bold));
-        g.drawText("Créer une nouvelle session", panel.getX()+39, panel.getY()+130, panel.getWidth()-78, 36, juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Créer une nouvelle session"), panel.getX()+39, panel.getY()+130, panel.getWidth()-78, 36, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff9db6c4));
         g.setFont(juce::Font(13.0f));
-        g.drawText("Choisissez votre point de départ", panel.getX()+40, panel.getY()+170, panel.getWidth()-80, 26, juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Choisissez votre point de départ"), panel.getX()+40, panel.getY()+170, panel.getWidth()-80, 26, juce::Justification::centredLeft);
         const juce::String titles[] = { "SESSION VIDE", "2 PISTES AUDIO", "2 INSTRUMENTS", "2 AUDIO + 2 INSTRUMENTS", "8 AUDIO + 8 INSTRUMENTS" };
         const juce::String descriptions[] = {
-            "Aucune piste. Un espace entièrement libre.",
+            juce::String::fromUTF8("Aucune piste. Un espace entièrement libre."),
             "2 pistes audio pour enregistrer et mixer.",
             "2 pistes d'instruments virtuels pour composer.",
             "2 pistes audio et 2 instruments virtuels.",
@@ -154,7 +154,7 @@ public:
         }
         g.setColour(juce::Colour(0xff6f91a2));
         g.setFont(juce::Font(11.0f));
-        g.drawText("LIBERTY  |  STATION AUDIONUMÉRIQUE",panel.getX()+36,panel.getBottom()-28,panel.getWidth()-72,20,juce::Justification::centred);
+        g.drawText(juce::String::fromUTF8("LIBERTY  |  STATION AUDIONUMÉRIQUE"),panel.getX()+36,panel.getBottom()-28,panel.getWidth()-72,20,juce::Justification::centred);
     }
     void resized() override
     {
