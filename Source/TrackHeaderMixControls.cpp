@@ -122,7 +122,7 @@ if(!isAudio(i))
   const int index=id-2;
   if(index>=0 && index<devices.size())owner.audioEngine.setInstrumentMidiInput(t,devices[index].identifier);
  };
- owner.addAndMakeVisible(*box);
+ addAndMakeVisible(*box);
 }
 auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScrollWheelEnabled(false);v->setLookAndFeel(&volumeLf);v->setVelocityBasedMode(false);v->setRange(0,2,.001);v->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);v->setTooltip("Volume de la piste (double-clic = 0 dB)");v->setDoubleClickReturnValue(true,1.0);v->textFromValueFunction=[](double value){return value <= 0.00001 ? juce::String("-inf dB") : juce::String(20.0*std::log10(value),1)+" dB";};v->valueFromTextFunction=[](const juce::String& text){return juce::jlimit(0.0,2.0,std::pow(10.0,text.getDoubleValue()/20.0));};v->onValueChange=[this,i,v]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackGain(i,(float)v->getValue());else owner.audioEngine.setInstrumentTrackGain(i-owner.getAudioTrackCount(),(float)v->getValue());};auto*p=c.pan.get();p->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);p->setRotaryParameters(juce::MathConstants<float>::pi * 1.25f,juce::MathConstants<float>::pi * 2.75f,true);p->setDoubleClickReturnValue(true,0.0);p->setTooltip("PAN : gauche / centre / droite (double-clic = centre)");p->setRange(-1,1,.001);p->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);p->setLookAndFeel(&lf);p->onValueChange=[this,i,p]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackPan(i,(float)p->getValue());else owner.audioEngine.setInstrumentTrackPan(i-owner.getAudioTrackCount(),(float)p->getValue());};c.mute->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackMuted(i,!owner.audioEngine.isTrackMuted(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackMuted(t,!owner.audioEngine.isInstrumentTrackMuted(t));}};c.solo->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackSolo(i,!owner.audioEngine.isTrackSolo(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackSolo(t,!owner.audioEngine.isInstrumentTrackSolo(t));}};for(auto*b:{c.mute.get(),c.solo.get()}){b->setMouseClickGrabsKeyboardFocus(false);b->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*b);}addAndMakeVisible(*v);addAndMakeVisible(*p);addAndMakeVisible(*c.mask);controls.push_back(std::move(c));}}
  void layout()
@@ -145,9 +145,15 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              // an owner child, positioned in owner coordinates every refresh.
              const int selectorY=y+37;
              c.midiInput->setBounds(12,selectorY,owner.trackHeaderWidth-24,19);
-             c.midiInput->setVisible(y>=owner.getArrangeTop()
-                 && logical>=owner.getTrackScrollRows()
-                 && rh>=56 && selectorY+19<=owner.getMixerTop());
+             // Both position and parent must match the header overlay.
+             // A selector can only appear when its actual hit-tested row is
+             // the instrument row it belongs to (never an audio row).
+             const bool visible=logical>=owner.getTrackScrollRows()
+                 && rh>=56 && y>=owner.getArrangeTop()
+                 && selectorY+19<=owner.getMixerTop()
+                 && owner.getArrangeTrackAtY(selectorY)==logical
+                 && owner.getArrangeTrackAtY(selectorY+18)==logical;
+             c.midiInput->setVisible(visible);
          }
          if(!middleVisible)continue;
          c.pan->setBounds(22,y+62,27,27);
