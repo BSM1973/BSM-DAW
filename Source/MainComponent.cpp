@@ -87,6 +87,7 @@ void MainComponent::updateLoopPunchButtons()
 
 MainComponent::MainComponent()
 {
+    addAndMakeVisible(dockMixerInputLayer);
     // Native child button receives clicks even if another controller overlays
     // the dock; the sequencer itself stays embedded in the original dock.
     stepSequencerDockButton.setMouseClickGrabsKeyboardFocus(false);
@@ -1854,7 +1855,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.toFront(false); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), getHeight() - getMixerTop()); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -1865,6 +1866,12 @@ void MainComponent::timerCallback()
     ensureLibertyAudioRecordingController(this);
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
+    dockResizeHandle.toFront(false);
+    // Keep mixer hit-testing above overlays that repaint or reorder themselves.
+    dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), getHeight() - getMixerTop());
+    dockMixerInputLayer.setVisible(!dockStepSequencerMode
+        && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
     dockResizeHandle.toFront(false);
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
