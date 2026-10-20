@@ -20,6 +20,8 @@ void resizeLibertyBrowserResizeController(MainComponent*);
 void resizeLibertyMultiMidiClipController(MainComponent*);
 void ensureLibertyAudioRecordingController(MainComponent*);
 void ensureLibertyBrowserController(MainComponent*);
+bool isLibertyMixConsoleVisible(MainComponent*);
+bool isLibertyPerformVisible(MainComponent*);
 bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
