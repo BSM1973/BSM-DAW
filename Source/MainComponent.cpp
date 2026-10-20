@@ -192,12 +192,12 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.setColour(juce::Colour(0xff111c26));
     g.fillRect(0, dock.getY(), 310, dock.getHeight());
     g.setColour(juce::Colour(0xff344452));
-    g.fillRect(309, dock.getY() + 4, 1, juce::jmax(0, dock.getHeight() - 8));
+    g.fillRect(309, dock.getY() + 12, 1, juce::jmax(0, dock.getHeight() - 8));
     g.setColour(juce::Colour(0xff111c26));
     g.fillRect(dock.withHeight(36));
     const auto tab = [&](int x, int w, const juce::String& name, bool active)
     {
-        auto r = juce::Rectangle<int>(x, dock.getY() + (name == "PIANO ROLL" ? 4 : name == "STEP SEQ" ? 36 : name == "DRUM SAMPLER" ? 68 : 4), w, 28);
+        auto r = juce::Rectangle<int>(x, dock.getY() + (name == "PIANO ROLL" ? 12 : name == "STEP SEQ" ? 44 : name == "DRUM SAMPLER" ? 76 : 12), w, 28);
         g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
@@ -206,9 +206,10 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
         g.setFont(juce::Font(12.0f, juce::Font::bold));
         g.drawText(name, r, juce::Justification::centred);
     };
+    const bool drumActive = floatingDrumSamplerWindow != nullptr && floatingDrumSamplerWindow->isVisible();
     tab(8, 148, "PIANO ROLL", false);
-    tab(8, 148, "STEP SEQ", true);
-    tab(8, 148, "DRUM SAMPLER", false);
+    tab(8, 148, "STEP SEQ", !drumActive);
+    tab(8, 148, "DRUM SAMPLER", drumActive);
     // The detach affordance is a small window-with-arrow icon beside each tab.
     const auto drawDetachIcon = [&](int y)
     {
@@ -275,13 +276,14 @@ void MainComponent::paint(juce::Graphics& g)
     else
         drawMixer(g, editorArea);
 
+    const bool drumSamplerActive = floatingDrumSamplerWindow != nullptr && floatingDrumSamplerWindow->isVisible();
     // Shared editor navigation for MIDI and instrument tracks.
     const bool isMidi = selectedTrack >= getAudioTrackCount()
                      && selectedTrack < instrumentFirst;
     // The editor tabs must remain reachable even when an Audio track is selected.
     // Previously the STEP SEQ tab disappeared with the selected Instrument track.
     {
-        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 148, 28);
+        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28);
         const auto piano = tabs.removeFromLeft(148);
         const auto seq = juce::Rectangle<int>(8, piano.getY() + 32, 148, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
@@ -301,10 +303,10 @@ void MainComponent::paint(juce::Graphics& g)
             g.setFont(juce::Font(12.0f, juce::Font::bold));
             g.drawText(label, rect, juce::Justification::centred);
         };
-        drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
+        drawTab(piano, "PIANO ROLL", !dockStepSequencerMode && !drumSamplerActive);
         // Detach Piano Roll without changing which dock editor is selected.
         g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 4.0f, 28.0f, 28.0f), 5.0f);
+        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 12.0f, 28.0f, 28.0f), 5.0f);
         g.setColour(juce::Colour(0xffc4e7ee));
         g.drawRect(180, mixer.getY() + 16, 11, 9, 1);
         g.drawLine(187.0f, (float)mixer.getY() + 19.0f, 195.0f, (float)mixer.getY() + 11.0f, 1.6f);
@@ -312,15 +314,15 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawLine(195.0f, (float)mixer.getY() + 11.0f, 195.0f, (float)mixer.getY() + 16.0f, 1.6f);
         // Same detach icon for the Step Sequencer, directly below Piano Roll.
         g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 36.0f, 28.0f, 28.0f), 5.0f);
+        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 44.0f, 28.0f, 28.0f), 5.0f);
         g.setColour(juce::Colour(0xffc4e7ee));
         g.drawRect(180, mixer.getY() + 48, 11, 9, 1);
         g.drawLine(187.0f, (float)mixer.getY() + 51.0f, 195.0f, (float)mixer.getY() + 43.0f, 1.6f);
         g.drawLine(190.0f, (float)mixer.getY() + 43.0f, 195.0f, (float)mixer.getY() + 43.0f, 1.6f);
         g.drawLine(195.0f, (float)mixer.getY() + 43.0f, 195.0f, (float)mixer.getY() + 48.0f, 1.6f);
-        drawTab(seq, "STEP SEQ", dockStepSequencerMode && (showStepSequencer || isMidi));
+        drawTab(seq, "STEP SEQ", dockStepSequencerMode && !drumSamplerActive && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
-        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", false);
+        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
 
     }
 }
@@ -1867,7 +1869,10 @@ void MainComponent::timerCallback()
                              juce::jmax(0, getHeight() - dockY - 36)),
         !dockStepSequencerMode && editableTrack
             && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-    stepSequencerDockButton.setBounds(8, dockY + 36, 148, 28);
+    stepSequencerDockButton.setBounds(8, dockY + 44, 148, 28);
+    stepSequencerDockButton.setColour(juce::TextButton::buttonColourId,
+        dockStepSequencerMode && !(floatingDrumSamplerWindow && floatingDrumSamplerWindow->isVisible())
+            ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
     stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
@@ -2339,17 +2344,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
     }
     // Compact detach icons: Piano Roll (top) and Step Sequencer (second row).
-    if (juce::Rectangle<int>(174, getMixerTop() + 4, 28, 28).contains(p))
+    if (juce::Rectangle<int>(174, getMixerTop() + 12, 28, 28).contains(p))
     {
         openLibertyMidiEditor(*this);
         return;
     }
-    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 36, 28, 28).contains(p))
+    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 124, 28, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
     }
-    if (juce::Rectangle<int>(8, getMixerTop() + 68, 148, 28).contains(p))
+    if (juce::Rectangle<int>(8, getMixerTop() + 76, 148, 28).contains(p))
     {
         const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
         if (selectedTrack >= getAudioTrackCount()
@@ -2365,10 +2370,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                            && selectedTrack < dockInstrumentFirst;
     const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
                                  && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
-    if (p.y >= getMixerTop() + 4 && p.y < getMixerTop() + 32)
+    if (p.y >= getMixerTop() + 12 && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
-        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 36 && p.y < getMixerTop() + 64)
+        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 124 && p.y < getMixerTop() + 64)
         {
             // Reconnect the permanent STEP SEQ button to the existing sequencer.
             // Keep the full 8-pattern/64-step editor and its existing state.
@@ -2393,7 +2398,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             return;
         }
     }
-    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 4
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 12
         && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
@@ -2504,16 +2509,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
     const bool instrumentDockSelected = selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
-    if (p.x >= 310 && p.y >= getMixerTop() + 36 && dockStepSequencerMode && instrumentDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 124 && dockStepSequencerMode && instrumentDockSelected)
     {
-        handleStepSequencerClick(p, juce::Rectangle<int>(310, getMixerTop() + 36, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
+        handleStepSequencerClick(p, juce::Rectangle<int>(310, getMixerTop() + 124, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
         return;
     }
     const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
-    if (p.x >= 310 && p.y >= getMixerTop() + 36 && dockStepSequencerMode && midiDockSelected)
+    if (p.x >= 310 && p.y >= getMixerTop() + 124 && dockStepSequencerMode && midiDockSelected)
     {
-        clickMidiStepSequencer(p, juce::Rectangle<int>(310, getMixerTop() + 36, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
+        clickMidiStepSequencer(p, juce::Rectangle<int>(310, getMixerTop() + 124, juce::jmax(0, getWidth() - 310), mixerHeight - 36));
         return;
     }
 
