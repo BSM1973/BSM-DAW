@@ -108,6 +108,7 @@ MainComponent::MainComponent()
             else return;
         }
         dockStepSequencerMode = true;
+        dockMixerMode = false;
         repaint();
     };
     addAndMakeVisible(stepSequencerDockButton);
@@ -181,7 +182,7 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
-    if (!dockStepSequencerMode) return;
+    if (!dockStepSequencerMode || dockMixerMode) return;
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool instrument = selectedTrack >= instrumentFirst
         && selectedTrack < instrumentFirst + getInstrumentTrackCount();
@@ -266,11 +267,11 @@ void MainComponent::paint(juce::Graphics& g)
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
     const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    if (dockStepSequencerMode && isMidiDockTrack)
+    if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
-    else if (showStepSequencer && dockStepSequencerMode)
+    else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, editorArea);
-    else if (!dockStepSequencerMode && (isMidiDockTrack || showStepSequencer))
+    else if (!dockMixerMode && !dockStepSequencerMode && (isMidiDockTrack || showStepSequencer))
     {
         // The embedded Piano Roll owns the editor surface; never draw mixer
         // strips underneath its native JUCE component.
@@ -289,7 +290,7 @@ void MainComponent::paint(juce::Graphics& g)
     {
         auto tabs = juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28);
         const auto piano = tabs.removeFromLeft(148);
-        const auto seq = juce::Rectangle<int>(8, piano.getY() + 32, 148, piano.getHeight());
+        const auto seq = juce::Rectangle<int>(8, piano.getY() + 64, 148, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
         {
             g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
@@ -307,7 +308,8 @@ void MainComponent::paint(juce::Graphics& g)
             g.setFont(juce::Font(12.0f, juce::Font::bold));
             g.drawText(label, rect, juce::Justification::centred);
         };
-        drawTab(piano, "PIANO ROLL", !dockStepSequencerMode && !drumSamplerActive);
+        drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
+        drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode && !drumSamplerActive);
         // Detach Piano Roll without changing which dock editor is selected.
         g.setColour(juce::Colour(0xff263644));
         g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 12.0f, 28.0f, 28.0f), 5.0f);
@@ -1856,7 +1858,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(selectedTrack < getAudioTrackCount() && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -1881,9 +1883,9 @@ void MainComponent::timerCallback()
     layoutLibertyPianoRollDock(*this,
         juce::Rectangle<int>(310, dockY + 36, juce::jmax(0, getWidth() - 310),
                              juce::jmax(0, getHeight() - dockY - 36)),
-        !dockStepSequencerMode && editableTrack
+        !dockMixerMode && !dockStepSequencerMode && editableTrack
             && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-    stepSequencerDockButton.setBounds(8, dockY + 44, 148, 28);
+    stepSequencerDockButton.setBounds(8, dockY + 76, 148, 28);
     stepSequencerDockButton.setColour(juce::TextButton::buttonColourId,
         dockStepSequencerMode && !(isLibertyFloatingDrumSamplerVisible())
             ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
@@ -2089,7 +2091,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         {
             const int logical = isAudio ? channel
                 : audioTracks + getMidiTrackCount() + (channel - audioTracks);
-            if (selectedTrack != logical) dockStepSequencerMode = false;
+            if (selectedTrack != logical) { dockStepSequencerMode = false; dockMixerMode = true; }
             selectedTrack = logical;
             repaint(); // Selection focus must update even on a plain strip click.
         }
@@ -2422,6 +2424,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (p.x >= tabX && p.x < tabX + 148)
         {
             dockStepSequencerMode = false;
+            dockMixerMode = false;
             repaint();
             return;
         }
@@ -2429,7 +2432,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             // MIDI-track Pattern playback needs its own routing and persistence;
             // do not pretend the instrument sequencer edits the selected MIDI track.
-            if (selectedInstrument || selectedMidi) dockStepSequencerMode = true;
+            if (selectedInstrument || selectedMidi) { dockStepSequencerMode = true; dockMixerMode = false; }
             repaint();
             return;
         }
@@ -2440,7 +2443,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                       && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
     // Mixer strips take their own mouse events regardless of the selected track.
     // In particular, never let an audio strip click fall through to an editor.
-    if (p.y >= getMixerTop() && (!stepSequencerDockActive || !dockStepSequencerMode)
+    if (p.y >= getMixerTop() && dockMixerMode
         && handleMixerMouse(event)) return;
 
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
@@ -2592,7 +2595,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
-        if (selectedTrack != track) dockStepSequencerMode = false;
+        if (selectedTrack != track) { dockStepSequencerMode = false; dockMixerMode = true; }
         selectedTrack = track;
         if (isPointInsideAudioClip(track, p))
         {
@@ -2688,7 +2691,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
         if (logicalRow >= midiFirst && logicalRow < totalRows)
         {
-            if (selectedTrack != logicalRow) dockStepSequencerMode = false;
+            if (selectedTrack != logicalRow) { dockStepSequencerMode = false; dockMixerMode = true; }
             selectedTrack = logicalRow;
             if (logicalRow >= instrumentFirst && p.x >= headerW)
             {
