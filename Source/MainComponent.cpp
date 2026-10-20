@@ -383,7 +383,9 @@ void MainComponent::showFloatingStepSequencer()
     if (!floatingStepSequencerWindow)
         floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
     floatingStepSequencerWindow->setVisible(true);
-    floatingStepSequencerWindow->toFront(true);
+    // Bringing a secondary editor forward must not transfer keyboard focus
+    // away from the selected instrument lane in the main arrangement.
+    floatingStepSequencerWindow->toFront(false);
     selectedTrack = sourceTrack;
     repaint();
 }
