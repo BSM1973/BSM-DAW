@@ -182,7 +182,7 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.fillRect(dock.withHeight(36));
     const auto tab = [&](int x, int w, const juce::String& name, bool active)
     {
-        auto r = juce::Rectangle<int>(x, dock.getY() + 4, w, 28);
+        auto r = juce::Rectangle<int>(x, dock.getY() + (name == "PIANO ROLL" ? 4 : name == "STEP SEQ" ? 36 : name == "DRUM SAMPLER" ? 68 : 4), w, 28);
         g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
@@ -191,9 +191,9 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
         g.setFont(juce::Font(12.0f, juce::Font::bold));
         g.drawText(name, r, juce::Justification::centred);
     };
-    tab(8, 118, "PIANO ROLL", false);
-    tab(134, 118, "STEP SEQ", true);
-    tab(260, 148, "DRUM SAMPLER", false);
+    tab(8, 148, "PIANO ROLL", false);
+    tab(8, 148, "STEP SEQ", true);
+    tab(8, 148, "DRUM SAMPLER", false);
     tab(416, 106, "DETACHER", false);
 }
 
@@ -231,9 +231,9 @@ void MainComponent::paint(juce::Graphics& g)
     // The editor tabs must remain reachable even when an Audio track is selected.
     // Previously the STEP SEQ tab disappeared with the selected Instrument track.
     {
-        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 244, 28);
+        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 148, 28);
         const auto piano = tabs.removeFromLeft(118);
-        const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
+        const auto seq = juce::Rectangle<int>(8, piano.getY() + 32, 148, piano.getHeight());
         const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
         {
             g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
@@ -254,7 +254,7 @@ void MainComponent::paint(juce::Graphics& g)
         drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
         drawTab(seq, "STEP SEQ", dockStepSequencerMode && (showStepSequencer || isMidi));
         // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
-        drawTab(juce::Rectangle<int>(seq.getRight() + 8, seq.getY(), 148, seq.getHeight()), "DRUM SAMPLER", false);
+        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", false);
         if ((showStepSequencer || isMidi) && dockStepSequencerMode)
         {
             const auto detach = juce::Rectangle<int>(416, mixer.getY() + 4, 106, 28);
@@ -1786,7 +1786,7 @@ void MainComponent::timerCallback()
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
     const int dockY = getMixerTop();
-    stepSequencerDockButton.setBounds(134, dockY + 4, 118, 28);
+    stepSequencerDockButton.setBounds(8, dockY + 36, 148, 28);
     stepSequencerDockButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
@@ -2251,7 +2251,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         showFloatingStepSequencer();
         return;
     }
-    if (juce::Rectangle<int>(260, getMixerTop() + 4, 148, 28).contains(p))
+    if (juce::Rectangle<int>(8, getMixerTop() + 68, 148, 28).contains(p))
     {
         const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
         if (selectedTrack >= getAudioTrackCount()
@@ -2269,7 +2269,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (p.y >= getMixerTop() + 4 && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
-        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 36 && p.y < getMixerTop() + 64)
         {
             // Reconnect the permanent STEP SEQ button to the existing sequencer.
             // Keep the full 8-pattern/64-step editor and its existing state.
