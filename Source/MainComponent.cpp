@@ -364,6 +364,15 @@ void showFloatingDrumSamplerWindow(AudioEngine& engine)
 
 void MainComponent::showFloatingStepSequencer()
 {
+    const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+    const bool validSource = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < firstInstrument + getInstrumentTrackCount();
+    if (validSource)
+        floatingStepSequencerTrack = selectedTrack;
+    else if (floatingStepSequencerTrack < getAudioTrackCount()
+             || floatingStepSequencerTrack >= firstInstrument + getInstrumentTrackCount())
+        floatingStepSequencerTrack = getInstrumentTrackCount() > 0 ? firstInstrument
+            : (getMidiTrackCount() > 0 ? getAudioTrackCount() : -1);
     if (!floatingStepSequencerWindow)
         floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
     floatingStepSequencerWindow->setVisible(true);
