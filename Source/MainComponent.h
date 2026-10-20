@@ -21,7 +21,8 @@ bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine
 
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
-                            private juce::Timer
+                            private juce::Timer,
+                            private juce::ScrollBar::Listener
 {
 public:
     MainComponent();
@@ -345,7 +346,7 @@ public:
                 return false;
             const int count = owner.getAudioTrackCount() + owner.getInstrumentTrackCount();
             for (int i = 0; i < count; ++i)
-                if (juce::Rectangle<int>(220 + i * 125, 12, 116, juce::jmax(1, getHeight() - 22)).contains(x, y))
+                if (juce::Rectangle<int>(220 + i * 125 - owner.mixerHorizontalOffset, 12, 116, juce::jmax(1, getHeight() - 22)).contains(x, y))
                     return true;
             return false;
         }
@@ -362,6 +363,34 @@ public:
         MainComponent& owner;
     };
     DockMixerInputLayer dockMixerInputLayer { *this };
+    juce::ScrollBar mixerHorizontalScrollBar { false };
+    int mixerHorizontalOffset = 0;
+    void scrollBarMoved(juce::ScrollBar* bar, double newRangeStart) override
+    {
+        if (bar == &mixerHorizontalScrollBar)
+        {
+            mixerHorizontalOffset = juce::jmax(0, (int) std::lround(newRangeStart));
+            repaint();
+        }
+    }
+    void updateMixerHorizontalScrollBar()
+    {
+        const int channelCount = getAudioTrackCount() + getInstrumentTrackCount() + 1;
+        const int viewportWidth = juce::jmax(1, getWidth() - 220);
+        const int contentWidth = channelCount * 125;
+        const int maximumOffset = juce::jmax(0, contentWidth - viewportWidth);
+        mixerHorizontalOffset = juce::jlimit(0, maximumOffset, mixerHorizontalOffset);
+        const bool show = dockMixerMode && maximumOffset > 0;
+        mixerHorizontalScrollBar.setVisible(show);
+        mixerHorizontalScrollBar.setBounds(220, getHeight() - 18,
+                                          juce::jmax(0, getWidth() - 228), 14);
+        mixerHorizontalScrollBar.setRangeLimits(0.0, (double)juce::jmax(contentWidth, viewportWidth));
+        mixerHorizontalScrollBar.setCurrentRange((double)mixerHorizontalOffset, (double)viewportWidth,
+                                                juce::dontSendNotification);
+        mixerHorizontalScrollBar.setSingleStepSize(125.0);
+        if (show) mixerHorizontalScrollBar.toFront(false);
+    }
+
     DockResizeHandle dockResizeHandle;
     int mixerHeight = 246;
     bool draggingDockHeight = false;
