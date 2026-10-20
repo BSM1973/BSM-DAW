@@ -140,6 +140,39 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
+void MainComponent::paintOverChildren(juce::Graphics& g)
+{
+    if (!dockStepSequencerMode) return;
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool instrument = selectedTrack >= instrumentFirst
+        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool midi = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < instrumentFirst;
+    if (!instrument && !midi) return;
+    const auto dock = juce::Rectangle<int>(0, getMixerTop(), getWidth(), getHeight() - getMixerTop());
+    if (dock.getHeight() <= 36) return;
+    const auto editor = dock.withTrimmedTop(36);
+    if (instrument) drawStepSequencerDock(g, editor);
+    else drawMidiStepSequencer(g, editor);
+    g.setColour(juce::Colour(0xff111c26));
+    g.fillRect(dock.withHeight(36));
+    const auto tab = [&](int x, int w, const juce::String& name, bool active)
+    {
+        auto r = juce::Rectangle<int>(x, dock.getY() + 4, w, 28);
+        g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
+        g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawText(name, r, juce::Justification::centred);
+    };
+    tab(8, 118, "PIANO ROLL", false);
+    tab(134, 118, "STEP SEQ", true);
+    tab(260, 148, "DRUM SAMPLER", false);
+    tab(416, 106, "DETACHER", false);
+}
+
 void MainComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
@@ -2212,7 +2245,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             dockStepSequencerMode = true;
             // Always open the existing full editor window as well: the dock
             // can be hidden by page overlays or reduced by window geometry.
-            showFloatingStepSequencer();
             repaint();
             return;
         }
