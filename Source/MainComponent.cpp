@@ -2463,7 +2463,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // match TrackHeaderMixControls exactly; never use the obsolete +36 row.
     if (p.x < trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
     {
-        const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / rowH;
+        const int logicalRow = getArrangeTrackAtY(p.y);
         const int instrumentFirst = audioTrackCount + midiTrackCount;
         if (logicalRow >= 0 && (logicalRow < audioTrackCount ||
                                 (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)))
@@ -2590,7 +2590,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int rowOffset = p.y - getArrangeTop();
     if (rowOffset >= 0 && p.y < getMixerTop())
     {
-        const int logicalRow = getTrackScrollRows() + rowOffset / rowH;
+        const int logicalRow = getArrangeTrackAtY(p.y);
         const int midiFirst = audioTrackCount;
         const int instrumentFirst = midiFirst + midiTrackCount;
         const int totalRows = instrumentFirst + instrumentTrackCount;
