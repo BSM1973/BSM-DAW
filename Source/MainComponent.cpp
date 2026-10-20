@@ -2334,7 +2334,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (selectedInstrument)
         {
             floatingDrumSamplerSourceTrack = selectedTrack;
+            // The Drum Sampler opens separately; keep the dock on the full mixer.
+            dockMixerMode = true;
+            dockStepSequencerMode = false;
             showFloatingDrumSamplerWindow(audioEngine);
+            repaint();
         }
         return;
     }
