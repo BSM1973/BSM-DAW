@@ -244,6 +244,11 @@ void MainComponent::paint(juce::Graphics& g)
         g.reduceClipRegion(bounds);
         drawTrackArea(g, bounds);
     }
+    // Permanent visible gold resize rail, drawn across the full draggable boundary.
+    g.setColour(juce::Colour(0xffb88732));
+    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
+    g.setColour(juce::Colour(0xffffdf83));
+    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
     // Visual dock boundary only; leave editor and tab hit areas unchanged.
     g.setColour(juce::Colour(0xff070b10));
     g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
