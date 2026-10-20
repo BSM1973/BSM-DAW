@@ -274,8 +274,18 @@ public:
     {
         int y = getArrangeTop();
         const int first = getTrackScrollRows();
-        for (int row = first; row < logicalRow; ++row)
-            y += getArrangeTrackHeight(row);
+        // Scrolled-out tracks must remain above the viewport, not collapse
+        // onto the first visible row and stack their native controls there.
+        if (logicalRow < first)
+        {
+            for (int row = logicalRow; row < first; ++row)
+                y -= getArrangeTrackHeight(row);
+        }
+        else
+        {
+            for (int row = first; row < logicalRow; ++row)
+                y += getArrangeTrackHeight(row);
+        }
         return y;
     }
     int getArrangeTrackAtY(int y) const noexcept
