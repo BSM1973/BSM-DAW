@@ -368,6 +368,9 @@ void showFloatingDrumSamplerWindow(AudioEngine& engine)
 
 void MainComponent::showFloatingStepSequencer()
 {
+    // Detaching is a window operation, not a track-selection operation.
+    // Preserve the instrument/MIDI lane in ARRANGE while the editor gains focus.
+    const int sourceTrack = selectedTrack;
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool validSource = selectedTrack >= getAudioTrackCount()
         && selectedTrack < firstInstrument + getInstrumentTrackCount();
@@ -381,6 +384,8 @@ void MainComponent::showFloatingStepSequencer()
         floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
     floatingStepSequencerWindow->setVisible(true);
     floatingStepSequencerWindow->toFront(true);
+    selectedTrack = sourceTrack;
+    repaint();
 }
 
 void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
