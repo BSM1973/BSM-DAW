@@ -45,6 +45,18 @@ public:
             setInterceptsMouseClicks(true, false);
         }
 
+        bool hitTest(int x, int y) override
+        {
+            // Never intercept track-header clicks, even if a stale clip handle
+            // is temporarily positioned over a different track.
+            const auto ownerPoint = localPointToGlobal(juce::Point<int>(x, y));
+            const auto p = controller.owner.getLocalPoint(nullptr, ownerPoint);
+            return p.x >= MainComponent::trackHeaderWidth
+                && p.y >= controller.owner.getArrangeTop()
+                && p.y < controller.owner.getMixerTop()
+                && controller.owner.getArrangeTrackAtY(p.y) == track;
+        }
+
         void paint(juce::Graphics& g) override
         {
             const bool active = controller.dragTrack == track && controller.dragSide == side;
@@ -232,7 +244,8 @@ private:
             const int clipW = juce::jmax(2, (int)std::llround(owner.audioEngine.getAudioFileLengthSeconds(t) * pps));
             const int y = rowY + 4;
             const int h = rowH - 8;
-            left.setBounds(clipX - handleWidth / 2, y, handleWidth, h);
+            left.setBounds(juce::jmax(headerWidth, clipX - handleWidth / 2), y,
+                           juce::jmax(0, clipX + handleWidth / 2 - juce::jmax(headerWidth, clipX - handleWidth / 2)), h);
             right.setBounds(clipX + clipW - handleWidth / 2, y, handleWidth, h);
         }
         toFront(false);
