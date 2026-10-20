@@ -42,6 +42,8 @@ public:
     bool loopEnabled = false, punchInEnabled = false, punchOutEnabled = false;
     bool punchRecordingRequested = false, punchWaitingForIn = false;
     int draggingRangeMarker = 0;
+    double loopDragAnchorSeconds = 0.0, loopDragInitialStartSeconds = 0.0;
+    double loopDragInitialEndSeconds = 0.0;
     juce::TextButton punchInButton { "IN" }, loopButton { "LOOP" }, punchOutButton { "OUT" };
     bool hasUnsavedChanges() const;
     void requestClose(std::function<void(bool)> completion);
