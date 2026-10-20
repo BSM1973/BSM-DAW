@@ -69,6 +69,17 @@ public:
      owner.selectedTrack=logical;
      owner.repaint();
  }
+ void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+ {
+  if(stopped || isLibertyMixConsoleVisible(&owner) || isLibertyPerformVisible(&owner))return;
+  const auto p=e.getEventRelativeTo(&owner).getPosition();
+  if(p.x<0 || p.x>=owner.trackHeaderWidth || p.y<owner.getArrangeTop() || p.y>=owner.getMixerTop())return;
+  if(wheel.deltaY==0.0f || e.mods.isCtrlDown() || e.mods.isCommandDown())return;
+  const int current=owner.getTrackScrollRows();
+  const int step=wheel.deltaY<0.0f ? 1 : -1;
+  const int next=juce::jlimit(0,juce::jmax(0,owner.getTotalArrangeTrackCount()-1),current+step);
+  if(next!=current){owner.setTrackScrollRows(next);refreshTrackLayout();}
+ }
  void paint(juce::Graphics&g)override
  {
      g.reduceClipRegion(getLocalBounds());
