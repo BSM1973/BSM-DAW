@@ -37,7 +37,7 @@ public:
  }
 };
 struct Controls{std::unique_ptr<juce::Slider>vol,pan;std::unique_ptr<juce::TextButton>mute,solo;std::unique_ptr<juce::Component>mask;};
-class TrackHeaderMixControls final:public juce::Component,private juce::Timer,private juce::MouseListener{
+class TrackHeaderMixControls final:public juce::Component,private juce::Timer{
 public:
  explicit TrackHeaderMixControls(MainComponent&o):owner(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
  ~TrackHeaderMixControls()override{shutdown();clear();}
