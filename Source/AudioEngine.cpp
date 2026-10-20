@@ -33,7 +33,7 @@ bool AudioEngine::initialise()
         selectedMidiInput = midiDevices.getFirst().identifier;
     for (const auto& midiDevice : midiDevices)
     {
-        const bool selected = midiDevice.identifier == selectedMidiInput;
+        const bool selected = true; // All devices available for per-instrument routing.
         deviceManager.setMidiInputDeviceEnabled(midiDevice.identifier, selected);
         if (selected)
             deviceManager.addMidiInputDeviceCallback(midiDevice.identifier, this);
@@ -64,11 +64,15 @@ std::vector<AudioEngine::CapturedMidiEvent> AudioEngine::endMidiCapture()
     return std::move(capturedMidiEvents);
 }
 
-void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message)
+void AudioEngine::handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message)
 {
-    if (monitoredInstrumentTrack.load(std::memory_order_acquire) >= 0)
+    const juce::String sourceId = source != nullptr ? source->getIdentifier() : juce::String();
+    const int monitored = monitoredInstrumentTrack.load(std::memory_order_acquire);
+    const int capturing = midiCaptureTrack.load(std::memory_order_acquire);
+    if (monitored >= 0 && (getInstrumentMidiInput(monitored).isEmpty() || getInstrumentMidiInput(monitored) == sourceId))
         liveMidiCollector.addMessageToQueue(message);
-    if (midiCaptureTrack.load(std::memory_order_acquire) >= 0 && (message.isNoteOn() || message.isNoteOff()))
+    if (capturing >= 0 && (getInstrumentMidiInput(capturing).isEmpty() || getInstrumentMidiInput(capturing) == sourceId)
+        && (message.isNoteOn() || message.isNoteOff()))
     {
         const juce::ScopedLock lock(midiCaptureLock);
         if (midiCaptureTrack.load(std::memory_order_relaxed) >= 0)
@@ -76,17 +80,31 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMe
     }
 }
 
+void AudioEngine::setInstrumentMidiInput(int track, const juce::String& identifier)
+{
+    if (track < 0) return;
+    const juce::ScopedLock lock(instrumentMidiInputLock);
+    instrumentMidiInputs[track] = identifier;
+}
+
+juce::String AudioEngine::getInstrumentMidiInput(int track) const
+{
+    const juce::ScopedLock lock(instrumentMidiInputLock);
+    const auto it = instrumentMidiInputs.find(track);
+    return it == instrumentMidiInputs.end() ? juce::String() : it->second;
+}
+
 void AudioEngine::selectMidiInput(const juce::String& identifier)
 {
-    if (selectedMidiInput == identifier) return;
+    selectedMidiInput = identifier;
+    // Legacy global choice remains available in settings, but devices stay
+    // enabled so that individual instrument tracks can use different inputs.
     for (const auto& device : juce::MidiInput::getAvailableDevices())
     {
         deviceManager.removeMidiInputDeviceCallback(device.identifier, this);
-        deviceManager.setMidiInputDeviceEnabled(device.identifier, device.identifier == identifier);
-        if (device.identifier == identifier)
-            deviceManager.addMidiInputDeviceCallback(device.identifier, this);
+        deviceManager.setMidiInputDeviceEnabled(device.identifier, true);
+        deviceManager.addMidiInputDeviceCallback(device.identifier, this);
     }
-    selectedMidiInput = identifier;
     liveMidiCollector.reset(juce::jmax(1.0, sampleRate.load(std::memory_order_relaxed)));
 }
 
