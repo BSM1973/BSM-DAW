@@ -244,6 +244,13 @@ void MainComponent::paint(juce::Graphics& g)
         drawMidiStepSequencer(g, editorArea);
     else if (showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, editorArea);
+    else if (!dockStepSequencerMode && (isMidiDockTrack || showStepSequencer))
+    {
+        // The embedded Piano Roll owns the editor surface; never draw mixer
+        // strips underneath its native JUCE component.
+        g.setColour(juce::Colour(0xff0b0d10));
+        g.fillRect(editorArea);
+    }
     else
         drawMixer(g, editorArea);
 
@@ -376,6 +383,7 @@ public:
     void closeButtonPressed() override { setVisible(false); }
 };
 std::unique_ptr<FloatingDrumSamplerWindow> floatingDrumSamplerWindow;
+int floatingDrumSamplerSourceTrack = -1;
 
 
 void closeFloatingDrumSamplerWindow() { floatingDrumSamplerWindow.reset(); }
@@ -1095,7 +1103,10 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         const bool detachedSource = floatingStepSequencerWindow != nullptr
             && floatingStepSequencerWindow->isVisible()
             && logicalRow == floatingStepSequencerTrack;
-        const bool activeLane = logicalRow == selectedTrack || detachedSource;
+        const bool detachedDrumSource = floatingDrumSamplerWindow != nullptr
+            && floatingDrumSamplerWindow->isVisible()
+            && logicalRow == floatingDrumSamplerSourceTrack;
+        const bool activeLane = logicalRow == selectedTrack || detachedSource || detachedDrumSource;
         g.setColour(activeLane ? juce::Colour(0xff1b303a)
                      : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
                                             : juce::Colour(0xff111b24)));
@@ -1158,7 +1169,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         {
             const int i = logicalRow - audioCount - midiCount;
             title = "Instrument " + juce::String(i + 1);
-            selected = selectedTrack == audioCount + midiCount + i || detachedSource;
+            selected = selectedTrack == audioCount + midiCount + i || detachedSource || detachedDrumSource;
             g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
 
         }
@@ -2309,6 +2320,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (selectedTrack >= getAudioTrackCount()
             && selectedTrack < firstInstrument + getInstrumentTrackCount())
         {
+            floatingDrumSamplerSourceTrack = selectedTrack;
             showFloatingDrumSamplerWindow(audioEngine);
             return;
         }
