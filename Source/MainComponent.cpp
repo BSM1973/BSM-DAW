@@ -2091,6 +2091,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             draggingRangeMarker = 1;
         else if (std::abs(p.x - markerX(loopEndSeconds)) <= 10)
             draggingRangeMarker = 2;
+        else if (!lowerRow && loopEnabled && loopEndSeconds > loopStartSeconds
+                 && p.x > markerX(loopStartSeconds) + 10
+                 && p.x < markerX(loopEndSeconds) - 10)
+        {
+            // Grab the interior of the loop band to move both handles together.
+            draggingRangeMarker = 5;
+            loopDragAnchorSeconds = (double)(p.x - trackHeaderWidth)
+                                    / getLibertyTimelinePixelsPerSecond();
+            loopDragInitialStartSeconds = loopStartSeconds;
+            loopDragInitialEndSeconds = loopEndSeconds;
+        }
         if (draggingRangeMarker != 0) return;
     }
     // A generous hit target around the ruler locator starts a playhead drag.
@@ -2495,6 +2506,18 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
             juce::jmax(0.0, ((double)event.position.x - trackHeaderWidth)
                               / getLibertyTimelinePixelsPerSecond()), tempoBpm);
         const double minimum = 0.01;
+        if (draggingRangeMarker == 5)
+        {
+            // Snap the translated start only; preserve the original duration.
+            const double delta = ((double)event.position.x - trackHeaderWidth)
+                                 / getLibertyTimelinePixelsPerSecond() - loopDragAnchorSeconds;
+            const double nextStart = snapLibertyTimelineTime(
+                juce::jmax(0.0, loopDragInitialStartSeconds + delta), tempoBpm);
+            loopStartSeconds = nextStart;
+            loopEndSeconds = nextStart + (loopDragInitialEndSeconds - loopDragInitialStartSeconds);
+            repaint();
+            return;
+        }
         switch (draggingRangeMarker)
         {
             case 1: loopStartSeconds = juce::jmin(seconds, loopEndSeconds - minimum); break;
