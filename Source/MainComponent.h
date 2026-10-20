@@ -302,7 +302,16 @@ public:
     }
     bool draggingPlayheadMarker = false;
     int getTrackScrollRows() const noexcept { return trackScrollRows; }
-    void setTrackScrollRows(int rows) noexcept { trackScrollRows = juce::jmax(0, rows); repaint(); }
+    void setTrackScrollRows(int rows) noexcept
+    {
+        const int next = juce::jlimit(0, juce::jmax(0, getTotalArrangeTrackCount() - 1), rows);
+        if (trackScrollRows == next) return;
+        trackScrollRows = next;
+        // Native track-header controls must follow the scroll synchronously,
+        // not on the next periodic timer tick.
+        refreshLibertyTrackHeaderMixLayout(this);
+        repaint();
+    }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
     static constexpr int transportHeight = 76;
     static constexpr int trackRulerHeight = 32;
