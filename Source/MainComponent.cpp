@@ -1066,7 +1066,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         row = row.getIntersection(rows);
         // Restrained graphite zebra lanes keep large sessions readable.
         // Selection remains distinct without overpowering clip colours.
-        const bool activeLane = logicalRow == selectedTrack;
+        // Keep the source instrument visually highlighted while its detached
+        // Step Sequencer owns the active desktop window. This is a paint-only
+        // fallback; it does not change MIDI routing or the actual track selection.
+        const bool detachedSource = floatingStepSequencerWindow != nullptr
+            && floatingStepSequencerWindow->isVisible()
+            && logicalRow == floatingStepSequencerTrack;
+        const bool activeLane = logicalRow == selectedTrack || detachedSource;
         g.setColour(activeLane ? juce::Colour(0xff1b303a)
                      : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
                                             : juce::Colour(0xff111b24)));
@@ -1122,14 +1128,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
         {
             const int i = logicalRow - audioCount;
             title = "MIDI " + juce::String(i + 1);
-            selected = selectedTrack == audioCount + i;
+            selected = selectedTrack == audioCount + i || detachedSource;
             g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
         }
         else
         {
             const int i = logicalRow - audioCount - midiCount;
             title = "Instrument " + juce::String(i + 1);
-            selected = selectedTrack == audioCount + midiCount + i;
+            selected = selectedTrack == audioCount + midiCount + i || detachedSource;
             g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
 
         }
