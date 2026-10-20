@@ -295,7 +295,10 @@ public:
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
     static constexpr int transportHeight = 76;
     static constexpr int trackRulerHeight = 32;
-    static constexpr int mixerHeight = 246;
+    int mixerHeight = 246;
+    bool draggingDockHeight = false;
+    int dockDragStartY = 0;
+    int dockDragStartHeight = 246;
     static constexpr int trackHeaderWidth = 330;
     int getArrangeTop() const noexcept { return transportHeight + trackRulerHeight; }
     int getMixerTop() const noexcept { return juce::jmax(getArrangeTop(), getHeight() - mixerHeight); }
