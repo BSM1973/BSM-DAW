@@ -312,7 +312,7 @@ void MainComponent::paint(juce::Graphics& g)
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode && !drumSamplerActive);
         // Detach Piano Roll without changing which dock editor is selected.
         g.setColour(juce::Colour(0xff263644));
-        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 12.0f, 28.0f, 28.0f), 5.0f);
+        g.fillRoundedRectangle(juce::Rectangle<float>(174.0f, (float)mixer.getY() + 44.0f, 28.0f, 28.0f), 5.0f);
         g.setColour(juce::Colour(0xffc4e7ee));
         g.drawRect(180, mixer.getY() + 16, 11, 9, 1);
         g.drawLine(187.0f, (float)mixer.getY() + 19.0f, 195.0f, (float)mixer.getY() + 11.0f, 1.6f);
@@ -2362,80 +2362,58 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             }
         }
     }
-    // Compact detach icons: Piano Roll (top) and Step Sequencer (second row).
-    if (juce::Rectangle<int>(174, getMixerTop() + 12, 28, 28).contains(p))
+    // Four stable dock choices: Mixer, Piano Roll, Step Seq, Drum Sampler.
+    const int dockTop = getMixerTop();
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool selectedEditorTrack = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool selectedInstrument = selectedTrack >= instrumentFirst
+        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    if (juce::Rectangle<int>(174, dockTop + 44, 28, 28).contains(p))
     {
         openLibertyMidiEditor(*this);
         return;
     }
-    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 44, 28, 28).contains(p))
+    if (juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
     }
-    if (juce::Rectangle<int>(8, getMixerTop() + 76, 148, 28).contains(p))
+    if (juce::Rectangle<int>(8, dockTop + 108, 148, 28).contains(p))
     {
-        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
-        if (selectedTrack >= getAudioTrackCount()
-            && selectedTrack < firstInstrument + getInstrumentTrackCount())
+        if (selectedInstrument)
         {
             floatingDrumSamplerSourceTrack = selectedTrack;
             showFloatingDrumSamplerWindow(audioEngine);
-            return;
         }
+        return;
     }
-    const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
-    const bool selectedMidi = selectedTrack >= getAudioTrackCount()
-                           && selectedTrack < dockInstrumentFirst;
-    const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
-                                 && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
-    if (p.y >= getMixerTop() + 12 && p.y < getMixerTop() + 32)
+    if (juce::Rectangle<int>(8, dockTop + 12, 148, 28).contains(p))
     {
-        const int tabX = 8;
-        if (p.x >= tabX && p.x < tabX + 148 && p.y >= getMixerTop() + 44 && p.y < getMixerTop() + 64)
-        {
-            // Reconnect the permanent STEP SEQ button to the existing sequencer.
-            // Keep the full 8-pattern/64-step editor and its existing state.
-            if (!selectedMidi && !selectedInstrument)
-            {
-                if (getInstrumentTrackCount() > 0)
-                    selectedTrack = dockInstrumentFirst;
-                else if (getMidiTrackCount() > 0)
-                    selectedTrack = getAudioTrackCount();
-                else
-                {
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                        "Liberty - Step Sequencer",
-                        "Ajoutez une piste Instrument ou MIDI pour utiliser le Step Sequencer.", "OK");
-                    return;
-                }
-            }
-            dockStepSequencerMode = true;
-            // Always open the existing full editor window as well: the dock
-            // can be hidden by page overlays or reduced by window geometry.
-            repaint();
-            return;
-        }
+        dockMixerMode = true;
+        dockStepSequencerMode = false;
+        repaint();
+        return;
     }
-    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 12
-        && p.y < getMixerTop() + 32)
+    if (juce::Rectangle<int>(8, dockTop + 44, 148, 28).contains(p))
     {
-        const int tabX = 8;
-        if (p.x >= tabX && p.x < tabX + 148)
+        if (selectedEditorTrack)
         {
-            dockStepSequencerMode = false;
             dockMixerMode = false;
+            dockStepSequencerMode = false;
             repaint();
-            return;
         }
-        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        return;
+    }
+    if (juce::Rectangle<int>(8, dockTop + 76, 148, 28).contains(p))
+    {
+        if (selectedEditorTrack)
         {
-            // MIDI-track Pattern playback needs its own routing and persistence;
-            // do not pretend the instrument sequencer edits the selected MIDI track.
-            if (selectedInstrument || selectedMidi) { dockStepSequencerMode = true; dockMixerMode = false; }
+            dockMixerMode = false;
+            dockStepSequencerMode = true;
             repaint();
-            return;
         }
+        return;
     }
 
     const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
