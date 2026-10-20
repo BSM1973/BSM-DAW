@@ -158,6 +158,17 @@ MainComponent::MainComponent()
         ? audioEngine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 44100.0);
     audioEngine.setDrumSampler(std::move(drumSampler));
     initializeProjectTracking(); // Project actions now live in the Fichier menu.
+    dockResizeHandle.setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    dockResizeHandle.onStart = [this] { dockDragStartHeight = mixerHeight; };
+    dockResizeHandle.onDragDelta = [this](int delta)
+    {
+        // Keep the drag origin stable for the full gesture.
+        if (!dockResizeHandle.isMouseButtonDown()) return;
+        const int maximumHeight = juce::jmax(246, getHeight() - getArrangeTop() - 110);
+        mixerHeight = juce::jlimit(180, maximumHeight, dockDragStartHeight + delta);
+        resized();
+    };
+    addAndMakeVisible(dockResizeHandle);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
@@ -1830,7 +1841,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     }
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.toFront(false); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -1841,6 +1852,7 @@ void MainComponent::timerCallback()
     ensureLibertyAudioRecordingController(this);
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
+    dockResizeHandle.toFront(false);
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
