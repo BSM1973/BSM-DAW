@@ -813,7 +813,7 @@ private:
                 button->setMouseClickGrabsKeyboardFocus(false); addAndMakeVisible(button);
             }
             tempoButton.onClick = [this] { owner->editTempo(); }; meterButton.onClick = [this] { owner->editTimeSignature(); };
-            setBounds(1020, 34, 120, 36); owner->addAndMakeVisible(this);
+            setBounds(1110, 34, 120, 36); owner->addAndMakeVisible(this);
         }
         void refresh() { tempoButton.setButtonText(juce::String(owner->tempoBpm, 2) + " BPM"); meterButton.setButtonText(juce::String(owner->timeSignatureNumerator) + "/" + juce::String(owner->timeSignatureDenominator)); repaint(); }
         void resized() override { tempoButton.setBounds(0, 4, 80, 28); meterButton.setBounds(80, 4, 40, 28); }
