@@ -2064,7 +2064,8 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
 
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
-    const int mixerTop = getMixerTop(); if (event.position.y < mixerTop) return false;
+    const int mixerTop = getMixerTop();
+    if (event.position.y < mixerTop || event.position.y >= getHeight()) return false;
     const int audioTracks = getAudioTrackCount();
     const int instrumentTracks = getInstrumentTrackCount();
     const int channelCount = audioTracks + instrumentTracks;
@@ -2111,9 +2112,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
             return true;
         }
 
-        // The click belongs to a visible instrument strip, but it has no
-        // per-instrument mixer state yet. Consume it so it cannot leak through
-        // to arranger hit-testing underneath the fixed mini mixer.
+        // Consume clicks within any mixer strip so they never trigger editor shortcuts.
         return true;
     }
     return false;
@@ -2159,6 +2158,9 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto click = event.getPosition();
+    // Double-clicks on the dock are mixer interactions, never MIDI-editor shortcuts.
+    // The first mouseDown already handles M/S/fader/pan; do not dispatch again.
+    if (click.y >= getMixerTop()) return;
     if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
     {
         const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
@@ -2427,7 +2429,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
                                       && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
-    if (p.y >= getMixerTop() && !stepSequencerDockActive && handleMixerMouse(event)) return;
+    // Mixer strips take their own mouse events regardless of the selected track.
+    // In particular, never let an audio strip click fall through to an editor.
+    if (p.y >= getMixerTop() && (!stepSequencerDockActive || !dockStepSequencerMode)
+        && handleMixerMouse(event)) return;
 
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
     const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
