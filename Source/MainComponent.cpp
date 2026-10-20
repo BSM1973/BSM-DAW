@@ -233,7 +233,7 @@ void MainComponent::paint(juce::Graphics& g)
     else
         drawMixer(g, editorArea);
 
-    const bool drumSamplerActive = isLibertyFloatingDrumSamplerVisible();
+    const bool drumSamplerActive = drumSamplerDockSelected && isLibertyFloatingDrumSamplerVisible();
     // Shared editor navigation for MIDI and instrument tracks.
     const bool isMidi = selectedTrack >= getAudioTrackCount()
                      && selectedTrack < instrumentFirst;
@@ -2337,6 +2337,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             // The Drum Sampler opens separately; keep the dock on the full mixer.
             dockMixerMode = true;
             dockStepSequencerMode = false;
+            drumSamplerDockSelected = true;
             showFloatingDrumSamplerWindow(audioEngine);
             repaint();
         }
@@ -2346,6 +2347,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     {
         dockMixerMode = true;
         dockStepSequencerMode = false;
+        drumSamplerDockSelected = false;
         repaint();
         return;
     }
@@ -2355,6 +2357,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             dockMixerMode = false;
             dockStepSequencerMode = false;
+            drumSamplerDockSelected = false;
             repaint();
         }
         return;
@@ -2365,6 +2368,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             dockMixerMode = false;
             dockStepSequencerMode = true;
+            drumSamplerDockSelected = false;
             repaint();
         }
         return;
