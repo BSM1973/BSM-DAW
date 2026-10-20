@@ -79,7 +79,7 @@ public:
     {
         setInterceptsMouseClicks(true, true);
         setWantsKeyboardFocus(true);
-        const juce::String names[] = { "EMPTY", "2 PISTES AUDIO", "2 INSTRUMENTS" };
+        const juce::String names[] = { "CRÉER UNE SESSION VIDE", "CRÉER 2 PISTES AUDIO", "CRÉER 2 INSTRUMENTS" };
         const juce::String descriptions[] = {
             "Une session vierge. Construisez votre projet librement.",
             "Deux pistes audio prêtes pour enregistrer et mixer.",
@@ -126,7 +126,7 @@ public:
         g.setColour(juce::Colour(0xff9db6c4));
         g.setFont(juce::Font(13.0f));
         g.drawText("Choisissez votre point de départ", panel.getX()+40, panel.getY()+170, panel.getWidth()-80, 26, juce::Justification::centredLeft);
-        const juce::String titles[] = { "EMPTY", "AUDIO", "INSTRUMENTS" };
+        const juce::String titles[] = { "SESSION VIDE", "PISTES AUDIO", "INSTRUMENTS VIRTUELS" };
         const juce::String descriptions[] = {
             "Aucune piste. Un espace entièrement libre.",
             "2 pistes audio pour enregistrer et mixer.",
@@ -143,14 +143,14 @@ public:
             g.fillRoundedRectangle((float)card.getX()+18, (float)card.getY()+18, 28.0f, 4.0f, 2.0f);
             g.setColour(juce::Colour(0xfff2faff));
             g.setFont(juce::Font(16.0f, juce::Font::bold));
-            g.drawFittedText(titles[i], card.reduced(18).withHeight(64).withTrimmedTop(15), juce::Justification::centredLeft, 1);
+            g.drawFittedText(titles[i], card.reduced(18).withHeight(64).withTrimmedTop(15), juce::Justification::centredLeft, 2);
             g.setColour(juce::Colour(0xffa4bcc9));
             g.setFont(juce::Font(12.0f));
             g.drawFittedText(descriptions[i], juce::Rectangle<int>(card.getX()+18,card.getY()+87,card.getWidth()-36,58),juce::Justification::topLeft,3);
         }
         g.setColour(juce::Colour(0xff6f91a2));
         g.setFont(juce::Font(11.0f));
-        g.drawText("LIBERTY  •  DIGITAL AUDIO WORKSTATION",panel.getX()+36,panel.getBottom()-45,panel.getWidth()-72,20,juce::Justification::centred);
+        g.drawText("LIBERTY  |  STATION AUDIONUMÉRIQUE",panel.getX()+36,panel.getBottom()-45,panel.getWidth()-72,20,juce::Justification::centred);
     }
     void resized() override
     {
