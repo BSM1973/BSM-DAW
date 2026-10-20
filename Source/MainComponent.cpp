@@ -2269,6 +2269,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             }
         }
     }
+    // Compact detach icons: Piano Roll (top) and Step Sequencer (second row).
+    if (juce::Rectangle<int>(174, getMixerTop() + 4, 28, 28).contains(p))
+    {
+        openLibertyMidiEditor(*this);
+        return;
+    }
+    if (dockStepSequencerMode && juce::Rectangle<int>(174, getMixerTop() + 36, 28, 28).contains(p))
+    {
+        showFloatingStepSequencer();
+        return;
+    }
     if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount()
         && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
         && juce::Rectangle<int>(416, getMixerTop() + 4, 106, 28).contains(p))
@@ -2323,10 +2334,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && p.y < getMixerTop() + 32)
     {
         const int tabX = 8;
-        if (p.x >= tabX && p.x < tabX + 118)
+        if (p.x >= tabX && p.x < tabX + 148)
         {
             dockStepSequencerMode = false;
-            openLibertyMidiEditor(*this);
             repaint();
             return;
         }
