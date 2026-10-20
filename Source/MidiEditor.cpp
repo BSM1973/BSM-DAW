@@ -506,7 +506,7 @@ public:
         const auto p = e.getEventRelativeTo(main).getPosition();
         // A global mouse listener must never use a legacy fixed MIDI-lane Y.
         // Only an actual MIDI track inside the visible arranger may open this editor.
-        if (p.x < main->getTrackHeaderWidth() || p.y < main->getArrangeTop()
+        if (p.x < main->trackHeaderWidth || p.y < main->getArrangeTop()
             || p.y >= main->getMixerTop()) return;
         const int track = main->getArrangeTrackAtY(p.y);
         const int midiFirst = main->getAudioTrackCount();
