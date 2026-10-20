@@ -148,7 +148,17 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              // Both position and parent must match the header overlay.
              // A selector can only appear when its actual hit-tested row is
              // the instrument row it belongs to (never an audio row).
-             const bool visible=logical>=owner.getTrackScrollRows()
+             // Determine the visible instrument range from the same rows
+             // that MainComponent paints.  Audio-only viewports must never
+             // contain a MIDI selector, even when a stale child has bounds.
+             const int firstInstrument=owner.getAudioTrackCount()+owner.getMidiTrackCount();
+             const int firstVisible=owner.getTrackScrollRows();
+             const int lastVisible=owner.getArrangeTrackAtY(owner.getMixerTop()-1);
+             const bool instrumentInViewport=lastVisible>=firstInstrument
+                 && firstVisible<owner.getTotalArrangeTrackCount();
+             const bool visible=instrumentInViewport
+                 && logical>=firstInstrument
+                 && logical>=firstVisible && logical<=lastVisible
                  && rh>=56 && y>=owner.getArrangeTop()
                  && selectorY+19<=owner.getMixerTop()
                  && owner.getArrangeTrackAtY(selectorY)==logical
