@@ -295,6 +295,25 @@ public:
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
     static constexpr int transportHeight = 76;
     static constexpr int trackRulerHeight = 32;
+    struct DockResizeHandle final : juce::Component
+    {
+        std::function<void(int)> onDragDelta;
+        int startScreenY = 0;
+        std::function<void()> onStart;
+        void mouseEnter(const juce::MouseEvent&) override { setMouseCursor(juce::MouseCursor::UpDownResizeCursor); }
+        void mouseMove(const juce::MouseEvent&) override { setMouseCursor(juce::MouseCursor::UpDownResizeCursor); }
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            startScreenY = e.getScreenY();
+            if (onStart) onStart();
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        }
+        void mouseDrag(const juce::MouseEvent& e) override
+        {
+            if (onDragDelta) onDragDelta(startScreenY - e.getScreenY());
+        }
+    };
+    DockResizeHandle dockResizeHandle;
     int mixerHeight = 246;
     bool draggingDockHeight = false;
     int dockDragStartY = 0;
