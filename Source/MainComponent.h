@@ -341,7 +341,14 @@ public:
             return false;
         }
         void mouseDown(const juce::MouseEvent& e) override { owner.handleMixerMouse(e.getEventRelativeTo(&owner)); }
-        void mouseDrag(const juce::MouseEvent& e) override { owner.handleMixerMouse(e.getEventRelativeTo(&owner)); }
+        void mouseDrag(const juce::MouseEvent& e) override
+        {
+            // Mute/Solo are click actions, not continuous drag actions.
+            const auto down = e.getMouseDownPosition();
+            const int localY = down.y;
+            if (localY >= 44 && localY < 64) return;
+            owner.handleMixerMouse(e.getEventRelativeTo(&owner));
+        }
     private:
         MainComponent& owner;
     };
