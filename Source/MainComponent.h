@@ -365,12 +365,34 @@ public:
     private:
         MainComponent& owner;
     };
-    // Native hit targets keep dock tabs clickable even when child overlays
-    // (mixer, piano editor or resize rail) are present.
-    juce::TextButton dockMixerTab;
-    juce::TextButton dockPianoTab;
-    juce::TextButton dockStepTab;
-    juce::TextButton dockDrumTab;
+    // One dock navigation hit layer: same 32px-spaced geometry as paint().
+    // A single owner receives the clicks instead of separate painted and
+    // interactive elements whose positions can drift apart.
+    void activateDockTab(int index);
+    class DockNavigationHitLayer final : public juce::Component
+    {
+    public:
+        explicit DockNavigationHitLayer(MainComponent& parent) : owner(parent)
+        {
+            setInterceptsMouseClicks(true, false);
+        }
+        bool hitTest(int x, int y) override
+        {
+            if (owner.dockCollapsed || x < 8 || x >= 156) return false;
+            for (int i = 0; i < 4; ++i)
+                if (y >= 12 + i * 32 && y < 40 + i * 32) return true;
+            return false;
+        }
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu()) return;
+            const int index = (e.y - 12) / 32;
+            if (index >= 0 && index < 4) owner.activateDockTab(index);
+        }
+    private:
+        MainComponent& owner;
+    };
+    DockNavigationHitLayer dockNavigationHitLayer { *this };
     DockMixerInputLayer dockMixerInputLayer { *this };
     juce::ScrollBar mixerHorizontalScrollBar { false };
     int mixerHorizontalOffset = 0;
