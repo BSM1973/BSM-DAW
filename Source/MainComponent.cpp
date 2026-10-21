@@ -174,6 +174,18 @@ MainComponent::MainComponent()
         resized();
     };
     addAndMakeVisible(dockResizeHandle);
+    dockVisibilityButton.setButtonText(juce::String::fromUTF8("▾"));
+    dockVisibilityButton.setTooltip(juce::String::fromUTF8("Masquer le dock"));
+    dockVisibilityButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263644));
+    dockVisibilityButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb8e8ec));
+    dockVisibilityButton.onClick = [this]
+    {
+        dockCollapsed = !dockCollapsed;
+        dockVisibilityButton.setButtonText(dockCollapsed ? juce::String::fromUTF8("▴") : juce::String::fromUTF8("▾"));
+        dockVisibilityButton.setTooltip(dockCollapsed ? juce::String::fromUTF8("Afficher le dock") : juce::String::fromUTF8("Masquer le dock"));
+        resized();
+    };
+    addAndMakeVisible(dockVisibilityButton);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
@@ -195,13 +207,24 @@ void MainComponent::paint(juce::Graphics& g)
     // Liberty Pro design system: shared canvas across transport, arrange and dock.
     g.fillAll(LibertyUI::Colour::canvas);
     auto transport = bounds.removeFromTop(transportHeight);
-    auto mixer = bounds.removeFromBottom(juce::jmin(mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
+    auto mixer = bounds.removeFromBottom(juce::jmin(dockCollapsed ? 32 : mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
     drawTransport(g, transport);
     {
         // Clip the complete arranger paint pass, including partially visible track controls.
         const juce::Graphics::ScopedSaveState arrangeClip(g);
         g.reduceClipRegion(bounds);
         drawTrackArea(g, bounds);
+    }
+    if (dockCollapsed)
+    {
+        g.setColour(juce::Colour(0xff182530));
+        g.fillRect(mixer);
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 1);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(12.0f));
+        g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
+        return;
     }
     // Permanent visible gold resize rail, drawn across the full draggable boundary.
     g.setColour(juce::Colour(0xffb88732));
@@ -1814,7 +1837,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     g.restoreState();
 }
 
-void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); dockResizeHandle.toFront(false); updateMixerHorizontalScrollBar(); repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false); updateMixerHorizontalScrollBar(); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -1841,7 +1864,7 @@ void MainComponent::timerCallback()
     layoutLibertyPianoRollDock(*this,
         juce::Rectangle<int>(310, dockY + 36, juce::jmax(0, getWidth() - 310),
                              juce::jmax(0, getHeight() - dockY - 36)),
-        !dockMixerMode && !dockStepSequencerMode && editableTrack
+        !dockCollapsed && !dockMixerMode && !dockStepSequencerMode && editableTrack
             && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     stepSequencerDockButton.setBounds(8, dockY + 76, 148, 28);
     stepSequencerDockButton.setColour(juce::TextButton::buttonColourId,
@@ -2196,7 +2219,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
-    if (!event.mods.isPopupMenu() && std::abs(p.y - getMixerTop()) <= 6)
+    if (!dockCollapsed && !event.mods.isPopupMenu() && std::abs(p.y - getMixerTop()) <= 6)
     {
         draggingDockHeight = true;
         dockDragStartY = p.y;
