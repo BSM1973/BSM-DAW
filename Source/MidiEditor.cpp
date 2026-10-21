@@ -265,7 +265,7 @@ public:
             const int y = rulerHeight + (visibleKeys - 1 - row) * keyHeight;
             const auto key = juce::Rectangle<int>(0, y, pianoKeyWidth, keyHeight);
             const bool black = isBlackKey(note);
-            g.setColour(black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea)); g.fillRect(key);
+            g.setColour(auditionPitch == note ? juce::Colour(0xff54d6dc) : (black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea))); g.fillRect(key);
             // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
             g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
             // Darker Obsidian note labels stay legible on light piano keys.
@@ -340,6 +340,20 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        if (e.mods.isLeftButtonDown() && e.x >= 0 && e.x < pianoKeyWidth
+            && e.y >= rulerHeight && !isInVelocityLane(e.y))
+        {
+            auditionPitch = pitchFromY(e.y);
+            const int instrumentFirst = owner.getAudioTrackCount() + owner.getMidiTrackCount();
+            const int lane = owner.selectedTrack - instrumentFirst;
+            if (lane >= 0 && lane < owner.getInstrumentTrackCount())
+            {
+                auditionLane = lane;
+                owner.audioEngine.sendPianoPreviewMidi(lane, juce::MidiMessage::noteOn(1, auditionPitch, (juce::uint8)100));
+            }
+            repaint();
+            return;
+        }
         if (e.mods.isRightButtonDown() || e.y < rulerHeight || e.x < pianoKeyWidth) return;
         const int tool = getLibertyActiveTool();
         if (tool == 7 || tool == 6) return; // MARQUEE and VELOCITY have dedicated handlers.
@@ -390,6 +404,21 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (auditionPitch >= 0)
+        {
+            const int next = e.x >= 0 && e.x < pianoKeyWidth && e.y >= rulerHeight && !isInVelocityLane(e.y)
+                ? pitchFromY(e.y) : -1;
+            if (next != auditionPitch)
+            {
+                if (auditionLane >= 0)
+                    owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOff(1, auditionPitch));
+                auditionPitch = next;
+                if (next >= 0 && auditionLane >= 0)
+                    owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOn(1, next, (juce::uint8)100));
+                repaint();
+            }
+            return;
+        }
         if (!draggingNote) return;
         const auto mouseTick = tickFromX(e.x);
         if (resizeSide == ResizeSide::right)
@@ -413,12 +442,23 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
+        if (auditionPitch >= 0)
+        {
+            if (auditionLane >= 0)
+                owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOff(1, auditionPitch));
+            auditionPitch = -1;
+            auditionLane = -1;
+            repaint();
+            return;
+        }
         if (!draggingNote) return;
         owner.updateMidiClipTiming(); draggingNote = false; dragMoved = false; resizeSide = ResizeSide::none; originalLengthTicks = 0; dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor); repaint(); owner.repaint();
     }
 
 private:
+    int auditionPitch = -1;
+    int auditionLane = -1;
     enum class ResizeSide { none, left, right };
     double getPixelsPerTick() const
     {
