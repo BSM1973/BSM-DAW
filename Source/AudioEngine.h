@@ -136,6 +136,8 @@ public:
 
     void setProjectExtraLengthSeconds(double seconds) noexcept { projectExtraLengthSeconds.store(juce::jmax(0.0, seconds), std::memory_order_relaxed); }
     double getProjectExtraLengthSeconds() const noexcept { return projectExtraLengthSeconds.load(std::memory_order_relaxed); }
+    // Keep transport running until the UI has wrapped an enabled loop.
+    void setLoopTransportEndSeconds(double seconds) noexcept { loopTransportEndSeconds.store(juce::jmax(0.0, seconds), std::memory_order_relaxed); }
 
     void setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
                       double clipStartSeconds,
@@ -369,6 +371,7 @@ private:
     std::atomic<int> bufferSize { 0 };
     std::atomic<int> outputChannels { 0 };
     std::atomic<std::int64_t> transportSamples { 0 };
+    std::atomic<double> loopTransportEndSeconds { 0.0 };
     std::atomic<double> projectExtraLengthSeconds { 0.0 };
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
