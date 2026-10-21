@@ -187,6 +187,9 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible(dockVisibilityButton);
     addAndMakeVisible(dockNavigationHitLayer);
+    // Observe mouse events received by overlay children as well as the parent.
+    // JUCE child components otherwise swallow dock navigation clicks.
+    addMouseListener(this, true);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
@@ -2267,7 +2270,23 @@ void MainComponent::activateDockTab(int index)
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
-    const auto p = event.getPosition();
+    // A listener attached recursively receives the original child event.
+    // Always convert to MainComponent coordinates before dock hit-testing.
+    const auto p = event.getEventRelativeTo(this).getPosition();
+    if (!dockCollapsed && !event.mods.isPopupMenu()
+        && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
+        && p.x >= 8 && p.x < 156)
+    {
+        const int relativeY = p.y - getMixerTop();
+        for (int tab = 0; tab < 4; ++tab)
+        {
+            if (relativeY >= 12 + tab * 32 && relativeY < 40 + tab * 32)
+            {
+                activateDockTab(tab);
+                return;
+            }
+        }
+    }
     if (!dockCollapsed && !event.mods.isPopupMenu() && std::abs(p.y - getMixerTop()) <= 6)
     {
         draggingDockHeight = true;
