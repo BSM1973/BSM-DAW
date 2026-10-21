@@ -214,7 +214,6 @@ MainComponent::MainComponent()
     dockDrumTab.onClick = [this] {
         const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
         if (selectedTrack < firstInstrument || selectedTrack >= firstInstrument + getInstrumentTrackCount()) return;
-        floatingDrumSamplerSourceTrack = selectedTrack;
         dockMixerMode = true; dockStepSequencerMode = false; drumSamplerDockSelected = true;
         showFloatingDrumSamplerWindow(audioEngine); repaint();
     };
