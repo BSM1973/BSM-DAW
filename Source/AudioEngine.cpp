@@ -1552,8 +1552,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // The independent Step Sequencer preview uses its own note snapshot
             // and duration, never a fabricated one-second arrangement length.
             const auto arrangementNotes = std::atomic_load(&state.arrangementSnapshot);
-            const auto noteSnapshot = arrangementNotes != nullptr ? arrangementNotes : std::atomic_load(&state.noteSnapshot);
-            const auto clipStart = arrangementNotes != nullptr ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
+            const auto fallbackNotes = std::atomic_load(&state.noteSnapshot);
+            // An empty arrangement snapshot must not shadow populated track notes.
+            const auto noteSnapshot = (arrangementNotes != nullptr && !arrangementNotes->notes.empty())
+                ? arrangementNotes : fallbackNotes;
+            const bool usingArrangementNotes = noteSnapshot == arrangementNotes;
+            const auto clipStart = usingArrangementNotes ? 0.0 : state.clipStartSeconds.load(std::memory_order_relaxed);
             if (!hasInstrument) continue;
             // Native drum voices are one-shots: keep rendering their tails and
             // queued pad auditions even in blocks with no scheduled MIDI notes.
