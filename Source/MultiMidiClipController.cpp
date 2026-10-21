@@ -23,8 +23,24 @@ void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName(
     const auto notes = owner.midiEngine.getNotesCopy();
     if (activeIndex >= 0)
     {
-        // Editing a selected arrangement clip must update its real instrument
-        // playback lane, not just the legacy MIDI preview synthesizer.
+        // MIDI-only arrangement clips do not reach the instrument host.
+        // Convert an edited clip when the Piano Roll targets an instrument lane.
+        if (!activeInstrument && activeIndex < (int) midiClips.size() && !notes.empty())
+        {
+            syncActiveClip();
+            Clip converted = std::move(midiClips[(size_t) activeIndex]);
+            midiClips.erase(midiClips.begin() + activeIndex);
+            converted.trackLane = selectedLane;
+            converted.notes = notes;
+            instrumentClips.push_back(std::move(converted));
+            activeIndex = (int) instrumentClips.size() - 1;
+            activeInstrument = true;
+            activeInstrumentLane = selectedLane;
+            syncPlayback();
+            repaint();
+            owner.repaint();
+            return;
+        }
         if (activeInstrument && activeInstrumentLane == selectedLane)
             syncActivePlayback();
         return;
