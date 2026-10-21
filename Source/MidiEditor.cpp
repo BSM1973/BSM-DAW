@@ -536,6 +536,7 @@ public:
 
 private:
     std::array<juce::TextButton, 9> toolButtons;
+    int lastDisplayedTool = -1;
     int lowestVisibleKey = lowestKey;
     float localGridZoom = 1.0f;
     int auditionPitch = -1;
@@ -596,6 +597,7 @@ private:
     void timerCallback() override {
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const int tool = getLibertyActiveTool();
+        if (lastDisplayedTool != tool) { lastDisplayedTool = tool; refreshToolButtons(); }
         setMouseCursor(tool == 0 ? juce::MouseCursor::DraggingHandCursor
                        : tool == 4 ? juce::MouseCursor::LeftRightResizeCursor
                        : juce::MouseCursor::CrosshairCursor);
