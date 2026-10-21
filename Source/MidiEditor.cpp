@@ -589,6 +589,7 @@ private:
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
+    int lastCursorTool = -1;
     bool selectingRectangle = false, editingVelocity = false;
     juce::Point<int> rectangleStart, rectangleEnd;
     std::int64_t velocityNoteTick = 0;
@@ -654,9 +655,24 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const int tool = getLibertyActiveTool();
         if (lastDisplayedTool != tool) { lastDisplayedTool = tool; refreshToolButtons(); }
-        setMouseCursor(tool == 0 ? juce::MouseCursor::DraggingHandCursor
-                       : tool == 4 ? juce::MouseCursor::LeftRightResizeCursor
-                       : juce::MouseCursor::CrosshairCursor);
+        if (lastCursorTool != tool)
+        {
+            lastCursorTool = tool;
+            if (tool == 0) setMouseCursor(juce::MouseCursor::NormalCursor);
+            else if (tool == 4) setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            else
+            {
+                // Tool-shaped cursor, shared by dock and floating editors.
+                static const char* symbols[] = { "", "✎", "✂", "⌫", "", "◇", "▥", "▧", "◉" };
+                juce::Image cursorImage(juce::Image::ARGB, 36, 36, true);
+                juce::Graphics cursorGraphics(cursorImage);
+                cursorGraphics.setColour(juce::Colours::white);
+                cursorGraphics.setFont(juce::Font(25.0f));
+                cursorGraphics.drawText(juce::String::fromUTF8(symbols[juce::jlimit(0, 8, tool)]),
+                                        2, 2, 32, 32, juce::Justification::centred);
+                setMouseCursor(juce::MouseCursor(cursorImage, juce::Point<int>(3, 3)));
+            }
+        }
         repaint(); velocityLane.repaint();
     }
     int pitchFromY(int y) const noexcept { const int keyHeight = currentKeyHeight(); const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / juce::jmax(1, keyHeight)); return lowestVisibleKey + visibleKeys - 1 - row; }
