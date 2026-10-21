@@ -1041,12 +1041,12 @@ private:
         void timerCallback() override
         {
             owner->updateMidiClipTiming();
-            // Legacy MIDI overlay is not an instrument arrangement clip.
-            // Never let it cover the instrument clip created by the Piano Roll.
+            // Keep Piano Roll notes visible on MIDI and Instrument tracks.
             const int firstMidiTrack = owner->getAudioTrackCount();
-            const bool selectedPlayableTrack = owner->getMidiTrackCount() > 0
-                && owner->selectedTrack >= firstMidiTrack
-                && owner->selectedTrack < firstMidiTrack + owner->getMidiTrackCount();
+            const int lastPlayableTrack = firstMidiTrack + owner->getMidiTrackCount()
+                                         + owner->getInstrumentTrackCount();
+            const bool selectedPlayableTrack = owner->selectedTrack >= firstMidiTrack
+                                               && owner->selectedTrack < lastPlayableTrack;
             const bool inArrange = selectedPlayableTrack
                 && owner->getArrangeTrackTop(owner->selectedTrack) >= owner->getArrangeTop()
                 && owner->getArrangeTrackTop(owner->selectedTrack)
