@@ -251,6 +251,7 @@ public:
         selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
+        durationValue.setBufferedToImage(true);
         durationValue.setButtonText("Noire  ▾");
         durationValue.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff233746));
         durationValue.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffdf99));
@@ -276,6 +277,11 @@ public:
         DurationPalette(int selected, std::function<void(int)> onSelect)
             : selection(std::move(onSelect))
         {
+            // This panel paints every pixel of its rectangular bounds.
+            // Treat it as an opaque, buffered layer so the rapidly repainted
+            // piano-roll underneath cannot show through between frames.
+            setOpaque(true);
+            setBufferedToImage(true);
             static const char* names[] = {
                 "Ronde", "Blanche", "Noire", "Croche", "Double-croche", "Triple-croche",
                 "Ronde pointée", "Blanche pointée", "Noire pointée", "Croche pointée",
