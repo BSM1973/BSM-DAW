@@ -106,7 +106,7 @@ public:
     }
     void sendPianoPreviewMidi(int track, const juce::MidiMessage& message)
     {
-        if (track < 0 || track >= getInstrumentTrackCount()) return;
+        if (track < 0 || track >= (int) instrumentPlayback.size()) return;
         pianoPreviewTrack.store(track, std::memory_order_release);
         pianoPreviewCollector.addMessageToQueue(message);
     }
