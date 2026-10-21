@@ -229,7 +229,50 @@ public:
             button.onClick = [this, i] { setLibertyActiveTool(i); refreshToolButtons(); };
             addAndMakeVisible(button);
         }
+        quantizeButton.setButtonText("Q");
+        quantizeButton.setTooltip("Quantifier les notes sélectionnées sur la grille SNAP (Q)");
+        quantizeButton.onClick = [this] { quantizeSelection(); };
+        addAndMakeVisible(quantizeButton);
+        selectAllButton.setButtonText("TOUT");
+        selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
+        selectAllButton.onClick = [this] { selectAllNotes(); };
+        addAndMakeVisible(selectAllButton);
         startTimerHz(30);
+    }
+
+    void selectAllNotes()
+    {
+        auto& midi = owner.getMidiEngine();
+        midi.setSelectedNotes(midi.getNotesCopy());
+        repaint();
+    }
+
+    void quantizeSelection()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto grid = activePianoSnapTicks();
+        if (grid <= 0 || !midi.hasSelectedNote()) return;
+        if (midi.quantizeSelectedNotes(grid))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A')
+        { selectAllNotes(); return true; }
+        if (key.getKeyCode() == 'Q' && !key.getModifiers().isCommandDown())
+        { quantizeSelection(); return true; }
+        if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey)
+        {
+            if (owner.getMidiEngine().deleteSelectedNotes())
+            { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+            return true;
+        }
+        return false;
     }
 
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
@@ -272,6 +315,8 @@ public:
         const int buttonWidth = 32;
         for (int i = 0; i < 9; ++i)
             toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
+        quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
+        selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
     }
@@ -624,6 +669,7 @@ public:
 
 private:
     std::array<juce::TextButton, 9> toolButtons;
+    juce::TextButton quantizeButton, selectAllButton;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
