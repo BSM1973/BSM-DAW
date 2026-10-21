@@ -1899,6 +1899,15 @@ void MainComponent::timerCallback()
     if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
     dockResizeHandle.toFront(false);
     if (mixerHorizontalScrollBar.isVisible()) mixerHorizontalScrollBar.toFront(false);
+    // Controller overlays are refreshed every timer tick and may reorder the
+    // component z-stack. Restore native dock controls AFTER those updates.
+    for (auto* tab : { &dockMixerTab, &dockPianoTab, &dockStepTab, &dockDrumTab })
+    {
+        tab->setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+        if (tab->isVisible()) tab->toFront(false);
+    }
+    dockVisibilityButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    if (dockVisibilityButton.isVisible()) dockVisibilityButton.toFront(false);
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
