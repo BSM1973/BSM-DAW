@@ -237,7 +237,37 @@ public:
         selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
+        velocityValue.setInputRestrictions(3, "0123456789");
+        velocityValue.setJustification(juce::Justification::centred);
+        velocityValue.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff233746));
+        velocityValue.setColour(juce::TextEditor::textColourId, juce::Colour(0xffffdf99));
+        velocityValue.setTooltip("Vélocité MIDI (1 à 127) : Entrée pour appliquer aux notes sélectionnées");
+        velocityValue.onReturnKey = [this] { applyVelocityValue(); };
+        velocityValue.onEscapeKey = [this] { velocityValue.giveAwayKeyboardFocus(); };
+        velocityValue.setVisible(false);
+        addAndMakeVisible(velocityValue);
         startTimerHz(30);
+    }
+
+    void applyVelocityValue()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        const int velocity = juce::jlimit(1, 127, velocityValue.getText().getIntValue());
+        auto notes = midi.getNotesCopy();
+        for (auto& note : notes)
+            if (midi.isNoteSelected(note))
+                note.velocity = static_cast<std::uint8_t>(velocity);
+        if (midi.replaceNotes(notes))
+        {
+            midi.setSelectedNotes(selected);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+        velocityValue.setText(juce::String(velocity), juce::dontSendNotification);
+        velocityValue.giveAwayKeyboardFocus();
     }
 
     void selectAllNotes()
@@ -317,6 +347,8 @@ public:
             toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
         quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
         selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
+        velocityValue.setBounds(juce::jmax(pianoKeyWidth, getWidth() - 58), editorToolbarHeight + 3,
+                                49, juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
     }
@@ -358,7 +390,7 @@ public:
                  + (n.muted ? "  [MUET]" : "");
         }
         g.setColour(juce::Colour(0xffd4e5ed));
-        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, getWidth() - pianoKeyWidth - 14),
+        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, getWidth() - pianoKeyWidth - 74),
                          rulerHeight - infoY - 1, juce::Justification::centredLeft, 1);
         const auto b = getLocalBounds();
         const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - velocityLaneHeight);
@@ -703,6 +735,7 @@ public:
 private:
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton;
+    juce::TextEditor velocityValue;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
@@ -772,6 +805,16 @@ private:
     }
     void timerCallback() override {
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
+        const auto selected = midi.getSelectedNotesCopy();
+        const bool hasSelection = !selected.empty();
+        velocityValue.setVisible(hasSelection);
+        if (hasSelection && !velocityValue.hasKeyboardFocus(true))
+        {
+            const int v = selected.front().velocity;
+            const auto display = juce::String(v);
+            if (velocityValue.getText() != display)
+                velocityValue.setText(display, juce::dontSendNotification);
+        }
         const int tool = getLibertyActiveTool();
         if (lastDisplayedTool != tool) { lastDisplayedTool = tool; refreshToolButtons(); }
         if (lastCursorTool != tool)
