@@ -187,9 +187,10 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible(dockVisibilityButton);
     addAndMakeVisible(dockNavigationHitLayer);
-    // Observe mouse events received by overlay children as well as the parent.
-    // JUCE child components otherwise swallow dock navigation clicks.
-    addMouseListener(this, true);
+    // Do not register MainComponent as its own recursive mouse listener:
+    // a click on the component would be dispatched twice, immediately
+    // toggling PLAY / instrument MON / REC back to their previous state.
+    // DockNavigationHitLayer handles the dock tabs independently.
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
