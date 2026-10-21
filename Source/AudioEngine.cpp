@@ -161,6 +161,11 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
     }
     const auto extraLength = static_cast<std::int64_t>(std::llround(projectExtraLengthSeconds.load(std::memory_order_relaxed) * rate));
     length = juce::jmax(length, extraLength);
+    // Give the message-thread loop handler time to seek before the audio
+    // callback automatically stops at the last instrument clip.
+    const auto loopEnd = loopTransportEndSeconds.load(std::memory_order_relaxed);
+    if (loopEnd > 0.0)
+        length = juce::jmax(length, static_cast<std::int64_t>(std::llround((loopEnd + 0.5) * rate)));
     return length;
 }
 
