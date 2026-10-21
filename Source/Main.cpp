@@ -75,10 +75,45 @@ class LibertyApplication final:public juce::JUCEApplication{public:const juce::S
 class LibertyWelcomeScreen final : public juce::Component
 {
 public:
-    explicit LibertyWelcomeScreen(std::function<void(int,int)> chosen) : onChoose(std::move(chosen))
+    explicit LibertyWelcomeScreen(std::function<void(int,int)> chosen, std::function<void(const juce::File&)> openRecent)
+        : onChoose(std::move(chosen)), onOpenRecent(std::move(openRecent))
     {
         setInterceptsMouseClicks(true, true);
         setWantsKeyboardFocus(true);
+        recentProjectsButton.setButtonText(juce::String::fromUTF8("Projets récents  ▾"));
+        recentProjectsButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff244653));
+        recentProjectsButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffbff));
+        recentProjectsButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            auto listFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("Liberty").getChildFile("recent-projects.txt");
+            juce::StringArray paths;
+            if (listFile.existsAsFile())
+                for (const auto& line : juce::StringArray::fromLines(listFile.loadFileAsString()))
+                {
+                    const auto path = line.trim();
+                    if (path.isNotEmpty() && juce::File(path).existsAsFile()
+                        && juce::File(path).hasFileExtension("bsmproj") && !paths.contains(path))
+                        paths.add(path);
+                    if (paths.size() >= 10) break;
+                }
+            if (paths.isEmpty())
+                menu.addItem(1, juce::String::fromUTF8("Aucun projet récent"), false, false);
+            else
+                for (int i = 0; i < paths.size(); ++i)
+                {
+                    const auto file = juce::File(paths[i]);
+                    menu.addItem(i + 1, file.getFileNameWithoutExtension());
+                }
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&recentProjectsButton),
+                [this, paths](int choice)
+                {
+                    if (choice > 0 && choice <= paths.size() && onOpenRecent)
+                        onOpenRecent(juce::File(paths[choice - 1]));
+                });
+        };
+        addAndMakeVisible(recentProjectsButton);
         const juce::String names[] = { "SESSION VIDE", "2 PISTES AUDIO", "2 INSTRUMENTS", "2 AUDIO + 2 INSTRUMENTS", "8 AUDIO + 8 INSTRUMENTS" };
         const juce::String descriptions[] = {
             "Une session vierge. Construisez votre projet librement.",
@@ -158,6 +193,8 @@ public:
     }
     void resized() override
     {
+        auto panel = getPanel();
+        recentProjectsButton.setBounds(panel.getRight()-212, panel.getY()+128, 174, 34);
         for (int i=0;i<5;++i)
         {
             auto card=cardBounds(i);
@@ -179,6 +216,8 @@ private:
         return {p.getX()+margin+(i%3)*(cw+gap),p.getY()+212+(i/3)*218,cw,200};
     }
     std::function<void(int,int)> onChoose;
+    std::function<void(const juce::File&)> onOpenRecent;
+    juce::TextButton recentProjectsButton;
     std::vector<std::unique_ptr<juce::TextButton>> buttons;
 };
 class LibertyMainContent final : public juce::Component
@@ -209,6 +248,17 @@ public:
                 if (safeThis == nullptr) return;
                 safeThis->welcome.reset();
                 safeThis->editor->grabKeyboardFocus();
+            });
+        }, [this](const juce::File& file)
+        {
+            if (welcome != nullptr) welcome->setVisible(false);
+            editor->openRecentProject(file);
+            // Keep the welcome screen available if opening fails.
+            juce::Component::SafePointer<LibertyMainContent> safeThis(this);
+            juce::MessageManager::callAsync([safeThis]
+            {
+                if (safeThis != nullptr && safeThis->welcome != nullptr)
+                    safeThis->welcome.reset();
             });
         });
         addAndMakeVisible(*welcome);
