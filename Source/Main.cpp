@@ -220,6 +220,37 @@ private:
     juce::TextButton recentProjectsButton;
     std::vector<std::unique_ptr<juce::TextButton>> buttons;
 };
+// Liberty Obsidian: a scoped, reusable menu skin based on the welcome screen.
+class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    LibertyMenuLookAndFeel()
+    {
+        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff192e3c));
+        setColour(juce::PopupMenu::textColourId, juce::Colour(0xffe8f3fa));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff285362));
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+        setColour(juce::MenuBarComponent::backgroundColourId, juce::Colour(0xff101f2c));
+        setColour(juce::MenuBarComponent::textColourId, juce::Colour(0xffdcebf4));
+        setColour(juce::MenuBarComponent::highlightColourId, juce::Colour(0xff294a58));
+    }
+
+    void drawMenuBarBackground(juce::Graphics& g, int width, int height,
+                               bool, juce::MenuBarComponent&) override
+    {
+        g.setColour(juce::Colour(0xff101f2c));
+        g.fillRect(0, 0, width, height);
+        g.setColour(juce::Colour(0xff35596b));
+        g.fillRect(0, height - 1, width, 1);
+    }
+
+    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
+    {
+        g.fillAll(juce::Colour(0xff192e3c));
+        g.setColour(juce::Colour(0xff41677a));
+        g.drawRect(0, 0, width, height, 1);
+    }
+};
 class LibertyMainContent final : public juce::Component
 {
 public:
@@ -228,6 +259,7 @@ public:
         editor = std::make_unique<MainComponent>();
         menuModel = std::make_unique<LibertyMainMenu>(*editor);
         menuBar = std::make_unique<juce::MenuBarComponent>(menuModel.get());
+        menuBar->setLookAndFeel(&menuLookAndFeel);
         addAndMakeVisible(*menuBar);
         addAndMakeVisible(*editor);
         setSize(editor->getWidth(), editor->getHeight() + 30);
@@ -267,6 +299,7 @@ public:
         addAndMakeVisible(*welcome);
         welcome->toFront(false);
     }
+    ~LibertyMainContent() override { if (menuBar) menuBar->setLookAndFeel(nullptr); }
     MainComponent& getEditor() const { return *editor; }
     void resized() override
     {
@@ -277,6 +310,7 @@ public:
         if (welcome != nullptr) { welcome->setBounds(getLocalBounds()); welcome->toFront(false); }
     }
 private:
+    LibertyMenuLookAndFeel menuLookAndFeel;
     std::unique_ptr<MainComponent> editor;
     std::unique_ptr<LibertyWelcomeScreen> welcome;
     std::unique_ptr<LibertyMainMenu> menuModel;
