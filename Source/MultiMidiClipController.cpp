@@ -41,8 +41,18 @@ void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName(
             owner.repaint();
             return;
         }
-        if (activeInstrument && activeInstrumentLane == selectedLane)
+        if (activeInstrument && activeIndex < (int) instrumentClips.size())
+        {
+            // The dock's selected instrument lane is authoritative for Piano Roll edits.
+            // Keep the clip on that lane so playback uses the same plugin as recording.
+            auto& clip = instrumentClips[(size_t) activeIndex];
+            const int previousLane = clip.trackLane;
+            clip.trackLane = selectedLane;
+            activeInstrumentLane = selectedLane;
             syncActivePlayback();
+            if (previousLane != selectedLane)
+                syncInstrumentLane(previousLane, projectClipEnd());
+        }
         return;
     }
     if (notes.empty()) return;
