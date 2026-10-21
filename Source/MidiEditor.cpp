@@ -251,20 +251,11 @@ public:
         selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
-        // Musically meaningful note lengths; ticks remain internal to the MIDI engine.
-        static const char* lengthNames[] = {
-            "Ronde", "Blanche", "Noire", "Croche", "Double-croche", "Triple-croche",
-            "Ronde pointée", "Blanche pointée", "Noire pointée", "Croche pointée",
-            "Double-croche pointée", "Triple-croche pointée",
-            "Blanche triolet", "Noire triolet", "Croche triolet",
-            "Double-croche triolet", "Triple-croche triolet"
-        };
-        for (int i = 0; i < 17; ++i)
-            durationValue.addItem(juce::String::fromUTF8(lengthNames[i]), i + 1);
-        durationValue.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
-        durationValue.setColour(juce::ComboBox::textColourId, juce::Colour(0xffffdf99));
-        durationValue.setTooltip(juce::String::fromUTF8("Durée musicale de la note sélectionnée"));
-        durationValue.onChange = [this] { applyDurationValue(); };
+        durationValue.setButtonText("Noire  ▾");
+        durationValue.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff233746));
+        durationValue.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffdf99));
+        durationValue.setTooltip(juce::String::fromUTF8("Choisir une durée dans la palette musicale"));
+        durationValue.onClick = [this] { showDurationPalette(); };
         durationValue.setVisible(false);
         addAndMakeVisible(durationValue);
         velocityValue.setInputRestrictions(3, "0123456789");
@@ -277,6 +268,84 @@ public:
         velocityValue.setVisible(false);
         addAndMakeVisible(velocityValue);
         startTimerHz(30);
+    }
+
+    class DurationPalette final : public juce::Component
+    {
+    public:
+        DurationPalette(int selected, std::function<void(int)> onSelect)
+            : selection(std::move(onSelect))
+        {
+            static const char* names[] = {
+                "Ronde", "Blanche", "Noire", "Croche", "Double-croche", "Triple-croche",
+                "Ronde pointée", "Blanche pointée", "Noire pointée", "Croche pointée",
+                "Double-croche pointée", "Triple-croche pointée",
+                "Blanche triolet", "Noire triolet", "Croche triolet",
+                "Double-croche triolet", "Triple-croche triolet"
+            };
+            for (int i = 0; i < 17; ++i)
+            {
+                auto button = std::make_unique<juce::TextButton>(juce::String::fromUTF8(names[i]));
+                button->setColour(juce::TextButton::buttonColourId,
+                                  juce::Colour(i + 1 == selected ? 0xff28606c : 0xff203948));
+                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff28606c));
+                button->setColour(juce::TextButton::textColourOffId,
+                                  juce::Colour(i + 1 == selected ? 0xff9ffaff : 0xffe8f3fa));
+                const int id = i + 1;
+                button->onClick = [this, id]
+                {
+                    selection(id);
+                    if (auto* popup = findParentComponentOfClass<juce::CallOutBox>())
+                        popup->dismiss();
+                };
+                addAndMakeVisible(*button);
+                buttons.push_back(std::move(button));
+            }
+            setSize(462, 360);
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff142633));
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(16.0f, 15.0f, 4.0f, 28.0f, 2.0f);
+            g.setColour(juce::Colour(0xfff1faff));
+            g.setFont(juce::Font(19.0f, juce::Font::bold));
+            g.drawText(juce::String::fromUTF8("DURÉE MUSICALE"), 29, 13, 395, 30,
+                       juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff89aab9));
+            g.setFont(juce::Font(12.0f));
+            g.drawText("STANDARD", 18, 53, 140, 20, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("POINTÉE"), 18, 148, 140, 20,
+                       juce::Justification::centredLeft);
+            g.drawText("TRIOLET", 18, 243, 140, 20, juce::Justification::centredLeft);
+        }
+        void resized() override
+        {
+            for (int i = 0; i < (int)buttons.size(); ++i)
+            {
+                const int group = i < 6 ? 0 : (i < 12 ? 1 : 2);
+                const int index = i - (group == 0 ? 0 : group == 1 ? 6 : 12);
+                buttons[(size_t)i]->setBounds(18 + (index % 3) * 144,
+                                               76 + group * 95 + (index / 3) * 32,
+                                               136, 28);
+            }
+        }
+    private:
+        std::function<void(int)> selection;
+        std::vector<std::unique_ptr<juce::TextButton>> buttons;
+    };
+
+    void showDurationPalette()
+    {
+        auto palette = std::make_unique<DurationPalette>(selectedDurationId,
+            [safe = juce::Component::SafePointer<juce::Component>(this), this](int id)
+            {
+                if (safe == nullptr) return;
+                selectedDurationId = id;
+                applyDurationValue();
+            });
+        juce::CallOutBox::launchAsynchronously(std::move(palette),
+                                               durationValue.getScreenBounds(), nullptr);
     }
 
     static std::int64_t musicalDurationTicks(int id)
@@ -294,7 +363,7 @@ public:
     {
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
-        const auto duration = musicalDurationTicks(durationValue.getSelectedId());
+        const auto duration = musicalDurationTicks(selectedDurationId);
         if (selected.empty() || duration <= 0) return;
         auto notes = midi.getNotesCopy();
         for (auto& note : notes)
@@ -812,7 +881,8 @@ private:
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton;
     juce::TextEditor velocityValue;
-    juce::ComboBox durationValue;
+    juce::TextButton durationValue;
+    int selectedDurationId = 3;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
@@ -885,16 +955,21 @@ private:
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
         durationValue.setVisible(hasSelection && durationValue.getWidth() >= 95);
-        if (hasSelection && !durationValue.isPopupActive())
+        if (hasSelection)
         {
             int matchingId = 0;
             for (int id = 1; id <= 17; ++id)
                 if (musicalDurationTicks(id) == selected.front().lengthTicks)
                 { matchingId = id; break; }
-            if (durationValue.getSelectedId() != matchingId)
-                durationValue.setSelectedId(matchingId, juce::dontSendNotification);
-            if (matchingId == 0)
-                durationValue.setText(juce::String::fromUTF8("Personnalisée"), juce::dontSendNotification);
+            selectedDurationId = matchingId;
+            static const char* labels[] = {
+                "Personnalisée", "Ronde", "Blanche", "Noire", "Croche", "Double-croche",
+                "Triple-croche", "Ronde pointée", "Blanche pointée", "Noire pointée",
+                "Croche pointée", "Double-croche pointée", "Triple-croche pointée",
+                "Blanche triolet", "Noire triolet", "Croche triolet",
+                "Double-croche triolet", "Triple-croche triolet"
+            };
+            durationValue.setButtonText(juce::String::fromUTF8(labels[matchingId]) + "  ▾");
         }
         velocityValue.setVisible(hasSelection && velocityValue.getWidth() >= 36);
         if (hasSelection && !velocityValue.hasKeyboardFocus(true))
