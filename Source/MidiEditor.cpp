@@ -220,11 +220,20 @@ public:
         if (e.mods.isCommandDown() || e.mods.isCtrlDown() || e.mods.isAltDown()) return;
         const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
         if (std::abs(delta) < 0.0001f) return;
-        // Wheel zooms the piano grid horizontally, not the piano keyboard.
-        // The arranger timeline has its own independent zoom.
-        const float current = localGridZoom;
-        localGridZoom = juce::jlimit(0.40f, 8.0f,
-            current * (delta > 0.0f ? 1.12f : 1.0f / 1.12f));
+        // Preserve both independently validated wheel interactions:
+        // keyboard column = pitch scroll; note grid = horizontal time zoom.
+        if (e.x < pianoKeyWidth)
+        {
+            const int steps = juce::jmax(1, (int) std::lround(std::abs(delta) * 6.0f));
+            lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys,
+                lowestVisibleKey + (delta > 0.0f ? steps : -steps));
+        }
+        else
+        {
+            localGridZoom = juce::jlimit(0.40f, 8.0f,
+                localGridZoom * (delta > 0.0f ? 1.12f : 1.0f / 1.12f));
+            velocityLane.repaint();
+        }
         repaint();
     }
 
@@ -500,7 +509,7 @@ private:
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         return (static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks))
-            * (double)getLibertyPianoHorizontalZoom();
+            * (double)getLibertyPianoHorizontalZoom() * (double)localGridZoom;
     }
     bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - velocityLaneHeight) && y < getHeight(); }
 
