@@ -213,6 +213,16 @@ public:
         startTimerHz(30);
     }
 
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+    {
+        if (e.mods.isCommandDown() || e.mods.isCtrlDown() || e.mods.isAltDown()) return;
+        const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
+        if (std::abs(delta) < 0.0001f) return;
+        const int steps = juce::jmax(1, (int) std::lround(std::abs(delta) * 6.0f));
+        lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys, lowestVisibleKey + (delta > 0.0f ? steps : -steps));
+        repaint();
+    }
+
     void resized() override
     {
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
@@ -261,7 +271,7 @@ public:
         }
         for (int row = 0; row < visibleKeys; ++row)
         {
-            const int note = lowestKey + row;
+            const int note = lowestVisibleKey + row;
             const int y = rulerHeight + (visibleKeys - 1 - row) * keyHeight;
             const auto key = juce::Rectangle<int>(0, y, pianoKeyWidth, keyHeight);
             const bool black = isBlackKey(note);
@@ -306,8 +316,8 @@ public:
         }
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
-            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
-            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const int x = grid.getX() + (int)std::llround((double)n.startTick * pixelsPerTick);
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
@@ -380,9 +390,9 @@ public:
         auto& midi = owner.getMidiEngine();
         for (const auto& n : midi.getNotesCopy())
         {
-            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys) continue;
+            if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visibleKeys) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * getPixelsPerTick());
-            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * getPixelsPerTick()));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
@@ -474,6 +484,7 @@ public:
     }
 
 private:
+    int lowestVisibleKey = lowestKey;
     int auditionPitch = -1;
     int auditionLane = -1;
     enum class ResizeSide { none, left, right };
@@ -495,9 +506,9 @@ private:
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
-            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
+            if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
-            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
@@ -516,9 +527,9 @@ private:
         ResizeSide bestSide = ResizeSide::none; float bestDistance = (float)resizeEdgePixels + 1.0f;
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
-            if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
+            if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visibleKeys || n.startTick >= clipLengthTicks) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
-            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
@@ -537,7 +548,7 @@ private:
                        : juce::MouseCursor::CrosshairCursor);
         repaint(); velocityLane.repaint();
     }
-    int pitchFromY(int y) const noexcept { const int keyHeight = currentKeyHeight(); const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / juce::jmax(1, keyHeight)); return lowestKey + visibleKeys - 1 - row; }
+    int pitchFromY(int y) const noexcept { const int keyHeight = currentKeyHeight(); const int row = juce::jlimit(0, visibleKeys - 1, (y - rulerHeight) / juce::jmax(1, keyHeight)); return lowestVisibleKey + visibleKeys - 1 - row; }
     std::int64_t tickFromX(int x) const noexcept { const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick()); return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks); }
 
     MainComponent& owner;
