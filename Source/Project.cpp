@@ -53,7 +53,7 @@ void rememberRecentLibertyProject(const juce::File& file)
     paths.removeString(file.getFullPathName());
     paths.insert(0, file.getFullPathName());
     while (paths.size() > 10) paths.remove(paths.size() - 1);
-    getRecentProjectsListFile().replaceWithText(paths.joinIntoString("\\n"));
+    getRecentProjectsListFile().replaceWithText(paths.joinIntoString("\n"));
 }
 
 bool prepareTrackProjectMedia(const juce::File& projectFile,
