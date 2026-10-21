@@ -186,37 +186,7 @@ MainComponent::MainComponent()
         resized();
     };
     addAndMakeVisible(dockVisibilityButton);
-    const auto configureDockTab = [this](juce::TextButton& button, const juce::String& label)
-    {
-        button.setButtonText(label);
-        button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202c37));
-        button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe8eff7));
-        button.setMouseClickGrabsKeyboardFocus(false);
-        addAndMakeVisible(button);
-    };
-    configureDockTab(dockMixerTab, "MIXER");
-    configureDockTab(dockPianoTab, "PIANO ROLL");
-    configureDockTab(dockStepTab, "STEP SEQ");
-    configureDockTab(dockDrumTab, "DRUM SAMPLER");
-    dockMixerTab.onClick = [this] {
-        dockMixerMode = true; dockStepSequencerMode = false; drumSamplerDockSelected = false; repaint();
-    };
-    dockPianoTab.onClick = [this] {
-        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
-        if (selectedTrack < getAudioTrackCount() || selectedTrack >= firstInstrument + getInstrumentTrackCount()) return;
-        dockMixerMode = false; dockStepSequencerMode = false; drumSamplerDockSelected = false; repaint();
-    };
-    dockStepTab.onClick = [this] {
-        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
-        if (selectedTrack < getAudioTrackCount() || selectedTrack >= firstInstrument + getInstrumentTrackCount()) return;
-        dockMixerMode = false; dockStepSequencerMode = true; drumSamplerDockSelected = false; repaint();
-    };
-    dockDrumTab.onClick = [this] {
-        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
-        if (selectedTrack < firstInstrument || selectedTrack >= firstInstrument + getInstrumentTrackCount()) return;
-        dockMixerMode = true; dockStepSequencerMode = false; drumSamplerDockSelected = true;
-        showFloatingDrumSamplerWindow(audioEngine); repaint();
-    };
+    addAndMakeVisible(dockNavigationHitLayer);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
@@ -1869,16 +1839,9 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 }
 
 void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
-    const int dockTop = getMixerTop();
-    dockMixerTab.setBounds(8, dockTop + 12, 148, 28);
-    dockPianoTab.setBounds(8, dockTop + 44, 148, 28);
-    dockStepTab.setBounds(8, dockTop + 76, 148, 28);
-    dockDrumTab.setBounds(8, dockTop + 108, 148, 28);
-    for (auto* tab : { &dockMixerTab, &dockPianoTab, &dockStepTab, &dockDrumTab })
-    {
-        tab->setVisible(!dockCollapsed);
-        if (!dockCollapsed) tab->toFront(false);
-    }
+    dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
+    dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
     dockVisibilityButton.toFront(false); updateMixerHorizontalScrollBar(); repaint(); }
 
 void MainComponent::timerCallback()
@@ -1899,13 +1862,10 @@ void MainComponent::timerCallback()
     if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
     dockResizeHandle.toFront(false);
     if (mixerHorizontalScrollBar.isVisible()) mixerHorizontalScrollBar.toFront(false);
-    // Controller overlays are refreshed every timer tick and may reorder the
-    // component z-stack. Restore native dock controls AFTER those updates.
-    for (auto* tab : { &dockMixerTab, &dockPianoTab, &dockStepTab, &dockDrumTab })
-    {
-        tab->setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-        if (tab->isVisible()) tab->toFront(false);
-    }
+    // Keep the clickable dock navigation surface above refreshed overlays.
+    dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
+    dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
+    if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
     dockVisibilityButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockVisibilityButton.isVisible()) dockVisibilityButton.toFront(false);
     const int dockY = getMixerTop();
@@ -2265,6 +2225,44 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
             }), true);
         return;
     }
+}
+
+void MainComponent::activateDockTab(int index)
+{
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool editorTrack = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool instrumentTrack = selectedTrack >= instrumentFirst
+        && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    switch (index)
+    {
+        case 0:
+            dockMixerMode = true;
+            dockStepSequencerMode = false;
+            drumSamplerDockSelected = false;
+            break;
+        case 1:
+            if (!editorTrack) return;
+            dockMixerMode = false;
+            dockStepSequencerMode = false;
+            drumSamplerDockSelected = false;
+            break;
+        case 2:
+            if (!editorTrack) return;
+            dockMixerMode = false;
+            dockStepSequencerMode = true;
+            drumSamplerDockSelected = false;
+            break;
+        case 3:
+            if (!instrumentTrack) return;
+            dockMixerMode = true;
+            dockStepSequencerMode = false;
+            drumSamplerDockSelected = true;
+            showFloatingDrumSamplerWindow(audioEngine);
+            break;
+        default: return;
+    }
+    repaint();
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
