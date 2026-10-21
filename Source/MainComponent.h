@@ -395,13 +395,15 @@ public:
     }
 
     DockResizeHandle dockResizeHandle;
-    int mixerHeight = 246;
+    int mixerHeight = 492;
+    bool dockCollapsed = false;
+    juce::TextButton dockVisibilityButton;
     bool draggingDockHeight = false;
     int dockDragStartY = 0;
-    int dockDragStartHeight = 246;
+    int dockDragStartHeight = 492;
     static constexpr int trackHeaderWidth = 330;
     int getArrangeTop() const noexcept { return transportHeight + trackRulerHeight; }
-    int getMixerTop() const noexcept { return juce::jmax(getArrangeTop(), getHeight() - mixerHeight); }
+    int getMixerTop() const noexcept { return juce::jmax(getArrangeTop(), getHeight() - (dockCollapsed ? 32 : mixerHeight)); }
     juce::Rectangle<int> getArrangeRowsBounds() const noexcept
     {
         return { 0, getArrangeTop(), getWidth(), juce::jmax(0, getMixerTop() - getArrangeTop()) };
