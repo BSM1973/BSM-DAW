@@ -394,7 +394,7 @@ public:
         if (!selectedNotes.empty() && getWidth() > pianoKeyWidth + 390)
         {
             g.setColour(juce::Colour(0xffffdf99));
-            g.drawText("Vél.", pianoKeyWidth + 275, infoY, 42, rulerHeight - infoY - 1, juce::Justification::centredRight);
+            g.drawText(juce::String::fromUTF8("Vél."), pianoKeyWidth + 275, infoY, 42, rulerHeight - infoY - 1, juce::Justification::centredRight);
             g.setColour(juce::Colour(0xffd4e5ed));
             g.drawText("Canal " + juce::String((int)selectedNotes.front().channel)
                        + (selectedNotes.front().muted ? "  MUET" : ""),
