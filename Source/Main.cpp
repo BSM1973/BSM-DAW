@@ -94,6 +94,37 @@ public:
         setColour(juce::AlertWindow::outlineColourId, juce::Colour(0xff41677a));
     }
 
+    // Obsidian controls: rounded surfaces, clear focus and generous hit targets.
+    void drawComboBox(juce::Graphics& g, int width, int height, bool,
+                      int, int, int, int, juce::ComboBox& box) override
+    {
+        const auto bounds = juce::Rectangle<float>(0.5f, 0.5f,
+                                                    (float)width - 1.0f, (float)height - 1.0f);
+        g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+        g.fillRoundedRectangle(bounds, 7.0f);
+        g.setColour(box.findColour(box.hasKeyboardFocus(true)
+                                  ? juce::ComboBox::focusedOutlineColourId
+                                  : juce::ComboBox::outlineColourId));
+        g.drawRoundedRectangle(bounds, 7.0f, box.hasKeyboardFocus(true) ? 1.6f : 1.0f);
+        const float cx = (float)width - 15.0f;
+        const float cy = (float)height * 0.5f;
+        juce::Path chevron;
+        chevron.startNewSubPath(cx - 4.0f, cy - 2.0f);
+        chevron.lineTo(cx, cy + 2.0f);
+        chevron.lineTo(cx + 4.0f, cy - 2.0f);
+        g.setColour(box.findColour(juce::ComboBox::arrowColourId)
+                       .withAlpha(box.isEnabled() ? 1.0f : 0.35f));
+        g.strokePath(chevron, juce::PathStrokeType(1.7f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
+
+    juce::Label* createComboBoxTextBox(juce::ComboBox& box) override
+    {
+        auto* label = juce::LookAndFeel_V4::createComboBoxTextBox(box);
+        label->setJustificationType(juce::Justification::centredLeft);
+        return label;
+    }
+
     void drawMenuBarBackground(juce::Graphics& g, int width, int height,
                                bool, juce::MenuBarComponent&) override
     {
