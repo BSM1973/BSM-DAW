@@ -136,6 +136,7 @@ MainComponent::MainComponent()
         loopEnabled = !loopEnabled;
         if (loopEndSeconds <= loopStartSeconds)
             loopEndSeconds = loopStartSeconds + 4.0 * 60.0 / juce::jmax(1.0, tempoBpm);
+        audioEngine.setLoopTransportEndSeconds(loopEnabled ? loopEndSeconds : 0.0);
         updateLoopPunchButtons();
     };
     punchOutButton.onClick = [this]
@@ -1906,6 +1907,8 @@ void MainComponent::timerCallback()
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
+    // Follow draggable loop markers without changing MIDI clip playback.
+    audioEngine.setLoopTransportEndSeconds(loopEnabled && loopEndSeconds > loopStartSeconds ? loopEndSeconds : 0.0);
     double transportTime = audioEngine.getCurrentTimeSeconds();
     if (punchWaitingForIn && audioEngine.isPlaying()
         && transportTime >= punchInSeconds)
