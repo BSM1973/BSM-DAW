@@ -26,6 +26,9 @@ void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName(
             - owner.getAudioTrackCount() - owner.getMidiTrackCount();
         if (selectedInstrumentRow >= 0 && selectedInstrumentRow < owner.getInstrumentTrackCount())
             selectedLane = selectedInstrumentRow;
+        else if (activeInstrument && activeInstrumentLane >= 0
+                 && activeInstrumentLane < owner.getInstrumentTrackCount())
+            selectedLane = activeInstrumentLane;
         else if (owner.getInstrumentTrackCount() == 1)
             selectedLane = 0;
         else
