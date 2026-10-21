@@ -295,8 +295,8 @@ public:
                 button->onClick = [this, id]
                 {
                     selection(id);
-                    if (auto* popup = findParentComponentOfClass<juce::CallOutBox>())
-                        popup->dismiss();
+                    // The owner closes the palette asynchronously after this click.
+                    // Never delete the button while its onClick is still executing.
                 };
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
@@ -337,25 +337,39 @@ public:
 
     void showDurationPalette()
     {
-        auto palette = std::make_unique<DurationPalette>(selectedDurationId,
-            [safe = juce::Component::SafePointer<juce::Component>(this), this](int id)
+        if (durationPalette != nullptr)
+        {
+            durationPalette->setVisible(false);
+            durationPalette.reset();
+        }
+        auto* host = getTopLevelComponent();
+        if (host == nullptr) return;
+        durationPalette = std::make_unique<DurationPalette>(selectedDurationId,
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int id)
             {
                 if (safe == nullptr) return;
-                selectedDurationId = id;
-                applyDurationValue();
+                safe->selectedDurationId = id;
+                safe->applyDurationValue();
+                // Avoid destroying a clicked button from inside its callback.
+                juce::MessageManager::callAsync([safe]
+                {
+                    if (safe != nullptr)
+                    {
+                        if (safe->durationPalette != nullptr)
+                        {
+                            safe->durationPalette->setVisible(false);
+                            safe->durationPalette.reset();
+                        }
+                    }
+                });
             });
-        // Keep the callout inside the stable top-level JUCE window rather than
-        // creating a separate native desktop window.  The latter can oscillate
-        // between screen-relative placements as the dock repaints/resizes.
-        auto* popupParent = getTopLevelComponent();
-        // JUCE CallOutBox expects coordinates LOCAL to its parent when a
-        // parent component is supplied. Screen coordinates here caused the
-        // whole popup to jump as JUCE tried to fit it inside the parent.
-        const auto anchorInParent = popupParent->getLocalArea(nullptr,
-                                                               durationValue.getScreenBounds());
-        auto& popup = juce::CallOutBox::launchAsynchronously(std::move(palette),
-                                                              anchorInParent, popupParent);
-        activeDurationPalette = &popup;
+        host->addAndMakeVisible(*durationPalette);
+        // Fixed overlay coordinates, with no JUCE CallOutBox repositioning.
+        const auto anchor = host->getLocalArea(nullptr, durationValue.getScreenBounds());
+        const int x = juce::jlimit(0, juce::jmax(0, host->getWidth() - 462), anchor.getX());
+        const int y = juce::jlimit(0, juce::jmax(0, host->getHeight() - 360), anchor.getBottom() + 5);
+        durationPalette->setBounds(x, y, 462, 360);
+        durationPalette->toFront(true);
     }
 
     static std::int64_t musicalDurationTicks(int id)
@@ -893,7 +907,7 @@ private:
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
     int selectedDurationId = 3;
-    juce::Component::SafePointer<juce::CallOutBox> activeDurationPalette;
+    std::unique_ptr<DurationPalette> durationPalette;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
@@ -970,7 +984,7 @@ private:
             durationValue.setVisible(shouldShowDuration);
         // A floating palette must not be driven by the 30 Hz editor refresh.
         // Hold the anchor label/selection steady until the popup is dismissed.
-        if (hasSelection && activeDurationPalette == nullptr)
+        if (hasSelection && durationPalette == nullptr)
         {
             int matchingId = 0;
             for (int id = 1; id <= 17; ++id)
