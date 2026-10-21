@@ -201,9 +201,25 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
-    // Dock navigation is painted once in paint(). Do not overpaint it here:
-    // the old overlay hid MIXER and placed editor buttons on the wrong rows.
-    juce::ignoreUnused(g);
+    // Paint only the playhead above child clip components. The original
+    // playhead/ruler and dock navigation remain in paint(); no MIDI state,
+    // clip ownership, hit testing, or audio routing is changed here.
+    const float x = static_cast<float>(trackHeaderWidth)
+        + static_cast<float>(playheadSeconds * getLibertyTimelinePixelsPerSecond());
+    if (x < static_cast<float>(trackHeaderWidth) || x > static_cast<float>(getWidth()))
+        return;
+    const int top = getArrangeTop();
+    const int bottom = getMixerTop();
+    if (bottom <= top)
+        return;
+    const juce::Graphics::ScopedSaveState saved(g);
+    g.reduceClipRegion(juce::Rectangle<int>(trackHeaderWidth, top,
+                                            juce::jmax(0, getWidth() - trackHeaderWidth),
+                                            bottom - top));
+    g.setColour(juce::Colour(0xff07111c).withAlpha(0.75f));
+    g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 4.0f);
+    g.setColour(juce::Colour(0xfff8b84d));
+    g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
 }
 
 void MainComponent::paint(juce::Graphics& g)
