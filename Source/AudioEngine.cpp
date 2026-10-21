@@ -243,6 +243,7 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
         snapshot->notes.reserve(notes.size());
         for (const auto& note : notes)
         {
+            if (note.muted) continue;
             InstrumentPlaybackNote playbackNote;
             playbackNote.startSeconds = MidiEngine::tickToSeconds(note.startTick, rate);
             playbackNote.endSeconds = MidiEngine::tickToSeconds(note.startTick + note.lengthTicks, rate);
@@ -290,6 +291,7 @@ void AudioEngine::setInstrumentArrangementClips(int instrumentTrack,
             if (!std::isfinite(clipEnd)) continue;
             for (const auto& note : clip.notes)
             {
+                if (note.muted) continue;
                 if (note.startTick < 0 || note.lengthTicks <= 0
                     || note.startTick > std::numeric_limits<std::int64_t>::max() - note.lengthTicks)
                     continue;
