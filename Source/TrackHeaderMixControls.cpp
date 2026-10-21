@@ -151,19 +151,18 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              // Determine the visible instrument range from the same rows
              // that MainComponent paints.  Audio-only viewports must never
              // contain a MIDI selector, even when a stale child has bounds.
+             // The last pixel of the arranger can be empty: querying its
+             // track index then returns -1 and previously hid ALL MIDI
+             // selectors, even when an instrument row was fully visible.
+             // Determine visibility from this row's actual bounds instead.
              const int firstInstrument=owner.getAudioTrackCount()+owner.getMidiTrackCount();
-             const int firstVisible=owner.getTrackScrollRows();
-             const int lastVisible=owner.getArrangeTrackAtY(owner.getMixerTop()-1);
-             const bool instrumentInViewport=lastVisible>=firstInstrument
-                 && firstVisible<owner.getTotalArrangeTrackCount();
-             const bool visible=instrumentInViewport
-                 && logical>=firstInstrument
-                 && logical>=firstVisible && logical<=lastVisible
+             const bool visible=logical>=firstInstrument
+                 && logical>=owner.getTrackScrollRows()
                  && rh>=31 && y>=owner.getArrangeTop()
                  && selectorY+24<=owner.getMixerTop()
-                 && owner.getArrangeTrackAtY(selectorY)==logical
-                 && owner.getArrangeTrackAtY(selectorY+23)==logical;
+                 && owner.getArrangeTrackAtY(selectorY+12)==logical;
              c.midiInput->setVisible(visible);
+             if (visible) c.midiInput->toFront(false);
          }
          if(!middleVisible)continue;
          c.pan->setBounds(22,y+62,27,27);
