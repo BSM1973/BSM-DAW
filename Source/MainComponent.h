@@ -37,6 +37,7 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
+    void openRecentProject(const juce::File& file, std::function<void()> onOpened);
     void updateLoopPunchButtons();
     double loopStartSeconds = 0.0, loopEndSeconds = 8.0;
     double punchInSeconds = 0.0, punchOutSeconds = 8.0;
@@ -1021,7 +1022,7 @@ private:
         double dragStartSeconds = 0.0;
         double dragStartLengthSeconds = 0.0;
     };
-    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&); void openRecentProject(const juce::File& file, std::function<void()> onOpened); bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
+    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&);  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
     struct PendingAudioWarpState
     {
         bool enabled = false;
