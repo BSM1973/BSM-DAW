@@ -338,6 +338,24 @@ public:
     }
     void mouseExit(const juce::MouseEvent&) override { if (!draggingNote) setMouseCursor(juce::MouseCursor::CrosshairCursor); }
 
+    // Both the embedded dock and the floating editor use this PianoRoll.
+    // Handle note insertion on the editor itself rather than relying on a
+    // separate selection overlay that may only exist in floating windows.
+    void mouseDoubleClick(const juce::MouseEvent& e) override
+    {
+        if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
+            || e.y < rulerHeight || isInVelocityLane(e.y))
+            return;
+        const int pitch = pitchFromY(e.y);
+        const auto tick = tickFromX(e.x);
+        if (owner.getMidiEngine().addNote(tick, MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
+        {
+            owner.updateMidiClipTiming();
+            repaint();
+            owner.repaint();
+        }
+    }
+
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (e.mods.isLeftButtonDown() && e.x >= 0 && e.x < pianoKeyWidth
