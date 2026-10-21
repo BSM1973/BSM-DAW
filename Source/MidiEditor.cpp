@@ -344,12 +344,11 @@ public:
             && e.y >= rulerHeight && !isInVelocityLane(e.y))
         {
             auditionPitch = pitchFromY(e.y);
-            const int instrumentFirst = owner.getAudioTrackCount() + owner.getMidiTrackCount();
-            const int lane = owner.selectedTrack - instrumentFirst;
+            const int lane = owner.getSelectedPianoInstrumentLane();
             if (lane >= 0 && lane < owner.getInstrumentTrackCount())
             {
                 auditionLane = lane;
-                owner.audioEngine.sendPianoPreviewMidi(lane, juce::MidiMessage::noteOn(1, auditionPitch, (juce::uint8)100));
+                owner.auditionPianoKey(lane, auditionPitch, true);
             }
             repaint();
             return;
@@ -411,10 +410,10 @@ public:
             if (next != auditionPitch)
             {
                 if (auditionLane >= 0)
-                    owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOff(1, auditionPitch));
+                    owner.auditionPianoKey(auditionLane, auditionPitch, false);
                 auditionPitch = next;
                 if (next >= 0 && auditionLane >= 0)
-                    owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOn(1, next, (juce::uint8)100));
+                    owner.auditionPianoKey(auditionLane, next, true);
                 repaint();
             }
             return;
@@ -445,7 +444,7 @@ public:
         if (auditionPitch >= 0)
         {
             if (auditionLane >= 0)
-                owner.audioEngine.sendPianoPreviewMidi(auditionLane, juce::MidiMessage::noteOff(1, auditionPitch));
+                owner.auditionPianoKey(auditionLane, auditionPitch, false);
             auditionPitch = -1;
             auditionLane = -1;
             repaint();
