@@ -969,7 +969,11 @@ private:
                 "Blanche triolet", "Noire triolet", "Croche triolet",
                 "Double-croche triolet", "Triple-croche triolet"
             };
-            durationValue.setButtonText(juce::String::fromUTF8(labels[matchingId]) + "  ▾");
+            const auto newLabel = juce::String::fromUTF8(labels[matchingId]) + "  ▾";
+            // The 30 Hz MIDI refresh must not reset the button's text every frame:
+            // doing so forces JUCE to repaint and makes the palette anchor jitter.
+            if (durationValue.getButtonText() != newLabel)
+                durationValue.setButtonText(newLabel);
         }
         velocityValue.setVisible(hasSelection && velocityValue.getWidth() >= 36);
         if (hasSelection && !velocityValue.hasKeyboardFocus(true))
