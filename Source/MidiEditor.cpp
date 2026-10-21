@@ -536,6 +536,8 @@ public:
 
 private:
     std::array<juce::TextButton, 9> toolButtons;
+    // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
+    juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
     int lowestVisibleKey = lowestKey;
     float localGridZoom = 1.0f;
