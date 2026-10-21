@@ -402,6 +402,13 @@ public:
     // Both the embedded dock and the floating editor use this PianoRoll.
     // Handle note insertion on the editor itself rather than relying on a
     // separate selection overlay that may only exist in floating windows.
+    void paintOverChildren(juce::Graphics& g) override
+    {
+        if (!selectingRectangle) return;
+        const auto area = juce::Rectangle<int>::leftTopRightBottom(juce::jmin(rectangleStart.x, rectangleEnd.x), juce::jmin(rectangleStart.y, rectangleEnd.y), juce::jmax(rectangleStart.x, rectangleEnd.x), juce::jmax(rectangleStart.y, rectangleEnd.y));
+        g.setColour(juce::Colour(0xff56bfd9).withAlpha(0.14f)); g.fillRect(area);
+        g.setColour(juce::Colour(0xff56bfd9)); g.drawRect(area, 1);
+    }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
@@ -434,7 +441,7 @@ public:
         }
         if (e.mods.isRightButtonDown() || e.y < rulerHeight || e.x < pianoKeyWidth) return;
         const int tool = getLibertyActiveTool();
-        if (tool == 7 || tool == 6) return; // MARQUEE and VELOCITY have dedicated handlers.
+        if (tool == 7) { selectingRectangle = true; rectangleStart = e.getPosition(); rectangleEnd = rectangleStart; repaint(); return; }
 
         const int pitch = pitchFromY(e.y);
         const int keyHeight = currentKeyHeight();
@@ -448,6 +455,25 @@ public:
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
             {
+                if (tool == 6) { editingVelocity = true; velocityNoteTick = n.startTick; velocityNotePitch = n.pitch; velocityNoteChannel = n.channel; velocityStartY = e.y; velocityStartValue = n.velocity; return; }
+                if (tool == 2)
+                {
+                    const auto split = tickFromX(e.x);
+                    if (split > n.startTick && split < n.startTick + n.lengthTicks)
+                    {
+                        auto notes = midi.getNotesCopy();
+                        for (auto& part : notes)
+                            if (part.startTick == n.startTick && part.pitch == n.pitch && part.channel == n.channel)
+                            {
+                                part.lengthTicks = split - n.startTick;
+                                auto right = n; right.startTick = split; right.lengthTicks = n.startTick + n.lengthTicks - split;
+                                notes.push_back(right);
+                                break;
+                            }
+                        if (midi.replaceNotes(notes)) { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+                    }
+                    return;
+                }
                 if (tool == 3) // ERASE / EFFACER
                 {
                     midi.removeNoteAt(n.startTick, n.pitch, n.channel);
@@ -482,6 +508,28 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (selectingRectangle)
+        {
+            rectangleEnd = e.getPosition();
+            const auto area = juce::Rectangle<int>::leftTopRightBottom(juce::jmin(rectangleStart.x, rectangleEnd.x), juce::jmin(rectangleStart.y, rectangleEnd.y), juce::jmax(rectangleStart.x, rectangleEnd.x), juce::jmax(rectangleStart.y, rectangleEnd.y));
+            std::vector<MidiEngine::NoteEvent> selected;
+            for (const auto& n : owner.getMidiEngine().getNotesCopy())
+            {
+                const int x = pianoKeyWidth + (int) std::llround(n.startTick * getPixelsPerTick());
+                const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestVisibleKey)) * currentKeyHeight() + 2;
+                const int w = juce::jmax(8, (int) std::llround(n.lengthTicks * getPixelsPerTick()));
+                if (area.intersects(juce::Rectangle<int>(x, y, w, currentKeyHeight() - 3))) selected.push_back(n);
+            }
+            owner.getMidiEngine().setSelectedNotes(selected);
+            repaint(); return;
+        }
+        if (editingVelocity)
+        {
+            const int value = juce::jlimit(1, 127, velocityStartValue + velocityStartY - e.y);
+            if (owner.getMidiEngine().setNoteVelocity(velocityNoteTick, velocityNotePitch, velocityNoteChannel, value))
+            { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+            return;
+        }
         if (auditionPitch >= 0)
         {
             const int next = e.x >= 0 && e.x < pianoKeyWidth && e.y >= rulerHeight && !isInVelocityLane(e.y)
@@ -520,6 +568,8 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
+        if (selectingRectangle) { selectingRectangle = false; repaint(); return; }
+        if (editingVelocity) { editingVelocity = false; repaint(); return; }
         if (auditionPitch >= 0)
         {
             if (auditionLane >= 0)
@@ -539,6 +589,10 @@ private:
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
+    bool selectingRectangle = false, editingVelocity = false;
+    juce::Point<int> rectangleStart, rectangleEnd;
+    std::int64_t velocityNoteTick = 0;
+    int velocityNotePitch = 60, velocityNoteChannel = 1, velocityStartY = 0, velocityStartValue = 100;
     int lowestVisibleKey = lowestKey;
     float localGridZoom = 1.0f;
     int auditionPitch = -1;
