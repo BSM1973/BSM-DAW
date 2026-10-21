@@ -251,6 +251,15 @@ public:
         selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
+        durationValue.setInputRestrictions(9, "0123456789");
+        durationValue.setJustification(juce::Justification::centred);
+        durationValue.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff233746));
+        durationValue.setColour(juce::TextEditor::textColourId, juce::Colour(0xffffdf99));
+        durationValue.setTooltip(juce::String::fromUTF8("Durée en ticks : Entrée pour appliquer"));
+        durationValue.onReturnKey = [this] { applyDurationValue(); };
+        durationValue.onEscapeKey = [this] { durationValue.giveAwayKeyboardFocus(); };
+        durationValue.setVisible(false);
+        addAndMakeVisible(durationValue);
         velocityValue.setInputRestrictions(3, "0123456789");
         velocityValue.setJustification(juce::Justification::centred);
         velocityValue.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff233746));
@@ -261,6 +270,28 @@ public:
         velocityValue.setVisible(false);
         addAndMakeVisible(velocityValue);
         startTimerHz(30);
+    }
+
+    void applyDurationValue()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        const auto duration = juce::jmax<std::int64_t>(1, durationValue.getText().getLargeIntValue());
+        auto notes = midi.getNotesCopy();
+        for (auto& note : notes)
+            if (midi.isNoteSelected(note)) note.lengthTicks = duration;
+        if (midi.replaceNotes(notes))
+        {
+            auto updated = selected;
+            for (auto& note : updated) note.lengthTicks = duration;
+            midi.setSelectedNotes(updated);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+        durationValue.setText(juce::String(duration), juce::dontSendNotification);
+        durationValue.giveAwayKeyboardFocus();
     }
 
     void applyVelocityValue()
@@ -363,6 +394,9 @@ public:
         selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
         // Keep the editable value inside the visible information line, not at the far-right edge.
         const int velocityX = pianoKeyWidth + 320;
+        durationValue.setBounds(pianoKeyWidth + 210, editorToolbarHeight + 3,
+                                juce::jmax(0, juce::jmin(65, getWidth() - pianoKeyWidth - 218)),
+                                juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
         velocityValue.setBounds(velocityX, editorToolbarHeight + 3,
                                 juce::jmax(0, juce::jmin(56, getWidth() - velocityX - 8)),
                                 juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
@@ -399,8 +433,7 @@ public:
             const auto beatNumber = measure > 0 ? (n.startTick % measure) / beat + 1 : 1;
             info = "Mes. " + juce::String(barNumber)
                  + "." + juce::String(beatNumber)
-                 + "  Note " + juce::MidiMessage::getMidiNoteName((int)n.pitch, true, true, 3)
-                 + "  Durée " + juce::String(n.lengthTicks);
+                 + "  Note " + juce::MidiMessage::getMidiNoteName((int)n.pitch, true, true, 3);
         }
         g.setColour(juce::Colour(0xffd4e5ed));
         g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, juce::jmin(258, getWidth() - pianoKeyWidth - 14)),
@@ -408,6 +441,8 @@ public:
         if (!selectedNotes.empty() && getWidth() > pianoKeyWidth + 390)
         {
             g.setColour(juce::Colour(0xffffdf99));
+            g.drawText(juce::String::fromUTF8("Durée"), pianoKeyWidth + 158, infoY, 48,
+                       rulerHeight - infoY - 1, juce::Justification::centredRight);
             g.drawText(juce::String::fromUTF8("Vél."), pianoKeyWidth + 275, infoY, 42, rulerHeight - infoY - 1, juce::Justification::centredRight);
             g.setColour(juce::Colour(0xffd4e5ed));
             g.drawText("Canal " + juce::String((int)selectedNotes.front().channel)
@@ -760,7 +795,7 @@ public:
 private:
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton;
-    juce::TextEditor velocityValue;
+    juce::TextEditor velocityValue, durationValue;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
@@ -832,6 +867,13 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
+        durationValue.setVisible(hasSelection && durationValue.getWidth() >= 40);
+        if (hasSelection && !durationValue.hasKeyboardFocus(true))
+        {
+            const auto display = juce::String(selected.front().lengthTicks);
+            if (durationValue.getText() != display)
+                durationValue.setText(display, juce::dontSendNotification);
+        }
         velocityValue.setVisible(hasSelection && velocityValue.getWidth() >= 36);
         if (hasSelection && !velocityValue.hasKeyboardFocus(true))
         {
