@@ -1122,5 +1122,16 @@ void layoutLibertyPianoRollDock(MainComponent& owner, juce::Rectangle<int> bound
     }
     dockPianoRoll->setBounds(bounds);
     dockPianoRoll->setVisible(visible && bounds.getWidth() > 80 && bounds.getHeight() > 120);
-    if (dockPianoRoll->isVisible()) dockPianoRoll->toFront(false);
+    // This layout runs at 30 Hz. Raising the piano roll while its popup is
+    // open covers the popup; the two surfaces then alternate in front.
+    bool durationPaletteOpen = false;
+    for (int i = 0; i < owner.getNumChildComponents(); ++i)
+        if (auto* child = owner.getChildComponent(i))
+            if (child->getName() == "LibertyDurationPaletteOverlay" && child->isVisible())
+            {
+                durationPaletteOpen = true;
+                break;
+            }
+    if (dockPianoRoll->isVisible() && !durationPaletteOpen)
+        dockPianoRoll->toFront(false);
 }
