@@ -104,6 +104,12 @@ public:
         monitoredInstrumentTrack.store(track, std::memory_order_release);
         instrumentPanicPending.store(true, std::memory_order_release);
     }
+    void sendPianoPreviewMidi(int track, const juce::MidiMessage& message)
+    {
+        if (track < 0 || track >= getInstrumentTrackCount()) return;
+        pianoPreviewTrack.store(track, std::memory_order_release);
+        pianoPreviewCollector.addMessageToQueue(message);
+    }
     int getMonitoredInstrumentTrack() const noexcept { return monitoredInstrumentTrack.load(std::memory_order_acquire); }
     struct CapturedMidiEvent { juce::MidiMessage message; double seconds = 0.0; };
     void beginMidiCapture(int instrumentTrack) noexcept;
