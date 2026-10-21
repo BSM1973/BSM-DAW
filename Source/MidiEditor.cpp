@@ -328,6 +328,38 @@ public:
         g.fillRect(0, 0, getWidth(), editorToolbarHeight);
         g.setColour(juce::Colour(0xff3b5262));
         g.fillRect(0, editorToolbarHeight - 1, getWidth(), 1);
+        // Cubase-inspired MIDI information line, fitted into the existing ruler header.
+        const auto selectedNotes = owner.getMidiEngine().getSelectedNotesCopy();
+        const int infoY = editorToolbarHeight + 2;
+        g.setColour(juce::Colour(0xff17242e));
+        g.fillRect(pianoKeyWidth, infoY, juce::jmax(0, getWidth() - pianoKeyWidth), rulerHeight - infoY);
+        g.setColour(juce::Colour(0xff405767));
+        g.drawHorizontalLine(rulerHeight - 1, (float)pianoKeyWidth, (float)getWidth());
+        g.setFont(juce::Font(11.0f));
+        juce::String info;
+        if (selectedNotes.empty())
+            info = "MIDI  |  Aucune note sélectionnée";
+        else if (selectedNotes.size() > 1)
+            info = "MIDI  |  " + juce::String((int) selectedNotes.size()) + " notes sélectionnées";
+        else
+        {
+            const auto& n = selectedNotes.front();
+            const auto beat = MidiEngine::ticksPerQuarterNote;
+            const auto measure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
+            const auto barNumber = measure > 0 ? n.startTick / measure + 1 : 1;
+            const auto beatNumber = measure > 0 ? (n.startTick % measure) / beat + 1 : 1;
+            info = "MIDI  |  Mes. " + juce::String(barNumber)
+                 + "  Temps " + juce::String(beatNumber)
+                 + "  Tick " + juce::String(n.startTick)
+                 + "  Note " + juce::MidiMessage::getMidiNoteName((int)n.pitch, true, true, 3)
+                 + "  Durée " + juce::String(n.lengthTicks)
+                 + "  Vél. " + juce::String((int)n.velocity)
+                 + "  Canal " + juce::String((int)n.channel)
+                 + (n.muted ? "  [MUET]" : "");
+        }
+        g.setColour(juce::Colour(0xffd4e5ed));
+        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, getWidth() - pianoKeyWidth - 14),
+                         rulerHeight - infoY - 1, juce::Justification::centredLeft, 1);
         const auto b = getLocalBounds();
         const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - velocityLaneHeight);
         const auto grid = juce::Rectangle<int>(pianoKeyWidth, rulerHeight, b.getWidth() - pianoKeyWidth, juce::jmax(1, velocityAreaY - rulerHeight));
