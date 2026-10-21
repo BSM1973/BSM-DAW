@@ -511,7 +511,7 @@ void MainComponent::newProject()
     });
 }
 
-void MainComponent::openRecentProject(const juce::File& file)
+void MainComponent::openRecentProject(const juce::File& file, std::function<void()> onOpened)
 {
     if (!file.existsAsFile() || !file.hasFileExtension("bsmproj"))
     {
@@ -519,7 +519,10 @@ void MainComponent::openRecentProject(const juce::File& file)
             "Liberty", juce::String::fromUTF8("Ce projet récent est introuvable."), "OK");
         return;
     }
-    confirmBeforeProjectAction([this, file] { loadProjectFromFile(file); });
+    confirmBeforeProjectAction([this, file, onOpened = std::move(onOpened)]
+    {
+        if (loadProjectFromFile(file) && onOpened) onOpened();
+    });
 }
 
 void MainComponent::openProject()
