@@ -373,9 +373,9 @@ public:
         g.setFont(juce::Font(11.0f));
         juce::String info;
         if (selectedNotes.empty())
-            info = "MIDI  |  Aucune note sélectionnée";
+            info = juce::String::fromUTF8("MIDI  |  Aucune note sélectionnée");
         else if (selectedNotes.size() > 1)
-            info = "MIDI  |  " + juce::String((int) selectedNotes.size()) + " notes sélectionnées";
+            info = "MIDI  |  " + juce::String((int) selectedNotes.size()) + juce::String::fromUTF8(" notes sélectionnées");
         else
         {
             const auto& n = selectedNotes.front();
@@ -495,15 +495,25 @@ public:
             if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
-            // Obsidian MIDI notes: brighter idle blue, clear turquoise playback state.
+            // Velocity heatmap: low = blue, medium = green, high = amber, maximum = red.
+            // Selection and playback use outlines so the velocity colour remains visible.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
-            g.setColour(n.muted ? juce::Colour(0xff46505a) : selected ? juce::Colour(0xffe6aa55) : active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
+            const float velocityRatio = juce::jlimit(0.0f, 1.0f, ((float)n.velocity - 1.0f) / 126.0f);
+            const juce::Colour stops[] = {
+                juce::Colour(0xff3575d9), juce::Colour(0xff36c9c5),
+                juce::Colour(0xff55c86b), juce::Colour(0xffffbe45),
+                juce::Colour(0xffed3949)
+            };
+            const float scaled = velocityRatio * 4.0f;
+            const int segment = juce::jlimit(0, 3, (int)scaled);
+            const juce::Colour velocityColour = stops[segment].interpolatedWith(stops[segment + 1], scaled - (float)segment);
+            g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
             // Defined idle-note outlines improve separation without changing active playback styling.
-            g.setColour(n.muted ? juce::Colour(0xff75808b) : selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
+            g.setColour(n.muted ? juce::Colour(0xff75808b) : selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffffffff) : velocityColour.brighter(0.35f));
             g.drawRoundedRectangle(r.toFloat(), 3.0f, selected ? 2.2f : active ? 1.5f : 1.0f);
         }
     }
