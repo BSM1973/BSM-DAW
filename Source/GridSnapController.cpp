@@ -46,3 +46,20 @@ double getLibertySnapStepSeconds(double bpm) noexcept
         default: return q / 4.0;
     }
 }
+
+// Musical grid division shared by the arranger and both Piano Roll views.
+// Zero means SNAP OFF: preserve the unsnapped tick position.
+std::int64_t getLibertySnapStepTicks() noexcept
+{
+    switch (snapIndex.load())
+    {
+        case 0: return 0;
+        case 1: return 960;
+        case 2: return 480;
+        case 3: return 240;
+        case 4: return 120;
+        case 5: return 320;
+        case 6: return 160;
+        default: return 240;
+    }
+}
