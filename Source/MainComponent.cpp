@@ -1867,6 +1867,18 @@ void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDyna
 
 void MainComponent::timerCallback()
 {
+    // A 30 Hz series of toFront() calls previously competed with the floating
+    // duration palette, causing the dock layers to repeatedly cover it.
+    // Preserve the dock's current z-order while that short-lived palette is open.
+    bool durationPaletteOpen = false;
+    for (int i = 0; i < getNumChildComponents(); ++i)
+        if (auto* child = getChildComponent(i))
+            if (child->getName() == "LibertyDurationPaletteOverlay" && child->isVisible())
+            {
+                durationPaletteOpen = true;
+                break;
+            }
+
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
     resizeLibertyDynamicTrackController(this);
@@ -1874,21 +1886,21 @@ void MainComponent::timerCallback()
     ensureLibertyAudioRecordingController(this);
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
-    dockResizeHandle.toFront(false);
+    if (!durationPaletteOpen) dockResizeHandle.toFront(false);
     updateMixerHorizontalScrollBar();
     // Keep mixer hit-testing above overlays that repaint or reorder themselves.
     dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop()));
     dockMixerInputLayer.setVisible(dockMixerMode
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-    if (dockMixerInputLayer.isVisible()) dockMixerInputLayer.toFront(false);
-    dockResizeHandle.toFront(false);
-    if (mixerHorizontalScrollBar.isVisible()) mixerHorizontalScrollBar.toFront(false);
+    if (!durationPaletteOpen && (dockMixerInputLayer.isVisible())) dockMixerInputLayer.toFront(false);
+    if (!durationPaletteOpen) dockResizeHandle.toFront(false);
+    if (!durationPaletteOpen && (mixerHorizontalScrollBar.isVisible())) mixerHorizontalScrollBar.toFront(false);
     // Keep the clickable dock navigation surface above refreshed overlays.
     dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
     dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-    if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
+    if (!durationPaletteOpen && (dockNavigationHitLayer.isVisible())) dockNavigationHitLayer.toFront(false);
     dockVisibilityButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
-    if (dockVisibilityButton.isVisible()) dockVisibilityButton.toFront(false);
+    if (!durationPaletteOpen && (dockVisibilityButton.isVisible())) dockVisibilityButton.toFront(false);
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
@@ -1903,7 +1915,7 @@ void MainComponent::timerCallback()
         dockStepSequencerMode && !(isLibertyFloatingDrumSamplerVisible())
             ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
     stepSequencerDockButton.setVisible(false); // The dock paints and handles its own STEP SEQ tab.
-    if (stepSequencerDockButton.isVisible()) stepSequencerDockButton.toFront(false);
+    if (!durationPaletteOpen && (stepSequencerDockButton.isVisible())) stepSequencerDockButton.toFront(false);
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
