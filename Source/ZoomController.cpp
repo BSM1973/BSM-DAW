@@ -157,6 +157,21 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
+        // Dock Piano Roll is embedded in MainComponent, not a MIDI window.
+        // The global zoom listener must not steal its wheel events.
+        MainComponent* dockOwner = nullptr;
+        for (auto* component = event.eventComponent; component != nullptr;
+             component = component->getParentComponent())
+            if ((dockOwner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+        if (dockOwner != nullptr)
+        {
+            const auto p = event.getEventRelativeTo(dockOwner).getPosition();
+            if (p.y >= dockOwner->getMixerTop() + 30
+                && p.x >= MainComponent::trackHeaderWidth - 30
+                && p.y < dockOwner->getHeight()
+                && !isInsideDrumSampler(event.eventComponent))
+                return;
+        }
         if (isInsideDrumSampler(event.eventComponent)
             || isInsideScrollableBrowserContent(event.eventComponent))
             return;
