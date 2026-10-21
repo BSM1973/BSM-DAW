@@ -370,13 +370,23 @@ public:
                 });
             });
         durationPalette->setName("LibertyDurationPaletteOverlay");
-        host->addAndMakeVisible(*durationPalette);
-        // Fixed overlay coordinates, with no JUCE CallOutBox repositioning.
-        const auto anchor = host->getLocalArea(nullptr, durationValue.getScreenBounds());
-        const int x = juce::jlimit(0, juce::jmax(0, host->getWidth() - 462), anchor.getX());
-        const int y = juce::jlimit(0, juce::jmax(0, host->getHeight() - 360), anchor.getBottom() + 5);
+        // A separate temporary desktop peer is not a child of the dock.
+        // MainComponent's 30 Hz layout and other controllers cannot reorder
+        // this palette relative to the piano roll.
+        const auto anchor = durationValue.getScreenBounds();
+        const auto screen = juce::Desktop::getInstance().getDisplays()
+                                .getDisplayForRect(anchor)->userArea;
+        const int x = juce::jlimit(screen.getX(),
+                                   juce::jmax(screen.getX(), screen.getRight() - 462),
+                                   anchor.getX());
+        const int y = juce::jlimit(screen.getY(),
+                                   juce::jmax(screen.getY(), screen.getBottom() - 360),
+                                   anchor.getBottom() + 5);
         durationPalette->setBounds(x, y, 462, 360);
-        durationPalette->toFront(true);
+        durationPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary
+                                      | juce::ComponentPeer::windowHasDropShadow);
+        durationPalette->setVisible(true);
+        durationPalette->toFront(false);
     }
 
     static std::int64_t musicalDurationTicks(int id)
