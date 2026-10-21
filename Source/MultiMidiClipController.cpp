@@ -127,7 +127,11 @@ void syncPlayback(){syncActiveClip();const double end=projectClipEnd();for(int l
 void synchronizeLibertyPianoRollPlayback(MainComponent& o)
 {
     auto it = controllers.find(&o);
-    if (it != controllers.end() && it->second)
+    // Dock edits can arrive before the bootstrap timer has installed
+    // the arrangement controller. Recorded MIDI already creates it eagerly.
+    if (it == controllers.end())
+        it = controllers.emplace(&o, std::make_unique<MultiMidiClipController>(o)).first;
+    if (it->second)
         it->second->synchronizePianoRollPlayback();
 }
 void prepareLibertyAIGeneration(MainComponent&o){if(activeController&&activeController->owns(o))activeController->prepareExternalGeneration();}bool commitLibertyAIGeneratedClip(MainComponent&o,bool i){return activeController&&activeController->owns(o)?activeController->commitGeneratedClip(i):false;}bool commitLibertyAIGeneratedNotes(MainComponent&o,const std::vector<MidiEngine::NoteEvent>&n,bool i,double s,double l){return activeController&&activeController->owns(o)?activeController->commitGeneratedNotes(n,i,s,l):false;}bool commitLibertyRecordedInstrumentMidiClip(MainComponent&o,const std::vector<MidiEngine::NoteEvent>&n,int lane,double start,double length){auto it=controllers.find(&o);if(it==controllers.end())it=controllers.emplace(&o,std::make_unique<MultiMidiClipController>(o)).first;auto*controller=it->second.get();return controller&&controller->commitRecordedInstrumentNotes(n,lane,juce::jmax(0.0,start),length);}
