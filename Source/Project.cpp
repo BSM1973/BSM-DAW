@@ -22,6 +22,40 @@ constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
 
+juce::File getRecentProjectsListFile()
+{
+    auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Liberty");
+    folder.createDirectory();
+    return folder.getChildFile("recent-projects.txt");
+}
+
+juce::StringArray readRecentLibertyProjects()
+{
+    juce::StringArray paths;
+    const auto file = getRecentProjectsListFile();
+    if (!file.existsAsFile()) return paths;
+    for (const auto& line : juce::StringArray::fromLines(file.loadFileAsString()))
+    {
+        const auto path = line.trim();
+        if (path.isNotEmpty() && juce::File(path).existsAsFile()
+            && juce::File(path).hasFileExtension("bsmproj") && !paths.contains(path))
+            paths.add(path);
+        if (paths.size() >= 10) break;
+    }
+    return paths;
+}
+
+void rememberRecentLibertyProject(const juce::File& file)
+{
+    if (!file.existsAsFile() || !file.hasFileExtension("bsmproj")) return;
+    auto paths = readRecentLibertyProjects();
+    paths.removeString(file.getFullPathName());
+    paths.insert(0, file.getFullPathName());
+    while (paths.size() > 10) paths.remove(paths.size() - 1);
+    getRecentProjectsListFile().replaceWithText(paths.joinIntoString("\\n"));
+}
+
 bool prepareTrackProjectMedia(const juce::File& projectFile,
                               int trackIndex,
                               const juce::AudioBuffer<float>* buffer,
@@ -477,6 +511,17 @@ void MainComponent::newProject()
     });
 }
 
+void MainComponent::openRecentProject(const juce::File& file)
+{
+    if (!file.existsAsFile() || !file.hasFileExtension("bsmproj"))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+            "Liberty", juce::String::fromUTF8("Ce projet récent est introuvable."), "OK");
+        return;
+    }
+    confirmBeforeProjectAction([this, file] { loadProjectFromFile(file); });
+}
+
 void MainComponent::openProject()
 {
     projectFileChooser = std::make_unique<juce::FileChooser>(
@@ -855,6 +900,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     currentProjectFile = file;
     markProjectClean();
+    rememberRecentLibertyProject(file);
     return true;
 }
 
@@ -1225,6 +1271,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     isPlaying = false;
     audioEngine.setPlaying(false);
     currentProjectFile = file;
+    rememberRecentLibertyProject(file);
     tempoControls.refresh();
     refreshLibertyMixConsole(this);
     markProjectClean();
