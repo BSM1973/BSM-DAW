@@ -40,6 +40,19 @@ const char* noteName(int n)
     return names[n % 12];
 }
 
+juce::Colour colourForMidiVelocity(int velocity)
+{
+    const float ratio = juce::jlimit(0.0f, 1.0f, ((float)velocity - 1.0f) / 126.0f);
+    const juce::Colour stops[] = {
+        juce::Colour(0xff3575d9), juce::Colour(0xff36c9c5),
+        juce::Colour(0xff55c86b), juce::Colour(0xffffbe45),
+        juce::Colour(0xffed3949)
+    };
+    const float scaled = ratio * 4.0f;
+    const int segment = juce::jlimit(0, 3, (int)scaled);
+    return stops[segment].interpolatedWith(stops[segment + 1], scaled - (float)segment);
+}
+
 bool isBlackKey(int n) { return n % 12 == 1 || n % 12 == 3 || n % 12 == 6 || n % 12 == 8 || n % 12 == 10; }
 
 MainComponent* findMainComponent(juce::Component* component) noexcept
@@ -100,14 +113,15 @@ public:
                                                 (int)std::llround((double)note.velocity / 127.0 * usableHeight));
             const auto bar = juce::Rectangle<int>(x, getHeight() - barHeight - 8, barWidth, barHeight);
 
-            // Match velocity bar underlay to the Obsidian inactive MIDI note fill.
-            g.setColour(juce::Colour(0xff376d86));
+            // Velocity lane and notes use exactly the same heatmap.
+            const auto velocityColour = note.muted ? juce::Colour(0xff46505a)
+                                                   : colourForMidiVelocity((int)note.velocity);
+            g.setColour(velocityColour);
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
-            g.setColour(juce::Colour(0xff54d6dc));
-            g.fillRoundedRectangle(bar.toFloat().reduced(1.0f, 0.0f), 2.0f);
-            // Slightly brighter Obsidian turquoise outline defines each velocity bar.
-            g.setColour(juce::Colour(0xffb6f2f2).withAlpha(0.95f));
-            g.drawRoundedRectangle(bar.toFloat(), 2.0f, 1.0f);
+            const bool selected = owner.getMidiEngine().isNoteSelected(note);
+            g.setColour(note.muted ? juce::Colour(0xff75808b)
+                                   : selected ? juce::Colour(0xffffe4ac) : velocityColour.brighter(0.35f));
+            g.drawRoundedRectangle(bar.toFloat(), 2.0f, selected ? 2.0f : 1.0f);
         }
         // Continue the keyboard/grid seam through the velocity lane.
         g.setColour(juce::Colour(0xff40515f));
@@ -498,15 +512,7 @@ public:
             // Velocity heatmap: low = blue, medium = green, high = amber, maximum = red.
             // Selection and playback use outlines so the velocity colour remains visible.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
-            const float velocityRatio = juce::jlimit(0.0f, 1.0f, ((float)n.velocity - 1.0f) / 126.0f);
-            const juce::Colour stops[] = {
-                juce::Colour(0xff3575d9), juce::Colour(0xff36c9c5),
-                juce::Colour(0xff55c86b), juce::Colour(0xffffbe45),
-                juce::Colour(0xffed3949)
-            };
-            const float scaled = velocityRatio * 4.0f;
-            const int segment = juce::jlimit(0, 3, (int)scaled);
-            const juce::Colour velocityColour = stops[segment].interpolatedWith(stops[segment + 1], scaled - (float)segment);
+            const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);
             g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
