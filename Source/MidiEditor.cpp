@@ -370,8 +370,9 @@ public:
 
         // Obsidian keyboard/ruler corner mirrors the arranger section hierarchy.
         g.setColour(juce::Colour(0xff1d2a35)); g.fillRect(0, 0, pianoKeyWidth, rulerHeight);
-        // Deep Obsidian ruler surface separates measure labels from MIDI note rows.
-        g.setColour(juce::Colour(0xff141e28)); g.fillRect(grid.getX(), 0, grid.getWidth(), rulerHeight);
+        // Preserve the MIDI information line: only the lower ruler is repainted.
+        g.setColour(juce::Colour(0xff141e28));
+        g.fillRect(grid.getX(), rulerHeight - 1, grid.getWidth(), 1);
         for (std::int64_t t = 0; t <= clipLengthTicks; t += juce::jmax<std::int64_t>(1, activePianoSnapTicks() > 0 ? activePianoSnapTicks() : gridTicks))
         {
             const int x = grid.getX() + (int)std::llround((double)t * pixelsPerTick);
@@ -395,7 +396,7 @@ public:
             const auto tick = (std::int64_t)m * juce::jmax<std::int64_t>(1, ticksPerMeasure);
             const int x = grid.getX() + (int)std::llround((double)tick * pixelsPerTick);
             if (x > grid.getRight()) break;
-            g.drawText(juce::String(m + 1), x + 5, 7, 36, 16, juce::Justification::left);
+            g.drawText(juce::String(m + 1), x + 5, rulerHeight - 13, 36, 12, juce::Justification::left);
         }
         for (int row = 0; row < visibleKeys; ++row)
         {
