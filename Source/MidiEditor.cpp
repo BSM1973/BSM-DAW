@@ -344,8 +344,13 @@ public:
                 selectedDurationId = id;
                 applyDurationValue();
             });
+        // Keep the callout inside the stable top-level JUCE window rather than
+        // creating a separate native desktop window.  The latter can oscillate
+        // between screen-relative placements as the dock repaints/resizes.
+        auto* popupParent = getTopLevelComponent();
         auto& popup = juce::CallOutBox::launchAsynchronously(std::move(palette),
-                                                              durationValue.getScreenBounds(), nullptr);
+                                                              durationValue.getScreenBounds(),
+                                                              popupParent);
         activeDurationPalette = &popup;
     }
 
