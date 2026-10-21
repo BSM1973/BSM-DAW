@@ -103,7 +103,17 @@ MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
         auto* window = dynamic_cast<juce::DocumentWindow*>(component);
         if (window == nullptr || !window->getScreenBounds().contains(screenPoint))
             continue;
-        if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
+        // The main window hosts LibertyMainContent (menu + editor), not
+        // MainComponent directly. Find the actual editor recursively.
+        const auto findEditor = [](auto&& self, juce::Component* node) -> MainComponent*
+        {
+            if (node == nullptr) return nullptr;
+            if (auto* editor = dynamic_cast<MainComponent*>(node)) return editor;
+            for (int child = 0; child < node->getNumChildComponents(); ++child)
+                if (auto* editor = self(self, node->getChildComponent(child))) return editor;
+            return nullptr;
+        };
+        if (auto* main = findEditor(findEditor, window->getContentComponent()))
             return main;
     }
     return nullptr;
@@ -111,10 +121,9 @@ MainComponent* findMainComponentAtScreenPoint(juce::Point<int> screenPoint)
 
 int arrangerDropTrack(MainComponent& main, juce::Point<int> local, bool instrumentPlugin)
 {
-    const int rowH = getLibertyTrackRowHeight();
-    const int relativeY = local.y - main.getArrangeTop();
-    if (relativeY < 0 || local.y >= main.getMixerTop()) return -1;
-    const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
+    if (local.y < main.getArrangeTop() || local.y >= main.getMixerTop()) return -1;
+    const int logicalRow = main.getArrangeTrackAtY(local.y);
+    if (logicalRow < 0) return -1;
     const int audioCount = main.getAudioTrackCount();
     const int midiCount = main.getMidiTrackCount();
     const int instrumentFirst = audioCount + midiCount;
@@ -133,10 +142,9 @@ int oneKnobDropTrack(MainComponent& main, juce::Point<int> local)
 {
     if (isLibertyMixConsoleVisible(&main))
         return getLibertyMixConsolePluginDropTrack(&main, local, false);
-    const int rowH = getLibertyTrackRowHeight();
-    const int relativeY = local.y - main.getArrangeTop();
-    if (relativeY < 0 || local.y >= main.getMixerTop()) return -1;
-    const int logicalRow = main.getTrackScrollRows() + relativeY / juce::jmax(1, rowH);
+    if (local.y < main.getArrangeTop() || local.y >= main.getMixerTop()) return -1;
+    const int logicalRow = main.getArrangeTrackAtY(local.y);
+    if (logicalRow < 0) return -1;
     return logicalRow >= 0 && logicalRow < main.getAudioTrackCount() ? logicalRow : -1;
 }
 class PluginDragDropController final : private juce::MouseListener
