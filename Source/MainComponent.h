@@ -1041,9 +1041,23 @@ private:
         void timerCallback() override
         {
             owner->updateMidiClipTiming();
-            const int rowH = getLibertyTrackRowHeight();
-            const auto rowY = 76 + 32 + ((owner->getAudioTrackCount() - owner->getTrackScrollRows()) * rowH);
-            setBounds(210, rowY, juce::jmax(1, owner->getWidth() - 210), rowH);
+            // Legacy MIDI clip belongs exclusively to an actual MIDI track.
+            // Never draw it over an Instrument header (or the modern clip layer).
+            const int midiTrack = owner->getAudioTrackCount();
+            const bool hasMidiTrack = owner->getMidiTrackCount() > 0;
+            const bool selectedMidiTrack = hasMidiTrack
+                && owner->selectedTrack >= midiTrack
+                && owner->selectedTrack < midiTrack + owner->getMidiTrackCount();
+            const bool inArrange = selectedMidiTrack
+                && owner->getArrangeTrackTop(owner->selectedTrack) >= owner->getArrangeTop()
+                && owner->getArrangeTrackTop(owner->selectedTrack)
+                   + owner->getArrangeTrackHeight(owner->selectedTrack) <= owner->getMixerTop();
+            setVisible(inArrange);
+            if (!inArrange) return;
+            const int rowY = owner->getArrangeTrackTop(owner->selectedTrack);
+            const int rowH = owner->getArrangeTrackHeight(owner->selectedTrack);
+            setBounds(owner->trackHeaderWidth, rowY,
+                      juce::jmax(1, owner->getWidth() - owner->trackHeaderWidth), rowH);
             repaint();
         }
         MainComponent* owner;
