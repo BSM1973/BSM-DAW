@@ -28,6 +28,7 @@ bool AudioEngine::initialise()
     auto* device = deviceManager.getCurrentAudioDevice();
     if (device == nullptr) { const juce::ScopedLock lock(stateLock); lastError = "No audio output device is available."; initialised.store(false); return false; }
     liveMidiCollector.reset(device->getCurrentSampleRate());
+    pianoPreviewCollector.reset(device->getCurrentSampleRate());
     const auto midiDevices = juce::MidiInput::getAvailableDevices();
     if (selectedMidiInput.isEmpty() && !midiDevices.isEmpty())
         selectedMidiInput = midiDevices.getFirst().identifier;
@@ -106,6 +107,7 @@ void AudioEngine::selectMidiInput(const juce::String& identifier)
         deviceManager.addMidiInputDeviceCallback(device.identifier, this);
     }
     liveMidiCollector.reset(juce::jmax(1.0, sampleRate.load(std::memory_order_relaxed)));
+    pianoPreviewCollector.reset(juce::jmax(1.0, sampleRate.load(std::memory_order_relaxed)));
 }
 
 void AudioEngine::shutdown()
@@ -1314,6 +1316,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
     juce::MidiBuffer liveMidi;
     liveMidiCollector.removeNextBlockOfMessages(liveMidi, numSamples);
+    juce::MidiBuffer pianoPreviewMidi;
+    pianoPreviewCollector.removeNextBlockOfMessages(pianoPreviewMidi, numSamples);
+    const int pianoPreviewLane = pianoPreviewTrack.load(std::memory_order_acquire);
     const int liveTrack = monitoredInstrumentTrack.load(std::memory_order_acquire);
     if (!playing.load())
     {
@@ -1347,6 +1352,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             juce::MidiBuffer midi;
             if (instrumentTrack == liveTrack)
                 midi.addEvents(liveMidi, 0, numSamples, 0);
+            if (instrumentTrack == pianoPreviewLane)
+                midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
             juce::AudioBuffer<float> bus;
             if (host.renderInstrumentForTrack(instrumentTrack, bus, numSamples, midi,
                                               state.gain.load(std::memory_order_relaxed),
@@ -1555,6 +1562,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             juce::MidiBuffer midi;
             if (instrumentTrack == liveTrack)
                 midi.addEvents(liveMidi, 0, numSamples, 0);
+            if (instrumentTrack == pianoPreviewLane)
+                midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
             if (noteSnapshot != nullptr)
