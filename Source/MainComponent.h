@@ -1041,14 +1041,15 @@ private:
         void timerCallback() override
         {
             owner->updateMidiClipTiming();
-            // Legacy MIDI clip belongs exclusively to an actual MIDI track.
-            // Never draw it over an Instrument header (or the modern clip layer).
-            const int midiTrack = owner->getAudioTrackCount();
-            const bool hasMidiTrack = owner->getMidiTrackCount() > 0;
-            const bool selectedMidiTrack = hasMidiTrack
-                && owner->selectedTrack >= midiTrack
-                && owner->selectedTrack < midiTrack + owner->getMidiTrackCount();
-            const bool inArrange = selectedMidiTrack
+            // Piano Roll notes can be edited on both MIDI and Instrument tracks.
+            // Keep their clip visible on the selected compatible track, but
+            // position the overlay exclusively inside the timeline area.
+            const int firstMidiTrack = owner->getAudioTrackCount();
+            const int lastPlayableTrack = firstMidiTrack + owner->getMidiTrackCount()
+                                         + owner->getInstrumentTrackCount();
+            const bool selectedPlayableTrack = owner->selectedTrack >= firstMidiTrack
+                                               && owner->selectedTrack < lastPlayableTrack;
+            const bool inArrange = selectedPlayableTrack
                 && owner->getArrangeTrackTop(owner->selectedTrack) >= owner->getArrangeTop()
                 && owner->getArrangeTrackTop(owner->selectedTrack)
                    + owner->getArrangeTrackHeight(owner->selectedTrack) <= owner->getMixerTop();
