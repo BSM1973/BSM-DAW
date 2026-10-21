@@ -344,8 +344,9 @@ public:
                 selectedDurationId = id;
                 applyDurationValue();
             });
-        juce::CallOutBox::launchAsynchronously(std::move(palette),
-                                               durationValue.getScreenBounds(), nullptr);
+        auto& popup = juce::CallOutBox::launchAsynchronously(std::move(palette),
+                                                              durationValue.getScreenBounds(), nullptr);
+        activeDurationPalette = &popup;
     }
 
     static std::int64_t musicalDurationTicks(int id)
@@ -883,6 +884,7 @@ private:
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
     int selectedDurationId = 3;
+    juce::Component::SafePointer<juce::CallOutBox> activeDurationPalette;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
@@ -954,8 +956,12 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
-        durationValue.setVisible(hasSelection && durationValue.getWidth() >= 95);
-        if (hasSelection)
+        const bool shouldShowDuration = hasSelection && durationValue.getWidth() >= 95;
+        if (durationValue.isVisible() != shouldShowDuration)
+            durationValue.setVisible(shouldShowDuration);
+        // A floating palette must not be driven by the 30 Hz editor refresh.
+        // Hold the anchor label/selection steady until the popup is dismissed.
+        if (hasSelection && activeDurationPalette == nullptr)
         {
             int matchingId = 0;
             for (int id = 1; id <= 17; ++id)
