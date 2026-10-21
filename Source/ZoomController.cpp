@@ -131,10 +131,9 @@ public:
             dragStart = p.y;
             initialTrackHeight = owner->getArrangeTrackHeight(track);
         }
-        else if (p.x >= 202 && p.x <= 218 && p.y >= 76 && p.y < owner->getArrangeTop())
-        {
-            dragMode = 2; dragStart = p.x; initialZoom = timelineHorizontalZoom.load();
-        }
+        // No timeline zoom drag on the track-height preset icon.
+        // Its bounds are x=188..208, y=79..100. The former x=202..218
+        // gesture overlapped it and caused a preset click to zoom the timeline.
     }
     void mouseDrag(const juce::MouseEvent& event) override
     {
