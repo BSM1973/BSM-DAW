@@ -365,6 +365,12 @@ public:
     private:
         MainComponent& owner;
     };
+    // Native hit targets keep dock tabs clickable even when child overlays
+    // (mixer, piano editor or resize rail) are present.
+    juce::TextButton dockMixerTab;
+    juce::TextButton dockPianoTab;
+    juce::TextButton dockStepTab;
+    juce::TextButton dockDrumTab;
     DockMixerInputLayer dockMixerInputLayer { *this };
     juce::ScrollBar mixerHorizontalScrollBar { false };
     int mixerHorizontalOffset = 0;
