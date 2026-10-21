@@ -37,6 +37,8 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
+    void auditionPianoKey(int lane, int pitch, bool on) { audioEngine.sendPianoPreviewMidi(lane, on ? juce::MidiMessage::noteOn(1, pitch, (juce::uint8)100) : juce::MidiMessage::noteOff(1, pitch)); }
+    int getSelectedPianoInstrumentLane() const noexcept { return selectedTrack - getAudioTrackCount() - getMidiTrackCount(); }
     void openRecentProject(const juce::File& file, std::function<void()> onOpened);
     void updateLoopPunchButtons();
     double loopStartSeconds = 0.0, loopEndSeconds = 8.0;
