@@ -315,6 +315,10 @@ private:
 
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
     juce::MidiMessageCollector liveMidiCollector;
+    // Piano-roll keyboard audition is independent of external MIDI monitoring.
+    juce::MidiMessageCollector pianoPreviewCollector;
+    std::atomic<int> pianoPreviewTrack { -1 };
+
     juce::String selectedMidiInput;
     mutable juce::CriticalSection instrumentMidiInputLock;
     std::map<int, juce::String> instrumentMidiInputs;
