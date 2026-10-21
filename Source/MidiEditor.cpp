@@ -12,6 +12,7 @@ std::int64_t getLibertySnapStepTicks() noexcept;
 float getLibertyPianoVerticalZoom() noexcept;
 int getLibertyTrackRowHeight() noexcept;
 int getLibertyActiveTool();
+void synchronizeLibertyPianoRollPlayback(MainComponent&);
 
 namespace
 {
@@ -191,7 +192,7 @@ private:
 
         if (owner.getMidiEngine().setNoteVelocity(editStartTick, editPitch, editChannel, velocity))
         {
-            owner.updateMidiClipTiming();
+            owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner);
             repaint();
             owner.repaint();
         }
@@ -374,7 +375,7 @@ public:
         const auto tick = tickFromX(e.x);
         if (owner.getMidiEngine().addNote(tick, MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
         {
-            owner.updateMidiClipTiming();
+            owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner);
             repaint();
             owner.repaint();
         }
@@ -414,7 +415,7 @@ public:
                 if (tool == 3) // ERASE / EFFACER
                 {
                     midi.removeNoteAt(n.startTick, n.pitch, n.channel);
-                    owner.updateMidiClipTiming(); repaint(); owner.repaint();
+                    owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
                     return;
                 }
 
@@ -440,7 +441,7 @@ public:
 
         if (tool == 1) // DRAW / DESSINER
             if (midi.addNote(tickFromX(e.x), MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
-            { owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
+            { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override
@@ -465,7 +466,7 @@ public:
         if (resizeSide == ResizeSide::right)
         {
             const auto newLength = juce::jmax(juce::jmax<std::int64_t>(1, activePianoSnapTicks()), mouseTick - dragStartTick);
-            if (newLength != originalLengthTicks && owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength)) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
+            if (newLength != originalLengthTicks && owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength)) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
         if (resizeSide == ResizeSide::left)
@@ -473,12 +474,12 @@ public:
             const auto maxStart = juce::jmax<std::int64_t>(0, dragEndTick - juce::jmax<std::int64_t>(1, activePianoSnapTicks()));
             const auto newStart = juce::jlimit<std::int64_t>(0, maxStart, mouseTick);
             const auto newLength = dragEndTick - newStart;
-            if (newStart != dragStartTick && newLength >= gridTicks && owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch) && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength)) { dragStartTick = newStart; originalLengthTicks = newLength; dragMoved = true; owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
+            if (newStart != dragStartTick && newLength >= gridTicks && owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch) && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength)) { dragStartTick = newStart; originalLengthTicks = newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
         const auto newTick = tickFromX(e.x); const int newPitch = pitchFromY(e.y);
         if (newTick == dragStartTick && newPitch == dragPitch) return;
-        if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragEndTick = newTick + originalLengthTicks; dragMoved = true; owner.updateMidiClipTiming(); repaint(); owner.repaint(); }
+        if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragEndTick = newTick + originalLengthTicks; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
 
     void mouseUp(const juce::MouseEvent&) override
@@ -493,7 +494,7 @@ public:
             return;
         }
         if (!draggingNote) return;
-        owner.updateMidiClipTiming(); draggingNote = false; dragMoved = false; resizeSide = ResizeSide::none; originalLengthTicks = 0; dragEndTick = 0;
+        owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); draggingNote = false; dragMoved = false; resizeSide = ResizeSide::none; originalLengthTicks = 0; dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor); repaint(); owner.repaint();
     }
 
