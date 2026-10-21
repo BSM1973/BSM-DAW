@@ -348,9 +348,13 @@ public:
         // creating a separate native desktop window.  The latter can oscillate
         // between screen-relative placements as the dock repaints/resizes.
         auto* popupParent = getTopLevelComponent();
+        // JUCE CallOutBox expects coordinates LOCAL to its parent when a
+        // parent component is supplied. Screen coordinates here caused the
+        // whole popup to jump as JUCE tried to fit it inside the parent.
+        const auto anchorInParent = popupParent->getLocalArea(nullptr,
+                                                               durationValue.getScreenBounds());
         auto& popup = juce::CallOutBox::launchAsynchronously(std::move(palette),
-                                                              durationValue.getScreenBounds(),
-                                                              popupParent);
+                                                              anchorInParent, popupParent);
         activeDurationPalette = &popup;
     }
 
