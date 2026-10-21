@@ -347,8 +347,11 @@ public:
             toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
         quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
         selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
-        velocityValue.setBounds(juce::jmax(pianoKeyWidth, getWidth() - 58), editorToolbarHeight + 3,
-                                49, juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
+        // Keep the editable value inside the visible information line, not at the far-right edge.
+        const int velocityX = pianoKeyWidth + 320;
+        velocityValue.setBounds(velocityX, editorToolbarHeight + 3,
+                                juce::jmax(0, juce::jmin(56, getWidth() - velocityX - 8)),
+                                juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
     }
@@ -380,18 +383,24 @@ public:
             const auto measure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
             const auto barNumber = measure > 0 ? n.startTick / measure + 1 : 1;
             const auto beatNumber = measure > 0 ? (n.startTick % measure) / beat + 1 : 1;
-            info = "MIDI  |  Mes. " + juce::String(barNumber)
-                 + "  Temps " + juce::String(beatNumber)
-                 + "  Tick " + juce::String(n.startTick)
+            info = "Mes. " + juce::String(barNumber)
+                 + "." + juce::String(beatNumber)
                  + "  Note " + juce::MidiMessage::getMidiNoteName((int)n.pitch, true, true, 3)
-                 + "  Durée " + juce::String(n.lengthTicks)
-                 + "  Vél. " + juce::String((int)n.velocity)
-                 + "  Canal " + juce::String((int)n.channel)
-                 + (n.muted ? "  [MUET]" : "");
+                 + "  Durée " + juce::String(n.lengthTicks);
         }
         g.setColour(juce::Colour(0xffd4e5ed));
-        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, getWidth() - pianoKeyWidth - 74),
+        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, juce::jmin(258, getWidth() - pianoKeyWidth - 14)),
                          rulerHeight - infoY - 1, juce::Justification::centredLeft, 1);
+        if (!selectedNotes.empty() && getWidth() > pianoKeyWidth + 390)
+        {
+            g.setColour(juce::Colour(0xffffdf99));
+            g.drawText("Vél.", pianoKeyWidth + 275, infoY, 42, rulerHeight - infoY - 1, juce::Justification::centredRight);
+            g.setColour(juce::Colour(0xffd4e5ed));
+            g.drawText("Canal " + juce::String((int)selectedNotes.front().channel)
+                       + (selectedNotes.front().muted ? "  MUET" : ""),
+                       pianoKeyWidth + 386, infoY, juce::jmax(0, getWidth() - pianoKeyWidth - 392),
+                       rulerHeight - infoY - 1, juce::Justification::centredLeft);
+        }
         const auto b = getLocalBounds();
         const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - velocityLaneHeight);
         const auto grid = juce::Rectangle<int>(pianoKeyWidth, rulerHeight, b.getWidth() - pianoKeyWidth, juce::jmax(1, velocityAreaY - rulerHeight));
@@ -807,7 +816,7 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
-        velocityValue.setVisible(hasSelection);
+        velocityValue.setVisible(hasSelection && velocityValue.getWidth() >= 36);
         if (hasSelection && !velocityValue.hasKeyboardFocus(true))
         {
             const int v = selected.front().velocity;
