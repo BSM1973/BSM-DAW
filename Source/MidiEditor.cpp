@@ -270,6 +270,20 @@ public:
             g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
             // Darker Obsidian note labels stay legible on light piano keys.
             if (!black) { g.setColour(juce::Colour(0xff17242e)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
+            // One horizontal pitch separator per piano key, aligned exactly
+            // with the note row in the dock and in the floating editor.
+            if (y >= rulerHeight && y < velocityAreaY)
+            {
+                g.setColour(juce::Colour(0xff344452));
+                g.fillRect(grid.getX(), y, grid.getWidth(), 1);
+            }
+        }
+        // Bottom boundary of the lowest pitch row.
+        const int lowestRowBottom = rulerHeight + visibleKeys * keyHeight;
+        if (lowestRowBottom < velocityAreaY)
+        {
+            g.setColour(juce::Colour(0xff344452));
+            g.fillRect(grid.getX(), lowestRowBottom, grid.getWidth(), 1);
         }
 
         // Crisp Obsidian seam between keyboard and note grid; no geometry changes.
