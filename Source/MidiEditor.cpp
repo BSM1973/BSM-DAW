@@ -1,6 +1,7 @@
 #include "MidiEditor.h"
 #include "MainComponent.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -12,13 +13,15 @@ std::int64_t getLibertySnapStepTicks() noexcept;
 float getLibertyPianoVerticalZoom() noexcept;
 int getLibertyTrackRowHeight() noexcept;
 int getLibertyActiveTool();
+void setLibertyActiveTool(int);
 void synchronizeLibertyPianoRollPlayback(MainComponent&);
 
 namespace
 {
 constexpr int lowestKey = 21;
 constexpr int pianoKeyWidth = 72;
-constexpr int rulerHeight = 30;
+constexpr int editorToolbarHeight = 34;
+constexpr int rulerHeight = 64;
 constexpr int baseKeyHeight = 20;
 constexpr int visibleKeys = 40;
 constexpr int velocityLaneHeight = 92;
@@ -213,6 +216,19 @@ public:
         setWantsKeyboardFocus(true);
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
         addAndMakeVisible(velocityLane);
+        // Shared Piano Roll component: identical tools in the dock and detached editor.
+        static const char* glyphs[] = { "↖", "✎", "✂", "⌫", "↔", "◇", "▥", "▧", "◉" };
+        static const char* names[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
+            "Redimensionner", "Étirer", "Vélocité", "Sélection rectangulaire", "Muet" };
+        for (int i = 0; i < 9; ++i)
+        {
+            auto& button = toolButtons[(size_t)i];
+            button.setButtonText(juce::String::fromUTF8(glyphs[i]));
+            button.setTooltip(juce::String::fromUTF8(names[i]) + " (" + juce::String(i + 1) + ")");
+            button.setClickingTogglesState(false);
+            button.onClick = [this, i] { setLibertyActiveTool(i); refreshToolButtons(); };
+            addAndMakeVisible(button);
+        }
         startTimerHz(30);
     }
 
@@ -238,8 +254,24 @@ public:
         repaint();
     }
 
+    void refreshToolButtons()
+    {
+        for (int i = 0; i < 9; ++i)
+        {
+            auto& button = toolButtons[(size_t)i];
+            const bool selected = getLibertyActiveTool() == i;
+            button.setColour(juce::TextButton::buttonColourId,
+                             selected ? juce::Colour(0xff315b69) : juce::Colour(0xff202a34));
+            button.setColour(juce::TextButton::textColourOffId,
+                             selected ? juce::Colour(0xfff3d48b) : juce::Colour(0xffd7e6ee));
+        }
+    }
+
     void resized() override
     {
+        const int buttonWidth = 32;
+        for (int i = 0; i < 9; ++i)
+            toolButtons[(size_t)i].setBounds(8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
     }
@@ -247,6 +279,10 @@ public:
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff0b0d10));
+        g.setColour(juce::Colour(0xff151f28));
+        g.fillRect(0, 0, getWidth(), editorToolbarHeight);
+        g.setColour(juce::Colour(0xff3b5262));
+        g.fillRect(0, editorToolbarHeight - 1, getWidth(), 1);
         const auto b = getLocalBounds();
         const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - velocityLaneHeight);
         const auto grid = juce::Rectangle<int>(pianoKeyWidth, rulerHeight, b.getWidth() - pianoKeyWidth, juce::jmax(1, velocityAreaY - rulerHeight));
@@ -499,6 +535,7 @@ public:
     }
 
 private:
+    std::array<juce::TextButton, 9> toolButtons;
     int lowestVisibleKey = lowestKey;
     float localGridZoom = 1.0f;
     int auditionPitch = -1;
