@@ -963,7 +963,10 @@ private:
             if (notes.empty()) return;
             const auto clip = getClipRectangle();
             if (!clip.contains(event.position)) return;
-            owner->selectMidiTrack();
+            // Do not switch an Instrument track to MIDI when its Piano Roll
+            // clip is clicked: the instrument lane must remain the playback target.
+            if (owner->getSelectedPianoInstrumentLane() < 0)
+                owner->selectMidiTrack();
             const auto side = getResizeSide(event.position.x, clip);
             if (side != ResizeSide::none)
             {
