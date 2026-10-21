@@ -69,6 +69,47 @@ public:
 private:
     MainComponent& owner;
 };
+// Liberty Obsidian: a scoped, reusable menu skin based on the welcome screen.
+class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    LibertyMenuLookAndFeel()
+    {
+        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff192e3c));
+        setColour(juce::PopupMenu::textColourId, juce::Colour(0xffe8f3fa));
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff285362));
+        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+        // Shared Obsidian palette for all ComboBoxes and their popup lists.
+        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1b3140));
+        setColour(juce::ComboBox::textColourId, juce::Colour(0xffe8f3fa));
+        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff41677a));
+        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
+        setColour(juce::ComboBox::focusedOutlineColourId, juce::Colour(0xff54d6dc));
+        setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192e3c));
+        setColour(juce::TextEditor::textColourId, juce::Colour(0xffe8f3fa));
+        setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff41677a));
+        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff54d6dc));
+        setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff112431));
+        setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe8f3fa));
+        setColour(juce::AlertWindow::outlineColourId, juce::Colour(0xff41677a));
+    }
+
+    void drawMenuBarBackground(juce::Graphics& g, int width, int height,
+                               bool, juce::MenuBarComponent&) override
+    {
+        g.setColour(juce::Colour(0xff101f2c));
+        g.fillRect(0, 0, width, height);
+        g.setColour(juce::Colour(0xff35596b));
+        g.fillRect(0, height - 1, width, 1);
+    }
+
+    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
+    {
+        g.fillAll(juce::Colour(0xff192e3c));
+        g.setColour(juce::Colour(0xff41677a));
+        g.drawRect(0, 0, width, height, 1);
+    }
+};
 class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
 LibertyMenuLookAndFeel applicationMenuLookAndFeel;
 // First-run project chooser: custom-painted, scalable and blocking the editor
@@ -220,50 +261,6 @@ private:
     std::function<void(const juce::File&)> onOpenRecent;
     juce::TextButton recentProjectsButton;
     std::vector<std::unique_ptr<juce::TextButton>> buttons;
-};
-// Liberty Obsidian: a scoped, reusable menu skin based on the welcome screen.
-class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
-{
-public:
-    LibertyMenuLookAndFeel()
-    {
-        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff192e3c));
-        setColour(juce::PopupMenu::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff285362));
-        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
-        setColour(juce::MenuBarComponent::backgroundColourId, juce::Colour(0xff101f2c));
-        setColour(juce::MenuBarComponent::textColourId, juce::Colour(0xffdcebf4));
-        setColour(juce::MenuBarComponent::highlightColourId, juce::Colour(0xff294a58));
-        // Shared Obsidian palette for all ComboBoxes and their popup lists.
-        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1b3140));
-        setColour(juce::ComboBox::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff41677a));
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
-        setColour(juce::ComboBox::focusedOutlineColourId, juce::Colour(0xff54d6dc));
-        setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192e3c));
-        setColour(juce::TextEditor::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff41677a));
-        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff54d6dc));
-        setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff112431));
-        setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::AlertWindow::outlineColourId, juce::Colour(0xff41677a));
-    }
-
-    void drawMenuBarBackground(juce::Graphics& g, int width, int height,
-                               bool, juce::MenuBarComponent&) override
-    {
-        g.setColour(juce::Colour(0xff101f2c));
-        g.fillRect(0, 0, width, height);
-        g.setColour(juce::Colour(0xff35596b));
-        g.fillRect(0, height - 1, width, 1);
-    }
-
-    void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
-    {
-        g.fillAll(juce::Colour(0xff192e3c));
-        g.setColour(juce::Colour(0xff41677a));
-        g.drawRect(0, 0, width, height, 1);
-    }
 };
 class LibertyMainContent final : public juce::Component
 {
