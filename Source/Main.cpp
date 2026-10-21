@@ -251,14 +251,17 @@ public:
             });
         }, [this](const juce::File& file)
         {
-            if (welcome != nullptr) welcome->setVisible(false);
-            editor->openRecentProject(file);
-            // Keep the welcome screen available if opening fails.
             juce::Component::SafePointer<LibertyMainContent> safeThis(this);
-            juce::MessageManager::callAsync([safeThis]
+            editor->openRecentProject(file, [safeThis]
             {
-                if (safeThis != nullptr && safeThis->welcome != nullptr)
+                if (safeThis == nullptr) return;
+                safeThis->welcome->setVisible(false);
+                juce::MessageManager::callAsync([safeThis]
+                {
+                    if (safeThis == nullptr) return;
                     safeThis->welcome.reset();
+                    safeThis->editor->grabKeyboardFocus();
+                });
             });
         });
         addAndMakeVisible(*welcome);
