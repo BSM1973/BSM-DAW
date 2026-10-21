@@ -271,7 +271,7 @@ public:
     {
         const int buttonWidth = 32;
         for (int i = 0; i < 9; ++i)
-            toolButtons[(size_t)i].setBounds(8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
+            toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
     }
@@ -378,13 +378,13 @@ public:
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
             // Obsidian MIDI notes: brighter idle blue, clear turquoise playback state.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
-            g.setColour(selected ? juce::Colour(0xffe6aa55) : active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
+            g.setColour(n.muted ? juce::Colour(0xff46505a) : selected ? juce::Colour(0xffe6aa55) : active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
             // Defined idle-note outlines improve separation without changing active playback styling.
-            g.setColour(selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
+            g.setColour(n.muted ? juce::Colour(0xff75808b) : selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
             g.drawRoundedRectangle(r.toFloat(), 3.0f, selected ? 2.2f : active ? 1.5f : 1.0f);
         }
     }
@@ -456,6 +456,19 @@ public:
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
             {
+                if (tool == 8) // Non-destructive per-note MIDI mute.
+                {
+                    auto notes = midi.getNotesCopy();
+                    const bool targetMute = !n.muted;
+                    const bool group = midi.getNumSelectedNotes() > 1 && midi.isNoteSelected(n);
+                    for (auto& note : notes)
+                        if (group ? midi.isNoteSelected(note) :
+                            (note.startTick == n.startTick && note.pitch == n.pitch && note.channel == n.channel))
+                            note.muted = targetMute;
+                    if (midi.replaceNotes(notes))
+                    { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+                    return;
+                }
                 if (tool == 6) { editingVelocity = true; velocityNoteTick = n.startTick; velocityNotePitch = n.pitch; velocityNoteChannel = n.channel; velocityStartY = e.y; velocityStartValue = n.velocity; return; }
                 if (tool == 2)
                 {
