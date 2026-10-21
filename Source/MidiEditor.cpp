@@ -377,14 +377,15 @@ public:
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
             // Obsidian MIDI notes: brighter idle blue, clear turquoise playback state.
-            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
+            const bool selected = owner.getMidiEngine().isNoteSelected(n);
+            g.setColour(selected ? juce::Colour(0xffe6aa55) : active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff376d86));
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
             // Defined idle-note outlines improve separation without changing active playback styling.
-            g.setColour(active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
-            g.drawRoundedRectangle(r.toFloat(), 3.0f, active ? 1.5f : 1.0f);
+            g.setColour(selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffb6f2f2) : juce::Colour(0xff91cde3));
+            g.drawRoundedRectangle(r.toFloat(), 3.0f, selected ? 2.2f : active ? 1.5f : 1.0f);
         }
     }
 
@@ -476,11 +477,21 @@ public:
                 }
                 if (tool == 3) // ERASE / EFFACER
                 {
-                    midi.removeNoteAt(n.startTick, n.pitch, n.channel);
+                    if (midi.getNumSelectedNotes() > 1 && midi.isNoteSelected(n))
+                    { if (midi.deleteSelectedNotes()) { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); } return; }
+                    midi.selectNoteAt(n.startTick, n.pitch, n.channel);
+                    midi.deleteSelectedNote();
                     owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
                     return;
                 }
 
+                if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
+                {
+                    draggingGroup = true;
+                    groupDragTick = tickFromX(e.x);
+                    groupDragPitch = pitchFromY(e.y);
+                    return;
+                }
                 if (tool == 4) // RESIZE / REDIMENSIONNER: edge only
                 {
                     const auto side = findResizeSide(e.position);
@@ -508,6 +519,19 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (draggingGroup)
+        {
+            const auto tick = tickFromX(e.x);
+            const int pitch = pitchFromY(e.y);
+            const auto dt = tick - groupDragTick;
+            const int dp = pitch - groupDragPitch;
+            if ((dt != 0 || dp != 0) && owner.getMidiEngine().moveSelectedNotesBy(dt, dp))
+            {
+                groupDragTick = tick; groupDragPitch = pitch;
+                owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
+            }
+            return;
+        }
         if (selectingRectangle)
         {
             rectangleEnd = e.getPosition();
@@ -525,7 +549,7 @@ public:
         }
         if (editingVelocity)
         {
-            const int value = juce::jlimit(1, 127, velocityStartValue + velocityStartY - e.y);
+            const int value = juce::jlimit(1, 127, velocityStartValue + (velocityStartY - e.y) * 2);
             if (owner.getMidiEngine().setNoteVelocity(velocityNoteTick, velocityNotePitch, velocityNoteChannel, value))
             { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
@@ -568,6 +592,7 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
+        if (draggingGroup) { draggingGroup = false; repaint(); return; }
         if (selectingRectangle) { selectingRectangle = false; repaint(); return; }
         if (editingVelocity) { editingVelocity = false; repaint(); return; }
         if (auditionPitch >= 0)
@@ -590,7 +615,9 @@ private:
     juce::TooltipWindow tooltips { this, 550 };
     int lastDisplayedTool = -1;
     int lastCursorTool = -1;
-    bool selectingRectangle = false, editingVelocity = false;
+    bool selectingRectangle = false, editingVelocity = false, draggingGroup = false;
+    std::int64_t groupDragTick = 0;
+    int groupDragPitch = 0;
     juce::Point<int> rectangleStart, rectangleEnd;
     std::int64_t velocityNoteTick = 0;
     int velocityNotePitch = 60, velocityNoteChannel = 1, velocityStartY = 0, velocityStartValue = 100;
