@@ -81,7 +81,7 @@ public:
             juce::jmax<std::int64_t>(1, ticksPerMeasure),
             MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         const auto pixelsPerTick = (static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks))
-            * (double)getLibertyPianoHorizontalZoom() * (double)localGridZoom;
+            * (double)getLibertyPianoHorizontalZoom();
 
         for (const auto& note : owner.getMidiEngine().getNotesCopy())
         {
