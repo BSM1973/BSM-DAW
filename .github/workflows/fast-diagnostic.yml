@@ -29,6 +29,9 @@ jobs:
           restore-keys: |
             liberty-ccache-arm64-${{ runner.os }}-
 
+      - name: Guard validated track header controls
+        run: python3 Tests/TrackHeaderRegression.py
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
