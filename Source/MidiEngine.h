@@ -19,6 +19,7 @@ public:
         std::uint8_t pitch = 60;
         std::uint8_t velocity = 100;
         std::uint8_t channel = 1;
+        bool muted = false;
     };
 
     MidiEngine() = default;
