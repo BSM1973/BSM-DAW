@@ -369,6 +369,7 @@ public:
                     }
                 });
             });
+        durationPalette->setName("LibertyDurationPaletteOverlay");
         host->addAndMakeVisible(*durationPalette);
         // Fixed overlay coordinates, with no JUCE CallOutBox repositioning.
         const auto anchor = host->getLocalArea(nullptr, durationValue.getScreenBounds());
