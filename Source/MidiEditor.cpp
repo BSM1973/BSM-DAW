@@ -670,7 +670,7 @@ private:
                 cursorGraphics.setFont(juce::Font(25.0f));
                 cursorGraphics.drawText(juce::String::fromUTF8(symbols[juce::jlimit(0, 8, tool)]),
                                         2, 2, 32, 32, juce::Justification::centred);
-                setMouseCursor(juce::MouseCursor(cursorImage, juce::Point<int>(3, 3)));
+                setMouseCursor(juce::MouseCursor(cursorImage, 3, 3));
             }
         }
         repaint(); velocityLane.repaint();
