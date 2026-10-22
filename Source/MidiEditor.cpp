@@ -355,6 +355,7 @@ public:
             {
                 if (safe == nullptr) return;
                 safe->selectedDurationId = id;
+                safe->durationValue.setButtonText(durationLabelForId(id) + "  ▾");
                 safe->applyDurationValue();
                 // Avoid destroying a clicked button from inside its callback.
                 juce::MessageManager::callAsync([safe]
@@ -387,6 +388,18 @@ public:
                                       | juce::ComponentPeer::windowHasDropShadow);
         durationPalette->setVisible(true);
         durationPalette->toFront(false);
+    }
+
+    static juce::String durationLabelForId(int id)
+    {
+        static const char* labels[] = {
+            "Personnalisée", "Ronde", "Blanche", "Noire", "Croche", "Double-croche",
+            "Triple-croche", "Ronde pointée", "Blanche pointée", "Noire pointée",
+            "Croche pointée", "Double-croche pointée", "Triple-croche pointée",
+            "Blanche triolet", "Noire triolet", "Croche triolet",
+            "Double-croche triolet", "Triple-croche triolet"
+        };
+        return juce::String::fromUTF8(labels[juce::jlimit(0, 17, id)]);
     }
 
     static std::int64_t musicalDurationTicks(int id)
@@ -1003,28 +1016,10 @@ private:
         const bool shouldShowDuration = durationValue.getWidth() >= 95;
         if (durationValue.isVisible() != shouldShowDuration)
             durationValue.setVisible(shouldShowDuration);
-        // A floating palette must not be driven by the 30 Hz editor refresh.
-        // Hold the anchor label/selection steady until the popup is dismissed.
-        if (hasSelection && durationPalette == nullptr)
-        {
-            int matchingId = 0;
-            for (int id = 1; id <= 17; ++id)
-                if (musicalDurationTicks(id) == selected.front().lengthTicks)
-                { matchingId = id; break; }
-            selectedDurationId = matchingId;
-            static const char* labels[] = {
-                "Personnalisée", "Ronde", "Blanche", "Noire", "Croche", "Double-croche",
-                "Triple-croche", "Ronde pointée", "Blanche pointée", "Noire pointée",
-                "Croche pointée", "Double-croche pointée", "Triple-croche pointée",
-                "Blanche triolet", "Noire triolet", "Croche triolet",
-                "Double-croche triolet", "Triple-croche triolet"
-            };
-            const auto newLabel = juce::String::fromUTF8(labels[matchingId]) + "  ▾";
-            // The 30 Hz MIDI refresh must not reset the button's text every frame:
-            // doing so forces JUCE to repaint and makes the palette anchor jitter.
-            if (durationValue.getButtonText() != newLabel)
-                durationValue.setButtonText(newLabel);
-        }
+        // The selection poll must never overwrite the duration explicitly
+        // chosen by the user. The click handler updates the compact label
+        // immediately; repeatedly deriving it from a transient note snapshot
+        // caused visible label oscillation at 30 Hz.
         velocityValue.setVisible(hasSelection && velocityValue.getWidth() >= 36);
         if (hasSelection && !velocityValue.hasKeyboardFocus(true))
         {
