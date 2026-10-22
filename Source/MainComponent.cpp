@@ -4,6 +4,16 @@ double getLibertySnapStepSeconds(double bpm) noexcept;
 void ensureLibertyTrackHeaderMixControls(MainComponent* owner);
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
+constexpr juce::uint32 libertyTrackPalette[33] = {
+    0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
+    0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6,
+    0xff60a5fa, 0xff84cc16, 0xfffacc15, 0xfffb923c,
+    0xfff87171, 0xffc084fc, 0xfff472b6, 0xff2dd4bf,
+    0xff1d4ed8, 0xff15803d, 0xffa16207, 0xffc2410c,
+    0xffb91c1c, 0xff7e22ce, 0xffbe185d, 0xff0f766e,
+    0xff93c5fd, 0xffbbf7d0, 0xfffde68a, 0xfffed7aa,
+    0xfffecaca, 0xffe9d5ff, 0xfffbcfe8, 0xff99f6e4
+};
 #include "LibertyDrumSampler.h"
 #include "MidiEditor.h"
 #include "LibertyDesignSystem.h"
@@ -1393,17 +1403,14 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     // Render track colours in the main arranger paint pass, above its own
     // header backgrounds. The independent overlay can be occluded by other
     // child components, so it must not be the only visible colour indicator.
-    constexpr juce::uint32 trackPalette[] = {
-        0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
-        0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
-    };
+
     for (int track = scrollRows; track < audioCount + midiCount + instrumentCount; ++track)
     {
         const int y = rows.getY() + (track - scrollRows) * rowH;
         if (y >= rows.getBottom()) break;
         const int colourId = getLibertyTrackColourId(track);
-        if (colourId <= 0 || colourId >= 9) continue;
-        const auto colour = juce::Colour(trackPalette[colourId]);
+        if (colourId <= 0 || colourId >= 33) continue;
+        const auto colour = juce::Colour(libertyTrackPalette[colourId]);
         g.setColour(colour.withAlpha(0.16f));
         g.fillRect(0, y, headerW, juce::jmin(rowH, rows.getBottom() - y));
         g.setColour(colour);
@@ -1759,13 +1766,10 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             const int arrangeTrack = isAudio ? sourceIndex
                                             : audioTracks + getMidiTrackCount() + sourceIndex;
             const int colourId = getLibertyTrackColourId(arrangeTrack);
-            constexpr juce::uint32 stripPalette[] = {
-                0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
-                0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
-            };
-            if (colourId > 0 && colourId < 9)
+
+            if (colourId > 0 && colourId < 33)
             {
-                const auto trackColour = juce::Colour(stripPalette[colourId]);
+                const auto trackColour = juce::Colour(libertyTrackPalette[colourId]);
                 g.setColour(trackColour.withAlpha(0.20f));
                 g.fillRoundedRectangle(c.toFloat().reduced(2.0f), 4.0f);
                 g.setColour(trackColour);
