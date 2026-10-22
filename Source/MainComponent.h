@@ -452,6 +452,13 @@ public:
         return commitLibertySequencerMidiClip(*this, notes, midiTrack, playheadSeconds, lengthSeconds);
     }
 
+    void publishPianoRollControllers() noexcept
+    {
+        const int lane = getSelectedPianoInstrumentLane();
+        if (lane >= 0 && lane < getInstrumentTrackCount())
+            audioEngine.setInstrumentTrackControllers(lane, midiEngine.getControllerEventsCopy(), tempoBpm);
+    }
+
     void updateMidiClipTiming() noexcept
     {
         const auto notes = midiEngine.getNotesCopy();
