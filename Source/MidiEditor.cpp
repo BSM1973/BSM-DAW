@@ -225,6 +225,77 @@ private:
 
 class ControllerLane final : public juce::Component
 {
+    class CurvePalette final : public juce::Component
+    {
+    public:
+        CurvePalette(int selected, std::function<void(int)> callback)
+            : selectedShape(selected), onSelect(std::move(callback))
+        {
+            setSize(368, 248);
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff152530));
+            g.setColour(juce::Colour(0xffe7f5fa));
+            g.setFont(juce::Font(15.0f, juce::Font::bold));
+            g.drawText(juce::String::fromUTF8("PALETTE DE COURBES"), 14, 8, 335, 26,
+                juce::Justification::centredLeft);
+            static const char* names[] = { "Ligne", "Sinusoïdale", "Triangle", "Douce",
+                "Descente", "Carrée", "Exponentielle", "Logarithmique" };
+            constexpr double pi = juce::MathConstants<double>::pi;
+            for (int i = 0; i < 8; ++i)
+            {
+                const int x = 12 + (i % 2) * 174;
+                const int y = 40 + (i / 2) * 50;
+                const auto tile = juce::Rectangle<float>((float)x, (float)y, 166.0f, 44.0f);
+                g.setColour(juce::Colour(i == selectedShape ? 0xff286873 : 0xff203744));
+                g.fillRoundedRectangle(tile, 6.0f);
+                g.setColour(juce::Colour(i == selectedShape ? 0xffa5faff : 0xff587383));
+                g.drawRoundedRectangle(tile, 6.0f, 1.0f);
+                juce::Path wave;
+                for (int n = 0; n <= 48; ++n)
+                {
+                    const double t = (double)n / 48.0;
+                    const double phase = std::fmod(t * 2.0, 1.0);
+                    double v = t;
+                    switch (i)
+                    {
+                        case 1: v = 0.5 - 0.5 * std::cos(2.0 * pi * phase); break;
+                        case 2: v = phase < 0.5 ? 2.0 * phase : 2.0 * (1.0 - phase); break;
+                        case 3: v = t * t * (3.0 - 2.0 * t); break;
+                        case 4: v = std::sin(t * pi * 0.5); break;
+                        case 5: v = phase < 0.5 ? 0.0 : 1.0; break;
+                        case 6: v = t * t * t; break;
+                        case 7: v = std::sqrt(t); break;
+                        default: break;
+                    }
+                    const float px = (float)(x + 12 + t * 142.0);
+                    const float py = (float)(y + 25 - v * 17.0);
+                    if (n == 0) wave.startNewSubPath(px, py);
+                    else wave.lineTo(px, py);
+                }
+                g.setColour(juce::Colour(0xff6ee3e7));
+                g.strokePath(wave, juce::PathStrokeType(1.7f));
+                g.setColour(juce::Colour(0xffe7f5fa));
+                g.setFont(juce::Font(10.0f));
+                g.drawText(juce::String::fromUTF8(names[i]), x + 8, y + 30, 150, 12,
+                    juce::Justification::centred);
+            }
+        }
+        void mouseUp(const juce::MouseEvent& e) override
+        {
+            const int col = (e.x - 12) / 174;
+            const int row = (e.y - 40) / 50;
+            if (e.x < 12 || e.y < 40 || col < 0 || col > 1 || row < 0 || row > 3) return;
+            const int shape = row * 2 + col;
+            selectedShape = shape;
+            onSelect(shape);
+            repaint();
+        }
+    private:
+        int selectedShape;
+        std::function<void(int)> onSelect;
+    };
 public:
     ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef)
     {
@@ -233,15 +304,17 @@ public:
         curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
         curveButton.onClick = [this]
         {
-            juce::PopupMenu menu;
-            menu.setLookAndFeel(&getLookAndFeel());
-            static const char* labels[] = { "Ligne droite", "Sinusoïdale", "Triangle",
-                "Montée douce", "Descente douce", "Carrée", "Exponentielle", "Logarithmique" };
-            for (int i = 0; i < 8; ++i)
-                menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
-            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
-                [safe = juce::Component::SafePointer<ControllerLane>(this)](int result)
-                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->curveMode = true; safe->curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff176b65)); safe->repaint(); } });
+            auto palette = std::make_unique<CurvePalette>(curveShape,
+                [safe = juce::Component::SafePointer<ControllerLane>(this)](int shape)
+                {
+                    if (safe == nullptr) return;
+                    safe->curveShape = shape;
+                    safe->curveMode = true;
+                    safe->curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff176b65));
+                    safe->repaint();
+                });
+            juce::CallOutBox::launchAsynchronously(std::move(palette),
+                curveButton.getScreenBounds(), nullptr);
         };
         addAndMakeVisible(curveButton);
         snapButton.setButtonText("SNAP");
@@ -254,14 +327,16 @@ public:
     }
     void resized() override
     {
-        curveButton.setBounds(pianoKeyWidth + 8, 5, 112, 23);
-        snapButton.setBounds(pianoKeyWidth + 126, 5, 84, 23);
+        curveButton.setBounds(pianoKeyWidth + 8, 4, 112, 23);
+        snapButton.setBounds(pianoKeyWidth + 126, 4, 84, 23);
     }
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff101821));
         g.setColour(juce::Colour(0xff54d6dc));
-        g.drawHorizontalLine(1, 0.0f, (float)getWidth());
+        g.fillRect(0, 0, getWidth(), 34);
+        g.setColour(juce::Colour(0xff345767));
+        g.drawHorizontalLine(34, 0.0f, (float)getWidth());
         const auto label = controller == 128 ? "PITCH BEND" : controller == 129 ? "AFTERTOUCH" : "CC " + juce::String(controller);
         g.setColour(juce::Colour(0xffb8e8ec));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
@@ -272,7 +347,7 @@ public:
             * getLibertyPianoHorizontalZoom();
         const int maxValue = controller == 128 ? 16383 : 127;
         const int bottom = getHeight() - 9;
-        const int usable = juce::jmax(1, getHeight() - 27);
+        const int usable = juce::jmax(1, getHeight() - 51);
         juce::Path curve;
         bool started = false;
         for (const auto& event : owner.getMidiEngine().getControllerEventsCopy())
@@ -297,7 +372,7 @@ public:
             {
                 const double t = (double)i / 96.0;
                 const float x = (float)(leftX + (rightX - leftX) * t);
-                const float y = (float)(y0 + (y1 - y0) * curveFraction(t, (double)(rightX - leftX) / 100.0));
+                const float y = (float)juce::jlimit(35.0, (double)getHeight() - 9.0, y0 + (y1 - y0) * curveFraction(t, (double)(rightX - leftX) / 100.0));
                 if (i == 0) preview.startNewSubPath(x, y);
                 else preview.lineTo(x, y);
             }
@@ -309,7 +384,7 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.x < pianoKeyWidth) return;
+        if (e.x < pianoKeyWidth || e.y < 35) return;
         if (e.mods.isRightButtonDown())
         {
             curveMode = false;
@@ -360,7 +435,7 @@ public:
         }
         if (tick0 == tick1) tick1 = tick0 + juce::jmax<std::int64_t>(1, snap);
         const int bottom = getHeight() - 9;
-        const int usable = juce::jmax(1, getHeight() - 27);
+        const int usable = juce::jmax(1, getHeight() - 51);
         const int maxValue = controller == 128 ? 16383 : 127;
         const auto valueAt = [&](int y)
         {
@@ -431,7 +506,7 @@ private:
     }
     void edit(const juce::MouseEvent& e)
     {
-        if (e.x < pianoKeyWidth || getWidth() <= pianoKeyWidth) return;
+        if (e.x < pianoKeyWidth || e.y < 35 || getWidth() <= pianoKeyWidth) return;
         const auto clipTicks = juce::jmax<std::int64_t>(MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
             MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
         const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2) / (double)juce::jmax<std::int64_t>(1, clipTicks)
