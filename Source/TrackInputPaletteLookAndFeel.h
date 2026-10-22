@@ -23,6 +23,61 @@ public:
         g.drawRect(0, 0, width, height, 1);
     }
     juce::Font getPopupMenuFont() override { return juce::Font(14.0f); }
+    void getIdealPopupMenuItemSize(const juce::String& text, bool isSeparator,
+                                   int standardMenuItemHeight, int& idealWidth,
+                                   int& idealHeight) override
+    {
+        juce::LookAndFeel_V4::getIdealPopupMenuItemSize(text, isSeparator,
+            standardMenuItemHeight, idealWidth, idealHeight);
+        if (!isSeparator)
+        {
+            idealHeight = juce::jmax(38, idealHeight);
+            idealWidth = juce::jmax(190, idealWidth + 24);
+        }
+    }
+
+    void drawPopupMenuItem(juce::Graphics& g, juce::Rectangle<int> area,
+                           bool isSeparator, bool isActive, bool isHighlighted,
+                           bool isTicked, bool hasSubMenu, const juce::String& text,
+                           const juce::String& shortcutKeyText,
+                           const juce::Drawable* icon) override
+    {
+        if (isSeparator)
+        {
+            g.setColour(juce::Colour(0xff405665));
+            g.fillRect(area.reduced(14, 3).withHeight(1));
+            return;
+        }
+        const auto tile = area.reduced(7, 3).toFloat();
+        g.setColour(isHighlighted ? juce::Colour(0xff28606c)
+                                  : isTicked ? juce::Colour(0xff27444d)
+                                             : juce::Colour(0xff203746));
+        g.fillRoundedRectangle(tile, 7.0f);
+        if (isTicked)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.drawRoundedRectangle(tile, 7.0f, 1.5f);
+        }
+        g.setColour(isActive ? (isTicked ? juce::Colour(0xffffdf99)
+                                         : juce::Colour(0xffe8f3fa))
+                             : juce::Colour(0xff8296a3));
+        g.setFont(juce::Font(14.0f, isTicked ? juce::Font::bold : juce::Font::plain));
+        g.drawFittedText(text, area.reduced(18, 3).withTrimmedRight(18),
+                         juce::Justification::centredLeft, 1);
+        if (isTicked)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.drawText(juce::String::fromUTF8("✓"), area.removeFromRight(25),
+                       juce::Justification::centred, false);
+        }
+        if (hasSubMenu)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.drawText(">", area.removeFromRight(16),
+                       juce::Justification::centred, false);
+        }
+        juce::ignoreUnused(shortcutKeyText, icon);
+    }
 };
 inline TrackInputPaletteLookAndFeel& libertyTrackInputPaletteStyle()
 {
