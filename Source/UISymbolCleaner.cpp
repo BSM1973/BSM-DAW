@@ -16,8 +16,7 @@ juce::String cleanText(juce::String text)
     text = text.replace("—", " - ");
     text = text.replace("…", "...");
     text = text.replace("×", "X");
-    // Also clean common UTF-8/Windows-1252 mojibake variants seen in Liberty UI.
-    text = text.replace("Â", "");
+    // Preserve all French UTF-8 accented characters. Never strip "Â": it is a valid letter.
     text = text.replace("Ã—", "X");
     text = text.replace("â€”", " - ");
     text = text.replace("â€“", "-");
