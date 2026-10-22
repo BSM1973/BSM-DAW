@@ -55,8 +55,8 @@ public:
             addAndMakeVisible(*button);
             buttons.push_back(std::move(button));
         }
-        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires"); setSize(336, expanded ? 264 : 186); repaint(); };
-        more.setButtonText("+  16 couleurs supplémentaires");
+        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("-  Moins de couleurs") : juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires")); setSize(336, expanded ? 264 : 186); repaint(); };
+        more.setButtonText(juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires"));
         more.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
         addAndMakeVisible(more);
         reset.setButtonText(juce::String::fromUTF8("Couleur par défaut"));
@@ -64,7 +64,7 @@ public:
         reset.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
         addAndMakeVisible(reset);
         expanded = selectedId > 16;
-        more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires");
+        more.setButtonText(expanded ? juce::String::fromUTF8("-  Moins de couleurs") : juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires"));
         setSize(336, expanded ? 264 : 186);
     }
     void paint(juce::Graphics& g) override
