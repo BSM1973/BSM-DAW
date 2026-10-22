@@ -641,6 +641,15 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         noteElement->setAttribute("channel", (int)note.channel);
     }
 
+    for (const auto& event : midiEngine.getControllerEventsCopy())
+    {
+        auto* element = midi->createNewChildElement("Controller");
+        element->setAttribute("tick", (double)event.tick);
+        element->setAttribute("controller", event.controller);
+        element->setAttribute("value", event.value);
+        element->setAttribute("channel", (int)event.channel);
+    }
+
     for (int i = 0; i < getAudioTrackCount(); ++i)
     {
         auto* track = project.createNewChildElement("Track");
@@ -1037,6 +1046,17 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
         {
             if (++visitedLegacyMidiElements > maxVisitedLegacyMidiElements) break;
+            if (noteElement->getTagName() == "Controller")
+            {
+                const double tick = noteElement->getDoubleAttribute("tick", -1.0);
+                if (std::isfinite(tick) && tick >= 0.0
+                    && tick <= (double)std::numeric_limits<std::int64_t>::max())
+                    midiEngine.setControllerEvent((std::int64_t)std::llround(tick),
+                        noteElement->getIntAttribute("controller", -1),
+                        noteElement->getIntAttribute("value", -1),
+                        noteElement->getIntAttribute("channel", 1));
+                continue;
+            }
             if (noteElement->getTagName() != "Note") continue;
             const double rawStartTick = noteElement->getDoubleAttribute("startTick", 0.0);
             const double rawLengthTicks = noteElement->getDoubleAttribute("lengthTicks", (double) MidiEngine::ticksPerQuarterNote);
