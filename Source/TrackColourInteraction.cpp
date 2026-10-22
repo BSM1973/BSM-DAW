@@ -84,7 +84,7 @@ public:
                          juce::Justification::centred, 1);
     }
 
-    void mouseUp(const juce::MouseEvent& e) override
+    void mouseDown(const juce::MouseEvent& e) override
     {
         const auto p = e.getPosition();
         const int count = expanded ? 32 : 16;
@@ -151,7 +151,7 @@ void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<
         screenPoint.y = juce::jlimit(area.getY(), juce::jmax(area.getY(), area.getBottom() - activeColourPalette->getHeight()), screenPoint.y);
     }
     activeColourPalette->setTopLeftPosition(screenPoint);
-    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow);
+    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow | juce::ComponentPeer::windowIsAlwaysOnTop);
     activeColourPalette->setVisible(true);
     activeColourPalette->toFront(false);
 }
