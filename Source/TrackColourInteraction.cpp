@@ -142,12 +142,20 @@ void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<
     options = options.withTargetScreenArea({screenPoint.x, screenPoint.y, 1, 1});
     menu.showMenuAsync(options, [onSelect = std::move(onSelect)](int result)
     {
-        if (result == 100)
-            onSelect(0);
-        else if (result >= 1 && result <= 32)
-            onSelect(result);
-        else if (result != 0)
-            DBG("Liberty colour menu: unexpected result " + juce::String(result));
+        if (result == 0)
+            return; // Dismissed without selecting.
+        const int selected = result == 100 ? 0 : result;
+        if (selected < 0 || selected > 32)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                "LIBERTY - Diagnostic couleur", "Identifiant de menu inattendu : " + juce::String(result));
+            return;
+        }
+        onSelect(selected);
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+            "LIBERTY - Diagnostic couleur",
+            "Le menu a transmis la couleur " + juce::String(selected)
+                + ".\\nSi la piste n'a pas change de couleur, le probleme se situe apres la selection.");
     });
 }
 
