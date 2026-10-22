@@ -57,7 +57,7 @@ void MidiEngine::clearControllerEvents()
 
 MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 {
-    return { notes, selectedNotes };
+    return { notes, controllerEvents, selectedNotes };
 }
 
 void MidiEngine::pushUndoState()
@@ -72,6 +72,7 @@ void MidiEngine::pushUndoState()
 void MidiEngine::restoreHistoryState(const HistoryState& state)
 {
     notes = state.notes;
+    controllerEvents = state.controllerEvents;
     selectedNotes = state.selectedNotes;
     if (selectedNotes.empty())
     {
