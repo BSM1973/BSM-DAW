@@ -92,7 +92,7 @@ private:
     struct HistoryState
     {
         std::vector<NoteEvent> notes;
-    std::vector<ControllerEvent> controllerEvents;
+        std::vector<ControllerEvent> controllerEvents;
         std::vector<NoteEvent> selectedNotes;
     };
 
@@ -101,6 +101,7 @@ private:
     void pushUndoState();
 
     std::vector<NoteEvent> notes;
+    std::vector<ControllerEvent> controllerEvents;
     NoteEvent selectedNote;
     bool selectedNoteValid = false;
     std::vector<NoteEvent> selectedNotes;
