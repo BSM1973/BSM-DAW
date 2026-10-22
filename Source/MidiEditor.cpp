@@ -996,7 +996,11 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
-        const bool shouldShowDuration = hasSelection && durationValue.getWidth() >= 95;
+        // Keep the compact duration selector continuously visible while it
+        // fits in the toolbar. MIDI selection can briefly fluctuate during
+        // 30 Hz synchronization; toggling visibility each frame makes this
+        // small button flash even though the note duration works correctly.
+        const bool shouldShowDuration = durationValue.getWidth() >= 95;
         if (durationValue.isVisible() != shouldShowDuration)
             durationValue.setVisible(shouldShowDuration);
         // A floating palette must not be driven by the 30 Hz editor refresh.
