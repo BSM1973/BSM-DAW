@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 float getLibertyPianoHorizontalZoom() noexcept;
@@ -90,7 +91,7 @@ public:
         // Obsidian velocity-lane heading matches the clear dock title hierarchy.
         g.setColour(juce::Colour(0xffb8e8ec));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.drawText("VELOCITY", 8, 8, pianoKeyWidth - 16, 16, juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("VÉLOCITÉ"), 8, 8, pianoKeyWidth - 16, 16, juce::Justification::centredLeft);
 
         const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
@@ -134,7 +135,7 @@ public:
             return; // Velocity lane remains directly editable in every tool, as before the palette.
 
         const auto note = findNoteForX(e.x);
-        if (note == nullptr)
+        if (!note.has_value())
             return;
 
         editing = true;
@@ -161,7 +162,7 @@ public:
     }
 
 private:
-    const MidiEngine::NoteEvent* findNoteForX(int x) const
+    std::optional<MidiEngine::NoteEvent> findNoteForX(int x) const
     {
         const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
@@ -171,7 +172,7 @@ private:
         const auto pixelsPerTick = (static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks))
             * (double)getLibertyPianoHorizontalZoom();
 
-        const MidiEngine::NoteEvent* best = nullptr;
+        std::optional<MidiEngine::NoteEvent> best;
         double bestDistance = std::numeric_limits<double>::max();
 
         for (const auto& note : owner.getMidiEngine().getNotesCopy())
@@ -192,7 +193,7 @@ private:
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = &note;
+                best = note;
             }
         }
 
