@@ -226,7 +226,39 @@ private:
 class ControllerLane final : public juce::Component
 {
 public:
-    ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef) {}
+    ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef)
+    {
+        curveButton.setButtonText(juce::String::fromUTF8("COURBES ▾"));
+        curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme puis glisser entre deux points MIDI"));
+        curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
+        curveButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            menu.setLookAndFeel(&getLookAndFeel());
+            static const char* labels[] = { "Ligne droite  ━", "Sinusoïdale  ∿", "Triangle  △",
+                "Montée douce  ⌒", "Descente douce  ⌣", "Carrée  ▔▁", "Exponentielle  ⤴", "Logarithmique  ⤵" };
+            for (int i = 0; i < 8; ++i)
+                menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
+            menu.setMinimumNumColumns(2);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
+                [safe = juce::Component::SafePointer<ControllerLane>(this)](int result)
+                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->repaint(); } });
+        };
+        addAndMakeVisible(curveButton);
+        snapButton.setButtonText("SNAP");
+        snapButton.setClickingTogglesState(true);
+        snapButton.setToggleState(true, juce::dontSendNotification);
+        snapButton.setTooltip(juce::String::fromUTF8("Activer ou désactiver la grille pour les contrôleurs MIDI"));
+        snapButton.onClick = [this] { snapButton.setColour(juce::TextButton::buttonColourId,
+            snapButton.getToggleState() ? juce::Colour(0xff315b69) : juce::Colour(0xff28303a)); };
+        snapButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff315b69));
+        addAndMakeVisible(snapButton);
+    }
+    void resized() override
+    {
+        curveButton.setBounds(pianoKeyWidth + 8, 5, 112, 23);
+        snapButton.setBounds(pianoKeyWidth + 126, 5, 64, 23);
+    }
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff101821));
@@ -297,7 +329,7 @@ private:
             * getLibertyPianoHorizontalZoom();
         auto tick = juce::jmax<std::int64_t>(0, (std::int64_t)std::llround((e.x - pianoKeyWidth) / ppt));
         const auto snap = activePianoSnapTicks();
-        if (snap > 0) tick = MidiEngine::quantizeTick(tick, snap);
+        if (snapButton.getToggleState() && snap > 0) tick = MidiEngine::quantizeTick(tick, snap);
         const int bottom = getHeight() - 9;
         const int value = juce::jlimit(0, controller == 128 ? 16383 : 127,
             (int)std::llround((double)(bottom - e.y) / juce::jmax(1, getHeight() - 27) * (controller == 128 ? 16383 : 127)));
@@ -306,6 +338,9 @@ private:
     }
     MainComponent& owner;
     int& controller;
+    juce::TextButton curveButton, snapButton;
+    int curveShape = 0;
+    std::int64_t curveStartTick = -1;
 };
 
 class PianoRoll final : public juce::Component, private juce::Timer
