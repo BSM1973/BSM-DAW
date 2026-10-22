@@ -50,6 +50,16 @@ std::vector<MidiEngine::ControllerEvent> MidiEngine::getControllerEventsCopy() c
     return controllerEvents;
 }
 
+bool MidiEngine::removeControllerEvent(std::int64_t tick, int controller, int channel)
+{
+    const auto it = std::find_if(controllerEvents.begin(), controllerEvents.end(),
+        [=](const ControllerEvent& event)
+        { return event.tick == tick && event.controller == controller && event.channel == channel; });
+    if (it == controllerEvents.end()) return false;
+    controllerEvents.erase(it);
+    return true;
+}
+
 void MidiEngine::clearControllerEvents()
 {
     controllerEvents.clear();
