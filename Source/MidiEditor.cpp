@@ -803,7 +803,7 @@ public:
             // Selection and playback use outlines so the velocity colour remains visible.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
             const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);
-            g.setColour(n.muted ? juce::Colour(0xff46505a) : selected ? juce::Colour(0xfff3d48b) : velocityColour);
+            g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
