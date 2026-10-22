@@ -122,39 +122,31 @@ private:
     std::function<void(int)> selection;
 };
 
-std::unique_ptr<ColourGridPalette> activeColourPalette;
+// Native JUCE popup menus avoid temporary-window hit-testing failures on macOS.
+// Every colour has its own menu command; the submenu groups keep all 32 reachable.
 void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<void(int)> onSelect)
 {
-    if (activeColourPalette != nullptr)
+    juce::PopupMenu menu;
+    menu.addItem(100, juce::String::fromUTF8("Couleur par défaut"), true, selectedId == 0);
+    menu.addSeparator();
+    for (int group = 0; group < 4; ++group)
     {
-        activeColourPalette->setVisible(false);
-        activeColourPalette.reset();
+        juce::PopupMenu colours;
+        for (int index = group * 8 + 1; index <= (group + 1) * 8; ++index)
+            colours.addItem(index, colourName(index), true, selectedId == index);
+        const auto title = juce::String::fromUTF8("Couleurs ")
+            + juce::String(group * 8 + 1) + " - " + juce::String((group + 1) * 8);
+        menu.addSubMenu(title, colours);
     }
-    activeColourPalette = std::make_unique<ColourGridPalette>(selectedId,
-        [onSelect = std::move(onSelect)](int id)
-        {
-            onSelect(id);
-            juce::MessageManager::callAsync([]
-            {
-                if (activeColourPalette != nullptr)
-                {
-                    activeColourPalette->setVisible(false);
-                    activeColourPalette.reset();
-                }
-            });
-        });
-    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForPoint(screenPoint);
-    if (display != nullptr)
+    juce::PopupMenu::Options options;
+    options = options.withTargetScreenArea({screenPoint.x, screenPoint.y, 1, 1});
+    menu.showMenuAsync(options, [onSelect = std::move(onSelect)](int result)
     {
-        const auto area = display->userArea;
-        screenPoint.x = juce::jlimit(area.getX(), juce::jmax(area.getX(), area.getRight() - activeColourPalette->getWidth()), screenPoint.x);
-        screenPoint.y = juce::jlimit(area.getY(), juce::jmax(area.getY(), area.getBottom() - activeColourPalette->getHeight()), screenPoint.y);
-    }
-    activeColourPalette->setTopLeftPosition(screenPoint);
-    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow);
-    activeColourPalette->setAlwaysOnTop(true);
-    activeColourPalette->setVisible(true);
-    activeColourPalette->toFront(false);
+        if (result == 100)
+            onSelect(0);
+        else if (result >= 1 && result <= 32)
+            onSelect(result);
+    });
 }
 
 std::vector<int> colourIds;
