@@ -349,22 +349,25 @@ public:
         const auto right = juce::jmax(start, end);
         const int a = findValue(left), b = findValue(right);
         const int maxValue = controller == 128 ? 16383 : 127;
-        const auto snap = snapButton.getToggleState() ? activePianoSnapTicks() : 0;
-        // Curve interpolation must produce points even when the global snap division
-        // is larger than the interval between the two anchors.
+        // Generate a dense, bounded series of events across the whole interval.
+        // The piano-roll SNAP controls anchor placement, not the resolution of
+        // an interpolated curve (a coarse 1/4 grid previously yielded one point).
         const auto span = right - left;
-        const auto step = juce::jmax<std::int64_t>(1,
-            juce::jmin<std::int64_t>(juce::jmax<std::int64_t>(1, span / 2),
-                snap > 0 ? snap : juce::jmax<std::int64_t>(1, span / 64)));
+        const int subdivisions = (int)juce::jmin<std::int64_t>(128, span - 1);
+        if (subdivisions <= 0) return;
         constexpr double pi = juce::MathConstants<double>::pi;
-        for (auto tick = left + step; tick < right; tick += step)
+        std::int64_t previousTick = left;
+        for (int i = 1; i <= subdivisions; ++i)
         {
-            const double t = (double)(tick - left) / (double)(right - left);
+            const auto tick = left + (span * i) / (subdivisions + 1);
+            if (tick <= previousTick || tick >= right) continue;
+            previousTick = tick;
+            const double t = (double)(tick - left) / (double)span;
             double fraction = t;
             switch (curveShape)
             {
-                case 1: fraction = t + 0.25 * std::sin(2.0 * pi * t); break;
-                case 2: fraction = t + (t < 0.5 ? t : 1.0 - t) * 0.5; break;
+                case 1: fraction = t + 0.22 * std::sin(2.0 * pi * t); break;
+                case 2: fraction = t + 0.35 * (t < 0.5 ? t : 1.0 - t); break;
                 case 3: fraction = t * t * (3.0 - 2.0 * t); break;
                 case 4: fraction = std::sin(t * pi * 0.5); break;
                 case 5: fraction = t < 0.5 ? 0.0 : 1.0; break;
@@ -372,9 +375,9 @@ public:
                 case 7: fraction = std::sqrt(t); break;
                 default: break;
             }
-            const int value = juce::jlimit(0, maxValue, (int)std::llround(a + (b - a) * fraction));
+            const int value = juce::jlimit(0, maxValue,
+                (int)std::llround(a + (b - a) * fraction));
             owner.getMidiEngine().setControllerEvent(tick, controller, value);
-
         }
         owner.publishPianoRollControllers();
         repaint(); owner.repaint();
