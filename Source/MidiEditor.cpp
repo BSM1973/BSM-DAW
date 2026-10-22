@@ -282,11 +282,28 @@ public:
             const int y = bottom - (int)std::llround((double)event.value / maxValue * usable);
             if (!started) { curve.startNewSubPath((float)x, (float)y); started = true; }
             else curve.lineTo((float)x, (float)y);
-            g.setColour(juce::Colour(0xff63d7dc));
-            g.fillEllipse((float)x - 3.5f, (float)y - 3.5f, 7.0f, 7.0f);
+            // Keep the automation line clean: do not paint dozens of control-point dots.
         }
         g.setColour(juce::Colour(0xff63d7dc).withAlpha(0.75f));
-        g.strokePath(curve, juce::PathStrokeType(1.5f));
+        g.strokePath(curve, juce::PathStrokeType(2.0f));
+        if (draggingCurve)
+        {
+            const int leftX = juce::jmax(pianoKeyWidth, juce::jmin(dragStart.x, dragEnd.x));
+            const int rightX = juce::jmax(pianoKeyWidth, juce::jmax(dragStart.x, dragEnd.x));
+            const int y0 = dragStart.x <= dragEnd.x ? dragStart.y : dragEnd.y;
+            const int y1 = dragStart.x <= dragEnd.x ? dragEnd.y : dragStart.y;
+            juce::Path preview;
+            for (int i = 0; i <= 96; ++i)
+            {
+                const double t = (double)i / 96.0;
+                const float x = (float)(leftX + (rightX - leftX) * t);
+                const float y = (float)(y0 + (y1 - y0) * curveFraction(t));
+                if (i == 0) preview.startNewSubPath(x, y);
+                else preview.lineTo(x, y);
+            }
+            g.setColour(juce::Colour(0xffffd486));
+            g.strokePath(preview, juce::PathStrokeType(2.5f));
+        }
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(pianoKeyWidth - 1, 2, 1, juce::jmax(0, getHeight() - 2));
     }
