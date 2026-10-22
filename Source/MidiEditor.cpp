@@ -259,7 +259,32 @@ public:
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(pianoKeyWidth - 1, 2, 1, juce::jmax(0, getHeight() - 2));
     }
-    void mouseDown(const juce::MouseEvent& e) override { if (e.mods.isLeftButtonDown()) edit(e); }
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (e.mods.isRightButtonDown())
+        {
+            if (e.x < pianoKeyWidth) return;
+            const auto clipTicks = juce::jmax<std::int64_t>(
+                MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
+                MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+            const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2)
+                / (double)juce::jmax<std::int64_t>(1, clipTicks) * getLibertyPianoHorizontalZoom();
+            const auto events = owner.getMidiEngine().getControllerEventsCopy();
+            std::int64_t closestTick = -1;
+            double bestDistance = 9.0;
+            for (const auto& event : events)
+            {
+                if (event.controller != controller || event.channel != 1) continue;
+                const double x = pianoKeyWidth + (double)event.tick * ppt;
+                const double distance = std::abs(x - e.x);
+                if (distance < bestDistance) { bestDistance = distance; closestTick = event.tick; }
+            }
+            if (closestTick >= 0 && owner.getMidiEngine().removeControllerEvent(closestTick, controller))
+            { repaint(); owner.repaint(); }
+            return;
+        }
+        if (e.mods.isLeftButtonDown()) edit(e);
+    }
     void mouseDrag(const juce::MouseEvent& e) override { if (e.mods.isLeftButtonDown()) edit(e); }
 private:
     void edit(const juce::MouseEvent& e)
