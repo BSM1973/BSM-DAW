@@ -34,125 +34,104 @@ juce::String colourName(int id)
     return juce::String::fromUTF8("Couleur ") + juce::String(id);
 }
 
+// A single JUCE component owns all 32 swatches: no overlapping child controls.
 class ColourGridPalette final : public juce::Component
 {
 public:
-    ColourGridPalette(int selected, std::function<void(int)> onSelect)
-        : selectedId(juce::jlimit(0, 32, selected)), selection(std::move(onSelect))
+    ColourGridPalette(int selected, std::function<void(int)> callback)
+        : selectedId(juce::jlimit(0, 32, selected)), onSelect(std::move(callback))
     {
         setOpaque(true);
-        expanded = selectedId > 16;
-        setSize(336, expanded ? 292 : 214);
+        setSize(346, 306);
     }
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff142633));
-        g.setColour(juce::Colour(0xff54d6dc));
-        g.fillRoundedRectangle(12.0f, 12.0f, 4.0f, 25.0f, 2.0f);
+        g.fillAll(juce::Colour(0xff15232d));
+        g.setColour(juce::Colour(0xff293e4b));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 9.0f, 1.0f);
+        g.setColour(juce::Colour(0xff5ad6df));
+        g.fillRoundedRectangle(16.0f, 15.0f, 4.0f, 25.0f, 2.0f);
         g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(17.0f, juce::Font::bold));
-        g.drawText("COULEUR DE PISTE", 25, 12, 290, 26, juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff89aab9));
-        g.setFont(juce::Font(13.0f));
-        g.drawText(expanded ? "32 couleurs" : "16 couleurs", 18, 46, 300, 20,
-                   juce::Justification::centredLeft);
+        g.setFont(juce::Font(16.0f, juce::Font::bold));
+        g.drawText("COULEUR DE PISTE", 29, 14, 295, 26, juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff9eb6c4));
+        g.setFont(juce::Font(12.0f));
+        g.drawText("32 couleurs", 17, 47, 200, 18, juce::Justification::centredLeft);
 
-        // All swatches are painted and hit-tested by this single component.
-        // No child buttons or overlapping desktop peers can swallow rows 2-4.
-        const int count = expanded ? 32 : 16;
-        for (int i = 0; i < count; ++i)
+        for (int i = 0; i < 32; ++i)
         {
-            const auto rect = swatchBounds(i);
+            const auto rect = swatch(i);
             g.setColour(juce::Colour(palette[(size_t)i + 1]));
             g.fillRoundedRectangle(rect.toFloat(), 5.0f);
             if (selectedId == i + 1)
             {
                 g.setColour(juce::Colours::white);
-                g.drawRoundedRectangle(rect.expanded(2).toFloat(), 6.0f, 2.0f);
+                g.drawRoundedRectangle(rect.expanded(2).toFloat(), 7.0f, 2.0f);
             }
         }
-        const int bottom = expanded ? 246 : 168;
-        g.setColour(juce::Colour(0xff263d4b));
-        g.fillRoundedRectangle(18.0f, (float)bottom, 184.0f, 30.0f, 5.0f);
-        g.fillRoundedRectangle(208.0f, (float)bottom, 110.0f, 30.0f, 5.0f);
+        g.setColour(juce::Colour(0xff293e4b));
+        g.fillRoundedRectangle(17.0f, 264.0f, 312.0f, 29.0f, 5.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(12.0f));
-        g.drawFittedText(expanded ? "-  Moins de couleurs" : "+  16 couleurs supplémentaires",
-                         22, bottom, 176, 30, juce::Justification::centred, 1);
-        g.drawFittedText("Par défaut", 210, bottom, 106, 30,
-                         juce::Justification::centred, 1);
+        g.drawText("Couleur par défaut", 17, 264, 312, 29, juce::Justification::centred);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
         const auto p = e.getPosition();
-        const int count = expanded ? 32 : 16;
-        for (int i = 0; i < count; ++i)
-        {
-            if (swatchBounds(i).contains(p))
+        for (int i = 0; i < 32; ++i)
+            if (swatch(i).contains(p))
             {
-                selectedId = i + 1;
-                repaint();
-                selection(selectedId);
+                onSelect(i + 1);
                 return;
             }
-        }
-        const int bottom = expanded ? 246 : 168;
-        if (juce::Rectangle<int>(18, bottom, 184, 30).contains(p))
-        {
-            expanded = !expanded;
-            setSize(336, expanded ? 292 : 214);
-            repaint();
-        }
-        else if (juce::Rectangle<int>(208, bottom, 110, 30).contains(p))
-        {
-            selectedId = 0;
-            selection(0);
-        }
+        if (juce::Rectangle<int>(17, 264, 312, 29).contains(p))
+            onSelect(0);
     }
 
 private:
-    static juce::Rectangle<int> swatchBounds(int i)
+    static juce::Rectangle<int> swatch(int i)
     {
-        return { 18 + (i % 8) * 39, 76 + (i / 8) * 39, 32, 30 };
+        return { 17 + (i % 8) * 40, 78 + (i / 8) * 43, 32, 32 };
     }
-    int selectedId = 0;
-    bool expanded = false;
-    std::function<void(int)> selection;
+    int selectedId;
+    std::function<void(int)> onSelect;
 };
 
-// Native JUCE popup menus avoid temporary-window hit-testing failures on macOS.
-// Every colour has its own menu command; the submenu groups keep all 32 reachable.
+std::unique_ptr<ColourGridPalette> activeColourPalette;
 void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<void(int)> onSelect)
 {
-    juce::PopupMenu menu;
-    menu.addItem(100, juce::String::fromUTF8("Couleur par défaut"), true, selectedId == 0);
-    menu.addSeparator();
-    for (int group = 0; group < 4; ++group)
+    if (activeColourPalette != nullptr)
     {
-        juce::PopupMenu colours;
-        for (int index = group * 8 + 1; index <= (group + 1) * 8; ++index)
-            colours.addItem(index, colourName(index), true, selectedId == index);
-        const auto title = juce::String::fromUTF8("Couleurs ")
-            + juce::String(group * 8 + 1) + " - " + juce::String((group + 1) * 8);
-        menu.addSubMenu(title, colours);
+        activeColourPalette->setVisible(false);
+        activeColourPalette.reset();
     }
-    juce::PopupMenu::Options options;
-    options = options.withTargetScreenArea({screenPoint.x, screenPoint.y, 1, 1});
-    menu.showMenuAsync(options, [onSelect = std::move(onSelect)](int result)
-    {
-        if (result == 0)
-            return; // Dismissed without selecting.
-        const int selected = result == 100 ? 0 : result;
-        if (selected < 0 || selected > 32)
+    activeColourPalette = std::make_unique<ColourGridPalette>(selectedId,
+        [onSelect = std::move(onSelect)](int id)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
-                "LIBERTY - Diagnostic couleur", "Identifiant de menu inattendu : " + juce::String(result));
-            return;
-        }
-        onSelect(selected);
-    });
+            onSelect(id);
+            juce::MessageManager::callAsync([]
+            {
+                if (activeColourPalette != nullptr)
+                {
+                    activeColourPalette->setVisible(false);
+                    activeColourPalette.reset();
+                }
+            });
+        });
+    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForPoint(screenPoint);
+    if (display != nullptr)
+    {
+        const auto area = display->userArea;
+        screenPoint.x = juce::jlimit(area.getX(), juce::jmax(area.getX(), area.getRight() - activeColourPalette->getWidth()), screenPoint.x);
+        screenPoint.y = juce::jlimit(area.getY(), juce::jmax(area.getY(), area.getBottom() - activeColourPalette->getHeight()), screenPoint.y);
+    }
+    activeColourPalette->setTopLeftPosition(screenPoint);
+    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow);
+    activeColourPalette->setAlwaysOnTop(true);
+    activeColourPalette->setVisible(true);
+    activeColourPalette->toFront(false);
 }
 
 std::vector<int> colourIds;
