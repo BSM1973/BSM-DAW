@@ -333,9 +333,10 @@ public:
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff101821));
-        g.setColour(juce::Colour(0xff54d6dc));
+        // Discreet graphite toolbar, visually separated from the MIDI grid.
+        g.setColour(juce::Colour(0xff1c232b));
         g.fillRect(0, 0, getWidth(), 34);
-        g.setColour(juce::Colour(0xff345767));
+        g.setColour(juce::Colour(0xff303942));
         g.drawHorizontalLine(34, 0.0f, (float)getWidth());
         const auto label = controller == 128 ? "PITCH BEND" : controller == 129 ? "AFTERTOUCH" : "CC " + juce::String(controller);
         g.setColour(juce::Colour(0xffb8e8ec));
