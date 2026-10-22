@@ -222,14 +222,91 @@ private:
     int editChannel = 1;
 };
 
+class ControllerLane final : public juce::Component
+{
+public:
+    ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef) {}
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xff101821));
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.drawHorizontalLine(1, 0.0f, (float)getWidth());
+        const auto label = controller == 128 ? "PITCH BEND" : controller == 129 ? "AFTERTOUCH" : "CC " + juce::String(controller);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.drawText(label, 7, 7, pianoKeyWidth - 12, 22, juce::Justification::centredLeft);
+        const auto clipTicks = juce::jmax<std::int64_t>(MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
+            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const double pixelsPerTick = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2) / (double)juce::jmax<std::int64_t>(1, clipTicks)
+            * getLibertyPianoHorizontalZoom();
+        const int maxValue = controller == 128 ? 16383 : 127;
+        const int bottom = getHeight() - 9;
+        const int usable = juce::jmax(1, getHeight() - 27);
+        juce::Path curve;
+        bool started = false;
+        for (const auto& event : owner.getMidiEngine().getControllerEventsCopy())
+        {
+            if (event.controller != controller || event.channel != 1) continue;
+            const int x = pianoKeyWidth + (int)std::llround((double)event.tick * pixelsPerTick);
+            const int y = bottom - (int)std::llround((double)event.value / maxValue * usable);
+            if (!started) { curve.startNewSubPath((float)x, (float)y); started = true; }
+            else curve.lineTo((float)x, (float)y);
+            g.setColour(juce::Colour(0xff63d7dc));
+            g.fillEllipse((float)x - 3.5f, (float)y - 3.5f, 7.0f, 7.0f);
+        }
+        g.setColour(juce::Colour(0xff63d7dc).withAlpha(0.75f));
+        g.strokePath(curve, juce::PathStrokeType(1.5f));
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(pianoKeyWidth - 1, 2, 1, juce::jmax(0, getHeight() - 2));
+    }
+    void mouseDown(const juce::MouseEvent& e) override { if (e.mods.isLeftButtonDown()) edit(e); }
+    void mouseDrag(const juce::MouseEvent& e) override { if (e.mods.isLeftButtonDown()) edit(e); }
+private:
+    void edit(const juce::MouseEvent& e)
+    {
+        if (e.x < pianoKeyWidth || getWidth() <= pianoKeyWidth) return;
+        const auto clipTicks = juce::jmax<std::int64_t>(MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
+            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2) / (double)juce::jmax<std::int64_t>(1, clipTicks)
+            * getLibertyPianoHorizontalZoom();
+        auto tick = juce::jmax<std::int64_t>(0, (std::int64_t)std::llround((e.x - pianoKeyWidth) / ppt));
+        const auto snap = activePianoSnapTicks();
+        if (snap > 0) tick = MidiEngine::quantizeTick(tick, snap);
+        const int bottom = getHeight() - 9;
+        const int value = juce::jlimit(0, controller == 128 ? 16383 : 127,
+            (int)std::llround((double)(bottom - e.y) / juce::jmax(1, getHeight() - 27) * (controller == 128 ? 16383 : 127)));
+        if (owner.getMidiEngine().setControllerEvent(tick, controller, value))
+        { repaint(); owner.repaint(); }
+    }
+    MainComponent& owner;
+    int& controller;
+};
+
 class PianoRoll final : public juce::Component, private juce::Timer
 {
 public:
-    explicit PianoRoll(MainComponent& o) : owner(o), velocityLane(o)
+    explicit PianoRoll(MainComponent& o) : owner(o), velocityLane(o), controllerLane(o, activeController)
     {
         setWantsKeyboardFocus(true);
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
         addAndMakeVisible(velocityLane);
+        addAndMakeVisible(controllerLane);
+        controllerLane.setVisible(false);
+        controllerSelector.addItem("Vélocité", 1);
+        controllerSelector.addItem("Modulation CC1", 2);
+        controllerSelector.addItem("Expression CC11", 3);
+        controllerSelector.addItem("Sustain CC64", 4);
+        controllerSelector.addItem("Pitch Bend", 5);
+        controllerSelector.addItem("Aftertouch", 6);
+        controllerSelector.setSelectedId(1, juce::dontSendNotification);
+        controllerSelector.onChange = [this] {
+            static constexpr int ids[] = { -1, 1, 11, 64, 128, 129 };
+            activeController = ids[juce::jlimit(0, 5, controllerSelector.getSelectedId() - 1)];
+            velocityLane.setVisible(activeController < 0);
+            controllerLane.setVisible(activeController >= 0);
+            resized(); repaint();
+        };
+        addAndMakeVisible(controllerSelector);
         // Shared Piano Roll component: identical tools in the dock and detached editor.
         static const char* glyphs[] = { "↖", "✎", "✂", "⌫", "↔", "◇", "▥", "▧", "◉" };
         static const char* names[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
@@ -547,6 +624,9 @@ public:
                                 juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
         velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
                                getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
+        controllerLane.setBounds(velocityLane.getBounds());
+        controllerSelector.setBounds(juce::jmax(pianoKeyWidth + 8, getWidth() - 180), 3,
+                                     juce::jmin(172, juce::jmax(0, getWidth() - pianoKeyWidth - 16)), 27);
     }
 
     void paint(juce::Graphics& g) override
@@ -1092,6 +1172,9 @@ private:
 
     MainComponent& owner;
     VelocityLane velocityLane;
+    int activeController = -1;
+    ControllerLane controllerLane;
+    juce::ComboBox controllerSelector;
     bool draggingNote = false, dragMoved = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0, dragEndTick = 0, originalLengthTicks = 0;
