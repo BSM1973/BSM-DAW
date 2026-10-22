@@ -409,6 +409,10 @@ private:
             setBounds(wantedBounds);
         else
             resized();
+        // Track header widgets are created/reordered after this overlay.
+        // Keep the colour layer above them while leaving mouse input to controls.
+        toFront(false);
+        repaint();
         if (editingTrack >= 0)
             renameEditor.toFront(true);
     }
