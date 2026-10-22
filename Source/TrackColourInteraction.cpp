@@ -365,12 +365,16 @@ private:
         owner.repaint();
 
         juce::Component::SafePointer<MainComponent> safeOwner(&owner);
+        juce::Component::SafePointer<TrackColourController> safeController(this);
         showColourGrid(event.getScreenPosition(), colourIds[(size_t)track],
-            [safeOwner, track](int id)
+            [safeOwner, safeController, track](int id)
             {
                 if (safeOwner == nullptr) return;
                 ensureTrackMetadata(track + 1);
-                colourIds[(size_t)track] = id;
+                colourIds[(size_t)track] = juce::jlimit(0, 32, id);
+                // Repaint the overlay that actually draws track colours.
+                if (safeController != nullptr)
+                    safeController->repaint();
                 safeOwner->repaint();
             });
     }
