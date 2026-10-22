@@ -36,11 +36,11 @@ public:
         }
     }
 
-    void drawPopupMenuItem(juce::Graphics& g, juce::Rectangle<int> area,
+    void drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<int>& area,
                            bool isSeparator, bool isActive, bool isHighlighted,
                            bool isTicked, bool hasSubMenu, const juce::String& text,
                            const juce::String& shortcutKeyText,
-                           const juce::Drawable* icon) override
+                           const juce::Drawable* icon, const juce::Colour* textColour) override
     {
         if (isSeparator)
         {
@@ -67,16 +67,16 @@ public:
         if (isTicked)
         {
             g.setColour(juce::Colour(0xff54d6dc));
-            g.drawText(juce::String::fromUTF8("✓"), area.removeFromRight(25),
+            g.drawText(juce::String::fromUTF8("✓"), area.withX(area.getRight() - 25).withWidth(25),
                        juce::Justification::centred, false);
         }
         if (hasSubMenu)
         {
             g.setColour(juce::Colour(0xff54d6dc));
-            g.drawText(">", area.removeFromRight(16),
+            g.drawText(">", area.withX(area.getRight() - 16).withWidth(16),
                        juce::Justification::centred, false);
         }
-        juce::ignoreUnused(shortcutKeyText, icon);
+        juce::ignoreUnused(shortcutKeyText, icon, textColour);
     }
 };
 inline TrackInputPaletteLookAndFeel& libertyTrackInputPaletteStyle()
