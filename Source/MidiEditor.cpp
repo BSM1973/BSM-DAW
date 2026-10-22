@@ -252,7 +252,7 @@ public:
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
         durationValue.setBufferedToImage(true);
-        durationValue.setButtonText("Noire  ▾");
+        durationValue.setButtonText(juce::String::fromUTF8("Durée  v"));
         durationValue.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff233746));
         durationValue.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffdf99));
         durationValue.setTooltip(juce::String::fromUTF8("Choisir une durée dans la palette musicale"));
@@ -355,7 +355,7 @@ public:
             {
                 if (safe == nullptr) return;
                 safe->selectedDurationId = id;
-                safe->durationValue.setButtonText(durationLabelForId(id) + "  ▾");
+                safe->durationValue.setButtonText(durationLabelForId(id) + "  v");
                 safe->applyDurationValue();
                 // Avoid destroying a clicked button from inside its callback.
                 juce::MessageManager::callAsync([safe]
@@ -411,6 +411,12 @@ public:
             4*q/3, 2*q/3, q/3, q/6, q/12
         };
         return id >= 1 && id <= 17 ? durations[id - 1] : 0;
+    }
+
+    std::int64_t drawingDurationTicks() const
+    {
+        const auto chosen = musicalDurationTicks(selectedDurationId);
+        return chosen > 0 ? chosen : MidiEngine::ticksPerQuarterNote;
     }
 
     void applyDurationValue()
@@ -726,7 +732,7 @@ public:
             return;
         const int pitch = pitchFromY(e.y);
         const auto tick = tickFromX(e.x);
-        if (owner.getMidiEngine().addNote(tick, MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
+        if (owner.getMidiEngine().addNote(tick, drawingDurationTicks(), pitch, 100, 1))
         {
             owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner);
             repaint();
@@ -835,7 +841,7 @@ public:
         }
 
         if (tool == 1) // DRAW / DESSINER
-            if (midi.addNote(tickFromX(e.x), MidiEngine::ticksPerQuarterNote, pitch, 100, 1))
+            if (midi.addNote(tickFromX(e.x), drawingDurationTicks(), pitch, 100, 1))
             { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
 
@@ -936,7 +942,7 @@ private:
     juce::TextButton quantizeButton, selectAllButton;
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
-    int selectedDurationId = 3;
+    int selectedDurationId = 0;
     std::unique_ptr<DurationPalette> durationPalette;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
