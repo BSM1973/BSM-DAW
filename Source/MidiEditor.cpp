@@ -292,12 +292,16 @@ public:
         addAndMakeVisible(velocityLane);
         addAndMakeVisible(controllerLane);
         controllerLane.setVisible(false);
-        controllerSelector.addItem("Vélocité", 1);
+        controllerSelector.addItem(juce::String::fromUTF8("Vélocité"), 1);
         controllerSelector.addItem("Modulation CC1", 2);
         controllerSelector.addItem("Expression CC11", 3);
         controllerSelector.addItem("Sustain CC64", 4);
         controllerSelector.addItem("Pitch Bend", 5);
         controllerSelector.addItem("Aftertouch", 6);
+        controllerSelector.setTooltip(juce::String::fromUTF8("Choisir le contrôleur MIDI à éditer"));
+        controllerSelector.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
+        controllerSelector.setColour(juce::ComboBox::textColourId, juce::Colour(0xffe2edf2));
+        controllerSelector.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff40515f));
         controllerSelector.setSelectedId(1, juce::dontSendNotification);
         controllerSelector.onChange = [this] {
             static constexpr int ids[] = { -1, 1, 11, 64, 128, 129 };
