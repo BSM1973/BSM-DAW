@@ -152,10 +152,6 @@ void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<
             return;
         }
         onSelect(selected);
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-            "LIBERTY - Diagnostic couleur",
-            "Le menu a transmis la couleur " + juce::String(selected)
-                + ".\\nSi la piste n'a pas change de couleur, le probleme se situe apres la selection.");
     });
 }
 
@@ -388,7 +384,10 @@ private:
                 if (safeOwner == nullptr) return;
                 ensureTrackMetadata(track + 1);
                 colourIds[(size_t)track] = juce::jlimit(0, 32, id);
-                DBG("Liberty track colour applied: track=" + juce::String(track) + " id=" + juce::String(id));
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+                    "LIBERTY - Application couleur",
+                    "Piste " + juce::String(track + 1) + " : couleur demandee " + juce::String(id)
+                    + ", valeur stockee " + juce::String(colourIds[(size_t)track]));
                 // Repaint the overlay that actually draws track colours.
                 if (safeController != nullptr)
                     safeController->repaint();
@@ -482,7 +481,10 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
             if (safeOwner == nullptr) return;
             ensureTrackMetadata(track + 1);
             colourIds[(size_t)track] = juce::jlimit(0, 32, id);
-            DBG("Liberty header colour applied: track=" + juce::String(track) + " id=" + juce::String(id));
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+                "LIBERTY - Application couleur",
+                "Piste " + juce::String(track + 1) + " : couleur demandee " + juce::String(id)
+                + ", valeur stockee " + juce::String(colourIds[(size_t)track]));
             auto controller = controllers.find(safeOwner.getComponent());
             if (controller != controllers.end() && controller->second != nullptr)
                 controller->second->repaint();
