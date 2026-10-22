@@ -188,6 +188,7 @@ public:
     {
         setInterceptsMouseClicks(false, true);
         owner.addAndMakeVisible(this);
+        toFront(false);
         owner.addMouseListener(&listener, true);
         // Also receive clicks on overlay controls and other nested header components.
 
@@ -384,13 +385,12 @@ private:
                 if (safeOwner == nullptr) return;
                 ensureTrackMetadata(track + 1);
                 colourIds[(size_t)track] = juce::jlimit(0, 32, id);
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "LIBERTY - Application couleur",
-                    "Piste " + juce::String(track + 1) + " : couleur demandee " + juce::String(id)
-                    + ", valeur stockee " + juce::String(colourIds[(size_t)track]));
                 // Repaint the overlay that actually draws track colours.
                 if (safeController != nullptr)
+                {
+                    safeController->toFront(false);
                     safeController->repaint();
+                }
                 safeOwner->repaint();
             });
     }
@@ -481,13 +481,12 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
             if (safeOwner == nullptr) return;
             ensureTrackMetadata(track + 1);
             colourIds[(size_t)track] = juce::jlimit(0, 32, id);
-            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                "LIBERTY - Application couleur",
-                "Piste " + juce::String(track + 1) + " : couleur demandee " + juce::String(id)
-                + ", valeur stockee " + juce::String(colourIds[(size_t)track]));
             auto controller = controllers.find(safeOwner.getComponent());
             if (controller != controllers.end() && controller->second != nullptr)
+            {
+                controller->second->toFront(false);
                 controller->second->repaint();
+            }
             safeOwner->repaint();
         });
 }
