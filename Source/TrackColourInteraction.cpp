@@ -16,13 +16,38 @@ namespace
 constexpr int colourDefault = 0;
 constexpr int headerW = 210;
 constexpr int rulerH = 32;
-constexpr std::array<juce::uint32, 9> palette {
-    0xff31506a, 0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
-    0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6
+constexpr std::array<juce::uint32, 33> palette {
+    0xff31506a, // Default
+    0xff3b82f6, 0xff22c55e, 0xffeab308, 0xfff97316,
+    0xffef4444, 0xffa855f7, 0xffec4899, 0xff14b8a6,
+    0xff60a5fa, 0xff84cc16, 0xfffacc15, 0xfffb923c,
+    0xfff87171, 0xffc084fc, 0xfff472b6, 0xff2dd4bf,
+    0xff1d4ed8, 0xff15803d, 0xffa16207, 0xffc2410c,
+    0xffb91c1c, 0xff7e22ce, 0xffbe185d, 0xff0f766e,
+    0xff93c5fd, 0xffbbf7d0, 0xfffde68a, 0xfffed7aa,
+    0xfffecaca, 0xffe9d5ff, 0xfffbcfe8, 0xff99f6e4
 };
-constexpr const char* colourNames[] = {
-    "Defaut", "Bleu", "Vert", "Jaune", "Orange", "Rouge", "Violet", "Rose", "Turquoise"
-};
+
+juce::String colourName(int id)
+{
+    if (id == 0) return juce::String::fromUTF8("Défaut");
+    return juce::String::fromUTF8("Couleur ") + juce::String(id);
+}
+
+juce::PopupMenu createColourMenu(int selectedId)
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader(juce::String::fromUTF8("Palette de couleurs"));
+    menu.addItem(1, colourName(0), true, selectedId == 0);
+    menu.addSeparator();
+    for (int id = 1; id <= 16; ++id)
+        menu.addItem(id + 1, colourName(id), true, selectedId == id);
+    juce::PopupMenu more;
+    for (int id = 17; id < (int)palette.size(); ++id)
+        more.addItem(id + 1, colourName(id), true, selectedId == id);
+    menu.addSubMenu("+  16 couleurs supplémentaires", more);
+    return menu;
+}
 
 std::vector<int> colourIds;
 std::vector<juce::String> trackNames;
@@ -245,10 +270,8 @@ private:
         owner.selectedTrack=track;
         owner.repaint();
 
-        juce::PopupMenu menu;
+        juce::PopupMenu menu = createColourMenu(colourIds[(size_t)track]);
         menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
-        for (int id = 0; id < (int)palette.size(); ++id)
-            menu.addItem(id + 1, colourNames[id], true, colourIds[(size_t)track] == id);
 
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(event.getScreenPosition(), { 1, 1 })),
@@ -340,10 +363,8 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
     ensureTrackMetadata(total);
     owner.selectedTrack = track;
     owner.repaint();
-    juce::PopupMenu menu;
+    juce::PopupMenu menu = createColourMenu(colourIds[(size_t)track]);
     menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
-    for (int id = 0; id < (int) palette.size(); ++id)
-        menu.addItem(id + 1, colourNames[id], true, colourIds[(size_t) track] == id);
     juce::Component::SafePointer<MainComponent> safeOwner(&owner);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
         juce::Rectangle<int>(screenPoint, {1, 1})),
