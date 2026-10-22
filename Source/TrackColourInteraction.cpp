@@ -38,56 +38,13 @@ class ColourGridPalette final : public juce::Component
 {
 public:
     ColourGridPalette(int selected, std::function<void(int)> onSelect)
-        : selectedId(selected), selection(std::move(onSelect))
+        : selectedId(juce::jlimit(0, 32, selected)), selection(std::move(onSelect))
     {
         setOpaque(true);
-        setInterceptsMouseClicks(true, true);
-        // Do not set bounds before child buttons exist: JUCE invokes resized()
-        // synchronously, which would dereference an empty buttons vector.
-        for (int i = 0; i < 32; ++i)
-        {
-            auto button = std::make_unique<juce::TextButton>();
-            const int id = i + 1;
-            button->setButtonText({});
-            button->setTooltip(colourName(id));
-            button->setColour(juce::TextButton::buttonColourId, juce::Colour(palette[(size_t)id]));
-            button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(palette[(size_t)id]));
-            button->onClick = [this, id] { selectedId = id; repaint(); selection(id); };
-            addAndMakeVisible(*button);
-            buttons.push_back(std::move(button));
-        }
-        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("-  Moins de couleurs") : juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires")); setSize(336, expanded ? 264 : 186); repaint(); };
-        more.setButtonText(juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires"));
-        more.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
-        addAndMakeVisible(more);
-        reset.setButtonText(juce::String::fromUTF8("Couleur par défaut"));
-        reset.onClick = [this] { selection(0); };
-        reset.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
-        addAndMakeVisible(reset);
         expanded = selectedId > 16;
-        more.setButtonText(expanded ? juce::String::fromUTF8("-  Moins de couleurs") : juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires"));
-        setSize(336, expanded ? 264 : 186);
+        setSize(336, expanded ? 292 : 214);
     }
-    void mouseUp(const juce::MouseEvent& event) override
-    {
-        // Explicit hit testing on the palette itself, independent of the
-        // platform's temporary-window child hit testing for lower rows.
-        const auto p = event.getPosition();
-        const int column = (p.x - 18) / 39;
-        const int row = (p.y - 76) / 39;
-        if (p.x >= 18 && p.y >= 76 && column >= 0 && column < 8
-            && row >= 0 && row < (expanded ? 4 : 2))
-        {
-            const int localX = (p.x - 18) % 39;
-            const int localY = (p.y - 76) % 39;
-            if (localX < 32 && localY < 30)
-            {
-                selectedId = row * 8 + column + 1;
-                repaint();
-                selection(selectedId);
-            }
-        }
-    }
+
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff142633));
@@ -95,39 +52,74 @@ public:
         g.fillRoundedRectangle(12.0f, 12.0f, 4.0f, 25.0f, 2.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(17.0f, juce::Font::bold));
-        g.drawText(juce::String::fromUTF8("COULEUR DE PISTE"), 25, 12, 280, 26, juce::Justification::centredLeft);
+        g.drawText("COULEUR DE PISTE", 25, 12, 290, 26, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff89aab9));
-        g.drawText(expanded ? "32 couleurs" : "16 couleurs", 18, 46, 300, 20, juce::Justification::centredLeft);
-        if (selectedId > 0)
+        g.setFont(juce::Font(13.0f));
+        g.drawText(expanded ? "32 couleurs" : "16 couleurs", 18, 46, 300, 20,
+                   juce::Justification::centredLeft);
+
+        // All swatches are painted and hit-tested by this single component.
+        // No child buttons or overlapping desktop peers can swallow rows 2-4.
+        const int count = expanded ? 32 : 16;
+        for (int i = 0; i < count; ++i)
         {
-            const int idx = selectedId - 1;
-            if (idx < (expanded ? 32 : 16))
+            const auto rect = swatchBounds(i);
+            g.setColour(juce::Colour(palette[(size_t)i + 1]));
+            g.fillRoundedRectangle(rect.toFloat(), 5.0f);
+            if (selectedId == i + 1)
             {
-                const int x = 18 + (idx % 8) * 39;
-                const int y = 76 + (idx / 8) * 39;
                 g.setColour(juce::Colours::white);
-                g.drawRoundedRectangle((float)x - 2, (float)y - 2, 36.0f, 34.0f, 5.0f, 2.0f);
+                g.drawRoundedRectangle(rect.expanded(2).toFloat(), 6.0f, 2.0f);
             }
         }
+        const int bottom = expanded ? 246 : 168;
+        g.setColour(juce::Colour(0xff263d4b));
+        g.fillRoundedRectangle(18.0f, (float)bottom, 184.0f, 30.0f, 5.0f);
+        g.fillRoundedRectangle(208.0f, (float)bottom, 110.0f, 30.0f, 5.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(12.0f));
+        g.drawFittedText(expanded ? "-  Moins de couleurs" : "+  16 couleurs supplémentaires",
+                         22, bottom, 176, 30, juce::Justification::centred, 1);
+        g.drawFittedText("Par défaut", 210, bottom, 106, 30,
+                         juce::Justification::centred, 1);
     }
-    void resized() override
+
+    void mouseUp(const juce::MouseEvent& e) override
     {
-        if (buttons.size() != 32) return;
-        for (int i = 0; i < 32; ++i)
+        const auto p = e.getPosition();
+        const int count = expanded ? 32 : 16;
+        for (int i = 0; i < count; ++i)
         {
-            buttons[(size_t)i]->setVisible(i < (expanded ? 32 : 16));
-            buttons[(size_t)i]->setBounds(18 + (i % 8) * 39, 76 + (i / 8) * 39, 32, 30);
+            if (swatchBounds(i).contains(p))
+            {
+                selectedId = i + 1;
+                repaint();
+                selection(selectedId);
+                return;
+            }
         }
-        const int bottom = expanded ? 232 : 154;
-        more.setBounds(18, bottom, 184, 27);
-        reset.setBounds(208, bottom, 110, 27);
+        const int bottom = expanded ? 246 : 168;
+        if (juce::Rectangle<int>(18, bottom, 184, 30).contains(p))
+        {
+            expanded = !expanded;
+            setSize(336, expanded ? 292 : 214);
+            repaint();
+        }
+        else if (juce::Rectangle<int>(208, bottom, 110, 30).contains(p))
+        {
+            selectedId = 0;
+            selection(0);
+        }
     }
+
 private:
+    static juce::Rectangle<int> swatchBounds(int i)
+    {
+        return { 18 + (i % 8) * 39, 76 + (i / 8) * 39, 32, 30 };
+    }
     int selectedId = 0;
     bool expanded = false;
     std::function<void(int)> selection;
-    std::vector<std::unique_ptr<juce::TextButton>> buttons;
-    juce::TextButton more, reset;
 };
 
 std::unique_ptr<ColourGridPalette> activeColourPalette;
