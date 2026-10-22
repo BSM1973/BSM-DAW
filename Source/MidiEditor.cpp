@@ -281,7 +281,7 @@ public:
                 if (distance < bestDistance) { bestDistance = distance; closestTick = event.tick; }
             }
             if (closestTick >= 0 && owner.getMidiEngine().removeControllerEvent(closestTick, controller))
-            { repaint(); owner.repaint(); }
+            { owner.publishPianoRollControllers(); repaint(); owner.repaint(); }
             return;
         }
         if (e.mods.isLeftButtonDown()) edit(e);
@@ -302,7 +302,7 @@ private:
         const int value = juce::jlimit(0, controller == 128 ? 16383 : 127,
             (int)std::llround((double)(bottom - e.y) / juce::jmax(1, getHeight() - 27) * (controller == 128 ? 16383 : 127)));
         if (owner.getMidiEngine().setControllerEvent(tick, controller, value))
-        { repaint(); owner.repaint(); }
+        { owner.publishPianoRollControllers(); repaint(); owner.repaint(); }
     }
     MainComponent& owner;
     int& controller;
