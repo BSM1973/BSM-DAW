@@ -350,7 +350,12 @@ public:
         const int a = findValue(left), b = findValue(right);
         const int maxValue = controller == 128 ? 16383 : 127;
         const auto snap = snapButton.getToggleState() ? activePianoSnapTicks() : 0;
-        const auto step = juce::jmax<std::int64_t>(1, juce::jmax<std::int64_t>((right - left) / 128, snap > 0 ? snap : (right - left) / 64));
+        // Curve interpolation must produce points even when the global snap division
+        // is larger than the interval between the two anchors.
+        const auto span = right - left;
+        const auto step = juce::jmax<std::int64_t>(1,
+            juce::jmin<std::int64_t>(juce::jmax<std::int64_t>(1, span / 2),
+                snap > 0 ? snap : juce::jmax<std::int64_t>(1, span / 64)));
         constexpr double pi = juce::MathConstants<double>::pi;
         for (auto tick = left + step; tick < right; tick += step)
         {
@@ -369,7 +374,7 @@ public:
             }
             const int value = juce::jlimit(0, maxValue, (int)std::llround(a + (b - a) * fraction));
             owner.getMidiEngine().setControllerEvent(tick, controller, value);
-            if (right - tick <= step) break;
+
         }
         owner.publishPianoRollControllers();
         repaint(); owner.repaint();
