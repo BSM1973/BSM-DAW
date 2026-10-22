@@ -1,5 +1,6 @@
 #define private public
 #include "MainComponent.h"
+#include "TrackInputPaletteLookAndFeel.h"
 #undef private
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -803,8 +804,9 @@ public:
             mon->onClick = [this, i] { handleMonitorClick(i); };
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
             auto selector = std::make_unique<juce::ComboBox>();
-            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff202c37));
-            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffe2edf4));
+            selector->setLookAndFeel(&libertyTrackInputPaletteStyle());
+            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
+            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffffdf99));
             selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff42596b));
             selector->setTooltip("Entrée audio de cette piste : mono ou paire stéréo");
             selector->onChange = [this, i]
