@@ -1,5 +1,6 @@
 #define private public
 #include "MainComponent.h"
+#include "TrackInputPaletteLookAndFeel.h"
 #undef private
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -111,6 +112,7 @@ private:
 if(!isAudio(i))
 {
  c.midiInput=std::make_unique<juce::ComboBox>();
+ c.midiInput->setLookAndFeel(&libertyTrackInputPaletteStyle());
  auto* box=c.midiInput.get();
  box->setTooltip(juce::String::fromUTF8("Entrée MIDI de la piste instrument (Toutes = tous les périphériques MIDI)"));
  box->onChange=[this,i,box]
