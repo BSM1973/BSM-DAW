@@ -16,6 +16,45 @@ bool checkedAdd(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept
 }
 
 
+bool MidiEngine::setControllerEvent(std::int64_t tick, int controller, int value, int channel)
+{
+    if (tick < 0 || channel < 1 || channel > 16 || controller < 0 || controller > 129
+        || value < 0 || value > (controller == 128 ? 16383 : 127))
+        return false;
+    const auto it = std::find_if(controllerEvents.begin(), controllerEvents.end(),
+        [=](const ControllerEvent& e) { return e.tick == tick && e.controller == controller && e.channel == channel; });
+    if (it != controllerEvents.end())
+    {
+        if (it->value == value) return true;
+        it->value = value;
+        return true;
+    }
+    if (controllerEvents.size() >= 65536) return false;
+    ControllerEvent event;
+    event.tick = tick;
+    event.channel = static_cast<std::uint8_t>(channel);
+    event.controller = controller;
+    event.value = value;
+    controllerEvents.push_back(event);
+    std::sort(controllerEvents.begin(), controllerEvents.end(), [](const ControllerEvent& a, const ControllerEvent& b)
+    {
+        if (a.tick != b.tick) return a.tick < b.tick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.controller < b.controller;
+    });
+    return true;
+}
+
+std::vector<MidiEngine::ControllerEvent> MidiEngine::getControllerEventsCopy() const
+{
+    return controllerEvents;
+}
+
+void MidiEngine::clearControllerEvents()
+{
+    controllerEvents.clear();
+}
+
 MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 {
     return { notes, selectedNotes };
@@ -72,8 +111,9 @@ void MidiEngine::clearUndoHistory() noexcept
 
 void MidiEngine::clear()
 {
-    if (notes.empty()) return;
+    if (notes.empty() && controllerEvents.empty()) return;
     pushUndoState();
+    controllerEvents.clear();
     notes.clear();
     clearNoteSelection();
     setPlaybackPositionSeconds(0.0);
