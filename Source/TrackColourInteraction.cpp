@@ -41,7 +41,8 @@ public:
         : selectedId(selected), selection(std::move(onSelect))
     {
         setOpaque(true);
-        setSize(336, 264);
+        // Do not set bounds before child buttons exist: JUCE invokes resized()
+        // synchronously, which would dereference an empty buttons vector.
         for (int i = 0; i < 32; ++i)
         {
             auto button = std::make_unique<juce::TextButton>();
@@ -54,7 +55,7 @@ public:
             addAndMakeVisible(*button);
             buttons.push_back(std::move(button));
         }
-        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires"); resized(); repaint(); };
+        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires"); setSize(336, expanded ? 264 : 186); repaint(); };
         more.setButtonText("+  16 couleurs supplémentaires");
         more.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
         addAndMakeVisible(more);
@@ -64,7 +65,7 @@ public:
         addAndMakeVisible(reset);
         expanded = selectedId > 16;
         more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires");
-        resized();
+        setSize(336, expanded ? 264 : 186);
     }
     void paint(juce::Graphics& g) override
     {
@@ -90,7 +91,7 @@ public:
     }
     void resized() override
     {
-        setSize(336, expanded ? 264 : 186);
+        if (buttons.size() != 32) return;
         for (int i = 0; i < 32; ++i)
         {
             buttons[(size_t)i]->setVisible(i < (expanded ? 32 : 16));
