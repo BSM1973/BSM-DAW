@@ -34,19 +34,112 @@ juce::String colourName(int id)
     return juce::String::fromUTF8("Couleur ") + juce::String(id);
 }
 
-juce::PopupMenu createColourMenu(int selectedId)
+class ColourGridPalette final : public juce::Component
 {
-    juce::PopupMenu menu;
-    menu.addSectionHeader(juce::String::fromUTF8("Palette de couleurs"));
-    menu.addItem(1, colourName(0), true, selectedId == 0);
-    menu.addSeparator();
-    for (int id = 1; id <= 16; ++id)
-        menu.addItem(id + 1, colourName(id), true, selectedId == id);
-    juce::PopupMenu more;
-    for (int id = 17; id < (int)palette.size(); ++id)
-        more.addItem(id + 1, colourName(id), true, selectedId == id);
-    menu.addSubMenu("+  16 couleurs supplémentaires", more);
-    return menu;
+public:
+    ColourGridPalette(int selected, std::function<void(int)> onSelect)
+        : selectedId(selected), selection(std::move(onSelect))
+    {
+        setOpaque(true);
+        setSize(336, 264);
+        for (int i = 0; i < 32; ++i)
+        {
+            auto button = std::make_unique<juce::TextButton>();
+            const int id = i + 1;
+            button->setButtonText({});
+            button->setTooltip(colourName(id));
+            button->setColour(juce::TextButton::buttonColourId, juce::Colour(palette[(size_t)id]));
+            button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(palette[(size_t)id]));
+            button->onClick = [this, id] { selection(id); };
+            addAndMakeVisible(*button);
+            buttons.push_back(std::move(button));
+        }
+        more.onClick = [this] { expanded = !expanded; more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires"); resized(); repaint(); };
+        more.setButtonText("+  16 couleurs supplémentaires");
+        more.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
+        addAndMakeVisible(more);
+        reset.setButtonText(juce::String::fromUTF8("Couleur par défaut"));
+        reset.onClick = [this] { selection(0); };
+        reset.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263d4b));
+        addAndMakeVisible(reset);
+        expanded = selectedId > 16;
+        more.setButtonText(expanded ? juce::String::fromUTF8("−  Moins de couleurs") : "+  16 couleurs supplémentaires");
+        resized();
+    }
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xff142633));
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.fillRoundedRectangle(12.0f, 12.0f, 4.0f, 25.0f, 2.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(17.0f, juce::Font::bold));
+        g.drawText(juce::String::fromUTF8("COULEUR DE PISTE"), 25, 12, 280, 26, juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff89aab9));
+        g.drawText(expanded ? "32 couleurs" : "16 couleurs", 18, 46, 300, 20, juce::Justification::centredLeft);
+        if (selectedId > 0)
+        {
+            const int idx = selectedId - 1;
+            if (idx < (expanded ? 32 : 16))
+            {
+                const int x = 18 + (idx % 8) * 39;
+                const int y = 76 + (idx / 8) * 39;
+                g.setColour(juce::Colours::white);
+                g.drawRoundedRectangle((float)x - 2, (float)y - 2, 36.0f, 34.0f, 5.0f, 2.0f);
+            }
+        }
+    }
+    void resized() override
+    {
+        setSize(336, expanded ? 264 : 186);
+        for (int i = 0; i < 32; ++i)
+        {
+            buttons[(size_t)i]->setVisible(i < (expanded ? 32 : 16));
+            buttons[(size_t)i]->setBounds(18 + (i % 8) * 39, 76 + (i / 8) * 39, 32, 30);
+        }
+        const int bottom = expanded ? 232 : 154;
+        more.setBounds(18, bottom, 184, 27);
+        reset.setBounds(208, bottom, 110, 27);
+    }
+private:
+    int selectedId = 0;
+    bool expanded = false;
+    std::function<void(int)> selection;
+    std::vector<std::unique_ptr<juce::TextButton>> buttons;
+    juce::TextButton more, reset;
+};
+
+std::unique_ptr<ColourGridPalette> activeColourPalette;
+void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<void(int)> onSelect)
+{
+    if (activeColourPalette != nullptr)
+    {
+        activeColourPalette->setVisible(false);
+        activeColourPalette.reset();
+    }
+    activeColourPalette = std::make_unique<ColourGridPalette>(selectedId,
+        [onSelect = std::move(onSelect)](int id)
+        {
+            onSelect(id);
+            juce::MessageManager::callAsync([]
+            {
+                if (activeColourPalette != nullptr)
+                {
+                    activeColourPalette->setVisible(false);
+                    activeColourPalette.reset();
+                }
+            });
+        });
+    const auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForPoint(screenPoint);
+    if (display != nullptr)
+    {
+        const auto area = display->userArea;
+        screenPoint.x = juce::jlimit(area.getX(), juce::jmax(area.getX(), area.getRight() - activeColourPalette->getWidth()), screenPoint.x);
+        screenPoint.y = juce::jlimit(area.getY(), juce::jmax(area.getY(), area.getBottom() - activeColourPalette->getHeight()), screenPoint.y);
+    }
+    activeColourPalette->setTopLeftPosition(screenPoint);
+    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow);
+    activeColourPalette->setVisible(true);
+    activeColourPalette->toFront(false);
 }
 
 std::vector<int> colourIds;
@@ -270,17 +363,14 @@ private:
         owner.selectedTrack=track;
         owner.repaint();
 
-        juce::PopupMenu menu = createColourMenu(colourIds[(size_t)track]);
-        menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
-
-        menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetScreenArea(juce::Rectangle<int>(event.getScreenPosition(), { 1, 1 })),
-            [this, track](int result)
+        juce::Component::SafePointer<MainComponent> safeOwner(&owner);
+        showColourGrid(event.getScreenPosition(), colourIds[(size_t)track],
+            [safeOwner, track](int id)
             {
-                if (result <= 0 || shutDown) return;
-                colourIds[(size_t)track] = result - 1;
-                repaint();
-                owner.repaint();
+                if (safeOwner == nullptr) return;
+                ensureTrackMetadata(track + 1);
+                colourIds[(size_t)track] = id;
+                safeOwner->repaint();
             });
     }
 
@@ -363,24 +453,16 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
     ensureTrackMetadata(total);
     owner.selectedTrack = track;
     owner.repaint();
-    juce::PopupMenu menu = createColourMenu(colourIds[(size_t)track]);
-    menu.addSectionHeader("Couleur de " + effectiveTrackName(owner, track));
     juce::Component::SafePointer<MainComponent> safeOwner(&owner);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-        juce::Rectangle<int>(screenPoint, {1, 1})),
-        [safeOwner, track](int result)
+    showColourGrid(screenPoint, colourIds[(size_t)track],
+        [safeOwner, track](int id)
         {
-            if (result <= 0 || safeOwner == nullptr) return;
+            if (safeOwner == nullptr) return;
             ensureTrackMetadata(track + 1);
-            colourIds[(size_t) track] = result - 1;
-            // The colour layer is a separate child component: repainting
-            // MainComponent alone does not invalidate that layer.
+            colourIds[(size_t)track] = id;
             auto controller = controllers.find(safeOwner.getComponent());
             if (controller != controllers.end() && controller->second != nullptr)
-            {
-                controller->second->toFront(false);
                 controller->second->repaint();
-            }
             safeOwner->repaint();
         });
 }
