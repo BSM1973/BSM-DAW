@@ -143,6 +143,8 @@ public:
                       double clipStartSeconds,
                       double clipLengthSeconds,
                       double tempoBpm) noexcept;
+    void setInstrumentTrackControllers(int instrumentTrack, const std::vector<MidiEngine::ControllerEvent>& events,
+                                       double tempoBpm) noexcept;
     void setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
                                  double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept;
 
@@ -308,9 +310,17 @@ private:
     {
         std::vector<InstrumentPlaybackNote> notes;
     };
+    struct InstrumentControllerPlayback
+    {
+        double seconds = 0.0;
+        int channel = 1;
+        int controller = 1;
+        int value = 0;
+    };
     struct InstrumentPlaybackState
     {
         std::shared_ptr<InstrumentNoteSnapshot> noteSnapshot;
+        std::shared_ptr<std::vector<InstrumentControllerPlayback>> controllerSnapshot;
         std::shared_ptr<InstrumentNoteSnapshot> arrangementSnapshot;
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
