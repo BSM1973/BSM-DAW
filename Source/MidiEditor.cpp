@@ -252,7 +252,7 @@ public:
         selectAllButton.onClick = [this] { selectAllNotes(); };
         addAndMakeVisible(selectAllButton);
         durationValue.setBufferedToImage(true);
-        durationValue.setButtonText(juce::String::fromUTF8("Durée  v"));
+        durationValue.setButtonText(juce::String::fromUTF8("Durée"));
         durationValue.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff233746));
         durationValue.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffdf99));
         durationValue.setTooltip(juce::String::fromUTF8("Choisir une durée dans la palette musicale"));
@@ -355,7 +355,7 @@ public:
             {
                 if (safe == nullptr) return;
                 safe->selectedDurationId = id;
-                safe->durationValue.setButtonText(durationLabelForId(id) + "  v");
+                safe->durationValue.setButtonText(durationLabelForId(id));
                 safe->applyDurationValue();
                 // Avoid destroying a clicked button from inside its callback.
                 juce::MessageManager::callAsync([safe]
@@ -693,7 +693,7 @@ public:
             // Selection and playback use outlines so the velocity colour remains visible.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
             const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);
-            g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
+            g.setColour(n.muted ? juce::Colour(0xff46505a) : selected ? juce::Colour(0xfff3d48b) : velocityColour);
             g.fillRoundedRectangle(r.toFloat(), 3.0f);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
@@ -813,6 +813,16 @@ public:
                     return;
                 }
 
+                if (tool == 0 || tool == 1)
+                {
+                    // Click toggles a note without altering its MIDI data.
+                    // Keep dragging available with the selection tool.
+                    clickSelectionPending = true;
+                    clickWasSelected = midi.isNoteSelected(n);
+                    clickNote = n;
+                    if (tool == 1) return;
+                }
+
                 if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
                     draggingGroup = true;
@@ -920,7 +930,7 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
-        if (draggingGroup) { draggingGroup = false; repaint(); return; }
+        if (draggingGroup) { draggingGroup = false; clickSelectionPending = false; repaint(); return; }
         if (selectingRectangle) { selectingRectangle = false; repaint(); return; }
         if (editingVelocity) { editingVelocity = false; repaint(); return; }
         if (auditionPitch >= 0)
@@ -932,6 +942,24 @@ public:
             repaint();
             return;
         }
+        if (clickSelectionPending && !dragMoved)
+        {
+            auto& midi = owner.getMidiEngine();
+            auto selected = midi.getSelectedNotesCopy();
+            const auto sameNote = [this](const MidiEngine::NoteEvent& note)
+            {
+                return note.startTick == clickNote.startTick
+                    && note.pitch == clickNote.pitch && note.channel == clickNote.channel;
+            };
+            if (clickWasSelected)
+                selected.erase(std::remove_if(selected.begin(), selected.end(), sameNote), selected.end());
+            else
+                selected.push_back(clickNote);
+            midi.setSelectedNotes(selected);
+            repaint();
+            owner.repaint();
+        }
+        clickSelectionPending = false;
         if (!draggingNote) return;
         owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); draggingNote = false; dragMoved = false; resizeSide = ResizeSide::none; originalLengthTicks = 0; dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor); repaint(); owner.repaint();
@@ -943,6 +971,9 @@ private:
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
     int selectedDurationId = 0;
+    bool clickSelectionPending = false;
+    bool clickWasSelected = false;
+    MidiEngine::NoteEvent clickNote {};
     std::unique_ptr<DurationPalette> durationPalette;
     // JUCE tooltips require a live TooltipWindow; setTooltip alone is not enough.
     juce::TooltipWindow tooltips { this, 550 };
