@@ -22,6 +22,19 @@ public:
         bool muted = false;
     };
 
+    struct ControllerEvent
+    {
+        std::int64_t tick = 0;
+        std::uint8_t channel = 1;
+        // CC: 0-127; pitch bend: 128; channel pressure: 129.
+        int controller = 1;
+        int value = 0; // CC/pressure 0-127; pitch bend 0-16383.
+    };
+
+    bool setControllerEvent(std::int64_t tick, int controller, int value, int channel = 1);
+    std::vector<ControllerEvent> getControllerEventsCopy() const;
+    void clearControllerEvents();
+
     MidiEngine() = default;
     ~MidiEngine() = default;
     MidiEngine(const MidiEngine&) = delete;
@@ -79,6 +92,7 @@ private:
     struct HistoryState
     {
         std::vector<NoteEvent> notes;
+    std::vector<ControllerEvent> controllerEvents;
         std::vector<NoteEvent> selectedNotes;
     };
 
