@@ -229,7 +229,7 @@ public:
     ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef)
     {
         curveButton.setButtonText(juce::String::fromUTF8("COURBES ▾"));
-        curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme puis glisser entre deux points MIDI"));
+        curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme pour relier automatiquement les deux derniers points MIDI"));
         curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
         curveButton.onClick = [this]
         {
@@ -241,22 +241,21 @@ public:
                 menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
                 [safe = juce::Component::SafePointer<ControllerLane>(this)](int result)
-                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->repaint(); } });
+                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->applyCurveToLastTwoPoints(); safe->repaint(); } });
         };
         addAndMakeVisible(curveButton);
         snapButton.setButtonText("SNAP");
         snapButton.setClickingTogglesState(true);
         snapButton.setToggleState(true, juce::dontSendNotification);
         snapButton.setTooltip(juce::String::fromUTF8("Activer ou désactiver la grille pour les contrôleurs MIDI"));
-        snapButton.onClick = [this] { snapButton.setColour(juce::TextButton::buttonColourId,
-            snapButton.getToggleState() ? juce::Colour(0xff315b69) : juce::Colour(0xff28303a)); };
-        snapButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff315b69));
+        snapButton.onClick = [this] { refreshSnapAppearance(); };
+        refreshSnapAppearance();
         addAndMakeVisible(snapButton);
     }
     void resized() override
     {
         curveButton.setBounds(pianoKeyWidth + 8, 5, 112, 23);
-        snapButton.setBounds(pianoKeyWidth + 126, 5, 64, 23);
+        snapButton.setBounds(pianoKeyWidth + 126, 5, 84, 23);
     }
     void paint(juce::Graphics& g) override
     {
@@ -334,7 +333,11 @@ public:
         curveStartTick = -1;
         const auto end = nearestPointTick(e.x);
         if (end < 0 || end == start) return;
-        auto events = owner.getMidiEngine().getControllerEventsCopy();
+        generateCurve(start, end);
+    }
+    void generateCurve(std::int64_t start, std::int64_t end)
+    {
+        const auto events = owner.getMidiEngine().getControllerEventsCopy();
         const auto findValue = [&](std::int64_t tick)
         {
             for (const auto& event : events)
@@ -372,6 +375,33 @@ public:
         repaint(); owner.repaint();
     }
 private:
+    void refreshSnapAppearance()
+    {
+        const bool enabled = snapButton.getToggleState();
+        snapButton.setButtonText(enabled ? "SNAP ON" : "SNAP OFF");
+        snapButton.setColour(juce::TextButton::buttonColourId,
+            enabled ? juce::Colour(0xff176b65) : juce::Colour(0xff4a2931));
+        snapButton.setColour(juce::TextButton::buttonOnColourId,
+            enabled ? juce::Colour(0xff176b65) : juce::Colour(0xff4a2931));
+        snapButton.setColour(juce::TextButton::textColourOffId,
+            enabled ? juce::Colour(0xffd8fff2) : juce::Colour(0xffffcbd0));
+        snapButton.setColour(juce::TextButton::textColourOnId,
+            enabled ? juce::Colour(0xffd8fff2) : juce::Colour(0xffffcbd0));
+        snapButton.repaint();
+    }
+    void applyCurveToLastTwoPoints()
+    {
+        const auto events = owner.getMidiEngine().getControllerEventsCopy();
+        std::vector<std::int64_t> ticks;
+        for (const auto& event : events)
+            if (event.controller == controller && event.channel == 1)
+                ticks.push_back(event.tick);
+        if (ticks.size() < 2) return;
+        std::sort(ticks.begin(), ticks.end());
+        ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
+        if (ticks.size() < 2) return;
+        generateCurve(ticks[ticks.size() - 2], ticks.back());
+    }
     std::int64_t nearestPointTick(int x) const
     {
         const auto clipTicks = juce::jmax<std::int64_t>(
