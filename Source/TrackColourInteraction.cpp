@@ -41,6 +41,7 @@ public:
         : selectedId(selected), selection(std::move(onSelect))
     {
         setOpaque(true);
+        setInterceptsMouseClicks(true, true);
         // Do not set bounds before child buttons exist: JUCE invokes resized()
         // synchronously, which would dereference an empty buttons vector.
         for (int i = 0; i < 32; ++i)
@@ -51,7 +52,7 @@ public:
             button->setTooltip(colourName(id));
             button->setColour(juce::TextButton::buttonColourId, juce::Colour(palette[(size_t)id]));
             button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(palette[(size_t)id]));
-            button->onClick = [this, id] { selection(id); };
+            button->onClick = [this, id] { selectedId = id; repaint(); selection(id); };
             addAndMakeVisible(*button);
             buttons.push_back(std::move(button));
         }
@@ -66,6 +67,26 @@ public:
         expanded = selectedId > 16;
         more.setButtonText(expanded ? juce::String::fromUTF8("-  Moins de couleurs") : juce::String::fromUTF8("+  16 couleurs suppl\u00e9mentaires"));
         setSize(336, expanded ? 264 : 186);
+    }
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        // Explicit hit testing on the palette itself, independent of the
+        // platform's temporary-window child hit testing for lower rows.
+        const auto p = event.getPosition();
+        const int column = (p.x - 18) / 39;
+        const int row = (p.y - 76) / 39;
+        if (p.x >= 18 && p.y >= 76 && column >= 0 && column < 8
+            && row >= 0 && row < (expanded ? 4 : 2))
+        {
+            const int localX = (p.x - 18) % 39;
+            const int localY = (p.y - 76) % 39;
+            if (localX < 32 && localY < 30)
+            {
+                selectedId = row * 8 + column + 1;
+                repaint();
+                selection(selectedId);
+            }
+        }
     }
     void paint(juce::Graphics& g) override
     {
