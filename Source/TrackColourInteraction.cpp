@@ -151,7 +151,8 @@ void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<
         screenPoint.y = juce::jlimit(area.getY(), juce::jmax(area.getY(), area.getBottom() - activeColourPalette->getHeight()), screenPoint.y);
     }
     activeColourPalette->setTopLeftPosition(screenPoint);
-    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow | juce::ComponentPeer::windowIsAlwaysOnTop);
+    activeColourPalette->addToDesktop(juce::ComponentPeer::windowIsTemporary | juce::ComponentPeer::windowHasDropShadow);
+    activeColourPalette->setAlwaysOnTop(true);
     activeColourPalette->setVisible(true);
     activeColourPalette->toFront(false);
 }
