@@ -34,6 +34,7 @@ public:
     bool setControllerEvent(std::int64_t tick, int controller, int value, int channel = 1);
     std::vector<ControllerEvent> getControllerEventsCopy() const;
     void clearControllerEvents();
+    bool removeControllerEvent(std::int64_t tick, int controller, int channel = 1);
 
     MidiEngine() = default;
     ~MidiEngine() = default;
