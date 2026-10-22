@@ -228,15 +228,15 @@ class ControllerLane final : public juce::Component
 public:
     ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef)
     {
-        curveButton.setButtonText(juce::String::fromUTF8("COURBES ▾"));
+        curveButton.setButtonText(juce::String::fromUTF8("COURBES"));
         curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme, puis cliquer-glisser dans la piste MIDI pour la dessiner"));
         curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
         curveButton.onClick = [this]
         {
             juce::PopupMenu menu;
             menu.setLookAndFeel(&getLookAndFeel());
-            static const char* labels[] = { "Ligne droite  ━", "Sinusoïdale  ∿", "Triangle  △",
-                "Montée douce  ⌒", "Descente douce  ⌣", "Carrée  ▔▁", "Exponentielle  ⤴", "Logarithmique  ⤵" };
+            static const char* labels[] = { "Ligne droite", "Sinusoïdale", "Triangle",
+                "Montée douce", "Descente douce", "Carrée", "Exponentielle", "Logarithmique" };
             for (int i = 0; i < 8; ++i)
                 menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
@@ -297,7 +297,7 @@ public:
             {
                 const double t = (double)i / 96.0;
                 const float x = (float)(leftX + (rightX - leftX) * t);
-                const float y = (float)(y0 + (y1 - y0) * curveFraction(t));
+                const float y = (float)(y0 + (y1 - y0) * curveFraction(t, (double)(rightX - leftX) / 100.0));
                 if (i == 0) preview.startNewSubPath(x, y);
                 else preview.lineTo(x, y);
             }
@@ -371,31 +371,34 @@ public:
         const auto right = juce::jmax(tick0, tick1);
         const int startValue = tick0 <= tick1 ? valueAt(dragStart.y) : valueAt(dragEnd.y);
         const int endValue = tick0 <= tick1 ? valueAt(dragEnd.y) : valueAt(dragStart.y);
-        generateCurve(left, right, startValue, endValue);
+        generateCurve(left, right, startValue, endValue, (double)std::abs(x1 - x0) / 100.0);
     }
-    double curveFraction(double t) const
+    double curveFraction(double t, double cycles) const
     {
         constexpr double pi = juce::MathConstants<double>::pi;
+        // One full waveform every 100 horizontal pixels; dragging farther
+        // repeats the pattern rather than stretching a single cycle.
+        const double phase = std::fmod(t * juce::jmax(0.01, cycles), 1.0);
         switch (curveShape)
         {
-            case 1: return 0.5 - 0.5 * std::cos(2.0 * pi * t);
-            case 2: return t < 0.5 ? 2.0 * t : 2.0 * (1.0 - t);
+            case 1: return 0.5 - 0.5 * std::cos(2.0 * pi * phase);
+            case 2: return phase < 0.5 ? 2.0 * phase : 2.0 * (1.0 - phase);
+            case 5: return phase < 0.5 ? 0.0 : 1.0;
             case 3: return t * t * (3.0 - 2.0 * t);
             case 4: return std::sin(t * pi * 0.5);
-            case 5: return t < 0.5 ? 0.0 : 1.0;
             case 6: return t * t * t;
             case 7: return std::sqrt(t);
             default: return t;
         }
     }
-    void generateCurve(std::int64_t left, std::int64_t right, int startValue, int endValue)
+    void generateCurve(std::int64_t left, std::int64_t right, int startValue, int endValue, double cycles)
     {
         if (right <= left) return;
         const auto span = right - left;
         const int maxValue = controller == 128 ? 16383 : 127;
         // MIDI CC is discrete, but the visible curve is rendered as a continuous path.
         // Cap event density to prevent flooding the instrument with automation.
-        const int steps = (int)juce::jmin<std::int64_t>(96, span);
+        const int steps = (int)juce::jmin<std::int64_t>(juce::jmax(96, (int)std::ceil(cycles * 24.0)), juce::jmin<std::int64_t>(512, span));
         std::int64_t previousTick = -1;
         for (int i = 0; i <= steps; ++i)
         {
@@ -403,7 +406,7 @@ public:
             if (tick == previousTick) continue;
             previousTick = tick;
             const double t = (double)(tick - left) / (double)span;
-            const double fraction = curveFraction(t);
+            const double fraction = curveFraction(t, cycles);
             const int value = juce::jlimit(0, maxValue,
                 (int)std::llround(startValue + (endValue - startValue) * fraction));
             owner.getMidiEngine().setControllerEvent(tick, controller, value);
