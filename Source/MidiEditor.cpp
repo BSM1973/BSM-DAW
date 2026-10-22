@@ -239,7 +239,6 @@ public:
                 "Montée douce  ⌒", "Descente douce  ⌣", "Carrée  ▔▁", "Exponentielle  ⤴", "Logarithmique  ⤵" };
             for (int i = 0; i < 8; ++i)
                 menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
-            menu.setMinimumNumColumns(2);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
                 [safe = juce::Component::SafePointer<ControllerLane>(this)](int result)
                 { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->repaint(); } });
