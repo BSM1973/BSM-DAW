@@ -348,7 +348,7 @@ public:
         const int a = findValue(left), b = findValue(right);
         const int maxValue = controller == 128 ? 16383 : 127;
         const auto snap = snapButton.getToggleState() ? activePianoSnapTicks() : 0;
-        const auto step = juce::jmax<std::int64_t>(1, snap > 0 ? snap : (right - left) / 64);
+        const auto step = juce::jmax<std::int64_t>(1, juce::jmax<std::int64_t>((right - left) / 128, snap > 0 ? snap : (right - left) / 64));
         constexpr double pi = juce::MathConstants<double>::pi;
         for (auto tick = left + step; tick < right; tick += step)
         {
@@ -356,8 +356,8 @@ public:
             double fraction = t;
             switch (curveShape)
             {
-                case 1: fraction = (1.0 - std::cos(pi * t)) * 0.5; break;
-                case 2: fraction = t < 0.5 ? 2.0 * t : 2.0 * (1.0 - t); break;
+                case 1: fraction = t + 0.25 * std::sin(2.0 * pi * t); break;
+                case 2: fraction = t + (t < 0.5 ? t : 1.0 - t) * 0.5; break;
                 case 3: fraction = t * t * (3.0 - 2.0 * t); break;
                 case 4: fraction = std::sin(t * pi * 0.5); break;
                 case 5: fraction = t < 0.5 ? 0.0 : 1.0; break;
