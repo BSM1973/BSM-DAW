@@ -229,7 +229,7 @@ public:
     ControllerLane(MainComponent& o, int& controllerRef) : owner(o), controller(controllerRef)
     {
         curveButton.setButtonText(juce::String::fromUTF8("COURBES ▾"));
-        curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme pour relier automatiquement les deux derniers points MIDI"));
+        curveButton.setTooltip(juce::String::fromUTF8("Choisir une forme, puis cliquer-glisser dans la piste MIDI pour la dessiner"));
         curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
         curveButton.onClick = [this]
         {
@@ -241,7 +241,7 @@ public:
                 menu.addItem(i + 1, juce::String::fromUTF8(labels[i]), true, curveShape == i);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&curveButton),
                 [safe = juce::Component::SafePointer<ControllerLane>(this)](int result)
-                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->applyCurveToLastTwoPoints(); safe->repaint(); } });
+                { if (safe != nullptr && result > 0) { safe->curveShape = result - 1; safe->curveMode = true; safe->curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff176b65)); safe->repaint(); } });
         };
         addAndMakeVisible(curveButton);
         snapButton.setButtonText("SNAP");
@@ -292,91 +292,103 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.mods.isShiftDown() && e.mods.isLeftButtonDown())
-        {
-            curveStartTick = nearestPointTick(e.x);
-            return;
-        }
+        if (e.x < pianoKeyWidth) return;
         if (e.mods.isRightButtonDown())
         {
-            if (e.x < pianoKeyWidth) return;
-            const auto clipTicks = juce::jmax<std::int64_t>(
-                MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
-                MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-            const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2)
-                / (double)juce::jmax<std::int64_t>(1, clipTicks) * getLibertyPianoHorizontalZoom();
-            const auto events = owner.getMidiEngine().getControllerEventsCopy();
-            std::int64_t closestTick = -1;
-            double bestDistance = 9.0;
-            for (const auto& event : events)
-            {
-                if (event.controller != controller || event.channel != 1) continue;
-                const double x = pianoKeyWidth + (double)event.tick * ppt;
-                const double distance = std::abs(x - e.x);
-                if (distance < bestDistance) { bestDistance = distance; closestTick = event.tick; }
-            }
-            if (closestTick >= 0 && owner.getMidiEngine().removeControllerEvent(closestTick, controller))
-            { owner.publishPianoRollControllers(); repaint(); owner.repaint(); }
+            curveMode = false;
+            draggingCurve = false;
+            curveButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff243e4b));
+            repaint();
             return;
         }
-        if (e.mods.isLeftButtonDown()) edit(e);
+        if (!e.mods.isLeftButtonDown()) return;
+        if (curveMode)
+        {
+            draggingCurve = true;
+            dragStart = e.getPosition();
+            dragEnd = dragStart;
+            repaint();
+        }
+        else edit(e);
     }
     void mouseDrag(const juce::MouseEvent& e) override
     {
-        if (curveStartTick >= 0) return;
-        if (e.mods.isLeftButtonDown()) edit(e);
+        if (draggingCurve)
+        {
+            dragEnd = e.getPosition();
+            repaint();
+        }
+        else if (e.mods.isLeftButtonDown()) edit(e);
     }
     void mouseUp(const juce::MouseEvent& e) override
     {
-        if (curveStartTick < 0) return;
-        const auto start = curveStartTick;
-        curveStartTick = -1;
-        const auto end = nearestPointTick(e.x);
-        if (end < 0 || end == start) return;
-        generateCurve(start, end);
-    }
-    void generateCurve(std::int64_t start, std::int64_t end)
-    {
-        const auto events = owner.getMidiEngine().getControllerEventsCopy();
-        const auto findValue = [&](std::int64_t tick)
+        if (!draggingCurve) return;
+        dragEnd = e.getPosition();
+        draggingCurve = false;
+        const int x0 = juce::jmax(pianoKeyWidth, dragStart.x);
+        const int x1 = juce::jmax(pianoKeyWidth, dragEnd.x);
+        if (std::abs(x1 - x0) < 4) { repaint(); return; }
+        const auto clipTicks = juce::jmax<std::int64_t>(
+            MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
+            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2)
+            / (double)juce::jmax<std::int64_t>(1, clipTicks) * getLibertyPianoHorizontalZoom();
+        auto tick0 = juce::jmax<std::int64_t>(0, (std::int64_t)std::llround((x0 - pianoKeyWidth) / ppt));
+        auto tick1 = juce::jmax<std::int64_t>(0, (std::int64_t)std::llround((x1 - pianoKeyWidth) / ppt));
+        const auto snap = snapButton.getToggleState() ? activePianoSnapTicks() : 0;
+        if (snap > 0)
         {
-            for (const auto& event : events)
-                if (event.tick == tick && event.controller == controller && event.channel == 1)
-                    return event.value;
-            return 0;
-        };
-        const auto left = juce::jmin(start, end);
-        const auto right = juce::jmax(start, end);
-        const int a = findValue(left), b = findValue(right);
+            tick0 = MidiEngine::quantizeTick(tick0, snap);
+            tick1 = MidiEngine::quantizeTick(tick1, snap);
+        }
+        if (tick0 == tick1) tick1 = tick0 + juce::jmax<std::int64_t>(1, snap);
+        const int bottom = getHeight() - 9;
+        const int usable = juce::jmax(1, getHeight() - 27);
         const int maxValue = controller == 128 ? 16383 : 127;
-        // Generate a dense, bounded series of events across the whole interval.
-        // The piano-roll SNAP controls anchor placement, not the resolution of
-        // an interpolated curve (a coarse 1/4 grid previously yielded one point).
-        const auto span = right - left;
-        const int subdivisions = (int)juce::jmin<std::int64_t>(128, span - 1);
-        if (subdivisions <= 0) return;
-        constexpr double pi = juce::MathConstants<double>::pi;
-        std::int64_t previousTick = left;
-        for (int i = 1; i <= subdivisions; ++i)
+        const auto valueAt = [&](int y)
         {
-            const auto tick = left + (span * i) / (subdivisions + 1);
-            if (tick <= previousTick || tick >= right) continue;
+            return juce::jlimit(0, maxValue,
+                (int)std::llround((double)(bottom - y) / usable * maxValue));
+        };
+        const auto left = juce::jmin(tick0, tick1);
+        const auto right = juce::jmax(tick0, tick1);
+        const int startValue = tick0 <= tick1 ? valueAt(dragStart.y) : valueAt(dragEnd.y);
+        const int endValue = tick0 <= tick1 ? valueAt(dragEnd.y) : valueAt(dragStart.y);
+        generateCurve(left, right, startValue, endValue);
+    }
+    double curveFraction(double t) const
+    {
+        constexpr double pi = juce::MathConstants<double>::pi;
+        switch (curveShape)
+        {
+            case 1: return 0.5 - 0.5 * std::cos(2.0 * pi * t);
+            case 2: return t < 0.5 ? 2.0 * t : 2.0 * (1.0 - t);
+            case 3: return t * t * (3.0 - 2.0 * t);
+            case 4: return std::sin(t * pi * 0.5);
+            case 5: return t < 0.5 ? 0.0 : 1.0;
+            case 6: return t * t * t;
+            case 7: return std::sqrt(t);
+            default: return t;
+        }
+    }
+    void generateCurve(std::int64_t left, std::int64_t right, int startValue, int endValue)
+    {
+        if (right <= left) return;
+        const auto span = right - left;
+        const int maxValue = controller == 128 ? 16383 : 127;
+        // MIDI CC is discrete, but the visible curve is rendered as a continuous path.
+        // Cap event density to prevent flooding the instrument with automation.
+        const int steps = (int)juce::jmin<std::int64_t>(96, span);
+        std::int64_t previousTick = -1;
+        for (int i = 0; i <= steps; ++i)
+        {
+            const auto tick = left + (span * i) / juce::jmax(1, steps);
+            if (tick == previousTick) continue;
             previousTick = tick;
             const double t = (double)(tick - left) / (double)span;
-            double fraction = t;
-            switch (curveShape)
-            {
-                case 1: fraction = t + 0.22 * std::sin(2.0 * pi * t); break;
-                case 2: fraction = t + 0.35 * (t < 0.5 ? t : 1.0 - t); break;
-                case 3: fraction = t * t * (3.0 - 2.0 * t); break;
-                case 4: fraction = std::sin(t * pi * 0.5); break;
-                case 5: fraction = t < 0.5 ? 0.0 : 1.0; break;
-                case 6: fraction = t * t * t; break;
-                case 7: fraction = std::sqrt(t); break;
-                default: break;
-            }
+            const double fraction = curveFraction(t);
             const int value = juce::jlimit(0, maxValue,
-                (int)std::llround(a + (b - a) * fraction));
+                (int)std::llround(startValue + (endValue - startValue) * fraction));
             owner.getMidiEngine().setControllerEvent(tick, controller, value);
         }
         owner.publishPianoRollControllers();
@@ -396,36 +408,6 @@ private:
         snapButton.setColour(juce::TextButton::textColourOnId,
             enabled ? juce::Colour(0xffd8fff2) : juce::Colour(0xffffcbd0));
         snapButton.repaint();
-    }
-    void applyCurveToLastTwoPoints()
-    {
-        const auto events = owner.getMidiEngine().getControllerEventsCopy();
-        std::vector<std::int64_t> ticks;
-        for (const auto& event : events)
-            if (event.controller == controller && event.channel == 1)
-                ticks.push_back(event.tick);
-        if (ticks.size() < 2) return;
-        std::sort(ticks.begin(), ticks.end());
-        ticks.erase(std::unique(ticks.begin(), ticks.end()), ticks.end());
-        if (ticks.size() < 2) return;
-        generateCurve(ticks[ticks.size() - 2], ticks.back());
-    }
-    std::int64_t nearestPointTick(int x) const
-    {
-        const auto clipTicks = juce::jmax<std::int64_t>(
-            MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
-            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2)
-            / (double)juce::jmax<std::int64_t>(1, clipTicks) * getLibertyPianoHorizontalZoom();
-        double distance = 13.0;
-        std::int64_t best = -1;
-        for (const auto& event : owner.getMidiEngine().getControllerEventsCopy())
-        {
-            if (event.controller != controller || event.channel != 1) continue;
-            const double d = std::abs((double)(pianoKeyWidth + event.tick * ppt) - x);
-            if (d < distance) { distance = d; best = event.tick; }
-        }
-        return best;
     }
     void edit(const juce::MouseEvent& e)
     {
@@ -447,7 +429,9 @@ private:
     int& controller;
     juce::TextButton curveButton, snapButton;
     int curveShape = 0;
-    std::int64_t curveStartTick = -1;
+    bool curveMode = false;
+    bool draggingCurve = false;
+    juce::Point<int> dragStart, dragEnd;
 };
 
 class PianoRoll final : public juce::Component, private juce::Timer
