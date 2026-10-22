@@ -294,6 +294,11 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e) override
     {
+        if (e.mods.isShiftDown() && e.mods.isLeftButtonDown())
+        {
+            curveStartTick = nearestPointTick(e.x);
+            return;
+        }
         if (e.mods.isRightButtonDown())
         {
             if (e.x < pianoKeyWidth) return;
@@ -318,8 +323,73 @@ public:
         }
         if (e.mods.isLeftButtonDown()) edit(e);
     }
-    void mouseDrag(const juce::MouseEvent& e) override { if (e.mods.isLeftButtonDown()) edit(e); }
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if (curveStartTick >= 0) return;
+        if (e.mods.isLeftButtonDown()) edit(e);
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if (curveStartTick < 0) return;
+        const auto start = curveStartTick;
+        curveStartTick = -1;
+        const auto end = nearestPointTick(e.x);
+        if (end < 0 || end == start) return;
+        auto events = owner.getMidiEngine().getControllerEventsCopy();
+        const auto findValue = [&](std::int64_t tick)
+        {
+            for (const auto& event : events)
+                if (event.tick == tick && event.controller == controller && event.channel == 1)
+                    return event.value;
+            return 0;
+        };
+        const auto left = juce::jmin(start, end);
+        const auto right = juce::jmax(start, end);
+        const int a = findValue(left), b = findValue(right);
+        const int maxValue = controller == 128 ? 16383 : 127;
+        const auto snap = snapButton.getToggleState() ? activePianoSnapTicks() : 0;
+        const auto step = juce::jmax<std::int64_t>(1, snap > 0 ? snap : (right - left) / 64);
+        constexpr double pi = juce::MathConstants<double>::pi;
+        for (auto tick = left + step; tick < right; tick += step)
+        {
+            const double t = (double)(tick - left) / (double)(right - left);
+            double fraction = t;
+            switch (curveShape)
+            {
+                case 1: fraction = (1.0 - std::cos(pi * t)) * 0.5; break;
+                case 2: fraction = t < 0.5 ? 2.0 * t : 2.0 * (1.0 - t); break;
+                case 3: fraction = t * t * (3.0 - 2.0 * t); break;
+                case 4: fraction = std::sin(t * pi * 0.5); break;
+                case 5: fraction = t < 0.5 ? 0.0 : 1.0; break;
+                case 6: fraction = t * t * t; break;
+                case 7: fraction = std::sqrt(t); break;
+                default: break;
+            }
+            const int value = juce::jlimit(0, maxValue, (int)std::llround(a + (b - a) * fraction));
+            owner.getMidiEngine().setControllerEvent(tick, controller, value);
+            if (right - tick <= step) break;
+        }
+        owner.publishPianoRollControllers();
+        repaint(); owner.repaint();
+    }
 private:
+    std::int64_t nearestPointTick(int x) const
+    {
+        const auto clipTicks = juce::jmax<std::int64_t>(
+            MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator()),
+            MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const double ppt = (double)juce::jmax(1, getWidth() - pianoKeyWidth - 2)
+            / (double)juce::jmax<std::int64_t>(1, clipTicks) * getLibertyPianoHorizontalZoom();
+        double distance = 13.0;
+        std::int64_t best = -1;
+        for (const auto& event : owner.getMidiEngine().getControllerEventsCopy())
+        {
+            if (event.controller != controller || event.channel != 1) continue;
+            const double d = std::abs((double)(pianoKeyWidth + event.tick * ppt) - x);
+            if (d < distance) { distance = d; best = event.tick; }
+        }
+        return best;
+    }
     void edit(const juce::MouseEvent& e)
     {
         if (e.x < pianoKeyWidth || getWidth() <= pianoKeyWidth) return;
