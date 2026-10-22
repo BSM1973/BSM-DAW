@@ -17,6 +17,12 @@ target_sources(BSM_DAW PRIVATE
  Source/OneKnobEffects.cpp Source/DynamicTrackController.cpp Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/PluginHost.cpp)
 target_include_directories(BSM_DAW PRIVATE Source)
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
+# Keep French UI literals consistently encoded on all supported compilers.
+if(MSVC)
+  target_compile_options(BSM_DAW PRIVATE /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+  target_compile_options(BSM_DAW PRIVATE -finput-charset=UTF-8)
+endif()
 target_compile_definitions(BSM_DAW PRIVATE JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1 SIGNALSMITH_USE_ACCELERATE=1)
 target_link_libraries(BSM_DAW PRIVATE juce::juce_audio_basics juce::juce_audio_devices juce::juce_audio_formats juce::juce_audio_processors juce::juce_audio_utils juce::juce_dsp juce::juce_core juce::juce_data_structures juce::juce_events juce::juce_graphics juce::juce_gui_basics juce::juce_gui_extra signalsmith-stretch)
 juce_generate_juce_header(BSM_DAW)
