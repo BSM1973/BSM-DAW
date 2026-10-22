@@ -230,6 +230,32 @@ void AudioEngine::setMidiNotes(const std::vector<MidiEngine::NoteEvent>& notes,
     midiPlaybackNoteCount.store(count, std::memory_order_release);
 }
 
+void AudioEngine::setInstrumentTrackControllers(int instrumentTrack,
+    const std::vector<MidiEngine::ControllerEvent>& events, double tempoBpm) noexcept
+{
+    if (instrumentTrack < 0) return;
+    try
+    {
+        ensureInstrumentPlaybackTracks(instrumentTrack + 1);
+        auto snapshot = std::make_shared<std::vector<InstrumentControllerPlayback>>();
+        snapshot->reserve(juce::jmin((size_t)65536, events.size()));
+        for (const auto& event : events)
+        {
+            if (snapshot->size() >= 65536) break;
+            InstrumentControllerPlayback item;
+            item.seconds = MidiEngine::tickToSeconds(event.tick, juce::jmax(1.0, tempoBpm));
+            item.channel = juce::jlimit(1, 16, (int)event.channel);
+            item.controller = event.controller;
+            item.value = event.value;
+            snapshot->push_back(item);
+        }
+        const juce::ScopedLock lock(stateLock);
+        if (instrumentTrack < (int)instrumentPlayback.size())
+            std::atomic_store(&instrumentPlayback[(size_t)instrumentTrack]->controllerSnapshot, std::move(snapshot));
+    }
+    catch (...) { return; }
+}
+
 void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
                                           double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept
 {
@@ -1595,6 +1621,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
             }
+            // Controllers share the instrument MIDI buffer with note events.
+            // Snapshots are prepared outside the audio callback; no allocations on the audio thread.
+            if (const auto controllers = std::atomic_load(&state.controllerSnapshot))
+                for (const auto& event : *controllers)
+                {
+                    const double absoluteSeconds = clipStart + event.seconds;
+                    if (absoluteSeconds < blockStart || absoluteSeconds >= blockEnd) continue;
+                    juce::MidiMessage message;
+                    if (event.controller == 128)
+                        message = juce::MidiMessage::pitchWheel(event.channel, event.value);
+                    else if (event.controller == 129)
+                        message = juce::MidiMessage::channelPressureChange(event.channel, event.value);
+                    else
+                        message = juce::MidiMessage::controllerEvent(event.channel, event.controller, event.value);
+                    midi.addEvent(message, juce::jlimit(0, numSamples - 1,
+                        (int)std::llround((absoluteSeconds - blockStart) * rate)));
+                }
             juce::AudioBuffer<float> instrumentBus;
             bool instrumentRendered = false;
             if (nativeDrums != nullptr)
