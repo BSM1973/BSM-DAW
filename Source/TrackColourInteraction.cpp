@@ -146,6 +146,8 @@ void showColourGrid(juce::Point<int> screenPoint, int selectedId, std::function<
             onSelect(0);
         else if (result >= 1 && result <= 32)
             onSelect(result);
+        else if (result != 0)
+            DBG("Liberty colour menu: unexpected result " + juce::String(result));
     });
 }
 
@@ -378,6 +380,7 @@ private:
                 if (safeOwner == nullptr) return;
                 ensureTrackMetadata(track + 1);
                 colourIds[(size_t)track] = juce::jlimit(0, 32, id);
+                DBG("Liberty track colour applied: track=" + juce::String(track) + " id=" + juce::String(id));
                 // Repaint the overlay that actually draws track colours.
                 if (safeController != nullptr)
                     safeController->repaint();
@@ -470,7 +473,8 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
         {
             if (safeOwner == nullptr) return;
             ensureTrackMetadata(track + 1);
-            colourIds[(size_t)track] = id;
+            colourIds[(size_t)track] = juce::jlimit(0, 32, id);
+            DBG("Liberty header colour applied: track=" + juce::String(track) + " id=" + juce::String(id));
             auto controller = controllers.find(safeOwner.getComponent());
             if (controller != controllers.end() && controller->second != nullptr)
                 controller->second->repaint();
