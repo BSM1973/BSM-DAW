@@ -70,8 +70,22 @@ MidiEngine::HistoryState MidiEngine::makeHistoryState() const
     return { notes, controllerEvents, selectedNotes };
 }
 
+void MidiEngine::beginGroupedEdit() noexcept
+{
+    groupedEditActive = true;
+    groupedEditHasUndo = false;
+}
+
+void MidiEngine::endGroupedEdit() noexcept
+{
+    groupedEditActive = false;
+    groupedEditHasUndo = false;
+}
+
 void MidiEngine::pushUndoState()
 {
+    if (groupedEditActive && groupedEditHasUndo) return;
+    if (groupedEditActive) groupedEditHasUndo = true;
     ++historyRevision;
     undoHistory.push_back(makeHistoryState());
     redoHistory.clear();
