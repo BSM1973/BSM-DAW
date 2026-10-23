@@ -559,7 +559,7 @@ public:
             resized(); repaint();
         };
         addAndMakeVisible(controllerSelector);
-        dualLaneButton.setButtonText("II");
+        dualLaneButton.setButtonText("");
         dualLaneButton.setTooltip(juce::String::fromUTF8("Afficher la vélocité et un contrôleur MIDI sur deux lignes"));
         dualLaneButton.setClickingTogglesState(true);
         dualLaneButton.onClick = [this]
@@ -575,6 +575,7 @@ public:
         };
         dualLaneButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff28333d));
         addAndMakeVisible(dualLaneButton);
+        dualLaneButton.setLookAndFeel(&dualLaneLookAndFeel);
         // Shared Piano Roll component: identical tools in the dock and detached editor.
         static const char* glyphs[] = { "↖", "✎", "✂", "⌫", "↔", "◇", "▥", "▧", "◉" };
         static const char* names[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
@@ -1065,6 +1066,16 @@ public:
 
     void mouseMove(const juce::MouseEvent& e) override
     {
+        if (dualLanes)
+        {
+            const int top = getHeight() - dualLaneTotalHeight;
+            if (std::abs(e.y - top) <= 6 || std::abs(e.y - (top + dualLaneFirstHeight)) <= 6)
+            {
+                setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+                return;
+            }
+        }
+
         if (draggingNote) return;
         if (isInVelocityLane(e.y)) { setMouseCursor(juce::MouseCursor::UpDownResizeCursor); return; }
         const auto side = findResizeSide(e.position);
@@ -1083,6 +1094,15 @@ public:
         const auto area = juce::Rectangle<int>::leftTopRightBottom(juce::jmin(rectangleStart.x, rectangleEnd.x), juce::jmin(rectangleStart.y, rectangleEnd.y), juce::jmax(rectangleStart.x, rectangleEnd.x), juce::jmax(rectangleStart.y, rectangleEnd.y));
         g.setColour(juce::Colour(0xff56bfd9).withAlpha(0.14f)); g.fillRect(area);
         g.setColour(juce::Colour(0xff56bfd9)); g.drawRect(area, 1);
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        if (resizingLaneTop || resizingLaneDivider)
+        {
+            resizingLaneTop = false;
+            resizingLaneDivider = false;
+            repaint();
+        }
     }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
@@ -1475,6 +1495,18 @@ private:
     int activeController = -1;
     ControllerLane controllerLane;
     juce::ComboBox controllerSelector;
+    class DualLaneLookAndFeel : public juce::LookAndFeel_V4
+    {
+    public:
+        void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override
+        {
+            auto r = button.getLocalBounds().toFloat().reduced(8.0f, 6.0f);
+            g.setColour(juce::Colour(0xffd8edf3));
+            g.drawRoundedRectangle(r, 2.0f, 1.5f);
+            g.drawLine(r.getX() + 2.0f, r.getCentreY(), r.getRight() - 2.0f, r.getCentreY(), 1.4f);
+        }
+    };
+    DualLaneLookAndFeel dualLaneLookAndFeel;
     juce::TextButton dualLaneButton;
     bool dualLanes = false;
     int dualLaneTotalHeight = 184;
