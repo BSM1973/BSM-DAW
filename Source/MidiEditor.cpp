@@ -741,12 +741,15 @@ public:
             const double fraction = last > first
                 ? (double)(notes[i].startTick - first) / (double)(last - first)
                 : (notes.size() > 1 ? (double)i / (double)(notes.size() - 1) : 0.0);
-            const double shaped = curveType == 1 ? fraction * fraction
-                : curveType == 2 ? std::sqrt(fraction)
-                : curveType == 3 ? fraction * fraction * (3.0 - 2.0 * fraction) : fraction;
+            const int shape = curveType % 4;
+            const double strength = juce::jlimit(0.25, 2.0, (curveType / 4) * 0.05);
+            const double shaped = shape == 1 ? fraction * fraction
+                : shape == 2 ? std::sqrt(fraction)
+                : shape == 3 ? fraction * fraction * (3.0 - 2.0 * fraction) : fraction;
+            const double adjusted = std::pow(shaped, strength);
             const int target = juce::jlimit(1, 127, juce::roundToInt(
-                ascending ? startVelocity + shaped * (endVelocity - startVelocity)
-                          : endVelocity + shaped * (startVelocity - endVelocity)));
+                ascending ? startVelocity + adjusted * (endVelocity - startVelocity)
+                          : endVelocity + adjusted * (startVelocity - endVelocity)));
             changed = midi.setNoteVelocity(notes[i].startTick, notes[i].pitch,
                 notes[i].channel, target) || changed;
         }
@@ -794,7 +797,7 @@ public:
                 button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202d3b));
                 button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
                 const int actionId = actionIds[i];
-                button->onClick = [this, actionId] { if (onAction) onAction(actionId, (int)startVelocity.getValue(), (int)endVelocity.getValue(), curveSelector.getSelectedId() - 1); };
+                button->onClick = [this, actionId] { if (onAction) onAction(actionId, (int)startVelocity.getValue(), (int)endVelocity.getValue(), curveSelector.getSelectedId() - 1 + 4 * ((int)curvature.getValue() / 5)); };
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
@@ -806,6 +809,13 @@ public:
                 slider->setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
                 addAndMakeVisible(*slider);
             }
+            curvature.setRange(25.0, 200.0, 5.0);
+            curvature.setValue(100.0, juce::dontSendNotification);
+            curvature.setSliderStyle(juce::Slider::LinearHorizontal);
+            curvature.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 25);
+            curvature.setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
+            curvature.onValueChange = [this] { repaint(); };
+            addAndMakeVisible(curvature);
             startVelocity.onValueChange = [this] { repaint(); };
             endVelocity.onValueChange = [this] { repaint(); };
             curveSelector.addItem(juce::String::fromUTF8("Linéaire"), 1);
@@ -833,11 +843,12 @@ public:
                 startVelocity.setValue(40.0, juce::sendNotification);
                 endVelocity.setValue(120.0, juce::sendNotification);
                 curveSelector.setSelectedId(1, juce::sendNotification);
+                curvature.setValue(100.0, juce::sendNotification);
             };
             addAndMakeVisible(resetVelocity);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
-            setSize(600, 650);
+            setSize(600, 720);
             refreshCategory();
         }
         void paint(juce::Graphics& g) override
@@ -861,8 +872,9 @@ public:
                 g.drawText(juce::String::fromUTF8("FORME"), 26, 411, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("DÉPART"), 26, 448, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("ARRIVÉE"), 26, 495, 115, 25, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("COURBURE"), 26, 530, 115, 25, juce::Justification::centredLeft);
                 // Keep the velocity preview in its own dark panel, below the reset control.
-                const juce::Rectangle<float> preview(26.0f, 568.0f, (float)getWidth() - 52.0f, 46.0f);
+                const juce::Rectangle<float> preview(26.0f, 596.0f, (float)getWidth() - 52.0f, 78.0f);
                 g.setColour(juce::Colour(0xff202f40));
                 g.fillRoundedRectangle(preview, 7.0f);
                 g.setColour(juce::Colour(0xff516476).withAlpha(0.55f));
@@ -878,8 +890,9 @@ public:
                     const int type = curveSelector.getSelectedId() - 1;
                     const double shaped = type == 1 ? t * t : type == 2 ? std::sqrt(t)
                         : type == 3 ? t * t * (3.0 - 2.0 * t) : t;
+                    const double adjusted = std::pow(shaped, curvature.getValue() / 100.0);
                     const double value = startVelocity.getValue()
-                        + shaped * (endVelocity.getValue() - startVelocity.getValue());
+                        + adjusted * (endVelocity.getValue() - startVelocity.getValue());
                     const float x = preview.getX() + 10.0f + (float)t * (preview.getWidth() - 20.0f);
                     const float y = preview.getBottom() - 5.0f - (float)(value / 127.0) * (preview.getHeight() - 10.0f);
                     if (i == 0) curve.startNewSubPath(x, y);
@@ -903,7 +916,7 @@ public:
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
             g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
-                26, 620, 548, 20, juce::Justification::centredLeft);
+                26, 690, 548, 20, juce::Justification::centredLeft);
         }
         void resized() override
         {
@@ -912,8 +925,9 @@ public:
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
-            reverseVelocity.setBounds(26, 532, (getWidth() - 60) / 2, 27);
-            resetVelocity.setBounds(34 + (getWidth() - 60) / 2, 532, (getWidth() - 60) / 2, 27);
+            curvature.setBounds(145, 530, getWidth() - 171, 25);
+            reverseVelocity.setBounds(26, 559, (getWidth() - 60) / 2, 27);
+            resetVelocity.setBounds(34 + (getWidth() - 60) / 2, 559, (getWidth() - 60) / 2, 27);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -935,6 +949,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
             resetVelocity.setVisible(currentCategory == 2);
             curveSelector.setVisible(currentCategory == 2);
@@ -944,7 +959,7 @@ public:
             repaint();
         }
         std::function<void(int, int, int, int)> onAction;
-        juce::Slider startVelocity, endVelocity;
+        juce::Slider startVelocity, endVelocity, curvature;
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity;
         std::array<juce::TextButton, 3> categoryButtons;
