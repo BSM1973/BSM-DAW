@@ -3137,9 +3137,10 @@ public:
                 && owner.getMidiEngine().moveSelectedNotesBy(dt, snappedDp))
             {
                 groupDragTick = tick;
-                // Keep the raw pointer reference for smooth continuous dragging,
-                // but retain any pitch distance not yet accepted by the scale.
-                if (!scaleSnap || dp == snappedDp) groupDragPitch = pitch;
+                // Advance the reference by the *applied* interval, not by the
+                // raw mouse pitch. This retains only the unconsumed pointer
+                // distance and prevents cumulative jumps at scale boundaries.
+                groupDragPitch += snappedDp;
                 owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
             }
             return;
