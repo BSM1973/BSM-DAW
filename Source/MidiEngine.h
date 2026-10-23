@@ -59,6 +59,7 @@ public:
     std::size_t getNumSelectedNotes() const noexcept { return selectedNotes.size(); }
     bool moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch);
     bool resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge);
+    bool splitSelectedNotesToGrid(std::int64_t gridTicks);
     bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
     bool deleteSelectedNotes();
     bool quantizeSelectedNotes(std::int64_t gridTicks);
