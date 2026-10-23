@@ -2403,6 +2403,20 @@ public:
         dialog->addTextEditor("spread", juce::String(initialSpread), juce::String::fromUTF8("Écartement (% de grille)"));
         dialog->addTextEditor("velocity", juce::String(initialVelocity), juce::String::fromUTF8("Humanisation vélocité (0–50)"));
         dialog->addTextEditor("timing", juce::String(initialTiming), juce::String::fromUTF8("Humanisation temporelle (0–50 %)"));
+        // Reject non-numeric characters at entry time, rather than silently
+        // accepting malformed values only when the user presses Apply.
+        for (const char* key : { "spread", "velocity", "timing" })
+        {
+            if (auto* editor = dialog->getTextEditor(key))
+            {
+                editor->setInputRestrictions(3, "0123456789");
+                editor->setSelectAllWhenFocused(true);
+                editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192634));
+                editor->setColour(juce::TextEditor::textColourId, juce::Colour(0xffedf4fc));
+                editor->setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff34495b));
+                editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xffc59b5e));
+            }
+        }
         // Quick musical preview of the selected chord without changing the MIDI
         // engine or consuming an Undo step.
         dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
