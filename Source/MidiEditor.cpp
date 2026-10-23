@@ -1291,7 +1291,9 @@ public:
                 key.onChange = [this] { repaint(); };
                 pattern.onChange = [this] { repaint(); };
                 mode.onChange = [this] { repaint(); };
-                setSize(440, 432);
+                octave.onChange = [this] { repaint(); };
+                smooth.onClick = [this] { repaint(); };
+                setSize(440, 510);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1321,6 +1323,7 @@ public:
                 g.setColour(juce::Colour(0xffb8c8d3));
                 g.drawText(juce::String::fromUTF8("PRÉVISUALISATION · 4 MESURES"),
                     26, 238, getWidth() - 52, 20, juce::Justification::centredLeft);
+                std::array<int, 3> previous {};
                 for (int bar = 0; bar < 4; ++bar)
                 {
                     const int degree = minor ? minorDegrees[selectedPattern][bar] : degrees[selectedPattern][bar];
@@ -1334,6 +1337,56 @@ public:
                             : ((degree == 1 || degree == 2 || degree == 5) ? "m" : ""));
                     g.drawFittedText(chord, x + 4, 271, 84, 35,
                         juce::Justification::centred, 1);
+                    std::array<int, 3> original {};
+                    const int basePitch = 60 + (juce::jlimit(2, 6, octave.getSelectedId()) - 4) * 12;
+                    for (int third = 0; third < 3; ++third)
+                    {
+                        const int step = degree + third * 2;
+                        original[(size_t)third] = basePitch + selectedKey
+                            + scale[step % 7] + (step / 7) * 12;
+                    }
+                    auto pitches = original;
+                    if (smooth.getToggleState() && bar > 0)
+                    {
+                        int bestMovement = 100000;
+                        for (int inversion = 0; inversion < 3; ++inversion)
+                        {
+                            auto candidate = original;
+                            for (int turn = 0; turn < inversion; ++turn)
+                            {
+                                const int moved = candidate[0] + 12;
+                                candidate[0] = candidate[1];
+                                candidate[1] = candidate[2];
+                                candidate[2] = moved;
+                            }
+                            for (int shift = -2; shift <= 1; ++shift)
+                            {
+                                auto voiced = candidate;
+                                int movement = 0;
+                                for (int n = 0; n < 3; ++n)
+                                {
+                                    voiced[(size_t)n] += shift * 12;
+                                    movement += std::abs(voiced[(size_t)n] - previous[(size_t)n]);
+                                }
+                                if (movement < bestMovement)
+                                {
+                                    bestMovement = movement;
+                                    pitches = voiced;
+                                }
+                            }
+                        }
+                    }
+                    previous = pitches;
+                    g.setFont(juce::Font(11.0f));
+                    g.setColour(juce::Colour(0xffb8c8d3));
+                    for (int n = 0; n < 3; ++n)
+                    {
+                        const auto noteName = juce::MidiMessage::getMidiNoteName(
+                            pitches[(size_t)n], true, true, 3);
+                        g.drawFittedText(noteName, x + 2, 320 + n * 22, 88, 20,
+                            juce::Justification::centred, 1);
+                    }
+                    g.setFont(juce::Font(12.0f));
                 }
             }
             void resized() override
@@ -1346,7 +1399,7 @@ public:
                 duration.setBounds(219, 145, getWidth() - 245, 32);
                 mode.setBounds(26, 192, getWidth() - 52, 32);
                 smooth.setBounds(26, 332, getWidth() - 52, 28);
-                insertButton.setBounds(26, 370, getWidth() - 52, 42);
+                insertButton.setBounds(26, 448, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
