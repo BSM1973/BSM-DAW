@@ -3068,6 +3068,7 @@ public:
                 if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
                     draggingGroup = true;
+                    midi.beginGroupedEdit();
                     groupDragTick = tickFromX(e.x);
                     groupDragPitch = pitchFromY(e.y);
                     return;
@@ -3250,7 +3251,7 @@ public:
             repaint();
             return;
         }
-        if (draggingGroup) { draggingGroup = false; clickSelectionPending = false; repaint(); return; }
+        if (draggingGroup) { owner.getMidiEngine().endGroupedEdit(); draggingGroup = false; clickSelectionPending = false; repaint(); return; }
         if (selectingRectangle) { selectingRectangle = false; repaint(); return; }
         if (editingVelocity) { editingVelocity = false; repaint(); return; }
         if (auditionPitch >= 0)
