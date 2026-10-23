@@ -3149,12 +3149,32 @@ public:
                 }
                 snappedDp = juce::jlimit(-minimumPitch, 127 - maximumPitch, snappedDp);
                 const auto safeDt = juce::jmax(dt, -minimumTick);
+                // A collision on a diagonal destination must not freeze
+                // both axes. Try the complete move first; if rejected,
+                // independently attempt the horizontal and vertical parts.
+                // Each attempt still passes through the engine's collision
+                // checks, so unselected notes are never overwritten.
+                std::int64_t appliedTicks = 0;
+                int appliedPitch = 0;
+                auto& midi = owner.getMidiEngine();
                 if ((safeDt != 0 || snappedDp != 0)
-                    && owner.getMidiEngine().moveSelectedNotesBy(safeDt, snappedDp))
+                    && midi.moveSelectedNotesBy(safeDt, snappedDp))
                 {
-                    groupDragTick += safeDt;
+                    appliedTicks = safeDt;
+                    appliedPitch = snappedDp;
+                }
+                else
+                {
+                    if (safeDt != 0 && midi.moveSelectedNotesBy(safeDt, 0))
+                        appliedTicks = safeDt;
+                    if (snappedDp != 0 && midi.moveSelectedNotesBy(0, snappedDp))
+                        appliedPitch = snappedDp;
+                }
+                if (appliedTicks != 0 || appliedPitch != 0)
+                {
+                    groupDragTick += appliedTicks;
                     // Only consume mouse movement actually applied to MIDI.
-                    groupDragPitch += snappedDp;
+                    groupDragPitch += appliedPitch;
                     owner.updateMidiClipTiming();
                     synchronizeLibertyPianoRollPlayback(owner);
                     repaint();
