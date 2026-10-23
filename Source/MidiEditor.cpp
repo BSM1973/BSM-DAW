@@ -2412,7 +2412,7 @@ public:
                         || window->getComboBoxComponent("direction")->getSelectedId() != 2;
                     const int percentage = juce::jlimit(1, 400,
                         window->getTextEditorContents("spread").getIntValue());
-                    const auto grid = juce::jmax<std::int64_t>(1, safe->activePianoSnapTicks());
+                    const auto grid = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
                     const auto spread = juce::jmax<std::int64_t>(1, grid * percentage / 100);
                     if (safe->owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh))
                     {
