@@ -892,7 +892,7 @@ public:
             resized();
             repaint();
         }
-        std::function<void(int, int, int)> onAction;
+        std::function<void(int, int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity;
         juce::ComboBox curveSelector;
         std::array<juce::TextButton, 3> categoryButtons;
