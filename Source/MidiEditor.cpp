@@ -1169,6 +1169,7 @@ public:
 
     void showEditWindow()
     {
+        humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  ÉDITION MIDI");
         options.dialogBackgroundColour = juce::Colour(0xff111923);
@@ -1407,6 +1408,7 @@ public:
         }
     }
 
+    std::vector<MidiEngine::NoteEvent> humanizePreviewSnapshot;
     std::vector<MidiEngine::NoteEvent> lastHumanizeResult;
     bool humanizeUndoAvailable = false;
 
@@ -1415,6 +1417,16 @@ public:
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
         if (selected.empty() || (velocityRange == 0 && timingRange == 0)) return;
+        // Reject a stale preview if the selection or its notes changed after opening the editor.
+        if (selected.size() != humanizePreviewSnapshot.size()) return;
+        for (size_t i = 0; i < selected.size(); ++i)
+        {
+            const auto& a = selected[i];
+            const auto& b = humanizePreviewSnapshot[i];
+            if (a.startTick != b.startTick || a.lengthTicks != b.lengthTicks
+                || a.pitch != b.pitch || a.velocity != b.velocity || a.channel != b.channel
+                || a.muted != b.muted) return;
+        }
         auto notes = midi.getNotesCopy();
         bool changed = false;
         int index = 0;
@@ -1444,6 +1456,7 @@ public:
         if (midi.replaceNotes(notes))
         {
             midi.setSelectedNotes(transformed);
+            humanizePreviewSnapshot = transformed;
             lastHumanizeResult = midi.getNotesCopy();
             humanizeUndoAvailable = true;
             owner.updateMidiClipTiming();
@@ -1468,6 +1481,7 @@ public:
         }
         if (midi.undo())
         {
+            humanizePreviewSnapshot = midi.getSelectedNotesCopy();
             humanizeUndoAvailable = false;
             lastHumanizeResult.clear();
             owner.updateMidiClipTiming();
