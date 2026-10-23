@@ -3337,8 +3337,20 @@ private:
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
             if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y)) continue;
             const float leftDistance = std::abs(position.x - (float)noteRect.getX()); const float rightDistance = std::abs(position.x - (float)noteRect.getRight());
-            if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance) { bestDistance = leftDistance; bestSide = ResizeSide::left; }
-            if (rightDistance <= (float)resizeEdgePixels && rightDistance < bestDistance) { bestDistance = rightDistance; bestSide = ResizeSide::right; }
+            // On very short notes, reserve a centre zone for moving the note
+            // rather than letting both resize handles consume its full width.
+            const float edgeZone = juce::jmin((float)resizeEdgePixels,
+                juce::jmax(1.0f, (float)noteRect.getWidth() * 0.25f));
+            if (leftDistance <= edgeZone && leftDistance <= bestDistance)
+            {
+                bestDistance = leftDistance;
+                bestSide = ResizeSide::left;
+            }
+            if (rightDistance <= edgeZone && rightDistance < bestDistance)
+            {
+                bestDistance = rightDistance;
+                bestSide = ResizeSide::right;
+            }
         }
         return bestSide;
     }
