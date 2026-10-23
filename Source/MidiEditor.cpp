@@ -629,6 +629,18 @@ public:
             menu.addSeparator();
             menu.addItem(20, juce::String::fromUTF8("Quantifier"));
             menu.addItem(21, juce::String::fromUTF8("ÉDITION MIDI"));
+            juce::PopupMenu chordMenu;
+            static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
+                "Fa#", "Sol", "La♭", "La", "Si♭", "Si" };
+            for (int root = 0; root < 12; ++root)
+            {
+                juce::PopupMenu types;
+                types.addItem(100 + root * 3, juce::String::fromUTF8("Majeur"));
+                types.addItem(101 + root * 3, juce::String::fromUTF8("Mineur"));
+                types.addItem(102 + root * 3, juce::String::fromUTF8("Septième dominante"));
+                chordMenu.addSubMenu(juce::String::fromUTF8(roots[root]), types);
+            }
+            menu.addSubMenu(juce::String::fromUTF8("COMPOSITION · Créer un accord"), chordMenu);
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -642,6 +654,7 @@ public:
                     else if (result == 21) safe->showEditWindow();
                     else if (result == 22) safe->applyMidiHistory(false);
                     else if (result == 23) safe->applyMidiHistory(true);
+                    else if (result >= 100 && result < 136) safe->insertCompositionChord(result - 100);
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -1224,6 +1237,33 @@ public:
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
     };
+
+    void insertCompositionChord(int choice)
+    {
+        // Additive composition tool: existing MIDI editing behaviour is untouched.
+        const int root = juce::jlimit(0, 11, choice / 3);
+        const int type = choice % 3;
+        static const int intervals[3][4] = {
+            { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 }
+        };
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        const auto startTick = selected.empty() ? 0 : selected.front().startTick;
+        const auto duration = MidiEngine::ticksPerQuarterNote;
+        bool changed = false;
+        for (int i = 0; i < 4; ++i)
+        {
+            if (intervals[type][i] < 0) continue;
+            changed = midi.addNote(startTick, duration, 60 + root + intervals[type][i], 100, 1) || changed;
+        }
+        if (changed)
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint();
+            owner.repaint();
+        }
+    }
 
     void showEditWindow()
     {
