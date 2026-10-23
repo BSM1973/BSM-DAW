@@ -1233,11 +1233,11 @@ public:
     {
         struct ProgressionContent final : juce::Component
         {
-            juce::ComboBox key, pattern, octave, duration;
+            juce::ComboBox key, pattern, octave, duration, mode;
             juce::TextButton insertButton { juce::String::fromUTF8("INSÉRER LA PROGRESSION") };
             juce::Label heading, explanation;
-            std::function<void(int, int, int, int)> insert;
-            explicit ProgressionContent(std::function<void(int, int, int, int)> callback)
+            std::function<void(int, int, int, int, int)> insert;
+            explicit ProgressionContent(std::function<void(int, int, int, int, int)> callback)
                 : insert(std::move(callback))
             {
                 static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
@@ -1252,6 +1252,9 @@ public:
                 pattern.addItem("I - vi - IV - V", 5);
                 pattern.addItem("I - iii - IV - V", 6);
                 pattern.setSelectedId(1, juce::dontSendNotification);
+                mode.addItem(juce::String::fromUTF8("Majeur"), 1);
+                mode.addItem(juce::String::fromUTF8("Mineur naturel"), 2);
+                mode.setSelectedId(1, juce::dontSendNotification);
                 for (int oct = 2; oct <= 6; ++oct)
                     octave.addItem("Octave " + juce::String(oct), oct);
                 octave.setSelectedId(4, juce::dontSendNotification);
@@ -1259,7 +1262,7 @@ public:
                 duration.addItem(juce::String::fromUTF8("2 mesures"), 2);
                 duration.addItem(juce::String::fromUTF8("2 temps"), 3);
                 duration.setSelectedId(1, juce::dontSendNotification);
-                for (auto* combo : { &key, &pattern, &octave, &duration })
+                for (auto* combo : { &key, &pattern, &octave, &duration, &mode })
                 {
                     combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
                     combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
@@ -1269,7 +1272,7 @@ public:
                     juce::dontSendNotification);
                 heading.setFont(juce::Font(19.0f, juce::Font::bold));
                 heading.setColour(juce::Label::textColourId, juce::Colour(0xfff3d48b));
-                explanation.setText(juce::String::fromUTF8("4 accords successifs · une mesure chacun · tonalité majeure"),
+                explanation.setText(juce::String::fromUTF8("4 accords successifs · durée et mode personnalisables"),
                     juce::dontSendNotification);
                 explanation.setColour(juce::Label::textColourId, juce::Colour(0xffb8c8d3));
                 addAndMakeVisible(heading);
@@ -1278,12 +1281,13 @@ public:
                 insertButton.onClick = [this]
                 {
                     if (insert) insert(key.getSelectedId() - 1, pattern.getSelectedId() - 1,
-                        octave.getSelectedId(), duration.getSelectedId());
+                        octave.getSelectedId(), duration.getSelectedId(), mode.getSelectedId() - 1);
                 };
                 addAndMakeVisible(insertButton);
                 key.onChange = [this] { repaint(); };
                 pattern.onChange = [this] { repaint(); };
-                setSize(440, 352);
+                mode.onChange = [this] { repaint(); };
+                setSize(440, 398);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1294,28 +1298,37 @@ public:
                     { 0, 4, 5, 3 }, { 0, 3, 4, 0 }, { 5, 3, 0, 4 },
                     { 1, 4, 0, 0 }, { 0, 5, 3, 4 }, { 0, 2, 3, 4 }
                 };
-                static const int scale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+                static const int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+                static const int minorScale[7] = { 0, 2, 3, 5, 7, 8, 10 };
                 static const char* noteNames[] = {
                     "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
                     "Fa#", "Sol", "La♭", "La", "Si♭", "Si"
                 };
+                const bool minor = mode.getSelectedId() == 2;
+                const int* scale = minor ? minorScale : majorScale;
+                const int minorDegrees[6][4] = {
+                    { 0, 5, 2, 6 }, { 0, 3, 6, 0 }, { 5, 3, 0, 6 },
+                    { 1, 4, 0, 0 }, { 0, 5, 3, 6 }, { 0, 2, 3, 6 }
+                };
+                const int minorTriad[7] = { 1, 2, 0, 1, 1, 0, 0 };
                 const int selectedPattern = juce::jlimit(0, 5, pattern.getSelectedId() - 1);
                 const int selectedKey = juce::jlimit(0, 11, key.getSelectedId() - 1);
                 g.setFont(juce::Font(12.0f));
                 g.setColour(juce::Colour(0xffb8c8d3));
                 g.drawText(juce::String::fromUTF8("PRÉVISUALISATION · 4 MESURES"),
-                    26, 192, getWidth() - 52, 20, juce::Justification::centredLeft);
+                    26, 238, getWidth() - 52, 20, juce::Justification::centredLeft);
                 for (int bar = 0; bar < 4; ++bar)
                 {
-                    const int degree = degrees[selectedPattern][bar];
+                    const int degree = minor ? minorDegrees[selectedPattern][bar] : degrees[selectedPattern][bar];
                     const int x = 26 + bar * 98;
                     g.setColour(juce::Colour(0xff263544));
-                    g.fillRoundedRectangle((float)x, 221.0f, 92.0f, 44.0f, 5.0f);
+                    g.fillRoundedRectangle((float)x, 267.0f, 92.0f, 44.0f, 5.0f);
                     g.setColour(juce::Colour(0xfff3d48b));
                     const juce::String chord = juce::String::fromUTF8(
                         noteNames[(selectedKey + scale[degree]) % 12])
-                        + ((degree == 1 || degree == 2 || degree == 5) ? "m" : "");
-                    g.drawFittedText(chord, x + 4, 225, 84, 35,
+                        + (minor ? (minorTriad[degree] == 1 ? "m" : minorTriad[degree] == 2 ? "dim" : "")
+                            : ((degree == 1 || degree == 2 || degree == 5) ? "m" : ""));
+                    g.drawFittedText(chord, x + 4, 271, 84, 35,
                         juce::Justification::centred, 1);
                 }
             }
@@ -1327,7 +1340,8 @@ public:
                 pattern.setBounds(168, 99, getWidth() - 194, 34);
                 octave.setBounds(26, 145, 185, 32);
                 duration.setBounds(219, 145, getWidth() - 245, 32);
-                insertButton.setBounds(26, 286, getWidth() - 52, 42);
+                mode.setBounds(26, 192, getWidth() - 52, 32);
+                insertButton.setBounds(26, 332, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1337,14 +1351,14 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new ProgressionContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int key, int pattern, int octave, int duration)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int key, int pattern, int octave, int duration, int mode)
             {
-                if (safe != nullptr) safe->insertChordProgression(key, pattern, octave, duration);
+                if (safe != nullptr) safe->insertChordProgression(key, pattern, octave, duration, mode);
             }));
         options.launchAsync();
     }
 
-    void insertChordProgression(int key, int pattern, int octave, int duration)
+    void insertChordProgression(int key, int pattern, int octave, int duration, int mode)
     {
         // Diatonic major-key progression, four bars, starting at the first
         // selected note (or the beginning of the clip). Existing notes remain.
@@ -1353,6 +1367,13 @@ public:
             { 1, 4, 0, 0 }, { 0, 5, 3, 4 }, { 0, 2, 3, 4 }
         };
         static const int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+        static const int minorScale[7] = { 0, 2, 3, 5, 7, 8, 10 };
+        static const int minorProgressions[6][4] = {
+            { 0, 5, 2, 6 }, { 0, 3, 6, 0 }, { 5, 3, 0, 6 },
+            { 1, 4, 0, 0 }, { 0, 5, 3, 6 }, { 0, 2, 3, 6 }
+        };
+        const bool minor = mode == 1;
+        const int* scale = minor ? minorScale : majorScale;
         const int which = juce::jlimit(0, 5, pattern);
         const int root = juce::jlimit(0, 11, key);
         auto& midi = owner.getMidiEngine();
@@ -1365,12 +1386,12 @@ public:
         bool changed = false;
         for (int bar = 0; bar < 4; ++bar)
         {
-            const int degree = progressions[which][bar];
-            const int pitchRoot = basePitch + root + majorScale[degree];
+            const int degree = minor ? minorProgressions[which][bar] : progressions[which][bar];
+            const int pitchRoot = basePitch + root + scale[degree];
             for (int third = 0; third < 3; ++third)
             {
                 const int scaleStep = degree + third * 2;
-                const int pitch = pitchRoot + majorScale[scaleStep % 7]
+                const int pitch = pitchRoot + scale[scaleStep % 7]
                     - majorScale[degree] + (scaleStep / 7) * 12;
                 changed = midi.addNote(firstTick + bar * chordTicks, chordTicks,
                     pitch, 100, 1) || changed;
