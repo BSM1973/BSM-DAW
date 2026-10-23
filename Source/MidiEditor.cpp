@@ -632,6 +632,11 @@ public:
             menu.addItem(24, juce::String::fromUTF8("COMPOSITION · ACCORDS…"));
             menu.addItem(25, juce::String::fromUTF8("COMPOSITION · PROGRESSIONS…"));
             menu.addItem(26, juce::String::fromUTF8("COMPOSITION · GAMMES…"));
+            // Fender-inspired pitch selection, without changing any MIDI notes.
+            juce::PopupMenu pitchSelection;
+            pitchSelection.addItem(30, juce::String::fromUTF8("Notes les plus aiguës"));
+            pitchSelection.addItem(31, juce::String::fromUTF8("Notes les plus graves"));
+            menu.addSubMenu(juce::String::fromUTF8("SÉLECTION · HAUTEURS"), pitchSelection);
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -648,6 +653,8 @@ public:
                     else if (result == 24) safe->showCompositionWindow();
                     else if (result == 25) safe->showProgressionWindow();
                     else if (result == 26) safe->showScaleWindow();
+                    else if (result == 30) safe->selectExtremePitches(true);
+                    else if (result == 31) safe->selectExtremePitches(false);
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -2138,6 +2145,23 @@ public:
         }
         velocityValue.setText(juce::String(velocity), juce::dontSendNotification);
         velocityValue.giveAwayKeyboardFocus();
+    }
+
+    void selectExtremePitches(bool highest)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto notes = midi.getNotesCopy();
+        if (notes.empty()) return;
+        int extreme = (int)notes.front().pitch;
+        for (const auto& note : notes)
+            extreme = highest ? juce::jmax(extreme, (int)note.pitch)
+                              : juce::jmin(extreme, (int)note.pitch);
+        std::vector<MidiEngine::NoteEvent> matching;
+        for (const auto& note : notes)
+            if ((int)note.pitch == extreme)
+                matching.push_back(note);
+        midi.setSelectedNotes(matching);
+        repaint();
     }
 
     void selectAllNotes()
