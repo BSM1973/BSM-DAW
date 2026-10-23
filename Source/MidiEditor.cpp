@@ -2979,11 +2979,12 @@ public:
     {
         // A dock/editor can be hidden while the mouse is still down.
         // Never leave the MIDI engine in grouped-undo mode afterwards.
-        if (!isVisible() && (draggingNote || draggingGroup))
+        if (!isVisible() && (draggingNote || draggingGroup || drawingNote))
         {
             owner.getMidiEngine().endGroupedEdit();
             draggingNote = false;
             draggingGroup = false;
+            drawingNote = false;
             dragMoved = false;
             resizeSide = ResizeSide::none;
             clickSelectionPending = false;
@@ -2996,11 +2997,12 @@ public:
     void mouseDown(const juce::MouseEvent& e) override
     {
         // Recover from a missing mouseUp before beginning a new gesture.
-        if (draggingNote || draggingGroup)
+        if (draggingNote || draggingGroup || drawingNote)
         {
             owner.getMidiEngine().endGroupedEdit();
             draggingNote = false;
             draggingGroup = false;
+            drawingNote = false;
             resizeSide = ResizeSide::none;
             dragMoved = false;
             originalLengthTicks = 0;
@@ -3125,12 +3127,58 @@ public:
         }
 
         if (tool == 1) // DRAW / DESSINER
-            if (midi.addNote(tickFromX(e.x), drawingDurationTicks(), snapPitchToScale(pitch), 100, 1))
-            { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+        {
+            const auto start = tickFromX(e.x);
+            const auto length = drawingDurationTicks();
+            const int notePitch = snapPitchToScale(pitch);
+            if (midi.addNote(start, length, notePitch, 100, 1))
+            {
+                drawingNote = true;
+                drawingStartTick = start;
+                drawingLengthTicks = length;
+                drawingPitch = notePitch;
+                drawingStartY = e.y;
+                drawingVelocity = 100;
+                midi.beginGroupedEdit();
+                owner.updateMidiClipTiming();
+                synchronizeLibertyPianoRollPlayback(owner);
+                repaint(); owner.repaint();
+            }
+        }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (drawingNote)
+        {
+            auto& midi = owner.getMidiEngine();
+            const auto snap = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
+            const auto end = tickFromX(e.x);
+            const auto newLength = juce::jmax(snap, end - drawingStartTick);
+            // Horizontal motion sets duration; vertical motion sets velocity.
+            const int newVelocity = juce::jlimit(1, 127,
+                100 + (drawingStartY - e.y) / 3);
+            bool changed = false;
+            if (newLength != drawingLengthTicks
+                && midi.setNoteLength(drawingStartTick, drawingPitch, 1, newLength))
+            {
+                drawingLengthTicks = newLength;
+                changed = true;
+            }
+            if (newVelocity != drawingVelocity
+                && midi.setNoteVelocity(drawingStartTick, drawingPitch, 1, newVelocity))
+            {
+                drawingVelocity = newVelocity;
+                changed = true;
+            }
+            if (changed)
+            {
+                owner.updateMidiClipTiming();
+                synchronizeLibertyPianoRollPlayback(owner);
+                repaint(); owner.repaint();
+            }
+            return;
+        }
         if (resizingLaneTop)
         {
             const int oldHeight = dualLaneTotalHeight;
@@ -3275,6 +3323,12 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
+        if (drawingNote)
+        {
+            owner.getMidiEngine().endGroupedEdit();
+            drawingNote = false;
+            return;
+        }
         if (resizingLaneTop || resizingLaneDivider)
         {
             resizingLaneTop = false;
@@ -3537,6 +3591,9 @@ private:
     int dualLaneFirstHeight = 92;
     bool resizingLaneTop = false;
     bool resizingLaneDivider = false;
+    bool drawingNote = false;
+    std::int64_t drawingStartTick = 0, drawingLengthTicks = 0;
+    int drawingPitch = 60, drawingStartY = 0, drawingVelocity = 100;
     bool draggingNote = false, dragMoved = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0, dragEndTick = 0, originalLengthTicks = 0;
