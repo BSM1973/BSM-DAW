@@ -63,6 +63,8 @@ public:
     bool deleteSelectedNotes();
     bool quantizeSelectedNotes(std::int64_t gridTicks);
 
+    void beginGroupedEdit() noexcept;
+    void endGroupedEdit() noexcept;
     bool undo();
     bool redo();
     bool canUndo() const noexcept { return !undoHistory.empty(); }
@@ -110,6 +112,8 @@ private:
     std::vector<HistoryState> undoHistory;
     std::vector<HistoryState> redoHistory;
     std::uint64_t historyRevision = 0;
+    bool groupedEditActive = false;
+    bool groupedEditHasUndo = false;
     std::atomic<double> playbackPositionSeconds { 0.0 };
     std::atomic<bool> playing { false };
 };
