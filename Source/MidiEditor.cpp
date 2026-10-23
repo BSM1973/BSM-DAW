@@ -815,6 +815,16 @@ public:
             curveSelector.setSelectedId(1, juce::dontSendNotification);
             curveSelector.onChange = [this] { repaint(); };
             addAndMakeVisible(curveSelector);
+            reverseVelocity.setButtonText(juce::String::fromUTF8("INVERSER DÉPART / ARRIVÉE"));
+            reverseVelocity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            reverseVelocity.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
+            reverseVelocity.onClick = [this]
+            {
+                const double previousStart = startVelocity.getValue();
+                startVelocity.setValue(endVelocity.getValue(), juce::sendNotification);
+                endVelocity.setValue(previousStart, juce::sendNotification);
+            };
+            addAndMakeVisible(reverseVelocity);
             resetVelocity.setButtonText(juce::String::fromUTF8("RÉINITIALISER LES RÉGLAGES"));
             resetVelocity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
             resetVelocity.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
@@ -902,7 +912,8 @@ public:
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
-            resetVelocity.setBounds(26, 532, getWidth() - 52, 27);
+            reverseVelocity.setBounds(26, 532, (getWidth() - 60) / 2, 27);
+            resetVelocity.setBounds(34 + (getWidth() - 60) / 2, 532, (getWidth() - 60) / 2, 27);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -924,6 +935,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            reverseVelocity.setVisible(currentCategory == 2);
             resetVelocity.setVisible(currentCategory == 2);
             curveSelector.setVisible(currentCategory == 2);
             startVelocity.setVisible(currentCategory == 2);
@@ -934,7 +946,7 @@ public:
         std::function<void(int, int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity;
         juce::ComboBox curveSelector;
-        juce::TextButton resetVelocity;
+        juce::TextButton reverseVelocity, resetVelocity;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int currentCategory = 0;
