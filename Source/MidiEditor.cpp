@@ -711,35 +711,38 @@ public:
         explicit EditWindowContent(std::function<void(int)> action, bool hasSelection)
             : onAction(std::move(action))
         {
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ" };
+            for (int i = 0; i < 3; ++i)
+            {
+                categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
+                categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
+                addAndMakeVisible(categoryButtons[(size_t)i]);
+            }
             static const char* labels[] = {
-                "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO",
-                "QUANTIFIER", "DURÉE = SNAP",
-                "TRANSPOSER +12", "TRANSPOSER -12", "SUPPRIMER"
+                "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO", "SUPPRIMER",
+                "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12"
             };
             static const char* details[] = {
-                "Sélectionner toutes les notes MIDI",
-                "Répéter la phrase après la sélection",
-                "Relier les notes de même hauteur",
-                "Aligner les notes sur la grille SNAP",
-                "Donner aux notes la durée de la grille SNAP",
-                "Monter les notes sélectionnées d’une octave",
-                "Descendre les notes sélectionnées d’une octave",
-                "Effacer les notes sélectionnées"
+                "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
+                "Relier les notes de même hauteur", "Effacer les notes sélectionnées",
+                "Aligner sur la grille SNAP", "Appliquer la durée de la grille SNAP",
+                "Monter les notes d'une octave", "Descendre les notes d'une octave"
             };
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7 };
             for (int i = 0; i < 8; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
-                    juce::String::fromUTF8(labels[i]) + juce::String::fromUTF8("   ·   ") +
-                    juce::String::fromUTF8(details[i]));
-                button->setEnabled(i == 0 || hasSelection);
+                    juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
+                button->setEnabled(actionIds[i] == 1 || hasSelection);
                 button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202d3b));
-                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff32516a));
                 button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
-                button->onClick = [this, i] { if (onAction) onAction(i + 1); };
+                const int actionId = actionIds[i];
+                button->onClick = [this, actionId] { if (onAction) onAction(actionId); };
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
-            setSize(560, 590);
+            setSize(600, 430);
+            refreshCategory();
         }
         void paint(juce::Graphics& g) override
         {
@@ -748,25 +751,61 @@ public:
             g.fillRoundedRectangle(24.0f, 26.0f, 4.0f, 46.0f, 2.0f);
             g.setColour(juce::Colour(0xfff4f5f8));
             g.setFont(juce::Font(25.0f, juce::Font::bold));
-            g.drawText(juce::String::fromUTF8("ÉDITION MIDI"), 42, 26, 460, 34, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("ÉDITION MIDI"), 42, 26, 520, 34, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff98a9ba));
             g.setFont(juce::Font(14.0f));
-            g.drawText(juce::String::fromUTF8("LIBERTY  /  PIANO ROLL  /  OUTILS DE NOTES"),
-                26, 78, 505, 24, juce::Justification::centredLeft);
+            g.drawText("LIBERTY / PIANO ROLL / CENTRE D'ÉDITION", 26, 78, 540, 24,
+                juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
-            g.drawHorizontalLine(114, 26.0f, 534.0f);
+            g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 2)
+            {
+                g.setColour(juce::Colour(0xffd2dee8));
+                g.setFont(juce::Font(17.0f));
+                g.drawText(juce::String::fromUTF8("ÉDITION DE LA VÉLOCITÉ"),
+                    28, 205, 535, 28, juce::Justification::centred);
+                g.setColour(juce::Colour(0xff92a9b8));
+                g.setFont(juce::Font(14.0f));
+                g.drawFittedText(juce::String::fromUTF8(
+                    "Sélectionnez les notes et modifiez leur vélocité dans la ligne de contrôleurs du Piano Roll."),
+                    45, 245, 510, 64, juce::Justification::centred, 3);
+            }
             g.setColour(juce::Colour(0xff8194a5));
-            g.drawText(juce::String::fromUTF8("Sélectionnez une opération pour modifier vos notes."),
-                27, 543, 510, 26, juce::Justification::centredLeft);
+            g.setFont(juce::Font(13.0f));
+            g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
+                26, 394, 548, 20, juce::Justification::centredLeft);
         }
         void resized() override
         {
-            for (int i = 0; i < (int)buttons.size(); ++i)
-                buttons[(size_t)i]->setBounds(26, 129 + i * 50, getWidth() - 52, 42);
+            const int available = getWidth() - 52;
+            const int tabWidth = (available - 12) / 3;
+            for (int i = 0; i < 3; ++i)
+                categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            int shown = 0;
+            for (auto& button : buttons)
+                if (button->isVisible())
+                    button->setBounds(26, 184 + shown++ * 49, available, 42);
         }
     private:
+        void refreshCategory()
+        {
+            for (int i = 0; i < 3; ++i)
+            {
+                categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
+                    i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
+                categoryButtons[(size_t)i].setColour(juce::TextButton::textColourOffId,
+                    i == currentCategory ? juce::Colours::white : juce::Colour(0xffb9cbd7));
+            }
+            for (int i = 0; i < (int)buttons.size(); ++i)
+                buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
+                    (currentCategory == 1 ? i >= 4 : false));
+            resized();
+            repaint();
+        }
         std::function<void(int)> onAction;
+        std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
+        int currentCategory = 0;
     };
 
     void showEditWindow()
