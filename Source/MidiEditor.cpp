@@ -713,16 +713,17 @@ public:
         {
             static const char* labels[] = {
                 "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO",
-                "QUANTIFIER", "SUPPRIMER"
+                "QUANTIFIER", "DURÉE = SNAP", "SUPPRIMER"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI",
                 "Répéter la phrase après la sélection",
                 "Relier les notes de même hauteur",
                 "Aligner les notes sur la grille SNAP",
+                "Donner aux notes la durée de la grille SNAP",
                 "Effacer les notes sélectionnées"
             };
-            for (int i = 0; i < 5; ++i)
+            for (int i = 0; i < 6; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + juce::String::fromUTF8("   ·   ") +
@@ -735,7 +736,7 @@ public:
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
-            setSize(560, 440);
+            setSize(560, 490);
         }
         void paint(juce::Graphics& g) override
         {
@@ -753,7 +754,7 @@ public:
             g.drawHorizontalLine(114, 26.0f, 534.0f);
             g.setColour(juce::Colour(0xff8194a5));
             g.drawText(juce::String::fromUTF8("Sélectionnez une opération pour modifier vos notes."),
-                27, 393, 510, 26, juce::Justification::centredLeft);
+                27, 443, 510, 26, juce::Justification::centredLeft);
         }
         void resized() override
         {
@@ -783,7 +784,8 @@ public:
                     case 2: safe->duplicateSelection(); break;
                     case 3: safe->makeSelectionLegato(); break;
                     case 4: safe->quantizeSelection(); break;
-                    case 5:
+                    case 5: safe->setSelectedNoteLengthToSnap(); break;
+                    case 6:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
                             safe->owner.updateMidiClipTiming();
@@ -952,6 +954,23 @@ public:
         const auto duration = juce::jmax<std::int64_t>(grid, last - first);
         const auto offset = ((duration + grid - 1) / grid) * grid;
         if (midi.duplicateSelectedNotes(offset))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void setSelectedNoteLengthToSnap()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        const auto length = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
+        bool changed = false;
+        for (const auto& note : selected)
+            if (note.lengthTicks != length)
+                changed = midi.setNoteLength(note.startTick, note.pitch, note.channel, length) || changed;
+        if (changed)
         {
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
