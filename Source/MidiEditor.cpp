@@ -2398,6 +2398,7 @@ public:
             { juce::String::fromUTF8("Grave vers aigu"), juce::String::fromUTF8("Aigu vers grave") },
             juce::String::fromUTF8("Direction"));
         dialog->addTextEditor("spread", "25", juce::String::fromUTF8("Écartement (% de grille)"));
+        dialog->addTextEditor("velocity", "0", juce::String::fromUTF8("Humanisation vélocité (0–50)"));
         dialog->addButton(juce::String::fromUTF8("APPLIQUER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
@@ -2414,7 +2415,9 @@ public:
                         window->getTextEditorContents("spread").getIntValue());
                     const auto grid = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
                     const auto spread = juce::jmax<std::int64_t>(1, grid * percentage / 100);
-                    if (safe->owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh))
+                    const int velocityVariation = juce::jlimit(0, 50,
+                        window->getTextEditorContents("velocity").getIntValue());
+                    if (safe->owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh, velocityVariation))
                     {
                         safe->owner.updateMidiClipTiming();
                         synchronizeLibertyPianoRollPlayback(safe->owner);
