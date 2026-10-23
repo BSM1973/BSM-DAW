@@ -763,7 +763,7 @@ public:
     class EditWindowContent final : public juce::Component
     {
     public:
-        explicit EditWindowContent(std::function<void(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes)
+        explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes)
             : onAction(std::move(action)), previewNotes(std::move(notes))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER" };
@@ -895,13 +895,18 @@ public:
                     statusMessage = juce::String::fromUTF8("Aucune note sélectionnée.");
                     repaint(); return;
                 }
-                if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), previewSeed);
+                if (onAction) statusMessage = onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), previewSeed);
+                repaint();
             };
             addAndMakeVisible(applyHumanize);
             undoHumanize.setButtonText(juce::String::fromUTF8("ANNULER LA DERNIÈRE APPLICATION"));
             undoHumanize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
             undoHumanize.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
-            undoHumanize.onClick = [this] { if (onAction) onAction(25, 0, 0, 0); };
+            undoHumanize.onClick = [this]
+            {
+                if (onAction) statusMessage = onAction(25, 0, 0, 0);
+                repaint();
+            };
             addAndMakeVisible(undoHumanize);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
@@ -1165,7 +1170,7 @@ public:
             resized();
             repaint();
         }
-        std::function<void(int, int, int, int)> onAction;
+        std::function<juce::String(int, int, int, int)> onAction;
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
@@ -1188,9 +1193,9 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new EditWindowContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end, int curve)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end, int curve) -> juce::String
             {
-                if (safe == nullptr) return;
+                if (safe == nullptr) return {};
                 switch (action)
                 {
                     case 1: safe->selectAllNotes(); break;
@@ -1210,8 +1215,8 @@ public:
                     case 21: safe->applySwingToSelection(0.65); break;
                     case 22: safe->humanizeSelectedVelocity(); break;
                     case 23: safe->humanizeSelectedTiming(); break;
-                    case 24: safe->humanizeSelection(start, end, curve); break;
-                    case 25: safe->undoLastHumanization(); break;
+                    case 24: return safe->humanizeSelection(start, end, curve);
+                    case 25: return safe->undoLastHumanization();
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1227,6 +1232,7 @@ public:
                         break;
                     default: break;
                 }
+                return {};
             }, owner.getMidiEngine().hasSelectedNote(), owner.getMidiEngine().getSelectedNotesCopy()));
         options.launchAsync();
     }
@@ -1423,20 +1429,21 @@ public:
     std::vector<MidiEngine::NoteEvent> lastHumanizeResult;
     bool humanizeUndoAvailable = false;
 
-    void humanizeSelection(int velocityRange, int timingRange, int seed)
+    juce::String humanizeSelection(int velocityRange, int timingRange, int seed)
     {
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
-        if (selected.empty() || (velocityRange == 0 && timingRange == 0)) return;
+        if (selected.empty()) return juce::String::fromUTF8("Aucune note sélectionnée.");
+        if (velocityRange == 0 && timingRange == 0) return juce::String::fromUTF8("Réglez une variation supérieure à zéro.");
         // Reject a stale preview if the selection or its notes changed after opening the editor.
-        if (selected.size() != humanizePreviewSnapshot.size()) return;
+        if (selected.size() != humanizePreviewSnapshot.size()) return juce::String::fromUTF8("Sélection modifiée : fermez et rouvrez ÉDITION MIDI.");
         for (size_t i = 0; i < selected.size(); ++i)
         {
             const auto& a = selected[i];
             const auto& b = humanizePreviewSnapshot[i];
             if (a.startTick != b.startTick || a.lengthTicks != b.lengthTicks
                 || a.pitch != b.pitch || a.velocity != b.velocity || a.channel != b.channel
-                || a.muted != b.muted) return;
+                || a.muted != b.muted) return juce::String::fromUTF8("Notes modifiées : fermez et rouvrez ÉDITION MIDI.");
         }
         auto notes = midi.getNotesCopy();
         bool changed = false;
@@ -1453,7 +1460,7 @@ public:
             transformed.push_back(edited);
             ++index;
         }
-        if (!changed) return;
+        if (!changed) return juce::String::fromUTF8("Aucune variation produite avec ces réglages.");
         for (size_t i = 0; i < selected.size(); ++i)
         {
             const auto& oldNote = selected[i];
@@ -1473,22 +1480,24 @@ public:
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
+            return juce::String::fromUTF8("Humanisation appliquée. Annulation disponible.");
         }
+        return juce::String::fromUTF8("Impossible d’appliquer l’humanisation.");
     }
 
-    void undoLastHumanization()
+    juce::String undoLastHumanization()
     {
         auto& midi = owner.getMidiEngine();
-        if (!humanizeUndoAvailable) return;
+        if (!humanizeUndoAvailable) return juce::String::fromUTF8("Aucune humanisation à annuler.");
         const auto current = midi.getNotesCopy();
-        if (current.size() != lastHumanizeResult.size()) return;
+        if (current.size() != lastHumanizeResult.size()) return juce::String::fromUTF8("Notes modifiées : annulation impossible ici.");
         for (size_t i = 0; i < current.size(); ++i)
         {
             const auto& a = current[i];
             const auto& b = lastHumanizeResult[i];
             if (a.startTick != b.startTick || a.lengthTicks != b.lengthTicks
                 || a.pitch != b.pitch || a.velocity != b.velocity || a.channel != b.channel
-                || a.muted != b.muted) return;
+                || a.muted != b.muted) return juce::String::fromUTF8("Notes modifiées : annulation impossible ici.");
         }
         if (midi.undo())
         {
@@ -1498,7 +1507,9 @@ public:
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
+            return juce::String::fromUTF8("Humanisation annulée.");
         }
+        return juce::String::fromUTF8("Annulation indisponible.");
     }
 
     void humanizeSelectedVelocity()
