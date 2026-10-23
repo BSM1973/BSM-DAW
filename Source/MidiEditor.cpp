@@ -919,6 +919,17 @@ public:
                 const float endY = preview.getBottom() - 5.0f - (float)(endVelocity.getValue() / 127.0) * graphHeight;
                 g.fillEllipse(leftX - 3.0f, startY - 3.0f, 6.0f, 6.0f);
                 g.fillEllipse(rightX - 3.0f, endY - 3.0f, 6.0f, 6.0f);
+                const int type = curveSelector.getSelectedId() - 1;
+                const double midShape = type == 1 ? 0.25 : type == 2 ? std::sqrt(0.5)
+                    : type == 3 ? 0.5 : 0.5;
+                const double midValue = startVelocity.getValue()
+                    + std::pow(midShape, curvature.getValue() / 100.0)
+                        * (endVelocity.getValue() - startVelocity.getValue());
+                const float midX = (leftX + rightX) * 0.5f;
+                const float midY = preview.getBottom() - 5.0f - (float)(midValue / 127.0) * graphHeight;
+                g.setColour(juce::Colour(0xfff0d9a6));
+                g.fillEllipse(midX - 4.5f, midY - 4.5f, 9.0f, 9.0f);
+                g.setColour(juce::Colour(0xffc6a76b));
                 g.setColour(juce::Colour(0xffdce5ed));
                 g.setFont(juce::Font(11.0f));
                 g.drawText(juce::String((int)startVelocity.getValue()), (int)leftX + 6, (int)preview.getY() + 2, 36, 15, juce::Justification::centredLeft);
@@ -941,7 +952,15 @@ public:
             const float endY = preview.getBottom() - 5.0f - (float)(endVelocity.getValue() / 127.0) * graphHeight;
             const float leftDistance = event.position.getDistanceFrom({ leftX, startY });
             const float rightDistance = event.position.getDistanceFrom({ rightX, endY });
-            draggedVelocityEndpoint = leftDistance <= 18.0f && leftDistance <= rightDistance ? 0
+            const int type = curveSelector.getSelectedId() - 1;
+            const double midShape = type == 1 ? 0.25 : type == 2 ? std::sqrt(0.5) : 0.5;
+            const double midValue = startVelocity.getValue()
+                + std::pow(midShape, curvature.getValue() / 100.0)
+                    * (endVelocity.getValue() - startVelocity.getValue());
+            const float midY = preview.getBottom() - 5.0f - (float)(midValue / 127.0) * graphHeight;
+            const float midDistance = event.position.getDistanceFrom({ (leftX + rightX) * 0.5f, midY });
+            draggedVelocityEndpoint = midDistance <= 16.0f ? 2
+                : leftDistance <= 18.0f && leftDistance <= rightDistance ? 0
                 : rightDistance <= 18.0f ? 1 : -1;
         }
         void mouseDrag(const juce::MouseEvent& event) override
@@ -950,7 +969,19 @@ public:
             const float graphBottom = 596.0f + 78.0f - 5.0f;
             const float graphHeight = 78.0f - 10.0f;
             const int velocity = juce::jlimit(1, 127, juce::roundToInt((graphBottom - event.position.y) * 127.0f / graphHeight));
-            (draggedVelocityEndpoint == 0 ? startVelocity : endVelocity).setValue(velocity, juce::sendNotification);
+            if (draggedVelocityEndpoint == 2)
+            {
+                const double start = startVelocity.getValue();
+                const double delta = endVelocity.getValue() - start;
+                if (std::abs(delta) < 1.0) return;
+                const double normalized = juce::jlimit(0.001, 0.999, (velocity - start) / delta);
+                const int type = curveSelector.getSelectedId() - 1;
+                const double midShape = type == 1 ? 0.25 : type == 2 ? std::sqrt(0.5) : 0.5;
+                const double exponent = std::log(normalized) / std::log(midShape);
+                curvature.setValue(juce::jlimit(25.0, 200.0, exponent * 100.0), juce::sendNotification);
+            }
+            else
+                (draggedVelocityEndpoint == 0 ? startVelocity : endVelocity).setValue(velocity, juce::sendNotification);
         }
         void mouseUp(const juce::MouseEvent&) override
         {
