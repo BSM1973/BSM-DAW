@@ -2962,7 +2962,7 @@ public:
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
-            || e.y < rulerHeight || isInVelocityLane(e.y))
+            || !isWithinPitchRows(e.y))
             return;
         const int pitch = pitchFromY(e.y);
         const auto tick = tickFromX(e.x);
@@ -2984,7 +2984,7 @@ public:
             if (std::abs(e.y - divider) <= 6) { resizingLaneDivider = true; return; }
         }
         if (e.mods.isLeftButtonDown() && e.x >= 0 && e.x < pianoKeyWidth
-            && e.y >= rulerHeight && !isInVelocityLane(e.y))
+            && isWithinPitchRows(e.y))
         {
             auditionPitch = pitchFromY(e.y);
             const int lane = owner.getSelectedPianoInstrumentLane();
@@ -3167,7 +3167,7 @@ public:
         }
         if (auditionPitch >= 0)
         {
-            const int next = e.x >= 0 && e.x < pianoKeyWidth && e.y >= rulerHeight && !isInVelocityLane(e.y)
+            const int next = e.x >= 0 && e.x < pianoKeyWidth && isWithinPitchRows(e.y)
                 ? pitchFromY(e.y) : -1;
             if (next != auditionPitch)
             {
@@ -3386,6 +3386,13 @@ private:
             }
         }
         repaint(); velocityLane.repaint();
+    }
+    bool isWithinPitchRows(int y) const noexcept
+    {
+        const int laneTop = juce::jmax(rulerHeight,
+            getHeight() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight));
+        const int rowsBottom = rulerHeight + visiblePitchRows() * pitchRowHeight();
+        return y >= rulerHeight && y < juce::jmin(laneTop, rowsBottom);
     }
     int pitchFromY(int y) const noexcept
     {
