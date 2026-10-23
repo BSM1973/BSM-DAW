@@ -267,6 +267,53 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     return true;
 }
 
+bool MidiEngine::splitSelectedNotesToGrid(std::int64_t gridTicks)
+{
+    if (gridTicks <= 0 || selectedNotes.empty()) return false;
+    auto replacement = notes;
+    std::vector<NoteEvent> newSelection;
+    bool changed = false;
+    for (const auto& selected : selectedNotes)
+    {
+        const auto it = std::find_if(replacement.begin(), replacement.end(), [&](const NoteEvent& n)
+        { return n.startTick == selected.startTick && n.pitch == selected.pitch && n.channel == selected.channel; });
+        if (it == replacement.end() || it->lengthTicks <= gridTicks) continue;
+        std::int64_t end = 0;
+        if (!checkedAdd(it->startTick, it->lengthTicks, end)) return false;
+        std::vector<NoteEvent> pieces;
+        auto cursor = it->startTick;
+        while (cursor < end)
+        {
+            const auto remaining = end - cursor;
+            const auto length = std::min(gridTicks, remaining);
+            auto piece = *it;
+            piece.startTick = cursor;
+            piece.lengthTicks = length;
+            pieces.push_back(piece);
+            cursor += length;
+            if (pieces.size() > 4096) return false;
+        }
+        replacement.erase(it);
+        replacement.insert(replacement.end(), pieces.begin(), pieces.end());
+        newSelection.insert(newSelection.end(), pieces.begin(), pieces.end());
+        changed = true;
+    }
+    if (!changed) return false;
+    std::sort(replacement.begin(), replacement.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    // Refuse duplicate note identities rather than overwriting existing notes.
+    for (std::size_t i = 1; i < replacement.size(); ++i)
+        if (replacement[i - 1].startTick == replacement[i].startTick
+            && replacement[i - 1].pitch == replacement[i].pitch
+            && replacement[i - 1].channel == replacement[i].channel) return false;
+    pushUndoState();
+    notes.swap(replacement);
+    setSelectedNotes(newSelection);
+    return true;
+}
+
 bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge)
 {
     if (selectedNotes.empty() || deltaTicks == 0)
