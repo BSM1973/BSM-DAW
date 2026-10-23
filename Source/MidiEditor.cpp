@@ -2987,6 +2987,8 @@ public:
             dragMoved = false;
             resizeSide = ResizeSide::none;
             clickSelectionPending = false;
+            originalLengthTicks = 0;
+            dragEndTick = 0;
             setMouseCursor(juce::MouseCursor::CrosshairCursor);
         }
     }
@@ -3000,6 +3002,9 @@ public:
             draggingNote = false;
             draggingGroup = false;
             resizeSide = ResizeSide::none;
+            dragMoved = false;
+            originalLengthTicks = 0;
+            dragEndTick = 0;
             clickSelectionPending = false;
         }
         if (dualLanes && e.mods.isLeftButtonDown())
