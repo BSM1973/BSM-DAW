@@ -705,6 +705,24 @@ public:
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
     };
 
+    void adjustSelectedVelocity(int delta, bool absolute)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto notes = midi.getSelectedNotesCopy();
+        bool changed = false;
+        for (const auto& note : notes)
+        {
+            const int target = juce::jlimit(1, 127, absolute ? delta : (int)note.velocity + delta);
+            if (target != (int)note.velocity)
+                changed = midi.setNoteVelocity(note.startTick, note.pitch, note.channel, target) || changed;
+        }
+        if (changed)
+        {
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     class EditWindowContent final : public juce::Component
     {
     public:
@@ -720,16 +738,19 @@ public:
             }
             static const char* labels[] = {
                 "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO", "SUPPRIMER",
-                "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12"
+                "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12",
+                "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
                 "Relier les notes de même hauteur", "Effacer les notes sélectionnées",
                 "Aligner sur la grille SNAP", "Appliquer la durée de la grille SNAP",
-                "Monter les notes d'une octave", "Descendre les notes d'une octave"
+                "Monter les notes d'une octave", "Descendre les notes d'une octave",
+                "Appliquer une vélocité uniforme de 100",
+                "Augmenter la vélocité de 10", "Diminuer la vélocité de 10"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7 };
-            for (int i = 0; i < 8; ++i)
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11 };
+            for (int i = 0; i < 11; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
@@ -758,18 +779,6 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
-            if (currentCategory == 2)
-            {
-                g.setColour(juce::Colour(0xffd2dee8));
-                g.setFont(juce::Font(17.0f));
-                g.drawText(juce::String::fromUTF8("ÉDITION DE LA VÉLOCITÉ"),
-                    28, 205, 535, 28, juce::Justification::centred);
-                g.setColour(juce::Colour(0xff92a9b8));
-                g.setFont(juce::Font(14.0f));
-                g.drawFittedText(juce::String::fromUTF8(
-                    "Sélectionnez les notes et modifiez leur vélocité dans la ligne de contrôleurs du Piano Roll."),
-                    45, 245, 510, 64, juce::Justification::centred, 3);
-            }
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
             g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
@@ -798,7 +807,7 @@ public:
             }
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
-                    (currentCategory == 1 ? i >= 4 : false));
+                    (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
             resized();
             repaint();
         }
@@ -829,6 +838,9 @@ public:
                     case 5: safe->setSelectedNoteLengthToSnap(); break;
                     case 6: safe->transposeSelectedNotes(12); break;
                     case 7: safe->transposeSelectedNotes(-12); break;
+                    case 9: safe->adjustSelectedVelocity(100, true); break;
+                    case 10: safe->adjustSelectedVelocity(10, false); break;
+                    case 11: safe->adjustSelectedVelocity(-10, false); break;
                     case 8:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
