@@ -850,6 +850,28 @@ public:
         { selectAllNotes(); return true; }
         if (key.getKeyCode() == 'Q' && !key.getModifiers().isCommandDown())
         { quantizeSelection(); return true; }
+        // Cubase-style keyboard editing: arrows nudge selected notes, Shift moves an octave.
+        // Alt/Option + horizontal arrows shifts notes by the current SNAP step.
+        const int code = key.getKeyCode();
+        const bool vertical = code == juce::KeyPress::upKey || code == juce::KeyPress::downKey;
+        const bool horizontal = code == juce::KeyPress::leftKey || code == juce::KeyPress::rightKey;
+        if ((vertical || (horizontal && key.getModifiers().isAltDown()))
+            && !key.getModifiers().isCommandDown() && !key.getModifiers().isCtrlDown())
+        {
+            auto& midi = owner.getMidiEngine();
+            if (!midi.hasSelectedNote()) return false;
+            const int pitchDelta = vertical
+                ? (code == juce::KeyPress::upKey ? 1 : -1) * (key.getModifiers().isShiftDown() ? 12 : 1) : 0;
+            const std::int64_t tickDelta = horizontal
+                ? (code == juce::KeyPress::rightKey ? 1 : -1) * juce::jmax<std::int64_t>(1, activePianoSnapTicks()) : 0;
+            if (midi.moveSelectedNotesBy(tickDelta, pitchDelta))
+            {
+                owner.updateMidiClipTiming();
+                synchronizeLibertyPianoRollPlayback(owner);
+                repaint(); owner.repaint();
+            }
+            return true;
+        }
         if (key.getKeyCode() == juce::KeyPress::deleteKey || key.getKeyCode() == juce::KeyPress::backspaceKey)
         {
             if (owner.getMidiEngine().deleteSelectedNotes())
