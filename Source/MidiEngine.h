@@ -66,6 +66,7 @@ public:
     bool undo();
     bool redo();
     bool canUndo() const noexcept { return !undoHistory.empty(); }
+    std::uint64_t getHistoryRevision() const noexcept { return historyRevision; }
     bool canRedo() const noexcept { return !redoHistory.empty(); }
     void clearUndoHistory() noexcept;
 
@@ -108,6 +109,7 @@ private:
     std::vector<NoteEvent> selectedNotes;
     std::vector<HistoryState> undoHistory;
     std::vector<HistoryState> redoHistory;
+    std::uint64_t historyRevision = 0;
     std::atomic<double> playbackPositionSeconds { 0.0 };
     std::atomic<bool> playing { false };
 };
