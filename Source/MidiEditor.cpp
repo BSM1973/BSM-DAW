@@ -629,27 +629,7 @@ public:
             menu.addSeparator();
             menu.addItem(20, juce::String::fromUTF8("Quantifier"));
             menu.addItem(21, juce::String::fromUTF8("ÉDITION MIDI"));
-            juce::PopupMenu chordMenu;
-            static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
-                "Fa#", "Sol", "La♭", "La", "Si♭", "Si" };
-            for (int root = 0; root < 12; ++root)
-            {
-                juce::PopupMenu types;
-                static const char* chordTypes[] = { "Majeur", "Mineur", "Septième dominante" };
-                for (int type = 0; type < 3; ++type)
-                {
-                    juce::PopupMenu inversions;
-                    inversions.addItem(100 + (root * 3 + type) * 3,
-                        juce::String::fromUTF8("Position fondamentale"));
-                    inversions.addItem(101 + (root * 3 + type) * 3,
-                        juce::String::fromUTF8("Premier renversement"));
-                    inversions.addItem(102 + (root * 3 + type) * 3,
-                        juce::String::fromUTF8("Deuxième renversement"));
-                    types.addSubMenu(juce::String::fromUTF8(chordTypes[type]), inversions);
-                }
-                chordMenu.addSubMenu(juce::String::fromUTF8(roots[root]), types);
-            }
-            menu.addSubMenu(juce::String::fromUTF8("COMPOSITION · Créer un accord"), chordMenu);
+            menu.addItem(24, juce::String::fromUTF8("COMPOSITION · ACCORDS…"));
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -663,7 +643,7 @@ public:
                     else if (result == 21) safe->showEditWindow();
                     else if (result == 22) safe->applyMidiHistory(false);
                     else if (result == 23) safe->applyMidiHistory(true);
-                    else if (result >= 100 && result < 208) safe->insertCompositionChord(result - 100);
+                    else if (result == 24) safe->showCompositionWindow();
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -1246,6 +1226,86 @@ public:
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
     };
+
+    void showCompositionWindow()
+    {
+        // Dedicated dialog is additive: the existing piano roll toolbar and
+        // all note-editing gestures remain unchanged.
+        struct CompositionContent final : juce::Component
+        {
+            juce::ComboBox root, quality, inversion;
+            juce::TextButton create { juce::String::fromUTF8("INSÉRER L’ACCORD") };
+            juce::Label heading, description;
+            std::function<void(int)> insert;
+            explicit CompositionContent(std::function<void(int)> callback) : insert(std::move(callback))
+            {
+                static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
+                    "Fa#", "Sol", "La♭", "La", "Si♭", "Si" };
+                for (int i = 0; i < 12; ++i)
+                    root.addItem(juce::String::fromUTF8(roots[i]), i + 1);
+                root.setSelectedId(1, juce::dontSendNotification);
+                quality.addItem(juce::String::fromUTF8("Majeur"), 1);
+                quality.addItem(juce::String::fromUTF8("Mineur"), 2);
+                quality.addItem(juce::String::fromUTF8("Septième dominante"), 3);
+                quality.setSelectedId(1, juce::dontSendNotification);
+                inversion.addItem(juce::String::fromUTF8("Position fondamentale"), 1);
+                inversion.addItem(juce::String::fromUTF8("Premier renversement"), 2);
+                inversion.addItem(juce::String::fromUTF8("Deuxième renversement"), 3);
+                inversion.setSelectedId(1, juce::dontSendNotification);
+                for (auto* combo : { &root, &quality, &inversion })
+                {
+                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
+                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    addAndMakeVisible(*combo);
+                }
+                heading.setText(juce::String::fromUTF8("COMPOSITION  /  ACCORDS"),
+                    juce::dontSendNotification);
+                heading.setColour(juce::Label::textColourId, juce::Colour(0xfff3d48b));
+                heading.setFont(juce::Font(19.0f, juce::Font::bold));
+                description.setText(juce::String::fromUTF8("Choisissez un accord et son renversement."),
+                    juce::dontSendNotification);
+                description.setColour(juce::Label::textColourId, juce::Colour(0xffb8c8d3));
+                addAndMakeVisible(heading);
+                addAndMakeVisible(description);
+                create.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff86652d));
+                create.onClick = [this]
+                {
+                    if (insert)
+                        insert(((root.getSelectedId() - 1) * 3
+                            + quality.getSelectedId() - 1) * 3 + inversion.getSelectedId() - 1);
+                };
+                addAndMakeVisible(create);
+                setSize(430, 250);
+            }
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xff111923));
+                g.setColour(juce::Colour(0xff344857));
+                g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
+            }
+            void resized() override
+            {
+                heading.setBounds(26, 18, getWidth() - 52, 32);
+                description.setBounds(26, 52, getWidth() - 52, 25);
+                root.setBounds(26, 94, 110, 32);
+                quality.setBounds(144, 94, 125, 32);
+                inversion.setBounds(277, 94, 127, 32);
+                create.setBounds(26, 163, getWidth() - 52, 42);
+            }
+        };
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  COMPOSITION");
+        options.dialogBackgroundColour = juce::Colour(0xff111923);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = false;
+        options.content.setOwned(new CompositionContent(
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int choice)
+            {
+                if (safe != nullptr) safe->insertCompositionChord(choice);
+            }));
+        options.launchAsync();
+    }
 
     void insertCompositionChord(int choice)
     {
