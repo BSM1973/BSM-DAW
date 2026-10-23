@@ -1257,10 +1257,11 @@ public:
             juce::ComboBox tonic, scale;
             juce::ToggleButton highlight { juce::String::fromUTF8("Afficher la gamme sur le Piano Roll") };
             juce::ToggleButton snap { juce::String::fromUTF8("Snap à la gamme (notes dessinées et déplacées)") };
+            juce::ToggleButton used { juce::String::fromUTF8("Repérer les notes utilisées dans le clip") };
             juce::Label title, help;
-            std::function<void(int, int, bool, bool)> apply;
-            explicit ScaleContent(std::function<void(int, int, bool, bool)> callback,
-                                  int root, int type, bool enabled, bool snapEnabled)
+            std::function<void(int, int, bool, bool, bool)> apply;
+            explicit ScaleContent(std::function<void(int, int, bool, bool, bool)> callback,
+                                  int root, int type, bool enabled, bool snapEnabled, bool usedEnabled)
                 : apply(std::move(callback))
             {
                 static const char* roots[] = {
@@ -1278,6 +1279,7 @@ public:
                 scale.setSelectedId(type + 1, juce::dontSendNotification);
                 highlight.setToggleState(enabled, juce::dontSendNotification);
                 snap.setToggleState(snapEnabled, juce::dontSendNotification);
+                used.setToggleState(usedEnabled, juce::dontSendNotification);
                 for (auto* combo : { &tonic, &scale })
                 {
                     combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
@@ -1297,17 +1299,20 @@ public:
                 addAndMakeVisible(highlight);
                 snap.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
                 addAndMakeVisible(snap);
+                used.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
+                addAndMakeVisible(used);
                 auto update = [this]
                 {
                     if (apply)
                         apply(tonic.getSelectedId() - 1, scale.getSelectedId() - 1,
-                              highlight.getToggleState(), snap.getToggleState());
+                              highlight.getToggleState(), snap.getToggleState(), used.getToggleState());
                 };
                 tonic.onChange = update;
                 scale.onChange = update;
                 highlight.onClick = update;
                 snap.onClick = update;
-                setSize(440, 270);
+                used.onClick = update;
+                setSize(440, 315);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1323,6 +1328,7 @@ public:
                 scale.setBounds(168, 94, getWidth() - 194, 34);
                 highlight.setBounds(26, 150, getWidth() - 52, 35);
                 snap.setBounds(26, 193, getWidth() - 52, 35);
+                used.setBounds(26, 236, getWidth() - 52, 35);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1332,15 +1338,16 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new ScaleContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled, bool snapEnabled)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled, bool snapEnabled, bool usedEnabled)
             {
                 if (safe == nullptr) return;
                 safe->scaleRoot = juce::jlimit(0, 11, root);
                 safe->scaleType = juce::jlimit(0, 4, type);
                 safe->scaleHighlight = enabled;
                 safe->scaleSnap = snapEnabled;
+                safe->showUsedPitches = usedEnabled;
                 safe->repaint();
-            }, scaleRoot, scaleType, scaleHighlight, scaleSnap));
+            }, scaleRoot, scaleType, scaleHighlight, scaleSnap, showUsedPitches));
         options.launchAsync();
     }
 
@@ -2748,6 +2755,11 @@ public:
             if (x > grid.getRight()) break;
             g.drawText(juce::String(m + 1), x + 5, rulerHeight - 13, 36, 12, juce::Justification::left);
         }
+        std::array<bool, 128> usedPitches {};
+        if (showUsedPitches)
+            for (const auto& midiNote : owner.getMidiEngine().getNotesCopy())
+                if ((int)midiNote.pitch >= 0 && (int)midiNote.pitch < 128)
+                    usedPitches[(size_t)midiNote.pitch] = true;
         for (int row = 0; row < visibleKeys; ++row)
         {
             const int note = lowestVisibleKey + row;
@@ -2771,12 +2783,23 @@ public:
                     g.fillRect(grid.getX(), y, grid.getWidth(), keyHeight);
                 }
             }
+            if (showUsedPitches && note >= 0 && note < 128 && usedPitches[(size_t)note])
+            {
+                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.18f));
+                g.fillRect(grid.getX(), y, grid.getWidth(), keyHeight);
+            }
             const bool black = isBlackKey(note);
             g.setColour(auditionPitch == note ? juce::Colour(0xff54d6dc) : (black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea))); g.fillRect(key);
             // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
             g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
             // Darker Obsidian note labels stay legible on light piano keys.
             if (!black) { g.setColour(juce::Colour(0xff17242e)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
+            if (showUsedPitches && note >= 0 && note < 128 && usedPitches[(size_t)note])
+            {
+                g.setColour(juce::Colour(0xff54d6dc));
+                g.fillRoundedRectangle((float)pianoKeyWidth - 9.0f, (float)y + 3.0f,
+                    5.0f, (float)juce::jmax(3, keyHeight - 6), 2.0f);
+            }
             // One horizontal pitch separator per piano key, aligned exactly
             // with the note row in the dock and in the floating editor.
             if (y >= rulerHeight && y < velocityAreaY)
@@ -3156,7 +3179,7 @@ public:
 
 private:
     int scaleRoot = 0, scaleType = 0;
-    bool scaleHighlight = false, scaleSnap = false;
+    bool scaleHighlight = false, scaleSnap = false, showUsedPitches = false;
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
     juce::TextEditor velocityValue;
