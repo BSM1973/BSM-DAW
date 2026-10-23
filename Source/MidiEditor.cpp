@@ -575,6 +575,24 @@ public:
         };
         dualLaneButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff28333d));
         addAndMakeVisible(dualLaneButton);
+        topLaneHandle.onDrag = [this](int y)
+        {
+            const old = dualLaneTotalHeight;
+            dualLaneTotalHeight = juce::jlimit(96, juce::jmax(96, getHeight() - rulerHeight - 40), getHeight() - y);
+            dualLaneFirstHeight = juce::jlimit(36, dualLaneTotalHeight - 36,
+                dualLaneFirstHeight + dualLaneTotalHeight - old);
+            resized(); repaint();
+        };
+        dividerLaneHandle.onDrag = [this](int y)
+        {
+            dualLaneFirstHeight = juce::jlimit(36, juce::jmax(36, dualLaneTotalHeight - 36),
+                y - (getHeight() - dualLaneTotalHeight));
+            resized(); repaint();
+        };
+        addAndMakeVisible(topLaneHandle);
+        addAndMakeVisible(dividerLaneHandle);
+        topLaneHandle.setVisible(false);
+        dividerLaneHandle.setVisible(false);
         dualLaneButton.setLookAndFeel(&dualLaneLookAndFeel);
         // Shared Piano Roll component: identical tools in the dock and detached editor.
         static const char* glyphs[] = { "↖", "✎", "✂", "⌫", "↔", "◇", "▥", "▧", "◉" };
@@ -907,6 +925,15 @@ public:
         const int selectorWidth = juce::jmin(172, juce::jmax(0, getWidth() - pianoKeyWidth - 58));
         controllerSelector.setBounds(juce::jmax(pianoKeyWidth + 8, getWidth() - selectorWidth - 48), 3, selectorWidth, 27);
         dualLaneButton.setBounds(getWidth() - 40, 3, 32, 27);
+        topLaneHandle.setBounds(0, laneTop - 5, getWidth(), 10);
+        dividerLaneHandle.setBounds(0, laneTop + dualLaneFirstHeight - 5, getWidth(), 10);
+        topLaneHandle.setVisible(dualLanes);
+        dividerLaneHandle.setVisible(dualLanes);
+        if (dualLanes)
+        {
+            topLaneHandle.toFront(false);
+            dividerLaneHandle.toFront(false);
+        }
     }
 
     void paint(juce::Graphics& g) override
@@ -1493,6 +1520,30 @@ private:
     int activeController = -1;
     ControllerLane controllerLane;
     juce::ComboBox controllerSelector;
+    class LaneResizeHandle : public juce::Component
+    {
+    public:
+        std::function<void(int)> onDrag;
+        LaneResizeHandle()
+        {
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+            setInterceptsMouseClicks(true, false);
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.setColour(juce::Colour(0xff384955));
+            g.fillRect(0, getHeight() / 2 - 1, getWidth(), 2);
+            g.setColour(juce::Colour(0xff7c9ca8));
+            g.fillRoundedRectangle((float)getWidth() / 2.0f - 18.0f,
+                (float)getHeight() / 2.0f - 2.0f, 36.0f, 4.0f, 2.0f);
+        }
+        void mouseDrag(const juce::MouseEvent& e) override
+        {
+            if (onDrag != nullptr)
+                onDrag(e.getEventRelativeTo(getParentComponent()).y);
+        }
+    };
+    LaneResizeHandle topLaneHandle, dividerLaneHandle;
     class DualLaneLookAndFeel : public juce::LookAndFeel_V4
     {
     public:
