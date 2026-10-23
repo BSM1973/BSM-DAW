@@ -713,7 +713,8 @@ public:
         {
             static const char* labels[] = {
                 "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO",
-                "QUANTIFIER", "DURÉE = SNAP", "SUPPRIMER"
+                "QUANTIFIER", "DURÉE = SNAP",
+                "TRANSPOSER +12", "TRANSPOSER -12", "SUPPRIMER"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI",
@@ -721,9 +722,11 @@ public:
                 "Relier les notes de même hauteur",
                 "Aligner les notes sur la grille SNAP",
                 "Donner aux notes la durée de la grille SNAP",
+                "Monter les notes sélectionnées d’une octave",
+                "Descendre les notes sélectionnées d’une octave",
                 "Effacer les notes sélectionnées"
             };
-            for (int i = 0; i < 6; ++i)
+            for (int i = 0; i < 8; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + juce::String::fromUTF8("   ·   ") +
@@ -736,7 +739,7 @@ public:
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
-            setSize(560, 490);
+            setSize(560, 590);
         }
         void paint(juce::Graphics& g) override
         {
@@ -754,7 +757,7 @@ public:
             g.drawHorizontalLine(114, 26.0f, 534.0f);
             g.setColour(juce::Colour(0xff8194a5));
             g.drawText(juce::String::fromUTF8("Sélectionnez une opération pour modifier vos notes."),
-                27, 443, 510, 26, juce::Justification::centredLeft);
+                27, 543, 510, 26, juce::Justification::centredLeft);
         }
         void resized() override
         {
@@ -785,7 +788,9 @@ public:
                     case 3: safe->makeSelectionLegato(); break;
                     case 4: safe->quantizeSelection(); break;
                     case 5: safe->setSelectedNoteLengthToSnap(); break;
-                    case 6:
+                    case 6: safe->transposeSelectedNotes(12); break;
+                    case 7: safe->transposeSelectedNotes(-12); break;
+                    case 8:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
                             safe->owner.updateMidiClipTiming();
@@ -954,6 +959,18 @@ public:
         const auto duration = juce::jmax<std::int64_t>(grid, last - first);
         const auto offset = ((duration + grid - 1) / grid) * grid;
         if (midi.duplicateSelectedNotes(offset))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void transposeSelectedNotes(int semitones)
+    {
+        auto& midi = owner.getMidiEngine();
+        if (!midi.hasSelectedNote() || semitones == 0) return;
+        if (midi.moveSelectedNotesBy(0, semitones))
         {
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
