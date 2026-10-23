@@ -2866,7 +2866,7 @@ public:
             {
                 g.setColour(juce::Colour(0xff54d6dc));
                 g.fillRoundedRectangle((float)pianoKeyWidth - 9.0f, (float)y + 3.0f,
-                    5.0f, (float)juce::jmax(3, keyHeight - 6), 2.0f);
+                    5.0f, (float)juce::jmax(3, juce::jmax(1, keyHeight - 6)), 2.0f);
             }
             // One horizontal pitch separator per piano key, aligned exactly
             // with the note row in the dock and in the floating editor.
@@ -2909,7 +2909,7 @@ public:
             const int x = grid.getX() + (int)std::llround((double)n.startTick * pixelsPerTick);
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto r = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
+            const auto r = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
             if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
@@ -3009,7 +3009,7 @@ public:
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * getPixelsPerTick());
             const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * getPixelsPerTick()));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
             {
                 if (tool == 8) // Non-destructive per-note MIDI mute.
@@ -3153,7 +3153,7 @@ public:
                 const int x = pianoKeyWidth + (int) std::llround(n.startTick * getPixelsPerTick());
                 const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * pitchRowHeight() + 2;
                 const int w = juce::jmax(8, (int) std::llround(n.lengthTicks * getPixelsPerTick()));
-                if (area.intersects(juce::Rectangle<int>(x, y, w, pitchRowHeight() - 3))) selected.push_back(n);
+                if (area.intersects(juce::Rectangle<int>(x, y, w, juce::jmax(1, pitchRowHeight() - 3)))) selected.push_back(n);
             }
             owner.getMidiEngine().setSelectedNotes(selected);
             repaint(); return;
@@ -3257,6 +3257,8 @@ private:
         // One common height is used by painting, hit-testing and note handles.
         const int laneHeight = dualLanes ? dualLaneTotalHeight : velocityLaneHeight;
         const int available = juce::jmax(1, getHeight() - rulerHeight - laneHeight);
+        // In a short dock, allow sub-10px rows but keep the exact same
+        // pitch geometry for rendering and hit-testing.
         return juce::jmax(1, juce::jmin(currentKeyHeight() * 3,
             available / juce::jmax(1, visiblePitchRows())));
     }
@@ -3309,7 +3311,7 @@ private:
             const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
             if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y)) return &n;
         }
         return nullptr;
@@ -3330,7 +3332,7 @@ private:
             const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, keyHeight - 4));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
             if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y)) continue;
             const float leftDistance = std::abs(position.x - (float)noteRect.getX()); const float rightDistance = std::abs(position.x - (float)noteRect.getRight());
             if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance) { bestDistance = leftDistance; bestSide = ResizeSide::left; }
@@ -3385,7 +3387,14 @@ private:
         }
         repaint(); velocityLane.repaint();
     }
-    int pitchFromY(int y) const noexcept { const int keyHeight = pitchRowHeight(); const int row = juce::jlimit(0, visiblePitchRows() - 1, (y - rulerHeight) / juce::jmax(1, keyHeight)); return lowestVisibleKey + visiblePitchRows() - 1 - row; }
+    int pitchFromY(int y) const noexcept
+    {
+        const int keyHeight = pitchRowHeight();
+        const int row = juce::jlimit(0, visiblePitchRows() - 1,
+            (y - rulerHeight) / juce::jmax(1, keyHeight));
+        return juce::jlimit(0, 127,
+            lowestVisibleKey + visiblePitchRows() - 1 - row);
+    }
     std::int64_t tickFromX(int x) const noexcept { const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick()); const auto tick = juce::jmax<std::int64_t>(0, raw); const auto snap = activePianoSnapTicks(); return snap > 0 ? MidiEngine::quantizeTick(tick, snap) : tick; }
 
     MainComponent& owner;
