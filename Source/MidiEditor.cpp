@@ -1786,19 +1786,37 @@ public:
 
     void resized() override
     {
+        // Adaptive toolbar: preserve editing tools first, then quantize, edit and history.
+        // Hidden commands remain accessible through keyboard shortcuts.
+        const int left = pianoKeyWidth + 8;
+        const int right = getWidth() - 8;
+        const int buttonHeight = editorToolbarHeight - 6;
         const int buttonWidth = 32;
+        const int step = 35;
+        const int reservedActions = 36 + 4 + 52 + 8 + 30 + 6 + 30;
+        const int available = juce::jmax(0, right - left);
+        const bool fullToolbar = available >= 9 * step + 8 + reservedActions;
+        const int toolCount = fullToolbar ? 9 : juce::jlimit(0, 9, (available - 8) / step);
         for (int i = 0; i < 9; ++i)
-            toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
-        quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
-        selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
-        const int historyX = pianoKeyWidth + 8 + 9 * 35 + 108;
-        // Compact controls: never overlap the right edge in a narrow dock.
-        const int availableHistoryWidth = getWidth() - historyX - 8;
-        const bool historyFits = availableHistoryWidth >= 68;
+        {
+            auto& button = toolButtons[(size_t)i];
+            button.setVisible(i < toolCount);
+            button.setBounds(left + i * step, 3, buttonWidth, buttonHeight);
+        }
+        const int actionX = left + toolCount * step + 8;
+        const bool quantizeFits = actionX + 36 <= right;
+        quantizeButton.setVisible(quantizeFits);
+        quantizeButton.setBounds(actionX, 3, 36, buttonHeight);
+        const int editX = actionX + 40;
+        const bool editFits = quantizeFits && editX + 52 <= right;
+        selectAllButton.setVisible(editFits);
+        selectAllButton.setBounds(editX, 3, 52, buttonHeight);
+        const int historyX = editX + 60;
+        const bool historyFits = editFits && historyX + 66 <= right;
         undoMidiButton.setVisible(historyFits);
         redoMidiButton.setVisible(historyFits);
-        undoMidiButton.setBounds(historyX, 3, 30, editorToolbarHeight - 6);
-        redoMidiButton.setBounds(historyX + 36, 3, 30, editorToolbarHeight - 6);
+        undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
+        redoMidiButton.setBounds(historyX + 36, 3, 30, buttonHeight);
         // Keep the editable value inside the visible information line, not at the far-right edge.
         const int velocityX = pianoKeyWidth + 390;
         durationValue.setBounds(pianoKeyWidth + 210, editorToolbarHeight + 3,
