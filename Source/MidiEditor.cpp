@@ -893,6 +893,11 @@ public:
                 if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), previewSeed);
             };
             addAndMakeVisible(applyHumanize);
+            undoHumanize.setButtonText(juce::String::fromUTF8("ANNULER LA DERNIÈRE APPLICATION"));
+            undoHumanize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            undoHumanize.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
+            undoHumanize.onClick = [this] { if (onAction) onAction(25, 0, 0, 0); };
+            addAndMakeVisible(undoHumanize);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -1099,7 +1104,8 @@ public:
             humanizeVelocity.setBounds(190, 235, getWidth() - 216, 32);
             humanizeTiming.setBounds(190, 310, getWidth() - 216, 32);
             applyHumanize.setBounds(26, 387, available, 40);
-            regeneratePreview.setBounds(26, 654, available, 30);
+            regeneratePreview.setBounds(26, 654, (available - 8) / 2, 30);
+            undoHumanize.setBounds(34 + (available - 8) / 2, 654, (available - 8) / 2, 30);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -1125,6 +1131,7 @@ public:
             humanizeTiming.setVisible(currentCategory == 3);
             applyHumanize.setVisible(currentCategory == 3);
             regeneratePreview.setVisible(currentCategory == 3);
+            undoHumanize.setVisible(currentCategory == 3);
             resetCurvature.setVisible(currentCategory == 2);
             curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
@@ -1139,7 +1146,7 @@ public:
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
         juce::ComboBox curveSelector;
-        juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview;
+        juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
         int previewSeed = 1;
         std::array<juce::TextButton, 4> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
@@ -1179,6 +1186,7 @@ public:
                     case 22: safe->humanizeSelectedVelocity(); break;
                     case 23: safe->humanizeSelectedTiming(); break;
                     case 24: safe->humanizeSelection(start, end, curve); break;
+                    case 25: safe->undoLastHumanization(); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1386,34 +1394,70 @@ public:
         }
     }
 
+    std::vector<MidiEngine::NoteEvent> lastHumanizeResult;
+    bool humanizeUndoAvailable = false;
+
     void humanizeSelection(int velocityRange, int timingRange, int seed)
     {
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
-        bool timingChanged = false;
-        bool velocityChanged = false;
+        if (selected.empty() || (velocityRange == 0 && timingRange == 0)) return;
+        auto notes = midi.getNotesCopy();
+        bool changed = false;
         int index = 0;
+        std::vector<MidiEngine::NoteEvent> transformed;
         for (const auto& note : selected)
         {
-            if (velocityRange > 0)
-            {
-                const int variation = (((index * 13 + seed * 7) % 13) - 6) * velocityRange / 6;
-                const int targetVelocity = juce::jlimit(1, 127, (int)note.velocity + variation);
-                if (targetVelocity != (int)note.velocity)
-                    velocityChanged = midi.setNoteVelocity(note.startTick, note.pitch, note.channel, targetVelocity) || velocityChanged;
-            }
-            if (timingRange > 0)
-            {
-                const int variation = (((index * 37 + seed * 19) % 17) - 8) * timingRange / 8;
-                const auto targetTick = juce::jmax<std::int64_t>(0, note.startTick + variation);
-                if (targetTick != note.startTick)
-                    timingChanged = midi.moveNote(note.startTick, note.pitch, note.channel, targetTick, note.pitch) || timingChanged;
-            }
+            auto edited = note;
+            const int velocityVariation = (((index * 13 + seed * 7) % 13) - 6) * velocityRange / 6;
+            const int timingVariation = (((index * 37 + seed * 19) % 17) - 8) * timingRange / 8;
+            edited.velocity = (std::uint8_t)juce::jlimit(1, 127, (int)note.velocity + velocityVariation);
+            edited.startTick = juce::jmax<std::int64_t>(0, note.startTick + timingVariation);
+            changed = changed || edited.velocity != note.velocity || edited.startTick != note.startTick;
+            transformed.push_back(edited);
             ++index;
         }
-        if (timingChanged) owner.updateMidiClipTiming();
-        if (timingChanged || velocityChanged)
+        if (!changed) return;
+        for (size_t i = 0; i < selected.size(); ++i)
         {
+            const auto& oldNote = selected[i];
+            auto it = std::find_if(notes.begin(), notes.end(), [&](const auto& note)
+            {
+                return note.startTick == oldNote.startTick && note.pitch == oldNote.pitch
+                    && note.channel == oldNote.channel;
+            });
+            if (it != notes.end()) *it = transformed[i];
+        }
+        if (midi.replaceNotes(notes))
+        {
+            midi.setSelectedNotes(transformed);
+            lastHumanizeResult = midi.getNotesCopy();
+            humanizeUndoAvailable = true;
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void undoLastHumanization()
+    {
+        auto& midi = owner.getMidiEngine();
+        if (!humanizeUndoAvailable) return;
+        const auto current = midi.getNotesCopy();
+        if (current.size() != lastHumanizeResult.size()) return;
+        for (size_t i = 0; i < current.size(); ++i)
+        {
+            const auto& a = current[i];
+            const auto& b = lastHumanizeResult[i];
+            if (a.startTick != b.startTick || a.lengthTicks != b.lengthTicks
+                || a.pitch != b.pitch || a.velocity != b.velocity || a.channel != b.channel
+                || a.muted != b.muted) return;
+        }
+        if (midi.undo())
+        {
+            humanizeUndoAvailable = false;
+            lastHumanizeResult.clear();
+            owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
         }
