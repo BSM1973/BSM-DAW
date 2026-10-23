@@ -840,7 +840,7 @@ public:
             g.drawText(juce::String::fromUTF8("ÉDITION MIDI"), 42, 26, 520, 34, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff98a9ba));
             g.setFont(juce::Font(14.0f));
-            g.drawText("LIBERTY / PIANO ROLL / CENTRE D'ÉDITION", 26, 78, 540, 24,
+            g.drawText(currentCategory == 2 ? "LIBERTY / VÉLOCITÉ / COURBES" : "LIBERTY / PIANO ROLL / CENTRE D'ÉDITION", 26, 78, 540, 24,
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
@@ -850,6 +850,16 @@ public:
                 g.setFont(juce::Font(14.0f));
                 g.drawText(juce::String::fromUTF8("DÉPART"), 26, 448, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("ARRIVÉE"), 26, 495, 115, 25, juce::Justification::centredLeft);
+                // Keep the velocity preview in its own dark panel, below the reset control.
+                const juce::Rectangle<float> preview(26.0f, 568.0f, (float)getWidth() - 52.0f, 46.0f);
+                g.setColour(juce::Colour(0xff202f40));
+                g.fillRoundedRectangle(preview, 7.0f);
+                g.setColour(juce::Colour(0xff516476).withAlpha(0.55f));
+                for (int line = 1; line <= 3; ++line)
+                {
+                    const float y = preview.getY() + line * preview.getHeight() / 4.0f;
+                    g.drawHorizontalLine((int)y, preview.getX() + 10.0f, preview.getRight() - 10.0f);
+                }
                 juce::Path curve;
                 for (int i = 0; i <= 64; ++i)
                 {
@@ -859,8 +869,8 @@ public:
                         : type == 3 ? t * t * (3.0 - 2.0 * t) : t;
                     const double value = startVelocity.getValue()
                         + shaped * (endVelocity.getValue() - startVelocity.getValue());
-                    const float x = 35.0f + (float)t * 530.0f;
-                    const float y = 606.0f - (float)value * 0.36f;
+                    const float x = preview.getX() + 10.0f + (float)t * (preview.getWidth() - 20.0f);
+                    const float y = preview.getBottom() - 5.0f - (float)(value / 127.0) * (preview.getHeight() - 10.0f);
                     if (i == 0) curve.startNewSubPath(x, y);
                     else curve.lineTo(x, y);
                 }
