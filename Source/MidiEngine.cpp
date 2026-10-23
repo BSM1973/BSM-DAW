@@ -405,6 +405,35 @@ bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel, s
     it->lengthTicks = newLengthTicks; selectNoteAt(startTick, pitch, channel); selectedNote.lengthTicks = newLengthTicks; return true;
 }
 
+bool MidiEngine::resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
+                                            std::int64_t newLengthTicks)
+{
+    if (newLengthTicks < ticksPerQuarterNote / 4) return false;
+    const auto first = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& n)
+    { return n.startTick == startTick && n.pitch == pitch && n.channel == channel; });
+    if (first == notes.end()) return false;
+    std::int64_t oldBoundary = 0, newBoundary = 0, followingEnd = 0;
+    if (!checkedAdd(startTick, first->lengthTicks, oldBoundary)
+        || !checkedAdd(startTick, newLengthTicks, newBoundary)) return false;
+    const auto following = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& n)
+    { return n.startTick == oldBoundary && n.pitch == pitch && n.channel == channel; });
+    if (following == notes.end()
+        || !checkedAdd(following->startTick, following->lengthTicks, followingEnd)
+        || newBoundary >= followingEnd - ticksPerQuarterNote / 4
+        || newBoundary <= startTick
+        || newBoundary == oldBoundary) return false;
+    pushUndoState();
+    first->lengthTicks = newLengthTicks;
+    following->startTick = newBoundary;
+    following->lengthTicks = followingEnd - newBoundary;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    selectNoteAt(startTick, pitch, channel);
+    return true;
+}
+
 bool MidiEngine::setNoteVelocity(std::int64_t startTick, int pitch, int channel, int newVelocity)
 {
     if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote || channel < 1 || channel > 16 || newVelocity < 1 || newVelocity > 127) return false;
