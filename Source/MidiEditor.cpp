@@ -2415,6 +2415,9 @@ public:
             juce::ModalCallbackFunction::create(
                 [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
                 {
+                    // Keep the dialog alive while reading its controls, then
+                    // release it on every exit path (including Cancel).
+                    std::unique_ptr<juce::AlertWindow> ownedDialog(window);
                     if (safe == nullptr || (result != 1 && result != 2)) return;
                     const bool lowToHigh = window->getComboBoxComponent("direction") == nullptr
                         || window->getComboBoxComponent("direction")->getSelectedId() != 2;
@@ -2477,7 +2480,7 @@ public:
                         safe->repaint();
                         safe->owner.repaint();
                     }
-                }), true);
+                }), false);
         dialog.release();
     }
 
