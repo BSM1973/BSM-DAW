@@ -1293,7 +1293,7 @@ public:
                 mode.onChange = [this] { repaint(); };
                 octave.onChange = [this] { repaint(); };
                 smooth.onClick = [this] { repaint(); };
-                setSize(440, 510);
+                setSize(440, 594);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1386,6 +1386,38 @@ public:
                         g.drawFittedText(noteName, x + 2, 320 + n * 22, 88, 20,
                             juce::Justification::centred, 1);
                     }
+                    // Read-only compact keyboard, centred on this chord's actual register.
+                    int lowest = pitches[0];
+                    for (int n = 1; n < 3; ++n)
+                        lowest = juce::jmin(lowest, pitches[(size_t)n]);
+                    const int first = (lowest / 12) * 12;
+                    const float whiteWidth = 92.0f / 14.0f;
+                    const float keyboardY = 405.0f;
+                    static const int whites[7] = { 0, 2, 4, 5, 7, 9, 11 };
+                    static const int blacks[7] = { 1, 3, -1, 6, 8, 10, -1 };
+                    auto isTone = [&](int note)
+                    {
+                        for (int n = 0; n < 3; ++n)
+                            if (pitches[(size_t)n] == note) return true;
+                        return false;
+                    };
+                    for (int n = 0; n < 14; ++n)
+                    {
+                        const int pitch = first + (n / 7) * 12 + whites[n % 7];
+                        g.setColour(isTone(pitch) ? juce::Colour(0xffe1b96f)
+                            : juce::Colour(0xffd5dce0));
+                        g.fillRoundedRectangle((float)x + n * whiteWidth + 0.4f,
+                            keyboardY, whiteWidth - 0.8f, 51.0f, 1.5f);
+                    }
+                    for (int n = 0; n < 14; ++n)
+                    {
+                        if (blacks[n % 7] < 0) continue;
+                        const int pitch = first + (n / 7) * 12 + blacks[n % 7];
+                        g.setColour(isTone(pitch) ? juce::Colour(0xffdba952)
+                            : juce::Colour(0xff293643));
+                        g.fillRoundedRectangle((float)x + (n + 1) * whiteWidth - whiteWidth * 0.32f,
+                            keyboardY, whiteWidth * 0.64f, 30.0f, 1.5f);
+                    }
                     g.setFont(juce::Font(12.0f));
                 }
             }
@@ -1399,7 +1431,7 @@ public:
                 duration.setBounds(219, 145, getWidth() - 245, 32);
                 mode.setBounds(26, 192, getWidth() - 52, 32);
                 smooth.setBounds(26, 332, getWidth() - 52, 28);
-                insertButton.setBounds(26, 448, getWidth() - 52, 42);
+                insertButton.setBounds(26, 532, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
