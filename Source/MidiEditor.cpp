@@ -778,7 +778,8 @@ public:
                 "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12",
                 "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10",
                 "CRESCENDO", "DECRESCENDO",
-                "TRANSPOSER +1", "TRANSPOSER -1"
+                "TRANSPOSER +1", "TRANSPOSER -1",
+                "DURÉE ×2", "DURÉE ÷2"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -788,10 +789,11 @@ public:
                 "Appliquer une vélocité uniforme de 100",
                 "Augmenter la vélocité de 10", "Diminuer la vélocité de 10",
                 "Progression de 40 à 120", "Progression de 120 à 40",
-                "Monter les notes d'un demi-ton", "Descendre les notes d'un demi-ton"
+                "Monter les notes d'un demi-ton", "Descendre les notes d'un demi-ton",
+                "Doubler la durée des notes sélectionnées", "Réduire de moitié la durée des notes sélectionnées"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15 };
-            for (int i = 0; i < 15; ++i)
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+            for (int i = 0; i < 17; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
@@ -1076,6 +1078,8 @@ public:
                     case 7: safe->transposeSelectedNotes(-12); break;
                     case 14: safe->transposeSelectedNotes(1); break;
                     case 15: safe->transposeSelectedNotes(-1); break;
+                    case 16: safe->scaleSelectedNoteLengths(2.0); break;
+                    case 17: safe->scaleSelectedNoteLengths(0.5); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1278,6 +1282,26 @@ public:
         for (const auto& note : selected)
             if (note.lengthTicks != length)
                 changed = midi.setNoteLength(note.startTick, note.pitch, note.channel, length) || changed;
+        if (changed)
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void scaleSelectedNoteLengths(double factor)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        bool changed = false;
+        for (const auto& note : selected)
+        {
+            const auto scaled = juce::jmax<std::int64_t>(1,
+                (std::int64_t)std::llround((double)note.lengthTicks * factor));
+            if (scaled != note.lengthTicks)
+                changed = midi.setNoteLength(note.startTick, note.pitch, note.channel, scaled) || changed;
+        }
         if (changed)
         {
             owner.updateMidiClipTiming();
