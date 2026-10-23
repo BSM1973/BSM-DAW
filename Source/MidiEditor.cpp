@@ -810,6 +810,8 @@ public:
                 addAndMakeVisible(*slider);
             }
             curvature.setRange(25.0, 200.0, 5.0);
+            curvature.setTextValueSuffix(" %");
+            curvature.setTooltip(juce::String::fromUTF8("Intensité de la courbe : 100 % conserve la forme d'origine."));
             curvature.setValue(100.0, juce::dontSendNotification);
             curvature.setSliderStyle(juce::Slider::LinearHorizontal);
             curvature.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 25);
@@ -823,11 +825,13 @@ public:
             curveSelector.addItem(juce::String::fromUTF8("Douce (logarithmique)"), 3);
             curveSelector.addItem(juce::String::fromUTF8("Courbe en S (progressive)"), 4);
             curveSelector.setSelectedId(1, juce::dontSendNotification);
+            curveSelector.setTooltip(juce::String::fromUTF8("Choisir la forme de progression des vélocités MIDI."));
             curveSelector.onChange = [this] { repaint(); };
             addAndMakeVisible(curveSelector);
             reverseVelocity.setButtonText(juce::String::fromUTF8("INVERSER DÉPART / ARRIVÉE"));
             reverseVelocity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
             reverseVelocity.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
+            reverseVelocity.setTooltip(juce::String::fromUTF8("Échanger les vélocités de départ et d'arrivée sans modifier les notes."));
             reverseVelocity.onClick = [this]
             {
                 const double previousStart = startVelocity.getValue();
@@ -838,6 +842,7 @@ public:
             resetVelocity.setButtonText(juce::String::fromUTF8("RÉINITIALISER LES RÉGLAGES"));
             resetVelocity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
             resetVelocity.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
+            resetVelocity.setTooltip(juce::String::fromUTF8("Restaurer les valeurs 40 / 120, la forme linéaire et la courbure 100 %."));
             resetVelocity.onClick = [this]
             {
                 startVelocity.setValue(40.0, juce::sendNotification);
@@ -882,6 +887,8 @@ public:
                 {
                     const float y = preview.getY() + line * preview.getHeight() / 4.0f;
                     g.drawHorizontalLine((int)y, preview.getX() + 10.0f, preview.getRight() - 10.0f);
+                    const float x = preview.getX() + line * preview.getWidth() / 4.0f;
+                    g.drawVerticalLine((int)x, preview.getY() + 5.0f, preview.getBottom() - 5.0f);
                 }
                 juce::Path curve;
                 for (int i = 0; i <= 64; ++i)
