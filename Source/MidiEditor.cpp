@@ -2201,6 +2201,65 @@ public:
         repaint();
     }
 
+    // Two-handle pitch range: the text fields remain editable and authoritative.
+    class MidiPitchRangeSlider final : public juce::Component, private juce::Timer
+    {
+    public:
+        MidiPitchRangeSlider()
+        {
+            setSize(420, 66);
+            range.setSliderStyle(juce::Slider::TwoValueHorizontal);
+            range.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            range.setRange(0.0, 127.0, 1.0);
+            range.setMinAndMaxValues(0.0, 127.0, juce::dontSendNotification);
+            range.setColour(juce::Slider::trackColourId, juce::Colour(0xff3575d9));
+            range.setColour(juce::Slider::thumbColourId, juce::Colour(0xffedf4fc));
+            range.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff344858));
+            range.onValueChange = [this]
+            {
+                if (minimum != nullptr && maximum != nullptr)
+                {
+                    minimum->setText(juce::String((int)range.getMinValue()), juce::dontSendNotification);
+                    maximum->setText(juce::String((int)range.getMaxValue()), juce::dontSendNotification);
+                }
+            };
+            addAndMakeVisible(range);
+        }
+
+        void bind(juce::TextEditor* minEditor, juce::TextEditor* maxEditor)
+        {
+            minimum = minEditor;
+            maximum = maxEditor;
+            startTimerHz(15);
+        }
+
+        void resized() override { range.setBounds(12, 27, getWidth() - 24, 32); }
+
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff111923));
+            g.setColour(juce::Colour(0xffc7d7e5));
+            g.setFont(juce::FontOptions(12.0f));
+            g.drawText(juce::String::fromUTF8("PLAGE DE HAUTEURS · MIDI 0–127"),
+                       12, 4, getWidth() - 24, 22, juce::Justification::centredLeft);
+        }
+
+    private:
+        void timerCallback() override
+        {
+            if (minimum == nullptr || maximum == nullptr) return;
+            const int low = juce::jlimit(0, 127, minimum->getText().getIntValue());
+            const int high = juce::jlimit(0, 127, maximum->getText().getIntValue());
+            if (low > high) return;
+            if ((int)range.getMinValue() != low || (int)range.getMaxValue() != high)
+                range.setMinAndMaxValues((double)low, (double)high, juce::dontSendNotification);
+        }
+
+        juce::Slider range;
+        juce::TextEditor* minimum = nullptr;
+        juce::TextEditor* maximum = nullptr;
+    };
+
     void showMidiSelectionFilter()
     {
         auto dialog = std::make_unique<juce::AlertWindow>(
@@ -2229,6 +2288,9 @@ public:
                 editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
             }
         }
+        auto* pitchRange = new MidiPitchRangeSlider();
+        pitchRange->bind(dialog->getTextEditor("pitchMin"), dialog->getTextEditor("pitchMax"));
+        dialog->addCustomComponent(pitchRange);
         dialog->addButton(juce::String::fromUTF8("SÉLECTIONNER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
