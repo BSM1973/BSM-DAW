@@ -1940,9 +1940,11 @@ public:
             // Never alter MIDI notes or existing editing tools.
             std::array<bool, 12> pitchClasses {};
             int uniqueCount = 0;
+            int lowestPitch = 127;
             for (const auto& note : selectedNotes)
             {
                 const int pc = ((int)note.pitch % 12 + 12) % 12;
+                lowestPitch = juce::jmin(lowestPitch, (int)note.pitch);
                 if (!pitchClasses[(size_t)pc])
                 {
                     pitchClasses[(size_t)pc] = true;
@@ -1982,6 +1984,9 @@ public:
                         info += juce::String::fromUTF8("  |  Accord : ")
                             + juce::String::fromUTF8(rootNames[root])
                             + juce::String::fromUTF8(shape.suffix);
+                        const int bassClass = lowestPitch % 12;
+                        if (bassClass != root)
+                            info += "/" + juce::String::fromUTF8(rootNames[bassClass]);
                         found = true;
                         break;
                     }
