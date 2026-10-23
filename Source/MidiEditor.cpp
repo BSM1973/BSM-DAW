@@ -3086,6 +3086,7 @@ public:
                 else
                     return;
 
+                midi.beginGroupedEdit();
                 dragStartTick = n.startTick; dragEndTick = n.startTick + n.lengthTicks;
                 dragPitch = n.pitch; dragChannel = n.channel; originalLengthTicks = n.lengthTicks;
                 setMouseCursor(resizeSide == ResizeSide::none ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::LeftRightResizeCursor);
@@ -3282,6 +3283,7 @@ public:
         }
         clickSelectionPending = false;
         if (!draggingNote) return;
+        owner.getMidiEngine().endGroupedEdit();
         owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); draggingNote = false; dragMoved = false; resizeSide = ResizeSide::none; originalLengthTicks = 0; dragEndTick = 0;
         setMouseCursor(juce::MouseCursor::CrosshairCursor); repaint(); owner.repaint();
     }
