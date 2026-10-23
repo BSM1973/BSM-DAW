@@ -1250,6 +1250,31 @@ public:
         return pitch;
     }
 
+    void frameClipPitches()
+    {
+        const auto notes = owner.getMidiEngine().getNotesCopy();
+        if (notes.empty()) return;
+        int minimum = 127, maximum = 0;
+        for (const auto& note : notes)
+        {
+            minimum = juce::jmin(minimum, (int)note.pitch);
+            maximum = juce::jmax(maximum, (int)note.pitch);
+        }
+        // Keep the existing fixed-height keyboard and MIDI coordinate system.
+        // Center the note range within the 40 visible keys where possible.
+        const int center = (minimum + maximum) / 2;
+        lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys,
+            center - visibleKeys / 2);
+        repaint();
+    }
+
+    void restoreClipPitchView()
+    {
+        lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys, pitchViewBeforeFrame);
+        pitchViewFramed = false;
+        repaint();
+    }
+
     void showScaleWindow()
     {
         struct ScaleContent final : juce::Component
@@ -1259,11 +1284,15 @@ public:
             juce::ToggleButton snap { juce::String::fromUTF8("Snap à la gamme (notes dessinées et déplacées)") };
             juce::ToggleButton used { juce::String::fromUTF8("Repérer les notes utilisées dans le clip") };
             juce::ToggleButton focus { juce::String::fromUTF8("Mettre en avant les notes utilisées uniquement") };
+            juce::TextButton frame { juce::String::fromUTF8("CADRER LES NOTES") };
+            juce::TextButton restore { juce::String::fromUTF8("REVENIR À LA VUE INITIALE") };
             juce::Label title, help;
             std::function<void(int, int, bool, bool, bool, bool)> apply;
+            std::function<void(bool)> viewAction;
             explicit ScaleContent(std::function<void(int, int, bool, bool, bool, bool)> callback,
+                                  std::function<void(bool)> viewCallback,
                                   int root, int type, bool enabled, bool snapEnabled, bool usedEnabled, bool focusEnabled)
-                : apply(std::move(callback))
+                : apply(std::move(callback)), viewAction(std::move(viewCallback))
             {
                 static const char* roots[] = {
                     "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa", "Fa#",
@@ -1305,6 +1334,14 @@ public:
                 addAndMakeVisible(used);
                 focus.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
                 addAndMakeVisible(focus);
+                for (auto* button : { &frame, &restore })
+                {
+                    button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+                    button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xfff3d48b));
+                    addAndMakeVisible(*button);
+                }
+                frame.onClick = [this] { if (viewAction) viewAction(true); };
+                restore.onClick = [this] { if (viewAction) viewAction(false); };
                 auto update = [this]
                 {
                     if (apply)
@@ -1317,7 +1354,7 @@ public:
                 snap.onClick = update;
                 used.onClick = update;
                 focus.onClick = update;
-                setSize(440, 355);
+                setSize(440, 414);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1335,6 +1372,8 @@ public:
                 snap.setBounds(26, 193, getWidth() - 52, 35);
                 used.setBounds(26, 236, getWidth() - 52, 35);
                 focus.setBounds(26, 279, getWidth() - 52, 35);
+                frame.setBounds(26, 337, 188, 32);
+                restore.setBounds(222, 337, 192, 32);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1354,6 +1393,19 @@ public:
                 safe->showUsedPitches = usedEnabled;
                 safe->focusUsedPitches = focusEnabled;
                 safe->repaint();
+            }, [safe = juce::Component::SafePointer<PianoRoll>(this)](bool frame)
+            {
+                if (safe == nullptr) return;
+                if (frame)
+                {
+                    if (!safe->pitchViewFramed)
+                    {
+                        safe->pitchViewBeforeFrame = safe->lowestVisibleKey;
+                        safe->pitchViewFramed = true;
+                    }
+                    safe->frameClipPitches();
+                }
+                else if (safe->pitchViewFramed) safe->restoreClipPitchView();
             }, scaleRoot, scaleType, scaleHighlight, scaleSnap, showUsedPitches, focusUsedPitches));
         options.launchAsync();
     }
@@ -3193,6 +3245,8 @@ public:
 
 private:
     int scaleRoot = 0, scaleType = 0;
+    int pitchViewBeforeFrame = lowestKey;
+    bool pitchViewFramed = false;
     bool scaleHighlight = false, scaleSnap = false, showUsedPitches = false, focusUsedPitches = false;
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
