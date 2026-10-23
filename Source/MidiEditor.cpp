@@ -878,7 +878,14 @@ public:
                 slider->setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
                 addAndMakeVisible(*slider);
             }
-            applyHumanize.setButtonText(juce::String::fromUTF8("APPLIQUER L'HUMANISATION"));
+            humanizeVelocity.onValueChange = [this] { repaint(); };
+            humanizeTiming.onValueChange = [this] { repaint(); };
+            regeneratePreview.setButtonText(juce::String::fromUTF8("NOUVEL APERÇU"));
+            regeneratePreview.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            regeneratePreview.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
+            regeneratePreview.onClick = [this] { ++previewSeed; repaint(); };
+            addAndMakeVisible(regeneratePreview);
+                        applyHumanize.setButtonText(juce::String::fromUTF8("APPLIQUER L'HUMANISATION"));
             applyHumanize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff78603c));
             applyHumanize.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             applyHumanize.onClick = [this]
@@ -915,6 +922,26 @@ public:
                 g.setFont(juce::Font(13.0f));
                 g.drawText(juce::String::fromUTF8("Variations aléatoires indépendantes sur les notes sélectionnées."), 26, 185, getWidth() - 52, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("0 = désactivé. Les hauteurs et durées des notes sont conservées."), 26, 450, getWidth() - 52, 30, juce::Justification::centredLeft);
+                const juce::Rectangle<float> graph(26.0f, 506.0f, (float)getWidth() - 52.0f, 140.0f);
+                g.setColour(juce::Colour(0xff202f40));
+                g.fillRoundedRectangle(graph, 7.0f);
+                g.setFont(juce::Font(12.0f));
+                g.setColour(juce::Colour(0xffaabcca));
+                g.drawText(juce::String::fromUTF8("GRIS : ORIGINAL     OR : APERÇU HUMANISÉ"), 36, 511, getWidth() - 72, 20, juce::Justification::centredLeft);
+                for (int n = 0; n < 8; ++n)
+                {
+                    const float originalX = graph.getX() + 17.0f + (float)n * (graph.getWidth() - 45.0f) / 8.0f;
+                    const float originalY = graph.getY() + 40.0f + (float)(n % 4) * 17.0f;
+                    const int variation = ((n * 37 + previewSeed * 19) % 17) - 8;
+                    const float timingOffset = (float)variation * (float)humanizeTiming.getValue() / 24.0f;
+                    const float velocityOffset = (float)(((n * 13 + previewSeed * 7) % 13) - 6)
+                        * (float)humanizeVelocity.getValue() / 24.0f;
+                    g.setColour(juce::Colour(0xff617789));
+                    g.fillRoundedRectangle(originalX, originalY, 30.0f, 8.0f, 2.0f);
+                    g.setColour(juce::Colour(0xffdcb66f));
+                    g.fillRoundedRectangle(originalX + timingOffset, originalY - velocityOffset,
+                        30.0f, 8.0f, 2.0f);
+                }
             }
             if (currentCategory == 2)
             {
@@ -1043,7 +1070,7 @@ public:
         {
             const int available = getWidth() - 52;
             const int tabWidth = (available - 18) / 4;
-            for (int i = 0; i < 3; ++i)
+            for (int i = 0; i < 4; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
             curvature.setBounds(145, 530, getWidth() - 239, 25);
@@ -1053,6 +1080,7 @@ public:
             humanizeVelocity.setBounds(190, 235, getWidth() - 216, 32);
             humanizeTiming.setBounds(190, 310, getWidth() - 216, 32);
             applyHumanize.setBounds(26, 387, available, 40);
+            regeneratePreview.setBounds(26, 654, available, 30);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -1077,6 +1105,7 @@ public:
             humanizeVelocity.setVisible(currentCategory == 3);
             humanizeTiming.setVisible(currentCategory == 3);
             applyHumanize.setVisible(currentCategory == 3);
+            regeneratePreview.setVisible(currentCategory == 3);
             resetCurvature.setVisible(currentCategory == 2);
             curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
@@ -1090,7 +1119,8 @@ public:
         std::function<void(int, int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
         juce::ComboBox curveSelector;
-        juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize;
+        juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview;
+        int previewSeed = 1;
         std::array<juce::TextButton, 4> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
