@@ -777,7 +777,8 @@ public:
                 "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO", "SUPPRIMER",
                 "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12",
                 "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10",
-                "CRESCENDO", "DECRESCENDO"
+                "CRESCENDO", "DECRESCENDO",
+                "TRANSPOSER +1", "TRANSPOSER -1"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -786,10 +787,11 @@ public:
                 "Monter les notes d'une octave", "Descendre les notes d'une octave",
                 "Appliquer une vélocité uniforme de 100",
                 "Augmenter la vélocité de 10", "Diminuer la vélocité de 10",
-                "Progression de 40 à 120", "Progression de 120 à 40"
+                "Progression de 40 à 120", "Progression de 120 à 40",
+                "Monter les notes d'un demi-ton", "Descendre les notes d'un demi-ton"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13 };
-            for (int i = 0; i < 13; ++i)
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15 };
+            for (int i = 0; i < 15; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
@@ -1030,7 +1032,7 @@ public:
             }
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
-                    (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+                    (currentCategory == 1 ? ((i >= 4 && i < 8) || i >= 13) : (i >= 8 && i < 13)));
             resetCurvature.setVisible(currentCategory == 2);
             curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
@@ -1072,6 +1074,8 @@ public:
                     case 5: safe->setSelectedNoteLengthToSnap(); break;
                     case 6: safe->transposeSelectedNotes(12); break;
                     case 7: safe->transposeSelectedNotes(-12); break;
+                    case 14: safe->transposeSelectedNotes(1); break;
+                    case 15: safe->transposeSelectedNotes(-1); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
