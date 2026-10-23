@@ -877,6 +877,18 @@ public:
                 }
                 g.setColour(juce::Colour(0xffc6a76b));
                 g.strokePath(curve, juce::PathStrokeType(3.0f));
+                // Endpoint markers and MIDI values stay inside the preview panel.
+                const float leftX = preview.getX() + 10.0f;
+                const float rightX = preview.getRight() - 10.0f;
+                const float graphHeight = preview.getHeight() - 10.0f;
+                const float startY = preview.getBottom() - 5.0f - (float)(startVelocity.getValue() / 127.0) * graphHeight;
+                const float endY = preview.getBottom() - 5.0f - (float)(endVelocity.getValue() / 127.0) * graphHeight;
+                g.fillEllipse(leftX - 3.0f, startY - 3.0f, 6.0f, 6.0f);
+                g.fillEllipse(rightX - 3.0f, endY - 3.0f, 6.0f, 6.0f);
+                g.setColour(juce::Colour(0xffdce5ed));
+                g.setFont(juce::Font(11.0f));
+                g.drawText(juce::String((int)startVelocity.getValue()), (int)leftX + 6, (int)preview.getY() + 2, 36, 15, juce::Justification::centredLeft);
+                g.drawText(juce::String((int)endVelocity.getValue()), (int)rightX - 42, (int)preview.getY() + 2, 36, 15, juce::Justification::centredRight);
             }
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
