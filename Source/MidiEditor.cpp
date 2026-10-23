@@ -559,7 +559,7 @@ public:
             resized(); repaint();
         };
         addAndMakeVisible(controllerSelector);
-        dualLaneButton.setButtonText("▤");
+        dualLaneButton.setButtonText("II");
         dualLaneButton.setTooltip(juce::String::fromUTF8("Afficher la vélocité et un contrôleur MIDI sur deux lignes"));
         dualLaneButton.setClickingTogglesState(true);
         dualLaneButton.onClick = [this]
@@ -890,11 +890,11 @@ public:
         velocityValue.setBounds(velocityX, editorToolbarHeight + 3,
                                 juce::jmax(0, juce::jmin(56, getWidth() - velocityX - 8)),
                                 juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
-        const int lanesHeight = juce::jmin(getHeight() - rulerHeight, dualLanes ? 184 : velocityLaneHeight);
+        const int lanesHeight = juce::jmax(0, juce::jmin(getHeight() - rulerHeight, dualLanes ? dualLaneTotalHeight : velocityLaneHeight));
         const int laneTop = getHeight() - lanesHeight;
         if (dualLanes)
         {
-            const int firstHeight = lanesHeight / 2;
+            const int firstHeight = juce::jlimit(36, juce::jmax(36, lanesHeight - 36), dualLaneFirstHeight);
             velocityLane.setBounds(0, laneTop, getWidth(), firstHeight);
             controllerLane.setBounds(0, laneTop + firstHeight, getWidth(), lanesHeight - firstHeight);
         }
@@ -955,7 +955,7 @@ public:
                        rulerHeight - infoY - 1, juce::Justification::centredLeft);
         }
         const auto b = getLocalBounds();
-        const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - (dualLanes ? 184 : velocityLaneHeight));
+        const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight));
         const auto grid = juce::Rectangle<int>(pianoKeyWidth, rulerHeight, b.getWidth() - pianoKeyWidth, juce::jmax(1, velocityAreaY - rulerHeight));
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
@@ -1101,6 +1101,13 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        if (dualLanes && e.mods.isLeftButtonDown())
+        {
+            const int top = getHeight() - dualLaneTotalHeight;
+            const int divider = top + dualLaneFirstHeight;
+            if (std::abs(e.y - top) <= 6) { resizingLaneTop = true; return; }
+            if (std::abs(e.y - divider) <= 6) { resizingLaneDivider = true; return; }
+        }
         if (e.mods.isLeftButtonDown() && e.x >= 0 && e.x < pianoKeyWidth
             && e.y >= rulerHeight && !isInVelocityLane(e.y))
         {
@@ -1216,6 +1223,20 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (resizingLaneTop)
+        {
+            const int oldHeight = dualLaneTotalHeight;
+            dualLaneTotalHeight = juce::jlimit(96, juce::jmax(96, getHeight() - rulerHeight - 40), getHeight() - e.y);
+            dualLaneFirstHeight = juce::jlimit(36, dualLaneTotalHeight - 36,
+                dualLaneFirstHeight + dualLaneTotalHeight - oldHeight);
+            resized(); repaint(); return;
+        }
+        if (resizingLaneDivider)
+        {
+            dualLaneFirstHeight = juce::jlimit(36, dualLaneTotalHeight - 36,
+                e.y - (getHeight() - dualLaneTotalHeight));
+            resized(); repaint(); return;
+        }
         if (draggingGroup)
         {
             const auto tick = tickFromX(e.x);
@@ -1357,7 +1378,7 @@ private:
         return (static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks))
             * (double)getLibertyPianoHorizontalZoom() * (double)localGridZoom;
     }
-    bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - (dualLanes ? 184 : velocityLaneHeight)) && y < getHeight(); }
+    bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight)) && y < getHeight(); }
 
     const MidiEngine::NoteEvent* findNoteAt(juce::Point<float> position) const
     {
@@ -1380,7 +1401,7 @@ private:
 
     ResizeSide findResizeSide(juce::Point<float> position) const
     {
-        if (position.y < rulerHeight || position.y >= getHeight() - (dualLanes ? 184 : velocityLaneHeight) || position.x < pianoKeyWidth) return ResizeSide::none;
+        if (position.y < rulerHeight || position.y >= getHeight() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight) || position.x < pianoKeyWidth) return ResizeSide::none;
         const auto pixelsPerTick = getPixelsPerTick();
         const int keyHeight = currentKeyHeight();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
@@ -1456,6 +1477,10 @@ private:
     juce::ComboBox controllerSelector;
     juce::TextButton dualLaneButton;
     bool dualLanes = false;
+    int dualLaneTotalHeight = 184;
+    int dualLaneFirstHeight = 92;
+    bool resizingLaneTop = false;
+    bool resizingLaneDivider = false;
     bool draggingNote = false, dragMoved = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0, dragEndTick = 0, originalLengthTicks = 0;
