@@ -2400,6 +2400,9 @@ public:
         dialog->addTextEditor("spread", "25", juce::String::fromUTF8("Écartement (% de grille)"));
         dialog->addTextEditor("velocity", "0", juce::String::fromUTF8("Humanisation vélocité (0–50)"));
         dialog->addTextEditor("timing", "0", juce::String::fromUTF8("Humanisation temporelle (0–50 %)"));
+        // Quick musical preview of the selected chord without changing the MIDI
+        // engine or consuming an Undo step.
+        dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
         dialog->addButton(juce::String::fromUTF8("APPLIQUER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
@@ -2409,7 +2412,7 @@ public:
             juce::ModalCallbackFunction::create(
                 [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
                 {
-                    if (result != 1 || safe == nullptr) return;
+                    if (safe == nullptr || (result != 1 && result != 2)) return;
                     const bool lowToHigh = window->getComboBoxComponent("direction") == nullptr
                         || window->getComboBoxComponent("direction")->getSelectedId() != 2;
                     const int percentage = juce::jlimit(1, 400,
@@ -2420,6 +2423,40 @@ public:
                         window->getTextEditorContents("velocity").getIntValue());
                     const int timingVariation = juce::jlimit(0, 50,
                         window->getTextEditorContents("timing").getIntValue());
+                    if (result == 2)
+                    {
+                        const int lane = safe->owner.getSelectedPianoInstrumentLane();
+                        if (lane < 0 || lane >= safe->owner.getInstrumentTrackCount()) return;
+                        auto notes = safe->owner.getMidiEngine().getSelectedNotesCopy();
+                        if (notes.size() < 2) return;
+                        std::sort(notes.begin(), notes.end(), [lowToHigh](const auto& a, const auto& b)
+                        {
+                            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+                            return lowToHigh ? a.pitch < b.pitch : a.pitch > b.pitch;
+                        });
+                        const auto base = notes.front().startTick;
+                        for (std::size_t i = 0; i < notes.size() && i < 32; ++i)
+                        {
+                            const int pitch = (int)notes[i].pitch;
+                            const auto relative = notes[i].startTick - base;
+                            const auto offset = (std::int64_t)i * spread;
+                            const int delay = (int)juce::jlimit<std::int64_t>(0, 3000,
+                                (relative + offset) * 500 / MidiEngine::ticksPerQuarterNote);
+                            juce::Timer::callAfterDelay(delay,
+                                [safe, lane, pitch]()
+                                {
+                                    if (safe == nullptr) return;
+                                    safe->owner.auditionPianoKey(lane, pitch, true);
+                                    juce::Timer::callAfterDelay(180,
+                                        [safe, lane, pitch]()
+                                        {
+                                            if (safe != nullptr)
+                                                safe->owner.auditionPianoKey(lane, pitch, false);
+                                        });
+                                });
+                        }
+                        return;
+                    }
                     if (safe->owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh, velocityVariation, timingVariation))
                     {
                         safe->owner.updateMidiClipTiming();
