@@ -1845,11 +1845,18 @@ public:
             : showQuantize ? 8 + 36 : 0;
         const int step = 35;
         const int toolCount = juce::jlimit(0, 9, (usable - actionWidth) / step);
+        // If the selected tool falls outside the visible group, give it the
+        // final visible slot so it remains directly accessible in narrow docks.
+        const int activeTool = getLibertyActiveTool();
         for (int i = 0; i < 9; ++i)
         {
             auto& button = toolButtons[(size_t)i];
-            button.setVisible(i < toolCount);
-            button.setBounds(left + i * step, 3, 32, buttonHeight);
+            const bool activeOverflow = activeTool >= toolCount && activeTool < 9;
+            const bool visible = i < toolCount - (activeOverflow ? 1 : 0)
+                || (activeOverflow && i == activeTool && toolCount > 0);
+            const int slot = activeOverflow && i == activeTool ? toolCount - 1 : i;
+            button.setVisible(visible);
+            button.setBounds(left + slot * step, 3, 32, buttonHeight);
         }
         const int actionX = left + toolCount * step + 8;
         quantizeButton.setVisible(showQuantize);
