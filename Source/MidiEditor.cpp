@@ -2397,7 +2397,7 @@ public:
             spacingSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 58, 24);
             spacingSlider.setRange(1.0, 400.0, 1.0);
             spacingSlider.setValue(percentage, juce::dontSendNotification);
-            spacingSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff54cbd1));
+            spacingSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff3575d9));
             spacingSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffedf4fc));
             spacingSlider.onValueChange = [this]()
             {
@@ -2464,7 +2464,7 @@ public:
             {
                 const float x = 22.0f + (float)i * step * scale;
                 const float y = 85.0f - 38.0f * (float)(pitches[i] - *limits.first) / range;
-                g.setColour(juce::Colour(0xff54cbd1));
+                g.setColour(juce::Colour(0xff3575d9));
                 g.fillRoundedRectangle(x, y, 21.0f, 7.0f, 3.0f);
             }
         }
