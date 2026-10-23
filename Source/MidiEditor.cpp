@@ -1247,6 +1247,10 @@ public:
                 quality.addItem(juce::String::fromUTF8("Majeur"), 1);
                 quality.addItem(juce::String::fromUTF8("Mineur"), 2);
                 quality.addItem(juce::String::fromUTF8("Septième dominante"), 3);
+                quality.addItem(juce::String::fromUTF8("Sus2"), 4);
+                quality.addItem(juce::String::fromUTF8("Sus4"), 5);
+                quality.addItem(juce::String::fromUTF8("Diminué"), 6);
+                quality.addItem(juce::String::fromUTF8("Augmenté"), 7);
                 quality.setSelectedId(1, juce::dontSendNotification);
                 inversion.addItem(juce::String::fromUTF8("Position fondamentale"), 1);
                 inversion.addItem(juce::String::fromUTF8("Premier renversement"), 2);
@@ -1279,7 +1283,7 @@ public:
                 create.onClick = [this]
                 {
                     if (insert)
-                        insert(((root.getSelectedId() - 1) * 3
+                        insert(((root.getSelectedId() - 1) * 7
                             + quality.getSelectedId() - 1) * 3 + inversion.getSelectedId() - 1,
                             octave.getSelectedId(), noteLength.getSelectedId());
                 };
@@ -1295,10 +1299,12 @@ public:
                 g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
                 // Visual-only preview: no MIDI event, note mutation or audio playback.
                 const int rootClass = juce::jlimit(0, 11, root.getSelectedId() - 1);
-                const int type = juce::jlimit(0, 2, quality.getSelectedId() - 1);
+                const int type = juce::jlimit(0, 6, quality.getSelectedId() - 1);
                 const int turns = juce::jlimit(0, 2, inversion.getSelectedId() - 1);
-                static const int shapes[3][4] = {
-                    { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 }
+                static const int shapes[7][4] = {
+                    { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 },
+                    { 0, 2, 7, -1 }, { 0, 5, 7, -1 }, { 0, 3, 6, -1 },
+                    { 0, 4, 8, -1 }
                 };
                 std::array<int, 4> pitches {};
                 int count = 0;
@@ -1402,10 +1408,12 @@ public:
         // Additive composition tool: existing MIDI editing behaviour is untouched.
         const int chordChoice = choice / 3;
         const int inversion = choice % 3;
-        const int root = juce::jlimit(0, 11, chordChoice / 3);
-        const int type = chordChoice % 3;
-        static const int intervals[3][4] = {
-            { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 }
+        const int root = juce::jlimit(0, 11, chordChoice / 7);
+        const int type = chordChoice % 7;
+        static const int intervals[7][4] = {
+            { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 },
+            { 0, 2, 7, -1 }, { 0, 5, 7, -1 }, { 0, 3, 6, -1 },
+            { 0, 4, 8, -1 }
         };
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
