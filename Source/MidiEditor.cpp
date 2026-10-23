@@ -890,6 +890,10 @@ public:
                     const float x = preview.getX() + line * preview.getWidth() / 4.0f;
                     g.drawVerticalLine((int)x, preview.getY() + 5.0f, preview.getBottom() - 5.0f);
                 }
+                g.setColour(juce::Colour(0xffa7b9c8));
+                g.setFont(juce::Font(10.0f));
+                g.drawText("127", (int)preview.getX() + 8, (int)preview.getY() + 3, 27, 12, juce::Justification::centredLeft);
+                g.drawText("1", (int)preview.getX() + 8, (int)preview.getBottom() - 16, 27, 12, juce::Justification::centredLeft);
                 juce::Path curve;
                 for (int i = 0; i <= 64; ++i)
                 {
