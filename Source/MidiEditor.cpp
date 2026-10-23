@@ -2385,6 +2385,18 @@ public:
         }
     }
 
+    void splitSelectedNotesToGrid()
+    {
+        if (owner.getMidiEngine().splitSelectedNotesToGrid(
+                juce::jmax<std::int64_t>(1, activePianoSnapTicks())))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint();
+            owner.repaint();
+        }
+    }
+
     void setSelectedNoteLengthToSnap()
     {
         auto& midi = owner.getMidiEngine();
@@ -2478,6 +2490,9 @@ public:
             applyMidiHistory(key.getKeyCode() == 'Y' || modifiers.isShiftDown());
             return true;
         }
+        // Cmd/Ctrl+Shift+K: découper les notes sélectionnées selon la grille.
+        if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'K')
+        { splitSelectedNotesToGrid(); return true; }
         if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D')
         { duplicateSelection(); return true; }
         if (key.getModifiers().isAltDown() && key.getKeyCode() == 'L')
