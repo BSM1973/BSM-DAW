@@ -763,8 +763,8 @@ public:
     class EditWindowContent final : public juce::Component
     {
     public:
-        explicit EditWindowContent(std::function<void(int, int, int, int)> action, bool hasSelection)
-            : onAction(std::move(action))
+        explicit EditWindowContent(std::function<void(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes)
+            : onAction(std::move(action)), previewNotes(std::move(notes))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER" };
             for (int i = 0; i < 4; ++i)
@@ -799,7 +799,7 @@ public:
                 "Variation douce des attaques MIDI", "Variation subtile du placement rythmique"
             };
             static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
-            for (int i = 0; i < 17; ++i)
+            for (int i = 0; i < 23; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
@@ -890,7 +890,7 @@ public:
             applyHumanize.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             applyHumanize.onClick = [this]
             {
-                if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), 0);
+                if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), previewSeed);
             };
             addAndMakeVisible(applyHumanize);
             startVelocity.setValue(40.0, juce::dontSendNotification);
@@ -928,19 +928,38 @@ public:
                 g.setFont(juce::Font(12.0f));
                 g.setColour(juce::Colour(0xffaabcca));
                 g.drawText(juce::String::fromUTF8("GRIS : ORIGINAL     OR : APERÇU HUMANISÉ"), 36, 511, getWidth() - 72, 20, juce::Justification::centredLeft);
-                for (int n = 0; n < 8; ++n)
+                if (previewNotes.empty())
                 {
-                    const float originalX = graph.getX() + 17.0f + (float)n * (graph.getWidth() - 45.0f) / 8.0f;
-                    const float originalY = graph.getY() + 40.0f + (float)(n % 4) * 17.0f;
-                    const int variation = ((n * 37 + previewSeed * 19) % 17) - 8;
-                    const float timingOffset = (float)variation * (float)humanizeTiming.getValue() / 24.0f;
-                    const float velocityOffset = (float)(((n * 13 + previewSeed * 7) % 13) - 6)
-                        * (float)humanizeVelocity.getValue() / 24.0f;
-                    g.setColour(juce::Colour(0xff617789));
-                    g.fillRoundedRectangle(originalX, originalY, 30.0f, 8.0f, 2.0f);
-                    g.setColour(juce::Colour(0xffdcb66f));
-                    g.fillRoundedRectangle(originalX + timingOffset, originalY - velocityOffset,
-                        30.0f, 8.0f, 2.0f);
+                    g.setColour(juce::Colour(0xff98a9ba));
+                    g.drawText(juce::String::fromUTF8("Sélectionnez des notes pour prévisualiser."), 36, 565, getWidth() - 72, 30, juce::Justification::centred);
+                }
+                else
+                {
+                    const auto minTick = std::min_element(previewNotes.begin(), previewNotes.end(),
+                        [](const auto& a, const auto& b) { return a.startTick < b.startTick; })->startTick;
+                    const auto maxTick = std::max_element(previewNotes.begin(), previewNotes.end(),
+                        [](const auto& a, const auto& b) { return a.startTick < b.startTick; })->startTick;
+                    const double span = (double)juce::jmax<std::int64_t>(1, maxTick - minTick);
+                    const float scale = (graph.getWidth() - 68.0f) / (float)span;
+                    const int count = juce::jmin(64, (int)previewNotes.size());
+                    for (int n = 0; n < count; ++n)
+                    {
+                        const auto& note = previewNotes[(size_t)n];
+                        const int tickVariation = (((n * 37 + previewSeed * 19) % 17) - 8)
+                            * (int)humanizeTiming.getValue() / 8;
+                        const int velocityVariation = (((n * 13 + previewSeed * 7) % 13) - 6)
+                            * (int)humanizeVelocity.getValue() / 6;
+                        const float originalX = graph.getX() + 19.0f + (float)(note.startTick - minTick) * scale;
+                        const float previewX = graph.getX() + 19.0f
+                            + (float)(juce::jmax<std::int64_t>(0, note.startTick + tickVariation) - minTick) * scale;
+                        const float originalY = graph.getBottom() - 14.0f - (float)note.velocity / 127.0f * 91.0f;
+                        const float previewY = graph.getBottom() - 14.0f
+                            - (float)juce::jlimit(1, 127, (int)note.velocity + velocityVariation) / 127.0f * 91.0f;
+                        g.setColour(juce::Colour(0xff617789));
+                        g.fillRoundedRectangle(originalX, originalY, 7.0f, 7.0f, 2.0f);
+                        g.setColour(juce::Colour(0xffdcb66f));
+                        g.fillRoundedRectangle(previewX, previewY, 7.0f, 7.0f, 2.0f);
+                    }
                 }
             }
             if (currentCategory == 2)
@@ -1092,7 +1111,7 @@ public:
     private:
         void refreshCategory()
         {
-            for (int i = 0; i < 3; ++i)
+            for (int i = 0; i < 4; ++i)
             {
                 categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
                     i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
@@ -1117,6 +1136,7 @@ public:
             repaint();
         }
         std::function<void(int, int, int, int)> onAction;
+        std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview;
@@ -1158,7 +1178,7 @@ public:
                     case 21: safe->applySwingToSelection(0.65); break;
                     case 22: safe->humanizeSelectedVelocity(); break;
                     case 23: safe->humanizeSelectedTiming(); break;
-                    case 24: safe->humanizeSelection(start, end); break;
+                    case 24: safe->humanizeSelection(start, end, curve); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1174,7 +1194,7 @@ public:
                         break;
                     default: break;
                 }
-            }, owner.getMidiEngine().hasSelectedNote()));
+            }, owner.getMidiEngine().hasSelectedNote(), owner.getMidiEngine().getSelectedNotesCopy()));
         options.launchAsync();
     }
 
@@ -1366,28 +1386,30 @@ public:
         }
     }
 
-    void humanizeSelection(int velocityRange, int timingRange)
+    void humanizeSelection(int velocityRange, int timingRange, int seed)
     {
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
         bool timingChanged = false;
         bool velocityChanged = false;
+        int index = 0;
         for (const auto& note : selected)
         {
             if (velocityRange > 0)
             {
-                const int variation = juce::Random::getSystemRandom().nextInt(velocityRange * 2 + 1) - velocityRange;
+                const int variation = (((index * 13 + seed * 7) % 13) - 6) * velocityRange / 6;
                 const int targetVelocity = juce::jlimit(1, 127, (int)note.velocity + variation);
                 if (targetVelocity != (int)note.velocity)
                     velocityChanged = midi.setNoteVelocity(note.startTick, note.pitch, note.channel, targetVelocity) || velocityChanged;
             }
             if (timingRange > 0)
             {
-                const int variation = juce::Random::getSystemRandom().nextInt(timingRange * 2 + 1) - timingRange;
+                const int variation = (((index * 37 + seed * 19) % 17) - 8) * timingRange / 8;
                 const auto targetTick = juce::jmax<std::int64_t>(0, note.startTick + variation);
                 if (targetTick != note.startTick)
                     timingChanged = midi.moveNote(note.startTick, note.pitch, note.channel, targetTick, note.pitch) || timingChanged;
             }
+            ++index;
         }
         if (timingChanged) owner.updateMidiClipTiming();
         if (timingChanged || velocityChanged)
