@@ -577,10 +577,10 @@ public:
         addAndMakeVisible(dualLaneButton);
         topLaneHandle.onDrag = [this](int y)
         {
-            const old = dualLaneTotalHeight;
+            const int previousHeight = dualLaneTotalHeight;
             dualLaneTotalHeight = juce::jlimit(96, juce::jmax(96, getHeight() - rulerHeight - 40), getHeight() - y);
             dualLaneFirstHeight = juce::jlimit(36, dualLaneTotalHeight - 36,
-                dualLaneFirstHeight + dualLaneTotalHeight - old);
+                dualLaneFirstHeight + dualLaneTotalHeight - previousHeight);
             resized(); repaint();
         };
         dividerLaneHandle.onDrag = [this](int y)
