@@ -2392,16 +2392,31 @@ public:
         StrumVisualPreview(std::vector<int> notes, bool ascending, int percentage)
             : pitches(std::move(notes)), lowToHigh(ascending), spread(percentage)
         {
-            setSize(420, 110);
+            setSize(420, 155);
+            spacingSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+            spacingSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 58, 24);
+            spacingSlider.setRange(1.0, 400.0, 1.0);
+            spacingSlider.setValue(percentage, juce::dontSendNotification);
+            spacingSlider.setColour(juce::Slider::trackColourId, juce::Colour(0xff54cbd1));
+            spacingSlider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffedf4fc));
+            spacingSlider.onValueChange = [this]()
+            {
+                if (spreadControl != nullptr)
+                    spreadControl->setText(juce::String((int)spacingSlider.getValue()),
+                                           juce::dontSendNotification);
+                timerCallback();
+            };
+            addAndMakeVisible(spacingSlider);
             std::sort(pitches.begin(), pitches.end());
             if (!lowToHigh) std::reverse(pitches.begin(), pitches.end());
-            setInterceptsMouseClicks(false, false);
+            setInterceptsMouseClicks(true, true);
         }
 
         void bindControls(juce::ComboBox* direction, juce::TextEditor* spacing)
         {
             directionControl = direction;
             spreadControl = spacing;
+            spacingSlider.setValue(spacing->getText().getIntValue(), juce::dontSendNotification);
             startTimerHz(20);
         }
 
@@ -2411,12 +2426,19 @@ public:
                 || directionControl->getSelectedId() != 2;
             const int nextSpread = spreadControl == nullptr ? spread
                 : juce::jlimit(1, 400, spreadControl->getText().getIntValue());
+            if ((int)spacingSlider.getValue() != nextSpread)
+                spacingSlider.setValue(nextSpread, juce::dontSendNotification);
             if (nextDirection == lowToHigh && nextSpread == spread) return;
             lowToHigh = nextDirection;
             spread = nextSpread;
             std::sort(pitches.begin(), pitches.end());
             if (!lowToHigh) std::reverse(pitches.begin(), pitches.end());
             repaint();
+        }
+
+        void resized() override
+        {
+            spacingSlider.setBounds(120, 111, getWidth() - 138, 32);
         }
 
         void paint(juce::Graphics& g) override
@@ -2430,6 +2452,8 @@ public:
             g.setFont(juce::FontOptions(12.0f));
             g.drawText(juce::String::fromUTF8("APERÇU DE L’ÉGRENAGE"),
                        15, 9, getWidth() - 30, 20, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("ÉCARTEMENT"),
+                       15, 115, 106, 24, juce::Justification::centredLeft);
             if (pitches.empty()) return;
             const auto limits = std::minmax_element(pitches.begin(), pitches.end());
             const float range = (float)juce::jmax(1, *limits.second - *limits.first);
@@ -2450,6 +2474,7 @@ public:
         int spread = 25;
         juce::ComboBox* directionControl = nullptr;
         juce::TextEditor* spreadControl = nullptr;
+        juce::Slider spacingSlider;
     };
 
     void showStrumWindow(int initialDirection = 1, int initialSpread = 25,
