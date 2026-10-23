@@ -636,6 +636,10 @@ public:
             juce::PopupMenu pitchSelection;
             pitchSelection.addItem(30, juce::String::fromUTF8("Notes les plus aiguës"));
             pitchSelection.addItem(31, juce::String::fromUTF8("Notes les plus graves"));
+            pitchSelection.addSeparator();
+            pitchSelection.addItem(32, juce::String::fromUTF8("Notes muettes"));
+            pitchSelection.addItem(33, juce::String::fromUTF8("Une note sur deux"));
+            pitchSelection.addItem(34, juce::String::fromUTF8("Une note sur trois"));
             menu.addSubMenu(juce::String::fromUTF8("SÉLECTION · HAUTEURS"), pitchSelection);
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
@@ -655,6 +659,9 @@ public:
                     else if (result == 26) safe->showScaleWindow();
                     else if (result == 30) safe->selectExtremePitches(true);
                     else if (result == 31) safe->selectExtremePitches(false);
+                    else if (result == 32) safe->selectMutedNotes();
+                    else if (result == 33) safe->selectEveryNthNote(2);
+                    else if (result == 34) safe->selectEveryNthNote(3);
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -2160,6 +2167,34 @@ public:
         for (const auto& note : notes)
             if ((int)note.pitch == extreme)
                 matching.push_back(note);
+        midi.setSelectedNotes(matching);
+        repaint();
+    }
+
+    void selectMutedNotes()
+    {
+        auto& midi = owner.getMidiEngine();
+        std::vector<MidiEngine::NoteEvent> matching;
+        for (const auto& note : midi.getNotesCopy())
+            if (note.muted) matching.push_back(note);
+        midi.setSelectedNotes(matching);
+        repaint();
+    }
+
+    void selectEveryNthNote(int interval)
+    {
+        if (interval < 1) return;
+        auto& midi = owner.getMidiEngine();
+        auto notes = midi.getNotesCopy();
+        std::stable_sort(notes.begin(), notes.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            return a.pitch < b.pitch;
+        });
+        std::vector<MidiEngine::NoteEvent> matching;
+        for (std::size_t i = 0; i < notes.size(); ++i)
+            if (i % (std::size_t)interval == 0)
+                matching.push_back(notes[i]);
         midi.setSelectedNotes(matching);
         repaint();
     }
