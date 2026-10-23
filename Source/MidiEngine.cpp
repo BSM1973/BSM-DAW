@@ -72,6 +72,7 @@ MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 
 void MidiEngine::pushUndoState()
 {
+    ++historyRevision;
     undoHistory.push_back(makeHistoryState());
     redoHistory.clear();
     constexpr std::size_t maxHistory = 100;
@@ -97,6 +98,7 @@ void MidiEngine::restoreHistoryState(const HistoryState& state)
 bool MidiEngine::undo()
 {
     if (undoHistory.empty()) return false;
+    ++historyRevision;
     redoHistory.push_back(makeHistoryState());
     auto state = std::move(undoHistory.back());
     undoHistory.pop_back();
@@ -107,6 +109,7 @@ bool MidiEngine::undo()
 bool MidiEngine::redo()
 {
     if (redoHistory.empty()) return false;
+    ++historyRevision;
     undoHistory.push_back(makeHistoryState());
     auto state = std::move(redoHistory.back());
     redoHistory.pop_back();
