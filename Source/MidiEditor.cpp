@@ -723,6 +723,36 @@ public:
         }
     }
 
+    void applyVelocityRamp(bool ascending)
+    {
+        auto& midi = owner.getMidiEngine();
+        auto notes = midi.getSelectedNotesCopy();
+        if (notes.empty()) return;
+        std::sort(notes.begin(), notes.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            return a.pitch < b.pitch;
+        });
+        const auto first = notes.front().startTick;
+        const auto last = notes.back().startTick;
+        bool changed = false;
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            const double fraction = last > first
+                ? (double)(notes[i].startTick - first) / (double)(last - first)
+                : (notes.size() > 1 ? (double)i / (double)(notes.size() - 1) : 0.0);
+            const int target = juce::jlimit(1, 127, juce::roundToInt(
+                ascending ? 40.0 + fraction * 80.0 : 120.0 - fraction * 80.0));
+            changed = midi.setNoteVelocity(notes[i].startTick, notes[i].pitch,
+                notes[i].channel, target) || changed;
+        }
+        if (changed)
+        {
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     class EditWindowContent final : public juce::Component
     {
     public:
@@ -739,7 +769,8 @@ public:
             static const char* labels[] = {
                 "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO", "SUPPRIMER",
                 "QUANTIFIER", "DURÉE = SNAP", "TRANSPOSER +12", "TRANSPOSER -12",
-                "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10"
+                "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10",
+                "CRESCENDO", "DECRESCENDO"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -747,10 +778,11 @@ public:
                 "Aligner sur la grille SNAP", "Appliquer la durée de la grille SNAP",
                 "Monter les notes d'une octave", "Descendre les notes d'une octave",
                 "Appliquer une vélocité uniforme de 100",
-                "Augmenter la vélocité de 10", "Diminuer la vélocité de 10"
+                "Augmenter la vélocité de 10", "Diminuer la vélocité de 10",
+                "Progression de 40 à 120", "Progression de 120 à 40"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11 };
-            for (int i = 0; i < 11; ++i)
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13 };
+            for (int i = 0; i < 13; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
                     juce::String::fromUTF8(labels[i]) + "   -   " + juce::String::fromUTF8(details[i]));
@@ -762,7 +794,7 @@ public:
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
-            setSize(600, 430);
+            setSize(600, 510);
             refreshCategory();
         }
         void paint(juce::Graphics& g) override
@@ -782,7 +814,7 @@ public:
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
             g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
-                26, 394, 548, 20, juce::Justification::centredLeft);
+                26, 474, 548, 20, juce::Justification::centredLeft);
         }
         void resized() override
         {
@@ -841,6 +873,8 @@ public:
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
+                    case 12: safe->applyVelocityRamp(true); break;
+                    case 13: safe->applyVelocityRamp(false); break;
                     case 8:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
