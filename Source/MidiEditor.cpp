@@ -1258,10 +1258,11 @@ public:
             juce::ToggleButton highlight { juce::String::fromUTF8("Afficher la gamme sur le Piano Roll") };
             juce::ToggleButton snap { juce::String::fromUTF8("Snap à la gamme (notes dessinées et déplacées)") };
             juce::ToggleButton used { juce::String::fromUTF8("Repérer les notes utilisées dans le clip") };
+            juce::ToggleButton focus { juce::String::fromUTF8("Mettre en avant les notes utilisées uniquement") };
             juce::Label title, help;
-            std::function<void(int, int, bool, bool, bool)> apply;
-            explicit ScaleContent(std::function<void(int, int, bool, bool, bool)> callback,
-                                  int root, int type, bool enabled, bool snapEnabled, bool usedEnabled)
+            std::function<void(int, int, bool, bool, bool, bool)> apply;
+            explicit ScaleContent(std::function<void(int, int, bool, bool, bool, bool)> callback,
+                                  int root, int type, bool enabled, bool snapEnabled, bool usedEnabled, bool focusEnabled)
                 : apply(std::move(callback))
             {
                 static const char* roots[] = {
@@ -1280,6 +1281,7 @@ public:
                 highlight.setToggleState(enabled, juce::dontSendNotification);
                 snap.setToggleState(snapEnabled, juce::dontSendNotification);
                 used.setToggleState(usedEnabled, juce::dontSendNotification);
+                focus.setToggleState(focusEnabled, juce::dontSendNotification);
                 for (auto* combo : { &tonic, &scale })
                 {
                     combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
@@ -1301,18 +1303,21 @@ public:
                 addAndMakeVisible(snap);
                 used.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
                 addAndMakeVisible(used);
+                focus.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
+                addAndMakeVisible(focus);
                 auto update = [this]
                 {
                     if (apply)
                         apply(tonic.getSelectedId() - 1, scale.getSelectedId() - 1,
-                              highlight.getToggleState(), snap.getToggleState(), used.getToggleState());
+                              highlight.getToggleState(), snap.getToggleState(), used.getToggleState(), focus.getToggleState());
                 };
                 tonic.onChange = update;
                 scale.onChange = update;
                 highlight.onClick = update;
                 snap.onClick = update;
                 used.onClick = update;
-                setSize(440, 315);
+                focus.onClick = update;
+                setSize(440, 355);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1329,6 +1334,7 @@ public:
                 highlight.setBounds(26, 150, getWidth() - 52, 35);
                 snap.setBounds(26, 193, getWidth() - 52, 35);
                 used.setBounds(26, 236, getWidth() - 52, 35);
+                focus.setBounds(26, 279, getWidth() - 52, 35);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1338,7 +1344,7 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new ScaleContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled, bool snapEnabled, bool usedEnabled)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled, bool snapEnabled, bool usedEnabled, bool focusEnabled)
             {
                 if (safe == nullptr) return;
                 safe->scaleRoot = juce::jlimit(0, 11, root);
@@ -1346,8 +1352,9 @@ public:
                 safe->scaleHighlight = enabled;
                 safe->scaleSnap = snapEnabled;
                 safe->showUsedPitches = usedEnabled;
+                safe->focusUsedPitches = focusEnabled;
                 safe->repaint();
-            }, scaleRoot, scaleType, scaleHighlight, scaleSnap, showUsedPitches));
+            }, scaleRoot, scaleType, scaleHighlight, scaleSnap, showUsedPitches, focusUsedPitches));
         options.launchAsync();
     }
 
@@ -2756,7 +2763,7 @@ public:
             g.drawText(juce::String(m + 1), x + 5, rulerHeight - 13, 36, 12, juce::Justification::left);
         }
         std::array<bool, 128> usedPitches {};
-        if (showUsedPitches)
+        if (showUsedPitches || focusUsedPitches)
             for (const auto& midiNote : owner.getMidiEngine().getNotesCopy())
                 if ((int)midiNote.pitch >= 0 && (int)midiNote.pitch < 128)
                     usedPitches[(size_t)midiNote.pitch] = true;
@@ -2786,6 +2793,13 @@ public:
             if (showUsedPitches && note >= 0 && note < 128 && usedPitches[(size_t)note])
             {
                 g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.18f));
+                g.fillRect(grid.getX(), y, grid.getWidth(), keyHeight);
+            }
+            // Focus mode dims unused rows but never removes their geometry.
+            // This preserves scrolling, pitch hit-testing and MIDI editing.
+            if (focusUsedPitches && note >= 0 && note < 128 && !usedPitches[(size_t)note])
+            {
+                g.setColour(juce::Colour(0xff050a10).withAlpha(0.67f));
                 g.fillRect(grid.getX(), y, grid.getWidth(), keyHeight);
             }
             const bool black = isBlackKey(note);
@@ -3179,7 +3193,7 @@ public:
 
 private:
     int scaleRoot = 0, scaleType = 0;
-    bool scaleHighlight = false, scaleSnap = false, showUsedPitches = false;
+    bool scaleHighlight = false, scaleSnap = false, showUsedPitches = false, focusUsedPitches = false;
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
     juce::TextEditor velocityValue;
