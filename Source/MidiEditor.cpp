@@ -613,39 +613,7 @@ public:
         addAndMakeVisible(quantizeButton);
         selectAllButton.setButtonText(juce::String::fromUTF8("ÉDITER"));
         selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
-        selectAllButton.onClick = [this]
-        {
-            juce::PopupMenu menu;
-            const bool selected = owner.getMidiEngine().hasSelectedNote();
-            menu.addItem(1, juce::String::fromUTF8("Tout sélectionner    Cmd/Ctrl+A"));
-            menu.addSeparator();
-            menu.addItem(2, juce::String::fromUTF8("Dupliquer la sélection    Cmd/Ctrl+D"), selected);
-            menu.addItem(3, juce::String::fromUTF8("Legato (même hauteur)    Option+L"), selected);
-            menu.addItem(4, juce::String::fromUTF8("Quantifier sur SNAP    Q"), selected);
-            menu.addSeparator();
-            menu.addItem(5, juce::String::fromUTF8("Supprimer la sélection    Suppr"), selected);
-            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&selectAllButton),
-                [safe = juce::Component::SafePointer<PianoRoll>(this)](int result)
-                {
-                    if (safe == nullptr) return;
-                    switch (result)
-                    {
-                        case 1: safe->selectAllNotes(); break;
-                        case 2: safe->duplicateSelection(); break;
-                        case 3: safe->makeSelectionLegato(); break;
-                        case 4: safe->quantizeSelection(); break;
-                        case 5:
-                            if (safe->owner.getMidiEngine().deleteSelectedNotes())
-                            {
-                                safe->owner.updateMidiClipTiming();
-                                synchronizeLibertyPianoRollPlayback(safe->owner);
-                                safe->repaint(); safe->owner.repaint();
-                            }
-                            break;
-                        default: break;
-                    }
-                });
-        };
+        selectAllButton.onClick = [this] { showEditWindow(); };
         addAndMakeVisible(selectAllButton);
         durationValue.setBufferedToImage(true);
         durationValue.setButtonText(juce::String::fromUTF8("Durée"));
@@ -736,6 +704,98 @@ public:
         std::function<void(int)> selection;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
     };
+
+    class EditWindowContent final : public juce::Component
+    {
+    public:
+        explicit EditWindowContent(std::function<void(int)> action, bool hasSelection)
+            : onAction(std::move(action))
+        {
+            static const char* labels[] = {
+                "TOUT SÉLECTIONNER", "DUPLIQUER", "LEGATO",
+                "QUANTIFIER", "SUPPRIMER"
+            };
+            static const char* details[] = {
+                "Sélectionner toutes les notes MIDI",
+                "Répéter la phrase après la sélection",
+                "Relier les notes de même hauteur",
+                "Aligner les notes sur la grille SNAP",
+                "Effacer les notes sélectionnées"
+            };
+            for (int i = 0; i < 5; ++i)
+            {
+                auto button = std::make_unique<juce::TextButton>(
+                    juce::String::fromUTF8(labels[i]) + juce::String::fromUTF8("   ·   ") +
+                    juce::String::fromUTF8(details[i]));
+                button->setEnabled(i == 0 || hasSelection);
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202d3b));
+                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff32516a));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
+                button->onClick = [this, i] { if (onAction) onAction(i + 1); };
+                addAndMakeVisible(*button);
+                buttons.push_back(std::move(button));
+            }
+            setSize(560, 440);
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff111923));
+            g.setColour(juce::Colour(0xffc6a76b));
+            g.fillRoundedRectangle(24.0f, 26.0f, 4.0f, 46.0f, 2.0f);
+            g.setColour(juce::Colour(0xfff4f5f8));
+            g.setFont(juce::Font(25.0f, juce::Font::bold));
+            g.drawText(juce::String::fromUTF8("ÉDITION MIDI"), 42, 26, 460, 34, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff98a9ba));
+            g.setFont(juce::Font(14.0f));
+            g.drawText(juce::String::fromUTF8("LIBERTY  /  PIANO ROLL  /  OUTILS DE NOTES"),
+                26, 78, 505, 24, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff344250));
+            g.drawHorizontalLine(114, 26.0f, 534.0f);
+            g.setColour(juce::Colour(0xff8194a5));
+            g.drawText(juce::String::fromUTF8("Sélectionnez une opération pour modifier vos notes."),
+                27, 393, 510, 26, juce::Justification::centredLeft);
+        }
+        void resized() override
+        {
+            for (int i = 0; i < (int)buttons.size(); ++i)
+                buttons[(size_t)i]->setBounds(26, 129 + i * 50, getWidth() - 52, 42);
+        }
+    private:
+        std::function<void(int)> onAction;
+        std::vector<std::unique_ptr<juce::TextButton>> buttons;
+    };
+
+    void showEditWindow()
+    {
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  ÉDITION MIDI");
+        options.dialogBackgroundColour = juce::Colour(0xff111923);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = false;
+        options.content.setOwned(new EditWindowContent(
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action)
+            {
+                if (safe == nullptr) return;
+                switch (action)
+                {
+                    case 1: safe->selectAllNotes(); break;
+                    case 2: safe->duplicateSelection(); break;
+                    case 3: safe->makeSelectionLegato(); break;
+                    case 4: safe->quantizeSelection(); break;
+                    case 5:
+                        if (safe->owner.getMidiEngine().deleteSelectedNotes())
+                        {
+                            safe->owner.updateMidiClipTiming();
+                            synchronizeLibertyPianoRollPlayback(safe->owner);
+                            safe->repaint(); safe->owner.repaint();
+                        }
+                        break;
+                    default: break;
+                }
+            }, owner.getMidiEngine().hasSelectedNote()));
+        options.launchAsync();
+    }
 
     void showDurationPalette()
     {
