@@ -1248,6 +1248,9 @@ public:
                 pattern.addItem("I - V - vi - IV", 1);
                 pattern.addItem("I - IV - V - I", 2);
                 pattern.addItem("vi - IV - I - V", 3);
+                pattern.addItem("ii - V - I - I", 4);
+                pattern.addItem("I - vi - IV - V", 5);
+                pattern.addItem("I - iii - IV - V", 6);
                 pattern.setSelectedId(1, juce::dontSendNotification);
                 for (auto* combo : { &key, &pattern })
                 {
@@ -1270,13 +1273,43 @@ public:
                     if (insert) insert(key.getSelectedId() - 1, pattern.getSelectedId() - 1);
                 };
                 addAndMakeVisible(insertButton);
-                setSize(440, 235);
+                key.onChange = [this] { repaint(); };
+                pattern.onChange = [this] { repaint(); };
+                setSize(440, 300);
             }
             void paint(juce::Graphics& g) override
             {
                 g.fillAll(juce::Colour(0xff111923));
                 g.setColour(juce::Colour(0xff344857));
                 g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
+                static const int degrees[6][4] = {
+                    { 0, 4, 5, 3 }, { 0, 3, 4, 0 }, { 5, 3, 0, 4 },
+                    { 1, 4, 0, 0 }, { 0, 5, 3, 4 }, { 0, 2, 3, 4 }
+                };
+                static const int scale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+                static const char* noteNames[] = {
+                    "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
+                    "Fa#", "Sol", "La♭", "La", "Si♭", "Si"
+                };
+                const int selectedPattern = juce::jlimit(0, 5, pattern.getSelectedId() - 1);
+                const int selectedKey = juce::jlimit(0, 11, key.getSelectedId() - 1);
+                g.setFont(juce::Font(12.0f));
+                g.setColour(juce::Colour(0xffb8c8d3));
+                g.drawText(juce::String::fromUTF8("PRÉVISUALISATION · 4 MESURES"),
+                    26, 146, getWidth() - 52, 20, juce::Justification::centredLeft);
+                for (int bar = 0; bar < 4; ++bar)
+                {
+                    const int degree = degrees[selectedPattern][bar];
+                    const int x = 26 + bar * 98;
+                    g.setColour(juce::Colour(0xff263544));
+                    g.fillRoundedRectangle((float)x, 175.0f, 92.0f, 44.0f, 5.0f);
+                    g.setColour(juce::Colour(0xfff3d48b));
+                    const juce::String chord = juce::String::fromUTF8(
+                        noteNames[(selectedKey + scale[degree]) % 12])
+                        + ((degree == 1 || degree == 2 || degree == 5) ? "m" : "");
+                    g.drawFittedText(chord, x + 4, 179, 84, 35,
+                        juce::Justification::centred, 1);
+                }
             }
             void resized() override
             {
@@ -1284,7 +1317,7 @@ public:
                 explanation.setBounds(26, 52, getWidth() - 52, 27);
                 key.setBounds(26, 99, 130, 34);
                 pattern.setBounds(168, 99, getWidth() - 194, 34);
-                insertButton.setBounds(26, 157, getWidth() - 52, 42);
+                insertButton.setBounds(26, 235, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1305,11 +1338,12 @@ public:
     {
         // Diatonic major-key progression, four bars, starting at the first
         // selected note (or the beginning of the clip). Existing notes remain.
-        static const int progressions[3][4] = {
-            { 0, 4, 5, 3 }, { 0, 3, 4, 0 }, { 5, 3, 0, 4 }
+        static const int progressions[6][4] = {
+            { 0, 4, 5, 3 }, { 0, 3, 4, 0 }, { 5, 3, 0, 4 },
+            { 1, 4, 0, 0 }, { 0, 5, 3, 4 }, { 0, 2, 3, 4 }
         };
         static const int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
-        const int which = juce::jlimit(0, 2, pattern);
+        const int which = juce::jlimit(0, 5, pattern);
         const int root = juce::jlimit(0, 11, key);
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
