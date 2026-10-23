@@ -1844,7 +1844,12 @@ public:
             : showEdit ? 8 + 36 + 4 + 52
             : showQuantize ? 8 + 36 : 0;
         const int step = 35;
-        const int toolCount = juce::jlimit(0, 9, (usable - actionWidth) / step);
+        // Guarantee a dedicated slot for the active tool when the toolbar is
+        // narrower than the preferred action group; remaining actions stay in ⋯.
+        const int minimumToolSlot = usable >= step ? step : 0;
+        const int adjustedActionWidth = juce::jmax(0, actionWidth - juce::jmax(0, minimumToolSlot - (usable - actionWidth)));
+        const int toolCount = juce::jlimit(0, 9, (usable - adjustedActionWidth) / step);
+        const bool actionsHaveRoom = usable - toolCount * step >= actionWidth;
         // If the selected tool falls outside the visible group, give it the
         // final visible slot so it remains directly accessible in narrow docks.
         const int activeTool = getLibertyActiveTool();
@@ -1859,14 +1864,14 @@ public:
             button.setBounds(left + slot * step, 3, 32, buttonHeight);
         }
         const int actionX = left + toolCount * step + 8;
-        quantizeButton.setVisible(showQuantize);
+        quantizeButton.setVisible(showQuantize && actionsHaveRoom);
         quantizeButton.setBounds(actionX, 3, 36, buttonHeight);
         const int editX = actionX + 40;
-        selectAllButton.setVisible(showEdit);
+        selectAllButton.setVisible(showEdit && actionsHaveRoom);
         selectAllButton.setBounds(editX, 3, 52, buttonHeight);
         const int historyX = editX + 60;
-        undoMidiButton.setVisible(showHistory);
-        redoMidiButton.setVisible(showHistory);
+        undoMidiButton.setVisible(showHistory && actionsHaveRoom);
+        redoMidiButton.setVisible(showHistory && actionsHaveRoom);
         undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
         redoMidiButton.setBounds(historyX + 36, 3, 30, buttonHeight);
         refreshToolButtons();
