@@ -2861,8 +2861,8 @@ public:
             // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
             g.setColour(black ? juce::Colour(0xff48606d) : juce::Colour(0xff91a4b0)); g.drawRect(key, 1);
             // Darker Obsidian note labels stay legible on light piano keys.
-            if (!black) { g.setColour(juce::Colour(0xff17242e)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
-            if (showUsedPitches && note >= 0 && note < 128 && usedPitches[(size_t)note])
+            if (!black && keyHeight >= 13) { g.setColour(juce::Colour(0xff17242e)); g.setFont(juce::Font(9.0f)); g.drawText(juce::String(noteName(note)) + juce::String(note / 12 - 1), key.reduced(5, 0), juce::Justification::centredLeft); }
+            if (showUsedPitches && keyHeight >= 8 && note >= 0 && note < 128 && usedPitches[(size_t)note])
             {
                 g.setColour(juce::Colour(0xff54d6dc));
                 g.fillRoundedRectangle((float)pianoKeyWidth - 9.0f, (float)y + 3.0f,
@@ -2905,11 +2905,11 @@ public:
         for (const auto& n : owner.getMidiEngine().getNotesCopy())
         {
             if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visiblePitchRows() || n.startTick >= clipLengthTicks) continue;
-            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + (keyHeight >= 8 ? 2 : 0);
             const int x = grid.getX() + (int)std::llround((double)n.startTick * pixelsPerTick);
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto r = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
+            const auto r = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
             if (r.getRight() <= grid.getX() || r.getX() >= grid.getRight()) continue;
             const auto noteEnd = n.startTick + n.lengthTicks;
             const bool active = playbackTick >= n.startTick && playbackTick < noteEnd && owner.getMidiEngine().isPlaying();
@@ -2918,13 +2918,14 @@ public:
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
             const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);
             g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
-            g.fillRoundedRectangle(r.toFloat(), 3.0f);
+            g.fillRoundedRectangle(r.toFloat(), juce::jmin(3.0f, (float)r.getHeight() * 0.35f));
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
             // Defined idle-note outlines improve separation without changing active playback styling.
             g.setColour(n.muted ? juce::Colour(0xff75808b) : selected ? juce::Colour(0xffffe4ac) : active ? juce::Colour(0xffffffff) : velocityColour.brighter(0.35f));
-            g.drawRoundedRectangle(r.toFloat(), 3.0f, selected ? 2.2f : active ? 1.5f : 1.0f);
+            g.drawRoundedRectangle(r.toFloat(), juce::jmin(3.0f, (float)r.getHeight() * 0.35f),
+                juce::jmin((float)r.getHeight() * 0.5f, selected ? 2.2f : active ? 1.5f : 1.0f));
         }
     }
 
@@ -3007,9 +3008,9 @@ public:
         {
             if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visiblePitchRows()) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * getPixelsPerTick());
-            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + (keyHeight >= 8 ? 2 : 0);
             const int w = juce::jmax(8, (int)std::llround((double)n.lengthTicks * getPixelsPerTick()));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
             if (n.pitch == pitch && noteRect.contains(e.getPosition()))
             {
                 if (tool == 8) // Non-destructive per-note MIDI mute.
@@ -3308,10 +3309,10 @@ private:
         {
             if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visiblePitchRows() || n.startTick >= clipLengthTicks) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
-            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + (keyHeight >= 8 ? 2 : 0);
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
             if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y)) return &n;
         }
         return nullptr;
@@ -3329,10 +3330,10 @@ private:
         {
             if (n.pitch < lowestVisibleKey || n.pitch >= lowestVisibleKey + visiblePitchRows() || n.startTick >= clipLengthTicks) continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
-            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + 2;
+            const int y = rulerHeight + (visiblePitchRows() - 1 - ((int)n.pitch - lowestVisibleKey)) * keyHeight + (keyHeight >= 8 ? 2 : 0);
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(4, juce::jmax(1, keyHeight - 4)));
+            const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
             if (n.pitch != pitchFromY((int)position.y) || !noteRect.contains((int)position.x, (int)position.y)) continue;
             const float leftDistance = std::abs(position.x - (float)noteRect.getX()); const float rightDistance = std::abs(position.x - (float)noteRect.getRight());
             if (leftDistance <= (float)resizeEdgePixels && leftDistance <= bestDistance) { bestDistance = leftDistance; bestSide = ResizeSide::left; }
