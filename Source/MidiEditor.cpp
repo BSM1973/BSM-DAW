@@ -631,6 +631,7 @@ public:
             menu.addItem(21, juce::String::fromUTF8("ÉDITION MIDI"));
             menu.addItem(24, juce::String::fromUTF8("COMPOSITION · ACCORDS…"));
             menu.addItem(25, juce::String::fromUTF8("COMPOSITION · PROGRESSIONS…"));
+            menu.addItem(26, juce::String::fromUTF8("COMPOSITION · GAMMES…"));
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -646,6 +647,7 @@ public:
                     else if (result == 23) safe->applyMidiHistory(true);
                     else if (result == 24) safe->showCompositionWindow();
                     else if (result == 25) safe->showProgressionWindow();
+                    else if (result == 26) safe->showScaleWindow();
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -1228,6 +1230,93 @@ public:
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
     };
+
+    void showScaleWindow()
+    {
+        struct ScaleContent final : juce::Component
+        {
+            juce::ComboBox tonic, scale;
+            juce::ToggleButton highlight { juce::String::fromUTF8("Afficher la gamme sur le Piano Roll") };
+            juce::Label title, help;
+            std::function<void(int, int, bool)> apply;
+            explicit ScaleContent(std::function<void(int, int, bool)> callback,
+                                  int root, int type, bool enabled)
+                : apply(std::move(callback))
+            {
+                static const char* roots[] = {
+                    "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa", "Fa#",
+                    "Sol", "La♭", "La", "Si♭", "Si"
+                };
+                for (int i = 0; i < 12; ++i)
+                    tonic.addItem(juce::String::fromUTF8(roots[i]), i + 1);
+                tonic.setSelectedId(root + 1, juce::dontSendNotification);
+                scale.addItem(juce::String::fromUTF8("Majeure"), 1);
+                scale.addItem(juce::String::fromUTF8("Mineure naturelle"), 2);
+                scale.addItem(juce::String::fromUTF8("Pentatonique majeure"), 3);
+                scale.addItem(juce::String::fromUTF8("Pentatonique mineure"), 4);
+                scale.addItem(juce::String::fromUTF8("Blues"), 5);
+                scale.setSelectedId(type + 1, juce::dontSendNotification);
+                highlight.setToggleState(enabled, juce::dontSendNotification);
+                for (auto* combo : { &tonic, &scale })
+                {
+                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
+                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    addAndMakeVisible(*combo);
+                }
+                title.setText(juce::String::fromUTF8("COMPOSITION  /  GAMMES"),
+                              juce::dontSendNotification);
+                title.setFont(juce::Font(19.0f, juce::Font::bold));
+                title.setColour(juce::Label::textColourId, juce::Colour(0xfff3d48b));
+                help.setText(juce::String::fromUTF8("Repères visuels uniquement · aucun Snap modifié"),
+                             juce::dontSendNotification);
+                help.setColour(juce::Label::textColourId, juce::Colour(0xffb8c8d3));
+                highlight.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
+                addAndMakeVisible(title);
+                addAndMakeVisible(help);
+                addAndMakeVisible(highlight);
+                auto update = [this]
+                {
+                    if (apply)
+                        apply(tonic.getSelectedId() - 1, scale.getSelectedId() - 1,
+                              highlight.getToggleState());
+                };
+                tonic.onChange = update;
+                scale.onChange = update;
+                highlight.onClick = update;
+                setSize(440, 225);
+            }
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xff111923));
+                g.setColour(juce::Colour(0xff344857));
+                g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
+            }
+            void resized() override
+            {
+                title.setBounds(26, 18, getWidth() - 52, 32);
+                help.setBounds(26, 52, getWidth() - 52, 24);
+                tonic.setBounds(26, 94, 130, 34);
+                scale.setBounds(168, 94, getWidth() - 194, 34);
+                highlight.setBounds(26, 150, getWidth() - 52, 35);
+            }
+        };
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  GAMMES");
+        options.dialogBackgroundColour = juce::Colour(0xff111923);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = false;
+        options.content.setOwned(new ScaleContent(
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled)
+            {
+                if (safe == nullptr) return;
+                safe->scaleRoot = juce::jlimit(0, 11, root);
+                safe->scaleType = juce::jlimit(0, 4, type);
+                safe->scaleHighlight = enabled;
+                safe->repaint();
+            }, scaleRoot, scaleType, scaleHighlight));
+        options.launchAsync();
+    }
 
     void showProgressionWindow()
     {
@@ -2638,6 +2727,24 @@ public:
             const int note = lowestVisibleKey + row;
             const int y = rulerHeight + (visibleKeys - 1 - row) * keyHeight;
             const auto key = juce::Rectangle<int>(0, y, pianoKeyWidth, keyHeight);
+            // Fender-inspired scale overlay: purely visual, no MIDI or Snap mutation.
+            if (scaleHighlight && y >= rulerHeight && y < velocityAreaY)
+            {
+                static const int masks[5][12] = {
+                    { 1,0,1,0,1,1,0,1,0,1,0,1 },
+                    { 1,0,1,1,0,1,0,1,1,0,1,0 },
+                    { 1,0,1,0,1,0,0,1,0,1,0,0 },
+                    { 1,0,0,1,0,1,0,1,0,0,1,0 },
+                    { 1,0,0,1,0,1,1,1,0,0,1,0 }
+                };
+                const int degree = ((note - scaleRoot) % 12 + 12) % 12;
+                if (masks[scaleType][degree] != 0)
+                {
+                    g.setColour(degree == 0 ? juce::Colour(0xffb28a46).withAlpha(0.23f)
+                        : juce::Colour(0xff7f9c79).withAlpha(0.13f));
+                    g.fillRect(grid.getX(), y, grid.getWidth(), keyHeight);
+                }
+            }
             const bool black = isBlackKey(note);
             g.setColour(auditionPitch == note ? juce::Colour(0xff54d6dc) : (black ? juce::Colour(0xff111922) : juce::Colour(0xffdbe3ea))); g.fillRect(key);
             // Obsidian keyboard edges: clearer black-key outlines, softer white-key dividers.
@@ -3004,6 +3111,8 @@ public:
     }
 
 private:
+    int scaleRoot = 0, scaleType = 0;
+    bool scaleHighlight = false;
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
     juce::TextEditor velocityValue;
