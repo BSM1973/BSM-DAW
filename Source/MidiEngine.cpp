@@ -119,6 +119,9 @@ bool MidiEngine::redo()
 
 void MidiEngine::clearUndoHistory() noexcept
 {
+    // Clearing the stacks invalidates any editor-owned undo token, even when
+    // the visible MIDI notes have not changed.
+    ++historyRevision;
     undoHistory.clear();
     redoHistory.clear();
 }
