@@ -766,8 +766,8 @@ public:
         explicit EditWindowContent(std::function<void(int, int, int, int)> action, bool hasSelection)
             : onAction(std::move(action))
         {
-            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ" };
-            for (int i = 0; i < 3; ++i)
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER" };
+            for (int i = 0; i < 4; ++i)
             {
                 categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
                 categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
@@ -867,6 +867,25 @@ public:
                 curvature.setValue(100.0, juce::sendNotification);
             };
             addAndMakeVisible(resetVelocity);
+            humanizeVelocity.setRange(0.0, 24.0, 1.0);
+            humanizeVelocity.setValue(6.0, juce::dontSendNotification);
+            humanizeTiming.setRange(0.0, 48.0, 1.0);
+            humanizeTiming.setValue(12.0, juce::dontSendNotification);
+            for (auto* slider : { &humanizeVelocity, &humanizeTiming })
+            {
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 25);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
+                addAndMakeVisible(*slider);
+            }
+            applyHumanize.setButtonText(juce::String::fromUTF8("APPLIQUER L'HUMANISATION"));
+            applyHumanize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff78603c));
+            applyHumanize.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            applyHumanize.onClick = [this]
+            {
+                if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), 0);
+            };
+            addAndMakeVisible(applyHumanize);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -886,6 +905,17 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 3)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(15.0f));
+                g.drawText(juce::String::fromUTF8("VÉLOCITÉ ±"), 26, 235, 158, 32, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("TIMING ± (ticks)"), 26, 310, 158, 32, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xff98a9ba));
+                g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("Variations aléatoires indépendantes sur les notes sélectionnées."), 26, 185, getWidth() - 52, 25, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("0 = désactivé. Les hauteurs et durées des notes sont conservées."), 26, 450, getWidth() - 52, 30, juce::Justification::centredLeft);
+            }
             if (currentCategory == 2)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1012,7 +1042,7 @@ public:
         void resized() override
         {
             const int available = getWidth() - 52;
-            const int tabWidth = (available - 12) / 3;
+            const int tabWidth = (available - 18) / 4;
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
@@ -1020,6 +1050,9 @@ public:
             resetCurvature.setBounds(getWidth() - 85, 530, 59, 25);
             reverseVelocity.setBounds(26, 559, (getWidth() - 60) / 2, 27);
             resetVelocity.setBounds(34 + (getWidth() - 60) / 2, 559, (getWidth() - 60) / 2, 27);
+            humanizeVelocity.setBounds(190, 235, getWidth() - 216, 32);
+            humanizeTiming.setBounds(190, 310, getWidth() - 216, 32);
+            applyHumanize.setBounds(26, 387, available, 40);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -1040,7 +1073,10 @@ public:
             }
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
-                    (currentCategory == 1 ? ((i >= 4 && i < 8) || i >= 13) : (i >= 8 && i < 13)));
+                    (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21)) : (currentCategory == 2 && i >= 8 && i < 13)));
+            humanizeVelocity.setVisible(currentCategory == 3);
+            humanizeTiming.setVisible(currentCategory == 3);
+            applyHumanize.setVisible(currentCategory == 3);
             resetCurvature.setVisible(currentCategory == 2);
             curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
@@ -1052,10 +1088,10 @@ public:
             repaint();
         }
         std::function<void(int, int, int, int)> onAction;
-        juce::Slider startVelocity, endVelocity, curvature;
+        juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
         juce::ComboBox curveSelector;
-        juce::TextButton reverseVelocity, resetVelocity, resetCurvature;
-        std::array<juce::TextButton, 3> categoryButtons;
+        juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize;
+        std::array<juce::TextButton, 4> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
@@ -1092,6 +1128,7 @@ public:
                     case 21: safe->applySwingToSelection(0.65); break;
                     case 22: safe->humanizeSelectedVelocity(); break;
                     case 23: safe->humanizeSelectedTiming(); break;
+                    case 24: safe->humanizeSelection(start, end); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1294,6 +1331,37 @@ public:
         if (changed)
         {
             owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void humanizeSelection(int velocityRange, int timingRange)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        bool timingChanged = false;
+        bool velocityChanged = false;
+        for (const auto& note : selected)
+        {
+            if (velocityRange > 0)
+            {
+                const int variation = juce::Random::getSystemRandom().nextInt(velocityRange * 2 + 1) - velocityRange;
+                const int targetVelocity = juce::jlimit(1, 127, (int)note.velocity + variation);
+                if (targetVelocity != (int)note.velocity)
+                    velocityChanged = midi.setNoteVelocity(note.startTick, note.pitch, note.channel, targetVelocity) || velocityChanged;
+            }
+            if (timingRange > 0)
+            {
+                const int variation = juce::Random::getSystemRandom().nextInt(timingRange * 2 + 1) - timingRange;
+                const auto targetTick = juce::jmax<std::int64_t>(0, note.startTick + variation);
+                if (targetTick != note.startTick)
+                    timingChanged = midi.moveNote(note.startTick, note.pitch, note.channel, targetTick, note.pitch) || timingChanged;
+            }
+        }
+        if (timingChanged) owner.updateMidiClipTiming();
+        if (timingChanged || velocityChanged)
+        {
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
         }
