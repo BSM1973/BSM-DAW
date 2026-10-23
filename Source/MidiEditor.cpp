@@ -1234,10 +1234,11 @@ public:
         struct ProgressionContent final : juce::Component
         {
             juce::ComboBox key, pattern, octave, duration, mode;
+            juce::ToggleButton smooth { juce::String::fromUTF8("Renversements automatiques") };
             juce::TextButton insertButton { juce::String::fromUTF8("INSÉRER LA PROGRESSION") };
             juce::Label heading, explanation;
-            std::function<void(int, int, int, int, int)> insert;
-            explicit ProgressionContent(std::function<void(int, int, int, int, int)> callback)
+            std::function<void(int, int, int, int, int, bool)> insert;
+            explicit ProgressionContent(std::function<void(int, int, int, int, int, bool)> callback)
                 : insert(std::move(callback))
             {
                 static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
@@ -1277,17 +1278,20 @@ public:
                 explanation.setColour(juce::Label::textColourId, juce::Colour(0xffb8c8d3));
                 addAndMakeVisible(heading);
                 addAndMakeVisible(explanation);
+                smooth.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
+                addAndMakeVisible(smooth);
                 insertButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff86652d));
                 insertButton.onClick = [this]
                 {
                     if (insert) insert(key.getSelectedId() - 1, pattern.getSelectedId() - 1,
-                        octave.getSelectedId(), duration.getSelectedId(), mode.getSelectedId() - 1);
+                        octave.getSelectedId(), duration.getSelectedId(), mode.getSelectedId() - 1,
+                        smooth.getToggleState());
                 };
                 addAndMakeVisible(insertButton);
                 key.onChange = [this] { repaint(); };
                 pattern.onChange = [this] { repaint(); };
                 mode.onChange = [this] { repaint(); };
-                setSize(440, 398);
+                setSize(440, 432);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1341,7 +1345,8 @@ public:
                 octave.setBounds(26, 145, 185, 32);
                 duration.setBounds(219, 145, getWidth() - 245, 32);
                 mode.setBounds(26, 192, getWidth() - 52, 32);
-                insertButton.setBounds(26, 332, getWidth() - 52, 42);
+                smooth.setBounds(26, 332, getWidth() - 52, 28);
+                insertButton.setBounds(26, 370, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1351,14 +1356,14 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new ProgressionContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int key, int pattern, int octave, int duration, int mode)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int key, int pattern, int octave, int duration, int mode, bool smooth)
             {
-                if (safe != nullptr) safe->insertChordProgression(key, pattern, octave, duration, mode);
+                if (safe != nullptr) safe->insertChordProgression(key, pattern, octave, duration, mode, smooth);
             }));
         options.launchAsync();
     }
 
-    void insertChordProgression(int key, int pattern, int octave, int duration, int mode)
+    void insertChordProgression(int key, int pattern, int octave, int duration, int mode, bool smooth)
     {
         // Diatonic major-key progression, four bars, starting at the first
         // selected note (or the beginning of the clip). Existing notes remain.
@@ -1384,18 +1389,52 @@ public:
             : duration == 3 ? barTicks / 2 : barTicks;
         const int basePitch = 60 + (juce::jlimit(2, 6, octave) - 4) * 12;
         bool changed = false;
+        std::array<int, 3> previous {};
         for (int bar = 0; bar < 4; ++bar)
         {
             const int degree = minor ? minorProgressions[which][bar] : progressions[which][bar];
-            const int pitchRoot = basePitch + root + scale[degree];
+            std::array<int, 3> original {};
             for (int third = 0; third < 3; ++third)
             {
                 const int scaleStep = degree + third * 2;
-                const int pitch = pitchRoot + scale[scaleStep % 7]
-                    - majorScale[degree] + (scaleStep / 7) * 12;
-                changed = midi.addNote(firstTick + bar * chordTicks, chordTicks,
-                    pitch, 100, 1) || changed;
+                original[(size_t)third] = basePitch + root
+                    + scale[scaleStep % 7] + (scaleStep / 7) * 12;
             }
+            std::array<int, 3> pitches = original;
+            if (smooth && bar > 0)
+            {
+                int bestMovement = 100000;
+                for (int inversion = 0; inversion < 3; ++inversion)
+                {
+                    auto candidate = original;
+                    for (int turn = 0; turn < inversion; ++turn)
+                    {
+                        const int moved = candidate[0] + 12;
+                        candidate[0] = candidate[1];
+                        candidate[1] = candidate[2];
+                        candidate[2] = moved;
+                    }
+                    for (int shift = -2; shift <= 1; ++shift)
+                    {
+                        auto voiced = candidate;
+                        int movement = 0;
+                        for (int n = 0; n < 3; ++n)
+                        {
+                            voiced[(size_t)n] += shift * 12;
+                            movement += std::abs(voiced[(size_t)n] - previous[(size_t)n]);
+                        }
+                        if (movement < bestMovement)
+                        {
+                            bestMovement = movement;
+                            pitches = voiced;
+                        }
+                    }
+                }
+            }
+            for (int n = 0; n < 3; ++n)
+                changed = midi.addNote(firstTick + bar * chordTicks, chordTicks,
+                    pitches[(size_t)n], 100, 1) || changed;
+            previous = pitches;
         }
         if (changed)
         {
