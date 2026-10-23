@@ -1836,20 +1836,18 @@ public:
         moreToolsButton.setBounds(overflowX, 3, 30, buttonHeight);
         const int actionRight = showOverflow ? overflowX - 6 : right;
         const int usable = juce::jmax(0, actionRight - left);
-        // Reserve space for Q, ÉDITER and history where possible.
-        const bool showHistory = usable >= 8 + 36 + 4 + 52 + 8 + 66;
-        const bool showEdit = usable >= 8 + 36 + 4 + 52;
-        const bool showQuantize = usable >= 8 + 36;
+        // Allocate one active-tool slot first, then fit complete action groups.
+        // A group is either fully visible or entirely available in the ⋯ menu.
+        const int step = 35;
+        const int reservedToolWidth = usable >= step ? step : 0;
+        const int actionsAvailable = juce::jmax(0, usable - reservedToolWidth);
+        const bool showHistory = actionsAvailable >= 8 + 36 + 4 + 52 + 8 + 66;
+        const bool showEdit = actionsAvailable >= 8 + 36 + 4 + 52;
+        const bool showQuantize = actionsAvailable >= 8 + 36;
         const int actionWidth = showHistory ? 8 + 36 + 4 + 52 + 8 + 66
             : showEdit ? 8 + 36 + 4 + 52
             : showQuantize ? 8 + 36 : 0;
-        const int step = 35;
-        // Guarantee a dedicated slot for the active tool when the toolbar is
-        // narrower than the preferred action group; remaining actions stay in ⋯.
-        const int minimumToolSlot = usable >= step ? step : 0;
-        const int adjustedActionWidth = juce::jmax(0, actionWidth - juce::jmax(0, minimumToolSlot - (usable - actionWidth)));
-        const int toolCount = juce::jlimit(0, 9, (usable - adjustedActionWidth) / step);
-        const bool actionsHaveRoom = usable - toolCount * step >= actionWidth;
+        const int toolCount = juce::jlimit(0, 9, (usable - actionWidth) / step);
         // If the selected tool falls outside the visible group, give it the
         // final visible slot so it remains directly accessible in narrow docks.
         const int activeTool = getLibertyActiveTool();
@@ -1864,14 +1862,14 @@ public:
             button.setBounds(left + slot * step, 3, 32, buttonHeight);
         }
         const int actionX = left + toolCount * step + 8;
-        quantizeButton.setVisible(showQuantize && actionsHaveRoom);
+        quantizeButton.setVisible(showQuantize);
         quantizeButton.setBounds(actionX, 3, 36, buttonHeight);
         const int editX = actionX + 40;
-        selectAllButton.setVisible(showEdit && actionsHaveRoom);
+        selectAllButton.setVisible(showEdit);
         selectAllButton.setBounds(editX, 3, 52, buttonHeight);
         const int historyX = editX + 60;
-        undoMidiButton.setVisible(showHistory && actionsHaveRoom);
-        redoMidiButton.setVisible(showHistory && actionsHaveRoom);
+        undoMidiButton.setVisible(showHistory);
+        redoMidiButton.setVisible(showHistory);
         undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
         redoMidiButton.setBounds(historyX + 36, 3, 30, buttonHeight);
         refreshToolButtons();
