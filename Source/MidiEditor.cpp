@@ -604,7 +604,7 @@ public:
             button.setButtonText(juce::String::fromUTF8(glyphs[i]));
             button.setTooltip(juce::String::fromUTF8(names[i]) + " (" + juce::String(i + 1) + ")");
             button.setClickingTogglesState(false);
-            button.onClick = [this, i] { setLibertyActiveTool(i); refreshToolButtons(); };
+            button.onClick = [this, i] { setLibertyActiveTool(i); resized(); };
             addAndMakeVisible(button);
         }
         quantizeButton.setButtonText("Q");
@@ -637,7 +637,7 @@ public:
                 {
                     if (safe == nullptr) return;
                     if (result >= 1 && result <= 9)
-                    { setLibertyActiveTool(result - 1); safe->refreshToolButtons(); }
+                    { setLibertyActiveTool(result - 1); safe->resized(); }
                     else if (result == 20) safe->quantizeSelection();
                     else if (result == 21) safe->showEditWindow();
                     else if (result == 22) safe->applyMidiHistory(false);
