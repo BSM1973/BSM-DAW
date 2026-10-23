@@ -2385,6 +2385,39 @@ public:
         }
     }
 
+    // First independent Liberty visual element: display-only, no MIDI mutations.
+    class StrumVisualPreview final : public juce::Component
+    {
+    public:
+        StrumVisualPreview()
+        {
+            setSize(420, 94);
+            setInterceptsMouseClicks(false, false);
+        }
+
+        void paint(juce::Graphics& g) override
+        {
+            const auto area = getLocalBounds().toFloat().reduced(1.0f);
+            g.setColour(juce::Colour(0xff17232f));
+            g.fillRoundedRectangle(area, 9.0f);
+            g.setColour(juce::Colour(0xff344858));
+            g.drawRoundedRectangle(area, 9.0f, 1.0f);
+            g.setColour(juce::Colour(0xffc7d7e5));
+            g.setFont(juce::FontOptions(12.0f));
+            g.drawText(juce::String::fromUTF8("APERÇU DE L’ÉGRENAGE"),
+                       15, 9, getWidth() - 30, 20, juce::Justification::centredLeft);
+            const int count = 6;
+            const float available = juce::jmax(10.0f, (float)getWidth() - 58.0f);
+            for (int i = 0; i < count; ++i)
+            {
+                const float x = 22.0f + available * (float)i / (float)(count - 1);
+                const float y = 67.0f - (float)i * 5.0f;
+                g.setColour(juce::Colour(0xff54cbd1).withAlpha(0.65f + (float)i * 0.06f));
+                g.fillRoundedRectangle(x, y, 24.0f, 7.0f, 3.0f);
+            }
+        }
+    };
+
     void showStrumWindow(int initialDirection = 1, int initialSpread = 25,
                          int initialVelocity = 0, int initialTiming = 0)
     {
@@ -2417,7 +2450,7 @@ public:
                 editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xffc59b5e));
             }
         }
-        // Quick musical preview of the selected chord without changing the MIDI
+        // Read-only visual foundation for the future custom STRUM panel.\n        dialog->addCustomComponent(new StrumVisualPreview());\n        // Quick musical preview of the selected chord without changing the MIDI
         // engine or consuming an Undo step.
         dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
         dialog->addButton(juce::String::fromUTF8("RÉINITIALISER"), 3);
