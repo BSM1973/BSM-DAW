@@ -1824,7 +1824,8 @@ public:
 
     void resized() override
     {
-        // Reserve an always-reachable overflow palette before placing optional controls.
+        // Keep primary editing commands visible before secondary drawing tools.
+        // Every hidden command remains reachable through the overflow palette.
         const int left = pianoKeyWidth + 8;
         const int right = getWidth() - 8;
         const int buttonHeight = editorToolbarHeight - 6;
@@ -1834,11 +1835,16 @@ public:
         moreToolsButton.setVisible(showOverflow);
         moreToolsButton.setBounds(overflowX, 3, 30, buttonHeight);
         const int actionRight = showOverflow ? overflowX - 6 : right;
+        const int usable = juce::jmax(0, actionRight - left);
+        // Reserve space for Q, ÉDITER and history where possible.
+        const bool showHistory = usable >= 8 + 36 + 4 + 52 + 8 + 66;
+        const bool showEdit = usable >= 8 + 36 + 4 + 52;
+        const bool showQuantize = usable >= 8 + 36;
+        const int actionWidth = showHistory ? 8 + 36 + 4 + 52 + 8 + 66
+            : showEdit ? 8 + 36 + 4 + 52
+            : showQuantize ? 8 + 36 : 0;
         const int step = 35;
-        const int allToolsWidth = 9 * step;
-        const bool fullToolbar = available >= allToolsWidth + 8 + 36 + 4 + 52 + 8 + 66 + 36;
-        const int toolCount = fullToolbar ? 9
-            : juce::jlimit(0, 9, (actionRight - left - 8) / step);
+        const int toolCount = juce::jlimit(0, 9, (usable - actionWidth) / step);
         for (int i = 0; i < 9; ++i)
         {
             auto& button = toolButtons[(size_t)i];
@@ -1846,17 +1852,14 @@ public:
             button.setBounds(left + i * step, 3, 32, buttonHeight);
         }
         const int actionX = left + toolCount * step + 8;
-        const bool quantizeFits = actionX + 36 <= actionRight;
-        quantizeButton.setVisible(quantizeFits);
+        quantizeButton.setVisible(showQuantize);
         quantizeButton.setBounds(actionX, 3, 36, buttonHeight);
         const int editX = actionX + 40;
-        const bool editFits = quantizeFits && editX + 52 <= actionRight;
-        selectAllButton.setVisible(editFits);
+        selectAllButton.setVisible(showEdit);
         selectAllButton.setBounds(editX, 3, 52, buttonHeight);
         const int historyX = editX + 60;
-        const bool historyFits = editFits && historyX + 66 <= actionRight;
-        undoMidiButton.setVisible(historyFits);
-        redoMidiButton.setVisible(historyFits);
+        undoMidiButton.setVisible(showHistory);
+        redoMidiButton.setVisible(showHistory);
         undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
         redoMidiButton.setBounds(historyX + 36, 3, 30, buttonHeight);
         refreshToolButtons();
