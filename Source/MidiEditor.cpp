@@ -2385,6 +2385,19 @@ public:
         }
     }
 
+    void strumSelectedChord(bool lowToHigh)
+    {
+        // A quarter of the current grid division gives a subtle strum.
+        const auto spread = juce::jmax<std::int64_t>(1, activePianoSnapTicks() / 4);
+        if (owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint();
+            owner.repaint();
+        }
+    }
+
     void splitSelectedNotesToGrid()
     {
         if (owner.getMidiEngine().splitSelectedNotesToGrid(
@@ -2490,6 +2503,9 @@ public:
             applyMidiHistory(key.getKeyCode() == 'Y' || modifiers.isShiftDown());
             return true;
         }
+        // Cmd/Ctrl+Shift+G: strum grave vers aigu; Alt inverse le sens.
+        if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'G')
+        { strumSelectedChord(!modifiers.isAltDown()); return true; }
         // Cmd/Ctrl+Shift+K: découper les notes sélectionnées selon la grille.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'K')
         { splitSelectedNotesToGrid(); return true; }
