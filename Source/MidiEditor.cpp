@@ -2386,7 +2386,7 @@ public:
     }
 
     // First independent Liberty visual element: display-only, no MIDI mutations.
-    class StrumVisualPreview final : public juce::Component
+    class StrumVisualPreview final : public juce::Component, private juce::Timer
     {
     public:
         StrumVisualPreview(std::vector<int> notes, bool ascending, int percentage)
@@ -2396,6 +2396,27 @@ public:
             std::sort(pitches.begin(), pitches.end());
             if (!lowToHigh) std::reverse(pitches.begin(), pitches.end());
             setInterceptsMouseClicks(false, false);
+        }
+
+        void bindControls(juce::ComboBox* direction, juce::TextEditor* spacing)
+        {
+            directionControl = direction;
+            spreadControl = spacing;
+            startTimerHz(20);
+        }
+
+        void timerCallback() override
+        {
+            const bool nextDirection = directionControl == nullptr
+                || directionControl->getSelectedId() != 2;
+            const int nextSpread = spreadControl == nullptr ? spread
+                : juce::jlimit(1, 400, spreadControl->getText().getIntValue());
+            if (nextDirection == lowToHigh && nextSpread == spread) return;
+            lowToHigh = nextDirection;
+            spread = nextSpread;
+            std::sort(pitches.begin(), pitches.end());
+            if (!lowToHigh) std::reverse(pitches.begin(), pitches.end());
+            repaint();
         }
 
         void paint(juce::Graphics& g) override
@@ -2427,6 +2448,8 @@ public:
         std::vector<int> pitches;
         bool lowToHigh = true;
         int spread = 25;
+        juce::ComboBox* directionControl = nullptr;
+        juce::TextEditor* spreadControl = nullptr;
     };
 
     void showStrumWindow(int initialDirection = 1, int initialSpread = 25,
@@ -2465,8 +2488,11 @@ public:
         std::vector<int> previewPitches;
         for (const auto& note : owner.getMidiEngine().getSelectedNotesCopy())
             previewPitches.push_back((int)note.pitch);
-        dialog->addCustomComponent(new StrumVisualPreview(
-            std::move(previewPitches), initialDirection != 2, initialSpread));
+        auto* preview = new StrumVisualPreview(
+            std::move(previewPitches), initialDirection != 2, initialSpread);
+        preview->bindControls(dialog->getComboBoxComponent("direction"),
+                              dialog->getTextEditor("spread"));
+        dialog->addCustomComponent(preview);
         // Quick musical preview of the selected chord without changing the MIDI
         // engine or consuming an Undo step.
         dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
