@@ -1260,11 +1260,23 @@ public:
             minimum = juce::jmin(minimum, (int)note.pitch);
             maximum = juce::jmax(maximum, (int)note.pitch);
         }
-        // Keep the existing fixed-height keyboard and MIDI coordinate system.
-        // Center the note range within the 40 visible keys where possible.
-        const int center = (minimum + maximum) / 2;
-        lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys,
-            center - visibleKeys / 2);
+        // Keep the existing keyboard geometry and pitch hit-testing.
+        // Prefer two notes of breathing room on both sides when the
+        // entire range fits. For wider clips, show the lowest voices
+        // instead of pretending that all notes can fit into 40 rows.
+        const int span = maximum - minimum + 1;
+        int first = minimum - 2;
+        if (span + 4 <= visibleKeys)
+        {
+            const int spare = visibleKeys - (span + 4);
+            first -= spare / 2;
+        }
+        else if (span <= visibleKeys)
+        {
+            first = minimum - (visibleKeys - span) / 2;
+        }
+        // At MIDI boundaries, clamp without wrapping or changing pitch.
+        lowestVisibleKey = juce::jlimit(0, 128 - visibleKeys, first);
         repaint();
     }
 
