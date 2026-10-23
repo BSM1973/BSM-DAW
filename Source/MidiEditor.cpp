@@ -2385,6 +2385,46 @@ public:
         }
     }
 
+    void showStrumWindow()
+    {
+        if (owner.getMidiEngine().getSelectedNotesCopy().size() < 2) return;
+        auto dialog = std::make_unique<juce::AlertWindow>(
+            juce::String::fromUTF8("LIBERTY  ·  STRUM MIDI"),
+            juce::String::fromUTF8("Réglez le sens et l'écartement des notes sélectionnées."),
+            juce::MessageBoxIconType::NoIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff111923));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe7edf5));
+        dialog->addComboBox("direction",
+            { juce::String::fromUTF8("Grave vers aigu"), juce::String::fromUTF8("Aigu vers grave") },
+            juce::String::fromUTF8("Direction"));
+        dialog->addTextEditor("spread", "25", juce::String::fromUTF8("Écartement (% de grille)"));
+        dialog->addButton(juce::String::fromUTF8("APPLIQUER"), 1,
+                          juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
+                          juce::KeyPress(juce::KeyPress::escapeKey));
+        auto* window = dialog.get();
+        dialog->enterModalState(true,
+            juce::ModalCallbackFunction::create(
+                [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
+                {
+                    if (result != 1 || safe == nullptr) return;
+                    const bool lowToHigh = window->getComboBoxComponent("direction") == nullptr
+                        || window->getComboBoxComponent("direction")->getSelectedId() != 2;
+                    const int percentage = juce::jlimit(1, 400,
+                        window->getTextEditorContents("spread").getIntValue());
+                    const auto grid = juce::jmax<std::int64_t>(1, safe->activePianoSnapTicks());
+                    const auto spread = juce::jmax<std::int64_t>(1, grid * percentage / 100);
+                    if (safe->owner.getMidiEngine().strumSelectedNotes(spread, lowToHigh))
+                    {
+                        safe->owner.updateMidiClipTiming();
+                        synchronizeLibertyPianoRollPlayback(safe->owner);
+                        safe->repaint();
+                        safe->owner.repaint();
+                    }
+                }), true);
+        dialog.release();
+    }
+
     void strumSelectedChord(bool lowToHigh)
     {
         // A quarter of the current grid division gives a subtle strum.
@@ -2503,6 +2543,10 @@ public:
             applyMidiHistory(key.getKeyCode() == 'Y' || modifiers.isShiftDown());
             return true;
         }
+        // Cmd/Ctrl+Alt+G opens the detailed Strum settings.
+        if (primaryShortcut && modifiers.isAltDown() && !modifiers.isShiftDown()
+            && key.getKeyCode() == 'G')
+        { showStrumWindow(); return true; }
         // Cmd/Ctrl+Shift+G: strum grave vers aigu; Alt inverse le sens.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'G')
         { strumSelectedChord(!modifiers.isAltDown()); return true; }
