@@ -3121,6 +3121,14 @@ public:
                 midi.beginGroupedEdit();
                 dragStartTick = n.startTick; dragEndTick = n.startTick + n.lengthTicks;
                 dragPitch = n.pitch; dragChannel = n.channel; originalLengthTicks = n.lengthTicks;
+                resizingAdjacent = false;
+                if (resizeSide == ResizeSide::right)
+                {
+                    const auto boundary = n.startTick + n.lengthTicks;
+                    for (const auto& next : midi.getNotesCopy())
+                        if (next.startTick == boundary && next.pitch == n.pitch && next.channel == n.channel)
+                        { resizingAdjacent = true; break; }
+                }
                 setMouseCursor(resizeSide == ResizeSide::none ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
@@ -3305,7 +3313,9 @@ public:
         if (resizeSide == ResizeSide::right)
         {
             const auto newLength = juce::jmax(juce::jmax<std::int64_t>(1, activePianoSnapTicks()), mouseTick - dragStartTick);
-            if (newLength != originalLengthTicks && owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength)) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+            if (newLength != originalLengthTicks && (resizingAdjacent
+                ? owner.getMidiEngine().resizeAdjacentNoteBoundary(dragStartTick, dragPitch, dragChannel, newLength)
+                : owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
         if (resizeSide == ResizeSide::left)
@@ -3594,6 +3604,7 @@ private:
     bool drawingNote = false;
     std::int64_t drawingStartTick = 0, drawingLengthTicks = 0;
     int drawingPitch = 60, drawingStartY = 0, drawingVelocity = 100;
+    bool resizingAdjacent = false;
     bool draggingNote = false, dragMoved = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0, dragEndTick = 0, originalLengthTicks = 0;
