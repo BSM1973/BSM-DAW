@@ -653,7 +653,7 @@ public:
                 "Blanche triolet", "Noire triolet", "Croche triolet",
                 "Double-croche triolet", "Triple-croche triolet"
             };
-            for (int i = 0; i < 19; ++i)
+            for (int i = 0; i < 21; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(juce::String::fromUTF8(names[i]));
                 button->setColour(juce::TextButton::buttonColourId,
@@ -780,7 +780,8 @@ public:
                 "CRESCENDO", "DECRESCENDO",
                 "TRANSPOSER +1", "TRANSPOSER -1",
                 "DURÉE ×2", "DURÉE ÷2",
-                "QUANTIFIER 50 %", "QUANTIFIER 75 %"
+                "QUANTIFIER 50 %", "QUANTIFIER 75 %",
+                "SWING 55 %", "SWING 65 %"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -792,9 +793,10 @@ public:
                 "Progression de 40 à 120", "Progression de 120 à 40",
                 "Monter les notes d'un demi-ton", "Descendre les notes d'un demi-ton",
                 "Doubler la durée des notes sélectionnées", "Réduire de moitié la durée des notes sélectionnées",
-                "Rapprocher les notes de la grille à moitié", "Rapprocher les notes de la grille aux trois quarts"
+                "Rapprocher les notes de la grille à moitié", "Rapprocher les notes de la grille aux trois quarts",
+                "Décaler légèrement les contretemps", "Décaler davantage les contretemps"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 };
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 };
             for (int i = 0; i < 17; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
@@ -1084,6 +1086,8 @@ public:
                     case 17: safe->scaleSelectedNoteLengths(0.5); break;
                     case 18: safe->quantizeSelectionWithStrength(0.5); break;
                     case 19: safe->quantizeSelectionWithStrength(0.75); break;
+                    case 20: safe->applySwingToSelection(0.55); break;
+                    case 21: safe->applySwingToSelection(0.65); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1254,6 +1258,32 @@ public:
             const auto nearest = (std::int64_t)std::llround((double)note.startTick / (double)grid) * grid;
             const auto offset = (std::int64_t)std::llround((double)(nearest - note.startTick) * strength);
             const auto target = juce::jmax<std::int64_t>(0, note.startTick + offset);
+            if (target != note.startTick)
+                changed = midi.moveNote(note.startTick, note.pitch, note.channel, target, note.pitch) || changed;
+        }
+        if (changed)
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void applySwingToSelection(double ratio)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto grid = activePianoSnapTicks();
+        if (grid <= 0) return;
+        const auto selected = midi.getSelectedNotesCopy();
+        bool changed = false;
+        const auto pairTicks = grid * 2;
+        for (const auto& note : selected)
+        {
+            const auto step = (std::int64_t)std::llround((double)note.startTick / (double)grid);
+            if (step % 2 == 0) continue;
+            const auto pairStart = (step / 2) * pairTicks;
+            const auto target = juce::jmax<std::int64_t>(0,
+                pairStart + (std::int64_t)std::llround((double)pairTicks * ratio));
             if (target != note.startTick)
                 changed = midi.moveNote(note.startTick, note.pitch, note.channel, target, note.pitch) || changed;
         }
