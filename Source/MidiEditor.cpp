@@ -2385,7 +2385,8 @@ public:
         }
     }
 
-    void showStrumWindow()
+    void showStrumWindow(int initialDirection = 1, int initialSpread = 25,
+                         int initialVelocity = 0, int initialTiming = 0)
     {
         if (owner.getMidiEngine().getSelectedNotesCopy().size() < 2) return;
         auto dialog = std::make_unique<juce::AlertWindow>(
@@ -2397,9 +2398,11 @@ public:
         dialog->addComboBox("direction",
             { juce::String::fromUTF8("Grave vers aigu"), juce::String::fromUTF8("Aigu vers grave") },
             juce::String::fromUTF8("Direction"));
-        dialog->addTextEditor("spread", "25", juce::String::fromUTF8("Écartement (% de grille)"));
-        dialog->addTextEditor("velocity", "0", juce::String::fromUTF8("Humanisation vélocité (0–50)"));
-        dialog->addTextEditor("timing", "0", juce::String::fromUTF8("Humanisation temporelle (0–50 %)"));
+        if (auto* direction = dialog->getComboBoxComponent("direction"))
+            direction->setSelectedId(initialDirection, juce::dontSendNotification);
+        dialog->addTextEditor("spread", juce::String(initialSpread), juce::String::fromUTF8("Écartement (% de grille)"));
+        dialog->addTextEditor("velocity", juce::String(initialVelocity), juce::String::fromUTF8("Humanisation vélocité (0–50)"));
+        dialog->addTextEditor("timing", juce::String(initialTiming), juce::String::fromUTF8("Humanisation temporelle (0–50 %)"));
         // Quick musical preview of the selected chord without changing the MIDI
         // engine or consuming an Undo step.
         dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
@@ -2425,6 +2428,16 @@ public:
                         window->getTextEditorContents("timing").getIntValue());
                     if (result == 2)
                     {
+                        // Reopen with identical parameters after audition; the
+                        // stock AlertWindow closes on any button press.
+                        const int directionId = lowToHigh ? 1 : 2;
+                        juce::MessageManager::callAsync(
+                            [safe, directionId, percentage, velocityVariation, timingVariation]()
+                            {
+                                if (safe != nullptr)
+                                    safe->showStrumWindow(directionId, percentage,
+                                                          velocityVariation, timingVariation);
+                            });
                         const int lane = safe->owner.getSelectedPianoInstrumentLane();
                         if (lane < 0 || lane >= safe->owner.getInstrumentTrackCount()) return;
                         auto notes = safe->owner.getMidiEngine().getSelectedNotesCopy();
