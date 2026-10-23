@@ -1432,6 +1432,7 @@ public:
     std::vector<MidiEngine::NoteEvent> humanizePreviewSnapshot;
     std::vector<MidiEngine::NoteEvent> lastHumanizeResult;
     bool humanizeUndoAvailable = false;
+    std::uint64_t humanizeHistoryRevision = 0;
 
     juce::String humanizeSelection(int velocityRange, int timingRange, int seed)
     {
@@ -1481,6 +1482,7 @@ public:
             humanizePreviewSnapshot = transformed;
             lastHumanizeResult = midi.getNotesCopy();
             humanizeUndoAvailable = true;
+            humanizeHistoryRevision = midi.getHistoryRevision();
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
@@ -1499,6 +1501,11 @@ public:
     {
         auto& midi = owner.getMidiEngine();
         if (!humanizeUndoAvailable) return juce::String::fromUTF8("Aucune humanisation à annuler.");
+        if (midi.getHistoryRevision() != humanizeHistoryRevision)
+        {
+            invalidateHumanizeUndo();
+            return juce::String::fromUTF8("Historique MIDI modifié : annulation dédiée indisponible.");
+        }
         const auto current = midi.getNotesCopy();
         if (current.size() != lastHumanizeResult.size()) return juce::String::fromUTF8("Notes modifiées : annulation impossible ici.");
         for (size_t i = 0; i < current.size(); ++i)
