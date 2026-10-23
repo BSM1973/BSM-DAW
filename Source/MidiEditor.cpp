@@ -1458,7 +1458,11 @@ public:
         }
     }
 
-    ns.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  ÉDITION MIDI");
+    void showEditWindow()
+    {
+        humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  ÉDITION MIDI");
         options.dialogBackgroundColour = juce::Colour(0xff111923);
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = false;
