@@ -615,8 +615,8 @@ public:
         selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
         selectAllButton.onClick = [this] { showEditWindow(); };
         addAndMakeVisible(selectAllButton);
-        moreToolsButton.setButtonText("...");
-        moreToolsButton.setTooltip(juce::String::fromUTF8("Outils MIDI supplémentaires"));
+        moreToolsButton.setButtonText(juce::String::fromUTF8("⋯"));
+        moreToolsButton.setTooltip(juce::String::fromUTF8("Outils MIDI supplémentaires — outil actif indiqué dans la palette"));
         moreToolsButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
         moreToolsButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
         moreToolsButton.onClick = [this]
@@ -1812,6 +1812,14 @@ public:
             button.setColour(juce::TextButton::textColourOffId,
                              selected ? juce::Colour(0xfff3d48b) : juce::Colour(0xffd7e6ee));
         }
+        // Highlight the overflow entry only when the active tool is hidden.
+        const int active = getLibertyActiveTool();
+        const bool activeHidden = active >= 0 && active < 9
+            && !toolButtons[(size_t)active].isVisible();
+        moreToolsButton.setColour(juce::TextButton::buttonColourId,
+            activeHidden ? juce::Colour(0xff315b69) : juce::Colour(0xff263544));
+        moreToolsButton.setColour(juce::TextButton::textColourOffId,
+            activeHidden ? juce::Colour(0xfff3d48b) : juce::Colour(0xffdcb66f));
     }
 
     void resized() override
@@ -1851,6 +1859,7 @@ public:
         redoMidiButton.setVisible(historyFits);
         undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
         redoMidiButton.setBounds(historyX + 36, 3, 30, buttonHeight);
+        refreshToolButtons();
         // Keep the editable value inside the visible information line, not at the far-right edge.
         const int velocityX = pianoKeyWidth + 390;
         durationValue.setBounds(pianoKeyWidth + 210, editorToolbarHeight + 3,
