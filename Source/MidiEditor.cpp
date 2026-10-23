@@ -3133,15 +3133,33 @@ public:
                     snappedDp = snapPitchToScale(anchorPitch + dp) - anchorPitch;
                 }
             }
-            if ((dt != 0 || snappedDp != 0)
-                && owner.getMidiEngine().moveSelectedNotesBy(dt, snappedDp))
+            // Clamp both axes against the *entire* selection before applying
+            // one uniform interval. The MIDI engine remains responsible for
+            // collision checks, undo and the final validity decision.
+            const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
+            if (!selected.empty())
             {
-                groupDragTick = tick;
-                // Advance the reference by the *applied* interval, not by the
-                // raw mouse pitch. This retains only the unconsumed pointer
-                // distance and prevents cumulative jumps at scale boundaries.
-                groupDragPitch += snappedDp;
-                owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
+                int minimumPitch = 127, maximumPitch = 0;
+                std::int64_t minimumTick = selected.front().startTick;
+                for (const auto& note : selected)
+                {
+                    minimumPitch = juce::jmin(minimumPitch, (int)note.pitch);
+                    maximumPitch = juce::jmax(maximumPitch, (int)note.pitch);
+                    minimumTick = juce::jmin(minimumTick, note.startTick);
+                }
+                snappedDp = juce::jlimit(-minimumPitch, 127 - maximumPitch, snappedDp);
+                const auto safeDt = juce::jmax(dt, -minimumTick);
+                if ((safeDt != 0 || snappedDp != 0)
+                    && owner.getMidiEngine().moveSelectedNotesBy(safeDt, snappedDp))
+                {
+                    groupDragTick += safeDt;
+                    // Only consume mouse movement actually applied to MIDI.
+                    groupDragPitch += snappedDp;
+                    owner.updateMidiClipTiming();
+                    synchronizeLibertyPianoRollPlayback(owner);
+                    repaint();
+                    owner.repaint();
+                }
             }
             return;
         }
