@@ -1673,6 +1673,25 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
+        // Share the MIDI engine's history with all Piano Roll editing commands.
+        // Command on macOS / Control on Windows and Linux.
+        const auto modifiers = key.getModifiers();
+        const bool primaryShortcut = modifiers.isCommandDown() || modifiers.isCtrlDown();
+        if (primaryShortcut && (key.getKeyCode() == 'Z' || key.getKeyCode() == 'Y'))
+        {
+            auto& midi = owner.getMidiEngine();
+            const bool redoAction = key.getKeyCode() == 'Y' || modifiers.isShiftDown();
+            const bool changed = redoAction ? midi.redo() : midi.undo();
+            if (changed)
+            {
+                invalidateHumanizeUndo();
+                owner.updateMidiClipTiming();
+                synchronizeLibertyPianoRollPlayback(owner);
+                repaint();
+                owner.repaint();
+            }
+            return true;
+        }
         if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D')
         { duplicateSelection(); return true; }
         if (key.getModifiers().isAltDown() && key.getKeyCode() == 'L')
