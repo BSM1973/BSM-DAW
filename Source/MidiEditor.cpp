@@ -1095,15 +1095,6 @@ public:
         g.setColour(juce::Colour(0xff56bfd9).withAlpha(0.14f)); g.fillRect(area);
         g.setColour(juce::Colour(0xff56bfd9)); g.drawRect(area, 1);
     }
-    void mouseUp(const juce::MouseEvent&) override
-    {
-        if (resizingLaneTop || resizingLaneDivider)
-        {
-            resizingLaneTop = false;
-            resizingLaneDivider = false;
-            repaint();
-        }
-    }
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
@@ -1330,6 +1321,13 @@ public:
 
     void mouseUp(const juce::MouseEvent&) override
     {
+        if (resizingLaneTop || resizingLaneDivider)
+        {
+            resizingLaneTop = false;
+            resizingLaneDivider = false;
+            repaint();
+            return;
+        }
         if (draggingGroup) { draggingGroup = false; clickSelectionPending = false; repaint(); return; }
         if (selectingRectangle) { selectingRectangle = false; repaint(); return; }
         if (editingVelocity) { editingVelocity = false; repaint(); return; }
