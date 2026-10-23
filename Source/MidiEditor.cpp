@@ -1284,13 +1284,51 @@ public:
                             octave.getSelectedId(), noteLength.getSelectedId());
                 };
                 addAndMakeVisible(create);
-                setSize(430, 300);
+                for (auto* combo : { &root, &quality, &inversion, &octave, &noteLength })
+                    combo->onChange = [this] { repaint(); };
+                setSize(430, 350);
             }
             void paint(juce::Graphics& g) override
             {
                 g.fillAll(juce::Colour(0xff111923));
                 g.setColour(juce::Colour(0xff344857));
                 g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
+                // Visual-only preview: no MIDI event, note mutation or audio playback.
+                const int rootClass = juce::jlimit(0, 11, root.getSelectedId() - 1);
+                const int type = juce::jlimit(0, 2, quality.getSelectedId() - 1);
+                const int turns = juce::jlimit(0, 2, inversion.getSelectedId() - 1);
+                static const int shapes[3][4] = {
+                    { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 }
+                };
+                std::array<int, 4> pitches {};
+                int count = 0;
+                for (int interval : shapes[type])
+                    if (interval >= 0)
+                        pitches[(size_t)count++] = 60 + (octave.getSelectedId() - 4) * 12 + rootClass + interval;
+                for (int turn = 0; turn < turns; ++turn)
+                {
+                    const int moved = pitches[0] + 12;
+                    for (int i = 1; i < count; ++i)
+                        pitches[(size_t)(i - 1)] = pitches[(size_t)i];
+                    pitches[(size_t)(count - 1)] = moved;
+                }
+                g.setColour(juce::Colour(0xffb8c8d3));
+                g.setFont(juce::Font(12.0f));
+                g.drawText(juce::String::fromUTF8("PRÉVISUALISATION DES NOTES"),
+                    26, 190, getWidth() - 52, 20, juce::Justification::centredLeft);
+                const int left = 26;
+                const int gap = 8;
+                const int available = getWidth() - 52 - gap * (count - 1);
+                const int cellWidth = available / count;
+                for (int i = 0; i < count; ++i)
+                {
+                    const int x = left + i * (cellWidth + gap);
+                    g.setColour(juce::Colour(0xff384331));
+                    g.fillRoundedRectangle((float)x, 215.0f, (float)cellWidth, 36.0f, 5.0f);
+                    g.setColour(juce::Colour(0xfff3d48b));
+                    g.drawFittedText(juce::MidiMessage::getMidiNoteName(pitches[(size_t)i], true, true, 3),
+                        x + 5, 219, cellWidth - 10, 28, juce::Justification::centred, 1);
+                }
             }
             void resized() override
             {
@@ -1301,7 +1339,7 @@ public:
                 inversion.setBounds(277, 94, 127, 32);
                 octave.setBounds(26, 145, 176, 32);
                 noteLength.setBounds(210, 145, 194, 32);
-                create.setBounds(26, 207, getWidth() - 52, 42);
+                create.setBounds(26, 274, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
