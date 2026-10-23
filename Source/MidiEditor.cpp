@@ -615,6 +615,18 @@ public:
         selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
         selectAllButton.onClick = [this] { showEditWindow(); };
         addAndMakeVisible(selectAllButton);
+        undoMidiButton.setButtonText(juce::String::fromUTF8("ANNULER"));
+        redoMidiButton.setButtonText(juce::String::fromUTF8("RÉTABLIR"));
+        undoMidiButton.setTooltip(juce::String::fromUTF8("Annuler la dernière édition MIDI (Cmd/Ctrl+Z)"));
+        redoMidiButton.setTooltip(juce::String::fromUTF8("Rétablir une édition MIDI (Cmd/Ctrl+Maj+Z)"));
+        for (auto* button : { &undoMidiButton, &redoMidiButton })
+        {
+            button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
+            addAndMakeVisible(*button);
+        }
+        undoMidiButton.onClick = [this] { applyMidiHistory(false); };
+        redoMidiButton.onClick = [this] { applyMidiHistory(true); };
         durationValue.setBufferedToImage(true);
         durationValue.setButtonText(juce::String::fromUTF8("Durée"));
         durationValue.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff233746));
@@ -1671,6 +1683,22 @@ public:
         }
     }
 
+    void applyMidiHistory(bool redoAction)
+    {
+        auto& midi = owner.getMidiEngine();
+        const bool changed = redoAction ? midi.redo() : midi.undo();
+        if (changed)
+        {
+            invalidateHumanizeUndo();
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint();
+            owner.repaint();
+        }
+        undoMidiButton.setEnabled(midi.canUndo());
+        redoMidiButton.setEnabled(midi.canRedo());
+    }
+
     bool keyPressed(const juce::KeyPress& key) override
     {
         // Share the MIDI engine's history with all Piano Roll editing commands.
@@ -1679,17 +1707,7 @@ public:
         const bool primaryShortcut = modifiers.isCommandDown() || modifiers.isCtrlDown();
         if (primaryShortcut && (key.getKeyCode() == 'Z' || key.getKeyCode() == 'Y'))
         {
-            auto& midi = owner.getMidiEngine();
-            const bool redoAction = key.getKeyCode() == 'Y' || modifiers.isShiftDown();
-            const bool changed = redoAction ? midi.redo() : midi.undo();
-            if (changed)
-            {
-                invalidateHumanizeUndo();
-                owner.updateMidiClipTiming();
-                synchronizeLibertyPianoRollPlayback(owner);
-                repaint();
-                owner.repaint();
-            }
+            applyMidiHistory(key.getKeyCode() == 'Y' || modifiers.isShiftDown());
             return true;
         }
         if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D')
@@ -1773,6 +1791,12 @@ public:
             toolButtons[(size_t)i].setBounds(pianoKeyWidth + 8 + i * 35, 3, buttonWidth, editorToolbarHeight - 6);
         quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
         selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
+        const int historyX = pianoKeyWidth + 8 + 9 * 35 + 108;
+        const bool historyFits = getWidth() >= historyX + 150;
+        undoMidiButton.setVisible(historyFits);
+        redoMidiButton.setVisible(historyFits);
+        undoMidiButton.setBounds(historyX, 3, 72, editorToolbarHeight - 6);
+        redoMidiButton.setBounds(historyX + 76, 3, 72, editorToolbarHeight - 6);
         // Keep the editable value inside the visible information line, not at the far-right edge.
         const int velocityX = pianoKeyWidth + 390;
         durationValue.setBounds(pianoKeyWidth + 210, editorToolbarHeight + 3,
@@ -2264,7 +2288,7 @@ public:
 
 private:
     std::array<juce::TextButton, 9> toolButtons;
-    juce::TextButton quantizeButton, selectAllButton;
+    juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton;
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
     int selectedDurationId = 0;
@@ -2343,6 +2367,8 @@ private:
         auto& midi = owner.getMidiEngine(); midi.setPlaybackPositionSeconds(owner.getAudioCurrentTimeSeconds()); midi.setPlaying(owner.isAudioPlaying());
         const auto selected = midi.getSelectedNotesCopy();
         const bool hasSelection = !selected.empty();
+        if (undoMidiButton.isEnabled() != midi.canUndo()) undoMidiButton.setEnabled(midi.canUndo());
+        if (redoMidiButton.isEnabled() != midi.canRedo()) redoMidiButton.setEnabled(midi.canRedo());
         // Keep the compact duration selector continuously visible while it
         // fits in the toolbar. MIDI selection can briefly fluctuate during
         // 30 Hz synchronization; toggling visibility each frame makes this
