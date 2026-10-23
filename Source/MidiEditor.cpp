@@ -1286,7 +1286,7 @@ public:
                 addAndMakeVisible(create);
                 for (auto* combo : { &root, &quality, &inversion, &octave, &noteLength })
                     combo->onChange = [this] { repaint(); };
-                setSize(430, 350);
+                setSize(430, 415);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1329,6 +1329,38 @@ public:
                     g.drawFittedText(juce::MidiMessage::getMidiNoteName(pitches[(size_t)i], true, true, 3),
                         x + 5, 219, cellWidth - 10, 28, juce::Justification::centred, 1);
                 }
+                // Compact two-octave keyboard. Golden keys represent chord tones.
+                const int keyboardLeft = 26;
+                const int keyboardTop = 270;
+                const int whiteCount = 14;
+                const float whiteWidth = (float)(getWidth() - 52) / (float)whiteCount;
+                const int firstPitch = 60 + (octave.getSelectedId() - 4) * 12;
+                auto isChordPitch = [&](int midiPitch)
+                {
+                    for (int i = 0; i < count; ++i)
+                        if (pitches[(size_t)i] == midiPitch) return true;
+                    return false;
+                };
+                for (int i = 0; i < 14; ++i)
+                {
+                    static const int whiteOffsets[] = { 0, 2, 4, 5, 7, 9, 11 };
+                    const int midiPitch = firstPitch + (i / 7) * 12 + whiteOffsets[i % 7];
+                    const float x = (float)keyboardLeft + i * whiteWidth;
+                    g.setColour(isChordPitch(midiPitch) ? juce::Colour(0xffe1b96f)
+                        : juce::Colour(0xffd5dce0));
+                    g.fillRoundedRectangle(x + 1.0f, (float)keyboardTop, whiteWidth - 2.0f, 48.0f, 2.0f);
+                }
+                for (int i = 0; i < 14; ++i)
+                {
+                    static const int blackOffsets[] = { 1, 3, -1, 6, 8, 10, -1 };
+                    const int offset = blackOffsets[i % 7];
+                    if (offset < 0) continue;
+                    const int midiPitch = firstPitch + (i / 7) * 12 + offset;
+                    const float x = (float)keyboardLeft + (i + 1) * whiteWidth - whiteWidth * 0.32f;
+                    g.setColour(isChordPitch(midiPitch) ? juce::Colour(0xffdba952)
+                        : juce::Colour(0xff293643));
+                    g.fillRoundedRectangle(x, (float)keyboardTop, whiteWidth * 0.64f, 29.0f, 2.0f);
+                }
             }
             void resized() override
             {
@@ -1339,7 +1371,7 @@ public:
                 inversion.setBounds(277, 94, 127, 32);
                 octave.setBounds(26, 145, 176, 32);
                 noteLength.setBounds(210, 145, 194, 32);
-                create.setBounds(26, 274, getWidth() - 52, 42);
+                create.setBounds(26, 341, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
