@@ -267,6 +267,53 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     return true;
 }
 
+bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh)
+{
+    if (spreadTicks <= 0 || selectedNotes.size() < 2) return false;
+    auto updated = notes;
+    auto selection = selectedNotes;
+    std::sort(selection.begin(), selection.end(), [lowToHigh](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        return lowToHigh ? a.pitch < b.pitch : a.pitch > b.pitch;
+    });
+    bool changed = false;
+    std::vector<NoteEvent> shifted;
+    for (std::size_t begin = 0; begin < selection.size();)
+    {
+        std::size_t end = begin + 1;
+        while (end < selection.size() && selection[end].startTick == selection[begin].startTick) ++end;
+        for (std::size_t i = begin; i < end; ++i)
+        {
+            const auto offsetIndex = i - begin;
+            if (offsetIndex > (std::size_t)(std::numeric_limits<std::int64_t>::max() / spreadTicks)) return false;
+            const auto offset = (std::int64_t)offsetIndex * spreadTicks;
+            auto moved = selection[i];
+            if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
+            const auto original = std::find_if(updated.begin(), updated.end(), [&](const NoteEvent& n)
+            { return n.startTick == selection[i].startTick && n.pitch == selection[i].pitch && n.channel == selection[i].channel; });
+            if (original == updated.end()) return false;
+            original->startTick = moved.startTick;
+            shifted.push_back(moved);
+            changed = changed || offset != 0;
+        }
+        begin = end;
+    }
+    if (!changed) return false;
+    std::sort(updated.begin(), updated.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    for (std::size_t i = 1; i < updated.size(); ++i)
+        if (updated[i].startTick == updated[i - 1].startTick
+            && updated[i].pitch == updated[i - 1].pitch
+            && updated[i].channel == updated[i - 1].channel) return false;
+    pushUndoState();
+    notes.swap(updated);
+    setSelectedNotes(shifted);
+    return true;
+}
+
 bool MidiEngine::splitSelectedNotesToGrid(std::int64_t gridTicks)
 {
     if (gridTicks <= 0 || selectedNotes.empty()) return false;
