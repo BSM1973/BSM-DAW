@@ -2975,8 +2975,33 @@ public:
         }
     }
 
+    void visibilityChanged() override
+    {
+        // A dock/editor can be hidden while the mouse is still down.
+        // Never leave the MIDI engine in grouped-undo mode afterwards.
+        if (!isVisible() && (draggingNote || draggingGroup))
+        {
+            owner.getMidiEngine().endGroupedEdit();
+            draggingNote = false;
+            draggingGroup = false;
+            dragMoved = false;
+            resizeSide = ResizeSide::none;
+            clickSelectionPending = false;
+            setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        }
+    }
+
     void mouseDown(const juce::MouseEvent& e) override
     {
+        // Recover from a missing mouseUp before beginning a new gesture.
+        if (draggingNote || draggingGroup)
+        {
+            owner.getMidiEngine().endGroupedEdit();
+            draggingNote = false;
+            draggingGroup = false;
+            resizeSide = ResizeSide::none;
+            clickSelectionPending = false;
+        }
         if (dualLanes && e.mods.isLeftButtonDown())
         {
             const int top = getHeight() - dualLaneTotalHeight;
