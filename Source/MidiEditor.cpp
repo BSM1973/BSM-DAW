@@ -1110,9 +1110,22 @@ public:
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
             for (auto& button : buttons)
-                if (button->isVisible())
-                    button->setBounds(26, currentCategory == 2 ? 180 + shown++ * 44 : 184 + shown++ * 49,
+            {
+                if (!button->isVisible()) continue;
+                if (currentCategory == 1)
+                {
+                    // Twelve transformations fit in two columns without leaving the dialog.
+                    const int columnWidth = (available - 12) / 2;
+                    const int column = shown / 6;
+                    const int row = shown % 6;
+                    button->setBounds(26 + column * (columnWidth + 12),
+                        184 + row * 68, columnWidth, 56);
+                }
+                else
+                    button->setBounds(26, currentCategory == 2 ? 180 + shown * 44 : 184 + shown * 49,
                         available, currentCategory == 2 ? 38 : 42);
+                ++shown;
+            }
         }
     private:
         void refreshCategory()
