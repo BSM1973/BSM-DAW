@@ -630,6 +630,7 @@ public:
             menu.addItem(20, juce::String::fromUTF8("Quantifier"));
             menu.addItem(21, juce::String::fromUTF8("ÉDITION MIDI"));
             menu.addItem(24, juce::String::fromUTF8("COMPOSITION · ACCORDS…"));
+            menu.addItem(25, juce::String::fromUTF8("COMPOSITION · PROGRESSIONS…"));
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -644,6 +645,7 @@ public:
                     else if (result == 22) safe->applyMidiHistory(false);
                     else if (result == 23) safe->applyMidiHistory(true);
                     else if (result == 24) safe->showCompositionWindow();
+                    else if (result == 25) safe->showProgressionWindow();
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -1226,6 +1228,115 @@ public:
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
     };
+
+    void showProgressionWindow()
+    {
+        struct ProgressionContent final : juce::Component
+        {
+            juce::ComboBox key, pattern;
+            juce::TextButton insertButton { juce::String::fromUTF8("INSÉRER LA PROGRESSION") };
+            juce::Label heading, explanation;
+            std::function<void(int, int)> insert;
+            explicit ProgressionContent(std::function<void(int, int)> callback)
+                : insert(std::move(callback))
+            {
+                static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
+                    "Fa#", "Sol", "La♭", "La", "Si♭", "Si" };
+                for (int i = 0; i < 12; ++i)
+                    key.addItem(juce::String::fromUTF8(roots[i]), i + 1);
+                key.setSelectedId(1, juce::dontSendNotification);
+                pattern.addItem("I - V - vi - IV", 1);
+                pattern.addItem("I - IV - V - I", 2);
+                pattern.addItem("vi - IV - I - V", 3);
+                pattern.setSelectedId(1, juce::dontSendNotification);
+                for (auto* combo : { &key, &pattern })
+                {
+                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
+                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    addAndMakeVisible(*combo);
+                }
+                heading.setText(juce::String::fromUTF8("COMPOSITION  /  PROGRESSIONS"),
+                    juce::dontSendNotification);
+                heading.setFont(juce::Font(19.0f, juce::Font::bold));
+                heading.setColour(juce::Label::textColourId, juce::Colour(0xfff3d48b));
+                explanation.setText(juce::String::fromUTF8("4 accords successifs · une mesure chacun · tonalité majeure"),
+                    juce::dontSendNotification);
+                explanation.setColour(juce::Label::textColourId, juce::Colour(0xffb8c8d3));
+                addAndMakeVisible(heading);
+                addAndMakeVisible(explanation);
+                insertButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff86652d));
+                insertButton.onClick = [this]
+                {
+                    if (insert) insert(key.getSelectedId() - 1, pattern.getSelectedId() - 1);
+                };
+                addAndMakeVisible(insertButton);
+                setSize(440, 235);
+            }
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xff111923));
+                g.setColour(juce::Colour(0xff344857));
+                g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(8.0f), 9.0f, 1.0f);
+            }
+            void resized() override
+            {
+                heading.setBounds(26, 18, getWidth() - 52, 32);
+                explanation.setBounds(26, 52, getWidth() - 52, 27);
+                key.setBounds(26, 99, 130, 34);
+                pattern.setBounds(168, 99, getWidth() - 194, 34);
+                insertButton.setBounds(26, 157, getWidth() - 52, 42);
+            }
+        };
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  PROGRESSIONS");
+        options.dialogBackgroundColour = juce::Colour(0xff111923);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = false;
+        options.content.setOwned(new ProgressionContent(
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int key, int pattern)
+            {
+                if (safe != nullptr) safe->insertChordProgression(key, pattern);
+            }));
+        options.launchAsync();
+    }
+
+    void insertChordProgression(int key, int pattern)
+    {
+        // Diatonic major-key progression, four bars, starting at the first
+        // selected note (or the beginning of the clip). Existing notes remain.
+        static const int progressions[3][4] = {
+            { 0, 4, 5, 3 }, { 0, 3, 4, 0 }, { 5, 3, 0, 4 }
+        };
+        static const int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+        const int which = juce::jlimit(0, 2, pattern);
+        const int root = juce::jlimit(0, 11, key);
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        const auto firstTick = selected.empty() ? 0 : selected.front().startTick;
+        const auto barTicks = MidiEngine::ticksPerQuarterNote * 4;
+        bool changed = false;
+        for (int bar = 0; bar < 4; ++bar)
+        {
+            const int degree = progressions[which][bar];
+            const int pitchRoot = 60 + root + majorScale[degree];
+            for (int third = 0; third < 3; ++third)
+            {
+                const int scaleStep = degree + third * 2;
+                const int pitch = pitchRoot + majorScale[scaleStep % 7]
+                    - majorScale[degree] + (scaleStep / 7) * 12;
+                changed = midi.addNote(firstTick + bar * barTicks, barTicks,
+                    pitch, 100, 1) || changed;
+            }
+        }
+        if (changed)
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint();
+            owner.repaint();
+        }
+    }
 
     void showCompositionWindow()
     {
