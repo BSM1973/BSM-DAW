@@ -1231,16 +1231,36 @@ public:
         int currentCategory = 0;
     };
 
+    int snapPitchToScale(int pitch) const noexcept
+    {
+        if (!scaleSnap) return pitch;
+        static const int masks[5][12] = {
+            { 1,0,1,0,1,1,0,1,0,1,0,1 },
+            { 1,0,1,1,0,1,0,1,1,0,1,0 },
+            { 1,0,1,0,1,0,0,1,0,1,0,0 },
+            { 1,0,0,1,0,1,0,1,0,0,1,0 },
+            { 1,0,0,1,0,1,1,1,0,0,1,0 }
+        };
+        pitch = juce::jlimit(0, 127, pitch);
+        for (int distance = 0; distance < 12; ++distance)
+            for (int candidate : { pitch - distance, pitch + distance })
+                if (candidate >= 0 && candidate <= 127
+                    && masks[scaleType][((candidate - scaleRoot) % 12 + 12) % 12])
+                    return candidate;
+        return pitch;
+    }
+
     void showScaleWindow()
     {
         struct ScaleContent final : juce::Component
         {
             juce::ComboBox tonic, scale;
             juce::ToggleButton highlight { juce::String::fromUTF8("Afficher la gamme sur le Piano Roll") };
+            juce::ToggleButton snap { juce::String::fromUTF8("Snap à la gamme (notes dessinées et déplacées)") };
             juce::Label title, help;
-            std::function<void(int, int, bool)> apply;
-            explicit ScaleContent(std::function<void(int, int, bool)> callback,
-                                  int root, int type, bool enabled)
+            std::function<void(int, int, bool, bool)> apply;
+            explicit ScaleContent(std::function<void(int, int, bool, bool)> callback,
+                                  int root, int type, bool enabled, bool snapEnabled)
                 : apply(std::move(callback))
             {
                 static const char* roots[] = {
@@ -1257,6 +1277,7 @@ public:
                 scale.addItem(juce::String::fromUTF8("Blues"), 5);
                 scale.setSelectedId(type + 1, juce::dontSendNotification);
                 highlight.setToggleState(enabled, juce::dontSendNotification);
+                snap.setToggleState(snapEnabled, juce::dontSendNotification);
                 for (auto* combo : { &tonic, &scale })
                 {
                     combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
@@ -1274,16 +1295,19 @@ public:
                 addAndMakeVisible(title);
                 addAndMakeVisible(help);
                 addAndMakeVisible(highlight);
+                snap.setColour(juce::ToggleButton::textColourId, juce::Colour(0xfff3d48b));
+                addAndMakeVisible(snap);
                 auto update = [this]
                 {
                     if (apply)
                         apply(tonic.getSelectedId() - 1, scale.getSelectedId() - 1,
-                              highlight.getToggleState());
+                              highlight.getToggleState(), snap.getToggleState());
                 };
                 tonic.onChange = update;
                 scale.onChange = update;
                 highlight.onClick = update;
-                setSize(440, 225);
+                snap.onClick = update;
+                setSize(440, 270);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1298,6 +1322,7 @@ public:
                 tonic.setBounds(26, 94, 130, 34);
                 scale.setBounds(168, 94, getWidth() - 194, 34);
                 highlight.setBounds(26, 150, getWidth() - 52, 35);
+                snap.setBounds(26, 193, getWidth() - 52, 35);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1307,14 +1332,15 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new ScaleContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int root, int type, bool enabled, bool snapEnabled)
             {
                 if (safe == nullptr) return;
                 safe->scaleRoot = juce::jlimit(0, 11, root);
                 safe->scaleType = juce::jlimit(0, 4, type);
                 safe->scaleHighlight = enabled;
+                safe->scaleSnap = snapEnabled;
                 safe->repaint();
-            }, scaleRoot, scaleType, scaleHighlight));
+            }, scaleRoot, scaleType, scaleHighlight, scaleSnap));
         options.launchAsync();
     }
 
@@ -2975,7 +3001,7 @@ public:
         }
 
         if (tool == 1) // DRAW / DESSINER
-            if (midi.addNote(tickFromX(e.x), drawingDurationTicks(), pitch, 100, 1))
+            if (midi.addNote(tickFromX(e.x), drawingDurationTicks(), snapPitchToScale(pitch), 100, 1))
             { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
 
@@ -3061,7 +3087,7 @@ public:
             if (newStart != dragStartTick && newLength >= gridTicks && owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch) && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength)) { dragStartTick = newStart; originalLengthTicks = newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
-        const auto newTick = tickFromX(e.x); const int newPitch = pitchFromY(e.y);
+        const auto newTick = tickFromX(e.x); const int newPitch = snapPitchToScale(pitchFromY(e.y));
         if (newTick == dragStartTick && newPitch == dragPitch) return;
         if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragEndTick = newTick + originalLengthTicks; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
@@ -3112,7 +3138,7 @@ public:
 
 private:
     int scaleRoot = 0, scaleType = 0;
-    bool scaleHighlight = false;
+    bool scaleHighlight = false, scaleSnap = false;
     std::array<juce::TextButton, 9> toolButtons;
     juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
     juce::TextEditor velocityValue;
