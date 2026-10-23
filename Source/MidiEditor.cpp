@@ -1334,7 +1334,7 @@ public:
         const auto quarter = MidiEngine::ticksPerQuarterNote;
         const auto duration = noteLength == 2 ? quarter * 2
             : noteLength == 3 ? quarter * 4
-            : noteLength == 4 ? juce::jmax(1, quarter / 2) : quarter;
+            : noteLength == 4 ? juce::jmax((decltype(quarter))1, quarter / 2) : quarter;
         std::array<int, 4> pitches {};
         int noteCount = 0;
         for (int interval : intervals[type])
