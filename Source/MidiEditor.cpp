@@ -2945,7 +2945,7 @@ public:
         if (isInVelocityLane(e.y)) { setMouseCursor(juce::MouseCursor::UpDownResizeCursor); return; }
         const auto side = findResizeSide(e.position);
         if (side != ResizeSide::none) { setMouseCursor(juce::MouseCursor::LeftRightResizeCursor); return; }
-        if (findNoteAt(e.position) != nullptr) { setMouseCursor(juce::MouseCursor::DraggingHandCursor); return; }
+        if (findNoteAt(e.position)) { setMouseCursor(juce::MouseCursor::DraggingHandCursor); return; }
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
     }
     void mouseExit(const juce::MouseEvent&) override { if (!draggingNote) setMouseCursor(juce::MouseCursor::CrosshairCursor); }
@@ -3299,8 +3299,9 @@ private:
     }
     bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight)) && y < getHeight(); }
 
-    const MidiEngine::NoteEvent* findNoteAt(juce::Point<float> position) const
+    bool findNoteAt(juce::Point<float> position) const
     {
+        if (position.x < pianoKeyWidth || !isWithinPitchRows((int)position.y)) return false;
         const auto pixelsPerTick = getPixelsPerTick();
         const int keyHeight = pitchRowHeight();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
@@ -3313,14 +3314,14 @@ private:
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
             const auto noteRect = juce::Rectangle<int>(x + 1, y, w - 2, juce::jmax(1, keyHeight - (keyHeight >= 8 ? 4 : 1)));
-            if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y)) return &n;
+            if (n.pitch == pitchFromY((int)position.y) && noteRect.contains((int)position.x, (int)position.y)) return true;
         }
-        return nullptr;
+        return false;
     }
 
     ResizeSide findResizeSide(juce::Point<float> position) const
     {
-        if (position.y < rulerHeight || position.y >= getHeight() - (dualLanes ? dualLaneTotalHeight : velocityLaneHeight) || position.x < pianoKeyWidth) return ResizeSide::none;
+        if (position.x < pianoKeyWidth || !isWithinPitchRows((int)position.y)) return ResizeSide::none;
         const auto pixelsPerTick = getPixelsPerTick();
         const int keyHeight = pitchRowHeight();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
