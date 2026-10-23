@@ -615,8 +615,8 @@ public:
         selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
         selectAllButton.onClick = [this] { showEditWindow(); };
         addAndMakeVisible(selectAllButton);
-        undoMidiButton.setButtonText(juce::String::fromUTF8("ANNULER"));
-        redoMidiButton.setButtonText(juce::String::fromUTF8("RÉTABLIR"));
+        undoMidiButton.setButtonText(juce::String::fromUTF8("↶"));
+        redoMidiButton.setButtonText(juce::String::fromUTF8("↷"));
         undoMidiButton.setTooltip(juce::String::fromUTF8("Annuler la dernière édition MIDI (Cmd/Ctrl+Z)"));
         redoMidiButton.setTooltip(juce::String::fromUTF8("Rétablir une édition MIDI (Cmd/Ctrl+Maj+Z)"));
         for (auto* button : { &undoMidiButton, &redoMidiButton })
@@ -1792,11 +1792,13 @@ public:
         quantizeButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 8, 3, 36, editorToolbarHeight - 6);
         selectAllButton.setBounds(pianoKeyWidth + 8 + 9 * 35 + 48, 3, 52, editorToolbarHeight - 6);
         const int historyX = pianoKeyWidth + 8 + 9 * 35 + 108;
-        const bool historyFits = getWidth() >= historyX + 150;
+        // Compact controls: never overlap the right edge in a narrow dock.
+        const int availableHistoryWidth = getWidth() - historyX - 8;
+        const bool historyFits = availableHistoryWidth >= 68;
         undoMidiButton.setVisible(historyFits);
         redoMidiButton.setVisible(historyFits);
-        undoMidiButton.setBounds(historyX, 3, 72, editorToolbarHeight - 6);
-        redoMidiButton.setBounds(historyX + 76, 3, 72, editorToolbarHeight - 6);
+        undoMidiButton.setBounds(historyX, 3, 30, editorToolbarHeight - 6);
+        redoMidiButton.setBounds(historyX + 36, 3, 30, editorToolbarHeight - 6);
         // Keep the editable value inside the visible information line, not at the far-right edge.
         const int velocityX = pianoKeyWidth + 390;
         durationValue.setBounds(pianoKeyWidth + 210, editorToolbarHeight + 3,
