@@ -1332,16 +1332,25 @@ public:
                 // Compact two-octave keyboard. Golden keys represent chord tones.
                 const int keyboardLeft = 26;
                 const int keyboardTop = 270;
-                const int whiteCount = 14;
+                // Follow the actual voicing, not only the chosen root octave.
+                // Expand to three octaves when a high inversion needs more room.
+                int lowest = pitches[0];
+                int highest = pitches[0];
+                for (int i = 1; i < count; ++i)
+                {
+                    lowest = juce::jmin(lowest, pitches[(size_t)i]);
+                    highest = juce::jmax(highest, pitches[(size_t)i]);
+                }
+                const int firstPitch = (lowest / 12) * 12;
+                const int whiteCount = highest >= firstPitch + 24 ? 21 : 14;
                 const float whiteWidth = (float)(getWidth() - 52) / (float)whiteCount;
-                const int firstPitch = 60 + (octave.getSelectedId() - 4) * 12;
                 auto isChordPitch = [&](int midiPitch)
                 {
                     for (int i = 0; i < count; ++i)
                         if (pitches[(size_t)i] == midiPitch) return true;
                     return false;
                 };
-                for (int i = 0; i < 14; ++i)
+                for (int i = 0; i < whiteCount; ++i)
                 {
                     static const int whiteOffsets[] = { 0, 2, 4, 5, 7, 9, 11 };
                     const int midiPitch = firstPitch + (i / 7) * 12 + whiteOffsets[i % 7];
@@ -1350,7 +1359,7 @@ public:
                         : juce::Colour(0xffd5dce0));
                     g.fillRoundedRectangle(x + 1.0f, (float)keyboardTop, whiteWidth - 2.0f, 48.0f, 2.0f);
                 }
-                for (int i = 0; i < 14; ++i)
+                for (int i = 0; i < whiteCount; ++i)
                 {
                     static const int blackOffsets[] = { 1, 3, -1, 6, 8, 10, -1 };
                     const int offset = blackOffsets[i % 7];
