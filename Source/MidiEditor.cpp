@@ -848,6 +848,7 @@ public:
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
                 g.setFont(juce::Font(14.0f));
+                g.drawText(juce::String::fromUTF8("FORME"), 26, 411, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("DÉPART"), 26, 448, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("ARRIVÉE"), 26, 495, 115, 25, juce::Justification::centredLeft);
                 // Keep the velocity preview in its own dark panel, below the reset control.
