@@ -637,7 +637,7 @@ public:
                 {
                     if (safe == nullptr) return;
                     if (result >= 1 && result <= 9)
-                    { safe->setLibertyActiveTool(result - 1); safe->refreshToolButtons(); }
+                    { setLibertyActiveTool(result - 1); safe->refreshToolButtons(); }
                     else if (result == 20) safe->quantizeSelection();
                     else if (result == 21) safe->showEditWindow();
                     else if (result == 22) safe->applyMidiHistory(false);
