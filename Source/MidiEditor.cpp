@@ -723,7 +723,7 @@ public:
         }
     }
 
-    void applyVelocityRamp(bool ascending, int startVelocity, int endVelocity)
+    void applyVelocityRamp(bool ascending, int startVelocity, int endVelocity, int curveType)
     {
         auto& midi = owner.getMidiEngine();
         auto notes = midi.getSelectedNotesCopy();
@@ -741,9 +741,11 @@ public:
             const double fraction = last > first
                 ? (double)(notes[i].startTick - first) / (double)(last - first)
                 : (notes.size() > 1 ? (double)i / (double)(notes.size() - 1) : 0.0);
+            const double shaped = curveType == 1 ? fraction * fraction
+                : curveType == 2 ? std::sqrt(fraction) : fraction;
             const int target = juce::jlimit(1, 127, juce::roundToInt(
-                ascending ? startVelocity + fraction * (endVelocity - startVelocity)
-                          : endVelocity + fraction * (startVelocity - endVelocity)));
+                ascending ? startVelocity + shaped * (endVelocity - startVelocity)
+                          : endVelocity + shaped * (startVelocity - endVelocity)));
             changed = midi.setNoteVelocity(notes[i].startTick, notes[i].pitch,
                 notes[i].channel, target) || changed;
         }
@@ -757,7 +759,7 @@ public:
     class EditWindowContent final : public juce::Component
     {
     public:
-        explicit EditWindowContent(std::function<void(int, int, int)> action, bool hasSelection)
+        explicit EditWindowContent(std::function<void(int, int, int, int)> action, bool hasSelection)
             : onAction(std::move(action))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ" };
@@ -791,7 +793,7 @@ public:
                 button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202d3b));
                 button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
                 const int actionId = actionIds[i];
-                button->onClick = [this, actionId] { if (onAction) onAction(actionId, (int)startVelocity.getValue(), (int)endVelocity.getValue()); };
+                button->onClick = [this, actionId] { if (onAction) onAction(actionId, (int)startVelocity.getValue(), (int)endVelocity.getValue(), curveSelector.getSelectedId() - 1); };
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
@@ -805,6 +807,12 @@ public:
             }
             startVelocity.onValueChange = [this] { repaint(); };
             endVelocity.onValueChange = [this] { repaint(); };
+            curveSelector.addItem(juce::String::fromUTF8("Linéaire"), 1);
+            curveSelector.addItem(juce::String::fromUTF8("Exponentielle"), 2);
+            curveSelector.addItem(juce::String::fromUTF8("Douce (logarithmique)"), 3);
+            curveSelector.setSelectedId(1, juce::dontSendNotification);
+            curveSelector.onChange = [this] { repaint(); };
+            addAndMakeVisible(curveSelector);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 650);
@@ -830,13 +838,21 @@ public:
                 g.setFont(juce::Font(14.0f));
                 g.drawText(juce::String::fromUTF8("DÉPART"), 26, 448, 115, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("ARRIVÉE"), 26, 495, 115, 25, juce::Justification::centredLeft);
-                const float x0 = 35.0f, x1 = 565.0f;
-                const float y0 = 586.0f - (float)startVelocity.getValue() * 0.36f;
-                const float y1 = 586.0f - (float)endVelocity.getValue() * 0.36f;
+                juce::Path curve;
+                for (int i = 0; i <= 64; ++i)
+                {
+                    const double t = (double)i / 64.0;
+                    const int type = curveSelector.getSelectedId() - 1;
+                    const double shaped = type == 1 ? t * t : type == 2 ? std::sqrt(t) : t;
+                    const double value = startVelocity.getValue()
+                        + shaped * (endVelocity.getValue() - startVelocity.getValue());
+                    const float x = 35.0f + (float)t * 530.0f;
+                    const float y = 606.0f - (float)value * 0.36f;
+                    if (i == 0) curve.startNewSubPath(x, y);
+                    else curve.lineTo(x, y);
+                }
                 g.setColour(juce::Colour(0xffc6a76b));
-                g.drawLine(x0, y0, x1, y1, 3.0f);
-                g.fillEllipse(x0 - 4.0f, y0 - 4.0f, 8.0f, 8.0f);
-                g.fillEllipse(x1 - 4.0f, y1 - 4.0f, 8.0f, 8.0f);
+                g.strokePath(curve, juce::PathStrokeType(3.0f));
             }
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
@@ -849,6 +865,7 @@ public:
             const int tabWidth = (available - 12) / 3;
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            curveSelector.setBounds(145, 411, getWidth() - 171, 28);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
@@ -869,6 +886,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            curveSelector.setVisible(currentCategory == 2);
             startVelocity.setVisible(currentCategory == 2);
             endVelocity.setVisible(currentCategory == 2);
             resized();
@@ -876,6 +894,7 @@ public:
         }
         std::function<void(int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity;
+        juce::ComboBox curveSelector;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int currentCategory = 0;
@@ -890,7 +909,7 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new EditWindowContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end, int curve)
             {
                 if (safe == nullptr) return;
                 switch (action)
@@ -905,8 +924,8 @@ public:
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
-                    case 12: safe->applyVelocityRamp(true, start, end); break;
-                    case 13: safe->applyVelocityRamp(false, start, end); break;
+                    case 12: safe->applyVelocityRamp(true, start, end, curve); break;
+                    case 13: safe->applyVelocityRamp(false, start, end, curve); break;
                     case 8:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
