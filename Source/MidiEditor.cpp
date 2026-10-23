@@ -1820,6 +1820,12 @@ public:
             activeHidden ? juce::Colour(0xff315b69) : juce::Colour(0xff263544));
         moreToolsButton.setColour(juce::TextButton::textColourOffId,
             activeHidden ? juce::Colour(0xfff3d48b) : juce::Colour(0xffdcb66f));
+        static const char* toolNames[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
+            "Redimensionner", "Étirer", "Vélocité", "Sélection rectangulaire", "Muet" };
+        const juce::String activeName = active >= 0 && active < 9
+            ? juce::String::fromUTF8(toolNames[active]) : juce::String::fromUTF8("Inconnu");
+        moreToolsButton.setTooltip(juce::String::fromUTF8("Outils MIDI — actif : ")
+            + activeName + (activeHidden ? juce::String::fromUTF8(" (dans la palette)") : juce::String()));
     }
 
     void resized() override
