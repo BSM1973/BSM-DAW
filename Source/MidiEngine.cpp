@@ -267,9 +267,9 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     return true;
 }
 
-bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh)
+bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, int velocityVariation)
 {
-    if (spreadTicks <= 0 || selectedNotes.size() < 2) return false;
+    if (spreadTicks <= 0 || selectedNotes.size() < 2 || velocityVariation < 0 || velocityVariation > 50) return false;
     auto updated = notes;
     auto selection = selectedNotes;
     std::sort(selection.begin(), selection.end(), [lowToHigh](const NoteEvent& a, const NoteEvent& b)
@@ -294,6 +294,12 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh)
             { return n.startTick == selection[i].startTick && n.pitch == selection[i].pitch && n.channel == selection[i].channel; });
             if (original == updated.end()) return false;
             original->startTick = moved.startTick;
+            if (velocityVariation > 0)
+            {
+                const int deviation = (int)((offsetIndex * 17 + (std::size_t)moved.pitch * 7) % (std::size_t)(2 * velocityVariation + 1)) - velocityVariation;
+                moved.velocity = (std::uint8_t)std::clamp((int)moved.velocity + deviation, 1, 127);
+                original->velocity = moved.velocity;
+            }
             shifted.push_back(moved);
             changed = changed || offset != 0;
         }
