@@ -1196,6 +1196,10 @@ public:
             [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end, int curve) -> juce::String
             {
                 if (safe == nullptr) return {};
+                // Any other edit may advance MIDI undo history: never undo that edit
+                // through the dedicated humanization button.
+                if (action != 24 && action != 25 && action != 1)
+                    safe->invalidateHumanizeUndo();
                 switch (action)
                 {
                     case 1: safe->selectAllNotes(); break;
@@ -1483,6 +1487,12 @@ public:
             return juce::String::fromUTF8("Humanisation appliquée. Annulation disponible.");
         }
         return juce::String::fromUTF8("Impossible d’appliquer l’humanisation.");
+    }
+
+    void invalidateHumanizeUndo() noexcept
+    {
+        humanizeUndoAvailable = false;
+        lastHumanizeResult.clear();
     }
 
     juce::String undoLastHumanization()
