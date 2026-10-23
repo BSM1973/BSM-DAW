@@ -615,6 +615,36 @@ public:
         selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
         selectAllButton.onClick = [this] { showEditWindow(); };
         addAndMakeVisible(selectAllButton);
+        moreToolsButton.setButtonText("...");
+        moreToolsButton.setTooltip(juce::String::fromUTF8("Outils MIDI supplémentaires"));
+        moreToolsButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+        moreToolsButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
+        moreToolsButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            static const char* names[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
+                "Redimensionner", "Étirer", "Vélocité", "Sélection rectangulaire", "Muet" };
+            for (int i = 0; i < 9; ++i)
+                menu.addItem(i + 1, juce::String::fromUTF8(names[i]), true, getLibertyActiveTool() == i);
+            menu.addSeparator();
+            menu.addItem(20, juce::String::fromUTF8("Quantifier"));
+            menu.addItem(21, juce::String::fromUTF8("ÉDITION MIDI"));
+            menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
+            menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
+            juce::Component::SafePointer<PianoRoll> safe(this);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&moreToolsButton),
+                [safe](int result)
+                {
+                    if (safe == nullptr) return;
+                    if (result >= 1 && result <= 9)
+                    { safe->setLibertyActiveTool(result - 1); safe->refreshToolButtons(); }
+                    else if (result == 20) safe->quantizeSelection();
+                    else if (result == 21) safe->showEditWindow();
+                    else if (result == 22) safe->applyMidiHistory(false);
+                    else if (result == 23) safe->applyMidiHistory(true);
+                });
+        };
+        addAndMakeVisible(moreToolsButton);
         undoMidiButton.setButtonText(juce::String::fromUTF8("↶"));
         redoMidiButton.setButtonText(juce::String::fromUTF8("↷"));
         undoMidiButton.setTooltip(juce::String::fromUTF8("Annuler la dernière édition MIDI (Cmd/Ctrl+Z)"));
@@ -1786,33 +1816,37 @@ public:
 
     void resized() override
     {
-        // Adaptive toolbar: preserve editing tools first, then quantize, edit and history.
-        // Hidden commands remain accessible through keyboard shortcuts.
+        // Reserve an always-reachable overflow palette before placing optional controls.
         const int left = pianoKeyWidth + 8;
         const int right = getWidth() - 8;
         const int buttonHeight = editorToolbarHeight - 6;
-        const int buttonWidth = 32;
-        const int step = 35;
-        const int reservedActions = 36 + 4 + 52 + 8 + 30 + 6 + 30;
         const int available = juce::jmax(0, right - left);
-        const bool fullToolbar = available >= 9 * step + 8 + reservedActions;
-        const int toolCount = fullToolbar ? 9 : juce::jlimit(0, 9, (available - 8) / step);
+        const bool showOverflow = available >= 30;
+        const int overflowX = right - 30;
+        moreToolsButton.setVisible(showOverflow);
+        moreToolsButton.setBounds(overflowX, 3, 30, buttonHeight);
+        const int actionRight = showOverflow ? overflowX - 6 : right;
+        const int step = 35;
+        const int allToolsWidth = 9 * step;
+        const bool fullToolbar = available >= allToolsWidth + 8 + 36 + 4 + 52 + 8 + 66 + 36;
+        const int toolCount = fullToolbar ? 9
+            : juce::jlimit(0, 9, (actionRight - left - 8) / step);
         for (int i = 0; i < 9; ++i)
         {
             auto& button = toolButtons[(size_t)i];
             button.setVisible(i < toolCount);
-            button.setBounds(left + i * step, 3, buttonWidth, buttonHeight);
+            button.setBounds(left + i * step, 3, 32, buttonHeight);
         }
         const int actionX = left + toolCount * step + 8;
-        const bool quantizeFits = actionX + 36 <= right;
+        const bool quantizeFits = actionX + 36 <= actionRight;
         quantizeButton.setVisible(quantizeFits);
         quantizeButton.setBounds(actionX, 3, 36, buttonHeight);
         const int editX = actionX + 40;
-        const bool editFits = quantizeFits && editX + 52 <= right;
+        const bool editFits = quantizeFits && editX + 52 <= actionRight;
         selectAllButton.setVisible(editFits);
         selectAllButton.setBounds(editX, 3, 52, buttonHeight);
         const int historyX = editX + 60;
-        const bool historyFits = editFits && historyX + 66 <= right;
+        const bool historyFits = editFits && historyX + 66 <= actionRight;
         undoMidiButton.setVisible(historyFits);
         redoMidiButton.setVisible(historyFits);
         undoMidiButton.setBounds(historyX, 3, 30, buttonHeight);
@@ -2308,7 +2342,7 @@ public:
 
 private:
     std::array<juce::TextButton, 9> toolButtons;
-    juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton;
+    juce::TextButton quantizeButton, selectAllButton, undoMidiButton, redoMidiButton, moreToolsButton;
     juce::TextEditor velocityValue;
     juce::TextButton durationValue;
     int selectedDurationId = 0;
