@@ -723,7 +723,7 @@ public:
         }
     }
 
-    void applyVelocityRamp(bool ascending)
+    void applyVelocityRamp(bool ascending, int startVelocity, int endVelocity)
     {
         auto& midi = owner.getMidiEngine();
         auto notes = midi.getSelectedNotesCopy();
@@ -742,7 +742,8 @@ public:
                 ? (double)(notes[i].startTick - first) / (double)(last - first)
                 : (notes.size() > 1 ? (double)i / (double)(notes.size() - 1) : 0.0);
             const int target = juce::jlimit(1, 127, juce::roundToInt(
-                ascending ? 40.0 + fraction * 80.0 : 120.0 - fraction * 80.0));
+                ascending ? startVelocity + fraction * (endVelocity - startVelocity)
+                          : endVelocity + fraction * (startVelocity - endVelocity)));
             changed = midi.setNoteVelocity(notes[i].startTick, notes[i].pitch,
                 notes[i].channel, target) || changed;
         }
@@ -756,7 +757,7 @@ public:
     class EditWindowContent final : public juce::Component
     {
     public:
-        explicit EditWindowContent(std::function<void(int)> action, bool hasSelection)
+        explicit EditWindowContent(std::function<void(int, int, int)> action, bool hasSelection)
             : onAction(std::move(action))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ" };
@@ -790,11 +791,23 @@ public:
                 button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff202d3b));
                 button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
                 const int actionId = actionIds[i];
-                button->onClick = [this, actionId] { if (onAction) onAction(actionId); };
+                button->onClick = [this, actionId] { if (onAction) onAction(actionId, (int)startVelocity.getValue(), (int)endVelocity.getValue()); };
                 addAndMakeVisible(*button);
                 buttons.push_back(std::move(button));
             }
-            setSize(600, 510);
+            for (auto* slider : { &startVelocity, &endVelocity })
+            {
+                slider->setRange(1.0, 127.0, 1.0);
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 25);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
+                addAndMakeVisible(*slider);
+            }
+            startVelocity.onValueChange = [this] { repaint(); };
+            endVelocity.onValueChange = [this] { repaint(); };
+            startVelocity.setValue(40.0, juce::dontSendNotification);
+            endVelocity.setValue(120.0, juce::dontSendNotification);
+            setSize(600, 650);
             refreshCategory();
         }
         void paint(juce::Graphics& g) override
@@ -811,10 +824,24 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 2)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(14.0f));
+                g.drawText(juce::String::fromUTF8("DÉPART"), 26, 448, 115, 25, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("ARRIVÉE"), 26, 495, 115, 25, juce::Justification::centredLeft);
+                const float x0 = 35.0f, x1 = 565.0f;
+                const float y0 = 586.0f - (float)startVelocity.getValue() * 0.36f;
+                const float y1 = 586.0f - (float)endVelocity.getValue() * 0.36f;
+                g.setColour(juce::Colour(0xffc6a76b));
+                g.drawLine(x0, y0, x1, y1, 3.0f);
+                g.fillEllipse(x0 - 4.0f, y0 - 4.0f, 8.0f, 8.0f);
+                g.fillEllipse(x1 - 4.0f, y1 - 4.0f, 8.0f, 8.0f);
+            }
             g.setColour(juce::Colour(0xff8194a5));
             g.setFont(juce::Font(13.0f));
             g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
-                26, 474, 548, 20, juce::Justification::centredLeft);
+                26, 620, 548, 20, juce::Justification::centredLeft);
         }
         void resized() override
         {
@@ -822,6 +849,8 @@ public:
             const int tabWidth = (available - 12) / 3;
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            startVelocity.setBounds(145, 448, getWidth() - 171, 28);
+            endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
             for (auto& button : buttons)
                 if (button->isVisible())
@@ -840,10 +869,13 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            startVelocity.setVisible(currentCategory == 2);
+            endVelocity.setVisible(currentCategory == 2);
             resized();
             repaint();
         }
-        std::function<void(int)> onAction;
+        std::function<void(int, int, int)> onAction;
+        juce::Slider startVelocity, endVelocity;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int currentCategory = 0;
@@ -858,7 +890,7 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new EditWindowContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int action, int start, int end)
             {
                 if (safe == nullptr) return;
                 switch (action)
@@ -873,8 +905,8 @@ public:
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
-                    case 12: safe->applyVelocityRamp(true); break;
-                    case 13: safe->applyVelocityRamp(false); break;
+                    case 12: safe->applyVelocityRamp(true, start, end); break;
+                    case 13: safe->applyVelocityRamp(false, start, end); break;
                     case 8:
                         if (safe->owner.getMidiEngine().deleteSelectedNotes())
                         {
