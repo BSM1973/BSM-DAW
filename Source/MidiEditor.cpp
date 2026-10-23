@@ -1933,7 +1933,61 @@ public:
         if (selectedNotes.empty())
             info = juce::String::fromUTF8("MIDI  |  Aucune note sélectionnée");
         else if (selectedNotes.size() > 1)
-            info = "MIDI  |  " + juce::String((int) selectedNotes.size()) + juce::String::fromUTF8(" notes sélectionnées");
+        {
+            info = "MIDI  |  " + juce::String((int) selectedNotes.size())
+                + juce::String::fromUTF8(" notes sélectionnées");
+            // Read-only chord recognition: ignore octaves and inversions.
+            // Never alter MIDI notes or existing editing tools.
+            std::array<bool, 12> pitchClasses {};
+            int uniqueCount = 0;
+            for (const auto& note : selectedNotes)
+            {
+                const int pc = ((int)note.pitch % 12 + 12) % 12;
+                if (!pitchClasses[(size_t)pc])
+                {
+                    pitchClasses[(size_t)pc] = true;
+                    ++uniqueCount;
+                }
+            }
+            struct ChordShape { const char* suffix; std::array<int, 4> intervals; int count; };
+            static const ChordShape shapes[] = {
+                { "maj7", { 0, 4, 7, 11 }, 4 },
+                { "m7",   { 0, 3, 7, 10 }, 4 },
+                { "7",    { 0, 4, 7, 10 }, 4 },
+                { "m7b5", { 0, 3, 6, 10 }, 4 },
+                { "dim7", { 0, 3, 6, 9 }, 4 },
+                { "",     { 0, 4, 7, 0 }, 3 },
+                { "m",    { 0, 3, 7, 0 }, 3 },
+                { "dim",  { 0, 3, 6, 0 }, 3 },
+                { "aug",  { 0, 4, 8, 0 }, 3 },
+                { "sus2", { 0, 2, 7, 0 }, 3 },
+                { "sus4", { 0, 5, 7, 0 }, 3 }
+            };
+            static const char* rootNames[] = {
+                "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
+                "Fa#", "Sol", "La♭", "La", "Si♭", "Si"
+            };
+            bool found = false;
+            for (int root = 0; root < 12 && !found; ++root)
+            {
+                for (const auto& shape : shapes)
+                {
+                    if (shape.count != uniqueCount) continue;
+                    bool matches = true;
+                    for (int i = 0; i < shape.count; ++i)
+                        if (!pitchClasses[(size_t)((root + shape.intervals[(size_t)i]) % 12)])
+                            matches = false;
+                    if (matches)
+                    {
+                        info += juce::String::fromUTF8("  |  Accord : ")
+                            + juce::String::fromUTF8(rootNames[root])
+                            + juce::String::fromUTF8(shape.suffix);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
         else
         {
             const auto& n = selectedNotes.front();
