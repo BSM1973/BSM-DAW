@@ -267,9 +267,9 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     return true;
 }
 
-bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, int velocityVariation)
+bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, int velocityVariation, int timingVariation)
 {
-    if (spreadTicks <= 0 || selectedNotes.size() < 2 || velocityVariation < 0 || velocityVariation > 50) return false;
+    if (spreadTicks <= 0 || selectedNotes.size() < 2 || velocityVariation < 0 || velocityVariation > 50 || timingVariation < 0 || timingVariation > 50) return false;
     auto updated = notes;
     auto selection = selectedNotes;
     std::sort(selection.begin(), selection.end(), [lowToHigh](const NoteEvent& a, const NoteEvent& b)
@@ -287,7 +287,18 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
         {
             const auto offsetIndex = i - begin;
             if (offsetIndex > (std::size_t)(std::numeric_limits<std::int64_t>::max() / spreadTicks)) return false;
-            const auto offset = (std::int64_t)offsetIndex * spreadTicks;
+            auto offset = (std::int64_t)offsetIndex * spreadTicks;
+            if (timingVariation > 0 && offsetIndex > 0)
+            {
+                // Deterministic variation within a bounded percentage of the
+                // interval. The first note remains anchored to the grid.
+                const auto jitterLimit = (spreadTicks / 100) * timingVariation
+                    + (spreadTicks % 100) * timingVariation / 100;
+                const auto variation = (std::int64_t)((offsetIndex * 13 + (std::size_t)selection[i].pitch * 3) % 101) - 50;
+                const auto jitter = jitterLimit * variation / 50;
+                if (jitter < 0 && offset < -jitter) offset = 0;
+                else offset += jitter;
+            }
             auto moved = selection[i];
             if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
             const auto original = std::find_if(updated.begin(), updated.end(), [&](const NoteEvent& n)
