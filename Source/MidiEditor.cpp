@@ -929,6 +929,33 @@ public:
             g.drawText(juce::String::fromUTF8("LIBERTY  •  ÉDITION NON DESTRUCTIVE DE LA POSITION DES NOTES"),
                 26, 690, 548, 20, juce::Justification::centredLeft);
         }
+        void mouseDown(const juce::MouseEvent& event) override
+        {
+            if (currentCategory != 2) return;
+            const juce::Rectangle<float> preview(26.0f, 596.0f, (float)getWidth() - 52.0f, 78.0f);
+            if (!preview.contains(event.position)) return;
+            const float leftX = preview.getX() + 10.0f;
+            const float rightX = preview.getRight() - 10.0f;
+            const float graphHeight = preview.getHeight() - 10.0f;
+            const float startY = preview.getBottom() - 5.0f - (float)(startVelocity.getValue() / 127.0) * graphHeight;
+            const float endY = preview.getBottom() - 5.0f - (float)(endVelocity.getValue() / 127.0) * graphHeight;
+            const float leftDistance = event.position.getDistanceFrom({ leftX, startY });
+            const float rightDistance = event.position.getDistanceFrom({ rightX, endY });
+            draggedVelocityEndpoint = leftDistance <= 18.0f && leftDistance <= rightDistance ? 0
+                : rightDistance <= 18.0f ? 1 : -1;
+        }
+        void mouseDrag(const juce::MouseEvent& event) override
+        {
+            if (currentCategory != 2 || draggedVelocityEndpoint < 0) return;
+            const float graphBottom = 596.0f + 78.0f - 5.0f;
+            const float graphHeight = 78.0f - 10.0f;
+            const int velocity = juce::jlimit(1, 127, juce::roundToInt((graphBottom - event.position.y) * 127.0f / graphHeight));
+            (draggedVelocityEndpoint == 0 ? startVelocity : endVelocity).setValue(velocity, juce::sendNotification);
+        }
+        void mouseUp(const juce::MouseEvent&) override
+        {
+            draggedVelocityEndpoint = -1;
+        }
         void resized() override
         {
             const int available = getWidth() - 52;
@@ -975,6 +1002,7 @@ public:
         juce::TextButton reverseVelocity, resetVelocity;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
+        int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
     };
 
