@@ -935,6 +935,12 @@ public:
                 const float midY = preview.getBottom() - 5.0f - (float)(midValue / 127.0) * graphHeight;
                 g.setColour(juce::Colour(0xfff0d9a6));
                 g.fillEllipse(midX - 4.5f, midY - 4.5f, 9.0f, 9.0f);
+                g.setColour(juce::Colour(0xfff2e6ce));
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                const int midpointVelocity = juce::jlimit(1, 127, juce::roundToInt(midValue));
+                const int labelY = (int)(midY < preview.getCentreY() ? midY + 7.0f : midY - 19.0f);
+                g.drawText(juce::String(midpointVelocity), (int)midX - 20, labelY, 40, 15,
+                    juce::Justification::centred);
                 g.setColour(juce::Colour(0xffc6a76b));
                 g.setColour(juce::Colour(0xffdce5ed));
                 g.setFont(juce::Font(11.0f));
