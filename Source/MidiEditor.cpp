@@ -554,11 +554,27 @@ public:
         controllerSelector.onChange = [this] {
             static constexpr int ids[] = { -1, 1, 11, 64, 128, 129 };
             activeController = ids[juce::jlimit(0, 5, controllerSelector.getSelectedId() - 1)];
-            velocityLane.setVisible(activeController < 0);
-            controllerLane.setVisible(activeController >= 0);
+            velocityLane.setVisible(dualLanes || activeController < 0);
+            controllerLane.setVisible(dualLanes || activeController >= 0);
             resized(); repaint();
         };
         addAndMakeVisible(controllerSelector);
+        dualLaneButton.setButtonText("▤");
+        dualLaneButton.setTooltip(juce::String::fromUTF8("Afficher la vélocité et un contrôleur MIDI sur deux lignes"));
+        dualLaneButton.setClickingTogglesState(true);
+        dualLaneButton.onClick = [this]
+        {
+            dualLanes = dualLaneButton.getToggleState();
+            if (dualLanes && activeController < 0)
+                controllerSelector.setSelectedId(5, juce::sendNotificationSync);
+            dualLaneButton.setColour(juce::TextButton::buttonColourId,
+                dualLanes ? juce::Colour(0xff176b65) : juce::Colour(0xff28333d));
+            velocityLane.setVisible(dualLanes || activeController < 0);
+            controllerLane.setVisible(dualLanes || activeController >= 0);
+            resized(); repaint();
+        };
+        dualLaneButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff28333d));
+        addAndMakeVisible(dualLaneButton);
         // Shared Piano Roll component: identical tools in the dock and detached editor.
         static const char* glyphs[] = { "↖", "✎", "✂", "⌫", "↔", "◇", "▥", "▧", "◉" };
         static const char* names[] = { "Sélection", "Crayon", "Ciseaux", "Gomme",
@@ -874,11 +890,22 @@ public:
         velocityValue.setBounds(velocityX, editorToolbarHeight + 3,
                                 juce::jmax(0, juce::jmin(56, getWidth() - velocityX - 8)),
                                 juce::jmax(16, rulerHeight - editorToolbarHeight - 6));
-        velocityLane.setBounds(0, juce::jmax(rulerHeight, getHeight() - velocityLaneHeight),
-                               getWidth(), juce::jmin(velocityLaneHeight, getHeight()));
-        controllerLane.setBounds(velocityLane.getBounds());
-        controllerSelector.setBounds(juce::jmax(pianoKeyWidth + 8, getWidth() - 180), 3,
-                                     juce::jmin(172, juce::jmax(0, getWidth() - pianoKeyWidth - 16)), 27);
+        const int lanesHeight = juce::jmin(getHeight() - rulerHeight, dualLanes ? 184 : velocityLaneHeight);
+        const int laneTop = getHeight() - lanesHeight;
+        if (dualLanes)
+        {
+            const int firstHeight = lanesHeight / 2;
+            velocityLane.setBounds(0, laneTop, getWidth(), firstHeight);
+            controllerLane.setBounds(0, laneTop + firstHeight, getWidth(), lanesHeight - firstHeight);
+        }
+        else
+        {
+            velocityLane.setBounds(0, laneTop, getWidth(), lanesHeight);
+            controllerLane.setBounds(velocityLane.getBounds());
+        }
+        const int selectorWidth = juce::jmin(172, juce::jmax(0, getWidth() - pianoKeyWidth - 58));
+        controllerSelector.setBounds(juce::jmax(pianoKeyWidth + 8, getWidth() - selectorWidth - 48), 3, selectorWidth, 27);
+        dualLaneButton.setBounds(getWidth() - 40, 3, 32, 27);
     }
 
     void paint(juce::Graphics& g) override
@@ -928,7 +955,7 @@ public:
                        rulerHeight - infoY - 1, juce::Justification::centredLeft);
         }
         const auto b = getLocalBounds();
-        const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - velocityLaneHeight);
+        const auto velocityAreaY = juce::jmax(rulerHeight, b.getBottom() - (dualLanes ? 184 : velocityLaneHeight));
         const auto grid = juce::Rectangle<int>(pianoKeyWidth, rulerHeight, b.getWidth() - pianoKeyWidth, juce::jmax(1, velocityAreaY - rulerHeight));
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
@@ -1330,7 +1357,7 @@ private:
         return (static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks))
             * (double)getLibertyPianoHorizontalZoom() * (double)localGridZoom;
     }
-    bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - velocityLaneHeight) && y < getHeight(); }
+    bool isInVelocityLane(int y) const noexcept { return y >= juce::jmax(rulerHeight, getHeight() - (dualLanes ? 184 : velocityLaneHeight)) && y < getHeight(); }
 
     const MidiEngine::NoteEvent* findNoteAt(juce::Point<float> position) const
     {
@@ -1353,7 +1380,7 @@ private:
 
     ResizeSide findResizeSide(juce::Point<float> position) const
     {
-        if (position.y < rulerHeight || position.y >= getHeight() - velocityLaneHeight || position.x < pianoKeyWidth) return ResizeSide::none;
+        if (position.y < rulerHeight || position.y >= getHeight() - (dualLanes ? 184 : velocityLaneHeight) || position.x < pianoKeyWidth) return ResizeSide::none;
         const auto pixelsPerTick = getPixelsPerTick();
         const int keyHeight = currentKeyHeight();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
@@ -1427,6 +1454,8 @@ private:
     int activeController = -1;
     ControllerLane controllerLane;
     juce::ComboBox controllerSelector;
+    juce::TextButton dualLaneButton;
+    bool dualLanes = false;
     bool draggingNote = false, dragMoved = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t dragStartTick = 0, dragEndTick = 0, originalLengthTicks = 0;
