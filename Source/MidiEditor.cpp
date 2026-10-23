@@ -1260,7 +1260,26 @@ public:
                 inversion.addItem(juce::String::fromUTF8("Position fondamentale"), 1);
                 inversion.addItem(juce::String::fromUTF8("Premier renversement"), 2);
                 inversion.addItem(juce::String::fromUTF8("Deuxième renversement"), 3);
+                inversion.addItem(juce::String::fromUTF8("Troisième renversement"), 4);
+                inversion.addItem(juce::String::fromUTF8("Quatrième renversement"), 5);
                 inversion.setSelectedId(1, juce::dontSendNotification);
+                auto refreshInversions = [this]
+                {
+                    const int type = quality.getSelectedId() - 1;
+                    const int notes = type == 11 ? 5
+                        : (type == 2 || type == 7 || type == 8 || type == 9 || type == 10) ? 4 : 3;
+                    const int previous = inversion.getSelectedId();
+                    for (int id = 1; id <= 5; ++id)
+                        inversion.setItemEnabled(id, id <= notes);
+                    if (previous > notes)
+                        inversion.setSelectedId(1, juce::dontSendNotification);
+                };
+                quality.onChange = [this, refreshInversions]
+                {
+                    refreshInversions();
+                    repaint();
+                };
+                refreshInversions();
                 for (int oct = 2; oct <= 6; ++oct)
                     octave.addItem("Octave " + juce::String(oct), oct);
                 octave.setSelectedId(4, juce::dontSendNotification);
@@ -1289,12 +1308,12 @@ public:
                 {
                     if (insert)
                         insert(((root.getSelectedId() - 1) * 12
-                            + quality.getSelectedId() - 1) * 3 + inversion.getSelectedId() - 1,
+                            + quality.getSelectedId() - 1) * 5 + inversion.getSelectedId() - 1,
                             octave.getSelectedId(), noteLength.getSelectedId());
                 };
                 addAndMakeVisible(create);
                 for (auto* combo : { &root, &quality, &inversion, &octave, &noteLength })
-                    combo->onChange = [this] { repaint(); };
+                    if (combo != &quality) combo->onChange = [this] { repaint(); };
                 setSize(430, 415);
             }
             void paint(juce::Graphics& g) override
@@ -1305,7 +1324,7 @@ public:
                 // Visual-only preview: no MIDI event, note mutation or audio playback.
                 const int rootClass = juce::jlimit(0, 11, root.getSelectedId() - 1);
                 const int type = juce::jlimit(0, 11, quality.getSelectedId() - 1);
-                const int turns = juce::jlimit(0, 2, inversion.getSelectedId() - 1);
+                const int turns = juce::jlimit(0, 4, inversion.getSelectedId() - 1);
                 static const int shapes[12][5] = {
                     { 0, 4, 7, -1, -1 }, { 0, 3, 7, -1, -1 },
                     { 0, 4, 7, 10, -1 }, { 0, 2, 7, -1, -1 },
@@ -1414,8 +1433,8 @@ public:
     void insertCompositionChord(int choice, int octave = 4, int noteLength = 1)
     {
         // Additive composition tool: existing MIDI editing behaviour is untouched.
-        const int chordChoice = choice / 3;
-        const int inversion = choice % 3;
+        const int chordChoice = choice / 5;
+        const int inversion = choice % 5;
         const int root = juce::jlimit(0, 11, chordChoice / 12);
         const int type = chordChoice % 12;
         static const int intervals[12][5] = {
@@ -1439,7 +1458,7 @@ public:
             if (interval >= 0)
                 pitches[(size_t)noteCount++] = 60 + (juce::jlimit(2, 6, octave) - 4) * 12 + root + interval;
         // Move the lowest note up an octave for each inversion.
-        for (int turn = 0; turn < inversion; ++turn)
+        for (int turn = 0; turn < juce::jmin(inversion, noteCount - 1); ++turn)
         {
             const int moved = pitches[0] + 12;
             for (int i = 1; i < noteCount; ++i)
