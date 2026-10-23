@@ -635,9 +635,18 @@ public:
             for (int root = 0; root < 12; ++root)
             {
                 juce::PopupMenu types;
-                types.addItem(100 + root * 3, juce::String::fromUTF8("Majeur"));
-                types.addItem(101 + root * 3, juce::String::fromUTF8("Mineur"));
-                types.addItem(102 + root * 3, juce::String::fromUTF8("Septième dominante"));
+                static const char* chordTypes[] = { "Majeur", "Mineur", "Septième dominante" };
+                for (int type = 0; type < 3; ++type)
+                {
+                    juce::PopupMenu inversions;
+                    inversions.addItem(100 + (root * 3 + type) * 3,
+                        juce::String::fromUTF8("Position fondamentale"));
+                    inversions.addItem(101 + (root * 3 + type) * 3,
+                        juce::String::fromUTF8("Premier renversement"));
+                    inversions.addItem(102 + (root * 3 + type) * 3,
+                        juce::String::fromUTF8("Deuxième renversement"));
+                    types.addSubMenu(juce::String::fromUTF8(chordTypes[type]), inversions);
+                }
                 chordMenu.addSubMenu(juce::String::fromUTF8(roots[root]), types);
             }
             menu.addSubMenu(juce::String::fromUTF8("COMPOSITION · Créer un accord"), chordMenu);
@@ -654,7 +663,7 @@ public:
                     else if (result == 21) safe->showEditWindow();
                     else if (result == 22) safe->applyMidiHistory(false);
                     else if (result == 23) safe->applyMidiHistory(true);
-                    else if (result >= 100 && result < 136) safe->insertCompositionChord(result - 100);
+                    else if (result >= 100 && result < 208) safe->insertCompositionChord(result - 100);
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -1241,8 +1250,10 @@ public:
     void insertCompositionChord(int choice)
     {
         // Additive composition tool: existing MIDI editing behaviour is untouched.
-        const int root = juce::jlimit(0, 11, choice / 3);
-        const int type = choice % 3;
+        const int chordChoice = choice / 3;
+        const int inversion = choice % 3;
+        const int root = juce::jlimit(0, 11, chordChoice / 3);
+        const int type = chordChoice % 3;
         static const int intervals[3][4] = {
             { 0, 4, 7, -1 }, { 0, 3, 7, -1 }, { 0, 4, 7, 10 }
         };
@@ -1250,12 +1261,22 @@ public:
         const auto selected = midi.getSelectedNotesCopy();
         const auto startTick = selected.empty() ? 0 : selected.front().startTick;
         const auto duration = MidiEngine::ticksPerQuarterNote;
-        bool changed = false;
-        for (int i = 0; i < 4; ++i)
+        std::array<int, 4> pitches {};
+        int noteCount = 0;
+        for (int interval : intervals[type])
+            if (interval >= 0)
+                pitches[(size_t)noteCount++] = 60 + root + interval;
+        // Move the lowest note up an octave for each inversion.
+        for (int turn = 0; turn < inversion; ++turn)
         {
-            if (intervals[type][i] < 0) continue;
-            changed = midi.addNote(startTick, duration, 60 + root + intervals[type][i], 100, 1) || changed;
+            const int moved = pitches[0] + 12;
+            for (int i = 1; i < noteCount; ++i)
+                pitches[(size_t)(i - 1)] = pitches[(size_t)i];
+            pitches[(size_t)(noteCount - 1)] = moved;
         }
+        bool changed = false;
+        for (int i = 0; i < noteCount; ++i)
+            changed = midi.addNote(startTick, duration, pitches[(size_t)i], 100, 1) || changed;
         if (changed)
         {
             owner.updateMidiClipTiming();
