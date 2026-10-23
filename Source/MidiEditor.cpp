@@ -2420,6 +2420,7 @@ public:
         // Quick musical preview of the selected chord without changing the MIDI
         // engine or consuming an Undo step.
         dialog->addButton(juce::String::fromUTF8("ÉCOUTER"), 2);
+        dialog->addButton(juce::String::fromUTF8("RÉINITIALISER"), 3);
         dialog->addButton(juce::String::fromUTF8("APPLIQUER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
@@ -2432,7 +2433,18 @@ public:
                     // Keep the dialog alive while reading its controls, then
                     // release it on every exit path (including Cancel).
                     std::unique_ptr<juce::AlertWindow> ownedDialog(window);
-                    if (safe == nullptr || (result != 1 && result != 2)) return;
+                    if (safe == nullptr) return;
+                    if (result == 3)
+                    {
+                        // Reset every parameter without touching the MIDI clip.
+                        juce::MessageManager::callAsync([safe]()
+                        {
+                            if (safe != nullptr)
+                                safe->showStrumWindow(1, 25, 0, 0);
+                        });
+                        return;
+                    }
+                    if (result != 1 && result != 2) return;
                     const bool lowToHigh = window->getComboBoxComponent("direction") == nullptr
                         || window->getComboBoxComponent("direction")->getSelectedId() != 2;
                     const int percentage = juce::jlimit(1, 400,
