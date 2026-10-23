@@ -3027,9 +3027,27 @@ public:
             const int pitch = pitchFromY(e.y);
             const auto dt = tick - groupDragTick;
             const int dp = pitch - groupDragPitch;
-            if ((dt != 0 || dp != 0) && owner.getMidiEngine().moveSelectedNotesBy(dt, dp))
+            // Move the whole selection by one common interval. Preserve the
+            // original chord voicing instead of quantizing each voice separately.
+            int snappedDp = dp;
+            if (scaleSnap && dp != 0)
             {
-                groupDragTick = tick; groupDragPitch = pitch;
+                const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
+                if (!selected.empty())
+                {
+                    const auto anchor = std::min_element(selected.begin(), selected.end(),
+                        [](const auto& a, const auto& b) { return a.pitch < b.pitch; });
+                    const int anchorPitch = (int)anchor->pitch;
+                    snappedDp = snapPitchToScale(anchorPitch + dp) - anchorPitch;
+                }
+            }
+            if ((dt != 0 || snappedDp != 0)
+                && owner.getMidiEngine().moveSelectedNotesBy(dt, snappedDp))
+            {
+                groupDragTick = tick;
+                // Keep the raw pointer reference for smooth continuous dragging,
+                // but retain any pitch distance not yet accepted by the scale.
+                if (!scaleSnap || dp == snappedDp) groupDragPitch = pitch;
                 owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint();
             }
             return;
