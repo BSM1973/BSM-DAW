@@ -1233,11 +1233,11 @@ public:
         // all note-editing gestures remain unchanged.
         struct CompositionContent final : juce::Component
         {
-            juce::ComboBox root, quality, inversion;
+            juce::ComboBox root, quality, inversion, octave, noteLength;
             juce::TextButton create { juce::String::fromUTF8("INSÉRER L’ACCORD") };
             juce::Label heading, description;
-            std::function<void(int)> insert;
-            explicit CompositionContent(std::function<void(int)> callback) : insert(std::move(callback))
+            std::function<void(int, int, int)> insert;
+            explicit CompositionContent(std::function<void(int, int, int)> callback) : insert(std::move(callback))
             {
                 static const char* roots[] = { "Do", "Do#", "Ré", "Mi♭", "Mi", "Fa",
                     "Fa#", "Sol", "La♭", "La", "Si♭", "Si" };
@@ -1252,7 +1252,15 @@ public:
                 inversion.addItem(juce::String::fromUTF8("Premier renversement"), 2);
                 inversion.addItem(juce::String::fromUTF8("Deuxième renversement"), 3);
                 inversion.setSelectedId(1, juce::dontSendNotification);
-                for (auto* combo : { &root, &quality, &inversion })
+                for (int oct = 2; oct <= 6; ++oct)
+                    octave.addItem("Octave " + juce::String(oct), oct);
+                octave.setSelectedId(4, juce::dontSendNotification);
+                noteLength.addItem(juce::String::fromUTF8("1/4 · Noire"), 1);
+                noteLength.addItem(juce::String::fromUTF8("1/2 · Blanche"), 2);
+                noteLength.addItem(juce::String::fromUTF8("1/1 · Ronde"), 3);
+                noteLength.addItem(juce::String::fromUTF8("1/8 · Croche"), 4);
+                noteLength.setSelectedId(1, juce::dontSendNotification);
+                for (auto* combo : { &root, &quality, &inversion, &octave, &noteLength })
                 {
                     combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
                     combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
@@ -1272,10 +1280,11 @@ public:
                 {
                     if (insert)
                         insert(((root.getSelectedId() - 1) * 3
-                            + quality.getSelectedId() - 1) * 3 + inversion.getSelectedId() - 1);
+                            + quality.getSelectedId() - 1) * 3 + inversion.getSelectedId() - 1,
+                            octave.getSelectedId(), noteLength.getSelectedId());
                 };
                 addAndMakeVisible(create);
-                setSize(430, 250);
+                setSize(430, 300);
             }
             void paint(juce::Graphics& g) override
             {
@@ -1290,7 +1299,9 @@ public:
                 root.setBounds(26, 94, 110, 32);
                 quality.setBounds(144, 94, 125, 32);
                 inversion.setBounds(277, 94, 127, 32);
-                create.setBounds(26, 163, getWidth() - 52, 42);
+                octave.setBounds(26, 145, 176, 32);
+                noteLength.setBounds(210, 145, 194, 32);
+                create.setBounds(26, 207, getWidth() - 52, 42);
             }
         };
         juce::DialogWindow::LaunchOptions options;
@@ -1300,14 +1311,14 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new CompositionContent(
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int choice)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int choice, int oct, int length)
             {
-                if (safe != nullptr) safe->insertCompositionChord(choice);
+                if (safe != nullptr) safe->insertCompositionChord(choice, oct, length);
             }));
         options.launchAsync();
     }
 
-    void insertCompositionChord(int choice)
+    void insertCompositionChord(int choice, int octave = 4, int noteLength = 1)
     {
         // Additive composition tool: existing MIDI editing behaviour is untouched.
         const int chordChoice = choice / 3;
@@ -1320,12 +1331,15 @@ public:
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
         const auto startTick = selected.empty() ? 0 : selected.front().startTick;
-        const auto duration = MidiEngine::ticksPerQuarterNote;
+        const auto quarter = MidiEngine::ticksPerQuarterNote;
+        const auto duration = noteLength == 2 ? quarter * 2
+            : noteLength == 3 ? quarter * 4
+            : noteLength == 4 ? juce::jmax(1, quarter / 2) : quarter;
         std::array<int, 4> pitches {};
         int noteCount = 0;
         for (int interval : intervals[type])
             if (interval >= 0)
-                pitches[(size_t)noteCount++] = 60 + root + interval;
+                pitches[(size_t)noteCount++] = 60 + (juce::jlimit(2, 6, octave) - 4) * 12 + root + interval;
         // Move the lowest note up an octave for each inversion.
         for (int turn = 0; turn < inversion; ++turn)
         {
