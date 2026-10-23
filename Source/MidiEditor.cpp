@@ -641,6 +641,7 @@ public:
             pitchSelection.addItem(33, juce::String::fromUTF8("Une note sur deux"));
             pitchSelection.addItem(34, juce::String::fromUTF8("Une note sur trois"));
             menu.addSubMenu(juce::String::fromUTF8("SÉLECTION · HAUTEURS"), pitchSelection);
+            menu.addItem(35, juce::String::fromUTF8("SÉLECTION · FILTRES MIDI…"));
             menu.addItem(22, juce::String::fromUTF8("Annuler"), owner.getMidiEngine().canUndo());
             menu.addItem(23, juce::String::fromUTF8("Rétablir"), owner.getMidiEngine().canRedo());
             juce::Component::SafePointer<PianoRoll> safe(this);
@@ -662,6 +663,7 @@ public:
                     else if (result == 32) safe->selectMutedNotes();
                     else if (result == 33) safe->selectEveryNthNote(2);
                     else if (result == 34) safe->selectEveryNthNote(3);
+                    else if (result == 35) safe->showMidiSelectionFilter();
                 });
         };
         addAndMakeVisible(moreToolsButton);
@@ -2197,6 +2199,66 @@ public:
                 matching.push_back(notes[i]);
         midi.setSelectedNotes(matching);
         repaint();
+    }
+
+    void showMidiSelectionFilter()
+    {
+        auto dialog = std::make_unique<juce::AlertWindow>(
+            juce::String::fromUTF8("LIBERTY · FILTRES DE SÉLECTION MIDI"),
+            juce::String::fromUTF8("Sélectionner les notes correspondant aux plages définies. Aucune note ne sera modifiée."),
+            juce::MessageBoxIconType::NoIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff111923));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe7edf5));
+        const struct { const char* key; const char* label; int value; } fields[] = {
+            { "pitchMin", "Hauteur minimale (0–127)", 0 },
+            { "pitchMax", "Hauteur maximale (0–127)", 127 },
+            { "velocityMin", "Vélocité minimale (1–127)", 1 },
+            { "velocityMax", "Vélocité maximale (1–127)", 127 },
+            { "durationMin", "Durée minimale (ticks)", 0 },
+            { "durationMax", "Durée maximale (ticks)", 999999 }
+        };
+        for (const auto& field : fields)
+        {
+            dialog->addTextEditor(field.key, juce::String(field.value),
+                                  juce::String::fromUTF8(field.label));
+            if (auto* editor = dialog->getTextEditor(field.key))
+            {
+                editor->setInputRestrictions(9, "0123456789");
+                editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192634));
+                editor->setColour(juce::TextEditor::textColourId, juce::Colour(0xffedf4fc));
+                editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
+            }
+        }
+        dialog->addButton(juce::String::fromUTF8("SÉLECTIONNER"), 1,
+                          juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
+                          juce::KeyPress(juce::KeyPress::escapeKey));
+        auto* window = dialog.get();
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
+            {
+                std::unique_ptr<juce::AlertWindow> ownedDialog(window);
+                if (safe == nullptr || result != 1) return;
+                const auto get = [window](const char* key, int lo, int hi)
+                {
+                    return juce::jlimit(lo, hi, window->getTextEditorContents(key).getIntValue());
+                };
+                const int pMin = get("pitchMin", 0, 127), pMax = get("pitchMax", 0, 127);
+                const int vMin = get("velocityMin", 1, 127), vMax = get("velocityMax", 1, 127);
+                const auto dMin = (std::int64_t)get("durationMin", 0, 999999999);
+                const auto dMax = (std::int64_t)get("durationMax", 0, 999999999);
+                if (pMin > pMax || vMin > vMax || dMin > dMax) return;
+                auto& midi = safe->owner.getMidiEngine();
+                std::vector<MidiEngine::NoteEvent> matching;
+                for (const auto& note : midi.getNotesCopy())
+                    if ((int)note.pitch >= pMin && (int)note.pitch <= pMax
+                        && (int)note.velocity >= vMin && (int)note.velocity <= vMax
+                        && note.lengthTicks >= dMin && note.lengthTicks <= dMax)
+                        matching.push_back(note);
+                midi.setSelectedNotes(matching);
+                safe->repaint();
+            }));
+        dialog.release();
     }
 
     void selectAllNotes()
