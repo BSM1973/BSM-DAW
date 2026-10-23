@@ -2004,9 +2004,30 @@ public:
                  + "." + juce::String(beatNumber)
                  + "  Note " + juce::MidiMessage::getMidiNoteName((int)n.pitch, true, true, 3);
         }
+        // Display detected harmony in its own amber badge, preserving the
+        // existing duration, velocity and channel information fields.
+        const int chordSeparator = info.indexOf(juce::String::fromUTF8("  |  Accord : "));
+        const juce::String chordName = chordSeparator >= 0
+            ? info.substring(chordSeparator + juce::String::fromUTF8("  |  Accord : ").length())
+            : juce::String();
+        const juce::String baseInfo = chordSeparator >= 0 ? info.substring(0, chordSeparator) : info;
+        const int infoWidth = juce::jmax(0, juce::jmin(258, getWidth() - pianoKeyWidth - 14));
         g.setColour(juce::Colour(0xffd4e5ed));
-        g.drawFittedText(info, pianoKeyWidth + 9, infoY, juce::jmax(0, juce::jmin(258, getWidth() - pianoKeyWidth - 14)),
+        g.drawFittedText(baseInfo, pianoKeyWidth + 9, infoY, infoWidth,
                          rulerHeight - infoY - 1, juce::Justification::centredLeft, 1);
+        if (chordName.isNotEmpty() && getWidth() > pianoKeyWidth + 290)
+        {
+            const int chordX = pianoKeyWidth + 265;
+            const int chordWidth = juce::jmin(142, getWidth() - chordX - 9);
+            const auto chordArea = juce::Rectangle<float>((float)chordX, (float)infoY + 1.0f,
+                (float)chordWidth, (float)juce::jmax(0, rulerHeight - infoY - 3));
+            g.setColour(juce::Colour(0xff384331));
+            g.fillRoundedRectangle(chordArea, 4.0f);
+            g.setColour(juce::Colour(0xfff3d48b));
+            g.drawFittedText(chordName, chordX + 7, infoY + 1,
+                juce::jmax(0, chordWidth - 14), rulerHeight - infoY - 3,
+                juce::Justification::centred, 1);
+        }
         if (!selectedNotes.empty() && getWidth() > pianoKeyWidth + 460)
         {
             g.setColour(juce::Colour(0xffffdf99));
