@@ -742,7 +742,8 @@ public:
                 ? (double)(notes[i].startTick - first) / (double)(last - first)
                 : (notes.size() > 1 ? (double)i / (double)(notes.size() - 1) : 0.0);
             const double shaped = curveType == 1 ? fraction * fraction
-                : curveType == 2 ? std::sqrt(fraction) : fraction;
+                : curveType == 2 ? std::sqrt(fraction)
+                : curveType == 3 ? fraction * fraction * (3.0 - 2.0 * fraction) : fraction;
             const int target = juce::jlimit(1, 127, juce::roundToInt(
                 ascending ? startVelocity + shaped * (endVelocity - startVelocity)
                           : endVelocity + shaped * (startVelocity - endVelocity)));
@@ -810,9 +811,20 @@ public:
             curveSelector.addItem(juce::String::fromUTF8("Linéaire"), 1);
             curveSelector.addItem(juce::String::fromUTF8("Exponentielle"), 2);
             curveSelector.addItem(juce::String::fromUTF8("Douce (logarithmique)"), 3);
+            curveSelector.addItem(juce::String::fromUTF8("Courbe en S (progressive)"), 4);
             curveSelector.setSelectedId(1, juce::dontSendNotification);
             curveSelector.onChange = [this] { repaint(); };
             addAndMakeVisible(curveSelector);
+            resetVelocity.setButtonText(juce::String::fromUTF8("RÉINITIALISER LES RÉGLAGES"));
+            resetVelocity.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            resetVelocity.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe4edf4));
+            resetVelocity.onClick = [this]
+            {
+                startVelocity.setValue(40.0, juce::sendNotification);
+                endVelocity.setValue(120.0, juce::sendNotification);
+                curveSelector.setSelectedId(1, juce::sendNotification);
+            };
+            addAndMakeVisible(resetVelocity);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 650);
@@ -843,7 +855,8 @@ public:
                 {
                     const double t = (double)i / 64.0;
                     const int type = curveSelector.getSelectedId() - 1;
-                    const double shaped = type == 1 ? t * t : type == 2 ? std::sqrt(t) : t;
+                    const double shaped = type == 1 ? t * t : type == 2 ? std::sqrt(t)
+                        : type == 3 ? t * t * (3.0 - 2.0 * t) : t;
                     const double value = startVelocity.getValue()
                         + shaped * (endVelocity.getValue() - startVelocity.getValue());
                     const float x = 35.0f + (float)t * 530.0f;
@@ -866,12 +879,14 @@ public:
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
+            resetVelocity.setBounds(26, 532, getWidth() - 52, 27);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
             endVelocity.setBounds(145, 495, getWidth() - 171, 28);
             int shown = 0;
             for (auto& button : buttons)
                 if (button->isVisible())
-                    button->setBounds(26, 184 + shown++ * 49, available, 42);
+                    button->setBounds(26, currentCategory == 2 ? 180 + shown++ * 44 : 184 + shown++ * 49,
+                        available, currentCategory == 2 ? 38 : 42);
         }
     private:
         void refreshCategory()
@@ -886,6 +901,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            resetVelocity.setVisible(currentCategory == 2);
             curveSelector.setVisible(currentCategory == 2);
             startVelocity.setVisible(currentCategory == 2);
             endVelocity.setVisible(currentCategory == 2);
@@ -895,6 +911,7 @@ public:
         std::function<void(int, int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity;
         juce::ComboBox curveSelector;
+        juce::TextButton resetVelocity;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int currentCategory = 0;
