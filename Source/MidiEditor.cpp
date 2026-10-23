@@ -611,9 +611,41 @@ public:
         quantizeButton.setTooltip("Quantifier les notes sélectionnées sur la grille SNAP (Q)");
         quantizeButton.onClick = [this] { quantizeSelection(); };
         addAndMakeVisible(quantizeButton);
-        selectAllButton.setButtonText("TOUT");
-        selectAllButton.setTooltip("Sélectionner toutes les notes MIDI (Cmd/Ctrl + A)");
-        selectAllButton.onClick = [this] { selectAllNotes(); };
+        selectAllButton.setButtonText(juce::String::fromUTF8("ÉDITER"));
+        selectAllButton.setTooltip(juce::String::fromUTF8("Édition MIDI : sélection, duplication, legato et quantification"));
+        selectAllButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            const bool selected = owner.getMidiEngine().hasSelectedNote();
+            menu.addItem(1, juce::String::fromUTF8("Tout sélectionner    Cmd/Ctrl+A"));
+            menu.addSeparator();
+            menu.addItem(2, juce::String::fromUTF8("Dupliquer la sélection    Cmd/Ctrl+D"), selected);
+            menu.addItem(3, juce::String::fromUTF8("Legato (même hauteur)    Option+L"), selected);
+            menu.addItem(4, juce::String::fromUTF8("Quantifier sur SNAP    Q"), selected);
+            menu.addSeparator();
+            menu.addItem(5, juce::String::fromUTF8("Supprimer la sélection    Suppr"), selected);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&selectAllButton),
+                [safe = juce::Component::SafePointer<PianoRoll>(this)](int result)
+                {
+                    if (safe == nullptr) return;
+                    switch (result)
+                    {
+                        case 1: safe->selectAllNotes(); break;
+                        case 2: safe->duplicateSelection(); break;
+                        case 3: safe->makeSelectionLegato(); break;
+                        case 4: safe->quantizeSelection(); break;
+                        case 5:
+                            if (safe->owner.getMidiEngine().deleteSelectedNotes())
+                            {
+                                safe->owner.updateMidiClipTiming();
+                                synchronizeLibertyPianoRollPlayback(safe->owner);
+                                safe->repaint(); safe->owner.repaint();
+                            }
+                            break;
+                        default: break;
+                    }
+                });
+        };
         addAndMakeVisible(selectAllButton);
         durationValue.setBufferedToImage(true);
         durationValue.setButtonText(juce::String::fromUTF8("Durée"));
