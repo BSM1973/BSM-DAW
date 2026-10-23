@@ -818,6 +818,12 @@ public:
             curvature.setColour(juce::Slider::trackColourId, juce::Colour(0xffc6a76b));
             curvature.onValueChange = [this] { repaint(); };
             addAndMakeVisible(curvature);
+            resetCurvature.setButtonText("100 %");
+            resetCurvature.setTooltip(juce::String::fromUTF8("Rétablir la courbure d'origine sans changer les vélocités."));
+            resetCurvature.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
+            resetCurvature.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
+            resetCurvature.onClick = [this] { curvature.setValue(100.0, juce::sendNotification); };
+            addAndMakeVisible(resetCurvature);
             startVelocity.onValueChange = [this] { repaint(); };
             endVelocity.onValueChange = [this] { repaint(); };
             curveSelector.addItem(juce::String::fromUTF8("Linéaire"), 1);
@@ -994,7 +1000,8 @@ public:
             for (int i = 0; i < 3; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
-            curvature.setBounds(145, 530, getWidth() - 171, 25);
+            curvature.setBounds(145, 530, getWidth() - 239, 25);
+            resetCurvature.setBounds(getWidth() - 85, 530, 59, 25);
             reverseVelocity.setBounds(26, 559, (getWidth() - 60) / 2, 27);
             resetVelocity.setBounds(34 + (getWidth() - 60) / 2, 559, (getWidth() - 60) / 2, 27);
             startVelocity.setBounds(145, 448, getWidth() - 171, 28);
@@ -1018,6 +1025,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? (i >= 4 && i < 8) : i >= 8));
+            resetCurvature.setVisible(currentCategory == 2);
             curvature.setVisible(currentCategory == 2);
             reverseVelocity.setVisible(currentCategory == 2);
             resetVelocity.setVisible(currentCategory == 2);
@@ -1030,7 +1038,7 @@ public:
         std::function<void(int, int, int, int)> onAction;
         juce::Slider startVelocity, endVelocity, curvature;
         juce::ComboBox curveSelector;
-        juce::TextButton reverseVelocity, resetVelocity;
+        juce::TextButton reverseVelocity, resetVelocity, resetCurvature;
         std::array<juce::TextButton, 3> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
