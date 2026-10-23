@@ -883,13 +883,18 @@ public:
             regeneratePreview.setButtonText(juce::String::fromUTF8("NOUVEL APERÇU"));
             regeneratePreview.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff263544));
             regeneratePreview.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdcb66f));
-            regeneratePreview.onClick = [this] { ++previewSeed; repaint(); };
+            regeneratePreview.onClick = [this] { ++previewSeed; statusMessage.clear(); repaint(); };
             addAndMakeVisible(regeneratePreview);
                         applyHumanize.setButtonText(juce::String::fromUTF8("APPLIQUER L'HUMANISATION"));
             applyHumanize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff78603c));
             applyHumanize.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             applyHumanize.onClick = [this]
             {
+                if (previewNotes.empty())
+                {
+                    statusMessage = juce::String::fromUTF8("Aucune note sélectionnée.");
+                    repaint(); return;
+                }
                 if (onAction) onAction(24, (int)humanizeVelocity.getValue(), (int)humanizeTiming.getValue(), previewSeed);
             };
             addAndMakeVisible(applyHumanize);
@@ -927,6 +932,11 @@ public:
                 g.setFont(juce::Font(13.0f));
                 g.drawText(juce::String::fromUTF8("Variations aléatoires indépendantes sur les notes sélectionnées."), 26, 185, getWidth() - 52, 25, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("0 = désactivé. Les hauteurs et durées des notes sont conservées."), 26, 450, getWidth() - 52, 30, juce::Justification::centredLeft);
+                if (statusMessage.isNotEmpty())
+                {
+                    g.setColour(juce::Colour(0xffe9b96e));
+                    g.drawText(statusMessage, 26, 475, getWidth() - 52, 25, juce::Justification::centredLeft);
+                }
                 const juce::Rectangle<float> graph(26.0f, 506.0f, (float)getWidth() - 52.0f, 140.0f);
                 g.setColour(juce::Colour(0xff202f40));
                 g.fillRoundedRectangle(graph, 7.0f);
@@ -1157,6 +1167,7 @@ public:
         }
         std::function<void(int, int, int, int)> onAction;
         std::vector<MidiEngine::NoteEvent> previewNotes;
+        juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
