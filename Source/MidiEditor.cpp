@@ -844,8 +844,64 @@ public:
         }
     }
 
+    void duplicateSelection()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        std::int64_t first = selected.front().startTick;
+        std::int64_t last = first;
+        for (const auto& note : selected)
+        {
+            first = juce::jmin(first, note.startTick);
+            last = juce::jmax(last, note.startTick + note.lengthTicks);
+        }
+        const auto grid = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
+        const auto duration = juce::jmax<std::int64_t>(grid, last - first);
+        const auto offset = ((duration + grid - 1) / grid) * grid;
+        if (midi.duplicateSelectedNotes(offset))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void makeSelectionLegato()
+    {
+        auto& midi = owner.getMidiEngine();
+        auto selected = midi.getSelectedNotesCopy();
+        if (selected.size() < 2) return;
+        std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b)
+        {
+            if (a.pitch != b.pitch) return a.pitch < b.pitch;
+            return a.startTick < b.startTick;
+        });
+        bool changed = false;
+        for (std::size_t i = 0; i + 1 < selected.size(); ++i)
+        {
+            const auto& note = selected[i];
+            const auto& next = selected[i + 1];
+            if (note.pitch != next.pitch || note.channel != next.channel
+                || next.startTick <= note.startTick) continue;
+            const auto length = next.startTick - note.startTick;
+            if (length != note.lengthTicks)
+                changed = midi.setNoteLength(note.startTick, note.pitch, note.channel, length) || changed;
+        }
+        if (changed)
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     bool keyPressed(const juce::KeyPress& key) override
     {
+        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'D')
+        { duplicateSelection(); return true; }
+        if (key.getModifiers().isAltDown() && key.getKeyCode() == 'L')
+        { makeSelectionLegato(); return true; }
         if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'A')
         { selectAllNotes(); return true; }
         if (key.getKeyCode() == 'Q' && !key.getModifiers().isCommandDown())
