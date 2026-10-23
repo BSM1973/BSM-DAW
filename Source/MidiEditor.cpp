@@ -653,7 +653,7 @@ public:
                 "Blanche triolet", "Noire triolet", "Croche triolet",
                 "Double-croche triolet", "Triple-croche triolet"
             };
-            for (int i = 0; i < 17; ++i)
+            for (int i = 0; i < 19; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(juce::String::fromUTF8(names[i]));
                 button->setColour(juce::TextButton::buttonColourId,
@@ -779,7 +779,8 @@ public:
                 "VÉLOCITÉ = 100", "VÉLOCITÉ +10", "VÉLOCITÉ -10",
                 "CRESCENDO", "DECRESCENDO",
                 "TRANSPOSER +1", "TRANSPOSER -1",
-                "DURÉE ×2", "DURÉE ÷2"
+                "DURÉE ×2", "DURÉE ÷2",
+                "QUANTIFIER 50 %", "QUANTIFIER 75 %"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -790,9 +791,10 @@ public:
                 "Augmenter la vélocité de 10", "Diminuer la vélocité de 10",
                 "Progression de 40 à 120", "Progression de 120 à 40",
                 "Monter les notes d'un demi-ton", "Descendre les notes d'un demi-ton",
-                "Doubler la durée des notes sélectionnées", "Réduire de moitié la durée des notes sélectionnées"
+                "Doubler la durée des notes sélectionnées", "Réduire de moitié la durée des notes sélectionnées",
+                "Rapprocher les notes de la grille à moitié", "Rapprocher les notes de la grille aux trois quarts"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17 };
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 };
             for (int i = 0; i < 17; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
@@ -1080,6 +1082,8 @@ public:
                     case 15: safe->transposeSelectedNotes(-1); break;
                     case 16: safe->scaleSelectedNoteLengths(2.0); break;
                     case 17: safe->scaleSelectedNoteLengths(0.5); break;
+                    case 18: safe->quantizeSelectionWithStrength(0.5); break;
+                    case 19: safe->quantizeSelectionWithStrength(0.75); break;
                     case 9: safe->adjustSelectedVelocity(100, true); break;
                     case 10: safe->adjustSelectedVelocity(10, false); break;
                     case 11: safe->adjustSelectedVelocity(-10, false); break;
@@ -1231,6 +1235,29 @@ public:
         const auto grid = activePianoSnapTicks();
         if (grid <= 0 || !midi.hasSelectedNote()) return;
         if (midi.quantizeSelectedNotes(grid))
+        {
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void quantizeSelectionWithStrength(double strength)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto grid = activePianoSnapTicks();
+        if (grid <= 0) return;
+        const auto selected = midi.getSelectedNotesCopy();
+        bool changed = false;
+        for (const auto& note : selected)
+        {
+            const auto nearest = (std::int64_t)std::llround((double)note.startTick / (double)grid) * grid;
+            const auto offset = (std::int64_t)std::llround((double)(nearest - note.startTick) * strength);
+            const auto target = juce::jmax<std::int64_t>(0, note.startTick + offset);
+            if (target != note.startTick)
+                changed = midi.moveNote(note.startTick, note.pitch, note.channel, target, note.pitch) || changed;
+        }
+        if (changed)
         {
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
