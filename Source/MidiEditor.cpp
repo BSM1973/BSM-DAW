@@ -828,11 +828,13 @@ public:
     {
     public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
-            std::function<void(double, double, double)> quantizeAction)
-            : onAction(std::move(action)), onQuantize(std::move(quantizeAction)), previewNotes(std::move(notes))
+            std::function<void(double, double, double)> quantizeAction,
+            std::function<void(int)> chordAction)
+            : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
+              onChordTransform(std::move(chordAction)), previewNotes(std::move(notes))
         {
-            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION" };
-            for (int i = 0; i < 5; ++i)
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS" };
+            for (int i = 0; i < 6; ++i)
             {
                 categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
                 categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
@@ -998,6 +1000,20 @@ public:
                     quantizeSwing.getValue() / 100.0, quantizeGroove.getValue() / 100.0);
             };
             addAndMakeVisible(applyQuantize);
+            static const char* chordNames[] = {
+                "INVERSION ASCENDANTE  +12", "INVERSION DESCENDANTE  -12",
+                "VOICING OUVERT", "VOICING DROP"
+            };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto& button = chordButtons[(size_t)i];
+                button.setButtonText(juce::String::fromUTF8(chordNames[i]));
+                button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+                button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+                button.setEnabled(hasSelection);
+                button.onClick = [this, i] { if (onChordTransform) onChordTransform(i); };
+                addAndMakeVisible(button);
+            }
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -1017,6 +1033,17 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 5)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(15.0f));
+                g.drawText(juce::String::fromUTF8("TRANSFORMATIONS DES ACCORDS SÉLECTIONNÉS"),
+                    26, 178, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xff98a9ba));
+                g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("Accords simultanés, canal par canal. Durées et vélocités conservées."),
+                    26, 586, getWidth() - 52, 30, juce::Justification::centredLeft);
+            }
             if (currentCategory == 4)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1212,9 +1239,11 @@ public:
         void resized() override
         {
             const int available = getWidth() - 52;
-            const int tabWidth = (available - 24) / 5;
-            for (int i = 0; i < 5; ++i)
+            const int tabWidth = (available - 30) / 6;
+            for (int i = 0; i < 6; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            for (int i = 0; i < 4; ++i)
+                chordButtons[(size_t)i].setBounds(26, 222 + i * 84, available, 54);
             quantizeStrength.setBounds(235, 224, getWidth() - 261, 32);
             quantizeSwing.setBounds(235, 314, getWidth() - 261, 32);
             quantizeGroove.setBounds(235, 404, getWidth() - 261, 32);
@@ -1253,7 +1282,7 @@ public:
     private:
         void refreshCategory()
         {
-            for (int i = 0; i < 5; ++i)
+            for (int i = 0; i < 6; ++i)
             {
                 categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
                     i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
@@ -1263,6 +1292,7 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21) || i >= 23) : (currentCategory == 2 && i >= 8 && i < 13)));
+            for (auto& button : chordButtons) button.setVisible(currentCategory == 5);
             quantizeStrength.setVisible(currentCategory == 4);
             quantizeSwing.setVisible(currentCategory == 4);
             quantizeGroove.setVisible(currentCategory == 4);
@@ -1284,6 +1314,8 @@ public:
         }
         std::function<juce::String(int, int, int, int)> onAction;
         std::function<void(double, double, double)> onQuantize;
+        std::function<void(int)> onChordTransform;
+        std::array<juce::TextButton, 4> chordButtons;
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
@@ -1292,7 +1324,7 @@ public:
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
         int previewSeed = 1;
-        std::array<juce::TextButton, 5> categoryButtons;
+        std::array<juce::TextButton, 6> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
@@ -2161,6 +2193,14 @@ public:
                 {
                     safe->invalidateHumanizeUndo();
                     safe->applyAdvancedQuantize(strength, swing, groove);
+                }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int mode)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->transformSelectedChords(mode);
                 }
             }));
         options.launchAsync();
