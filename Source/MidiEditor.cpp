@@ -2900,8 +2900,11 @@ public:
         auto& midi = owner.getMidiEngine();
         auto selected = midi.getSelectedNotesCopy();
         if (selected.size() < 2) return;
+        // Legato is independent for each MIDI channel and pitch. Grouping by
+        // pitch alone can interleave channels and miss the next note.
         std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b)
         {
+            if (a.channel != b.channel) return a.channel < b.channel;
             if (a.pitch != b.pitch) return a.pitch < b.pitch;
             return a.startTick < b.startTick;
         });
