@@ -6,6 +6,8 @@
 #include <optional>
 #include <vector>
 
+std::int64_t getLibertySnapStepTicks() noexcept;
+
 namespace
 {
 constexpr int pianoKeyWidth = 72;
@@ -15,7 +17,6 @@ constexpr int visibleKeys = 40;
 constexpr int velocityLaneHeight = 92;
 constexpr int lowestKey = 21;
 constexpr int resizeEdgePixels = 12;
-constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
 class MidiGroupDragOverlay final : public juce::Component, private juce::Timer
 {
@@ -137,7 +138,9 @@ private:
     std::int64_t tickFromX(int x) const noexcept
     {
         const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick());
-        return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks);
+        const auto tick = juce::jmax<std::int64_t>(0, raw);
+        const auto snapStep = getLibertySnapStepTicks();
+        return snapStep > 0 ? MidiEngine::quantizeTick(tick, snapStep) : tick;
     }
 
     MainComponent& owner;
