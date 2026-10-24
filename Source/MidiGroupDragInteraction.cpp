@@ -7,6 +7,7 @@
 #include <vector>
 
 std::int64_t getLibertySnapStepTicks() noexcept;
+int getLibertyActiveTool();
 
 namespace
 {
@@ -33,6 +34,12 @@ public:
 
     bool hitTest(int x, int y) override
     {
+        // The rectangular selection tool owns Shift/Alt gestures, even when
+        // they start directly over one of the selected chord notes.
+        const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+        if (!dragging && getLibertyActiveTool() == 7
+            && (mods.isShiftDown() || mods.isAltDown()))
+            return false;
         if (dragging || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return dragging;
         if (x < pianoKeyWidth || y < rulerHeight || y >= getHeight() - velocityLaneHeight)
@@ -44,6 +51,8 @@ public:
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown()) return;
+        if (getLibertyActiveTool() == 7 && (e.mods.isShiftDown() || e.mods.isAltDown()))
+            return;
         const auto note = findSelectedNoteAt(e.getPosition());
         if (!note.has_value() || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return;
