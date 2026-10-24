@@ -829,13 +829,15 @@ public:
     public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
             std::function<void(double, double, double)> quantizeAction,
-            std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction)
+            std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
+            std::function<void(int)> rhythmAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
+              onRhythmTool(std::move(rhythmAction)),
               previewNotes(std::move(notes))
         {
-            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS" };
-            for (int i = 0; i < 6; ++i)
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME" };
+            for (int i = 0; i < 7; ++i)
             {
                 categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
                 categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
@@ -1026,6 +1028,21 @@ public:
                 button.onClick = [this, i] { if (onChordTransform) onChordTransform(i); };
                 addAndMakeVisible(button);
             }
+            static const char* rhythmNames[] = {
+                "RÉPÉTITION ×2", "RÉPÉTITION ×4",
+                "ARPÈGE MONTANT", "ARPÈGE DESCENDANT",
+                "NOTES COURTES ×0,5", "NOTES LONGUES ×2"
+            };
+            for (int i = 0; i < 6; ++i)
+            {
+                auto& button = rhythmButtons[(size_t)i];
+                button.setButtonText(juce::String::fromUTF8(rhythmNames[i]));
+                button.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+                button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+                button.setEnabled(hasSelection);
+                button.onClick = [this, i] { if (onRhythmTool) onRhythmTool(i); };
+                addAndMakeVisible(button);
+            }
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -1045,6 +1062,17 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 6)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(15.0f));
+                g.drawText(juce::String::fromUTF8("RÉPÉTITIONS · ARPÈGES · DURÉES"),
+                    26, 185, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xff98a9ba));
+                g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("Opérations sur les notes sélectionnées, annulables en une étape."),
+                    26, 600, getWidth() - 52, 28, juce::Justification::centredLeft);
+            }
             if (currentCategory == 5)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1253,9 +1281,12 @@ public:
         void resized() override
         {
             const int available = getWidth() - 52;
-            const int tabWidth = (available - 30) / 6;
-            for (int i = 0; i < 6; ++i)
+            const int tabWidth = (available - 36) / 7;
+            for (int i = 0; i < 7; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            for (int i = 0; i < 6; ++i)
+                rhythmButtons[(size_t)i].setBounds(26 + (i % 2) * ((available + 10) / 2),
+                    235 + (i / 2) * 115, (available - 10) / 2, 64);
             recognizeChord.setBounds(26, 615, available, 32);
             for (int i = 0; i < 8; ++i)
             {
@@ -1302,7 +1333,7 @@ public:
     private:
         void refreshCategory()
         {
-            for (int i = 0; i < 6; ++i)
+            for (int i = 0; i < 7; ++i)
             {
                 categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
                     i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
@@ -1313,6 +1344,7 @@ public:
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21) || i >= 23) : (currentCategory == 2 && i >= 8 && i < 13)));
             for (auto& button : chordButtons) button.setVisible(currentCategory == 5);
+            for (auto& button : rhythmButtons) button.setVisible(currentCategory == 6);
             recognizeChord.setVisible(currentCategory == 5);
             quantizeStrength.setVisible(currentCategory == 4);
             quantizeSwing.setVisible(currentCategory == 4);
@@ -1337,6 +1369,8 @@ public:
         std::function<void(double, double, double)> onQuantize;
         std::function<void(int)> onChordTransform;
         std::array<juce::TextButton, 8> chordButtons;
+        std::array<juce::TextButton, 6> rhythmButtons;
+        std::function<void(int)> onRhythmTool;
         juce::TextButton recognizeChord;
         juce::String chordName;
         std::function<juce::String()> onRecognizeChord;
@@ -1348,7 +1382,7 @@ public:
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
         int previewSeed = 1;
-        std::array<juce::TextButton, 6> categoryButtons;
+        std::array<juce::TextButton, 7> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
@@ -2399,6 +2433,14 @@ public:
             [safe = juce::Component::SafePointer<PianoRoll>(this)]() -> juce::String
             {
                 return safe != nullptr ? safe->recognizeSelectedChord() : juce::String();
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int mode)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->applyRhythmicNoteTool(mode);
+                }
             }));
         options.launchAsync();
     }
