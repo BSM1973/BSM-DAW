@@ -85,6 +85,8 @@ public:
                        std::int64_t newLengthTicks);
     bool setNoteLengthExact(std::int64_t startTick, int pitch, int channel,
                             std::int64_t oldLengthTicks, std::int64_t newLengthTicks);
+    bool resizeNoteLeftExact(std::int64_t oldStartTick, int pitch, int channel,
+                             std::int64_t oldLengthTicks, std::int64_t newStartTick);
     bool resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
                                     std::int64_t newLengthTicks);
     bool setNoteVelocity(std::int64_t startTick, int pitch, int channel,
