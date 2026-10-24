@@ -3609,8 +3609,8 @@ public:
                         : juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
                 + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)"
-                + juce::String::fromUTF8("    Nouvelles : ")
-                + juce::String(newlyLimitedLow + newlyLimitedHigh),
+                + juce::String::fromUTF8("    Nouv. 1 : ") + juce::String(newlyLimitedLow)
+                + juce::String::fromUTF8("  ·  127 : ") + juce::String(newlyLimitedHigh),
                 24, 433, 492, 16, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
