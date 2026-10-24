@@ -253,6 +253,26 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
         { return !isNoteSelected(other) && other.startTick == newStart && other.pitch == static_cast<std::uint8_t>(newPitch) && other.channel == n.channel; });
         if (collision) return false;
     }
+    // Reject target collisions within the moving group as well. Checking only
+    // against unselected events would miss two selected notes converging on
+    // the same tick, pitch and MIDI channel.
+    for (std::size_t i = 0; i < source.size(); ++i)
+    {
+        std::int64_t targetTick = 0;
+        if (!checkedAdd(source[i].startTick, deltaTicks, targetTick))
+            return false;
+        const int targetPitch = static_cast<int>(source[i].pitch) + deltaPitch;
+        for (std::size_t j = i + 1; j < source.size(); ++j)
+        {
+            std::int64_t otherTick = 0;
+            if (!checkedAdd(source[j].startTick, deltaTicks, otherTick))
+                return false;
+            if (targetTick == otherTick
+                && targetPitch == static_cast<int>(source[j].pitch) + deltaPitch
+                && source[i].channel == source[j].channel)
+                return false;
+        }
+    }
     // Resolve every selected event before mutating any note. A stale selection
     // must never produce a partially moved chord.
     std::vector<std::size_t> indices;
