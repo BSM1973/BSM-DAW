@@ -276,6 +276,7 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
             playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
             playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
             playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
+            playbackNote.probability = juce::jlimit(0, 100, (int) note.probability);
             snapshot->notes.push_back(playbackNote);
         }
     }
@@ -331,6 +332,7 @@ void AudioEngine::setInstrumentArrangementClips(int instrumentTrack,
                 playbackNote.frequency = 440.0 * std::pow(2.0, (static_cast<int>(note.pitch) - 69) / 12.0);
                 playbackNote.amplitude = 0.045f * (static_cast<float>(note.velocity) / 127.0f);
                 playbackNote.channel = juce::jlimit(1, 16, (int) note.channel);
+                playbackNote.probability = juce::jlimit(0, 100, (int) note.probability);
                 snapshot->notes.push_back(playbackNote);
             }
         }
@@ -1613,6 +1615,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const int channel=juce::jlimit(1,16,note.channel);
                 const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
                 const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
+                // Deterministic per-note draw: identical for Note On and Note Off,
+                // independent of callback buffer size and audio-thread allocations.
+                const auto startKey = static_cast<std::uint64_t>(std::llround(absoluteStart * 1000000.0));
+                std::uint64_t randomKey = startKey ^ (static_cast<std::uint64_t>(pitch) << 24)
+                    ^ (static_cast<std::uint64_t>(channel) << 40);
+                randomKey ^= randomKey >> 30;
+                randomKey *= UINT64_C(0xbf58476d1ce4e5b9);
+                randomKey ^= randomKey >> 27;
+                randomKey *= UINT64_C(0x94d049bb133111eb);
+                randomKey ^= randomKey >> 31;
+                if (note.probability <= 0 || (note.probability < 100
+                    && (randomKey % 100) >= static_cast<std::uint64_t>(note.probability))) continue;
                 const bool noteStartsInBlock = absoluteStart >= blockStart && absoluteStart < blockEnd;
                 const bool noteSpansResume = resumeInstruments && absoluteStart < blockStart && absoluteEnd > blockStart;
                 if (noteSpansResume)
