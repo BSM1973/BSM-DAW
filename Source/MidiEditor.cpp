@@ -829,9 +829,10 @@ public:
     public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
             std::function<void(double, double, double)> quantizeAction,
-            std::function<void(int)> chordAction)
+            std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
-              onChordTransform(std::move(chordAction)), previewNotes(std::move(notes))
+              onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
+              previewNotes(std::move(notes))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS" };
             for (int i = 0; i < 6; ++i)
@@ -1005,6 +1006,16 @@ public:
                 "VOICING OUVERT", "VOICING DROP",
                 "DROP 2", "DROP 3", "ÉTENDRE LES VOIX +12", "ABAISSER LES VOIX -12"
             };
+            recognizeChord.setButtonText(juce::String::fromUTF8("IDENTIFIER L'ACCORD"));
+            recognizeChord.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            recognizeChord.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            recognizeChord.setEnabled(hasSelection);
+            recognizeChord.onClick = [this]
+            {
+                if (onRecognizeChord) chordName = onRecognizeChord();
+                repaint();
+            };
+            addAndMakeVisible(recognizeChord);
             for (int i = 0; i < 8; ++i)
             {
                 auto& button = chordButtons[(size_t)i];
@@ -1044,6 +1055,8 @@ public:
                 g.setFont(juce::Font(13.0f));
                 g.drawText(juce::String::fromUTF8("Accords simultanés, canal par canal. Durées et vélocités conservées."),
                     26, 586, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.drawText(chordName, 26, 650, getWidth() - 52, 32, juce::Justification::centred);
             }
             if (currentCategory == 4)
             {
@@ -1243,6 +1256,7 @@ public:
             const int tabWidth = (available - 30) / 6;
             for (int i = 0; i < 6; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            recognizeChord.setBounds(26, 625, available, 32);
             for (int i = 0; i < 8; ++i)
             {
                 const int col = i % 2;
@@ -1299,6 +1313,7 @@ public:
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21) || i >= 23) : (currentCategory == 2 && i >= 8 && i < 13)));
             for (auto& button : chordButtons) button.setVisible(currentCategory == 5);
+            recognizeChord.setVisible(currentCategory == 5);
             quantizeStrength.setVisible(currentCategory == 4);
             quantizeSwing.setVisible(currentCategory == 4);
             quantizeGroove.setVisible(currentCategory == 4);
@@ -1322,6 +1337,9 @@ public:
         std::function<void(double, double, double)> onQuantize;
         std::function<void(int)> onChordTransform;
         std::array<juce::TextButton, 8> chordButtons;
+        juce::TextButton recognizeChord;
+        juce::String chordName;
+        std::function<juce::String()> onRecognizeChord;
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
@@ -2266,6 +2284,10 @@ public:
                     safe->invalidateHumanizeUndo();
                     safe->transformSelectedChords(mode);
                 }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)]() -> juce::String
+            {
+                return safe != nullptr ? safe->recognizeSelectedChord() : juce::String();
             }));
         options.launchAsync();
     }
