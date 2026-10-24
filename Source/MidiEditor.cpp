@@ -854,9 +854,15 @@ public:
             selectionCriterion.setSelectedId(1, juce::dontSendNotification);
             selectionCriterion.onChange = [this]
             {
-                const bool usesRange = (selectionCriterion.getSelectedId() <= 4 || selectionCriterion.getSelectedId() == 9);
+                const int criterion = selectionCriterion.getSelectedId();
+                const bool usesRange = criterion <= 4 || criterion == 9;
                 selectionMin.setEnabled(usesRange);
                 selectionMax.setEnabled(usesRange);
+                const double upper = criterion == 9 ? 100.0 : 127.0;
+                selectionMin.setRange(0.0, upper, 1.0);
+                selectionMax.setRange(0.0, upper, 1.0);
+                if (selectionMax.getValue() > upper)
+                    selectionMax.setValue(upper, juce::dontSendNotification);
             };
             addAndMakeVisible(selectionCriterion);
             for (auto* slider : { &selectionMin, &selectionMax })
