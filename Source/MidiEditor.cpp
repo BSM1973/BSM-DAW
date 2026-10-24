@@ -843,7 +843,17 @@ public:
             selectionCriterion.addItem(juce::String::fromUTF8("Vélocité"), 2);
             selectionCriterion.addItem(juce::String::fromUTF8("Durée (échelle 0–127)"), 3);
             selectionCriterion.addItem(juce::String::fromUTF8("Position sur la grille"), 4);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes dans la gamme active"), 5);
+            selectionCriterion.addItem(juce::String::fromUTF8("Temps forts (noires)"), 6);
+            selectionCriterion.addItem(juce::String::fromUTF8("Temps faibles (hors noires)"), 7);
+            selectionCriterion.addItem(juce::String::fromUTF8("Hauteurs répétées"), 8);
             selectionCriterion.setSelectedId(1, juce::dontSendNotification);
+            selectionCriterion.onChange = [this]
+            {
+                const bool usesRange = selectionCriterion.getSelectedId() <= 4;
+                selectionMin.setEnabled(usesRange);
+                selectionMax.setEnabled(usesRange);
+            };
             addAndMakeVisible(selectionCriterion);
             for (auto* slider : { &selectionMin, &selectionMax })
             {
