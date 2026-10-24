@@ -2457,6 +2457,59 @@ public:
         }
     }
 
+    // Deterministic MIDI generator: evenly distributed Euclidean hits
+    // within the selected note's original duration.
+    void generateEuclideanRhythm(int steps, int pulses)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        steps = juce::jlimit(2, 32, steps);
+        pulses = juce::jlimit(1, steps, pulses);
+        auto updated = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> generated;
+        for (const auto& note : selected)
+        {
+            if (note.lengthTicks < steps) return;
+            const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+            {
+                return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+            });
+            if (it == updated.end()) return;
+            updated.erase(it);
+            for (int step = 0; step < steps; ++step)
+            {
+                if ((step * pulses) % steps >= pulses) continue;
+                const auto from = (note.lengthTicks / steps) * step
+                    + (note.lengthTicks % steps) * step / steps;
+                const auto to = (note.lengthTicks / steps) * (step + 1)
+                    + (note.lengthTicks % steps) * (step + 1) / steps;
+                auto copy = note;
+                copy.startTick += from;
+                copy.lengthTicks = juce::jmax<std::int64_t>(1, to - from);
+                updated.push_back(copy);
+                generated.push_back(copy);
+            }
+        }
+        std::sort(updated.begin(), updated.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        for (std::size_t i = 1; i < updated.size(); ++i)
+            if (updated[i].startTick == updated[i - 1].startTick
+                && updated[i].channel == updated[i - 1].channel
+                && updated[i].pitch == updated[i - 1].pitch) return;
+        if (midi.replaceNotes(updated))
+        {
+            midi.setSelectedNotes(generated);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
