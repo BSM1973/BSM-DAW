@@ -176,7 +176,8 @@ juce::Rectangle<int> MidiMarqueeOverlay::noteRectangle(juce::Point<int> /*p*/,
 
     const int x = pianoKeyWidth + static_cast<int>(std::llround(static_cast<double>(startTick) * pixelsPerTick));
     const int y = rulerHeight + (visibleKeys - 1 - (pitch - lowestKey)) * keyHeight + 2;
-    const int w = juce::jmax(8, static_cast<int>(std::llround(static_cast<double>(lengthTicks) * pixelsPerTick)));
+    const auto visibleTicks = juce::jmax<std::int64_t>(0, juce::jmin(lengthTicks, clipLengthTicks - juce::jmin(startTick, clipLengthTicks)));
+    const int w = juce::jmax(8, static_cast<int>(std::llround(static_cast<double>(visibleTicks) * pixelsPerTick)));
 
     return juce::Rectangle<int>(x + 1, y, juce::jmax(1, w - 2), keyHeight - 4);
 }
