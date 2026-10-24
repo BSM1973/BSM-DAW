@@ -249,7 +249,7 @@ void MidiEngine::setSelectedNotes(const std::vector<NoteEvent>& selection) noexc
 
 bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
 {
-    if (selectedNotes.empty()) return false;
+    if (selectedNotes.empty() || (deltaTicks == 0 && deltaPitch == 0)) return false;
     // The editor applies the active global SNAP step; the engine must also
     // accept finer tick deltas (including unsnapped movements).
     std::vector<NoteEvent> source = selectedNotes;
