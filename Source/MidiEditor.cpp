@@ -2870,7 +2870,7 @@ public:
                     {
                         if (event.channel != note.channel || event.tick < note.startTick) return false;
                         if (event.tick - note.startTick >= note.lengthTicks) return false;
-                        return criterion == 15 ? event.controller >= 1 && event.controller <= 127
+                        return criterion == 15 ? event.controller >= 0 && event.controller <= 127
                             : criterion == 16 ? event.controller == 128 : event.controller == 129;
                     });
                     break;
