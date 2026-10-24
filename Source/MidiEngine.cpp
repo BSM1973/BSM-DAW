@@ -640,6 +640,44 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel, 
     return true;
 }
 
+bool MidiEngine::moveNoteExact(std::int64_t oldStartTick, int oldPitch, int channel,
+                               std::int64_t oldLengthTicks, std::int64_t newStartTick, int newPitch)
+{
+    if (newStartTick < 0 || newPitch < minMidiNote || newPitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == oldStartTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(oldPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end()) return false;
+    std::int64_t movedEnd = 0;
+    if (!checkedAdd(newStartTick, it->lengthTicks, movedEnd)) return false;
+    const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return &note != &(*it) && note.startTick == newStartTick
+            && note.pitch == static_cast<std::uint8_t>(newPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (duplicate != notes.end()) return false;
+    pushUndoState();
+    it->startTick = newStartTick;
+    it->pitch = static_cast<std::uint8_t>(newPitch);
+    const auto moved = *it;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    selectedNote = moved;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(moved);
+    return true;
+}
+
 bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel, std::int64_t newLengthTicks)
 {
     std::int64_t resizedEnd = 0;
