@@ -4555,7 +4555,8 @@ public:
                     const bool group = midi.getNumSelectedNotes() > 1 && midi.isNoteSelected(n);
                     for (auto& note : notes)
                         if (group ? midi.isNoteSelected(note) :
-                            (note.startTick == n.startTick && note.pitch == n.pitch && note.channel == n.channel))
+                            (note.startTick == n.startTick && note.lengthTicks == n.lengthTicks
+                                && note.pitch == n.pitch && note.channel == n.channel))
                             note.muted = targetMute;
                     if (midi.replaceNotes(notes))
                     { owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
@@ -4569,7 +4570,8 @@ public:
                     {
                         auto notes = midi.getNotesCopy();
                         for (auto& part : notes)
-                            if (part.startTick == n.startTick && part.pitch == n.pitch && part.channel == n.channel)
+                            if (part.startTick == n.startTick && part.lengthTicks == n.lengthTicks
+                                && part.pitch == n.pitch && part.channel == n.channel)
                             {
                                 part.lengthTicks = split - n.startTick;
                                 auto right = n; right.startTick = split; right.lengthTicks = n.startTick + n.lengthTicks - split;
