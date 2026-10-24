@@ -3483,20 +3483,30 @@ public:
             g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 92, 155, 32, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff91a9bf));
             g.setFont(juce::Font(12.0f));
-            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 143, 490, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 143, 270, 22, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff587187));
+            g.fillRoundedRectangle(305.0f, 149.0f, 10.0f, 10.0f, 2.0f);
+            g.setColour(juce::Colour(0xffa9bdd0));
+            g.drawText(juce::String::fromUTF8("Avant"), 320, 142, 62, 22, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff4b9de0));
+            g.fillRoundedRectangle(392.0f, 149.0f, 10.0f, 10.0f, 2.0f);
+            g.setColour(juce::Colour(0xffa9bdd0));
+            g.drawText(juce::String::fromUTF8("Après"), 407, 142, 70, 22, juce::Justification::centredLeft);
             const auto area = juce::Rectangle<float>(24.0f, 170.0f, 492.0f, 145.0f);
             g.setColour(juce::Colour(0xff192634));
             g.fillRoundedRectangle(area, 7.0f);
             g.setColour(juce::Colour(0xff34495b));
             g.drawRoundedRectangle(area, 7.0f, 1.0f);
             if (velocities.empty()) return;
-            const int count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
+            // Keep the full selection represented even when it exceeds 96 notes.
+            const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
             const double ratio = intensity.getValue() / 100.0;
             const double pivot = centre.getValue();
             for (int i = 0; i < count; ++i)
             {
-                const int velocity = velocities[static_cast<std::size_t>(i)];
+                const auto sourceIndex = (static_cast<std::size_t>(i) * velocities.size()) / count;
+                const int velocity = velocities[sourceIndex];
                 const int processed = juce::jlimit(1, 127,
                     juce::roundToInt(pivot + (static_cast<double>(velocity) - pivot) * ratio));
                 const float x = area.getX() + 10.0f + static_cast<float>(i) * width;
