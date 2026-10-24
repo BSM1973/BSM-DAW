@@ -3440,7 +3440,7 @@ public:
                            std::function<void(double, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
-            setSize(540, 462);
+            setSize(540, 502);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
             intensity.onValueChange = [this]
@@ -3508,9 +3508,9 @@ public:
             presets.setBounds(184, 37, 325, 28);
             intensity.setBounds(184, 79, 325, 34);
             centre.setBounds(184, 122, 325, 34);
-            resetButton.setBounds(24, 412, 128, 32);
-            cancelButton.setBounds(288, 412, 100, 32);
-            applyButton.setBounds(400, 412, 110, 32);
+            resetButton.setBounds(24, 452, 128, 32);
+            cancelButton.setBounds(288, 452, 100, 32);
+            applyButton.setBounds(400, 452, 110, 32);
         }
 
         void paint(juce::Graphics& g) override
