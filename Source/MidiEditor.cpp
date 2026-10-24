@@ -3447,12 +3447,12 @@ public:
             configure(centre, 1.0, 127.0, initialCentre, "");
             intensity.onValueChange = [this]
             {
-                if (!applyingPreset) presets.setSelectedId(1, juce::dontSendNotification);
+                if (!applyingPreset) syncPresetFromControls();
                 repaint();
             };
             centre.onValueChange = [this]
             {
-                if (!applyingPreset) presets.setSelectedId(1, juce::dontSendNotification);
+                if (!applyingPreset) syncPresetFromControls();
                 repaint();
             };
             addAndMakeVisible(intensity);
@@ -3463,6 +3463,7 @@ public:
             presets.addItem(juce::String::fromUTF8("Expressive"), 4);
             presets.addItem(juce::String::fromUTF8("Accentuée"), 5);
             presets.setSelectedId(1, juce::dontSendNotification);
+            syncPresetFromControls();
             presets.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff192634));
             presets.setColour(juce::ComboBox::textColourId, juce::Colour(0xffedf4fc));
             presets.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff34495b));
@@ -3497,15 +3498,7 @@ public:
                 intensity.setValue(initialIntensity, juce::sendNotificationSync);
                 centre.setValue(initialCentreValue, juce::sendNotificationSync);
                 applyingPreset = false;
-                int restoredPreset = 1;
-                if (juce::roundToInt(initialCentreValue) == 64)
-                {
-                    const int ratios[] = { 65, 100, 135, 180 };
-                    for (int i = 0; i < 4; ++i)
-                        if (juce::roundToInt(initialIntensity) == ratios[i])
-                            restoredPreset = i + 2;
-                }
-                presets.setSelectedId(restoredPreset, juce::dontSendNotification);
+                syncPresetFromControls();
                 repaint();
             };
             addAndMakeVisible(resetButton);
@@ -3647,6 +3640,18 @@ public:
         }
 
     private:
+        void syncPresetFromControls()
+        {
+            int matchingPreset = 1;
+            if (juce::roundToInt(centre.getValue()) == 64)
+            {
+                const int ratios[] = { 65, 100, 135, 180 };
+                for (int i = 0; i < 4; ++i)
+                    if (juce::roundToInt(intensity.getValue()) == ratios[i])
+                        matchingPreset = i + 2;
+            }
+            presets.setSelectedId(matchingPreset, juce::dontSendNotification);
+        }
         double initialIntensity = 100.0;
         double initialCentreValue = 64.0;
         static void configure(juce::Slider& slider, double minimum, double maximum,
