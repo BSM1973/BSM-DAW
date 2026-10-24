@@ -305,6 +305,7 @@ private:
         double frequency = 440.0;
         float amplitude = 0.0f;
         int channel = 1;
+        int probability = 100;
     };
     struct InstrumentNoteSnapshot
     {
