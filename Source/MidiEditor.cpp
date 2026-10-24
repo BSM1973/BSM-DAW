@@ -830,14 +830,15 @@ public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
             std::function<void(double, double, double)> quantizeAction,
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
-            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction)
+            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
+              onEuclidean(std::move(euclideanAction)),
               previewNotes(std::move(notes))
         {
-            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION" };
-            for (int i = 0; i < 8; ++i)
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION", "GÉNÉRATEURS" };
+            for (int i = 0; i < 9; ++i)
             {
                 categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
                 categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
@@ -1068,6 +1069,26 @@ public:
                 };
                 addAndMakeVisible(button);
             }
+            for (auto* slider : { &euclideanSteps, &euclideanPulses })
+            {
+                slider->setRange(1.0, 32.0, 1.0);
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 26);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xff348fc2));
+                addAndMakeVisible(*slider);
+            }
+            euclideanSteps.setRange(2.0, 32.0, 1.0);
+            euclideanSteps.setValue(16.0, juce::dontSendNotification);
+            euclideanPulses.setValue(5.0, juce::dontSendNotification);
+            generateEuclidean.setButtonText(juce::String::fromUTF8("GÉNÉRER LE RYTHME"));
+            generateEuclidean.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            generateEuclidean.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            generateEuclidean.setEnabled(hasSelection);
+            generateEuclidean.onClick = [this]
+            {
+                if (onEuclidean) onEuclidean((int)euclideanSteps.getValue(), (int)euclideanPulses.getValue());
+            };
+            addAndMakeVisible(generateEuclidean);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -1087,6 +1108,19 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 8)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(17.0f));
+                g.drawText(juce::String::fromUTF8("RYTHMES EUCLIDIENS"), 26, 191, getWidth() - 52, 34, juce::Justification::centredLeft);
+                g.setFont(juce::Font(15.0f));
+                g.drawText(juce::String::fromUTF8("NOMBRE DE PAS"), 26, 260, 190, 36, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("FRAPPES"), 26, 352, 190, 36, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xff98a9ba));
+                g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("Répartit les frappes sur la durée de chaque note sélectionnée."),
+                    26, 550, getWidth() - 52, 30, juce::Justification::centredLeft);
+            }
             if (currentCategory == 7)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1316,9 +1350,12 @@ public:
         void resized() override
         {
             const int available = getWidth() - 52;
-            const int tabWidth = (available - 42) / 8;
-            for (int i = 0; i < 8; ++i)
+            const int tabWidth = (available - 48) / 9;
+            for (int i = 0; i < 9; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            euclideanSteps.setBounds(230, 260, getWidth() - 256, 36);
+            euclideanPulses.setBounds(230, 352, getWidth() - 256, 36);
+            generateEuclidean.setBounds(26, 472, available, 56);
             expressiveAmount.setBounds(215, 208, getWidth() - 241, 32);
             for (int i = 0; i < 8; ++i)
                 expressiveButtons[(size_t)i].setBounds(26 + (i % 2) * ((available + 10) / 2),
@@ -1372,7 +1409,7 @@ public:
     private:
         void refreshCategory()
         {
-            for (int i = 0; i < 8; ++i)
+            for (int i = 0; i < 9; ++i)
             {
                 categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
                     i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
@@ -1386,6 +1423,9 @@ public:
             for (auto& button : rhythmButtons) button.setVisible(currentCategory == 6);
             for (auto& button : expressiveButtons) button.setVisible(currentCategory == 7);
             expressiveAmount.setVisible(currentCategory == 7);
+            euclideanSteps.setVisible(currentCategory == 8);
+            euclideanPulses.setVisible(currentCategory == 8);
+            generateEuclidean.setVisible(currentCategory == 8);
             recognizeChord.setVisible(currentCategory == 5);
             quantizeStrength.setVisible(currentCategory == 4);
             quantizeSwing.setVisible(currentCategory == 4);
@@ -1412,7 +1452,9 @@ public:
         std::array<juce::TextButton, 8> chordButtons;
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
-        juce::Slider expressiveAmount;
+        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses;
+        juce::TextButton generateEuclidean;
+        std::function<void(int, int)> onEuclidean;
         std::function<void(int, int)> onExpressiveTool;
         std::function<void(int)> onRhythmTool;
         juce::TextButton recognizeChord;
@@ -1426,7 +1468,7 @@ public:
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
         int previewSeed = 1;
-        std::array<juce::TextButton, 8> categoryButtons;
+        std::array<juce::TextButton, 9> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
@@ -2605,6 +2647,14 @@ public:
                 {
                     const int controller = mode == 4 ? 1 : mode == 5 ? 11 : mode == 6 ? 64 : 129;
                     safe->applyExpressiveController(controller, amount);
+                }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int steps, int pulses)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->generateEuclideanRhythm(steps, pulses);
                 }
             }));
         options.launchAsync();
