@@ -2782,8 +2782,18 @@ public:
                     break;
                 }
                 case 5:
-                    selected = snapPitchToScale(note.pitch) == note.pitch;
+                {
+                    static constexpr int scaleMasks[5][12] = {
+                        { 1,0,1,0,1,1,0,1,0,1,0,1 },
+                        { 1,0,1,1,0,1,0,1,1,0,1,0 },
+                        { 1,0,1,0,1,0,0,1,0,1,0,0 },
+                        { 1,0,0,1,0,1,0,1,0,0,1,0 },
+                        { 1,0,0,1,0,1,1,1,0,0,1,0 }
+                    };
+                    selected = scaleMasks[juce::jlimit(0, 4, scaleType)]
+                        [((static_cast<int>(note.pitch) - scaleRoot) % 12 + 12) % 12] != 0;
                     break;
+                }
                 case 6:
                     selected = note.startTick % quarter == 0;
                     break;
