@@ -58,6 +58,11 @@ bool MidiMarqueeOverlay::hitTest(int x, int y)
     if (!isInPianoRollGrid(p))
         return false;
 
+    // Alt is reserved for subtractive marquee selection, including starting
+    // the gesture on top of an already selected note or its resize handle.
+    if (mods.isAltDown() && getLibertyActiveTool() == 7)
+        return true;
+
     // MARQUEE tool owns empty piano-roll space directly; no Cmd/Ctrl is required.
     if (!pointHitsAnyNote(p))
         return true;
@@ -76,7 +81,7 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     // Selected-note edges must retain priority over marquee selection.
     // Otherwise the marquee tool intercepts group resizing before it can start.
     ResizeSide side = ResizeSide::none;
-    if (owner.getMidiEngine().getNumSelectedNotes() > 1
+    if (!e.mods.isAltDown() && owner.getMidiEngine().getNumSelectedNotes() > 1
         && findSelectedResizeSide(e.getPosition(), side))
     {
         owner.getMidiEngine().beginGroupedEdit();
