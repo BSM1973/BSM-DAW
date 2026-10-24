@@ -3554,6 +3554,7 @@ public:
             if (velocities.empty()) return;
             int originalMin = 127, originalMax = 1, transformedMin = 127, transformedMax = 1;
             double originalSum = 0.0, transformedSum = 0.0;
+            int clippedLow = 0, clippedHigh = 0;
             const double transformRatio = intensity.getValue() / 100.0;
             const double transformCentre = centre.getValue();
             for (const int value : velocities)
@@ -3564,6 +3565,8 @@ public:
                 originalMax = juce::jmax(originalMax, value);
                 transformedMin = juce::jmin(transformedMin, transformed);
                 transformedMax = juce::jmax(transformedMax, transformed);
+                if (transformed == 1) ++clippedLow;
+                if (transformed == 127) ++clippedHigh;
                 originalSum += value;
                 transformedSum += transformed;
             }
@@ -3592,6 +3595,12 @@ public:
             g.drawText(juce::String::fromUTF8("Écart moyen : ")
                 + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
                 270, 413, 246, 20, juce::Justification::centredRight);
+            g.setFont(juce::Font(10.5f));
+            g.setColour((clippedLow + clippedHigh) > 0 ? juce::Colour(0xffefaa92)
+                        : juce::Colour(0xff7890a6));
+            g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
+                + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)",
+                24, 433, 492, 16, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 42.0f) / static_cast<float>(count);
