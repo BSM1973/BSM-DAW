@@ -712,6 +712,45 @@ bool MidiEngine::setNoteLengthExact(std::int64_t startTick, int pitch, int chann
     return true;
 }
 
+bool MidiEngine::resizeNoteLeftExact(std::int64_t oldStartTick, int pitch, int channel,
+                                     std::int64_t oldLengthTicks, std::int64_t newStartTick)
+{
+    if (oldStartTick < 0 || newStartTick < 0 || pitch < minMidiNote || pitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0) return false;
+    std::int64_t oldEnd = 0;
+    if (!checkedAdd(oldStartTick, oldLengthTicks, oldEnd)
+        || newStartTick >= oldEnd || newStartTick == oldStartTick) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == oldStartTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end()) return false;
+    const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return &note != &(*it) && note.startTick == newStartTick
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (duplicate != notes.end()) return false;
+    pushUndoState();
+    it->startTick = newStartTick;
+    it->lengthTicks = oldEnd - newStartTick;
+    const auto resized = *it;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    selectedNote = resized;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(resized);
+    return true;
+}
+
 bool MidiEngine::resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
                                             std::int64_t newLengthTicks)
 {
