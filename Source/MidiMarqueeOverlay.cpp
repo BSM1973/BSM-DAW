@@ -78,6 +78,7 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     if (owner.getMidiEngine().getNumSelectedNotes() > 1
         && findSelectedResizeSide(e.getPosition(), side))
     {
+        owner.getMidiEngine().beginGroupedEdit();
         resizeActive = true;
         resizeSide = side;
         lastResizeTick = tickFromX(e.x);
@@ -129,6 +130,7 @@ void MidiMarqueeOverlay::mouseUp(const juce::MouseEvent& e)
 {
     if (resizeActive)
     {
+        owner.getMidiEngine().endGroupedEdit();
         resizeActive = false;
         resizeSide = ResizeSide::none;
         lastResizeTick = 0;
