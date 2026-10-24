@@ -345,7 +345,11 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
                 // interval. The first note remains anchored to the grid.
                 const auto jitterLimit = (spreadTicks / 100) * timingVariation
                     + (spreadTicks % 100) * timingVariation / 100;
-                const auto variation = (std::int64_t)((offsetIndex * 13 + (std::size_t)selection[i].pitch * 3) % 101) - 50;
+                // Keep the deterministic timing pattern without overflowing
+                // the index arithmetic on exceptionally large selections.
+                const auto timingSeed = ((offsetIndex % 101) * 13
+                    + (static_cast<std::size_t>(selection[i].pitch) * 3) % 101) % 101;
+                const auto variation = static_cast<std::int64_t>(timingSeed) - 50;
                 // Split the multiplication to avoid overflowing int64 while
                 // retaining the original integer rounding and musical feel.
                 const auto jitter = (jitterLimit / 50) * variation
