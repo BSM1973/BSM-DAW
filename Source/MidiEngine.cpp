@@ -294,8 +294,22 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     }
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     { if (a.startTick != b.startTick) return a.startTick < b.startTick; if (a.channel != b.channel) return a.channel < b.channel; return a.pitch < b.pitch; });
-    auto result = source;
-    for (auto& n : result) { n.startTick += deltaTicks; n.pitch = static_cast<std::uint8_t>(static_cast<int>(n.pitch) + deltaPitch); }
+    // Rebuild the selection from the moved engine notes, preserving the actual
+    // velocity, mute state and probability rather than stale selection copies.
+    std::vector<NoteEvent> result;
+    result.reserve(indices.size());
+    for (const auto& original : source)
+    {
+        std::int64_t movedTick = 0;
+        if (!checkedAdd(original.startTick, deltaTicks, movedTick)) return false;
+        const auto movedPitch = static_cast<std::uint8_t>(static_cast<int>(original.pitch) + deltaPitch);
+        const auto it = std::find_if(notes.begin(), notes.end(), [&](const NoteEvent& note)
+        {
+            return note.startTick == movedTick && note.lengthTicks == original.lengthTicks
+                && note.pitch == movedPitch && note.channel == original.channel;
+        });
+        if (it != notes.end()) result.push_back(*it);
+    }
     setSelectedNotes(result);
     return true;
 }
