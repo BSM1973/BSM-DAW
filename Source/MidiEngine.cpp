@@ -314,6 +314,19 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
         if (a.startTick != b.startTick) return a.startTick < b.startTick;
         return lowToHigh ? a.pitch < b.pitch : a.pitch > b.pitch;
     });
+    // Reject stale or duplicate source references before applying strum.
+    // Otherwise a repeated selection entry could shift the same event twice.
+    for (std::size_t i = 0; i < selection.size(); ++i)
+    {
+        const auto& n = selection[i];
+        if (i > 0 && n.startTick == selection[i - 1].startTick
+            && n.pitch == selection[i - 1].pitch
+            && n.channel == selection[i - 1].channel)
+            return false;
+        if (std::none_of(notes.begin(), notes.end(), [&n](const NoteEvent& live)
+            { return live.startTick == n.startTick && live.pitch == n.pitch && live.channel == n.channel; }))
+            return false;
+    }
     bool changed = false;
     std::vector<NoteEvent> shifted;
     for (std::size_t begin = 0; begin < selection.size();)
