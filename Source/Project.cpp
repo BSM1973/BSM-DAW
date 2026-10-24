@@ -240,7 +240,7 @@ juce::String MainComponent::getProjectStateSignature() const
 
     signature << "|midi=";
     for (const auto& note : midiEngine.getNotesCopy())
-        signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ';';
+        signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ',' << (int)note.probability << ';';
 
     // Step Sequencer Patterns and their timeline clips are part of the project.
     // Include their serialized state so editing, moving, creating or renaming a
@@ -639,6 +639,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         noteElement->setAttribute("pitch", (int)note.pitch);
         noteElement->setAttribute("velocity", (int)note.velocity);
         noteElement->setAttribute("channel", (int)note.channel);
+        noteElement->setAttribute("probability", (int)note.probability);
     }
 
     for (const auto& event : midiEngine.getControllerEventsCopy())
@@ -1041,6 +1042,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     if (auto* midi = project->getChildByName("MIDI"))
     {
         midiEngine.clear();
+        struct RestoredProbability { std::int64_t tick; int pitch; int channel; int probability; };
+        std::vector<RestoredProbability> restoredProbabilities;
         constexpr std::size_t maxVisitedLegacyMidiElements = 32768;
         std::size_t visitedLegacyMidiElements = 0;
         for (auto* noteElement = midi->getFirstChildElement(); noteElement != nullptr; noteElement = noteElement->getNextElement())
@@ -1075,6 +1078,26 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 noteElement->getIntAttribute("pitch", 60),
                 noteElement->getIntAttribute("velocity", 100),
                 noteElement->getIntAttribute("channel", 1));
+            restoredProbabilities.push_back({ restoredStartTick,
+                noteElement->getIntAttribute("pitch", 60),
+                noteElement->getIntAttribute("channel", 1),
+                juce::jlimit(0, 100, noteElement->getIntAttribute("probability", 100)) });
+        }
+        if (!restoredProbabilities.empty())
+        {
+            auto restoredNotes = midiEngine.getNotesCopy();
+            for (auto& note : restoredNotes)
+            {
+                const auto found = std::find_if(restoredProbabilities.begin(), restoredProbabilities.end(),
+                    [&note](const auto& entry)
+                    {
+                        return entry.tick == note.startTick && entry.pitch == (int)note.pitch
+                            && entry.channel == (int)note.channel;
+                    });
+                if (found != restoredProbabilities.end())
+                    note.probability = (std::uint8_t)found->probability;
+            }
+            midiEngine.replaceNotes(restoredNotes);
         }
     }
 
