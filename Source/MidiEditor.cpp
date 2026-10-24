@@ -1056,7 +1056,7 @@ public:
                 g.drawText(juce::String::fromUTF8("Accords simultanés, canal par canal. Durées et vélocités conservées."),
                     26, 586, getWidth() - 52, 30, juce::Justification::centredLeft);
                 g.setColour(juce::Colour(0xffd4e0e9));
-                g.drawText(chordName, 26, 650, getWidth() - 52, 32, juce::Justification::centred);
+                g.drawText(chordName, 26, 654, getWidth() - 52, 28, juce::Justification::centred);
             }
             if (currentCategory == 4)
             {
@@ -1256,7 +1256,7 @@ public:
             const int tabWidth = (available - 30) / 6;
             for (int i = 0; i < 6; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
-            recognizeChord.setBounds(26, 625, available, 32);
+            recognizeChord.setBounds(26, 615, available, 32);
             for (int i = 0; i < 8; ++i)
             {
                 const int col = i % 2;
