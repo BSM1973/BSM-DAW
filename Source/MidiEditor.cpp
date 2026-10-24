@@ -2288,6 +2288,48 @@ public:
                 editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
             }
         }
+        // The range component owns no editor pointers or timer: its lifetime is
+        // entirely managed by the AlertWindow custom-component collection.
+        class SafePitchRangeSlider final : public juce::Component
+        {
+        public:
+            SafePitchRangeSlider(juce::TextEditor* low, juce::TextEditor* high)
+                : minimum(low), maximum(high)
+            {
+                setSize(420, 66);
+                range.setSliderStyle(juce::Slider::TwoValueHorizontal);
+                range.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+                range.setRange(0.0, 127.0, 1.0);
+                range.setMinAndMaxValues(0.0, 127.0, juce::dontSendNotification);
+                range.setColour(juce::Slider::trackColourId, juce::Colour(0xff3575d9));
+                range.setColour(juce::Slider::thumbColourId, juce::Colour(0xffedf4fc));
+                range.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff344858));
+                range.onValueChange = [this]
+                {
+                    if (minimum != nullptr && maximum != nullptr)
+                    {
+                        minimum->setText(juce::String((int) range.getMinValue()), juce::dontSendNotification);
+                        maximum->setText(juce::String((int) range.getMaxValue()), juce::dontSendNotification);
+                    }
+                };
+                addAndMakeVisible(range);
+            }
+            void resized() override { range.setBounds(12, 27, getWidth() - 24, 32); }
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xff111923));
+                g.setColour(juce::Colour(0xffc7d7e5));
+                g.setFont(juce::FontOptions(12.0f));
+                g.drawText(juce::String::fromUTF8("PLAGE DE HAUTEURS · MIDI 0–127"),
+                           12, 4, getWidth() - 24, 22, juce::Justification::centredLeft);
+            }
+        private:
+            juce::Slider range;
+            juce::TextEditor* minimum;
+            juce::TextEditor* maximum;
+        };
+        dialog->addCustomComponent(new SafePitchRangeSlider(dialog->getTextEditor("pitchMin"),
+                                                             dialog->getTextEditor("pitchMax")));
         dialog->addButton(juce::String::fromUTF8("SÉLECTIONNER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
