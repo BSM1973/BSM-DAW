@@ -283,7 +283,11 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
         { return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel; });
         if (it == notes.end())
             return false;
-        indices.push_back(static_cast<std::size_t>(std::distance(notes.begin(), it)));
+        const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
+        // A duplicated selection entry must not mutate the same note twice.
+        if (std::find(indices.begin(), indices.end(), index) != indices.end())
+            return false;
+        indices.push_back(index);
     }
     pushUndoState();
     for (const auto index : indices)
@@ -468,7 +472,11 @@ bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdg
         });
         if (it == notes.end())
             return false;
-        indices.push_back(static_cast<std::size_t>(std::distance(notes.begin(), it)));
+        const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
+        // A duplicated selection entry must not mutate the same note twice.
+        if (std::find(indices.begin(), indices.end(), index) != indices.end())
+            return false;
+        indices.push_back(index);
     }
 
     pushUndoState();
