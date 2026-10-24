@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace
@@ -35,15 +36,15 @@ public:
             return dragging;
         if (x < pianoKeyWidth || y < rulerHeight || y >= getHeight() - velocityLaneHeight)
             return false;
-        const auto* note = findSelectedNoteAt({ x, y });
-        return note != nullptr && !isNearResizeEdge(*note, x);
+        const auto note = findSelectedNoteAt({ x, y });
+        return note.has_value() && !isNearResizeEdge(*note, x);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown()) return;
-        const auto* note = findSelectedNoteAt(e.getPosition());
-        if (note == nullptr || owner.getMidiEngine().getNumSelectedNotes() <= 1)
+        const auto note = findSelectedNoteAt(e.getPosition());
+        if (!note.has_value() || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return;
         if (lastSelection.size() > 1)
             owner.getMidiEngine().setSelectedNotes(lastSelection);
@@ -93,7 +94,7 @@ private:
             lastSelection = owner.getMidiEngine().getSelectedNotesCopy();
     }
 
-    const MidiEngine::NoteEvent* findSelectedNoteAt(juce::Point<int> p) const
+    std::optional<MidiEngine::NoteEvent> findSelectedNoteAt(juce::Point<int> p) const
     {
         const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
         const auto pixelsPerTick = getPixelsPerTick();
@@ -107,9 +108,9 @@ private:
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p)) return &n;
+            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p)) return n;
         }
-        return nullptr;
+        return std::nullopt;
     }
 
     bool isNearResizeEdge(const MidiEngine::NoteEvent& note, int x) const
