@@ -371,6 +371,10 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
             previousOffset = offset;
             auto moved = selection[i];
             if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
+            // Reject impossible note end positions before touching the copy.
+            std::int64_t movedEnd = 0;
+            if (!checkedAdd(moved.startTick, moved.lengthTicks, movedEnd))
+                return false;
             const auto original = std::find_if(updated.begin(), updated.end(), [&](const NoteEvent& n)
             { return n.startTick == selection[i].startTick && n.pitch == selection[i].pitch && n.channel == selection[i].channel; });
             if (original == updated.end()) return false;
