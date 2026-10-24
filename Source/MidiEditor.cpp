@@ -4602,6 +4602,22 @@ public:
                     if (tool == 1) return;
                 }
 
+                // The legacy move/resize engine identifies a note by tick, pitch and channel.
+                // When lengths differ at the same position, do not accidentally edit a neighbour.
+                const auto allNotes = midi.getNotesCopy();
+                const bool ambiguousNote = std::any_of(allNotes.begin(), allNotes.end(),
+                    [&n](const auto& other)
+                    {
+                        return other.startTick == n.startTick && other.pitch == n.pitch
+                            && other.channel == n.channel && other.lengthTicks != n.lengthTicks;
+                    });
+                if (ambiguousNote && (tool == 0 || tool == 4))
+                {
+                    // Preserve click-to-select while avoiding an unintended edit.
+                    if (tool == 0) return;
+                    return;
+                }
+
                 if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
                     draggingGroup = true;
