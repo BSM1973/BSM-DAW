@@ -3542,6 +3542,12 @@ public:
             g.fillRoundedRectangle(392.0f, 179.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
             g.drawText(juce::String::fromUTF8("Après"), 407, 172, 70, 22, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff7890a6));
+            g.setFont(juce::Font(10.0f));
+            const auto previewCount = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
+            g.drawText(juce::String(previewCount) + " / " + juce::String(velocities.size())
+                           + juce::String::fromUTF8(" notes affichées"),
+                       270, 326, 236, 17, juce::Justification::centredRight);
             const auto area = juce::Rectangle<float>(24.0f, 200.0f, 492.0f, 145.0f);
             g.setColour(juce::Colour(0xff192634));
             g.fillRoundedRectangle(area, 7.0f);
