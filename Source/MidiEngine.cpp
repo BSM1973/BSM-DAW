@@ -263,49 +263,37 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
         { return !isNoteSelected(other) && other.startTick == newStart && other.pitch == static_cast<std::uint8_t>(newPitch) && other.channel == n.channel; });
         if (collision) return false;
     }
-    // Reject target collisions within the moving group as well. Checking only
-    // against unselected events would miss two selected notes converging on
-    // the same tick, pitch and MIDI channel.
-    for (std::size_t i = 0; i < source.size(); ++i)
-    {
-        std::int64_t targetTick = 0;
-        if (!checkedAdd(source[i].startTick, deltaTicks, targetTick))
-            return false;
-        const int targetPitch = static_cast<int>(source[i].pitch) + deltaPitch;
-        for (std::size_t j = i + 1; j < source.size(); ++j)
-        {
-            std::int64_t otherTick = 0;
-            if (!checkedAdd(source[j].startTick, deltaTicks, otherTick))
-                return false;
-            if (targetTick == otherTick
-                && targetPitch == static_cast<int>(source[j].pitch) + deltaPitch
-                && source[i].channel == source[j].channel)
-            {
-                // A pair already stacked at the same onset and pitch must be
-                // allowed to travel together; only reject newly formed overlaps.
-                const bool alreadyStacked = source[i].startTick == source[j].startTick
-                    && source[i].pitch == source[j].pitch
-                    && source[i].channel == source[j].channel;
-                if (!alreadyStacked) return false;
-            }
-        }
-    }
-    // Resolve every selected event before mutating any note. A stale selection
-    // must never produce a partially moved chord.
+    // Resolve exact note identities before checking collisions. A selected note
+    // is identified by onset, duration, pitch and channel, not onset alone.
     std::vector<std::size_t> indices;
     indices.reserve(source.size());
     for (const auto& n : source)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
-        { return other.startTick == n.startTick && other.lengthTicks == n.lengthTicks
-            && other.pitch == n.pitch && other.channel == n.channel; });
-        if (it == notes.end())
-            return false;
+        {
+            return other.startTick == n.startTick && other.lengthTicks == n.lengthTicks
+                && other.pitch == n.pitch && other.channel == n.channel;
+        });
+        if (it == notes.end()) return false;
         const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
-        // A duplicated selection entry must not mutate the same note twice.
-        if (std::find(indices.begin(), indices.end(), index) != indices.end())
-            return false;
+        if (std::find(indices.begin(), indices.end(), index) != indices.end()) return false;
         indices.push_back(index);
+    }
+    for (std::size_t i = 0; i < source.size(); ++i)
+    {
+        std::int64_t targetTick = 0;
+        if (!checkedAdd(source[i].startTick, deltaTicks, targetTick)) return false;
+        const int targetPitch = static_cast<int>(source[i].pitch) + deltaPitch;
+        if (targetTick < 0 || targetPitch < minMidiNote || targetPitch > maxMidiNote) return false;
+        for (std::size_t j = 0; j < notes.size(); ++j)
+        {
+            if (std::find(indices.begin(), indices.end(), j) != indices.end()) continue;
+            const auto& other = notes[j];
+            if (other.startTick == targetTick && other.pitch == static_cast<std::uint8_t>(targetPitch)
+                && other.channel == source[i].channel) return false;
+        }
+        // Every selected note receives the same translation, so its existing
+        // relative overlaps remain unchanged; no new intra-group overlap is possible.
     }
     pushUndoState();
     for (const auto index : indices)
