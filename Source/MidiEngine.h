@@ -78,6 +78,9 @@ public:
 
     bool moveNote(std::int64_t oldStartTick, int oldPitch, int channel,
                   std::int64_t newStartTick, int newPitch);
+    // Exact identity for overlapping notes with the same tick, pitch and channel.
+    bool moveNoteExact(std::int64_t oldStartTick, int oldPitch, int channel,
+                       std::int64_t oldLengthTicks, std::int64_t newStartTick, int newPitch);
     bool setNoteLength(std::int64_t startTick, int pitch, int channel,
                        std::int64_t newLengthTicks);
     bool resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
