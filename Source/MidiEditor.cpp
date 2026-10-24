@@ -868,6 +868,7 @@ public:
             selectionMode.addItem(juce::String::fromUTF8("Remplacer la sélection"), 1);
             selectionMode.addItem(juce::String::fromUTF8("Ajouter à la sélection"), 2);
             selectionMode.addItem(juce::String::fromUTF8("Retirer de la sélection"), 3);
+            selectionMode.addItem(juce::String::fromUTF8("Conserver les correspondances"), 4);
             selectionMode.setSelectedId(1, juce::dontSendNotification);
             addAndMakeVisible(selectionMode);
             for (auto* slider : { &selectionMin, &selectionMax })
@@ -1455,7 +1456,7 @@ public:
             selectionMode.setBounds(26, 574, available, 32);
             selectionMin.setBounds(160, 482, getWidth() - 186, 30);
             selectionMax.setBounds(160, 530, getWidth() - 186, 30);
-            applySelection.setBounds(26, 595, available, 42);
+            applySelection.setBounds(26, 624, available, 42);
             melodySteps.setBounds(230, 404, getWidth() - 256, 30);
             melodyRange.setBounds(230, 448, getWidth() - 256, 30);
             melodySeed.setBounds(230, 485, getWidth() - 256, 30);
@@ -2853,7 +2854,7 @@ public:
             }
             if (selected) matches.push_back(note);
         }
-        if (selectionMode == 2 || selectionMode == 3)
+        if (selectionMode == 2 || selectionMode == 3 || selectionMode == 4)
         {
             const auto previous = midi.getSelectedNotesCopy();
             const auto sameNote = [](const auto& lhs, const auto& rhs)
@@ -2872,7 +2873,8 @@ public:
                 std::vector<MidiEngine::NoteEvent> remaining;
                 remaining.reserve(previous.size());
                 for (const auto& note : previous)
-                    if (std::none_of(matches.begin(), matches.end(), [&](const auto& found) { return sameNote(note, found); }))
+                    if ((selectionMode == 3 && std::none_of(matches.begin(), matches.end(), [&](const auto& found) { return sameNote(note, found); }))
+                        || (selectionMode == 4 && std::any_of(matches.begin(), matches.end(), [&](const auto& found) { return sameNote(note, found); })))
                         remaining.push_back(note);
                 matches.swap(remaining);
             }
