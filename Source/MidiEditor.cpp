@@ -3544,7 +3544,12 @@ public:
             for (const int level : { 32, 64, 96 })
             {
                 const float y = area.getBottom() - 9.0f - (static_cast<float>(level) / 127.0f) * 118.0f;
-                g.drawHorizontalLine(juce::roundToInt(y), area.getX() + 8.0f, area.getRight() - 8.0f);
+                g.drawHorizontalLine(juce::roundToInt(y), area.getX() + 28.0f, area.getRight() - 8.0f);
+                g.setColour(juce::Colour(0xff7890a6));
+                g.setFont(juce::Font(10.0f));
+                g.drawText(juce::String(level), 29, juce::roundToInt(y) - 9, 22, 18,
+                           juce::Justification::centredRight);
+                g.setColour(juce::Colour(0xff304153).withAlpha(0.65f));
             }
             if (velocities.empty()) return;
             int originalMin = 127, originalMax = 1, transformedMin = 127, transformedMax = 1;
@@ -3589,7 +3594,7 @@ public:
                 270, 413, 246, 20, juce::Justification::centredRight);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
-            const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
+            const float width = (area.getWidth() - 42.0f) / static_cast<float>(count);
             const double ratio = intensity.getValue() / 100.0;
             const double pivot = centre.getValue();
             for (int i = 0; i < count; ++i)
@@ -3598,7 +3603,7 @@ public:
                 const int velocity = velocities[sourceIndex];
                 const int processed = juce::jlimit(1, 127,
                     juce::roundToInt(pivot + (static_cast<double>(velocity) - pivot) * ratio));
-                const float x = area.getX() + 10.0f + static_cast<float>(i) * width;
+                const float x = area.getX() + 32.0f + static_cast<float>(i) * width;
                 const float originalHeight = static_cast<float>(velocity) / 127.0f * 118.0f;
                 const float processedHeight = static_cast<float>(processed) / 127.0f * 118.0f;
                 g.setColour(juce::Colour(0xff587187));
