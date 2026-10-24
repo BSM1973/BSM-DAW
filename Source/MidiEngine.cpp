@@ -334,6 +334,7 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
     {
         std::size_t end = begin + 1;
         while (end < selection.size() && selection[end].startTick == selection[begin].startTick) ++end;
+        std::int64_t previousOffset = -1;
         for (std::size_t i = begin; i < end; ++i)
         {
             const auto offsetIndex = i - begin;
@@ -359,6 +360,15 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
                 else if (!checkedAdd(offset, jitter, offset))
                     return false;
             }
+            // Timing variation must not reverse the musical strum order.
+            // Preserve a minimum one-tick separation within each chord.
+            if (offsetIndex > 0 && offset <= previousOffset)
+            {
+                if (previousOffset == std::numeric_limits<std::int64_t>::max())
+                    return false;
+                offset = previousOffset + 1;
+            }
+            previousOffset = offset;
             auto moved = selection[i];
             if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
             const auto original = std::find_if(updated.begin(), updated.end(), [&](const NoteEvent& n)
