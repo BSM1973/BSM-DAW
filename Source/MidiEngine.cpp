@@ -511,6 +511,18 @@ bool MidiEngine::duplicateSelectedNotes(std::int64_t deltaTicks)
 {
     if (selectedNotes.empty() || deltaTicks == 0) return false;
     const auto source = selectedNotes;
+    // Ensure the selection still refers to actual events. A stale selection
+    // must not create new notes from events that no longer exist.
+    for (const auto& n : source)
+    {
+        const bool exists = std::any_of(notes.begin(), notes.end(), [&n](const NoteEvent& other)
+        {
+            return other.startTick == n.startTick && other.pitch == n.pitch
+                && other.channel == n.channel;
+        });
+        if (!exists)
+            return false;
+    }
     std::vector<NoteEvent> copies;
     for (const auto& n : source)
     {
