@@ -3552,7 +3552,7 @@ public:
             const auto previewCount = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             g.drawText(juce::String(previewCount) + " / " + juce::String(velocities.size())
                            + juce::String::fromUTF8(" notes affichées"),
-                       270, 326, 236, 17, juce::Justification::centredRight);
+                       270, 330, 236, 14, juce::Justification::centredRight);
 
             // Subtle reference lines make MIDI velocity levels easier to compare.
             g.setColour(juce::Colour(0xff304153).withAlpha(0.65f));
