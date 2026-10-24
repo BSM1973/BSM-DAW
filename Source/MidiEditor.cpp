@@ -2357,6 +2357,62 @@ public:
         }
     }
 
+    // Expressive MIDI transformations, preserving pitch and start positions.
+    // Apply all note changes in one undoable replacement.
+    void applyExpressiveNotes(int mode, int amount)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        auto updated = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> newSelection;
+        bool changed = false;
+        for (const auto& note : selected)
+        {
+            const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+            {
+                return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+            });
+            if (it == updated.end()) return;
+            auto edited = note;
+            if (mode == 0) edited.velocity = static_cast<std::uint8_t>(juce::jlimit(1, 127, amount));
+            else if (mode == 1) edited.velocity = static_cast<std::uint8_t>(
+                juce::jlimit(1, 127, (int)note.velocity + amount));
+            else if (mode == 2) edited.lengthTicks = juce::jmax<std::int64_t>(1,
+                (note.lengthTicks / 100) * amount + ((note.lengthTicks % 100) * amount) / 100);
+            else if (mode == 3) edited.lengthTicks = juce::jmax<std::int64_t>(1,
+                (note.lengthTicks / 100) * amount + ((note.lengthTicks % 100) * amount) / 100);
+            changed = changed || edited.velocity != note.velocity || edited.lengthTicks != note.lengthTicks;
+            *it = edited;
+            newSelection.push_back(edited);
+        }
+        if (!changed) return;
+        if (midi.replaceNotes(updated))
+        {
+            midi.setSelectedNotes(newSelection);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
+    void applyExpressiveController(int controller, int value)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        midi.beginGroupedEdit();
+        bool changed = false;
+        for (const auto& note : selected)
+            changed = midi.setControllerEvent(note.startTick, controller, value, note.channel) || changed;
+        midi.endGroupedEdit();
+        if (changed)
+        {
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
