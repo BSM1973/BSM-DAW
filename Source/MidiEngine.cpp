@@ -1,14 +1,92 @@
 #include "MidiEngine.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
+
+namespace
+{
+bool checkedAdd(std::int64_t a, std::int64_t b, std::int64_t& result) noexcept
+{
+    if ((b > 0 && a > std::numeric_limits<std::int64_t>::max() - b) ||
+        (b < 0 && a < std::numeric_limits<std::int64_t>::min() - b))
+        return false;
+    result = a + b;
+    return true;
+}
+}
+
+
+bool MidiEngine::setControllerEvent(std::int64_t tick, int controller, int value, int channel)
+{
+    if (tick < 0 || channel < 1 || channel > 16 || controller < 0 || controller > 129
+        || value < 0 || value > (controller == 128 ? 16383 : 127))
+        return false;
+    const auto it = std::find_if(controllerEvents.begin(), controllerEvents.end(),
+        [=](const ControllerEvent& e) { return e.tick == tick && e.controller == controller && e.channel == channel; });
+    if (it != controllerEvents.end())
+    {
+        if (it->value == value) return true;
+        it->value = value;
+        return true;
+    }
+    if (controllerEvents.size() >= 65536) return false;
+    ControllerEvent event;
+    event.tick = tick;
+    event.channel = static_cast<std::uint8_t>(channel);
+    event.controller = controller;
+    event.value = value;
+    controllerEvents.push_back(event);
+    std::sort(controllerEvents.begin(), controllerEvents.end(), [](const ControllerEvent& a, const ControllerEvent& b)
+    {
+        if (a.tick != b.tick) return a.tick < b.tick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.controller < b.controller;
+    });
+    return true;
+}
+
+std::vector<MidiEngine::ControllerEvent> MidiEngine::getControllerEventsCopy() const
+{
+    return controllerEvents;
+}
+
+bool MidiEngine::removeControllerEvent(std::int64_t tick, int controller, int channel)
+{
+    const auto it = std::find_if(controllerEvents.begin(), controllerEvents.end(),
+        [=](const ControllerEvent& event)
+        { return event.tick == tick && event.controller == controller && event.channel == channel; });
+    if (it == controllerEvents.end()) return false;
+    controllerEvents.erase(it);
+    return true;
+}
+
+void MidiEngine::clearControllerEvents()
+{
+    controllerEvents.clear();
+}
 
 MidiEngine::HistoryState MidiEngine::makeHistoryState() const
 {
-    return { notes, selectedNotes };
+    return { notes, controllerEvents, selectedNotes };
+}
+
+void MidiEngine::beginGroupedEdit() noexcept
+{
+    groupedEditActive = true;
+    groupedEditHasUndo = false;
+}
+
+void MidiEngine::endGroupedEdit() noexcept
+{
+    groupedEditActive = false;
+    groupedEditHasUndo = false;
 }
 
 void MidiEngine::pushUndoState()
 {
+    if (groupedEditActive && groupedEditHasUndo) return;
+    if (groupedEditActive) groupedEditHasUndo = true;
+    ++historyRevision;
     undoHistory.push_back(makeHistoryState());
     redoHistory.clear();
     constexpr std::size_t maxHistory = 100;
@@ -19,6 +97,7 @@ void MidiEngine::pushUndoState()
 void MidiEngine::restoreHistoryState(const HistoryState& state)
 {
     notes = state.notes;
+    controllerEvents = state.controllerEvents;
     selectedNotes = state.selectedNotes;
     if (selectedNotes.empty())
     {
@@ -33,6 +112,7 @@ void MidiEngine::restoreHistoryState(const HistoryState& state)
 bool MidiEngine::undo()
 {
     if (undoHistory.empty()) return false;
+    ++historyRevision;
     redoHistory.push_back(makeHistoryState());
     auto state = std::move(undoHistory.back());
     undoHistory.pop_back();
@@ -43,6 +123,7 @@ bool MidiEngine::undo()
 bool MidiEngine::redo()
 {
     if (redoHistory.empty()) return false;
+    ++historyRevision;
     undoHistory.push_back(makeHistoryState());
     auto state = std::move(redoHistory.back());
     redoHistory.pop_back();
@@ -52,14 +133,18 @@ bool MidiEngine::redo()
 
 void MidiEngine::clearUndoHistory() noexcept
 {
+    // Clearing the stacks invalidates any editor-owned undo token, even when
+    // the visible MIDI notes have not changed.
+    ++historyRevision;
     undoHistory.clear();
     redoHistory.clear();
 }
 
 void MidiEngine::clear()
 {
-    if (notes.empty()) return;
+    if (notes.empty() && controllerEvents.empty()) return;
     pushUndoState();
+    controllerEvents.clear();
     notes.clear();
     clearNoteSelection();
     setPlaybackPositionSeconds(0.0);
@@ -68,7 +153,8 @@ void MidiEngine::clear()
 
 bool MidiEngine::addNote(std::int64_t startTick, std::int64_t lengthTicks, int pitch, int velocity, int channel)
 {
-    if (startTick < 0 || lengthTicks <= 0 || pitch < minMidiNote || pitch > maxMidiNote || velocity < 1 || velocity > 127 || channel < 1 || channel > 16) return false;
+    std::int64_t noteEnd = 0;
+    if (startTick < 0 || lengthTicks <= 0 || !checkedAdd(startTick, lengthTicks, noteEnd) || pitch < minMidiNote || pitch > maxMidiNote || velocity < 1 || velocity > 127 || channel < 1 || channel > 16) return false;
     NoteEvent note;
     note.startTick = startTick; note.lengthTicks = lengthTicks; note.pitch = static_cast<std::uint8_t>(pitch); note.velocity = static_cast<std::uint8_t>(velocity); note.channel = static_cast<std::uint8_t>(channel);
     const auto duplicate = std::find_if(notes.begin(), notes.end(), [note](const NoteEvent& existing)
@@ -80,6 +166,31 @@ bool MidiEngine::addNote(std::int64_t startTick, std::int64_t lengthTicks, int p
     notes.insert(insertionPoint, note);
     selectedNote = note; selectedNoteValid = true;
     selectedNotes.clear(); selectedNotes.push_back(note);
+    return true;
+}
+
+bool MidiEngine::replaceNotes(const std::vector<NoteEvent>& replacement)
+{
+    std::vector<NoteEvent> prepared;
+    try { prepared = replacement; } catch (...) { return false; }
+    for (const auto& note : prepared)
+    {
+        std::int64_t noteEnd = 0;
+        if (note.startTick < 0 || note.lengthTicks <= 0 || !checkedAdd(note.startTick, note.lengthTicks, noteEnd)
+            || note.pitch > maxMidiNote || note.velocity < 1 || note.velocity > 127 || note.channel < 1 || note.channel > 16)
+            return false;
+    }
+    std::sort(prepared.begin(), prepared.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    pushUndoState();
+    notes.swap(prepared);
+    clearNoteSelection();
+    setPlaybackPositionSeconds(0.0);
+    setPlaying(false);
     return true;
 }
 
@@ -108,7 +219,8 @@ bool MidiEngine::toggleNoteSelectionAt(std::int64_t startTick, int pitch, int ch
 bool MidiEngine::isNoteSelected(const NoteEvent& note) const noexcept
 {
     return std::find_if(selectedNotes.begin(), selectedNotes.end(), [&note](const NoteEvent& selected)
-    { return selected.startTick == note.startTick && selected.pitch == note.pitch && selected.channel == note.channel; }) != selectedNotes.end();
+    { return selected.startTick == note.startTick && selected.lengthTicks == note.lengthTicks
+        && selected.pitch == note.pitch && selected.channel == note.channel; }) != selectedNotes.end();
 }
 
 std::vector<MidiEngine::NoteEvent> MidiEngine::getSelectedNotesCopy() const { return selectedNotes; }
@@ -119,8 +231,17 @@ void MidiEngine::setSelectedNotes(const std::vector<NoteEvent>& selection) noexc
     for (const auto& candidate : selection)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&candidate](const NoteEvent& note)
-        { return note.startTick == candidate.startTick && note.pitch == candidate.pitch && note.channel == candidate.channel; });
-        if (it != notes.end()) selectedNotes.push_back(*it);
+        {
+            return note.startTick == candidate.startTick && note.lengthTicks == candidate.lengthTicks
+                && note.pitch == candidate.pitch && note.channel == candidate.channel;
+        });
+        if (it == notes.end()) continue;
+        const auto alreadySelected = std::any_of(selectedNotes.begin(), selectedNotes.end(), [&it](const NoteEvent& selected)
+        {
+            return selected.startTick == it->startTick && selected.lengthTicks == it->lengthTicks
+                && selected.pitch == it->pitch && selected.channel == it->channel;
+        });
+        if (!alreadySelected) selectedNotes.push_back(*it);
     }
     if (selectedNotes.empty()) { clearNoteSelection(); return; }
     selectedNote = selectedNotes.back(); selectedNoteValid = true;
@@ -128,29 +249,312 @@ void MidiEngine::setSelectedNotes(const std::vector<NoteEvent>& selection) noexc
 
 bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
 {
-    if (selectedNotes.empty()) return false;
-    if (deltaTicks % (ticksPerQuarterNote / 4) != 0) return false;
+    if (selectedNotes.empty() || (deltaTicks == 0 && deltaPitch == 0)) return false;
+    // The editor applies the active global SNAP step; the engine must also
+    // accept finer tick deltas (including unsnapped movements).
     std::vector<NoteEvent> source = selectedNotes;
-    for (const auto& n : source)
-    {
-        const auto newStart = n.startTick + deltaTicks;
-        const int newPitch = static_cast<int>(n.pitch) + deltaPitch;
-        if (newStart < 0 || newPitch < minMidiNote || newPitch > maxMidiNote) return false;
-        const bool collision = std::any_of(notes.begin(), notes.end(), [&n, newStart, newPitch, this](const NoteEvent& other)
-        { return !isNoteSelected(other) && other.startTick == newStart && other.pitch == static_cast<std::uint8_t>(newPitch) && other.channel == n.channel; });
-        if (collision) return false;
-    }
-    pushUndoState();
+    // Resolve exact note identities before checking collisions. A selected note
+    // is identified by onset, duration, pitch and channel, not onset alone.
+    std::vector<std::size_t> indices;
+    indices.reserve(source.size());
     for (const auto& n : source)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
-        { return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel; });
-        if (it != notes.end()) { it->startTick += deltaTicks; it->pitch = static_cast<std::uint8_t>(static_cast<int>(it->pitch) + deltaPitch); }
+        {
+            return other.startTick == n.startTick && other.lengthTicks == n.lengthTicks
+                && other.pitch == n.pitch && other.channel == n.channel;
+        });
+        if (it == notes.end()) return false;
+        const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
+        if (std::find(indices.begin(), indices.end(), index) != indices.end()) return false;
+        indices.push_back(index);
+    }
+    for (std::size_t i = 0; i < source.size(); ++i)
+    {
+        std::int64_t targetTick = 0;
+        if (!checkedAdd(source[i].startTick, deltaTicks, targetTick)) return false;
+        const int targetPitch = static_cast<int>(source[i].pitch) + deltaPitch;
+        if (targetTick < 0 || targetPitch < minMidiNote || targetPitch > maxMidiNote) return false;
+        for (std::size_t j = 0; j < notes.size(); ++j)
+        {
+            if (std::find(indices.begin(), indices.end(), j) != indices.end()) continue;
+            const auto& other = notes[j];
+            if (other.startTick == targetTick && other.pitch == static_cast<std::uint8_t>(targetPitch)
+                && other.channel == source[i].channel) return false;
+        }
+        // Every selected note receives the same translation, so its existing
+        // relative overlaps remain unchanged; no new intra-group overlap is possible.
+    }
+    pushUndoState();
+    for (const auto index : indices)
+    {
+        auto& note = notes[index];
+        note.startTick += deltaTicks;
+        note.pitch = static_cast<std::uint8_t>(static_cast<int>(note.pitch) + deltaPitch);
     }
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     { if (a.startTick != b.startTick) return a.startTick < b.startTick; if (a.channel != b.channel) return a.channel < b.channel; return a.pitch < b.pitch; });
-    auto result = source;
-    for (auto& n : result) { n.startTick += deltaTicks; n.pitch = static_cast<std::uint8_t>(static_cast<int>(n.pitch) + deltaPitch); }
+    // Rebuild the selection from the moved engine notes, preserving the actual
+    // velocity, mute state and probability rather than stale selection copies.
+    std::vector<NoteEvent> result;
+    result.reserve(indices.size());
+    for (const auto& original : source)
+    {
+        std::int64_t movedTick = 0;
+        if (!checkedAdd(original.startTick, deltaTicks, movedTick)) return false;
+        const auto movedPitch = static_cast<std::uint8_t>(static_cast<int>(original.pitch) + deltaPitch);
+        const auto it = std::find_if(notes.begin(), notes.end(), [&](const NoteEvent& note)
+        {
+            return note.startTick == movedTick && note.lengthTicks == original.lengthTicks
+                && note.pitch == movedPitch && note.channel == original.channel;
+        });
+        if (it != notes.end()) result.push_back(*it);
+    }
+    setSelectedNotes(result);
+    return true;
+}
+
+bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, int velocityVariation, int timingVariation)
+{
+    if (spreadTicks <= 0 || selectedNotes.size() < 2 || velocityVariation < 0 || velocityVariation > 50 || timingVariation < 0 || timingVariation > 50) return false;
+    auto updated = notes;
+    auto selection = selectedNotes;
+    std::sort(selection.begin(), selection.end(), [lowToHigh](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        return lowToHigh ? a.pitch < b.pitch : a.pitch > b.pitch;
+    });
+    // Reject stale or duplicate source references before applying strum.
+    // Otherwise a repeated selection entry could shift the same event twice.
+    for (std::size_t i = 0; i < selection.size(); ++i)
+    {
+        const auto& n = selection[i];
+        if (std::any_of(selection.begin(), selection.begin() + static_cast<std::ptrdiff_t>(i),
+            [&n](const NoteEvent& previous)
+            { return previous.startTick == n.startTick && previous.pitch == n.pitch
+                && previous.channel == n.channel; }))
+            return false;
+        if (std::none_of(notes.begin(), notes.end(), [&n](const NoteEvent& live)
+            { return live.startTick == n.startTick && live.pitch == n.pitch && live.channel == n.channel; }))
+            return false;
+    }
+    bool changed = false;
+    std::vector<NoteEvent> shifted;
+    for (std::size_t begin = 0; begin < selection.size();)
+    {
+        std::size_t end = begin + 1;
+        while (end < selection.size() && selection[end].startTick == selection[begin].startTick) ++end;
+        std::int64_t previousOffset = -1;
+        for (std::size_t i = begin; i < end; ++i)
+        {
+            const auto offsetIndex = i - begin;
+            if (offsetIndex > (std::size_t)(std::numeric_limits<std::int64_t>::max() / spreadTicks)) return false;
+            auto offset = (std::int64_t)offsetIndex * spreadTicks;
+            if (timingVariation > 0 && offsetIndex > 0)
+            {
+                // Deterministic variation within a bounded percentage of the
+                // interval. The first note remains anchored to the grid.
+                const auto jitterLimit = (spreadTicks / 100) * timingVariation
+                    + (spreadTicks % 100) * timingVariation / 100;
+                // Keep the deterministic timing pattern without overflowing
+                // the index arithmetic on exceptionally large selections.
+                const auto timingSeed = ((offsetIndex % 101) * 13
+                    + (static_cast<std::size_t>(selection[i].pitch) * 3) % 101) % 101;
+                const auto variation = static_cast<std::int64_t>(timingSeed) - 50;
+                // Split the multiplication to avoid overflowing int64 while
+                // retaining the original integer rounding and musical feel.
+                const auto jitter = (jitterLimit / 50) * variation
+                    + ((jitterLimit % 50) * variation) / 50;
+                if (jitter < 0 && offset < -jitter)
+                    offset = 0;
+                else if (!checkedAdd(offset, jitter, offset))
+                    return false;
+            }
+            // Timing variation must not reverse the musical strum order.
+            // Preserve a minimum one-tick separation within each chord.
+            if (offsetIndex > 0 && offset <= previousOffset)
+            {
+                if (previousOffset == std::numeric_limits<std::int64_t>::max())
+                    return false;
+                offset = previousOffset + 1;
+            }
+            previousOffset = offset;
+            auto moved = selection[i];
+            if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
+            // Reject impossible note end positions before touching the copy.
+            std::int64_t movedEnd = 0;
+            if (!checkedAdd(moved.startTick, moved.lengthTicks, movedEnd))
+                return false;
+            const auto original = std::find_if(updated.begin(), updated.end(), [&](const NoteEvent& n)
+            { return n.startTick == selection[i].startTick && n.pitch == selection[i].pitch && n.channel == selection[i].channel; });
+            if (original == updated.end()) return false;
+            original->startTick = moved.startTick;
+            if (velocityVariation > 0)
+            {
+                // Reduce before multiplying to avoid size_t overflow for
+                // unusually large selections while preserving the pattern.
+                const auto modulus = static_cast<std::size_t>(2 * velocityVariation + 1);
+                const auto deviationSeed = ((offsetIndex % modulus) * 17
+                    + (static_cast<std::size_t>(moved.pitch) * 7) % modulus) % modulus;
+                const int deviation = static_cast<int>(deviationSeed) - velocityVariation;
+                moved.velocity = (std::uint8_t)std::clamp((int)moved.velocity + deviation, 1, 127);
+                original->velocity = moved.velocity;
+            }
+            shifted.push_back(moved);
+            changed = changed || offset != 0;
+        }
+        begin = end;
+    }
+    if (!changed) return false;
+    std::sort(updated.begin(), updated.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    for (std::size_t i = 1; i < updated.size(); ++i)
+        if (updated[i].startTick == updated[i - 1].startTick
+            && updated[i].pitch == updated[i - 1].pitch
+            && updated[i].channel == updated[i - 1].channel) return false;
+    pushUndoState();
+    notes.swap(updated);
+    setSelectedNotes(shifted);
+    return true;
+}
+
+bool MidiEngine::splitSelectedNotesToGrid(std::int64_t gridTicks)
+{
+    if (gridTicks <= 0 || selectedNotes.empty()) return false;
+    auto replacement = notes;
+    std::vector<NoteEvent> newSelection;
+    bool changed = false;
+    for (const auto& selected : selectedNotes)
+    {
+        const auto it = std::find_if(replacement.begin(), replacement.end(), [&](const NoteEvent& n)
+        { return n.startTick == selected.startTick && n.pitch == selected.pitch && n.channel == selected.channel; });
+        if (it == replacement.end() || it->lengthTicks <= gridTicks) continue;
+        std::int64_t end = 0;
+        if (!checkedAdd(it->startTick, it->lengthTicks, end)) return false;
+        std::vector<NoteEvent> pieces;
+        auto cursor = it->startTick;
+        while (cursor < end)
+        {
+            const auto remaining = end - cursor;
+            const auto length = std::min(gridTicks, remaining);
+            auto piece = *it;
+            piece.startTick = cursor;
+            piece.lengthTicks = length;
+            pieces.push_back(piece);
+            cursor += length;
+            if (pieces.size() > 4096) return false;
+        }
+        replacement.erase(it);
+        replacement.insert(replacement.end(), pieces.begin(), pieces.end());
+        newSelection.insert(newSelection.end(), pieces.begin(), pieces.end());
+        changed = true;
+    }
+    if (!changed) return false;
+    std::sort(replacement.begin(), replacement.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    // Refuse duplicate note identities rather than overwriting existing notes.
+    for (std::size_t i = 1; i < replacement.size(); ++i)
+        if (replacement[i - 1].startTick == replacement[i].startTick
+            && replacement[i - 1].pitch == replacement[i].pitch
+            && replacement[i - 1].channel == replacement[i].channel) return false;
+    pushUndoState();
+    notes.swap(replacement);
+    setSelectedNotes(newSelection);
+    return true;
+}
+
+bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge)
+{
+    if (selectedNotes.empty() || deltaTicks == 0)
+        return false;
+
+    constexpr std::int64_t minimumLength = ticksPerQuarterNote / 4;
+    const auto source = selectedNotes;
+
+    for (const auto& n : source)
+    {
+        if (fromLeftEdge)
+        {
+            std::int64_t newStart = 0, newLength = 0;
+            if (!checkedAdd(n.startTick, deltaTicks, newStart) || !checkedAdd(n.lengthTicks, -deltaTicks, newLength)) return false;
+            if (newStart < 0 || newLength < minimumLength)
+                return false;
+        }
+        else
+        {
+            std::int64_t newLength = 0;
+            if (!checkedAdd(n.lengthTicks, deltaTicks, newLength) || newLength < minimumLength)
+                return false;
+        }
+    }
+
+    // Resizing from the left changes note onset. Reject duplicate target
+    // onsets on the same pitch/channel before changing any live events.
+    if (fromLeftEdge)
+    {
+        for (const auto& n : source)
+        {
+            std::int64_t targetTick = 0;
+            if (!checkedAdd(n.startTick, deltaTicks, targetTick))
+                return false;
+            const bool collision = std::any_of(notes.begin(), notes.end(),
+                [this, &n, targetTick](const NoteEvent& other)
+                {
+                    return !isNoteSelected(other) && other.startTick == targetTick
+                        && other.pitch == n.pitch && other.channel == n.channel;
+                });
+            if (collision)
+                return false;
+        }
+    }
+
+    // Validate every selected note against the live event collection before
+    // changing anything, so a stale selection cannot cause a partial resize.
+    std::vector<std::size_t> indices;
+    indices.reserve(source.size());
+    for (const auto& n : source)
+    {
+        const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
+        {
+            return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel;
+        });
+        if (it == notes.end())
+            return false;
+        const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
+        // A duplicated selection entry must not mutate the same note twice.
+        if (std::find(indices.begin(), indices.end(), index) != indices.end())
+            return false;
+        indices.push_back(index);
+    }
+
+    pushUndoState();
+    std::vector<NoteEvent> result;
+    result.reserve(source.size());
+    for (const auto index : indices)
+    {
+        auto& note = notes[index];
+        if (fromLeftEdge)
+        {
+            note.startTick += deltaTicks;
+            note.lengthTicks -= deltaTicks;
+        }
+        else
+        {
+            note.lengthTicks += deltaTicks;
+        }
+        result.push_back(note);
+    }
+
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
     setSelectedNotes(result);
     return true;
 }
@@ -159,13 +563,30 @@ bool MidiEngine::duplicateSelectedNotes(std::int64_t deltaTicks)
 {
     if (selectedNotes.empty() || deltaTicks == 0) return false;
     const auto source = selectedNotes;
+    // Ensure the selection still refers to actual events. A stale selection
+    // must not create new notes from events that no longer exist.
+    for (const auto& n : source)
+    {
+        const bool exists = std::any_of(notes.begin(), notes.end(), [&n](const NoteEvent& other)
+        {
+            return other.startTick == n.startTick && other.pitch == n.pitch
+                && other.channel == n.channel;
+        });
+        if (!exists)
+            return false;
+    }
     std::vector<NoteEvent> copies;
     for (const auto& n : source)
     {
-        const auto newStart = n.startTick + deltaTicks;
-        if (newStart < 0) return false;
+        std::int64_t newStart = 0;
+        if (!checkedAdd(n.startTick, deltaTicks, newStart) || newStart < 0) return false;
         if (std::any_of(notes.begin(), notes.end(), [&n, newStart](const NoteEvent& other)
             { return other.startTick == newStart && other.pitch == n.pitch && other.channel == n.channel; })) return false;
+        // Also check copies produced earlier in this operation. The live notes
+        // collection alone cannot detect duplicates inside the new batch.
+        if (std::any_of(copies.begin(), copies.end(), [&n, newStart](const NoteEvent& other)
+            { return other.startTick == newStart && other.pitch == n.pitch && other.channel == n.channel; }))
+            return false;
         auto copy = n; copy.startTick = newStart; copies.push_back(copy);
     }
     pushUndoState();
@@ -204,6 +625,8 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel, 
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return note.startTick == oldStartTick && note.pitch == static_cast<std::uint8_t>(oldPitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (it == notes.end()) return false;
+    std::int64_t movedEnd = 0;
+    if (!checkedAdd(newStartTick, it->lengthTicks, movedEnd)) return false;
     const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return &note != &(*it) && note.startTick == newStartTick && note.pitch == static_cast<std::uint8_t>(newPitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (duplicate != notes.end()) return false;
@@ -217,14 +640,144 @@ bool MidiEngine::moveNote(std::int64_t oldStartTick, int oldPitch, int channel, 
     return true;
 }
 
+bool MidiEngine::moveNoteExact(std::int64_t oldStartTick, int oldPitch, int channel,
+                               std::int64_t oldLengthTicks, std::int64_t newStartTick, int newPitch)
+{
+    if (newStartTick < 0 || newPitch < minMidiNote || newPitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == oldStartTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(oldPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end()) return false;
+    std::int64_t movedEnd = 0;
+    if (!checkedAdd(newStartTick, it->lengthTicks, movedEnd)) return false;
+    const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return &note != &(*it) && note.startTick == newStartTick
+            && note.pitch == static_cast<std::uint8_t>(newPitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (duplicate != notes.end()) return false;
+    pushUndoState();
+    it->startTick = newStartTick;
+    it->pitch = static_cast<std::uint8_t>(newPitch);
+    const auto moved = *it;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    selectedNote = moved;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(moved);
+    return true;
+}
+
 bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel, std::int64_t newLengthTicks)
 {
-    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote || channel < 1 || channel > 16 || newLengthTicks <= 0) return false;
+    std::int64_t resizedEnd = 0;
+    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote || channel < 1 || channel > 16 || newLengthTicks <= 0 || !checkedAdd(startTick, newLengthTicks, resizedEnd)) return false;
     const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
     { return note.startTick == startTick && note.pitch == static_cast<std::uint8_t>(pitch) && note.channel == static_cast<std::uint8_t>(channel); });
     if (it == notes.end() || it->lengthTicks == newLengthTicks) return false;
     pushUndoState();
     it->lengthTicks = newLengthTicks; selectNoteAt(startTick, pitch, channel); selectedNote.lengthTicks = newLengthTicks; return true;
+}
+
+bool MidiEngine::setNoteLengthExact(std::int64_t startTick, int pitch, int channel,
+                                    std::int64_t oldLengthTicks, std::int64_t newLengthTicks)
+{
+    std::int64_t resizedEnd = 0;
+    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0 || newLengthTicks <= 0
+        || !checkedAdd(startTick, newLengthTicks, resizedEnd)) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == startTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end() || it->lengthTicks == newLengthTicks) return false;
+    pushUndoState();
+    it->lengthTicks = newLengthTicks;
+    selectedNote = *it;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(*it);
+    return true;
+}
+
+bool MidiEngine::resizeNoteLeftExact(std::int64_t oldStartTick, int pitch, int channel,
+                                     std::int64_t oldLengthTicks, std::int64_t newStartTick)
+{
+    if (oldStartTick < 0 || newStartTick < 0 || pitch < minMidiNote || pitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0) return false;
+    std::int64_t oldEnd = 0;
+    if (!checkedAdd(oldStartTick, oldLengthTicks, oldEnd)
+        || newStartTick >= oldEnd || newStartTick == oldStartTick) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == oldStartTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end()) return false;
+    const auto duplicate = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return &note != &(*it) && note.startTick == newStartTick
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (duplicate != notes.end()) return false;
+    pushUndoState();
+    it->startTick = newStartTick;
+    it->lengthTicks = oldEnd - newStartTick;
+    const auto resized = *it;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.startTick != b.startTick) return a.startTick < b.startTick;
+        if (a.channel != b.channel) return a.channel < b.channel;
+        return a.pitch < b.pitch;
+    });
+    selectedNote = resized;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(resized);
+    return true;
+}
+
+bool MidiEngine::resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
+                                            std::int64_t newLengthTicks)
+{
+    if (newLengthTicks < ticksPerQuarterNote / 4) return false;
+    const auto first = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& n)
+    { return n.startTick == startTick && n.pitch == pitch && n.channel == channel; });
+    if (first == notes.end()) return false;
+    std::int64_t oldBoundary = 0, newBoundary = 0, followingEnd = 0;
+    if (!checkedAdd(startTick, first->lengthTicks, oldBoundary)
+        || !checkedAdd(startTick, newLengthTicks, newBoundary)) return false;
+    const auto following = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& n)
+    { return n.startTick == oldBoundary && n.pitch == pitch && n.channel == channel; });
+    if (following == notes.end()
+        || !checkedAdd(following->startTick, following->lengthTicks, followingEnd)
+        || newBoundary >= followingEnd - ticksPerQuarterNote / 4
+        || newBoundary <= startTick
+        || newBoundary == oldBoundary) return false;
+    pushUndoState();
+    first->lengthTicks = newLengthTicks;
+    following->startTick = newBoundary;
+    following->lengthTicks = followingEnd - newBoundary;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    { if (a.startTick != b.startTick) return a.startTick < b.startTick;
+      if (a.channel != b.channel) return a.channel < b.channel;
+      return a.pitch < b.pitch; });
+    selectNoteAt(startTick, pitch, channel);
+    return true;
 }
 
 bool MidiEngine::setNoteVelocity(std::int64_t startTick, int pitch, int channel, int newVelocity)
@@ -238,10 +791,10 @@ bool MidiEngine::setNoteVelocity(std::int64_t startTick, int pitch, int channel,
 }
 
 std::vector<MidiEngine::NoteEvent> MidiEngine::getNotesCopy() const { return notes; }
-std::int64_t MidiEngine::getLengthTicks() const noexcept { std::int64_t length = 0; for (const auto& note : notes) length = std::max(length, note.startTick + note.lengthTicks); return length; }
-double MidiEngine::tickToSeconds(std::int64_t tick, double tempoBpm) noexcept { if (tick <= 0 || tempoBpm <= 0.0) return 0.0; return (static_cast<double>(tick) / static_cast<double>(ticksPerQuarterNote)) * (60.0 / tempoBpm); }
-std::int64_t MidiEngine::secondsToTick(double seconds, double tempoBpm) noexcept { if (seconds <= 0.0 || tempoBpm <= 0.0) return 0; return static_cast<std::int64_t>(std::llround(seconds * tempoBpm / 60.0 * static_cast<double>(ticksPerQuarterNote))); }
-std::int64_t MidiEngine::quantizeTick(std::int64_t tick, std::int64_t gridTicks) noexcept { if (tick <= 0 || gridTicks <= 0) return std::max<std::int64_t>(0, tick); return static_cast<std::int64_t>(std::llround(static_cast<double>(tick) / static_cast<double>(gridTicks))) * gridTicks; }
+std::int64_t MidiEngine::getLengthTicks() const noexcept { std::int64_t length = 0; for (const auto& note : notes) { std::int64_t end = 0; if (!checkedAdd(note.startTick, note.lengthTicks, end)) return std::numeric_limits<std::int64_t>::max(); length = std::max(length, end); } return length; }
+double MidiEngine::tickToSeconds(std::int64_t tick, double tempoBpm) noexcept { if (tick <= 0 || !std::isfinite(tempoBpm) || tempoBpm <= 0.0) return 0.0; return (static_cast<double>(tick) / static_cast<double>(ticksPerQuarterNote)) * (60.0 / tempoBpm); }
+std::int64_t MidiEngine::secondsToTick(double seconds, double tempoBpm) noexcept { if (!std::isfinite(seconds) || !std::isfinite(tempoBpm) || seconds <= 0.0 || tempoBpm <= 0.0) return 0; const double ticks=seconds*tempoBpm/60.0*static_cast<double>(ticksPerQuarterNote); const double maxTick=static_cast<double>(std::numeric_limits<std::int64_t>::max()); if (!std::isfinite(ticks) || ticks >= maxTick) return std::numeric_limits<std::int64_t>::max(); return static_cast<std::int64_t>(std::llround(ticks)); }
+std::int64_t MidiEngine::quantizeTick(std::int64_t tick, std::int64_t gridTicks) noexcept { if (tick <= 0 || gridTicks <= 0) return std::max<std::int64_t>(0, tick); const double rounded=std::round(static_cast<double>(tick)/static_cast<double>(gridTicks)); const double maxMultiple=static_cast<double>(std::numeric_limits<std::int64_t>::max()/gridTicks); if (!std::isfinite(rounded) || rounded>=maxMultiple) return std::numeric_limits<std::int64_t>::max(); return static_cast<std::int64_t>(rounded)*gridTicks; }
 std::int64_t MidiEngine::ticksPerMeasure(int numerator, int denominator) noexcept { if (numerator <= 0 || denominator <= 0) return 0; return static_cast<std::int64_t>(numerator) * ticksPerQuarterNote * 4 / denominator; }
 void MidiEngine::setPlaybackPositionSeconds(double seconds) noexcept { playbackPositionSeconds.store(std::max(0.0, seconds), std::memory_order_relaxed); }
 double MidiEngine::getPlaybackPositionSeconds() const noexcept { return playbackPositionSeconds.load(std::memory_order_relaxed); }
