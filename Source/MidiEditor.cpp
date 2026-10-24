@@ -2756,18 +2756,49 @@ public:
         const auto notes = midi.getNotesCopy();
         std::vector<MidiEngine::NoteEvent> matches;
         if (minimum > maximum) std::swap(minimum, maximum);
+        const auto quarter = juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote);
+        const auto sixteenth = juce::jmax<std::int64_t>(1, quarter / 4);
         for (const auto& note : notes)
         {
-            int value = 0;
+            bool selected = false;
             switch (criterion)
             {
-                case 1: value = note.pitch; break;
-                case 2: value = note.velocity; break;
-                case 3: value = static_cast<int>(juce::jlimit<std::int64_t>(0, 127, note.lengthTicks * 127 / juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote * 4))); break;
-                case 4: value = static_cast<int>((note.startTick / juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote / 4)) % 128); break;
+                case 1: selected = note.pitch >= minimum && note.pitch <= maximum; break;
+                case 2: selected = note.velocity >= minimum && note.velocity <= maximum; break;
+                case 3:
+                {
+                    // Scale 0..127 represents up to four quarter notes.
+                    const auto length = juce::jmax<std::int64_t>(0, note.lengthTicks);
+                    const auto scaled = static_cast<int>(juce::jlimit<std::int64_t>(
+                        0, 127, (length / (quarter * 4)) * 127
+                            + ((length % (quarter * 4)) * 127) / (quarter * 4)));
+                    selected = scaled >= minimum && scaled <= maximum;
+                    break;
+                }
+                case 4:
+                {
+                    const int gridStep = static_cast<int>((note.startTick / sixteenth) % 128);
+                    selected = gridStep >= minimum && gridStep <= maximum;
+                    break;
+                }
+                case 5:
+                    selected = snapPitchToScale(note.pitch) == note.pitch;
+                    break;
+                case 6:
+                    selected = note.startTick % quarter == 0;
+                    break;
+                case 7:
+                    selected = note.startTick % quarter != 0;
+                    break;
+                case 8:
+                    selected = std::any_of(notes.begin(), notes.end(), [&note](const auto& other)
+                    {
+                        return &other != &note && other.pitch == note.pitch && other.channel == note.channel;
+                    });
+                    break;
                 default: return;
             }
-            if (value >= minimum && value <= maximum) matches.push_back(note);
+            if (selected) matches.push_back(note);
         }
         midi.setSelectedNotes(matches);
         repaint(); owner.repaint();
