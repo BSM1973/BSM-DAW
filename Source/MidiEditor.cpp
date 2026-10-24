@@ -3367,6 +3367,38 @@ public:
         repaint();
     }
 
+    // Invert the dynamics of the selected MIDI notes (1 <-> 127) without
+    // changing timing, pitch, duration, probability or mute state.
+    void invertSelectedVelocities()
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selection = midi.getSelectedNotesCopy();
+        if (selection.empty()) return;
+        auto notes = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> updatedSelection;
+        updatedSelection.reserve(selection.size());
+        bool changed = false;
+        for (const auto& selected : selection)
+        {
+            const auto it = std::find_if(notes.begin(), notes.end(), [&](const auto& note)
+            {
+                return note.startTick == selected.startTick
+                    && note.lengthTicks == selected.lengthTicks
+                    && note.pitch == selected.pitch && note.channel == selected.channel;
+            });
+            if (it == notes.end()) return; // Reject stale selections atomically.
+            const auto velocity = static_cast<std::uint8_t>(128 - juce::jlimit(1, 127, static_cast<int>(it->velocity)));
+            changed = changed || it->velocity != velocity;
+            it->velocity = velocity;
+            updatedSelection.push_back(*it);
+        }
+        if (!changed || !midi.replaceNotes(notes)) return;
+        midi.setSelectedNotes(updatedSelection);
+        synchronizeLibertyPianoRollPlayback(owner);
+        repaint();
+        owner.repaint();
+    }
+
     void quantizeSelection()
     {
         auto& midi = owner.getMidiEngine();
@@ -3978,6 +4010,10 @@ public:
         // Cmd/Ctrl+Shift+G: strum grave vers aigu; Alt inverse le sens.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'G')
         { strumSelectedChord(!modifiers.isAltDown()); return true; }
+        // Cmd/Ctrl+Shift+V: inverser les vélocités de la sélection (1 ↔ 127).
+        if (primaryShortcut && modifiers.isShiftDown() && !modifiers.isAltDown()
+            && key.getKeyCode() == 'V')
+        { invertSelectedVelocities(); return true; }
         // Cmd/Ctrl+Shift+K: découper les notes sélectionnées selon la grille.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'K')
         { splitSelectedNotesToGrid(); return true; }
