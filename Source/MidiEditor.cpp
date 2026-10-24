@@ -4611,12 +4611,6 @@ public:
                         return other.startTick == n.startTick && other.pitch == n.pitch
                             && other.channel == n.channel && other.lengthTicks != n.lengthTicks;
                     });
-                if (ambiguousNote && tool == 4)
-                {
-                    // Resizing still uses legacy tick/pitch targeting; keep it safe until
-                    // exact-identity resizing is connected to the engine.
-                    return;
-                }
 
                 if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
@@ -4629,7 +4623,9 @@ public:
                 if (tool == 4) // RESIZE / REDIMENSIONNER: edge only
                 {
                     const auto side = findResizeSide(e.position);
-                    if (side == ResizeSide::none) return;
+                    if (side == ResizeSide::none || (ambiguousNote && side == ResizeSide::left)) return;
+                    // Right-edge resizing has exact identity; left-edge resizing still
+                    // requires a combined atomic move-and-resize operation.
                     draggingNote = true; dragMoved = false; resizeSide = side;
                 }
                 else if (tool == 0) // SELECT / SELECTION: move without deleting on click
@@ -4643,7 +4639,7 @@ public:
                 dragStartTick = n.startTick; dragEndTick = n.startTick + n.lengthTicks;
                 dragPitch = n.pitch; dragChannel = n.channel; originalLengthTicks = n.lengthTicks;
                 resizingAdjacent = false;
-                if (resizeSide == ResizeSide::right)
+                if (resizeSide == ResizeSide::right && !ambiguousNote)
                 {
                     const auto boundary = n.startTick + n.lengthTicks;
                     for (const auto& next : midi.getNotesCopy())
@@ -4836,7 +4832,7 @@ public:
             const auto newLength = juce::jmax(juce::jmax<std::int64_t>(1, activePianoSnapTicks()), mouseTick - dragStartTick);
             if (newLength != originalLengthTicks && (resizingAdjacent
                 ? owner.getMidiEngine().resizeAdjacentNoteBoundary(dragStartTick, dragPitch, dragChannel, newLength)
-                : owner.getMidiEngine().setNoteLength(dragStartTick, dragPitch, dragChannel, newLength))) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+                : owner.getMidiEngine().setNoteLengthExact(dragStartTick, dragPitch, dragChannel, originalLengthTicks, newLength))) { originalLengthTicks = newLength; dragEndTick = dragStartTick + newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
         if (resizeSide == ResizeSide::left)
