@@ -1326,6 +1326,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         const double offset = (double) iteration * cycle;
                         const double start = offset + note.startSeconds;
                         const double end = offset + note.endSeconds;
+                        // Each loop iteration receives a new stable draw. Both note
+                        // events use the same decision, including across audio blocks.
+                        std::uint64_t draw = static_cast<std::uint64_t>(iteration)
+                            ^ (static_cast<std::uint64_t>(std::llround(note.startSeconds * 1000000.0)) << 1)
+                            ^ (static_cast<std::uint64_t>(pitch) << 24)
+                            ^ (static_cast<std::uint64_t>(channel) << 40);
+                        draw ^= draw >> 30;
+                        draw *= UINT64_C(0xbf58476d1ce4e5b9);
+                        draw ^= draw >> 27;
+                        draw *= UINT64_C(0x94d049bb133111eb);
+                        draw ^= draw >> 31;
+                        if (note.probability <= 0 || (note.probability < 100
+                            && draw % 100 >= static_cast<std::uint64_t>(note.probability))) continue;
                         if (start >= blockStart && start < blockEnd)
                             midi.addEvent(juce::MidiMessage::noteOn(channel, pitch, velocity),
                                           juce::jlimit(0, numSamples - 1, (int) std::llround((start - blockStart) * rate)));
