@@ -3547,13 +3547,8 @@ public:
             g.fillRoundedRectangle(area, 7.0f);
             g.setColour(juce::Colour(0xff34495b));
             g.drawRoundedRectangle(area, 7.0f, 1.0f);
-            g.setColour(juce::Colour(0xff7890a6));
-            g.setFont(juce::Font(10.0f));
-            const auto previewCount = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
-            g.drawText(juce::String(previewCount) + " / " + juce::String(velocities.size())
-                           + juce::String::fromUTF8(" notes affichées"),
-                       270, 330, 236, 14, juce::Justification::centredRight);
 
+            const auto previewCount = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             // Subtle reference lines make MIDI velocity levels easier to compare.
             g.setColour(juce::Colour(0xff304153).withAlpha(0.65f));
             for (const int level : { 32, 64, 96 })
@@ -3651,6 +3646,14 @@ public:
                 g.fillRect(x + width * 0.43f, area.getBottom() - 9.0f - processedHeight,
                            juce::jmax(1.0f, width * 0.38f), processedHeight);
             }
+            // Draw the sample count last so high-velocity bars cannot cover the label.
+            g.setColour(juce::Colour(0xff192634).withAlpha(0.88f));
+            g.fillRoundedRectangle(268.0f, 328.0f, 240.0f, 16.0f, 3.0f);
+            g.setColour(juce::Colour(0xffa9bdd0));
+            g.setFont(juce::Font(10.0f));
+            g.drawText(juce::String(previewCount) + " / " + juce::String(velocities.size())
+                           + juce::String::fromUTF8(" notes affichées"),
+                       270, 329, 236, 14, juce::Justification::centredRight);
         }
 
     private:
