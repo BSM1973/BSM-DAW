@@ -404,10 +404,10 @@ bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdg
         }
     }
 
-    pushUndoState();
-    std::vector<NoteEvent> result;
-    result.reserve(source.size());
-
+    // Validate every selected note against the live event collection before
+    // changing anything, so a stale selection cannot cause a partial resize.
+    std::vector<std::size_t> indices;
+    indices.reserve(source.size());
     for (const auto& n : source)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
@@ -415,22 +415,27 @@ bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdg
             return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel;
         });
         if (it == notes.end())
-            continue;
+            return false;
+        indices.push_back(static_cast<std::size_t>(std::distance(notes.begin(), it)));
+    }
 
+    pushUndoState();
+    std::vector<NoteEvent> result;
+    result.reserve(source.size());
+    for (const auto index : indices)
+    {
+        auto& note = notes[index];
         if (fromLeftEdge)
         {
-            it->startTick += deltaTicks;
-            it->lengthTicks -= deltaTicks;
+            note.startTick += deltaTicks;
+            note.lengthTicks -= deltaTicks;
         }
         else
         {
-            it->lengthTicks += deltaTicks;
+            note.lengthTicks += deltaTicks;
         }
-        result.push_back(*it);
+        result.push_back(note);
     }
-
-    if (result.size() != source.size())
-        return false;
 
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
