@@ -2638,7 +2638,7 @@ public:
 
     // Generate a repeatable melodic pattern within the selected notes' time span.
     // Existing notes are retained; only free note positions are populated.
-    void generateMelodicPattern(int steps, int pitchRange)
+    void generateMelodicPattern(int steps, int pitchRange, int melodySeed)
     {
         auto& midi = owner.getMidiEngine();
         const auto selected = midi.getSelectedNotesCopy();
@@ -2666,7 +2666,14 @@ public:
             const auto to = (span / steps) * (i + 1) + ((span % steps) * (i + 1)) / steps;
             // Major scale degrees, octave wrapping, constrained by requested range.
             static constexpr int majorScale[] = { 0, 2, 4, 5, 7, 9, 11 };
-            const int degree = (i * 5 + i / 3) % 14;
+            const std::uint32_t seed = static_cast<std::uint32_t>(melodySeed);
+            std::uint32_t value = seed ^ (static_cast<std::uint32_t>(i + 1) * UINT32_C(0x9e3779b9));
+            value ^= value >> 16;
+            value *= UINT32_C(0x7feb352d);
+            value ^= value >> 15;
+            value *= UINT32_C(0x846ca68b);
+            value ^= value >> 16;
+            const int degree = static_cast<int>(value % 14);
             const int semitone = majorScale[degree % 7] + 12 * (degree / 7);
             const int pitch = juce::jlimit(0, 127, root + (semitone % (pitchRange + 1)));
             const auto tick = first + from;
