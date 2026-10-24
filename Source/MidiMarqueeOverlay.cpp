@@ -6,6 +6,7 @@
 #include <limits>
 
 int getLibertyActiveTool();
+std::int64_t getLibertySnapStepTicks() noexcept;
 
 namespace
 {
@@ -238,7 +239,10 @@ std::int64_t MidiMarqueeOverlay::tickFromX(int x) const noexcept
     const auto pixelsPerTick = static_cast<double>(juce::jmax(1, gridWidth - 2))
                                / static_cast<double>(clipLengthTicks);
     const auto rawTick = static_cast<std::int64_t>(std::llround((x - pianoKeyWidth) / pixelsPerTick));
-    return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, rawTick), gridTicks);
+    const auto snapStep = getLibertySnapStepTicks();
+    return snapStep > 0
+        ? MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, rawTick), snapStep)
+        : juce::jmax<std::int64_t>(0, rawTick);
 }
 
 void MidiMarqueeOverlay::applySelection()
