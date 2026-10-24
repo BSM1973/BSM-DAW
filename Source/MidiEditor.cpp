@@ -2707,6 +2707,29 @@ public:
         }
     }
 
+    void selectNotesByCriteria(int criterion, int minimum, int maximum)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto notes = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> matches;
+        if (minimum > maximum) std::swap(minimum, maximum);
+        for (const auto& note : notes)
+        {
+            int value = 0;
+            switch (criterion)
+            {
+                case 1: value = note.pitch; break;
+                case 2: value = note.velocity; break;
+                case 3: value = static_cast<int>(juce::jlimit<std::int64_t>(0, 127, note.lengthTicks * 127 / juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote * 4))); break;
+                case 4: value = static_cast<int>((note.startTick / juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote / 4)) % 128); break;
+                default: return;
+            }
+            if (value >= minimum && value <= maximum) matches.push_back(note);
+        }
+        midi.setSelectedNotes(matches);
+        repaint(); owner.repaint();
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
