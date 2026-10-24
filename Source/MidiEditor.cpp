@@ -827,11 +827,12 @@ public:
     class EditWindowContent final : public juce::Component
     {
     public:
-        explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes)
-            : onAction(std::move(action)), previewNotes(std::move(notes))
+        explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
+            std::function<void(double, double, double)> quantizeAction)
+            : onAction(std::move(action)), onQuantize(std::move(quantizeAction)), previewNotes(std::move(notes))
         {
-            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER" };
-            for (int i = 0; i < 4; ++i)
+            static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION" };
+            for (int i = 0; i < 5; ++i)
             {
                 categoryButtons[(size_t)i].setButtonText(juce::String::fromUTF8(tabs[i]));
                 categoryButtons[(size_t)i].onClick = [this, i] { currentCategory = i; refreshCategory(); };
@@ -974,6 +975,29 @@ public:
                 repaint();
             };
             addAndMakeVisible(undoHumanize);
+            for (auto* slider : { &quantizeStrength, &quantizeSwing, &quantizeGroove })
+            {
+                slider->setRange(0.0, 100.0, 1.0);
+                slider->setTextValueSuffix(" %");
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 26);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xff348fc2));
+                addAndMakeVisible(*slider);
+            }
+            quantizeStrength.setValue(100.0, juce::dontSendNotification);
+            quantizeSwing.setRange(50.0, 75.0, 1.0);
+            quantizeSwing.setValue(50.0, juce::dontSendNotification);
+            quantizeGroove.setValue(25.0, juce::dontSendNotification);
+            applyQuantize.setButtonText(juce::String::fromUTF8("APPLIQUER LA QUANTIFICATION"));
+            applyQuantize.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            applyQuantize.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            applyQuantize.setEnabled(hasSelection);
+            applyQuantize.onClick = [this]
+            {
+                if (onQuantize) onQuantize(quantizeStrength.getValue() / 100.0,
+                    quantizeSwing.getValue() / 100.0, quantizeGroove.getValue() / 100.0);
+            };
+            addAndMakeVisible(applyQuantize);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -993,6 +1017,20 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 4)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(16.0f));
+                g.drawText(juce::String::fromUTF8("FORCE"), 26, 224, 160, 32, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("SWING"), 26, 314, 160, 32, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("PRÉSERVER LE GROOVE"), 26, 404, 220, 32, juce::Justification::centredLeft);
+                g.setColour(juce::Colour(0xff98a9ba));
+                g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("Quantification sur la grille SNAP active. Les durées sont conservées."),
+                    26, 182, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("50 % = swing neutre. Préservation 100 % = timing original."),
+                    26, 490, getWidth() - 52, 28, juce::Justification::centredLeft);
+            }
             if (currentCategory == 3)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1174,9 +1212,13 @@ public:
         void resized() override
         {
             const int available = getWidth() - 52;
-            const int tabWidth = (available - 18) / 4;
-            for (int i = 0; i < 4; ++i)
+            const int tabWidth = (available - 24) / 5;
+            for (int i = 0; i < 5; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            quantizeStrength.setBounds(235, 224, getWidth() - 261, 32);
+            quantizeSwing.setBounds(235, 314, getWidth() - 261, 32);
+            quantizeGroove.setBounds(235, 404, getWidth() - 261, 32);
+            applyQuantize.setBounds(26, 545, available, 44);
             curveSelector.setBounds(145, 411, getWidth() - 171, 28);
             curvature.setBounds(145, 530, getWidth() - 239, 25);
             resetCurvature.setBounds(getWidth() - 85, 530, 59, 25);
@@ -1211,7 +1253,7 @@ public:
     private:
         void refreshCategory()
         {
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < 5; ++i)
             {
                 categoryButtons[(size_t)i].setColour(juce::TextButton::buttonColourId,
                     i == currentCategory ? juce::Colour(0xff78603c) : juce::Colour(0xff263544));
@@ -1221,6 +1263,10 @@ public:
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
                     (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21) || i >= 23) : (currentCategory == 2 && i >= 8 && i < 13)));
+            quantizeStrength.setVisible(currentCategory == 4);
+            quantizeSwing.setVisible(currentCategory == 4);
+            quantizeGroove.setVisible(currentCategory == 4);
+            applyQuantize.setVisible(currentCategory == 4);
             humanizeVelocity.setVisible(currentCategory == 3);
             humanizeTiming.setVisible(currentCategory == 3);
             applyHumanize.setVisible(currentCategory == 3);
@@ -1237,13 +1283,16 @@ public:
             repaint();
         }
         std::function<juce::String(int, int, int, int)> onAction;
+        std::function<void(double, double, double)> onQuantize;
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
+        juce::Slider quantizeStrength, quantizeSwing, quantizeGroove;
+        juce::TextButton applyQuantize;
         juce::ComboBox curveSelector;
         juce::TextButton reverseVelocity, resetVelocity, resetCurvature, applyHumanize, regeneratePreview, undoHumanize;
         int previewSeed = 1;
-        std::array<juce::TextButton, 4> categoryButtons;
+        std::array<juce::TextButton, 5> categoryButtons;
         std::vector<std::unique_ptr<juce::TextButton>> buttons;
         int draggedVelocityEndpoint = -1;
         int currentCategory = 0;
@@ -2037,7 +2086,15 @@ public:
                     default: break;
                 }
                 return {};
-            }, owner.getMidiEngine().hasSelectedNote(), owner.getMidiEngine().getSelectedNotesCopy()));
+            }, owner.getMidiEngine().hasSelectedNote(), owner.getMidiEngine().getSelectedNotesCopy(),
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](double strength, double swing, double groove)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->applyAdvancedQuantize(strength, swing, groove);
+                }
+            }));
         options.launchAsync();
     }
 
