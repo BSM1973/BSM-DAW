@@ -346,9 +346,14 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
                 const auto jitterLimit = (spreadTicks / 100) * timingVariation
                     + (spreadTicks % 100) * timingVariation / 100;
                 const auto variation = (std::int64_t)((offsetIndex * 13 + (std::size_t)selection[i].pitch * 3) % 101) - 50;
-                const auto jitter = jitterLimit * variation / 50;
-                if (jitter < 0 && offset < -jitter) offset = 0;
-                else offset += jitter;
+                // Split the multiplication to avoid overflowing int64 while
+                // retaining the original integer rounding and musical feel.
+                const auto jitter = (jitterLimit / 50) * variation
+                    + ((jitterLimit % 50) * variation) / 50;
+                if (jitter < 0 && offset < -jitter)
+                    offset = 0;
+                else if (!checkedAdd(offset, jitter, offset))
+                    return false;
             }
             auto moved = selection[i];
             if (!checkedAdd(moved.startTick, offset, moved.startTick)) return false;
