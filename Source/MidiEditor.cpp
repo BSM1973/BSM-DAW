@@ -2605,6 +2605,65 @@ public:
         }
     }
 
+    // Generate a repeatable melodic pattern within the selected notes' time span.
+    // Existing notes are retained; only free note positions are populated.
+    void generateMelodicPattern(int steps, int pitchRange)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        steps = juce::jlimit(2, 32, steps);
+        pitchRange = juce::jlimit(1, 24, pitchRange);
+        std::int64_t first = selected.front().startTick;
+        std::int64_t last = first;
+        int root = selected.front().pitch;
+        int channel = selected.front().channel;
+        int velocity = selected.front().velocity;
+        for (const auto& note : selected)
+        {
+            first = juce::jmin(first, note.startTick);
+            if (note.lengthTicks > 0 && note.startTick <= std::numeric_limits<std::int64_t>::max() - note.lengthTicks)
+                last = juce::jmax(last, note.startTick + note.lengthTicks);
+        }
+        if (last <= first || last - first < steps) return;
+        auto updated = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> created;
+        const auto span = last - first;
+        for (int i = 0; i < steps; ++i)
+        {
+            const auto from = (span / steps) * i + ((span % steps) * i) / steps;
+            const auto to = (span / steps) * (i + 1) + ((span % steps) * (i + 1)) / steps;
+            // Major scale degrees, octave wrapping, constrained by requested range.
+            static constexpr int majorScale[] = { 0, 2, 4, 5, 7, 9, 11 };
+            const int degree = (i * 5 + i / 3) % 14;
+            const int semitone = majorScale[degree % 7] + 12 * (degree / 7);
+            const int pitch = juce::jlimit(0, 127, root + (semitone % (pitchRange + 1)));
+            const auto tick = first + from;
+            const auto collision = std::find_if(updated.begin(), updated.end(), [tick, pitch, channel](const auto& note)
+            {
+                return note.startTick == tick && note.pitch == pitch && note.channel == channel;
+            });
+            if (collision != updated.end()) continue;
+            auto note = selected.front();
+            note.startTick = tick;
+            note.lengthTicks = juce::jmax<std::int64_t>(1, (to - from) * 9 / 10);
+            note.pitch = static_cast<std::uint8_t>(pitch);
+            note.velocity = static_cast<std::uint8_t>(juce::jlimit(1, 127, velocity - (i % 4) * 5));
+            note.probability = 100;
+            note.muted = false;
+            updated.push_back(note);
+            created.push_back(note);
+        }
+        if (created.empty()) return;
+        if (midi.replaceNotes(updated))
+        {
+            midi.setSelectedNotes(created);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
