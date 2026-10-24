@@ -717,7 +717,7 @@ public:
                 "Blanche triolet", "Noire triolet", "Croche triolet",
                 "Double-croche triolet", "Triple-croche triolet"
             };
-            for (int i = 0; i < 23; ++i)
+            for (int i = 0; i < 25; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(juce::String::fromUTF8(names[i]));
                 button->setColour(juce::TextButton::buttonColourId,
@@ -846,7 +846,8 @@ public:
                 "DURÉE ×2", "DURÉE ÷2",
                 "QUANTIFIER 50 %", "QUANTIFIER 75 %",
                 "SWING 55 %", "SWING 65 %",
-                "HUMANISER VÉLOCITÉ", "HUMANISER TIMING"
+                "HUMANISER VÉLOCITÉ", "HUMANISER TIMING",
+                "GROOVE 25 %", "GROOVE 50 %"
             };
             static const char* details[] = {
                 "Sélectionner toutes les notes MIDI", "Répéter la phrase MIDI",
@@ -860,9 +861,10 @@ public:
                 "Doubler la durée des notes sélectionnées", "Réduire de moitié la durée des notes sélectionnées",
                 "Rapprocher les notes de la grille à moitié", "Rapprocher les notes de la grille aux trois quarts",
                 "Décaler légèrement les contretemps", "Décaler davantage les contretemps",
-                "Variation douce des attaques MIDI", "Variation subtile du placement rythmique"
+                "Variation douce des attaques MIDI", "Variation subtile du placement rythmique",
+                "Quantifier en préservant 25 % du placement", "Quantifier en préservant 50 % du placement"
             };
-            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23 };
+            static const int actionIds[] = { 1, 2, 3, 8, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 26, 27 };
             for (int i = 0; i < 23; ++i)
             {
                 auto button = std::make_unique<juce::TextButton>(
@@ -1195,10 +1197,10 @@ public:
                 {
                     // Twelve transformations fit in two columns without leaving the dialog.
                     const int columnWidth = (available - 12) / 2;
-                    const int column = shown / 6;
-                    const int row = shown % 6;
+                    const int column = shown / 7;
+                    const int row = shown % 7;
                     button->setBounds(26 + column * (columnWidth + 12),
-                        184 + row * 68, columnWidth, 56);
+                        184 + row * 65, columnWidth, 53);
                 }
                 else
                     button->setBounds(26, currentCategory == 2 ? 180 + shown * 44 : 184 + shown * 49,
@@ -1218,7 +1220,7 @@ public:
             }
             for (int i = 0; i < (int)buttons.size(); ++i)
                 buttons[(size_t)i]->setVisible(currentCategory == 0 ? i < 4 :
-                    (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21)) : (currentCategory == 2 && i >= 8 && i < 13)));
+                    (currentCategory == 1 ? ((i >= 4 && i < 8) || (i >= 13 && i < 21) || i >= 23) : (currentCategory == 2 && i >= 8 && i < 13)));
             humanizeVelocity.setVisible(currentCategory == 3);
             humanizeTiming.setVisible(currentCategory == 3);
             applyHumanize.setVisible(currentCategory == 3);
@@ -2015,6 +2017,8 @@ public:
                     case 21: safe->applySwingToSelection(0.65); break;
                     case 22: safe->humanizeSelectedVelocity(); break;
                     case 23: safe->humanizeSelectedTiming(); break;
+                    case 26: safe->applyAdvancedQuantize(1.0, 0.5, 0.25); break;
+                    case 27: safe->applyAdvancedQuantize(1.0, 0.5, 0.50); break;
                     case 24: return safe->humanizeSelection(start, end, curve);
                     case 25: return safe->undoLastHumanization();
                     case 9: safe->adjustSelectedVelocity(100, true); break;
