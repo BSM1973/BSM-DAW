@@ -518,6 +518,11 @@ bool MidiEngine::duplicateSelectedNotes(std::int64_t deltaTicks)
         if (!checkedAdd(n.startTick, deltaTicks, newStart) || newStart < 0) return false;
         if (std::any_of(notes.begin(), notes.end(), [&n, newStart](const NoteEvent& other)
             { return other.startTick == newStart && other.pitch == n.pitch && other.channel == n.channel; })) return false;
+        // Also check copies produced earlier in this operation. The live notes
+        // collection alone cannot detect duplicates inside the new batch.
+        if (std::any_of(copies.begin(), copies.end(), [&n, newStart](const NoteEvent& other)
+            { return other.startTick == newStart && other.pitch == n.pitch && other.channel == n.channel; }))
+            return false;
         auto copy = n; copy.startTick = newStart; copies.push_back(copy);
     }
     pushUndoState();
