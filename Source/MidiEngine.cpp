@@ -253,12 +253,24 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
         { return !isNoteSelected(other) && other.startTick == newStart && other.pitch == static_cast<std::uint8_t>(newPitch) && other.channel == n.channel; });
         if (collision) return false;
     }
-    pushUndoState();
+    // Resolve every selected event before mutating any note. A stale selection
+    // must never produce a partially moved chord.
+    std::vector<std::size_t> indices;
+    indices.reserve(source.size());
     for (const auto& n : source)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
         { return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel; });
-        if (it != notes.end()) { it->startTick += deltaTicks; it->pitch = static_cast<std::uint8_t>(static_cast<int>(it->pitch) + deltaPitch); }
+        if (it == notes.end())
+            return false;
+        indices.push_back(static_cast<std::size_t>(std::distance(notes.begin(), it)));
+    }
+    pushUndoState();
+    for (const auto index : indices)
+    {
+        auto& note = notes[index];
+        note.startTick += deltaTicks;
+        note.pitch = static_cast<std::uint8_t>(static_cast<int>(note.pitch) + deltaPitch);
     }
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     { if (a.startTick != b.startTick) return a.startTick < b.startTick; if (a.channel != b.channel) return a.channel < b.channel; return a.pitch < b.pitch; });
