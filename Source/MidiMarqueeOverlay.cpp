@@ -94,7 +94,9 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     marqueeActive = false;
     resizeActive = false;
     resizeSide = ResizeSide::none;
-    baseSelection = owner.getMidiEngine().getSelectedNotesCopy();
+    additiveSelection = e.mods.isShiftDown() || legacyMarquee;
+    baseSelection = additiveSelection ? owner.getMidiEngine().getSelectedNotesCopy()
+                                      : std::vector<MidiEngine::NoteEvent>{};
     repaint();
 }
 
@@ -151,6 +153,7 @@ void MidiMarqueeOverlay::mouseUp(const juce::MouseEvent& e)
     dragging = false;
     marqueeActive = false;
     baseSelection.clear();
+    additiveSelection = false;
     repaint();
 }
 
