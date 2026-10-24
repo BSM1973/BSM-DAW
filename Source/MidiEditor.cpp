@@ -4623,9 +4623,8 @@ public:
                 if (tool == 4) // RESIZE / REDIMENSIONNER: edge only
                 {
                     const auto side = findResizeSide(e.position);
-                    if (side == ResizeSide::none || (ambiguousNote && side == ResizeSide::left)) return;
-                    // Right-edge resizing has exact identity; left-edge resizing still
-                    // requires a combined atomic move-and-resize operation.
+                    if (side == ResizeSide::none) return;
+                    // Both edges now use exact-identity operations for overlapping notes.
                     draggingNote = true; dragMoved = false; resizeSide = side;
                 }
                 else if (tool == 0) // SELECT / SELECTION: move without deleting on click
@@ -4840,7 +4839,7 @@ public:
             const auto maxStart = juce::jmax<std::int64_t>(0, dragEndTick - juce::jmax<std::int64_t>(1, activePianoSnapTicks()));
             const auto newStart = juce::jlimit<std::int64_t>(0, maxStart, mouseTick);
             const auto newLength = dragEndTick - newStart;
-            if (newStart != dragStartTick && newLength >= gridTicks && owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newStart, dragPitch) && owner.getMidiEngine().setNoteLength(newStart, dragPitch, dragChannel, newLength)) { dragStartTick = newStart; originalLengthTicks = newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+            if (newStart != dragStartTick && newLength >= gridTicks && owner.getMidiEngine().resizeNoteLeftExact(dragStartTick, dragPitch, dragChannel, originalLengthTicks, newStart)) { dragStartTick = newStart; originalLengthTicks = newLength; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
             return;
         }
         const auto newTick = tickFromX(e.x); const int newPitch = snapPitchToScale(pitchFromY(e.y));
