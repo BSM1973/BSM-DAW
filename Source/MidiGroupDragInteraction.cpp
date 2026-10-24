@@ -99,8 +99,9 @@ private:
         const auto pixelsPerTick = getPixelsPerTick();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        for (const auto& n : selected)
+        for (auto it = selected.rbegin(); it != selected.rend(); ++it)
         {
+            const auto& n = *it;
             if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick < 0 || n.startTick >= clipLengthTicks)
                 continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
@@ -116,7 +117,10 @@ private:
     {
         const auto pixelsPerTick = getPixelsPerTick();
         const int left = pianoKeyWidth + (int)std::llround((double)note.startTick * pixelsPerTick) + 1;
-        const int width = juce::jmax(8, (int)std::llround((double)note.lengthTicks * pixelsPerTick)) - 2;
+        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const auto visibleLengthTicks = juce::jmax<std::int64_t>(0, juce::jmin(note.lengthTicks, clipLengthTicks - note.startTick));
+        const int width = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick)) - 2;
         const int right = left + width;
         return std::abs(x - left) <= resizeEdgePixels || std::abs(x - right) <= resizeEdgePixels;
     }
@@ -126,7 +130,7 @@ private:
         const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        return static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        return static_cast<double>(juce::jmax(1, gridWidth - 2)) / static_cast<double>(clipLengthTicks);
     }
 
     int pitchFromY(int y) const noexcept
