@@ -3433,44 +3433,122 @@ public:
         owner.repaint();
     }
 
-    void showMidiDynamicsWindow(int initialRatio = 100, int initialCentre = 64)
+    class MidiDynamicsContent final : public juce::Component
     {
-        if (owner.getMidiEngine().getSelectedNotesCopy().empty()) return;
-        auto dialog = std::make_unique<juce::AlertWindow>(
-            juce::String::fromUTF8("LIBERTY  ·  DYNAMIQUE MIDI"),
-            juce::String::fromUTF8("Compressez ou étendez les vélocités des notes sélectionnées.\\n100 % = inchangé · 50 % = compression · 150 % = expansion."),
-            juce::MessageBoxIconType::NoIcon);
-        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff111923));
-        dialog->setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe7edf5));
-        dialog->addTextEditor("ratio", juce::String(initialRatio), juce::String::fromUTF8("Intensité (0–300 %)"));
-        dialog->addTextEditor("centre", juce::String(initialCentre), juce::String::fromUTF8("Vélocité centrale (1–127)"));
-        for (const char* key : { "ratio", "centre" })
+    public:
+        MidiDynamicsContent(std::vector<int> values, int initialRatio, int initialCentre,
+                           std::function<void(double, int)> apply)
+            : velocities(std::move(values)), onApply(std::move(apply))
         {
-            if (auto* editor = dialog->getTextEditor(key))
+            setSize(540, 380);
+            configure(intensity, 0.0, 300.0, initialRatio, "%");
+            configure(centre, 1.0, 127.0, initialCentre, "");
+            intensity.onValueChange = [this] { repaint(); };
+            centre.onValueChange = [this] { repaint(); };
+            addAndMakeVisible(intensity);
+            addAndMakeVisible(centre);
+            applyButton.setButtonText(juce::String::fromUTF8("Appliquer"));
+            cancelButton.setButtonText(juce::String::fromUTF8("Annuler"));
+            applyButton.onClick = [this]
             {
-                editor->setInputRestrictions(3, "0123456789");
-                editor->setSelectAllWhenFocused(true);
-                editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192634));
-                editor->setColour(juce::TextEditor::textColourId, juce::Colour(0xffedf4fc));
-                editor->setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff34495b));
-                editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
+                if (onApply) onApply(intensity.getValue() / 100.0, (int)centre.getValue());
+                if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+                    window->exitModalState(1);
+            };
+            cancelButton.onClick = [this]
+            {
+                if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+                    window->exitModalState(0);
+            };
+            addAndMakeVisible(applyButton);
+            addAndMakeVisible(cancelButton);
+        }
+
+        void resized() override
+        {
+            intensity.setBounds(184, 42, 325, 34);
+            centre.setBounds(184, 91, 325, 34);
+            cancelButton.setBounds(288, 330, 100, 32);
+            applyButton.setBounds(400, 330, 110, 32);
+        }
+
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff111923));
+            g.setColour(juce::Colour(0xffe7edf5));
+            g.setFont(juce::Font(17.0f, juce::Font::bold));
+            g.drawText(juce::String::fromUTF8("DYNAMIQUE MIDI"), 24, 12, 490, 28, juce::Justification::centredLeft);
+            g.setFont(juce::Font(13.0f));
+            g.drawText(juce::String::fromUTF8("Intensité"), 24, 43, 155, 32, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 92, 155, 32, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff91a9bf));
+            g.setFont(juce::Font(12.0f));
+            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 143, 490, 22, juce::Justification::centredLeft);
+            const auto area = juce::Rectangle<float>(24.0f, 170.0f, 492.0f, 145.0f);
+            g.setColour(juce::Colour(0xff192634));
+            g.fillRoundedRectangle(area, 7.0f);
+            g.setColour(juce::Colour(0xff34495b));
+            g.drawRoundedRectangle(area, 7.0f, 1.0f);
+            if (velocities.empty()) return;
+            const int count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
+            const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
+            const double ratio = intensity.getValue() / 100.0;
+            const double pivot = centre.getValue();
+            for (int i = 0; i < count; ++i)
+            {
+                const int velocity = velocities[static_cast<std::size_t>(i)];
+                const int processed = juce::jlimit(1, 127,
+                    juce::roundToInt(pivot + (static_cast<double>(velocity) - pivot) * ratio));
+                const float x = area.getX() + 10.0f + static_cast<float>(i) * width;
+                const float originalHeight = static_cast<float>(velocity) / 127.0f * 118.0f;
+                const float processedHeight = static_cast<float>(processed) / 127.0f * 118.0f;
+                g.setColour(juce::Colour(0xff587187));
+                g.fillRect(x, area.getBottom() - 9.0f - originalHeight, juce::jmax(1.0f, width * 0.38f), originalHeight);
+                g.setColour(juce::Colour(0xff4b9de0));
+                g.fillRect(x + width * 0.43f, area.getBottom() - 9.0f - processedHeight,
+                           juce::jmax(1.0f, width * 0.38f), processedHeight);
             }
         }
-        dialog->addButton(juce::String::fromUTF8("Appliquer"), 1, juce::KeyPress(juce::KeyPress::returnKey));
-        dialog->addButton(juce::String::fromUTF8("Annuler"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
-        auto* window = dialog.get();
-        dialog->enterModalState(true,
-            juce::ModalCallbackFunction::create(
-                [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
-                {
-                    std::unique_ptr<juce::AlertWindow> ownedDialog(window);
-                    if (safe == nullptr || result != 1) return;
-                    const int percentage = window->getTextEditorContents("ratio").getIntValue();
-                    const int centre = window->getTextEditorContents("centre").getIntValue();
-                    if (percentage < 0 || percentage > 300 || centre < 1 || centre > 127) return;
-                    safe->scaleSelectedVelocityDynamics(static_cast<double>(percentage) / 100.0, centre);
-                }), false);
-        dialog.release();
+
+    private:
+        static void configure(juce::Slider& slider, double minimum, double maximum,
+                              double value, const juce::String& suffix)
+        {
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 25);
+            slider.setRange(minimum, maximum, 1.0);
+            slider.setValue(value, juce::dontSendNotification);
+            slider.setTextValueSuffix(suffix);
+            slider.setColour(juce::Slider::trackColourId, juce::Colour(0xff3575d9));
+            slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffedf4fc));
+            slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xff192634));
+            slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffedf4fc));
+        }
+        std::vector<int> velocities;
+        std::function<void(double, int)> onApply;
+        juce::Slider intensity, centre;
+        juce::TextButton applyButton, cancelButton;
+    };
+
+    void showMidiDynamicsWindow(int initialRatio = 100, int initialCentre = 64)
+    {
+        const auto selection = owner.getMidiEngine().getSelectedNotesCopy();
+        if (selection.empty()) return;
+        std::vector<int> velocities;
+        velocities.reserve(selection.size());
+        for (const auto& note : selection) velocities.push_back(static_cast<int>(note.velocity));
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = juce::String::fromUTF8("LIBERTY  ·  DYNAMIQUE MIDI");
+        options.dialogBackgroundColour = juce::Colour(0xff111923);
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = false;
+        options.content.setOwned(new MidiDynamicsContent(std::move(velocities), initialRatio, initialCentre,
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](double ratio, int centre)
+            {
+                if (safe != nullptr) safe->scaleSelectedVelocityDynamics(ratio, centre);
+            }));
+        options.launchAsync();
     }
 
     void quantizeSelection()
