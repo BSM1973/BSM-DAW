@@ -851,6 +851,11 @@ public:
             selectionCriterion.addItem(juce::String::fromUTF8("Notes muettes"), 10);
             selectionCriterion.addItem(juce::String::fromUTF8("Notes actives"), 11);
             selectionCriterion.addItem(juce::String::fromUTF8("Doublons exacts"), 12);
+            selectionCriterion.addItem(juce::String::fromUTF8("Vélocité différente de 100"), 13);
+            selectionCriterion.addItem(juce::String::fromUTF8("Probabilité différente de 100 %"), 14);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes avec contrôleurs CC"), 15);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes avec Pitch Bend"), 16);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes avec pression canal"), 17);
             selectionCriterion.setSelectedId(1, juce::dontSendNotification);
             selectionCriterion.onChange = [this]
             {
