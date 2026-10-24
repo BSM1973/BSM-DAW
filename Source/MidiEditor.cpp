@@ -1002,9 +1002,10 @@ public:
             addAndMakeVisible(applyQuantize);
             static const char* chordNames[] = {
                 "INVERSION ASCENDANTE  +12", "INVERSION DESCENDANTE  -12",
-                "VOICING OUVERT", "VOICING DROP"
+                "VOICING OUVERT", "VOICING DROP",
+                "DROP 2", "DROP 3", "ÉTENDRE LES VOIX +12", "ABAISSER LES VOIX -12"
             };
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < 8; ++i)
             {
                 auto& button = chordButtons[(size_t)i];
                 button.setButtonText(juce::String::fromUTF8(chordNames[i]));
@@ -1242,8 +1243,13 @@ public:
             const int tabWidth = (available - 30) / 6;
             for (int i = 0; i < 6; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
-            for (int i = 0; i < 4; ++i)
-                chordButtons[(size_t)i].setBounds(26, 222 + i * 84, available, 54);
+            for (int i = 0; i < 8; ++i)
+            {
+                const int col = i % 2;
+                const int row = i / 2;
+                chordButtons[(size_t)i].setBounds(26 + col * ((available + 10) / 2),
+                    240 + row * 84, (available - 10) / 2, 58);
+            }
             quantizeStrength.setBounds(235, 224, getWidth() - 261, 32);
             quantizeSwing.setBounds(235, 314, getWidth() - 261, 32);
             quantizeGroove.setBounds(235, 404, getWidth() - 261, 32);
@@ -1315,7 +1321,7 @@ public:
         std::function<juce::String(int, int, int, int)> onAction;
         std::function<void(double, double, double)> onQuantize;
         std::function<void(int)> onChordTransform;
-        std::array<juce::TextButton, 4> chordButtons;
+        std::array<juce::TextButton, 8> chordButtons;
         std::vector<MidiEngine::NoteEvent> previewNotes;
         juce::String statusMessage;
         juce::Slider startVelocity, endVelocity, curvature, humanizeVelocity, humanizeTiming;
@@ -2094,6 +2100,10 @@ public:
                     else if (mode == 1 && i + 1 == end) pitch -= 12; // reverse inversion
                     else if (mode == 2 && ((i - begin) % 2 == 1)) pitch += 12; // open voicing
                     else if (mode == 3 && ((i - begin) % 2 == 1)) pitch -= 12; // drop voicing
+                    else if (mode == 4 && count >= 3 && i == end - 2) pitch -= 12; // drop 2
+                    else if (mode == 5 && count >= 4 && i == end - 3) pitch -= 12; // drop 3
+                    else if (mode == 6 && i > begin) pitch += 12; // octave spread
+                    else if (mode == 7 && i > begin) pitch -= 12; // lower upper voices
                     if (pitch < 0 || pitch > 127) return;
                     const auto it = std::find_if(transformed.begin(), transformed.end(), [&note](const auto& n)
                     {
