@@ -63,6 +63,11 @@ bool MidiMarqueeOverlay::hitTest(int x, int y)
     if (mods.isAltDown() && getLibertyActiveTool() == 7)
         return true;
 
+    // Shift also starts an additive marquee over notes. Without a modifier,
+    // existing note interactions retain their original hit-test priority.
+    if (mods.isShiftDown() && getLibertyActiveTool() == 7)
+        return true;
+
     // MARQUEE tool owns empty piano-roll space directly; no Cmd/Ctrl is required.
     if (!pointHitsAnyNote(p))
         return true;
@@ -81,7 +86,7 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     // Selected-note edges must retain priority over marquee selection.
     // Otherwise the marquee tool intercepts group resizing before it can start.
     ResizeSide side = ResizeSide::none;
-    if (!e.mods.isAltDown() && owner.getMidiEngine().getNumSelectedNotes() > 1
+    if (!e.mods.isAltDown() && !e.mods.isShiftDown() && owner.getMidiEngine().getNumSelectedNotes() > 1
         && findSelectedResizeSide(e.getPosition(), side))
     {
         owner.getMidiEngine().beginGroupedEdit();
