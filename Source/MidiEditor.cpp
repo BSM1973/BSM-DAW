@@ -3401,9 +3401,9 @@ public:
 
     // Dynamic range processing around MIDI velocity 64. Ratio < 1 compresses,
     // ratio > 1 expands, while all note positions and expressive flags remain intact.
-    void scaleSelectedVelocityDynamics(double ratio)
+    void scaleSelectedVelocityDynamics(double ratio, int centre = 64)
     {
-        if (ratio <= 0.0) return;
+        if (ratio <= 0.0 || centre < 1 || centre > 127) return;
         auto& midi = owner.getMidiEngine();
         const auto selection = midi.getSelectedNotesCopy();
         if (selection.empty()) return;
@@ -3421,7 +3421,7 @@ public:
             });
             if (it == notes.end()) return;
             const auto scaled = juce::jlimit(1, 127,
-                juce::roundToInt(64.0 + (static_cast<double>(it->velocity) - 64.0) * ratio));
+                juce::roundToInt(static_cast<double>(centre) + (static_cast<double>(it->velocity) - centre) * ratio));
             changed = changed || it->velocity != static_cast<std::uint8_t>(scaled);
             it->velocity = static_cast<std::uint8_t>(scaled);
             updatedSelection.push_back(*it);
@@ -3431,6 +3431,46 @@ public:
         synchronizeLibertyPianoRollPlayback(owner);
         repaint();
         owner.repaint();
+    }
+
+    void showMidiDynamicsWindow(int initialRatio = 100, int initialCentre = 64)
+    {
+        if (owner.getMidiEngine().getSelectedNotesCopy().empty()) return;
+        auto dialog = std::make_unique<juce::AlertWindow>(
+            juce::String::fromUTF8("LIBERTY  ·  DYNAMIQUE MIDI"),
+            juce::String::fromUTF8("Compressez ou étendez les vélocités des notes sélectionnées.\\n100 % = inchangé · 50 % = compression · 150 % = expansion."),
+            juce::MessageBoxIconType::NoIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff111923));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe7edf5));
+        dialog->addTextEditor("ratio", juce::String(initialRatio), juce::String::fromUTF8("Intensité (0–300 %)"));
+        dialog->addTextEditor("centre", juce::String(initialCentre), juce::String::fromUTF8("Vélocité centrale (1–127)"));
+        for (const char* key : { "ratio", "centre" })
+        {
+            if (auto* editor = dialog->getTextEditor(key))
+            {
+                editor->setInputRestrictions(3, "0123456789");
+                editor->setSelectAllWhenFocused(true);
+                editor->setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192634));
+                editor->setColour(juce::TextEditor::textColourId, juce::Colour(0xffedf4fc));
+                editor->setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff34495b));
+                editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
+            }
+        }
+        dialog->addButton(juce::String::fromUTF8("Appliquer"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton(juce::String::fromUTF8("Annuler"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        auto* window = dialog.get();
+        dialog->enterModalState(true,
+            juce::ModalCallbackFunction::create(
+                [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
+                {
+                    std::unique_ptr<juce::AlertWindow> ownedDialog(window);
+                    if (safe == nullptr || result != 1) return;
+                    const int percentage = window->getTextEditorContents("ratio").getIntValue();
+                    const int centre = window->getTextEditorContents("centre").getIntValue();
+                    if (percentage < 0 || percentage > 300 || centre < 1 || centre > 127) return;
+                    safe->scaleSelectedVelocityDynamics(static_cast<double>(percentage) / 100.0, centre);
+                }), false);
+        dialog.release();
     }
 
     void quantizeSelection()
@@ -4044,6 +4084,10 @@ public:
         // Cmd/Ctrl+Shift+G: strum grave vers aigu; Alt inverse le sens.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'G')
         { strumSelectedChord(!modifiers.isAltDown()); return true; }
+        // Cmd/Ctrl+Alt+V: fenêtre professionnelle de dynamique MIDI.
+        if (primaryShortcut && modifiers.isAltDown() && !modifiers.isShiftDown()
+            && key.getKeyCode() == 'V')
+        { showMidiDynamicsWindow(); return true; }
         // Cmd/Ctrl+Alt+C: compresser les vélocités autour de 64 (50 %).
         if (primaryShortcut && modifiers.isAltDown() && !modifiers.isShiftDown()
             && key.getKeyCode() == 'C')
