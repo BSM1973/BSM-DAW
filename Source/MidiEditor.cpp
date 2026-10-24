@@ -847,10 +847,14 @@ public:
             selectionCriterion.addItem(juce::String::fromUTF8("Temps forts (noires)"), 6);
             selectionCriterion.addItem(juce::String::fromUTF8("Temps faibles (hors noires)"), 7);
             selectionCriterion.addItem(juce::String::fromUTF8("Hauteurs répétées"), 8);
+            selectionCriterion.addItem(juce::String::fromUTF8("Probabilité de lecture"), 9);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes muettes"), 10);
+            selectionCriterion.addItem(juce::String::fromUTF8("Notes actives"), 11);
+            selectionCriterion.addItem(juce::String::fromUTF8("Doublons exacts"), 12);
             selectionCriterion.setSelectedId(1, juce::dontSendNotification);
             selectionCriterion.onChange = [this]
             {
-                const bool usesRange = selectionCriterion.getSelectedId() <= 4;
+                const bool usesRange = (selectionCriterion.getSelectedId() <= 4 || selectionCriterion.getSelectedId() == 9);
                 selectionMin.setEnabled(usesRange);
                 selectionMax.setEnabled(usesRange);
             };
@@ -2814,6 +2818,22 @@ public:
                     selected = std::any_of(notes.begin(), notes.end(), [&note](const auto& other)
                     {
                         return &other != &note && other.pitch == note.pitch && other.channel == note.channel;
+                    });
+                    break;
+                case 9:
+                    selected = note.probability >= minimum && note.probability <= maximum;
+                    break;
+                case 10:
+                    selected = note.muted;
+                    break;
+                case 11:
+                    selected = !note.muted;
+                    break;
+                case 12:
+                    selected = std::any_of(notes.begin(), notes.end(), [&note](const auto& other)
+                    {
+                        return &other != &note && other.startTick == note.startTick
+                            && other.pitch == note.pitch && other.channel == note.channel;
                     });
                     break;
                 default: return;
