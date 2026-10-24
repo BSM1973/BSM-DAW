@@ -72,19 +72,8 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     if ((getLibertyActiveTool() != 7 && !legacyMarquee) || !e.mods.isLeftButtonDown())
         return;
 
-    if (getLibertyActiveTool() == 7 || e.mods.isCommandDown() || e.mods.isCtrlDown())
-    {
-        dragStart = e.getPosition();
-        dragCurrent = dragStart;
-        dragging = true;
-        marqueeActive = false;
-        resizeActive = false;
-        resizeSide = ResizeSide::none;
-        baseSelection = owner.getMidiEngine().getSelectedNotesCopy();
-        repaint();
-        return;
-    }
-
+    // Selected-note edges must retain priority over marquee selection.
+    // Otherwise the marquee tool intercepts group resizing before it can start.
     ResizeSide side = ResizeSide::none;
     if (owner.getMidiEngine().getNumSelectedNotes() > 1
         && findSelectedResizeSide(e.getPosition(), side))
@@ -96,6 +85,15 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
         marqueeActive = false;
         return;
     }
+
+    dragStart = e.getPosition();
+    dragCurrent = dragStart;
+    dragging = true;
+    marqueeActive = false;
+    resizeActive = false;
+    resizeSide = ResizeSide::none;
+    baseSelection = owner.getMidiEngine().getSelectedNotesCopy();
+    repaint();
 }
 
 void MidiMarqueeOverlay::mouseDrag(const juce::MouseEvent& e)
