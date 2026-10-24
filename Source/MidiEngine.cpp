@@ -280,7 +280,14 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
             if (targetTick == otherTick
                 && targetPitch == static_cast<int>(source[j].pitch) + deltaPitch
                 && source[i].channel == source[j].channel)
-                return false;
+            {
+                // A pair already stacked at the same onset and pitch must be
+                // allowed to travel together; only reject newly formed overlaps.
+                const bool alreadyStacked = source[i].startTick == source[j].startTick
+                    && source[i].pitch == source[j].pitch
+                    && source[i].channel == source[j].channel;
+                if (!alreadyStacked) return false;
+            }
         }
     }
     // Resolve every selected event before mutating any note. A stale selection
