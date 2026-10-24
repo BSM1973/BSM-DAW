@@ -3440,13 +3440,31 @@ public:
                            std::function<void(double, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
-            setSize(540, 380);
+            setSize(540, 415);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
             intensity.onValueChange = [this] { repaint(); };
             centre.onValueChange = [this] { repaint(); };
             addAndMakeVisible(intensity);
             addAndMakeVisible(centre);
+            presets.addItem(juce::String::fromUTF8("Personnalisé"), 1);
+            presets.addItem(juce::String::fromUTF8("Douce"), 2);
+            presets.addItem(juce::String::fromUTF8("Naturelle"), 3);
+            presets.addItem(juce::String::fromUTF8("Expressive"), 4);
+            presets.addItem(juce::String::fromUTF8("Accentuée"), 5);
+            presets.setSelectedId(1, juce::dontSendNotification);
+            presets.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff192634));
+            presets.setColour(juce::ComboBox::textColourId, juce::Colour(0xffedf4fc));
+            presets.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff34495b));
+            presets.onChange = [this]
+            {
+                const int id = presets.getSelectedId();
+                if (id < 2) return;
+                const int ratios[] = { 65, 100, 135, 180 };
+                intensity.setValue(ratios[id - 2], juce::sendNotificationSync);
+                centre.setValue(64, juce::sendNotificationSync);
+            };
+            addAndMakeVisible(presets);
             applyButton.setButtonText(juce::String::fromUTF8("Appliquer"));
             cancelButton.setButtonText(juce::String::fromUTF8("Annuler"));
             applyButton.onClick = [this]
@@ -3466,10 +3484,11 @@ public:
 
         void resized() override
         {
-            intensity.setBounds(184, 42, 325, 34);
-            centre.setBounds(184, 91, 325, 34);
-            cancelButton.setBounds(288, 330, 100, 32);
-            applyButton.setBounds(400, 330, 110, 32);
+            presets.setBounds(184, 37, 325, 28);
+            intensity.setBounds(184, 79, 325, 34);
+            centre.setBounds(184, 122, 325, 34);
+            cancelButton.setBounds(288, 365, 100, 32);
+            applyButton.setBounds(400, 365, 110, 32);
         }
 
         void paint(juce::Graphics& g) override
@@ -3479,20 +3498,21 @@ public:
             g.setFont(juce::Font(17.0f, juce::Font::bold));
             g.drawText(juce::String::fromUTF8("DYNAMIQUE MIDI"), 24, 12, 490, 28, juce::Justification::centredLeft);
             g.setFont(juce::Font(13.0f));
-            g.drawText(juce::String::fromUTF8("Intensité"), 24, 43, 155, 32, juce::Justification::centredLeft);
-            g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 92, 155, 32, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Préréglage"), 24, 37, 155, 28, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Intensité"), 24, 79, 155, 32, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 122, 155, 32, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff91a9bf));
             g.setFont(juce::Font(12.0f));
-            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 143, 270, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 173, 270, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff587187));
-            g.fillRoundedRectangle(305.0f, 149.0f, 10.0f, 10.0f, 2.0f);
+            g.fillRoundedRectangle(305.0f, 179.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
-            g.drawText(juce::String::fromUTF8("Avant"), 320, 142, 62, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Avant"), 320, 172, 62, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff4b9de0));
-            g.fillRoundedRectangle(392.0f, 149.0f, 10.0f, 10.0f, 2.0f);
+            g.fillRoundedRectangle(392.0f, 179.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
-            g.drawText(juce::String::fromUTF8("Après"), 407, 142, 70, 22, juce::Justification::centredLeft);
-            const auto area = juce::Rectangle<float>(24.0f, 170.0f, 492.0f, 145.0f);
+            g.drawText(juce::String::fromUTF8("Après"), 407, 172, 70, 22, juce::Justification::centredLeft);
+            const auto area = juce::Rectangle<float>(24.0f, 200.0f, 492.0f, 145.0f);
             g.setColour(juce::Colour(0xff192634));
             g.fillRoundedRectangle(area, 7.0f);
             g.setColour(juce::Colour(0xff34495b));
@@ -3537,6 +3557,7 @@ public:
         std::vector<int> velocities;
         std::function<void(double, int)> onApply;
         juce::Slider intensity, centre;
+        juce::ComboBox presets;
         juce::TextButton applyButton, cancelButton;
     };
 
