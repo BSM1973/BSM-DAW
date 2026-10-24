@@ -2212,6 +2212,117 @@ public:
         }
     }
 
+    // FL Studio-inspired rhythm tools. Build the complete result first, then
+    // commit as a single undoable MIDI operation with collision validation.
+    void applyRhythmicNoteTool(int mode)
+    {
+        auto& midi = owner.getMidiEngine();
+        auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        auto updated = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> outputSelection;
+        const auto grid = juce::jmax<std::int64_t>(1, activePianoSnapTicks());
+        std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        bool changed = false;
+        if (mode <= 1) // ratchet: split each note into two or four repeats
+        {
+            const int divisions = mode == 0 ? 2 : 4;
+            for (const auto& note : selected)
+            {
+                if (note.lengthTicks < divisions) return;
+                const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+                {
+                    return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+                });
+                if (it == updated.end()) return;
+                updated.erase(it);
+                for (int part = 0; part < divisions; ++part)
+                {
+                    auto copy = note;
+                    const auto from = (note.lengthTicks / divisions) * part
+                        + (note.lengthTicks % divisions) * part / divisions;
+                    const auto to = (note.lengthTicks / divisions) * (part + 1)
+                        + (note.lengthTicks % divisions) * (part + 1) / divisions;
+                    copy.startTick += from;
+                    copy.lengthTicks = to - from;
+                    updated.push_back(copy);
+                    outputSelection.push_back(copy);
+                }
+                changed = true;
+            }
+        }
+        else if (mode <= 3) // arpeggiate simultaneous chord groups
+        {
+            for (std::size_t begin = 0; begin < selected.size();)
+            {
+                std::size_t end = begin + 1;
+                while (end < selected.size() && selected[end].startTick == selected[begin].startTick
+                    && selected[end].channel == selected[begin].channel) ++end;
+                if (end - begin > 1)
+                {
+                    for (std::size_t i = begin; i < end; ++i)
+                    {
+                        const auto& note = selected[i];
+                        const auto rank = mode == 2 ? i - begin : end - i - 1;
+                        if (rank > static_cast<std::size_t>(
+                            (std::numeric_limits<std::int64_t>::max() - note.startTick) / grid)) return;
+                        const auto offset = static_cast<std::int64_t>(rank) * grid;
+                        const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+                        {
+                            return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+                        });
+                        if (it == updated.end()) return;
+                        it->startTick += offset;
+                        outputSelection.push_back(*it);
+                        changed = changed || offset != 0;
+                    }
+                }
+                else outputSelection.push_back(selected[begin]);
+                begin = end;
+            }
+        }
+        else // note length transformation
+        {
+            for (const auto& note : selected)
+            {
+                const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+                {
+                    return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+                });
+                if (it == updated.end()) return;
+                const auto target = mode == 4 ? juce::jmax<std::int64_t>(1, note.lengthTicks / 2)
+                    : (note.lengthTicks <= std::numeric_limits<std::int64_t>::max() / 2
+                        ? note.lengthTicks * 2 : note.lengthTicks);
+                it->lengthTicks = target;
+                outputSelection.push_back(*it);
+                changed = changed || target != note.lengthTicks;
+            }
+        }
+        if (!changed) return;
+        std::sort(updated.begin(), updated.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        for (std::size_t i = 1; i < updated.size(); ++i)
+            if (updated[i].startTick == updated[i - 1].startTick
+                && updated[i].pitch == updated[i - 1].pitch
+                && updated[i].channel == updated[i - 1].channel) return;
+        if (midi.replaceNotes(updated))
+        {
+            midi.setSelectedNotes(outputSelection);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
