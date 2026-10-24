@@ -3440,7 +3440,7 @@ public:
                            std::function<void(double, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
-            setSize(540, 415);
+            setSize(540, 462);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
             intensity.onValueChange = [this]
@@ -3497,8 +3497,8 @@ public:
             presets.setBounds(184, 37, 325, 28);
             intensity.setBounds(184, 79, 325, 34);
             centre.setBounds(184, 122, 325, 34);
-            cancelButton.setBounds(288, 365, 100, 32);
-            applyButton.setBounds(400, 365, 110, 32);
+            cancelButton.setBounds(288, 412, 100, 32);
+            applyButton.setBounds(400, 412, 110, 32);
         }
 
         void paint(juce::Graphics& g) override
@@ -3528,6 +3528,32 @@ public:
             g.setColour(juce::Colour(0xff34495b));
             g.drawRoundedRectangle(area, 7.0f, 1.0f);
             if (velocities.empty()) return;
+            int originalMin = 127, originalMax = 1, transformedMin = 127, transformedMax = 1;
+            double originalSum = 0.0, transformedSum = 0.0;
+            const double transformRatio = intensity.getValue() / 100.0;
+            const double transformCentre = centre.getValue();
+            for (const int value : velocities)
+            {
+                const int transformed = juce::jlimit(1, 127,
+                    juce::roundToInt(transformCentre + (static_cast<double>(value) - transformCentre) * transformRatio));
+                originalMin = juce::jmin(originalMin, value);
+                originalMax = juce::jmax(originalMax, value);
+                transformedMin = juce::jmin(transformedMin, transformed);
+                transformedMax = juce::jmax(transformedMax, transformed);
+                originalSum += value;
+                transformedSum += transformed;
+            }
+            g.setFont(juce::Font(12.0f));
+            g.setColour(juce::Colour(0xffa9bdd0));
+            g.drawText(juce::String::fromUTF8("AVANT    Min ") + juce::String(originalMin)
+                + "  ·  Max " + juce::String(originalMax)
+                + "  ·  Moy " + juce::String(originalSum / velocities.size(), 1),
+                24, 353, 492, 20, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff79b9ee));
+            g.drawText(juce::String::fromUTF8("APRÈS    Min ") + juce::String(transformedMin)
+                + "  ·  Max " + juce::String(transformedMax)
+                + "  ·  Moy " + juce::String(transformedSum / velocities.size(), 1),
+                24, 376, 492, 20, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
