@@ -3497,7 +3497,15 @@ public:
                 intensity.setValue(initialIntensity, juce::sendNotificationSync);
                 centre.setValue(initialCentreValue, juce::sendNotificationSync);
                 applyingPreset = false;
-                presets.setSelectedId(1, juce::dontSendNotification);
+                int restoredPreset = 1;
+                if (juce::roundToInt(initialCentreValue) == 64)
+                {
+                    const int ratios[] = { 65, 100, 135, 180 };
+                    for (int i = 0; i < 4; ++i)
+                        if (juce::roundToInt(initialIntensity) == ratios[i])
+                            restoredPreset = i + 2;
+                }
+                presets.setSelectedId(restoredPreset, juce::dontSendNotification);
                 repaint();
             };
             addAndMakeVisible(resetButton);
