@@ -53,6 +53,7 @@ public:
         dragStartPitch = pitchFromY(e.y);
         appliedTickDelta = 0;
         appliedPitchDelta = 0;
+        owner.getMidiEngine().beginGroupedEdit();
         dragging = true;
         repaint();
     }
@@ -81,6 +82,7 @@ public:
     {
         if (!dragging) return;
         dragging = false;
+        owner.getMidiEngine().endGroupedEdit();
         selectionBeforeDrag.clear();
         owner.updateMidiClipTiming();
         owner.repaint();
