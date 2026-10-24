@@ -46,8 +46,8 @@ public:
         const auto note = findSelectedNoteAt(e.getPosition());
         if (!note.has_value() || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return;
-        if (lastSelection.size() > 1)
-            owner.getMidiEngine().setSelectedNotes(lastSelection);
+        // Keep the live selection as the source of truth. Restoring a timer-cached
+        // selection here could unexpectedly reselect notes the user just removed.
         selectionBeforeDrag = owner.getMidiEngine().getSelectedNotesCopy();
         dragStartTick = tickFromX(e.x);
         dragStartPitch = pitchFromY(e.y);
@@ -88,11 +88,7 @@ public:
     }
 
 private:
-    void timerCallback() override
-    {
-        if (!dragging)
-            lastSelection = owner.getMidiEngine().getSelectedNotesCopy();
-    }
+    void timerCallback() override { if (dragging) repaint(); }
 
     std::optional<MidiEngine::NoteEvent> findSelectedNoteAt(juce::Point<int> p) const
     {
@@ -149,7 +145,6 @@ private:
     int dragStartPitch = 60;
     int appliedPitchDelta = 0;
     std::vector<MidiEngine::NoteEvent> selectionBeforeDrag;
-    std::vector<MidiEngine::NoteEvent> lastSelection;
 };
 
 class MidiGroupDragManager final : private juce::Timer
