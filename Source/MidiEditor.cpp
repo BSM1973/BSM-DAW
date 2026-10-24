@@ -4870,6 +4870,7 @@ public:
             const auto sameNote = [this](const MidiEngine::NoteEvent& note)
             {
                 return note.startTick == clickNote.startTick
+                    && note.lengthTicks == clickNote.lengthTicks
                     && note.pitch == clickNote.pitch && note.channel == clickNote.channel;
             };
             if (clickWasSelected)
