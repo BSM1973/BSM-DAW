@@ -4611,10 +4611,10 @@ public:
                         return other.startTick == n.startTick && other.pitch == n.pitch
                             && other.channel == n.channel && other.lengthTicks != n.lengthTicks;
                     });
-                if (ambiguousNote && (tool == 0 || tool == 4))
+                if (ambiguousNote && tool == 4)
                 {
-                    // Preserve click-to-select while avoiding an unintended edit.
-                    if (tool == 0) return;
+                    // Resizing still uses legacy tick/pitch targeting; keep it safe until
+                    // exact-identity resizing is connected to the engine.
                     return;
                 }
 
@@ -4849,7 +4849,7 @@ public:
         }
         const auto newTick = tickFromX(e.x); const int newPitch = snapPitchToScale(pitchFromY(e.y));
         if (newTick == dragStartTick && newPitch == dragPitch) return;
-        if (owner.getMidiEngine().moveNote(dragStartTick, dragPitch, dragChannel, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragEndTick = newTick + originalLengthTicks; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
+        if (owner.getMidiEngine().moveNoteExact(dragStartTick, dragPitch, dragChannel, originalLengthTicks, newTick, newPitch)) { dragStartTick = newTick; dragPitch = newPitch; dragEndTick = newTick + originalLengthTicks; dragMoved = true; owner.updateMidiClipTiming(); synchronizeLibertyPianoRollPlayback(owner); repaint(); owner.repaint(); }
     }
 
     void mouseUp(const juce::MouseEvent&) override
