@@ -436,6 +436,26 @@ bool MidiEngine::resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdg
         }
     }
 
+    // Resizing from the left changes note onset. Reject duplicate target
+    // onsets on the same pitch/channel before changing any live events.
+    if (fromLeftEdge)
+    {
+        for (const auto& n : source)
+        {
+            std::int64_t targetTick = 0;
+            if (!checkedAdd(n.startTick, deltaTicks, targetTick))
+                return false;
+            const bool collision = std::any_of(notes.begin(), notes.end(),
+                [this, &n, targetTick](const NoteEvent& other)
+                {
+                    return !isNoteSelected(other) && other.startTick == targetTick
+                        && other.pitch == n.pitch && other.channel == n.channel;
+                });
+            if (collision)
+                return false;
+        }
+    }
+
     // Validate every selected note against the live event collection before
     // changing anything, so a stale selection cannot cause a partial resize.
     std::vector<std::size_t> indices;
