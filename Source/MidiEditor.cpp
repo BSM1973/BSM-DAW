@@ -3572,10 +3572,14 @@ public:
             const double meanDelta = (transformedSum - originalSum) / static_cast<double>(velocities.size());
             g.setFont(juce::Font(11.0f));
             g.setColour(juce::Colour(0xff91a9bf));
-            g.drawText(juce::String::fromUTF8("Notes : ") + juce::String(velocities.size())
-                + juce::String::fromUTF8("  ·  Écart moyen : ")
+            g.drawText(juce::String::fromUTF8("Notes sélectionnées : ") + juce::String(velocities.size()),
+                24, 413, 245, 20, juce::Justification::centredLeft);
+            g.setColour(meanDelta > 0.05 ? juce::Colour(0xff7dcfa9)
+                        : meanDelta < -0.05 ? juce::Colour(0xffefaa92)
+                        : juce::Colour(0xff91a9bf));
+            g.drawText(juce::String::fromUTF8("Écart moyen : ")
                 + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
-                170, 402, 346, 18, juce::Justification::centredRight);
+                270, 413, 246, 20, juce::Justification::centredRight);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
