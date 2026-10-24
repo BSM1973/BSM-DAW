@@ -3555,6 +3555,9 @@ public:
                 originalSum += value;
                 transformedSum += transformed;
             }
+            // Statistics cover every selected note, not just the graph sample.
+            g.setColour(juce::Colour(0xff192634));
+            g.fillRoundedRectangle(24.0f, 350.0f, 492.0f, 52.0f, 6.0f);
             g.setFont(juce::Font(12.0f));
             g.setColour(juce::Colour(0xffa9bdd0));
             g.drawText(juce::String::fromUTF8("AVANT    Min ") + juce::String(originalMin)
@@ -3566,6 +3569,13 @@ public:
                 + "  ·  Max " + juce::String(transformedMax)
                 + "  ·  Moy " + juce::String(transformedSum / velocities.size(), 1),
                 24, 376, 492, 20, juce::Justification::centredLeft);
+            const double meanDelta = (transformedSum - originalSum) / static_cast<double>(velocities.size());
+            g.setFont(juce::Font(11.0f));
+            g.setColour(juce::Colour(0xff91a9bf));
+            g.drawText(juce::String::fromUTF8("Notes : ") + juce::String(velocities.size())
+                + juce::String::fromUTF8("  ·  Écart moyen : ")
+                + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
+                170, 402, 346, 18, juce::Justification::centredRight);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 20.0f) / static_cast<float>(count);
