@@ -831,7 +831,7 @@ public:
             std::function<void(double, double, double)> quantizeAction,
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
             std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction,
-              std::function<void(int, int)> melodyAction)
+              std::function<void(int, int, int)> melodyAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
@@ -1081,7 +1081,7 @@ public:
             euclideanSteps.setRange(2.0, 32.0, 1.0);
             euclideanSteps.setValue(16.0, juce::dontSendNotification);
             euclideanPulses.setValue(5.0, juce::dontSendNotification);
-            for (auto* slider : { &melodySteps, &melodyRange })
+            for (auto* slider : { &melodySteps, &melodyRange, &melodySeed })
             {
                 slider->setSliderStyle(juce::Slider::LinearHorizontal);
                 slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 26);
@@ -1092,13 +1092,15 @@ public:
             melodySteps.setValue(8.0, juce::dontSendNotification);
             melodyRange.setRange(1.0, 24.0, 1.0);
             melodyRange.setValue(12.0, juce::dontSendNotification);
+            melodySeed.setRange(0.0, 9999.0, 1.0);
+            melodySeed.setValue(1.0, juce::dontSendNotification);
             generateMelody.setButtonText(juce::String::fromUTF8("GÉNÉRER UNE MÉLODIE"));
             generateMelody.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
             generateMelody.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             generateMelody.setEnabled(hasSelection);
             generateMelody.onClick = [this]
             {
-                if (onMelody) onMelody((int)melodySteps.getValue(), (int)melodyRange.getValue());
+                if (onMelody) onMelody((int)melodySteps.getValue(), (int)melodyRange.getValue(), (int)melodySeed.getValue());
             };
             addAndMakeVisible(generateMelody);
             generateEuclidean.setButtonText(juce::String::fromUTF8("GÉNÉRER LE RYTHME"));
@@ -1157,6 +1159,7 @@ public:
                 g.setFont(juce::Font(13.0f));
                 g.drawText(juce::String::fromUTF8("PAS MÉLODIQUES"), 26, 404, 190, 30, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("ÉTENDUE (DEMI-TONS)"), 26, 448, 190, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("GRAINE MÉLODIQUE"), 26, 485, 190, 30, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("PROBABILITÉ DE LECTURE"),
                     26, 590, 195, 32, juce::Justification::centredLeft);
             }
@@ -1394,7 +1397,8 @@ public:
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             melodySteps.setBounds(230, 404, getWidth() - 256, 30);
             melodyRange.setBounds(230, 448, getWidth() - 256, 30);
-            generateMelody.setBounds(26, 490, available, 38);
+            melodySeed.setBounds(230, 485, getWidth() - 256, 30);
+            generateMelody.setBounds(26, 526, available, 38);
             noteProbability.setBounds(230, 590, getWidth() - 256, 32);
             applyProbability.setBounds(26, 630, available, 38);
             euclideanSteps.setBounds(230, 260, getWidth() - 256, 36);
@@ -1471,6 +1475,7 @@ public:
             applyProbability.setVisible(currentCategory == 8);
             melodySteps.setVisible(currentCategory == 8);
             melodyRange.setVisible(currentCategory == 8);
+            melodySeed.setVisible(currentCategory == 8);
             generateMelody.setVisible(currentCategory == 8);
             euclideanSteps.setVisible(currentCategory == 8);
             euclideanPulses.setVisible(currentCategory == 8);
@@ -1501,9 +1506,9 @@ public:
         std::array<juce::TextButton, 8> chordButtons;
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
-        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability, melodySteps, melodyRange;
+        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability, melodySteps, melodyRange, melodySeed;
         juce::TextButton generateMelody;
-        std::function<void(int, int)> onMelody;
+        std::function<void(int, int, int)> onMelody;
         juce::TextButton applyProbability;
         std::function<void(int)> onProbability;
         juce::TextButton generateEuclidean;
@@ -2815,12 +2820,12 @@ public:
                     safe->setSelectedNoteProbability(percentage);
                 }
             },
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int steps, int range)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int steps, int range, int seed)
             {
                 if (safe != nullptr)
                 {
                     safe->invalidateHumanizeUndo();
-                    safe->generateMelodicPattern(steps, range);
+                    safe->generateMelodicPattern(steps, range, seed);
                 }
             }));
         options.launchAsync();
