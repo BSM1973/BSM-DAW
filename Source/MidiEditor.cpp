@@ -3633,7 +3633,9 @@ public:
                 const float processedHeight = static_cast<float>(processed) / 127.0f * 118.0f;
                 g.setColour(juce::Colour(0xff587187));
                 g.fillRect(x, area.getBottom() - 9.0f - originalHeight, juce::jmax(1.0f, width * 0.38f), originalHeight);
-                g.setColour(juce::Colour(0xff4b9de0));
+                const bool newlyAtLimit = (processed == 1 && velocity != 1)
+                                           || (processed == 127 && velocity != 127);
+                g.setColour(newlyAtLimit ? juce::Colour(0xffefaa92) : juce::Colour(0xff4b9de0));
                 g.fillRect(x + width * 0.43f, area.getBottom() - 9.0f - processedHeight,
                            juce::jmax(1.0f, width * 0.38f), processedHeight);
             }
