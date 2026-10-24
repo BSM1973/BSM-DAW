@@ -3399,6 +3399,40 @@ public:
         owner.repaint();
     }
 
+    // Dynamic range processing around MIDI velocity 64. Ratio < 1 compresses,
+    // ratio > 1 expands, while all note positions and expressive flags remain intact.
+    void scaleSelectedVelocityDynamics(double ratio)
+    {
+        if (ratio <= 0.0) return;
+        auto& midi = owner.getMidiEngine();
+        const auto selection = midi.getSelectedNotesCopy();
+        if (selection.empty()) return;
+        auto notes = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> updatedSelection;
+        updatedSelection.reserve(selection.size());
+        bool changed = false;
+        for (const auto& selected : selection)
+        {
+            const auto it = std::find_if(notes.begin(), notes.end(), [&](const auto& note)
+            {
+                return note.startTick == selected.startTick
+                    && note.lengthTicks == selected.lengthTicks
+                    && note.pitch == selected.pitch && note.channel == selected.channel;
+            });
+            if (it == notes.end()) return;
+            const auto scaled = juce::jlimit(1, 127,
+                juce::roundToInt(64.0 + (static_cast<double>(it->velocity) - 64.0) * ratio));
+            changed = changed || it->velocity != static_cast<std::uint8_t>(scaled);
+            it->velocity = static_cast<std::uint8_t>(scaled);
+            updatedSelection.push_back(*it);
+        }
+        if (!changed || !midi.replaceNotes(notes)) return;
+        midi.setSelectedNotes(updatedSelection);
+        synchronizeLibertyPianoRollPlayback(owner);
+        repaint();
+        owner.repaint();
+    }
+
     void quantizeSelection()
     {
         auto& midi = owner.getMidiEngine();
@@ -4010,6 +4044,14 @@ public:
         // Cmd/Ctrl+Shift+G: strum grave vers aigu; Alt inverse le sens.
         if (primaryShortcut && modifiers.isShiftDown() && key.getKeyCode() == 'G')
         { strumSelectedChord(!modifiers.isAltDown()); return true; }
+        // Cmd/Ctrl+Alt+C: compresser les vélocités autour de 64 (50 %).
+        if (primaryShortcut && modifiers.isAltDown() && !modifiers.isShiftDown()
+            && key.getKeyCode() == 'C')
+        { scaleSelectedVelocityDynamics(0.5); return true; }
+        // Cmd/Ctrl+Alt+E: étendre les vélocités autour de 64 (150 %).
+        if (primaryShortcut && modifiers.isAltDown() && !modifiers.isShiftDown()
+            && key.getKeyCode() == 'E')
+        { scaleSelectedVelocityDynamics(1.5); return true; }
         // Cmd/Ctrl+Shift+V: inverser les vélocités de la sélection (1 ↔ 127).
         if (primaryShortcut && modifiers.isShiftDown() && !modifiers.isAltDown()
             && key.getKeyCode() == 'V')
