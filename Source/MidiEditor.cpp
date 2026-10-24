@@ -830,11 +830,12 @@ public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
             std::function<void(double, double, double)> quantizeAction,
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
-            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction)
+            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction,
+              std::function<void(int, int)> melodyAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
-              onEuclidean(std::move(euclideanAction)), onProbability(std::move(probabilityAction)),
+              onEuclidean(std::move(euclideanAction)), onProbability(std::move(probabilityAction)), onMelody(std::move(melodyAction)),
               previewNotes(std::move(notes))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION", "GÉNÉRATEURS" };
@@ -1080,6 +1081,26 @@ public:
             euclideanSteps.setRange(2.0, 32.0, 1.0);
             euclideanSteps.setValue(16.0, juce::dontSendNotification);
             euclideanPulses.setValue(5.0, juce::dontSendNotification);
+            for (auto* slider : { &melodySteps, &melodyRange })
+            {
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 26);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xff348fc2));
+                addAndMakeVisible(*slider);
+            }
+            melodySteps.setRange(2.0, 32.0, 1.0);
+            melodySteps.setValue(8.0, juce::dontSendNotification);
+            melodyRange.setRange(1.0, 24.0, 1.0);
+            melodyRange.setValue(12.0, juce::dontSendNotification);
+            generateMelody.setButtonText(juce::String::fromUTF8("GÉNÉRER UNE MÉLODIE"));
+            generateMelody.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            generateMelody.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            generateMelody.setEnabled(hasSelection);
+            generateMelody.onClick = [this]
+            {
+                if (onMelody) onMelody((int)melodySteps.getValue(), (int)melodyRange.getValue());
+            };
+            addAndMakeVisible(generateMelody);
             generateEuclidean.setButtonText(juce::String::fromUTF8("GÉNÉRER LE RYTHME"));
             generateEuclidean.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
             generateEuclidean.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -1134,6 +1155,8 @@ public:
                 g.drawText(juce::String::fromUTF8("FRAPPES"), 26, 352, 190, 36, juce::Justification::centredLeft);
                 g.setColour(juce::Colour(0xff98a9ba));
                 g.setFont(juce::Font(13.0f));
+                g.drawText(juce::String::fromUTF8("PAS MÉLODIQUES"), 26, 404, 190, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("ÉTENDUE (DEMI-TONS)"), 26, 448, 190, 30, juce::Justification::centredLeft);
                 g.drawText(juce::String::fromUTF8("PROBABILITÉ DE LECTURE"),
                     26, 590, 195, 32, juce::Justification::centredLeft);
             }
@@ -1369,11 +1392,14 @@ public:
             const int tabWidth = (available - 48) / 9;
             for (int i = 0; i < 9; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            melodySteps.setBounds(230, 404, getWidth() - 256, 30);
+            melodyRange.setBounds(230, 448, getWidth() - 256, 30);
+            generateMelody.setBounds(26, 490, available, 38);
             noteProbability.setBounds(230, 590, getWidth() - 256, 32);
             applyProbability.setBounds(26, 630, available, 38);
             euclideanSteps.setBounds(230, 260, getWidth() - 256, 36);
             euclideanPulses.setBounds(230, 352, getWidth() - 256, 36);
-            generateEuclidean.setBounds(26, 472, available, 56);
+            generateEuclidean.setBounds(26, 310, available, 38);
             expressiveAmount.setBounds(215, 208, getWidth() - 241, 32);
             for (int i = 0; i < 8; ++i)
                 expressiveButtons[(size_t)i].setBounds(26 + (i % 2) * ((available + 10) / 2),
@@ -1443,6 +1469,9 @@ public:
             expressiveAmount.setVisible(currentCategory == 7);
             noteProbability.setVisible(currentCategory == 8);
             applyProbability.setVisible(currentCategory == 8);
+            melodySteps.setVisible(currentCategory == 8);
+            melodyRange.setVisible(currentCategory == 8);
+            generateMelody.setVisible(currentCategory == 8);
             euclideanSteps.setVisible(currentCategory == 8);
             euclideanPulses.setVisible(currentCategory == 8);
             generateEuclidean.setVisible(currentCategory == 8);
@@ -1472,7 +1501,9 @@ public:
         std::array<juce::TextButton, 8> chordButtons;
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
-        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability;
+        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability, melodySteps, melodyRange;
+        juce::TextButton generateMelody;
+        std::function<void(int, int)> onMelody;
         juce::TextButton applyProbability;
         std::function<void(int)> onProbability;
         juce::TextButton generateEuclidean;
@@ -2775,6 +2806,14 @@ public:
                 {
                     safe->invalidateHumanizeUndo();
                     safe->setSelectedNoteProbability(percentage);
+                }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int steps, int range)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->generateMelodicPattern(steps, range);
                 }
             }));
         options.launchAsync();
