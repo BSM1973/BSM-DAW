@@ -3440,6 +3440,8 @@ public:
                            std::function<void(double, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
+            initialIntensity = initialRatio;
+            initialCentreValue = initialCentre;
             setSize(540, 524);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
@@ -3492,10 +3494,10 @@ public:
             resetButton.onClick = [this]
             {
                 applyingPreset = true;
-                intensity.setValue(100.0, juce::sendNotificationSync);
-                centre.setValue(64.0, juce::sendNotificationSync);
+                intensity.setValue(initialIntensity, juce::sendNotificationSync);
+                centre.setValue(initialCentreValue, juce::sendNotificationSync);
                 applyingPreset = false;
-                presets.setSelectedId(3, juce::dontSendNotification);
+                presets.setSelectedId(1, juce::dontSendNotification);
                 repaint();
             };
             addAndMakeVisible(resetButton);
@@ -3637,6 +3639,8 @@ public:
         }
 
     private:
+        double initialIntensity = 100.0;
+        double initialCentreValue = 64.0;
         static void configure(juce::Slider& slider, double minimum, double maximum,
                               double value, const juce::String& suffix)
         {
