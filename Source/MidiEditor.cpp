@@ -2288,17 +2288,15 @@ public:
                 editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff3575d9));
             }
         }
-        auto* pitchRange = new MidiPitchRangeSlider();
-        pitchRange->bind(dialog->getTextEditor("pitchMin"), dialog->getTextEditor("pitchMax"));
-        dialog->addCustomComponent(pitchRange);
         dialog->addButton(juce::String::fromUTF8("SÉLECTIONNER"), 1,
                           juce::KeyPress(juce::KeyPress::returnKey));
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
                           juce::KeyPress(juce::KeyPress::escapeKey));
         auto* window = dialog.get();
-        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+        dialog->enterModalState(false, juce::ModalCallbackFunction::create(
             [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
             {
+                std::unique_ptr<juce::AlertWindow> ownedDialog(window);
                 if (safe == nullptr || result != 1) return;
                 const auto get = [window](const char* key, int lo, int hi)
                 {
