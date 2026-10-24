@@ -831,13 +831,36 @@ public:
             std::function<void(double, double, double)> quantizeAction,
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
             std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction,
-              std::function<void(int, int, int)> melodyAction)
+              std::function<void(int, int, int)> melodyAction,
+              std::function<void(int, int, int)> selectionAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
-              onEuclidean(std::move(euclideanAction)), onProbability(std::move(probabilityAction)), onMelody(std::move(melodyAction)),
+              onEuclidean(std::move(euclideanAction)), onProbability(std::move(probabilityAction)), onMelody(std::move(melodyAction)), onSelection(std::move(selectionAction)),
               previewNotes(std::move(notes))
         {
+            selectionCriterion.addItem(juce::String::fromUTF8("Hauteur MIDI"), 1);
+            selectionCriterion.addItem(juce::String::fromUTF8("Vélocité"), 2);
+            selectionCriterion.addItem(juce::String::fromUTF8("Durée (échelle 0–127)"), 3);
+            selectionCriterion.addItem(juce::String::fromUTF8("Position sur la grille"), 4);
+            selectionCriterion.setSelectedId(1, juce::dontSendNotification);
+            addAndMakeVisible(selectionCriterion);
+            for (auto* slider : { &selectionMin, &selectionMax })
+            {
+                slider->setRange(0, 127, 1);
+                slider->setSliderStyle(juce::Slider::LinearHorizontal);
+                slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 25);
+                slider->setColour(juce::Slider::trackColourId, juce::Colour(0xff348fc2));
+                addAndMakeVisible(*slider);
+            }
+            selectionMax.setValue(127, juce::dontSendNotification);
+            applySelection.setButtonText(juce::String::fromUTF8("SÉLECTIONNER LES NOTES CORRESPONDANTES"));
+            applySelection.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            applySelection.onClick = [this]
+            {
+                if (onSelection) onSelection(selectionCriterion.getSelectedId(), (int)selectionMin.getValue(), (int)selectionMax.getValue());
+            };
+            addAndMakeVisible(applySelection);
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION", "GÉNÉRATEURS" };
             for (int i = 0; i < 9; ++i)
             {
@@ -1147,6 +1170,14 @@ public:
                 juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff344250));
             g.drawHorizontalLine(113, 26.0f, 574.0f);
+            if (currentCategory == 0)
+            {
+                g.setColour(juce::Colour(0xffd4e0e9));
+                g.setFont(juce::Font(15.0f));
+                g.drawText(juce::String::fromUTF8("SÉLECTION INTELLIGENTE"), 26, 390, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("MINIMUM"), 26, 482, 125, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("MAXIMUM"), 26, 530, 125, 30, juce::Justification::centredLeft);
+            }
             if (currentCategory == 8)
             {
                 g.setColour(juce::Colour(0xffd4e0e9));
@@ -1395,6 +1426,10 @@ public:
             const int tabWidth = (available - 48) / 9;
             for (int i = 0; i < 9; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            selectionCriterion.setBounds(26, 426, available, 32);
+            selectionMin.setBounds(160, 482, getWidth() - 186, 30);
+            selectionMax.setBounds(160, 530, getWidth() - 186, 30);
+            applySelection.setBounds(26, 595, available, 42);
             melodySteps.setBounds(230, 404, getWidth() - 256, 30);
             melodyRange.setBounds(230, 448, getWidth() - 256, 30);
             melodySeed.setBounds(230, 485, getWidth() - 256, 30);
@@ -1471,6 +1506,10 @@ public:
             for (auto& button : rhythmButtons) button.setVisible(currentCategory == 6);
             for (auto& button : expressiveButtons) button.setVisible(currentCategory == 7);
             expressiveAmount.setVisible(currentCategory == 7);
+            selectionCriterion.setVisible(currentCategory == 0);
+            selectionMin.setVisible(currentCategory == 0);
+            selectionMax.setVisible(currentCategory == 0);
+            applySelection.setVisible(currentCategory == 0);
             noteProbability.setVisible(currentCategory == 8);
             applyProbability.setVisible(currentCategory == 8);
             melodySteps.setVisible(currentCategory == 8);
@@ -1507,6 +1546,10 @@ public:
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
         juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability, melodySteps, melodyRange, melodySeed;
+        juce::ComboBox selectionCriterion;
+        juce::Slider selectionMin, selectionMax;
+        juce::TextButton applySelection;
+        std::function<void(int, int, int)> onSelection;
         juce::TextButton generateMelody;
         std::function<void(int, int, int)> onMelody;
         juce::TextButton applyProbability;
@@ -2850,6 +2893,10 @@ public:
                     safe->invalidateHumanizeUndo();
                     safe->generateMelodicPattern(steps, range, seed);
                 }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int criterion, int minimum, int maximum)
+            {
+                if (safe != nullptr) safe->selectNotesByCriteria(criterion, minimum, maximum);
             }));
         options.launchAsync();
     }
