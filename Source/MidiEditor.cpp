@@ -2552,6 +2552,37 @@ public:
         }
     }
 
+    void setSelectedNoteProbability(int percentage)
+    {
+        auto& midi = owner.getMidiEngine();
+        const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        auto updated = midi.getNotesCopy();
+        std::vector<MidiEngine::NoteEvent> nextSelection;
+        bool changed = false;
+        for (const auto& note : selected)
+        {
+            const auto it = std::find_if(updated.begin(), updated.end(), [&note](const auto& n)
+            {
+                return n.startTick == note.startTick && n.pitch == note.pitch && n.channel == note.channel;
+            });
+            if (it == updated.end()) return;
+            auto edited = *it;
+            edited.probability = static_cast<std::uint8_t>(juce::jlimit(0, 100, percentage));
+            changed = changed || edited.probability != it->probability;
+            *it = edited;
+            nextSelection.push_back(edited);
+        }
+        if (!changed) return;
+        if (midi.replaceNotes(updated))
+        {
+            midi.setSelectedNotes(nextSelection);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
