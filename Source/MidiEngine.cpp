@@ -290,7 +290,8 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     for (const auto& n : source)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&n](const NoteEvent& other)
-        { return other.startTick == n.startTick && other.pitch == n.pitch && other.channel == n.channel; });
+        { return other.startTick == n.startTick && other.lengthTicks == n.lengthTicks
+            && other.pitch == n.pitch && other.channel == n.channel; });
         if (it == notes.end())
             return false;
         const auto index = static_cast<std::size_t>(std::distance(notes.begin(), it));
