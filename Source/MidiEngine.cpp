@@ -230,8 +230,17 @@ void MidiEngine::setSelectedNotes(const std::vector<NoteEvent>& selection) noexc
     for (const auto& candidate : selection)
     {
         const auto it = std::find_if(notes.begin(), notes.end(), [&candidate](const NoteEvent& note)
-        { return note.startTick == candidate.startTick && note.pitch == candidate.pitch && note.channel == candidate.channel; });
-        if (it != notes.end()) selectedNotes.push_back(*it);
+        {
+            return note.startTick == candidate.startTick && note.lengthTicks == candidate.lengthTicks
+                && note.pitch == candidate.pitch && note.channel == candidate.channel;
+        });
+        if (it == notes.end()) continue;
+        const auto alreadySelected = std::any_of(selectedNotes.begin(), selectedNotes.end(), [&it](const NoteEvent& selected)
+        {
+            return selected.startTick == it->startTick && selected.lengthTicks == it->lengthTicks
+                && selected.pitch == it->pitch && selected.channel == it->channel;
+        });
+        if (!alreadySelected) selectedNotes.push_back(*it);
     }
     if (selectedNotes.empty()) { clearNoteSelection(); return; }
     selectedNote = selectedNotes.back(); selectedNoteValid = true;
