@@ -94,8 +94,9 @@ void MidiMarqueeOverlay::mouseDown(const juce::MouseEvent& e)
     marqueeActive = false;
     resizeActive = false;
     resizeSide = ResizeSide::none;
-    additiveSelection = e.mods.isShiftDown() || legacyMarquee;
-    baseSelection = additiveSelection ? owner.getMidiEngine().getSelectedNotesCopy()
+    subtractiveSelection = e.mods.isAltDown();
+    additiveSelection = !subtractiveSelection && (e.mods.isShiftDown() || legacyMarquee);
+    baseSelection = (additiveSelection || subtractiveSelection) ? owner.getMidiEngine().getSelectedNotesCopy()
                                       : std::vector<MidiEngine::NoteEvent>{};
     repaint();
 }
@@ -154,6 +155,7 @@ void MidiMarqueeOverlay::mouseUp(const juce::MouseEvent& e)
     marqueeActive = false;
     baseSelection.clear();
     additiveSelection = false;
+    subtractiveSelection = false;
     repaint();
 }
 
@@ -278,8 +280,22 @@ void MidiMarqueeOverlay::applySelection()
         if (note.pitch < lowestKey || note.pitch >= lowestKey + visibleKeys)
             continue;
 
-        if (marquee.intersects(noteRectangle({}, note.startTick, note.lengthTicks, note.pitch)))
+        if (!marquee.intersects(noteRectangle({}, note.startTick, note.lengthTicks, note.pitch)))
+            continue;
+
+        if (subtractiveSelection)
+        {
+            selection.erase(std::remove_if(selection.begin(), selection.end(), [&note](const auto& existing)
+            {
+                return existing.startTick == note.startTick
+                    && existing.pitch == note.pitch
+                    && existing.channel == note.channel;
+            }), selection.end());
+        }
+        else
+        {
             addIfMissing(note);
+        }
     }
 
     owner.getMidiEngine().setSelectedNotes(selection);
