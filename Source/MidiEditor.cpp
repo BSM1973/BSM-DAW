@@ -3488,6 +3488,17 @@ public:
                 if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
                     window->exitModalState(0);
             };
+            resetButton.setButtonText(juce::String::fromUTF8("Réinitialiser"));
+            resetButton.onClick = [this]
+            {
+                applyingPreset = true;
+                intensity.setValue(100.0, juce::sendNotificationSync);
+                centre.setValue(64.0, juce::sendNotificationSync);
+                applyingPreset = false;
+                presets.setSelectedId(3, juce::dontSendNotification);
+                repaint();
+            };
+            addAndMakeVisible(resetButton);
             addAndMakeVisible(applyButton);
             addAndMakeVisible(cancelButton);
         }
@@ -3497,6 +3508,7 @@ public:
             presets.setBounds(184, 37, 325, 28);
             intensity.setBounds(184, 79, 325, 34);
             centre.setBounds(184, 122, 325, 34);
+            resetButton.setBounds(24, 412, 128, 32);
             cancelButton.setBounds(288, 412, 100, 32);
             applyButton.setBounds(400, 412, 110, 32);
         }
@@ -3595,7 +3607,7 @@ public:
         juce::Slider intensity, centre;
         juce::ComboBox presets;
         bool applyingPreset = false;
-        juce::TextButton applyButton, cancelButton;
+        juce::TextButton applyButton, cancelButton, resetButton;
     };
 
     void showMidiDynamicsWindow(int initialRatio = 100, int initialCentre = 64)
