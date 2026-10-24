@@ -3440,7 +3440,7 @@ public:
                            std::function<void(double, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
-            setSize(540, 502);
+            setSize(540, 524);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
             intensity.onValueChange = [this]
@@ -3508,9 +3508,9 @@ public:
             presets.setBounds(184, 37, 325, 28);
             intensity.setBounds(184, 79, 325, 34);
             centre.setBounds(184, 122, 325, 34);
-            resetButton.setBounds(24, 452, 128, 32);
-            cancelButton.setBounds(288, 452, 100, 32);
-            applyButton.setBounds(400, 452, 110, 32);
+            resetButton.setBounds(24, 474, 128, 32);
+            cancelButton.setBounds(288, 474, 100, 32);
+            applyButton.setBounds(400, 474, 110, 32);
         }
 
         void paint(juce::Graphics& g) override
@@ -3608,10 +3608,11 @@ public:
             g.setColour((newlyLimitedLow + newlyLimitedHigh) > 0 ? juce::Colour(0xffefaa92)
                         : juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
-                + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)"
-                + juce::String::fromUTF8("    Nouv. 1 : ") + juce::String(newlyLimitedLow)
-                + juce::String::fromUTF8("  ·  127 : ") + juce::String(newlyLimitedHigh),
-                24, 433, 492, 16, juce::Justification::centredLeft);
+                + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)",
+                24, 433, 492, 17, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Nouvelles aux limites : ")
+                + juce::String(newlyLimitedLow) + " (1)  ·  " + juce::String(newlyLimitedHigh) + " (127)",
+                24, 451, 492, 17, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 42.0f) / static_cast<float>(count);
