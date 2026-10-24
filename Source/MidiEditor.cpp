@@ -2770,7 +2770,7 @@ public:
         }
     }
 
-    void selectNotesByCriteria(int criterion, int minimum, int maximum)
+    void selectNotesByCriteria(int criterion, int minimum, int maximum, int selectionMode)
     {
         auto& midi = owner.getMidiEngine();
         const auto notes = midi.getNotesCopy();
@@ -2845,6 +2845,30 @@ public:
                 default: return;
             }
             if (selected) matches.push_back(note);
+        }
+        if (selectionMode == 2 || selectionMode == 3)
+        {
+            const auto previous = midi.getSelectedNotesCopy();
+            const auto sameNote = [](const auto& lhs, const auto& rhs)
+            {
+                return lhs.startTick == rhs.startTick && lhs.lengthTicks == rhs.lengthTicks
+                    && lhs.pitch == rhs.pitch && lhs.channel == rhs.channel;
+            };
+            if (selectionMode == 2)
+            {
+                for (const auto& note : previous)
+                    if (std::none_of(matches.begin(), matches.end(), [&](const auto& found) { return sameNote(note, found); }))
+                        matches.push_back(note);
+            }
+            else
+            {
+                std::vector<MidiEngine::NoteEvent> remaining;
+                remaining.reserve(previous.size());
+                for (const auto& note : previous)
+                    if (std::none_of(matches.begin(), matches.end(), [&](const auto& found) { return sameNote(note, found); }))
+                        remaining.push_back(note);
+                matches.swap(remaining);
+            }
         }
         midi.setSelectedNotes(matches);
         repaint(); owner.repaint();
