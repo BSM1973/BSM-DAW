@@ -3605,11 +3605,12 @@ public:
                 + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
                 270, 413, 246, 20, juce::Justification::centredRight);
             g.setFont(juce::Font(10.5f));
-            g.setColour((newlyLimitedLow + newlyLimitedHigh) > 0 ? juce::Colour(0xffefaa92)
-                        : juce::Colour(0xff7890a6));
+            g.setColour(juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
                 + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)",
                 24, 433, 492, 17, juce::Justification::centredLeft);
+            g.setColour((newlyLimitedLow + newlyLimitedHigh) > 0 ? juce::Colour(0xffefaa92)
+                        : juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Nouvelles aux limites : ")
                 + juce::String(newlyLimitedLow) + " (1)  ·  " + juce::String(newlyLimitedHigh) + " (127)",
                 24, 451, 492, 17, juce::Justification::centredLeft);
