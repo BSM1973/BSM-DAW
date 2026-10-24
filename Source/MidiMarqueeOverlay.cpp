@@ -216,8 +216,12 @@ bool MidiMarqueeOverlay::findSelectedResizeSide(juce::Point<int> p, ResizeSide& 
     side = ResizeSide::none;
     float bestDistance = static_cast<float>(resizeEdgePixels + 1);
 
-    for (const auto& note : owner.getMidiEngine().getSelectedNotesCopy())
+    const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
+    // Inspect in reverse selection order so the most recently selected note
+    // wins when overlapping notes expose equally close resize handles.
+    for (auto it = selected.rbegin(); it != selected.rend(); ++it)
     {
+        const auto& note = *it;
         if (note.pitch < lowestKey || note.pitch >= lowestKey + visibleKeys)
             continue;
 
