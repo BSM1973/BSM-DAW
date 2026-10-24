@@ -3555,6 +3555,7 @@ public:
             int originalMin = 127, originalMax = 1, transformedMin = 127, transformedMax = 1;
             double originalSum = 0.0, transformedSum = 0.0;
             int clippedLow = 0, clippedHigh = 0;
+            int newlyLimitedLow = 0, newlyLimitedHigh = 0;
             const double transformRatio = intensity.getValue() / 100.0;
             const double transformCentre = centre.getValue();
             for (const int value : velocities)
@@ -3565,8 +3566,16 @@ public:
                 originalMax = juce::jmax(originalMax, value);
                 transformedMin = juce::jmin(transformedMin, transformed);
                 transformedMax = juce::jmax(transformedMax, transformed);
-                if (transformed == 1) ++clippedLow;
-                if (transformed == 127) ++clippedHigh;
+                if (transformed == 1)
+                {
+                    ++clippedLow;
+                    if (value != 1) ++newlyLimitedLow;
+                }
+                if (transformed == 127)
+                {
+                    ++clippedHigh;
+                    if (value != 127) ++newlyLimitedHigh;
+                }
                 originalSum += value;
                 transformedSum += transformed;
             }
@@ -3596,10 +3605,12 @@ public:
                 + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
                 270, 413, 246, 20, juce::Justification::centredRight);
             g.setFont(juce::Font(10.5f));
-            g.setColour((clippedLow + clippedHigh) > 0 ? juce::Colour(0xffefaa92)
+            g.setColour((newlyLimitedLow + newlyLimitedHigh) > 0 ? juce::Colour(0xffefaa92)
                         : juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
-                + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)",
+                + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)"
+                + juce::String::fromUTF8("    Nouvelles : ")
+                + juce::String(newlyLimitedLow + newlyLimitedHigh),
                 24, 433, 492, 16, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
