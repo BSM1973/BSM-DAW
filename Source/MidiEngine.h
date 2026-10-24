@@ -20,6 +20,7 @@ public:
         std::uint8_t velocity = 100;
         std::uint8_t channel = 1;
         bool muted = false;
+        std::uint8_t probability = 100; // 0..100; default preserves existing playback.
     };
 
     struct ControllerEvent
