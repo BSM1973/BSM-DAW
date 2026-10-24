@@ -830,11 +830,11 @@ public:
         explicit EditWindowContent(std::function<juce::String(int, int, int, int)> action, bool hasSelection, std::vector<MidiEngine::NoteEvent> notes,
             std::function<void(double, double, double)> quantizeAction,
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
-            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction)
+            std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
-              onEuclidean(std::move(euclideanAction)),
+              onEuclidean(std::move(euclideanAction)), onProbability(std::move(probabilityAction)),
               previewNotes(std::move(notes))
         {
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION", "GÉNÉRATEURS" };
@@ -1089,6 +1089,22 @@ public:
                 if (onEuclidean) onEuclidean((int)euclideanSteps.getValue(), (int)euclideanPulses.getValue());
             };
             addAndMakeVisible(generateEuclidean);
+            noteProbability.setRange(0.0, 100.0, 1.0);
+            noteProbability.setValue(100.0, juce::dontSendNotification);
+            noteProbability.setTextValueSuffix(" %");
+            noteProbability.setSliderStyle(juce::Slider::LinearHorizontal);
+            noteProbability.setTextBoxStyle(juce::Slider::TextBoxRight, false, 60, 26);
+            noteProbability.setColour(juce::Slider::trackColourId, juce::Colour(0xff348fc2));
+            addAndMakeVisible(noteProbability);
+            applyProbability.setButtonText(juce::String::fromUTF8("APPLIQUER LA PROBABILITÉ"));
+            applyProbability.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
+            applyProbability.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            applyProbability.setEnabled(hasSelection);
+            applyProbability.onClick = [this]
+            {
+                if (onProbability) onProbability((int)noteProbability.getValue());
+            };
+            addAndMakeVisible(applyProbability);
             startVelocity.setValue(40.0, juce::dontSendNotification);
             endVelocity.setValue(120.0, juce::dontSendNotification);
             setSize(600, 720);
@@ -1118,8 +1134,8 @@ public:
                 g.drawText(juce::String::fromUTF8("FRAPPES"), 26, 352, 190, 36, juce::Justification::centredLeft);
                 g.setColour(juce::Colour(0xff98a9ba));
                 g.setFont(juce::Font(13.0f));
-                g.drawText(juce::String::fromUTF8("Répartit les frappes sur la durée de chaque note sélectionnée."),
-                    26, 550, getWidth() - 52, 30, juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("PROBABILITÉ DE LECTURE"),
+                    26, 590, 195, 32, juce::Justification::centredLeft);
             }
             if (currentCategory == 7)
             {
@@ -1353,6 +1369,8 @@ public:
             const int tabWidth = (available - 48) / 9;
             for (int i = 0; i < 9; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
+            noteProbability.setBounds(230, 590, getWidth() - 256, 32);
+            applyProbability.setBounds(26, 630, available, 38);
             euclideanSteps.setBounds(230, 260, getWidth() - 256, 36);
             euclideanPulses.setBounds(230, 352, getWidth() - 256, 36);
             generateEuclidean.setBounds(26, 472, available, 56);
@@ -1423,6 +1441,8 @@ public:
             for (auto& button : rhythmButtons) button.setVisible(currentCategory == 6);
             for (auto& button : expressiveButtons) button.setVisible(currentCategory == 7);
             expressiveAmount.setVisible(currentCategory == 7);
+            noteProbability.setVisible(currentCategory == 8);
+            applyProbability.setVisible(currentCategory == 8);
             euclideanSteps.setVisible(currentCategory == 8);
             euclideanPulses.setVisible(currentCategory == 8);
             generateEuclidean.setVisible(currentCategory == 8);
@@ -1452,7 +1472,9 @@ public:
         std::array<juce::TextButton, 8> chordButtons;
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
-        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses;
+        juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability;
+        juce::TextButton applyProbability;
+        std::function<void(int)> onProbability;
         juce::TextButton generateEuclidean;
         std::function<void(int, int)> onEuclidean;
         std::function<void(int, int)> onExpressiveTool;
@@ -2686,6 +2708,14 @@ public:
                 {
                     safe->invalidateHumanizeUndo();
                     safe->generateEuclideanRhythm(steps, pulses);
+                }
+            },
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int percentage)
+            {
+                if (safe != nullptr)
+                {
+                    safe->invalidateHumanizeUndo();
+                    safe->setSelectedNoteProbability(percentage);
                 }
             }));
         options.launchAsync();
