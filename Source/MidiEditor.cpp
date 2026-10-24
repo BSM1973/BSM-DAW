@@ -3443,8 +3443,16 @@ public:
             setSize(540, 415);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
-            intensity.onValueChange = [this] { repaint(); };
-            centre.onValueChange = [this] { repaint(); };
+            intensity.onValueChange = [this]
+            {
+                if (!applyingPreset) presets.setSelectedId(1, juce::dontSendNotification);
+                repaint();
+            };
+            centre.onValueChange = [this]
+            {
+                if (!applyingPreset) presets.setSelectedId(1, juce::dontSendNotification);
+                repaint();
+            };
             addAndMakeVisible(intensity);
             addAndMakeVisible(centre);
             presets.addItem(juce::String::fromUTF8("Personnalisé"), 1);
@@ -3461,8 +3469,10 @@ public:
                 const int id = presets.getSelectedId();
                 if (id < 2) return;
                 const int ratios[] = { 65, 100, 135, 180 };
+                applyingPreset = true;
                 intensity.setValue(ratios[id - 2], juce::sendNotificationSync);
                 centre.setValue(64, juce::sendNotificationSync);
+                applyingPreset = false;
             };
             addAndMakeVisible(presets);
             applyButton.setButtonText(juce::String::fromUTF8("Appliquer"));
@@ -3558,6 +3568,7 @@ public:
         std::function<void(double, int)> onApply;
         juce::Slider intensity, centre;
         juce::ComboBox presets;
+        bool applyingPreset = false;
         juce::TextButton applyButton, cancelButton;
     };
 
