@@ -253,16 +253,6 @@ bool MidiEngine::moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch)
     // The editor applies the active global SNAP step; the engine must also
     // accept finer tick deltas (including unsnapped movements).
     std::vector<NoteEvent> source = selectedNotes;
-    for (const auto& n : source)
-    {
-        std::int64_t newStart = 0;
-        if (!checkedAdd(n.startTick, deltaTicks, newStart)) return false;
-        const int newPitch = static_cast<int>(n.pitch) + deltaPitch;
-        if (newStart < 0 || newPitch < minMidiNote || newPitch > maxMidiNote) return false;
-        const bool collision = std::any_of(notes.begin(), notes.end(), [&n, newStart, newPitch, this](const NoteEvent& other)
-        { return !isNoteSelected(other) && other.startTick == newStart && other.pitch == static_cast<std::uint8_t>(newPitch) && other.channel == n.channel; });
-        if (collision) return false;
-    }
     // Resolve exact note identities before checking collisions. A selected note
     // is identified by onset, duration, pitch and channel, not onset alone.
     std::vector<std::size_t> indices;
