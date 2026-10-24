@@ -3539,6 +3539,13 @@ public:
             g.fillRoundedRectangle(area, 7.0f);
             g.setColour(juce::Colour(0xff34495b));
             g.drawRoundedRectangle(area, 7.0f, 1.0f);
+            // Subtle reference lines make MIDI velocity levels easier to compare.
+            g.setColour(juce::Colour(0xff304153).withAlpha(0.65f));
+            for (const int level : { 32, 64, 96 })
+            {
+                const float y = area.getBottom() - 9.0f - (static_cast<float>(level) / 127.0f) * 118.0f;
+                g.drawHorizontalLine(juce::roundToInt(y), area.getX() + 8.0f, area.getRight() - 8.0f);
+            }
             if (velocities.empty()) return;
             int originalMin = 127, originalMax = 1, transformedMin = 127, transformedMax = 1;
             double originalSum = 0.0, transformedSum = 0.0;
