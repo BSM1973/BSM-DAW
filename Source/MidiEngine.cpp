@@ -219,7 +219,8 @@ bool MidiEngine::toggleNoteSelectionAt(std::int64_t startTick, int pitch, int ch
 bool MidiEngine::isNoteSelected(const NoteEvent& note) const noexcept
 {
     return std::find_if(selectedNotes.begin(), selectedNotes.end(), [&note](const NoteEvent& selected)
-    { return selected.startTick == note.startTick && selected.pitch == note.pitch && selected.channel == note.channel; }) != selectedNotes.end();
+    { return selected.startTick == note.startTick && selected.lengthTicks == note.lengthTicks
+        && selected.pitch == note.pitch && selected.channel == note.channel; }) != selectedNotes.end();
 }
 
 std::vector<MidiEngine::NoteEvent> MidiEngine::getSelectedNotesCopy() const { return selectedNotes; }
