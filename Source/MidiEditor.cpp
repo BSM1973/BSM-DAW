@@ -2296,10 +2296,9 @@ public:
         dialog->addButton(juce::String::fromUTF8("ANNULER"), 0,
                           juce::KeyPress(juce::KeyPress::escapeKey));
         auto* window = dialog.get();
-        dialog->enterModalState(false, juce::ModalCallbackFunction::create(
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
             [safe = juce::Component::SafePointer<PianoRoll>(this), window](int result)
             {
-                std::unique_ptr<juce::AlertWindow> ownedDialog(window);
                 if (safe == nullptr || result != 1) return;
                 const auto get = [window](const char* key, int lo, int hi)
                 {
