@@ -2030,6 +2030,74 @@ public:
         }
     }
 
+    // Transform simultaneous selected notes as independent chord voicings.
+    // All edits are prepared before one undoable replacement.
+    void transformSelectedChords(int mode)
+    {
+        auto& midi = owner.getMidiEngine();
+        auto selected = midi.getSelectedNotesCopy();
+        if (selected.size() < 2) return;
+        auto transformed = midi.getNotesCopy();
+        std::sort(selected.begin(), selected.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        std::vector<MidiEngine::NoteEvent> newSelection;
+        bool changed = false;
+        for (std::size_t begin = 0; begin < selected.size();)
+        {
+            std::size_t end = begin + 1;
+            while (end < selected.size() && selected[end].startTick == selected[begin].startTick
+                && selected[end].channel == selected[begin].channel) ++end;
+            const auto count = end - begin;
+            if (count >= 2)
+            {
+                for (std::size_t i = begin; i < end; ++i)
+                {
+                    auto note = selected[i];
+                    int pitch = static_cast<int>(note.pitch);
+                    if (mode == 0 && i == begin) pitch += 12; // first inversion
+                    else if (mode == 1 && i + 1 == end) pitch -= 12; // reverse inversion
+                    else if (mode == 2 && ((i - begin) % 2 == 1)) pitch += 12; // open voicing
+                    else if (mode == 3 && ((i - begin) % 2 == 1)) pitch -= 12; // drop voicing
+                    if (pitch < 0 || pitch > 127) return;
+                    const auto it = std::find_if(transformed.begin(), transformed.end(), [&note](const auto& n)
+                    {
+                        return n.startTick == note.startTick && n.pitch == note.pitch
+                            && n.channel == note.channel;
+                    });
+                    if (it == transformed.end()) return;
+                    it->pitch = static_cast<std::uint8_t>(pitch);
+                    note.pitch = static_cast<std::uint8_t>(pitch);
+                    newSelection.push_back(note);
+                    changed = changed || pitch != static_cast<int>(selected[i].pitch);
+                }
+            }
+            else newSelection.push_back(selected[begin]);
+            begin = end;
+        }
+        if (!changed) return;
+        std::sort(transformed.begin(), transformed.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        for (std::size_t i = 1; i < transformed.size(); ++i)
+            if (transformed[i].startTick == transformed[i - 1].startTick
+                && transformed[i].channel == transformed[i - 1].channel
+                && transformed[i].pitch == transformed[i - 1].pitch) return;
+        if (midi.replaceNotes(transformed))
+        {
+            midi.setSelectedNotes(newSelection);
+            owner.updateMidiClipTiming();
+            synchronizeLibertyPianoRollPlayback(owner);
+            repaint(); owner.repaint();
+        }
+    }
+
     void showEditWindow()
     {
         humanizePreviewSnapshot = owner.getMidiEngine().getSelectedNotesCopy();
