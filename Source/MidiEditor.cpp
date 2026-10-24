@@ -2382,53 +2382,72 @@ public:
         }
     }
 
-    void quantizeSelectionWithStrength(double strength)
+    // Atomic, non-destructive advanced quantization: selected notes are moved
+    // together while unselected notes and note durations remain untouched.
+    // Strength < 1 preserves a proportional amount of the original groove.
+    void applyAdvancedQuantize(double strength, double swingRatio, double groovePreservation)
     {
         auto& midi = owner.getMidiEngine();
         const auto grid = activePianoSnapTicks();
-        if (grid <= 0) return;
+        if (grid <= 0 || strength <= 0.0) return;
         const auto selected = midi.getSelectedNotesCopy();
+        if (selected.empty()) return;
+        const auto originals = midi.getNotesCopy();
+        auto transformed = originals;
+        std::vector<MidiEngine::NoteEvent> newSelection;
+        newSelection.reserve(selected.size());
         bool changed = false;
+        const double effectiveStrength = juce::jlimit(0.0, 1.0, strength)
+            * (1.0 - juce::jlimit(0.0, 1.0, groovePreservation));
         for (const auto& note : selected)
         {
-            const auto nearest = (std::int64_t)std::llround((double)note.startTick / (double)grid) * grid;
-            const auto offset = (std::int64_t)std::llround((double)(nearest - note.startTick) * strength);
-            const auto target = juce::jmax<std::int64_t>(0, note.startTick + offset);
-            if (target != note.startTick)
-                changed = midi.moveNote(note.startTick, note.pitch, note.channel, target, note.pitch) || changed;
+            const auto it = std::find_if(transformed.begin(), transformed.end(), [&note](const auto& n)
+            {
+                return n.startTick == note.startTick && n.pitch == note.pitch
+                    && n.channel == note.channel;
+            });
+            if (it == transformed.end()) return;
+            const auto step = static_cast<std::int64_t>(std::llround(
+                static_cast<double>(note.startTick) / static_cast<double>(grid)));
+            const double baseTarget = static_cast<double>(step) * static_cast<double>(grid);
+            const double swungTarget = baseTarget + ((step % 2 != 0)
+                ? (2.0 * swingRatio - 1.0) * static_cast<double>(grid) : 0.0);
+            const auto target = static_cast<std::int64_t>(std::llround(
+                static_cast<double>(note.startTick)
+                + (swungTarget - static_cast<double>(note.startTick)) * effectiveStrength));
+            if (target < 0) return;
+            it->startTick = target;
+            newSelection.push_back(*it);
+            changed = changed || target != note.startTick;
         }
-        if (changed)
+        if (!changed) return;
+        std::sort(transformed.begin(), transformed.end(), [](const auto& a, const auto& b)
         {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        for (std::size_t i = 1; i < transformed.size(); ++i)
+            if (transformed[i].startTick == transformed[i - 1].startTick
+                && transformed[i].pitch == transformed[i - 1].pitch
+                && transformed[i].channel == transformed[i - 1].channel) return;
+        if (midi.replaceNotes(transformed))
+        {
+            midi.setSelectedNotes(newSelection);
             owner.updateMidiClipTiming();
             synchronizeLibertyPianoRollPlayback(owner);
             repaint(); owner.repaint();
         }
     }
 
+    void quantizeSelectionWithStrength(double strength)
+    {
+        applyAdvancedQuantize(strength, 0.5, 0.0);
+    }
+
     void applySwingToSelection(double ratio)
     {
-        auto& midi = owner.getMidiEngine();
-        const auto grid = activePianoSnapTicks();
-        if (grid <= 0) return;
-        const auto selected = midi.getSelectedNotesCopy();
-        bool changed = false;
-        const auto pairTicks = grid * 2;
-        for (const auto& note : selected)
-        {
-            const auto step = (std::int64_t)std::llround((double)note.startTick / (double)grid);
-            if (step % 2 == 0) continue;
-            const auto pairStart = (step / 2) * pairTicks;
-            const auto target = juce::jmax<std::int64_t>(0,
-                pairStart + (std::int64_t)std::llround((double)pairTicks * ratio));
-            if (target != note.startTick)
-                changed = midi.moveNote(note.startTick, note.pitch, note.channel, target, note.pitch) || changed;
-        }
-        if (changed)
-        {
-            owner.updateMidiClipTiming();
-            synchronizeLibertyPianoRollPlayback(owner);
-            repaint(); owner.repaint();
-        }
+        applyAdvancedQuantize(1.0, ratio, 0.0);
     }
 
     std::vector<MidiEngine::NoteEvent> humanizePreviewSnapshot;
