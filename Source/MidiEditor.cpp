@@ -4602,8 +4602,8 @@ public:
                     if (tool == 1) return;
                 }
 
-                // The legacy move/resize engine identifies a note by tick, pitch and channel.
-                // When lengths differ at the same position, do not accidentally edit a neighbour.
+                // Detect notes sharing the same onset, pitch and channel so that
+                // adjacent-boundary resizing does not accidentally change a neighbour.
                 const auto allNotes = midi.getNotesCopy();
                 const bool ambiguousNote = std::any_of(allNotes.begin(), allNotes.end(),
                     [&n](const auto& other)
@@ -4612,7 +4612,7 @@ public:
                             && other.channel == n.channel && other.lengthTicks != n.lengthTicks;
                     });
 
-                if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
+                if (tool == 0 && !ambiguousNote && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
                     draggingGroup = true;
                     midi.beginGroupedEdit();
