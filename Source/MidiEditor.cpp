@@ -2782,6 +2782,7 @@ public:
     {
         auto& midi = owner.getMidiEngine();
         const auto notes = midi.getNotesCopy();
+        const auto controllers = criterion >= 15 ? midi.getControllerEventsCopy() : std::vector<MidiEngine::ControllerEvent>{};
         std::vector<MidiEngine::NoteEvent> matches;
         if (minimum > maximum) std::swap(minimum, maximum);
         const auto quarter = juce::jmax<std::int64_t>(1, MidiEngine::ticksPerQuarterNote);
@@ -2848,6 +2849,23 @@ public:
                     {
                         return &other != &note && other.startTick == note.startTick
                             && other.pitch == note.pitch && other.channel == note.channel;
+                    });
+                    break;
+                case 13:
+                    selected = note.velocity != 100;
+                    break;
+                case 14:
+                    selected = note.probability != 100;
+                    break;
+                case 15:
+                case 16:
+                case 17:
+                    selected = std::any_of(controllers.begin(), controllers.end(), [&note, criterion](const auto& event)
+                    {
+                        if (event.channel != note.channel || event.tick < note.startTick) return false;
+                        if (event.tick - note.startTick >= note.lengthTicks) return false;
+                        return criterion == 15 ? event.controller >= 1 && event.controller <= 127
+                            : criterion == 16 ? event.controller == 128 : event.controller == 129;
                     });
                     break;
                 default: return;
