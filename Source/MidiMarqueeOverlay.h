@@ -28,6 +28,7 @@ private:
     bool dragging = false;
     bool marqueeActive = false;
     bool additiveSelection = false;
+    bool subtractiveSelection = false;
     bool resizeActive = false;
     ResizeSide resizeSide = ResizeSide::none;
     std::int64_t lastResizeTick = 0;
