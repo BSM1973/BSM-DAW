@@ -2853,7 +2853,8 @@ public:
                     selected = std::any_of(notes.begin(), notes.end(), [&note](const auto& other)
                     {
                         return &other != &note && other.startTick == note.startTick
-                            && other.pitch == note.pitch && other.channel == note.channel;
+                            && other.pitch == note.pitch && other.channel == note.channel
+                            && other.lengthTicks == note.lengthTicks;
                     });
                     break;
                 case 13:
