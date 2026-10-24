@@ -363,7 +363,12 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
             original->startTick = moved.startTick;
             if (velocityVariation > 0)
             {
-                const int deviation = (int)((offsetIndex * 17 + (std::size_t)moved.pitch * 7) % (std::size_t)(2 * velocityVariation + 1)) - velocityVariation;
+                // Reduce before multiplying to avoid size_t overflow for
+                // unusually large selections while preserving the pattern.
+                const auto modulus = static_cast<std::size_t>(2 * velocityVariation + 1);
+                const auto deviationSeed = ((offsetIndex % modulus) * 17
+                    + (static_cast<std::size_t>(moved.pitch) * 7) % modulus) % modulus;
+                const int deviation = static_cast<int>(deviationSeed) - velocityVariation;
                 moved.velocity = (std::uint8_t)std::clamp((int)moved.velocity + deviation, 1, 127);
                 original->velocity = moved.velocity;
             }
