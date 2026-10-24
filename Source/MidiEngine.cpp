@@ -689,6 +689,29 @@ bool MidiEngine::setNoteLength(std::int64_t startTick, int pitch, int channel, s
     it->lengthTicks = newLengthTicks; selectNoteAt(startTick, pitch, channel); selectedNote.lengthTicks = newLengthTicks; return true;
 }
 
+bool MidiEngine::setNoteLengthExact(std::int64_t startTick, int pitch, int channel,
+                                    std::int64_t oldLengthTicks, std::int64_t newLengthTicks)
+{
+    std::int64_t resizedEnd = 0;
+    if (startTick < 0 || pitch < minMidiNote || pitch > maxMidiNote
+        || channel < 1 || channel > 16 || oldLengthTicks <= 0 || newLengthTicks <= 0
+        || !checkedAdd(startTick, newLengthTicks, resizedEnd)) return false;
+    const auto it = std::find_if(notes.begin(), notes.end(), [=](const NoteEvent& note)
+    {
+        return note.startTick == startTick && note.lengthTicks == oldLengthTicks
+            && note.pitch == static_cast<std::uint8_t>(pitch)
+            && note.channel == static_cast<std::uint8_t>(channel);
+    });
+    if (it == notes.end() || it->lengthTicks == newLengthTicks) return false;
+    pushUndoState();
+    it->lengthTicks = newLengthTicks;
+    selectedNote = *it;
+    selectedNoteValid = true;
+    selectedNotes.clear();
+    selectedNotes.push_back(*it);
+    return true;
+}
+
 bool MidiEngine::resizeAdjacentNoteBoundary(std::int64_t startTick, int pitch, int channel,
                                             std::int64_t newLengthTicks)
 {
