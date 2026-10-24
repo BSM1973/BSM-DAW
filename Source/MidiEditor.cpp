@@ -3528,7 +3528,12 @@ public:
             g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 122, 155, 32, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff91a9bf));
             g.setFont(juce::Font(12.0f));
-            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 173, 270, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 173, 205, 22, juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xffefaa92));
+            g.fillRoundedRectangle(229.0f, 179.0f, 9.0f, 9.0f, 2.0f);
+            g.setColour(juce::Colour(0xffa9bdd0));
+            g.setFont(juce::Font(10.0f));
+            g.drawText(juce::String::fromUTF8("Limite"), 241, 172, 60, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff587187));
             g.fillRoundedRectangle(305.0f, 179.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
