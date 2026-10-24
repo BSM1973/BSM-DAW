@@ -4612,7 +4612,7 @@ public:
                             && other.channel == n.channel && other.lengthTicks != n.lengthTicks;
                     });
 
-                if (tool == 0 && !ambiguousNote && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
+                if (tool == 0 && midi.isNoteSelected(n) && midi.getNumSelectedNotes() > 1)
                 {
                     draggingGroup = true;
                     midi.beginGroupedEdit();
