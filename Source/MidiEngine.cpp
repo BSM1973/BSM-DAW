@@ -319,9 +319,10 @@ bool MidiEngine::strumSelectedNotes(std::int64_t spreadTicks, bool lowToHigh, in
     for (std::size_t i = 0; i < selection.size(); ++i)
     {
         const auto& n = selection[i];
-        if (i > 0 && n.startTick == selection[i - 1].startTick
-            && n.pitch == selection[i - 1].pitch
-            && n.channel == selection[i - 1].channel)
+        if (std::any_of(selection.begin(), selection.begin() + static_cast<std::ptrdiff_t>(i),
+            [&n](const NoteEvent& previous)
+            { return previous.startTick == n.startTick && previous.pitch == n.pitch
+                && previous.channel == n.channel; }))
             return false;
         if (std::none_of(notes.begin(), notes.end(), [&n](const NoteEvent& live)
             { return live.startTick == n.startTick && live.pitch == n.pitch && live.channel == n.channel; }))
