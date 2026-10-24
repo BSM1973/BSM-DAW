@@ -2070,6 +2070,60 @@ public:
 
     // Transform simultaneous selected notes as independent chord voicings.
     // All edits are prepared before one undoable replacement.
+    juce::String recognizeSelectedChord() const
+    {
+        auto notes = owner.getMidiEngine().getSelectedNotesCopy();
+        if (notes.size() < 3) return juce::String::fromUTF8("Sélectionnez au moins trois notes d'un accord.");
+        std::sort(notes.begin(), notes.end(), [](const auto& a, const auto& b)
+        {
+            if (a.startTick != b.startTick) return a.startTick < b.startTick;
+            if (a.channel != b.channel) return a.channel < b.channel;
+            return a.pitch < b.pitch;
+        });
+        const auto start = notes.front().startTick;
+        const auto channel = notes.front().channel;
+        std::array<bool, 12> present {};
+        int bass = 127;
+        int count = 0;
+        for (const auto& n : notes)
+            if (n.startTick == start && n.channel == channel)
+            {
+                present[(size_t)(n.pitch % 12)] = true;
+                bass = std::min(bass, (int)n.pitch);
+                ++count;
+            }
+        if (count < 3) return juce::String::fromUTF8("Accord incomplet : sélectionnez trois notes simultanées.");
+        struct Quality { const char* name; std::array<int, 4> intervals; int count; };
+        static const Quality qualities[] = {
+            { "maj7", { 0, 4, 7, 11 }, 4 }, { "7", { 0, 4, 7, 10 }, 4 },
+            { "m7", { 0, 3, 7, 10 }, 4 }, { "m7b5", { 0, 3, 6, 10 }, 4 },
+            { "dim7", { 0, 3, 6, 9 }, 4 }, { "m(maj7)", { 0, 3, 7, 11 }, 4 },
+            { "", { 0, 4, 7, 0 }, 3 }, { "m", { 0, 3, 7, 0 }, 3 },
+            { "dim", { 0, 3, 6, 0 }, 3 }, { "aug", { 0, 4, 8, 0 }, 3 },
+            { "sus2", { 0, 2, 7, 0 }, 3 }, { "sus4", { 0, 5, 7, 0 }, 3 }
+        };
+        static const char* pitchNames[] = { "Do", "Do#", "Ré", "Ré#", "Mi", "Fa",
+            "Fa#", "Sol", "Sol#", "La", "La#", "Si" };
+        const int distinct = (int)std::count(present.begin(), present.end(), true);
+        for (int root = 0; root < 12; ++root)
+            for (const auto& q : qualities)
+            {
+                if (distinct != q.count) continue;
+                bool match = true;
+                for (int i = 0; i < q.count; ++i)
+                    if (!present[(size_t)((root + q.intervals[(size_t)i]) % 12)])
+                        match = false;
+                if (match)
+                {
+                    juce::String label = juce::String::fromUTF8(pitchNames[root]) + q.name;
+                    if (bass % 12 != root)
+                        label += "/" + juce::String::fromUTF8(pitchNames[bass % 12]);
+                    return label;
+                }
+            }
+        return juce::String::fromUTF8("Accord non reconnu (ou enrichi).");
+    }
+
     void transformSelectedChords(int mode)
     {
         auto& midi = owner.getMidiEngine();
