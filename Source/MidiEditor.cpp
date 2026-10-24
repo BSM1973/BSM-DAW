@@ -832,7 +832,7 @@ public:
             std::function<void(int)> chordAction, std::function<juce::String()> recognizeAction,
             std::function<void(int)> rhythmAction, std::function<void(int, int)> expressiveAction, std::function<void(int, int)> euclideanAction, std::function<void(int)> probabilityAction,
               std::function<void(int, int, int)> melodyAction,
-              std::function<void(int, int, int)> selectionAction)
+              std::function<void(int, int, int, int)> selectionAction)
             : onAction(std::move(action)), onQuantize(std::move(quantizeAction)),
               onChordTransform(std::move(chordAction)), onRecognizeChord(std::move(recognizeAction)),
               onRhythmTool(std::move(rhythmAction)), onExpressiveTool(std::move(expressiveAction)),
@@ -865,6 +865,11 @@ public:
                     selectionMax.setValue(upper, juce::dontSendNotification);
             };
             addAndMakeVisible(selectionCriterion);
+            selectionMode.addItem(juce::String::fromUTF8("Remplacer la sélection"), 1);
+            selectionMode.addItem(juce::String::fromUTF8("Ajouter à la sélection"), 2);
+            selectionMode.addItem(juce::String::fromUTF8("Retirer de la sélection"), 3);
+            selectionMode.setSelectedId(1, juce::dontSendNotification);
+            addAndMakeVisible(selectionMode);
             for (auto* slider : { &selectionMin, &selectionMax })
             {
                 slider->setRange(0, 127, 1);
@@ -878,7 +883,7 @@ public:
             applySelection.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff205d85));
             applySelection.onClick = [this]
             {
-                if (onSelection) onSelection(selectionCriterion.getSelectedId(), (int)selectionMin.getValue(), (int)selectionMax.getValue());
+                if (onSelection) onSelection(selectionCriterion.getSelectedId(), (int)selectionMin.getValue(), (int)selectionMax.getValue(), selectionMode.getSelectedId());
             };
             addAndMakeVisible(applySelection);
             static const char* tabs[] = { "NOTES", "TRANSFORMATIONS", "VÉLOCITÉ", "HUMANISER", "QUANTIFICATION", "ACCORDS", "RYTHME", "EXPRESSION", "GÉNÉRATEURS" };
@@ -1447,6 +1452,7 @@ public:
             for (int i = 0; i < 9; ++i)
                 categoryButtons[(size_t)i].setBounds(26 + i * (tabWidth + 6), 127, tabWidth, 38);
             selectionCriterion.setBounds(26, 426, available, 32);
+            selectionMode.setBounds(26, 574, available, 32);
             selectionMin.setBounds(160, 482, getWidth() - 186, 30);
             selectionMax.setBounds(160, 530, getWidth() - 186, 30);
             applySelection.setBounds(26, 595, available, 42);
@@ -1527,6 +1533,7 @@ public:
             for (auto& button : expressiveButtons) button.setVisible(currentCategory == 7);
             expressiveAmount.setVisible(currentCategory == 7);
             selectionCriterion.setVisible(currentCategory == 0);
+            selectionMode.setVisible(currentCategory == 0);
             selectionMin.setVisible(currentCategory == 0);
             selectionMax.setVisible(currentCategory == 0);
             applySelection.setVisible(currentCategory == 0);
@@ -1566,10 +1573,10 @@ public:
         std::array<juce::TextButton, 6> rhythmButtons;
         std::array<juce::TextButton, 8> expressiveButtons;
         juce::Slider expressiveAmount, euclideanSteps, euclideanPulses, noteProbability, melodySteps, melodyRange, melodySeed;
-        juce::ComboBox selectionCriterion;
+        juce::ComboBox selectionCriterion, selectionMode;
         juce::Slider selectionMin, selectionMax;
         juce::TextButton applySelection;
-        std::function<void(int, int, int)> onSelection;
+        std::function<void(int, int, int, int)> onSelection;
         juce::TextButton generateMelody;
         std::function<void(int, int, int)> onMelody;
         juce::TextButton applyProbability;
@@ -2995,9 +3002,9 @@ public:
                     safe->generateMelodicPattern(steps, range, seed);
                 }
             },
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](int criterion, int minimum, int maximum)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](int criterion, int minimum, int maximum, int mode)
             {
-                if (safe != nullptr) safe->selectNotesByCriteria(criterion, minimum, maximum);
+                if (safe != nullptr) safe->selectNotesByCriteria(criterion, minimum, maximum, mode);
             }));
         options.launchAsync();
     }
