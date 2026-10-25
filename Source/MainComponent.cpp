@@ -3290,6 +3290,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (panning || (inWaveform(event.getPosition())
                         && (event.mods.isAltDown() || event.mods.isMiddleButtonDown())))
                     {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
                         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
                         return;
                     }
