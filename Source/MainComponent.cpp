@@ -296,6 +296,21 @@ void MainComponent::paint(juce::Graphics& g)
                        + juce::String(audioDockZoom, 1) + "x",
                    inner.getX(), inner.getY() + 23, inner.getWidth(), 18,
                    juce::Justification::centredLeft);
+        // Audio selection controls share the existing dock header.
+        const auto selectionBar = juce::Rectangle<int>(inner.getRight() - 280,
+            inner.getY() + 22, 280, 21);
+        const char* selectionLabels[] = { "TOUT", "EFFACER", "DEBUT", "FIN" };
+        for (int buttonIndex = 0; buttonIndex < 4; ++buttonIndex)
+        {
+            const auto button = selectionBar.withX(selectionBar.getX() + buttonIndex * 70)
+                                            .withWidth(67);
+            g.setColour(juce::Colour(0xff203b4d));
+            g.fillRoundedRectangle(button.toFloat(), 3.0f);
+            g.setColour(juce::Colour(0xff83bed4));
+            g.drawRoundedRectangle(button.toFloat(), 3.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(selectionLabels[buttonIndex], button, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const auto ruler = inner.withTrimmedTop(46).withHeight(24);
         const auto wave = inner.withTrimmedTop(74).reduced(0, 8);
