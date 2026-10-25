@@ -3160,6 +3160,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             (targetSeconds - ta) / juce::jmax(0.000001, tb - ta));
                         return sa + (sb - sa) * alpha;
                     }
+                    // Clamp outside the marker range to the nearest
+                    // endpoint instead of falling back to linear mapping,
+                    // which could make the waveform jump at the boundary.
+                    const double firstTarget = audio.getTrackWarpMarkerTargetSeconds(track, 0);
+                    const double lastTarget = audio.getTrackWarpMarkerTargetSeconds(track, count - 1);
+                    if (targetSeconds <= firstTarget)
+                        return audio.getTrackWarpMarkerSourceSeconds(track, 0);
+                    if (targetSeconds >= lastTarget)
+                        return audio.getTrackWarpMarkerSourceSeconds(track, count - 1);
                     return targetSeconds * sourceDuration / length;
                 }
                 double sourceLengthSeconds() const
