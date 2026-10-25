@@ -3259,10 +3259,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     draggingMarker = -1;
                     panning = false;
+                    hoveredMarker = -1;
+                    setMouseCursor(juce::MouseCursor::NormalCursor);
                     repaint();
                 }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
+                    if (draggingMarker >= 0)
+                    {
+                        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                        return;
+                    }
                     if (panning || (inWaveform(event.getPosition())
                         && (event.mods.isAltDown() || event.mods.isMiddleButtonDown())))
                     {
