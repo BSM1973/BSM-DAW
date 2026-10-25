@@ -274,9 +274,59 @@ void MainComponent::paint(juce::Graphics& g)
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
-    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer))
+    const bool isAudioDockTrack = selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+                                  && audioEngine.hasAudioFile(selectedTrack);
+    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
         ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
+    if (!dockMixerMode && isAudioDockTrack)
+    {
+        // First audio-dock surface: a non-destructive, scalable waveform view.
+        // It reuses the waveform cache already drawn by the arranger.
+        g.setColour(juce::Colour(0xff0b1521));
+        g.fillRect(editorArea);
+        const auto inner = editorArea.reduced(14, 12);
+        g.setColour(juce::Colour(0xffdcebf4));
+        g.setFont(juce::Font(15.0f, juce::Font::bold));
+        g.drawText("EDITEUR AUDIO  |  " + getTrackDisplayName(selectedTrack),
+                   inner.getX(), inner.getY(), inner.getWidth(), 24,
+                   juce::Justification::centredLeft);
+        const auto wave = inner.withTrimmedTop(36).reduced(0, 8);
+        g.setColour(juce::Colour(0xff152b3b));
+        g.fillRoundedRectangle(wave.toFloat(), 5.0f);
+        const int cy = wave.getCentreY();
+        g.setColour(juce::Colour(0xff44647a));
+        g.drawHorizontalLine(cy, (float)wave.getX(), (float)wave.getRight());
+        const auto index = (size_t) selectedTrack;
+        if (index < waveformMin.size() && index < waveformMax.size()
+            && !waveformMin[index].empty()
+            && waveformMin[index].size() == waveformMax[index].size()
+            && wave.getWidth() > 2 && wave.getHeight() > 2)
+        {
+            const int count = (int) waveformMin[index].size();
+            const float amplitude = (float) wave.getHeight() * 0.43f;
+            juce::Path shape;
+            for (int i = 0; i < count; ++i)
+            {
+                const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
+                                  * (float) i / (float) juce::jmax(1, count - 1);
+                const float y = (float) cy - waveformMax[index][(size_t)i] * amplitude;
+                if (i == 0) shape.startNewSubPath(x, y);
+                else shape.lineTo(x, y);
+            }
+            for (int i = count - 1; i >= 0; --i)
+            {
+                const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
+                                  * (float) i / (float) juce::jmax(1, count - 1);
+                shape.lineTo(x, (float) cy - waveformMin[index][(size_t)i] * amplitude);
+            }
+            shape.closeSubPath();
+            const juce::Graphics::ScopedSaveState clipped(g);
+            g.reduceClipRegion(wave);
+            g.setColour(juce::Colour(0xff60bbd4));
+            g.fillPath(shape);
+        }
+    }
+    else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, editorArea);
@@ -318,7 +368,9 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(label, rect, juce::Justification::centred);
         };
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
-        drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28), "PIANO ROLL", !dockMixerMode && !dockStepSequencerMode);
+        drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28),
+                isAudioDockTrack ? "AUDIO" : "PIANO ROLL",
+                !dockMixerMode && !dockStepSequencerMode);
         // Detach icons aligned with their editors (not the Mixer).
         const auto detachIcon = [&](int top)
         {
@@ -2229,7 +2281,25 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
             }
         }
     }
-    const auto p = event.getPosition();    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
+    const auto p = event.getPosition();
+    // Restore the original audio-clip gesture: double-click the actual clip
+    // body to open its waveform in the lower dock.
+    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int audioTrack = getAudioTrackAtPosition(p);
+        if (audioTrack >= 0 && isPointInsideAudioClip(audioTrack, p))
+        {
+            selectedTrack = audioTrack;
+            dockMixerMode = false;
+            dockStepSequencerMode = false;
+            drumSamplerDockSelected = false;
+            if (dockCollapsed) dockCollapsed = false;
+            resized();
+            repaint();
+            return;
+        }
+    }
+    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
     const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
     const int instrumentIndex = logicalRow - getAudioTrackCount() - getMidiTrackCount();
@@ -2466,7 +2536,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
     if (juce::Rectangle<int>(8, dockTop + 44, 148, 28).contains(p))
     {
-        if (selectedEditorTrack)
+        if (selectedEditorTrack || (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+                                    && audioEngine.hasAudioFile(selectedTrack)))
         {
             dockMixerMode = false;
             dockStepSequencerMode = false;
