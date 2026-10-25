@@ -3091,7 +3091,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     else if (result == 41 || result == 42)
                     {
                         const double oldLength = safeThis->audioEngine.getAudioFileLengthSeconds(trackIndex);
-                        if (oldLength <= 0.0)
+                        const auto sourceBuffer = safeThis->audioEngine.getAudioBufferSnapshot(trackIndex);
+                        const double sourceRate = safeThis->audioEngine.getAudioBufferSampleRate(trackIndex);
+                        const double sourceDuration = sourceBuffer != nullptr && sourceRate > 0.0
+                            ? (double) sourceBuffer->getNumSamples() / sourceRate : 0.0;
+                        if (oldLength <= 0.0 || (result == 42 && sourceDuration <= 0.0))
                             return;
                         auto prompt = std::make_unique<juce::AlertWindow>(
                             result == 41 ? "Duree du clip audio" : "Synchronisation au tempo",
@@ -3109,7 +3113,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         juce::Component::SafePointer<MainComponent> editor(safeThis.getComponent());
                         dialog->enterModalState(true,
                             juce::ModalCallbackFunction::create(
-                                [editor, trackIndex, oldLength, tempoMode, dialog](int answer)
+                                [editor, trackIndex, sourceDuration, tempoMode, dialog](int answer)
                                 {
                                     if (answer == 1 && editor != nullptr)
                                     {
@@ -3119,7 +3123,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                             && value <= (tempoMode ? 999.0 : 86400.0))
                                         {
                                             const double targetLength = tempoMode
-                                                ? oldLength * value / juce::jmax(1.0, editor->getTempoBpm())
+                                                ? sourceDuration * value / juce::jmax(1.0, editor->getTempoBpm())
                                                 : value;
                                             editor->audioEngine.setAudioFileLengthSeconds(trackIndex, targetLength);
                                             editor->audioEngine.setTrackWarpEnabled(trackIndex, true);
