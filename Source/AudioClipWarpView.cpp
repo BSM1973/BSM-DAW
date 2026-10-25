@@ -110,8 +110,16 @@ public:
 
         if (resetButton().contains(e.getPosition()))
         {
-            owner.audioEngine.resetTrackWarpMarkers(selectedTrack);
-            repaint();
+            const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                juce::MessageBoxIconType::QuestionIcon,
+                "Liberty | Warp",
+                "Reinitialiser tous les marqueurs Warp de cette piste ?",
+                this, nullptr);
+            if (confirmed)
+            {
+                owner.audioEngine.resetTrackWarpMarkers(selectedTrack);
+                repaint();
+            }
             return;
         }
 
