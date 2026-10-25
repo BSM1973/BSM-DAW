@@ -592,29 +592,59 @@ void MainComponent::paint(juce::Graphics& g)
                     }
                 }
             }
-            else for (int x = 0; x < columns; ++x)
+            else
             {
-                const double t0 = scroll + visibleFraction * (double) x / (double) columns;
-                const double t1 = scroll + visibleFraction * (double) (x + 1) / (double) columns;
-                const int first = juce::jlimit(0, count - 1, (int) std::floor(t0 * count));
-                const int last = juce::jlimit(first + 1, count,
-                    (int) std::ceil(t1 * count));
-                float low = 1.0f, high = -1.0f;
-                for (int bin = first; bin < last; ++bin)
+                // Resolve peaks from the actual PCM at the current viewport.
+                // This avoids sparse cached bins turning short transients into
+                // oversized rectangles at intermediate zoom levels.
+                const int channels = pcm != nullptr ? juce::jmin(2, pcm->getNumChannels()) : 0;
+                const bool usePCM = channels > 0 && sampleCount > 0;
+                const int lanes = usePCM ? channels : 1;
+                for (int channel = 0; channel < lanes; ++channel)
                 {
-                    low = juce::jmin(low, waveformMin[index][(size_t)bin]);
-                    high = juce::jmax(high, waveformMax[index][(size_t)bin]);
+                    const float laneHeight = (float)wave.getHeight() / (float)lanes;
+                    const float laneCentre = (float)wave.getY() + ((float)channel + 0.5f) * laneHeight;
+                    const float laneAmplitude = laneHeight * 0.45f;
+                    g.setColour(juce::Colour(0xff507080).withAlpha(0.55f));
+                    g.drawHorizontalLine((int)laneCentre, (float)wave.getX(), (float)wave.getRight());
+                    const float* samples = usePCM ? pcm->getReadPointer(channel) : nullptr;
+                    for (int x = 0; x < columns; ++x)
+                    {
+                        const double t0 = scroll + visibleFraction * (double)x / (double)columns;
+                        const double t1 = scroll + visibleFraction * (double)(x + 1) / (double)columns;
+                        float low = 1.0f, high = -1.0f;
+                        if (usePCM)
+                        {
+                            const int first = juce::jlimit(0, sampleCount - 1, (int)std::floor(t0 * sampleCount));
+                            const int last = juce::jlimit(first + 1, sampleCount, (int)std::ceil(t1 * sampleCount));
+                            // Full min/max retains every transient, including
+                            // peaks narrower than one display pixel.
+                            for (int sample = first; sample < last; ++sample)
+                            {
+                                low = juce::jmin(low, samples[sample]);
+                                high = juce::jmax(high, samples[sample]);
+                            }
+                        }
+                        else
+                        {
+                            const int first = juce::jlimit(0, count - 1, (int)std::floor(t0 * count));
+                            const int last = juce::jlimit(first + 1, count, (int)std::ceil(t1 * count));
+                            for (int bin = first; bin < last; ++bin)
+                            {
+                                low = juce::jmin(low, waveformMin[index][(size_t)bin]);
+                                high = juce::jmax(high, waveformMax[index][(size_t)bin]);
+                            }
+                        }
+                        const float top = laneCentre - high * laneAmplitude;
+                        const float bottom = laneCentre - low * laneAmplitude;
+                        const int pixel = wave.getX() + x;
+                        g.setColour(juce::Colour(0xffd3a55b).withAlpha(0.58f));
+                        g.drawVerticalLine(pixel, top, bottom);
+                        g.setColour(juce::Colour(0xffffd68b).withAlpha(0.90f));
+                        g.fillRect((float)pixel, top, 1.0f, 1.0f);
+                        g.fillRect((float)pixel, bottom - 1.0f, 1.0f);
+                    }
                 }
-                const float top = (float) cy - high * amplitude;
-                const float bottom = (float) cy - low * amplitude;
-                // Layered peak envelope: translucent body and crisp extrema
-                // retain quiet detail without the opaque block appearance.
-                const float xPos = (float)(wave.getX() + x);
-                g.setColour(juce::Colour(0xffd8a85a).withAlpha(0.48f));
-                g.drawVerticalLine((int)xPos, top, bottom);
-                g.setColour(juce::Colour(0xffffdc96).withAlpha(0.95f));
-                g.fillRect(xPos, top, 1.0f, 1.0f);
-                g.fillRect(xPos, bottom - 1.0f, 1.0f);
             }
         }
         // Paint the selection readout after the waveform so the waveform
