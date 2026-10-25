@@ -1710,9 +1710,20 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     if (phase < 0.0 || phase >= 1.0)
                         continue;
                     const double centreSeconds = (origin + 0.5 * grainLength) / rate;
-                    // Clamp grain centres to the active marker segment.
-                    const double mappedSeconds = sa + (sb - sa)
-                        * juce::jlimit(0.0, 1.0, (centreSeconds - ta) / span);
+                    // Map each grain centre through the full marker curve.
+                    // Unlike clamping to the current segment, this preserves
+                    // continuity when a grain overlaps a Warp marker.
+                    int grainSegment = 0;
+                    while (grainSegment < markerCount - 2
+                           && centreSeconds > targetMarkers[(size_t) (grainSegment + 1)])
+                        ++grainSegment;
+                    const double grainTa = targetMarkers[(size_t) grainSegment];
+                    const double grainTb = targetMarkers[(size_t) (grainSegment + 1)];
+                    const double grainSa = sourceMarkers[(size_t) grainSegment];
+                    const double grainSb = sourceMarkers[(size_t) (grainSegment + 1)];
+                    const double grainAlpha = juce::jlimit(0.0, 1.0,
+                        (centreSeconds - grainTa) / juce::jmax(0.000001, grainTb - grainTa));
+                    const double mappedSeconds = grainSa + (grainSb - grainSa) * grainAlpha;
                     const double grainPosition = mappedSeconds * sourceRate
                         + (phase - 0.5) * grainLength * sourceRate / rate;
                     if (grainPosition < 0.0 || grainPosition > (double) lastSample)
