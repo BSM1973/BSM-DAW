@@ -3403,7 +3403,7 @@ public:
     // ratio > 1 expands, while all note positions and expressive flags remain intact.
     void scaleSelectedVelocityDynamics(double ratio, int centre = 64, int offset = 0)
     {
-        if (!std::isfinite(ratio) || ratio < 0.0 || centre < 1 || centre > 127) return;
+        if (!std::isfinite(ratio) || ratio < 0.0 || ratio > 3.0 || centre < 1 || centre > 127 || offset < -63 || offset > 63) return;
         auto& midi = owner.getMidiEngine();
         const auto selection = midi.getSelectedNotesCopy();
         if (selection.empty()) return;
