@@ -2249,6 +2249,23 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
+bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
+{
+    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop())
+        return false;
+    const int track = getAudioTrackAtPosition(p);
+    if (track < 0 || !isPointInsideAudioClip(track, p))
+        return false;
+    selectedTrack = track;
+    dockMixerMode = false;
+    dockStepSequencerMode = false;
+    drumSamplerDockSelected = false;
+    if (dockCollapsed) dockCollapsed = false;
+    resized();
+    repaint();
+    return true;
+}
+
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto click = event.getPosition();
@@ -2284,21 +2301,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
     const auto p = event.getPosition();
     // Restore the original audio-clip gesture: double-click the actual clip
     // body to open its waveform in the lower dock.
-    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
-    {
-        const int audioTrack = getAudioTrackAtPosition(p);
-        if (audioTrack >= 0 && isPointInsideAudioClip(audioTrack, p))
-        {
-            selectedTrack = audioTrack;
-            dockMixerMode = false;
-            dockStepSequencerMode = false;
-            drumSamplerDockSelected = false;
-            if (dockCollapsed) dockCollapsed = false;
-            resized();
-            repaint();
-            return;
-        }
-    }
+    if (openAudioClipInDockAt(p)) return;
     if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
     const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
@@ -2384,21 +2387,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // Route the second press of an audio-clip double-click before any
     // arrange editing tool can move, split or erase the clip.
     if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
-        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
-    {
-        const int audioTrack = getAudioTrackAtPosition(p);
-        if (audioTrack >= 0 && isPointInsideAudioClip(audioTrack, p))
-        {
-            selectedTrack = audioTrack;
-            dockMixerMode = false;
-            dockStepSequencerMode = false;
-            drumSamplerDockSelected = false;
-            if (dockCollapsed) dockCollapsed = false;
-            resized();
-            repaint();
-            return;
-        }
-    }
+        && openAudioClipInDockAt(p)) return;
     if (!dockCollapsed && !event.mods.isPopupMenu()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
         && p.x >= 8 && p.x < 156)
