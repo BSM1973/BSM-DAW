@@ -3344,8 +3344,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                     lo = juce::jmin(lo, data[i]);
                                     hi = juce::jmax(hi, data[i]);
                                 }
-                                g.drawVerticalLine(left + x, centre - hi * amplitude,
-                                                   centre - lo * amplitude);
+                                // Translucent envelope adds body; the brighter
+                                // central stroke keeps sharp transients readable.
+                                const float peakTop = centre - hi * amplitude;
+                                const float peakBottom = centre - lo * amplitude;
+                                const auto amber = channel == 0 ? juce::Colour(0xffffcf75)
+                                                                : juce::Colour(0xffe9a95b);
+                                g.setColour(amber.withAlpha(0.30f));
+                                g.drawVerticalLine(left + x, peakTop, peakBottom);
+                                g.setColour(amber.withAlpha(0.92f));
+                                g.drawVerticalLine(left + x, peakTop, peakBottom);
+                                if (hi > 0.82f || lo < -0.82f)
+                                {
+                                    g.setColour(juce::Colour(0xffffe8a9));
+                                    g.fillRect(left + x, (int)std::floor(peakTop), 1, 2);
+                                }
                             }
                         }
                     }
