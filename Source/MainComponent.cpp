@@ -415,60 +415,6 @@ void MainComponent::paint(juce::Graphics& g)
         }
         g.setColour(juce::Colour(0xff152b3b));
         g.fillRoundedRectangle(wave.toFloat(), 5.0f);
-        // Distinct clip-boundary guides; do not alter the underlying audio.
-        if (audioClipBoundaryTrack == selectedTrack && wave.getWidth() > 0)
-        {
-            const double visible = 1.0 / audioDockZoom;
-            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-            const auto drawBoundary = [&](double fraction, juce::Colour colour,
-                                          const juce::String& label)
-            {
-                const int x = wave.getX() + (int) std::lround(
-                    (fraction - offset) / visible * wave.getWidth());
-                if (x >= wave.getX() && x < wave.getRight())
-                {
-                    g.setColour(colour);
-                    g.drawVerticalLine(x, (float) wave.getY(), (float) wave.getBottom());
-                    g.fillRoundedRectangle((float) x - 4.0f,
-                        (float) wave.getY() + 2.0f, 8.0f, 17.0f, 2.5f);
-                    g.setColour(juce::Colour(0xff0e2432));
-                    g.drawText(label, x + 6, wave.getY() + 3, 34, 15,
-                        juce::Justification::centredLeft, true);
-                }
-            };
-            drawBoundary(audioClipStartFraction, juce::Colour(0xff73dfac), "DEB");
-            drawBoundary(audioClipEndFraction, juce::Colour(0xffffb870), "FIN");
-            if (draggingAudioClipBoundary != 0 && wave.getWidth() >= 150)
-            {
-                const double fraction = draggingAudioClipBoundary == 1
-                    ? audioClipStartFraction : audioClipEndFraction;
-                const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
-                const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
-                const juce::int64 sampleCount = snapshot != nullptr
-                    ? snapshot->getNumSamples() : 0;
-                const double seconds = fraction * duration;
-                const juce::int64 milliseconds = (juce::int64) std::llround(seconds * 1000.0);
-                const juce::String clock =
-                    juce::String(milliseconds / 60000).paddedLeft('0', 2) + ":"
-                    + juce::String((milliseconds / 1000) % 60).paddedLeft('0', 2)
-                    + "." + juce::String(milliseconds % 1000).paddedLeft('0', 3);
-                const juce::String text = (draggingAudioClipBoundary == 1 ? "DEB  " : "FIN  ")
-                    + clock + "  |  "
-                    + juce::String((juce::int64) std::llround(fraction * (double) sampleCount))
-                    + " ech";
-                const int x = wave.getX() + (int) std::lround(
-                    (fraction - offset) / visible * wave.getWidth());
-                const int width = juce::jmin(230, wave.getWidth() - 8);
-                const int left = juce::jlimit(wave.getX() + 4,
-                    wave.getRight() - width - 4, x - width / 2);
-                const auto bubble = juce::Rectangle<int>(left, wave.getY() + 23, width, 22);
-                g.setColour(juce::Colour(0xff10283a).withAlpha(0.96f));
-                g.fillRoundedRectangle(bubble.toFloat(), 4.0f);
-                g.setColour(juce::Colour(0xffb8e7f0));
-                g.drawText(text, bubble.reduced(5, 0),
-                    juce::Justification::centred, true);
-            }
-        }
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
         {
             const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
@@ -680,6 +626,61 @@ void MainComponent::paint(juce::Graphics& g)
                 g.drawText(timing + "   |   " + samples,
                     selectionInfo.reduced(5, 0),
                     juce::Justification::centredRight, true);
+            }
+        }
+        // Boundary markers must be painted above the waveform, not underneath it.
+        // Distinct clip-boundary guides; do not alter the underlying audio.
+        if (audioClipBoundaryTrack == selectedTrack && wave.getWidth() > 0)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const auto drawBoundary = [&](double fraction, juce::Colour colour,
+                                          const juce::String& label)
+            {
+                const int x = wave.getX() + (int) std::lround(
+                    (fraction - offset) / visible * wave.getWidth());
+                if (x >= wave.getX() && x < wave.getRight())
+                {
+                    g.setColour(colour);
+                    g.drawVerticalLine(x, (float) wave.getY(), (float) wave.getBottom());
+                    g.fillRoundedRectangle((float) x - 4.0f,
+                        (float) wave.getY() + 2.0f, 8.0f, 17.0f, 2.5f);
+                    g.setColour(juce::Colour(0xff0e2432));
+                    g.drawText(label, x + 6, wave.getY() + 3, 34, 15,
+                        juce::Justification::centredLeft, true);
+                }
+            };
+            drawBoundary(audioClipStartFraction, juce::Colour(0xff73dfac), "DEB");
+            drawBoundary(audioClipEndFraction, juce::Colour(0xffffb870), "FIN");
+            if (draggingAudioClipBoundary != 0 && wave.getWidth() >= 150)
+            {
+                const double fraction = draggingAudioClipBoundary == 1
+                    ? audioClipStartFraction : audioClipEndFraction;
+                const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+                const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+                const juce::int64 sampleCount = snapshot != nullptr
+                    ? snapshot->getNumSamples() : 0;
+                const double seconds = fraction * duration;
+                const juce::int64 milliseconds = (juce::int64) std::llround(seconds * 1000.0);
+                const juce::String clock =
+                    juce::String(milliseconds / 60000).paddedLeft('0', 2) + ":"
+                    + juce::String((milliseconds / 1000) % 60).paddedLeft('0', 2)
+                    + "." + juce::String(milliseconds % 1000).paddedLeft('0', 3);
+                const juce::String text = (draggingAudioClipBoundary == 1 ? "DEB  " : "FIN  ")
+                    + clock + "  |  "
+                    + juce::String((juce::int64) std::llround(fraction * (double) sampleCount))
+                    + " ech";
+                const int x = wave.getX() + (int) std::lround(
+                    (fraction - offset) / visible * wave.getWidth());
+                const int width = juce::jmin(230, wave.getWidth() - 8);
+                const int left = juce::jlimit(wave.getX() + 4,
+                    wave.getRight() - width - 4, x - width / 2);
+                const auto bubble = juce::Rectangle<int>(left, wave.getY() + 23, width, 22);
+                g.setColour(juce::Colour(0xff10283a).withAlpha(0.96f));
+                g.fillRoundedRectangle(bubble.toFloat(), 4.0f);
+                g.setColour(juce::Colour(0xffb8e7f0));
+                g.drawText(text, bubble.reduced(5, 0),
+                    juce::Justification::centred, true);
             }
         }
     }
