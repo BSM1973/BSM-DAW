@@ -5520,8 +5520,20 @@ private:
 class MidiEditorWindow final : public juce::DocumentWindow
 {
 public:
-    explicit MidiEditorWindow(MainComponent& owner) : DocumentWindow("Liberty - MIDI 1", juce::Colour(0xff0b0d10), DocumentWindow::closeButton)
-    { setUsingNativeTitleBar(true); setContentOwned(new PianoRoll(owner), true); setResizable(true, true); setResizeLimits(900, 500, 1800, 1000); centreWithSize(1200, 760); setVisible(true); toFront(true); }
+    explicit MidiEditorWindow(juce::Component& editor)
+        : DocumentWindow("Liberty - Piano Roll", juce::Colour(0xff0b0d10),
+                         DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        // The Piano Roll belongs to dockPianoRoll, not to this window.
+        // Never delete it when closing the floating window.
+        setContentNonOwned(&editor, true);
+        setResizable(true, true);
+        setResizeLimits(900, 500, 1800, 1000);
+        centreWithSize(1200, 760);
+        setVisible(true);
+        toFront(true);
+    }
     void closeButtonPressed() override { setVisible(false); }
 };
 
@@ -5564,15 +5576,28 @@ MainComponent* dockPianoRollOwner = nullptr;
 
 void openLibertyMidiEditor(MainComponent& owner)
 {
-    for (auto& w : midiEditorWindows) if (w != nullptr && w->isVisible()) { w->toFront(true); return; }
-    midiEditorWindows.push_back(std::make_unique<MidiEditorWindow>(owner));
+    if (!dockPianoRoll || dockPianoRollOwner != &owner)
+    {
+        midiEditorWindows.clear();
+        dockPianoRoll.reset();
+        dockPianoRollOwner = &owner;
+        dockPianoRoll = std::make_unique<PianoRoll>(owner);
+    }
+    for (auto& w : midiEditorWindows)
+        if (w != nullptr && w->isVisible()) { w->toFront(true); return; }
+
+    // Reuse the dock's editor and preserve its state when detaching.
+    midiEditorWindows.clear();
+    dockPianoRoll->setVisible(true);
+    midiEditorWindows.push_back(std::make_unique<MidiEditorWindow>(*dockPianoRoll));
 }
 
 void shutdownLibertyMidiEditor()
 {
+    // The non-owned floating content must be detached before its owner dies.
+    midiEditorWindows.clear();
     dockPianoRoll.reset();
     dockPianoRollOwner = nullptr;
-    midiEditorWindows.clear();
     globalMidiEditorMouseListener.shutdown();
 }
 
@@ -5585,6 +5610,15 @@ void layoutLibertyPianoRollDock(MainComponent& owner, juce::Rectangle<int> bound
         dockPianoRoll = std::make_unique<PianoRoll>(owner);
         owner.addAndMakeVisible(*dockPianoRoll);
     }
+    // Reattach the same component when the floating window has been closed.
+    const bool floating = !midiEditorWindows.empty() && midiEditorWindows.front() != nullptr
+                          && midiEditorWindows.front()->isVisible();
+    if (floating)
+        return;
+    if (!midiEditorWindows.empty())
+        midiEditorWindows.clear();
+    if (dockPianoRoll->getParentComponent() != &owner)
+        owner.addAndMakeVisible(*dockPianoRoll);
     dockPianoRoll->setBounds(bounds);
     dockPianoRoll->setVisible(visible && bounds.getWidth() > 80 && bounds.getHeight() > 120);
     // This layout runs at 30 Hz. Raising the piano roll while its popup is
