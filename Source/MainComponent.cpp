@@ -3158,9 +3158,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int i = 1; i < count - 1; ++i)
                     {
                         const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
-                        const int x = 40 + (int)std::llround(
-                            juce::jlimit(0.0, 1.0, audio.getTrackWarpMarkerTargetSeconds(track, i) / duration)
-                            * juce::jmax(1, getWidth() - 80));
+                        const int x = xAt(audio.getTrackWarpMarkerTargetSeconds(track, i));
                         if (std::abs(event.x - x) <= 8)
                         {
                             if (event.mods.isRightButtonDown())
@@ -3195,9 +3193,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     for (int i = 1; i < count - 1; ++i)
                     {
-                        const int x = 40 + (int)std::llround(
-                            juce::jlimit(0.0, 1.0, audio.getTrackWarpMarkerTargetSeconds(track, i) / duration)
-                            * juce::jmax(1, getWidth() - 80));
+                        const int x = xAt(audio.getTrackWarpMarkerTargetSeconds(track, i));
                         if (std::abs(event.x - x) <= 8) { nearMarker = true; break; }
                     }
                     setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
@@ -3206,13 +3202,36 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 bool inWaveform(juce::Point<int> point) const
                 {
                     return point.x >= 40 && point.x < getWidth() - 40
-                        && point.y >= 350 && point.y <= getHeight() - 60;
+                        && point.y >= 350 && point.y <= getHeight() - 92;
+                }
+                void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+                {
+                    if (!inWaveform(event.getPosition()) || wheel.deltaY == 0.0f) return;
+                    const double anchor = timeAt(event.x);
+                    const double fraction = juce::jlimit(0.0, 1.0,
+                        (double)(event.x - 40) / (double)juce::jmax(1, getWidth() - 80));
+                    const double newZoom = juce::jlimit(1.0, 32.0,
+                        zoom * (wheel.deltaY > 0.0f ? 1.25 : 0.8));
+                    zoom = newZoom;
+                    viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
+                        anchor / juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
+                        - fraction / zoom);
+                    repaint();
+                }
+                double fractionAt(int x) const
+                {
+                    return viewStart + juce::jlimit(0.0, 1.0,
+                        (double)(x - 40) / (double)juce::jmax(1, getWidth() - 80)) / zoom;
+                }
+                int xAt(double seconds) const
+                {
+                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    return 40 + (int)std::llround(
+                        (seconds / duration - viewStart) * zoom * juce::jmax(1, getWidth() - 80));
                 }
                 double timeAt(int x) const
                 {
-                    const double fraction = juce::jlimit(0.0, 1.0,
-                        (double)(x - 40) / (double)juce::jmax(1, getWidth() - 80));
-                    return fraction * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    return fractionAt(x) * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                 }
                 void paint(juce::Graphics& g) override
                 {
@@ -3245,17 +3264,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int width = juce::jmax(1, right - left);
                         const int sampleCount = pcm->getNumSamples();
                         const float* data = pcm->getReadPointer(0);
-                        const float centre = (350.0f + (float)getHeight() - 60.0f) * 0.5f;
-                        const float amplitude = juce::jmax(19.0f, ((float)getHeight() - 410.0f) * 0.42f);
+                        const float centre = (350.0f + (float)getHeight() - 92.0f) * 0.5f;
+                        const float amplitude = juce::jmax(19.0f, ((float)getHeight() - 442.0f) * 0.42f);
                         g.setColour(juce::Colour(0xff496579));
                         g.drawHorizontalLine((int)centre, (float)left, (float)right);
                         g.setColour(juce::Colour(0xffffcf75).withAlpha(0.85f));
                         for (int x = 0; x < width; ++x)
                         {
                             const int first = juce::jlimit(0, sampleCount - 1,
-                                (int)((int64_t)x * sampleCount / width));
+                                (int)(fractionAt(left + x) * sampleCount));
                             const int last = juce::jlimit(first + 1, sampleCount,
-                                (int)((int64_t)(x + 1) * sampleCount / width));
+                                (int)(fractionAt(left + x + 1) * sampleCount));
                             float lo = 0.0f, hi = 0.0f;
                             for (int i = first; i < last; ++i)
                             {
@@ -3275,8 +3294,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int marker = 0; marker < markerCount; ++marker)
                     {
                         const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, marker);
-                        const int x = 40 + (int)std::llround(
-                            juce::jlimit(0.0, 1.0, seconds / duration) * plotWidth);
+                        const int x = xAt(seconds);
+                        if (x < 40 || x >= getWidth() - 40) continue;
                         const bool endpoint = marker == 0 || marker == markerCount - 1;
                         g.setColour(endpoint ? juce::Colour(0xff8196a8)
                                              : juce::Colour(0xffffc857));
@@ -3286,8 +3305,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setColour(juce::Colour(0xffa7bfd1));
                     g.setFont(juce::Font(11.0f));
                     g.drawText("Marqueurs : " + juce::String(markerCount)
+                               + "   |   Molette : zoom " + juce::String(zoom, 1) + "x"
                                + "   |   Double-clic : ajouter  |  Glisser : deplacer  |  Clic droit : supprimer",
-                               40, getHeight() - 55, getWidth() - 80, 18, juce::Justification::centredLeft);
+                               40, getHeight() - 84, getWidth() - 80, 18, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
                                + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
@@ -3308,6 +3328,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 int track;
                 double originalDuration = 0.0;
                 int draggingMarker = -1;
+                double zoom = 1.0;
+                double viewStart = 0.0;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
                 juce::TextButton apply, reset;
