@@ -3217,7 +3217,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 if (confirmed) audio.removeTrackWarpMarker(track, i);
                                 repaint();
                             }
-                            else draggingMarker = i;
+                            else
+                            {
+                                draggingMarker = i;
+                                dragStartX = event.x;
+                                dragStartTime = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                            }
                             return;
                         }
                     }
@@ -3233,7 +3238,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         return;
                     }
                     if (draggingMarker < 0) return;
-                    audio.moveTrackWarpMarker(track, draggingMarker, timeAt(event.x));
+                    const double delta = (double)(event.x - dragStartX)
+                        * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
+                        / ((double)juce::jmax(1, getWidth() - 80) * zoom);
+                    const double precision = event.mods.isShiftDown() ? 0.1 : 1.0;
+                    audio.moveTrackWarpMarker(track, draggingMarker,
+                        dragStartTime + delta * precision);
                     repaint();
                 }
                 void mouseUp(const juce::MouseEvent&) override
@@ -3508,6 +3518,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 int track;
                 double originalDuration = 0.0;
                 int draggingMarker = -1;
+                int dragStartX = 0;
+                double dragStartTime = 0.0;
                 double zoom = 1.0;
                 double viewStart = 0.0;
                 double panStartFraction = 0.0;
