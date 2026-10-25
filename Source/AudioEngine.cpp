@@ -1733,6 +1733,34 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     grainWeightSum += weight;
                 }
             }
+            float transientBlend = 0.0f;
+            if (granular)
+            {
+                const int attackIndex = juce::jlimit(0, lastSample,
+                    (int) std::floor(sourceSamplePosition));
+                double recentEnergy = 0.0;
+                double previousEnergy = 0.0;
+                const int channelsToScan = juce::jmin(2, sourceChannels);
+                for (int channel = 0; channel < channelsToScan; ++channel)
+                {
+                    const float* attackData = audioBuffer->getReadPointer(channel);
+                    for (int k = 0; k < 8; ++k)
+                    {
+                        const int recentIndex = juce::jlimit(0, lastSample,
+                            attackIndex - k * windowSamples / 8);
+                        const int previousIndex = juce::jlimit(0, lastSample,
+                            attackIndex - windowSamples - k * windowSamples / 8);
+                        recentEnergy += std::abs(attackData[recentIndex]);
+                        previousEnergy += std::abs(attackData[previousIndex]);
+                    }
+                }
+                const double divisor = (double) (8 * juce::jmax(1, channelsToScan));
+                const float energyRise = (float) ((recentEnergy - previousEnergy) / divisor);
+                const float localLevel = (float) (previousEnergy / divisor);
+                const float threshold = juce::jmax(0.012f, localLevel * 0.55f);
+                transientBlend = juce::jlimit(0.0f, 1.0f,
+                    (energyRise - threshold) / juce::jmax(0.02f, threshold));
+            }
             auto readGrain = [&](int channel) -> float
             {
                 if (!granular)
@@ -1748,31 +1776,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
-                const int attackIndex = juce::jlimit(0, lastSample,
-                    (int) std::floor(sourceSamplePosition));
-                const float* attackData = audioBuffer->getReadPointer(
-                    juce::jlimit(0, sourceChannels - 1, channel));
-                // Compare the recent and preceding short-time mean absolute
-                // amplitudes. A positive energy rise is more robust than
-                // a single-sample derivative, especially on pitched tones.
-                double recentEnergy = 0.0;
-                double previousEnergy = 0.0;
-                for (int k = 0; k < 8; ++k)
-                {
-                    const int recentIndex = juce::jlimit(0, lastSample,
-                        attackIndex - k * windowSamples / 8);
-                    const int previousIndex = juce::jlimit(0, lastSample,
-                        attackIndex - windowSamples - k * windowSamples / 8);
-                    recentEnergy += std::abs(attackData[recentIndex]);
-                    previousEnergy += std::abs(attackData[previousIndex]);
-                }
-                const float energyRise = (float) ((recentEnergy - previousEnergy) / 8.0);
-                // Scale the threshold with local signal level so quieter
-                // percussion can trigger without overreacting to loud pads.
-                const float localLevel = (float) (previousEnergy / 8.0);
-                const float threshold = juce::jmax(0.012f, localLevel * 0.55f);
-                const float transientBlend = juce::jlimit(0.0f, 1.0f,
-                    (energyRise - threshold) / juce::jmax(0.02f, threshold));
                 return stretched * (1.0f - transientBlend)
                     + readWarpedSample(channel, sourceSamplePosition) * transientBlend;
             };
