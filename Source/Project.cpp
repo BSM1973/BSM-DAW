@@ -679,6 +679,16 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     {
         auto* track = project.createNewChildElement("Track");
         track->setAttribute("index", i);
+        if (audioEngine.hasAudioFile(i))
+        {
+            auto clipId = audioEngine.getAudioClipId(i);
+            if (clipId.isEmpty())
+            {
+                clipId = juce::Uuid().toString();
+                audioEngine.setAudioClipId(i, clipId);
+            }
+            track->setAttribute("clipId", clipId);
+        }
         const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const bool expectsAudioMedia = audioSnapshot.loaded || sourceFile.getFullPathName().isNotEmpty();
@@ -1333,6 +1343,20 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             }
         }
     }
+    // Restore stable clip IDs after loading media, including legacy projects.
+    for (const auto* trackElement : project->getChildIterator())
+    {
+        if (!trackElement->hasTagName("Track"))
+            continue;
+        const int index = trackElement->getIntAttribute("index", -1);
+        if (index < 0 || index >= getAudioTrackCount() || !audioEngine.hasAudioFile(index))
+            continue;
+        auto clipId = trackElement->getStringAttribute("clipId");
+        if (clipId.isEmpty())
+            clipId = juce::Uuid().toString();
+        audioEngine.setAudioClipId(index, clipId);
+    }
+
     // Resolve saved markers against the freshly loaded audio revision.
     // Older projects without this optional element retain default boundaries.
     juce::ValueTree restoredMarkers("AudioDockClipBounds");
