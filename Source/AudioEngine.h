@@ -314,6 +314,11 @@ private:
         std::shared_ptr<WarpMarkerSnapshot> warpMarkerSnapshot;
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::atomic<std::uint64_t> contentRevision { 0 };
+        // Audio-callback-owned Riche envelope; never accessed by the UI thread.
+        float richeTransientEnvelope = 0.0f;
+        bool richeTransientPrimed = false;
+        std::int64_t richeNextSample = -1;
+        std::uint64_t richeContentRevision = 0;
         juce::String fileName;
         juce::String clipId;
         std::vector<AudioClipMetadata> clipMetadata;
