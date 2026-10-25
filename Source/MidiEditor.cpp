@@ -5554,6 +5554,9 @@ public:
     {
         auto* main = findMainComponent(e.eventComponent); if (main == nullptr) return;
         const auto p = e.getEventRelativeTo(main).getPosition();
+        // Child components can receive the arranger's double-click instead
+        // of MainComponent. Route audio clips through the same shared action.
+        if (main->openAudioClipInDockAt(p)) return;
         // A global mouse listener must never use a legacy fixed MIDI-lane Y.
         // Only an actual MIDI track inside the visible arranger may open this editor.
         if (p.x < main->trackHeaderWidth || p.y < main->getArrangeTop()
