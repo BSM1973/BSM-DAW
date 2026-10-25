@@ -993,6 +993,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
     track.clipMetadata.clear();
+    std::atomic_store(&track.playbackClips,
+        std::shared_ptr<const std::vector<AudioClipMetadata>>{});
     track.fileName = std::move(newFileName); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
@@ -1232,8 +1234,19 @@ bool AudioEngine::addAudioClipMetadata(int trackIndex, const AudioClipMetadata& 
     for (const auto& existing : clips)
         if (existing.id == clip.id)
             return false;
-    try { clips.push_back(clip); }
-    catch (...) { return false; }
+    try
+    {
+        clips.push_back(clip);
+        std::shared_ptr<const std::vector<AudioClipMetadata>> snapshot =
+            std::make_shared<const std::vector<AudioClipMetadata>>(clips);
+        std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips, std::move(snapshot));
+    }
+    catch (...)
+    {
+        clips.erase(std::remove_if(clips.begin(), clips.end(),
+            [&](const AudioClipMetadata& entry) { return entry.id == clip.id; }), clips.end());
+        return false;
+    }
     return true;
 }
 
@@ -1287,6 +1300,10 @@ bool AudioEngine::loadAudioClipSource(int trackIndex, const juce::String& clipId
         clip.sourceSampleRate = reader->sampleRate;
         clip.sourceName = sourceFile.getFileName();
         clip.sourcePath = sourceFile.getFullPathName();
+        std::shared_ptr<const std::vector<AudioClipMetadata>> snapshot =
+            std::make_shared<const std::vector<AudioClipMetadata>>(
+                tracks[(size_t)trackIndex]->clipMetadata);
+        std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips, std::move(snapshot));
         return true;
     }
     error = "Audio clip no longer exists.";
@@ -1299,6 +1316,8 @@ void AudioEngine::clearAudioClipMetadata(int trackIndex)
         return;
     const juce::ScopedLock lock(stateLock);
     tracks[(size_t)trackIndex]->clipMetadata.clear();
+    std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips,
+        std::shared_ptr<const std::vector<AudioClipMetadata>>{});
 }
 
 juce::String AudioEngine::getAudioClipId(int trackIndex) const
