@@ -14,6 +14,7 @@ class AudioEngine final : private juce::AudioIODeviceCallback
 {
 public:
     static constexpr int maxAudioTracks = 4;
+    static constexpr int maxWarpMarkers = 32;
 
     AudioEngine();
     ~AudioEngine() override;
@@ -30,9 +31,32 @@ public:
     int getOutputChannels() const noexcept { return outputChannels.load(std::memory_order_relaxed); }
     juce::String getLastError() const;
 
-    void setPlaying(bool shouldPlay) noexcept { playing.store(shouldPlay, std::memory_order_relaxed); }
+    void setPlaying(bool shouldPlay) noexcept
+    {
+        const auto rate = sampleRate.load(std::memory_order_relaxed);
+        if (shouldPlay)
+        {
+            const auto current = rate > 0.0
+                ? static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate
+                : 0.0;
+            playbackClockBaseSeconds.store(current, std::memory_order_relaxed);
+            playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+        }
+        else if (playing.load(std::memory_order_relaxed) && rate > 0.0)
+        {
+            const auto current = getCurrentTimeSeconds();
+            transportSamples.store(static_cast<std::int64_t>(std::llround(current * rate)), std::memory_order_relaxed);
+            playbackClockBaseSeconds.store(current, std::memory_order_relaxed);
+        }
+        playing.store(shouldPlay, std::memory_order_relaxed);
+    }
     bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
-    void resetTransport() noexcept { transportSamples.store(0, std::memory_order_relaxed); }
+    void resetTransport() noexcept
+    {
+        transportSamples.store(0, std::memory_order_relaxed);
+        playbackClockBaseSeconds.store(0.0, std::memory_order_relaxed);
+        playbackClockStartMilliseconds.store(juce::Time::getMillisecondCounterHiRes(), std::memory_order_relaxed);
+    }
     void setCurrentTimeSeconds(double seconds) noexcept;
     double getCurrentTimeSeconds() const noexcept;
 
@@ -54,6 +78,15 @@ public:
     bool isTrackSolo(int trackIndex) const noexcept;
     bool isAnyTrackSolo() const noexcept;
 
+    void setMidiTrackMuted(bool muted) noexcept { midiTrackMuted.store(muted, std::memory_order_relaxed); }
+    bool isMidiTrackMuted() const noexcept { return midiTrackMuted.load(std::memory_order_relaxed); }
+    void setMidiTrackSolo(bool solo) noexcept { midiTrackSolo.store(solo, std::memory_order_relaxed); }
+    bool isMidiTrackSolo() const noexcept { return midiTrackSolo.load(std::memory_order_relaxed); }
+    void setInstrumentTrackMuted(bool muted) noexcept { instrumentTrackMuted.store(muted, std::memory_order_relaxed); }
+    bool isInstrumentTrackMuted() const noexcept { return instrumentTrackMuted.load(std::memory_order_relaxed); }
+    void setInstrumentTrackSolo(bool solo) noexcept { instrumentTrackSolo.store(solo, std::memory_order_relaxed); }
+    bool isInstrumentTrackSolo() const noexcept { return instrumentTrackSolo.load(std::memory_order_relaxed); }
+
     bool loadAudioFileIntoTrack(int trackIndex, const juce::File& file, juce::String& error);
     void clearAudioTrack(int trackIndex);
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int& newTrackIndex, juce::String& error);
@@ -63,6 +96,18 @@ public:
     double getTrackStartSeconds(int trackIndex) const noexcept;
     void setTrackStartSeconds(int trackIndex, double seconds) noexcept;
     const juce::AudioBuffer<float>* getAudioBuffer(int trackIndex) const noexcept;
+
+    void setTrackWarpEnabled(int trackIndex, bool enabled) noexcept;
+    bool isTrackWarpEnabled(int trackIndex) const noexcept;
+    void setTrackWarpMode(int trackIndex, int mode) noexcept;
+    int getTrackWarpMode(int trackIndex) const noexcept;
+    void resetTrackWarpMarkers(int trackIndex) noexcept;
+    bool addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept;
+    bool moveTrackWarpMarker(int trackIndex, int markerIndex, double targetSeconds) noexcept;
+    bool removeTrackWarpMarker(int trackIndex, int markerIndex) noexcept;
+    int getTrackWarpMarkerCount(int trackIndex) const noexcept;
+    double getTrackWarpMarkerSourceSeconds(int trackIndex, int markerIndex) const noexcept;
+    double getTrackWarpMarkerTargetSeconds(int trackIndex, int markerIndex) const noexcept;
 
     void setMasterGain(float gain) noexcept { masterGain.store(juce::jlimit(0.0f, 2.0f, gain), std::memory_order_relaxed); }
     float getMasterGain() const noexcept { return masterGain.load(std::memory_order_relaxed); }
@@ -90,6 +135,11 @@ private:
         std::atomic<bool> loaded { false };
         std::atomic<double> lengthSeconds { 0.0 };
         std::atomic<double> startSeconds { 0.0 };
+        std::atomic<bool> warpEnabled { false };
+        std::atomic<int> warpMode { 0 };
+        std::atomic<int> warpMarkerCount { 0 };
+        std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
+        std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
         std::unique_ptr<juce::AudioBuffer<float>> buffer;
         std::int64_t numSamples = 0;
         juce::String fileName;
@@ -123,6 +173,10 @@ private:
     std::atomic<double> midiClipStartSeconds { 0.0 };
     std::atomic<double> midiClipLengthSeconds { 0.0 };
     std::atomic<double> midiTempoBpm { 120.0 };
+    std::atomic<bool> midiTrackMuted { false };
+    std::atomic<bool> midiTrackSolo { false };
+    std::atomic<bool> instrumentTrackMuted { false };
+    std::atomic<bool> instrumentTrackSolo { false };
     std::atomic<bool> initialised { false };
     std::atomic<bool> playing { false };
     std::atomic<double> sampleRate { 0.0 };
@@ -130,6 +184,8 @@ private:
     std::atomic<int> outputChannels { 0 };
     std::atomic<std::int64_t> transportSamples { 0 };
     std::atomic<double> projectExtraLengthSeconds { 0.0 };
+    std::atomic<double> playbackClockBaseSeconds { 0.0 };
+    std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
     mutable juce::CriticalSection stateLock;
     juce::String deviceName;

@@ -1,61 +1,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <cstdlib>
 #include "MainComponent.h"
 #include "MidiEditor.h"
-
-// MIDI note editing shortcuts are routed through MainWindow, just like the
-// existing project Save/Open shortcuts. This avoids relying on focus delivery
-// to a child editor component on macOS.
-bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key);
-void shutdownLibertyMidiGroupDragInteraction();
-
-class LibertyApplication final : public juce::JUCEApplication
-{
-public:
-    LibertyApplication() = default;
-    const juce::String getApplicationName() override { return "Liberty"; }
-    const juce::String getApplicationVersion() override { return "0.1.0"; }
-    bool moreThanOneInstanceAllowed() override { return true; }
-    void initialise(const juce::String&) override { mainWindow = std::make_unique<MainWindow>(getApplicationName()); }
-    void shutdown() override
-    {
-        shutdownLibertyMidiGroupDragInteraction();
-        shutdownLibertyMidiNoteSelectionInteraction();
-        shutdownLibertyMidiEditor();
-        mainWindow.reset();
-    }
-    void systemRequestedQuit() override { if (mainWindow != nullptr) mainWindow->requestClose(); else quit(); }
-    void anotherInstanceStarted(const juce::String&) override {}
-private:
-    class MainWindow final : public juce::DocumentWindow, private juce::KeyListener
-    {
-    public:
-        explicit MainWindow(juce::String name) : DocumentWindow(std::move(name), juce::Colours::black, DocumentWindow::allButtons)
-        {
-            setUsingNativeTitleBar(true); setContentOwned(new MainComponent(), true); centreWithSize(getWidth(), getHeight()); setResizable(true, true); addKeyListener(this); setVisible(true);
-            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) content->grabKeyboardFocus();
-        }
-        ~MainWindow() override { removeKeyListener(this); }
-        bool keyPressed(const juce::KeyPress& key, juce::Component*) override
-        {
-            if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
-            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
-            return true;
-        }
-        bool keyPressed(const juce::KeyPress& key) override
-        {
-            if (handleLibertyMidiNoteSelectionKeyPress(key)) return true;
-            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent())) if (content->keyPressed(key)) return true;
-            return DocumentWindow::keyPressed(key);
-        }
-        void requestClose()
-        {
-            if (auto* content = dynamic_cast<MainComponent*>(getContentComponent()))
-                content->requestClose([this](bool canClose) { if (canClose) juce::JUCEApplication::getInstance()->quit(); });
-            else juce::JUCEApplication::getInstance()->quit();
-        }
-        void closeButtonPressed() override { requestClose(); }
-    };
-    std::unique_ptr<MainWindow> mainWindow;
-};
-
+#include "PluginHost.h"
+bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key); bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
+void shutdownLibertyMidiKeyboardRouter(); void shutdownLibertyMidiGroupDragInteraction(); void shutdownLibertyAudioRecordingController(); void shutdownLibertyTrackColourInteraction(); void shutdownLibertyMultiMidiClipController(); void shutdownLibertyGridSnapController(); void shutdownLibertyTrackHeaderMixControls(); void shutdownLibertyZoomController(); void shutdownLibertyAudioClipWarpView(); void shutdownLibertyMetronomeController(); void shutdownLibertyBrowserController(); void shutdownLibertyBrowserResizeController(); void shutdownLibertyUILayerCoordinator(); void shutdownLibertyAudioSettingsRelocator(); void shutdownLibertyLanguageController(); void shutdownLibertyToolPaletteController(); void shutdownLibertyAIAdvancedController(); void shutdownLibertyAINoveltyController(); void shutdownLibertyAIArrangerController(); void shutdownLibertyAISongIntelligenceController(); void shutdownLibertyAIComposer2Controller(); void shutdownLibertyAIController(); void shutdownLibertyTrackPluginInsertControls(); void shutdownLibertyPluginDragDropController(); void shutdownLibertyMixConsoleController(); void shutdownLibertyPerformController(); void shutdownLibertyPageModeCoordinator(); void shutdownLibertyUISymbolCleaner(); void shutdownLibertySpliceBrowserController();
+class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:class MainWindow final:public juce::DocumentWindow,private juce::KeyListener{public:explicit MainWindow(juce::String n):DocumentWindow(std::move(n),juce::Colours::black,DocumentWindow::allButtons){setUsingNativeTitleBar(true);setContentOwned(new MainComponent(),true);centreWithSize(getWidth(),getHeight());setResizable(true,true);addKeyListener(this);setVisible(true);if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))c->grabKeyboardFocus();}~MainWindow()override{removeKeyListener(this);}bool keyPressed(const juce::KeyPress&k,juce::Component*)override{if(handleLibertyMidiNoteSelectionKeyPress(k)||handleLibertyMidiQuantizeKeyPress(k))return true;if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))if(c->keyPressed(k))return true;return true;}bool keyPressed(const juce::KeyPress&k)override{if(handleLibertyMidiNoteSelectionKeyPress(k)||handleLibertyMidiQuantizeKeyPress(k))return true;if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))if(c->keyPressed(k))return true;return DocumentWindow::keyPressed(k);}void requestClose(){if(auto*c=dynamic_cast<MainComponent*>(getContentComponent()))c->requestClose([this](bool ok){if(ok)juce::JUCEApplication::getInstance()->quit();});else juce::JUCEApplication::getInstance()->quit();}void closeButtonPressed()override{requestClose();}};std::unique_ptr<MainWindow>mainWindow;};
 START_JUCE_APPLICATION(LibertyApplication)
