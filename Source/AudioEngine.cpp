@@ -1227,7 +1227,11 @@ bool AudioEngine::addAudioClipMetadata(int trackIndex, const AudioClipMetadata& 
         || !std::isfinite(clip.lengthSeconds) || clip.lengthSeconds <= 0.0
         || !std::isfinite(clip.trimStartFraction) || !std::isfinite(clip.trimEndFraction)
         || clip.trimStartFraction < 0.0 || clip.trimEndFraction > 1.0
-        || clip.trimStartFraction >= clip.trimEndFraction)
+        || clip.trimStartFraction >= clip.trimEndFraction
+        || !std::isfinite(clip.clipGain) || clip.clipGain < 0.0f || clip.clipGain > 4.0f
+        || !std::isfinite(clip.pitchSemitones) || std::abs(clip.pitchSemitones) > 48.0
+        || !std::isfinite(clip.fadeInSeconds) || clip.fadeInSeconds < 0.0
+        || !std::isfinite(clip.fadeOutSeconds) || clip.fadeOutSeconds < 0.0)
         return false;
     const juce::ScopedLock lock(stateLock);
     auto& clips = tracks[(size_t)trackIndex]->clipMetadata;
