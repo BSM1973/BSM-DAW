@@ -1695,8 +1695,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // beyond this range it may repeat or skip attacks excessively.
             const bool granular = mode == 4 && sourceRate > 0.0
                 && std::isfinite(localRatio)
-                && localRatio >= 0.25 && localRatio <= 4.0
+                && localRatio >= 0.20 && localRatio <= 4.5
                 && std::abs(localRatio - 1.0) > 0.005;
+            // Smoothly blend into the direct interpolation near the
+            // supported ratio limits, avoiding an abrupt timbre switch.
+            const float ratioBlend = granular
+                ? (float) juce::jlimit(0.0, 1.0,
+                    juce::jmin((localRatio - 0.20) / 0.10,
+                               (4.5 - localRatio) / 1.0))
+                : 0.0f;
             constexpr double grainSeconds = 0.060;
             const double grainLength = juce::jmax(64.0, grainSeconds * rate);
             const double hop = grainLength * 0.5;
@@ -1786,8 +1793,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
-                return stretched * (1.0f - transientBlend)
-                    + readWarpedSample(channel, sourceSamplePosition) * transientBlend;
+                const float directBlend = 1.0f - ratioBlend * (1.0f - transientBlend);
+                return stretched * (1.0f - directBlend)
+                    + readWarpedSample(channel, sourceSamplePosition) * directBlend;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
