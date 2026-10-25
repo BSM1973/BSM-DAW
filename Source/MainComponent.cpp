@@ -415,6 +415,27 @@ void MainComponent::paint(juce::Graphics& g)
         }
         g.setColour(juce::Colour(0xff152b3b));
         g.fillRoundedRectangle(wave.toFloat(), 5.0f);
+        // Distinct clip-boundary guides; do not alter the underlying audio.
+        if (audioClipBoundaryTrack == selectedTrack && wave.getWidth() > 0)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const auto drawBoundary = [&](double fraction, juce::Colour colour,
+                                          const juce::String& label)
+            {
+                const int x = wave.getX() + (int) std::lround(
+                    (fraction - offset) / visible * wave.getWidth());
+                if (x >= wave.getX() && x < wave.getRight())
+                {
+                    g.setColour(colour);
+                    g.drawVerticalLine(x, (float) wave.getY(), (float) wave.getBottom());
+                    g.drawText(label, x + 3, wave.getY() + 3, 34, 15,
+                        juce::Justification::centredLeft, true);
+                }
+            };
+            drawBoundary(audioClipStartFraction, juce::Colour(0xff73dfac), "DEB");
+            drawBoundary(audioClipEndFraction, juce::Colour(0xffffb870), "FIN");
+        }
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
         {
             const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
@@ -2872,6 +2893,24 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && getAudioDockWaveBounds().contains(p))
     {
         const auto wave = getAudioDockWaveBounds();
+        // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
+        // These markers are independent of the transient audio selection.
+        if (event.mods.isAltDown() && event.mods.isLeftButtonDown())
+        {
+            if (audioClipBoundaryTrack != selectedTrack)
+            {
+                audioClipBoundaryTrack = selectedTrack;
+                audioClipStartFraction = 0.0;
+                audioClipEndFraction = 1.0;
+            }
+            const double position = snapAudioDockFraction(audioDockFractionAt(p.x));
+            if (event.mods.isShiftDown())
+                audioClipEndFraction = juce::jmax(audioClipStartFraction, position);
+            else
+                audioClipStartFraction = juce::jmin(position, audioClipEndFraction);
+            repaint();
+            return;
+        }
         const double visible = 1.0 / audioDockZoom;
         const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
         audioSelectionDragHandle = 0;
