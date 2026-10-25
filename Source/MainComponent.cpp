@@ -331,6 +331,20 @@ void MainComponent::paint(juce::Graphics& g)
         g.setFont(juce::Font(10.0f, juce::Font::bold));
         g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]) + "  v",
                    formatButton, juce::Justification::centred);
+        // Ableton-style focus: fit the selected audio range to the dock width.
+        const auto focusButton = juce::Rectangle<int>(
+            formatButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(116, juce::jmax(0, inner.getRight() - formatButton.getRight() - 6)), 20);
+        if (focusButton.getWidth() >= 45)
+        {
+            g.setColour(juce::Colour(0xff203b4d));
+            g.fillRoundedRectangle(focusButton.toFloat(), 3.0f);
+            g.setColour(juce::Colour(0xff83bed4));
+            g.drawRoundedRectangle(focusButton.toFloat(), 3.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(focusButton.getWidth() >= 95 ? "ZOOM SELECTION" : "ZOOM",
+                focusButton, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -2755,6 +2769,27 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto formatButton = juce::Rectangle<int>(dockInner.getX(),
             dockInner.getY() + (compact ? 70 : 46),
             juce::jmin(126, juce::jmax(0, dockInner.getWidth())), 20);
+        const auto focusButton = juce::Rectangle<int>(
+            formatButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(116, juce::jmax(0, dockInner.getRight() - formatButton.getRight() - 6)), 20);
+        if (focusButton.getWidth() >= 45 && focusButton.contains(p))
+        {
+            if (audioSelectionActive && audioSelectionTrack == selectedTrack)
+            {
+                const double start = juce::jlimit(0.0, 1.0,
+                    juce::jmin(audioSelectionStart, audioSelectionEnd));
+                const double end = juce::jlimit(0.0, 1.0,
+                    juce::jmax(audioSelectionStart, audioSelectionEnd));
+                const double span = end - start;
+                if (span > 0.0)
+                {
+                    audioDockZoom = juce::jlimit(1.0, 100000000.0, 1.0 / span);
+                    audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom, start);
+                }
+            }
+            repaint();
+            return;
+        }
         if (formatButton.contains(p))
         {
             juce::PopupMenu menu;
