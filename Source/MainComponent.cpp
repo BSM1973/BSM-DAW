@@ -318,7 +318,58 @@ void MainComponent::paint(juce::Graphics& g)
             // Each column includes every cached peak bin in its time range.
             const juce::Graphics::ScopedSaveState clipped(g);
             g.reduceClipRegion(wave);
-            for (int x = 0; x < columns; ++x)
+            // Switch to the actual PCM samples when there are at most two
+            // samples per screen pixel. No peak-cache interpolation at this scale.
+            const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+            const auto* pcm = snapshot.get();
+            const int sampleCount = pcm != nullptr ? pcm->getNumSamples() : 0;
+            const double samplesPerPixel = columns > 0
+                ? (double) sampleCount * visibleFraction / (double) columns : 0.0;
+            if (pcm != nullptr && pcm->getNumChannels() > 0 && sampleCount > 1
+                && samplesPerPixel <= 2.0 && columns > 1)
+            {
+                const int channels = juce::jmin(2, pcm->getNumChannels());
+                for (int channel = 0; channel < channels; ++channel)
+                {
+                    // Stereo channels occupy separate lanes; mono uses full height.
+                    const float laneHeight = (float) wave.getHeight() / (float) channels;
+                    const float laneCentre = (float) wave.getY()
+                        + ((float) channel + 0.5f) * laneHeight;
+                    const float laneAmplitude = laneHeight * 0.44f;
+                    g.setColour(juce::Colour(0xff42647a));
+                    g.drawHorizontalLine((int) laneCentre, (float) wave.getX(), (float) wave.getRight());
+                    juce::Path signal;
+                    const int firstSample = juce::jlimit(0, sampleCount - 1,
+                        (int) std::floor(scroll * (double) sampleCount));
+                    const int lastSample = juce::jlimit(firstSample, sampleCount - 1,
+                        (int) std::ceil((scroll + visibleFraction) * (double) sampleCount));
+                    const auto* data = pcm->getReadPointer(channel);
+                    for (int sample = firstSample; sample <= lastSample; ++sample)
+                    {
+                        const float x = (float) wave.getX()
+                            + (float) (((double) sample / (double) sampleCount - scroll)
+                                       / visibleFraction * (double) columns);
+                        const float y = laneCentre - data[sample] * laneAmplitude;
+                        if (sample == firstSample) signal.startNewSubPath(x, y);
+                        else signal.lineTo(x, y);
+                    }
+                    g.setColour(juce::Colour(0xff79d9ee));
+                    g.strokePath(signal, juce::PathStrokeType(1.35f));
+                    // At sample-level magnification show each actual sample point.
+                    if (samplesPerPixel <= 0.5)
+                    {
+                        for (int sample = firstSample; sample <= lastSample; ++sample)
+                        {
+                            const float x = (float) wave.getX()
+                                + (float) (((double) sample / (double) sampleCount - scroll)
+                                           / visibleFraction * (double) columns);
+                            g.fillEllipse(x - 2.0f, laneCentre - data[sample] * laneAmplitude - 2.0f,
+                                          4.0f, 4.0f);
+                        }
+                    }
+                }
+            }
+            else for (int x = 0; x < columns; ++x)
             {
                 const double t0 = scroll + visibleFraction * (double) x / (double) columns;
                 const double t1 = scroll + visibleFraction * (double) (x + 1) / (double) columns;
@@ -2286,7 +2337,7 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
             const double relativeX = juce::jlimit(0.0, 1.0,
                 (double) (p.x - area.getX()) / (double) juce::jmax(1, area.getWidth()));
             const double cursorPosition = audioDockScroll + relativeX / previousZoom;
-            audioDockZoom = juce::jlimit(1.0, 64.0,
+            audioDockZoom = juce::jlimit(1.0, 100000000.0,
                 previousZoom * std::pow(1.35, (double) wheel.deltaY));
             audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom,
                 cursorPosition - relativeX / audioDockZoom);
