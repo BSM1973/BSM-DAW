@@ -3087,30 +3087,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
                     setSize(900, 550);
-                    cachedAudio = audio.getAudioBufferSnapshot(track);
-                    if (cachedAudio != nullptr)
-                    {
-                        const int count = cachedAudio->getNumSamples();
-                        const int channels = juce::jmin(2, cachedAudio->getNumChannels());
-                        for (int channel = 0; channel < channels; ++channel)
-                        {
-                            const float* data = cachedAudio->getReadPointer(channel);
-                            auto& lows = cachedLows[channel];
-                            auto& highs = cachedHighs[channel];
-                            for (int start = 0; start < count; start += 512)
-                            {
-                                const int end = juce::jmin(count, start + 512);
-                                float lo = 0.0f, hi = 0.0f;
-                                for (int i = start; i < end; ++i)
-                                {
-                                    lo = juce::jmin(lo, data[i]);
-                                    hi = juce::jmax(hi, data[i]);
-                                }
-                                lows.add(lo);
-                                highs.add(hi);
-                            }
-                        }
-                    }
+                    rebuildPeakCache(audio.getAudioBufferSnapshot(track));
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
@@ -3303,8 +3280,43 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     return fractionAt(x) * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                 }
+                void rebuildPeakCache(std::shared_ptr<const juce::AudioBuffer<float>> snapshot)
+                {
+                    cachedAudio = snapshot;
+                    for (int channel = 0; channel < 2; ++channel)
+                    {
+                        cachedLows[channel].clearQuick();
+                        cachedHighs[channel].clearQuick();
+                    }
+                    if (cachedAudio != nullptr)
+                    {
+                        const int count = cachedAudio->getNumSamples();
+                        const int channels = juce::jmin(2, cachedAudio->getNumChannels());
+                        for (int channel = 0; channel < channels; ++channel)
+                        {
+                            const float* data = cachedAudio->getReadPointer(channel);
+                            auto& lows = cachedLows[channel];
+                            auto& highs = cachedHighs[channel];
+                            for (int start = 0; start < count; start += 512)
+                            {
+                                const int end = juce::jmin(count, start + 512);
+                                float lo = 0.0f, hi = 0.0f;
+                                for (int i = start; i < end; ++i)
+                                {
+                                    lo = juce::jmin(lo, data[i]);
+                                    hi = juce::jmax(hi, data[i]);
+                                }
+                                lows.add(lo);
+                                highs.add(hi);
+                            }
+                        }
+                    }
+                }
                 void paint(juce::Graphics& g) override
                 {
+                    const auto currentAudio = audio.getAudioBufferSnapshot(track);
+                    if (currentAudio != cachedAudio)
+                        rebuildPeakCache(currentAudio);
                     g.fillAll(juce::Colour(0xff101e2d));
                     g.setColour(juce::Colour(0xffe7edf5));
                     g.setFont(juce::Font(22.0f, juce::Font::bold));
