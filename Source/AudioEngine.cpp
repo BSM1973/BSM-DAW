@@ -1685,32 +1685,50 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceSeconds = sa + (sb - sa) * alpha;
 
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
-            double sourceSamplePosition = sourceSeconds * sourceRate;
-            // Mode Riche: granular overlap-add approximation. Short grains
-            // preserve local pitch by reading each grain at the native sample
-            // rate while the grain centres follow the Warp mapping.
-            if (mode == 4 && sourceRate > 0.0 && tb > ta)
+            const double sourceSamplePosition = sourceSeconds * sourceRate;
+            // Riche: two 50%-overlapped Hann-windowed grains. Each grain
+            // advances at native source rate; grain centres follow the Warp
+            // mapping. No allocation or locking is performed in this loop.
+            const double localRatio = (sb - sa) / span * sourceRate / rate;
+            const bool granular = mode == 4 && sourceRate > 0.0
+                && localRatio > 0.01 && std::abs(localRatio - 1.0) > 0.005;
+            auto readGrain = [&](int channel) -> float
             {
-                const double ratio = (sb - sa) / (tb - ta) * sourceRate / rate;
-                if (ratio > 0.01 && std::abs(ratio - 1.0) > 0.005)
+                if (!granular)
+                    return readWarpedSample(channel, sourceSamplePosition);
+                constexpr double grainSeconds = 0.060;
+                const double grainLength = juce::jmax(64.0, grainSeconds * rate);
+                const double hop = grainLength * 0.5;
+                const double targetSample = (double) (mixStart - startSample + s);
+                const double grainIndex = std::floor(targetSample / hop);
+                float weighted = 0.0f;
+                double weightSum = 0.0;
+                for (int overlap = 0; overlap < 2; ++overlap)
                 {
-                    constexpr double grainSeconds = 0.045;
-                    const double grain = juce::jmax(32.0, grainSeconds * rate);
-                    const double phase = (double) (mixStart - startSample + s) / grain;
-                    const double centre = std::floor(phase);
-                    const double local = phase - centre;
-                    const double targetCentre = (centre + 0.5) * grain;
-                    const double sourceCentre = (sa + (targetCentre / rate - ta)
-                        * (sb - sa) / (tb - ta)) * sourceRate;
-                    const double localOffset = (local - 0.5) * grain * sourceRate / rate;
-                    sourceSamplePosition = juce::jlimit(0.0, (double) lastSample,
-                        sourceCentre + localOffset);
+                    const double origin = (grainIndex - overlap) * hop;
+                    const double phase = (targetSample - origin) / grainLength;
+                    if (phase < 0.0 || phase >= 1.0)
+                        continue;
+                    const double centreSeconds = (origin + 0.5 * grainLength) / rate;
+                    // Clamp grain centres to the active marker segment.
+                    const double mappedSeconds = sa + (sb - sa)
+                        * juce::jlimit(0.0, 1.0, (centreSeconds - ta) / span);
+                    const double grainPosition = mappedSeconds * sourceRate
+                        + (phase - 0.5) * grainLength * sourceRate / rate;
+                    if (grainPosition < 0.0 || grainPosition > (double) lastSample)
+                        continue;
+                    const double weight = 0.5 - 0.5 * std::cos(
+                        juce::MathConstants<double>::twoPi * phase);
+                    weighted += (float) weight * readWarpedSample(channel, grainPosition);
+                    weightSum += weight;
                 }
-            }
+                return weightSum > 0.000001
+                    ? weighted / (float) weightSum : 0.0f;
+            };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                outputChannelData[0][outputOffset + s] += readWarpedSample(0, sourceSamplePosition) * leftGain;
+                outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                outputChannelData[1][outputOffset + s] += readWarpedSample(sourceChannels == 1 ? 0 : 1, sourceSamplePosition) * rightGain;
+                outputChannelData[1][outputOffset + s] += readGrain(sourceChannels == 1 ? 0 : 1) * rightGain;
         }
 
         processTrackInsertChain();
