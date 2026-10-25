@@ -5231,6 +5231,10 @@ public:
         {
             owner.getMidiEngine().endGroupedEdit();
             drawingNote = false;
+            // Explicitly invalidate the floating editor after note creation.
+            // Otherwise the last transient drawing frame can remain visible
+            // until the next note triggers another repaint.
+            repaint();
             return;
         }
         if (resizingLaneTop || resizingLaneDivider)
