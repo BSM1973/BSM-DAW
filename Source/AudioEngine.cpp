@@ -1685,7 +1685,28 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceSeconds = sa + (sb - sa) * alpha;
 
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
-            const double sourceSamplePosition = sourceSeconds * sourceRate;
+            double sourceSamplePosition = sourceSeconds * sourceRate;
+            // Mode Riche: granular overlap-add approximation. Short grains
+            // preserve local pitch by reading each grain at the native sample
+            // rate while the grain centres follow the Warp mapping.
+            if (mode == 4 && sourceRate > 0.0 && tb > ta)
+            {
+                const double ratio = (sb - sa) / (tb - ta) * sourceRate / rate;
+                if (ratio > 0.01 && std::abs(ratio - 1.0) > 0.005)
+                {
+                    constexpr double grainSeconds = 0.045;
+                    const double grain = juce::jmax(32.0, grainSeconds * rate);
+                    const double phase = (double) (mixStart - startSample + s) / grain;
+                    const double centre = std::floor(phase);
+                    const double local = phase - centre;
+                    const double targetCentre = (centre + 0.5) * grain;
+                    const double sourceCentre = (sa + (targetCentre / rate - ta)
+                        * (sb - sa) / (tb - ta)) * sourceRate;
+                    const double localOffset = (local - 0.5) * grain * sourceRate / rate;
+                    sourceSamplePosition = juce::jlimit(0.0, (double) lastSample,
+                        sourceCentre + localOffset);
+                }
+            }
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readWarpedSample(0, sourceSamplePosition) * leftGain;
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
