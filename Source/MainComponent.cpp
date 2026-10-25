@@ -345,6 +345,21 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(focusButton.getWidth() >= 95 ? "ZOOM SELECTION" : "ZOOM",
                 focusButton, juce::Justification::centred);
         }
+        // Compact Warp access reuses the existing track warp engine.
+        const auto warpButton = juce::Rectangle<int>(
+            focusButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(112, juce::jmax(0, inner.getRight() - focusButton.getRight() - 6)), 20);
+        if (warpButton.getWidth() >= 55)
+        {
+            const bool warpOn = audioEngine.isTrackWarpEnabled(selectedTrack);
+            g.setColour(warpOn ? juce::Colour(0xff285b76) : juce::Colour(0xff203b4d));
+            g.fillRoundedRectangle(warpButton.toFloat(), 3.0f);
+            g.setColour(warpOn ? juce::Colour(0xffa4e1f2) : juce::Colour(0xff83bed4));
+            g.drawRoundedRectangle(warpButton.toFloat(), 3.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(warpOn ? "WARP : ON" : "WARP : OFF",
+                       warpButton, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -3023,6 +3038,37 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto focusButton = juce::Rectangle<int>(
             formatButton.getRight() + 6, formatButton.getY(),
             juce::jmin(116, juce::jmax(0, dockInner.getRight() - formatButton.getRight() - 6)), 20);
+        const auto warpButton = juce::Rectangle<int>(
+            focusButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(112, juce::jmax(0, dockInner.getRight() - focusButton.getRight() - 6)), 20);
+        if (warpButton.getWidth() >= 55 && warpButton.contains(p))
+        {
+            juce::PopupMenu menu;
+            const bool enabled = audioEngine.isTrackWarpEnabled(selectedTrack);
+            menu.addItem(1, enabled ? "Desactiver Warp" : "Activer Warp");
+            menu.addSeparator();
+            // Existing engine interpolation modes, not Ableton algorithms.
+            const char* modes[] = { "Direct", "Lineaire", "Lisse", "Cubique", "Haute precision" };
+            const int currentMode = audioEngine.getTrackWarpMode(selectedTrack);
+            for (int mode = 0; mode < 5; ++mode)
+                menu.addItem(10 + mode, modes[mode], true, mode == currentMode);
+            juce::Component::SafePointer<MainComponent> safeThis(this);
+            const int trackIndex = selectedTrack;
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [safeThis, trackIndex](int result)
+                {
+                    if (safeThis == nullptr || trackIndex < 0
+                        || trackIndex >= safeThis->getAudioTrackCount())
+                        return;
+                    if (result == 1)
+                        safeThis->audioEngine.setTrackWarpEnabled(trackIndex,
+                            !safeThis->audioEngine.isTrackWarpEnabled(trackIndex));
+                    else if (result >= 10 && result < 15)
+                        safeThis->audioEngine.setTrackWarpMode(trackIndex, result - 10);
+                    safeThis->repaint();
+                });
+            return;
+        }
         if (focusButton.getWidth() >= 45 && focusButton.contains(p))
         {
             if (audioSelectionActive && audioSelectionTrack == selectedTrack)
