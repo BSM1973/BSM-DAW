@@ -3303,20 +3303,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         setMouseCursor(juce::MouseCursor::NormalCursor);
                         return;
                     }
-                    bool nearMarker = false;
                     int newHoveredMarker = -1;
+                    int nearestDistance = 9;
                     const int count = audio.getTrackWarpMarkerCount(track);
-                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     for (int i = 1; i < count - 1; ++i)
                     {
-                        const int x = xAt(audio.getTrackWarpMarkerTargetSeconds(track, i));
-                        if (std::abs(event.x - x) <= 8)
+                        const int distance = std::abs(event.x
+                            - xAt(audio.getTrackWarpMarkerTargetSeconds(track, i)));
+                        if (distance < nearestDistance)
                         {
-                            nearMarker = true;
+                            nearestDistance = distance;
                             newHoveredMarker = i;
-                            break;
                         }
                     }
+                    const bool nearMarker = newHoveredMarker >= 0;
                     setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
                                               : juce::MouseCursor::CrosshairCursor);
                     if (hoveredMarker != newHoveredMarker)
