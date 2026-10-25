@@ -1726,8 +1726,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         + (phase - 0.5) * grainLength * sourceRate / rate;
                     if (grainPosition < 0.0 || grainPosition > (double) lastSample)
                         continue;
-                    const float weight = (float) (0.5 - 0.5 * std::cos(
-                        juce::MathConstants<double>::twoPi * phase));
+                    // Fast, smooth raised-cosine approximation avoids a
+                    // transcendental cosine in the real-time sample loop.
+                    // The polynomial is zero at the grain edges and one
+                    // at its centre, with zero slope at both boundaries.
+                    const double x = 2.0 * juce::jmin(phase, 1.0 - phase);
+                    const double smooth = x * x * (3.0 - 2.0 * x);
+                    const float weight = (float) smooth;
                     grainPositions[overlap] = grainPosition;
                     grainWeights[overlap] = weight;
                     grainWeightSum += weight;
