@@ -1759,8 +1759,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     previousEnergy += std::abs(attackData[previousIndex]);
                 }
                 const float energyRise = (float) ((recentEnergy - previousEnergy) / 8.0);
+                // Scale the threshold with local signal level so quieter
+                // percussion can trigger without overreacting to loud pads.
+                const float localLevel = (float) (previousEnergy / 8.0);
+                const float threshold = juce::jmax(0.012f, localLevel * 0.55f);
                 const float transientBlend = juce::jlimit(0.0f, 1.0f,
-                    (energyRise - 0.035f) * 10.0f);
+                    (energyRise - threshold) / juce::jmax(0.02f, threshold));
                 return stretched * (1.0f - transientBlend)
                     + readWarpedSample(channel, sourceSamplePosition) * transientBlend;
             };
