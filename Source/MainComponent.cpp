@@ -2693,6 +2693,24 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
     juce::Component::mouseWheelMove(event, wheel);
 }
 
+void MainComponent::saveAudioDockClipBounds()
+{
+    if (audioClipBoundaryTrack >= 0)
+        audioDockClipBoundsByTrack[audioClipBoundaryTrack] =
+            { audioClipStartFraction, audioClipEndFraction };
+}
+
+void MainComponent::restoreAudioDockClipBounds(int track)
+{
+    if (audioClipBoundaryTrack == track)
+        return;
+    saveAudioDockClipBounds();
+    audioClipBoundaryTrack = track;
+    const auto it = audioDockClipBoundsByTrack.find(track);
+    audioClipStartFraction = it != audioDockClipBoundsByTrack.end() ? it->second.start : 0.0;
+    audioClipEndFraction = it != audioDockClipBoundsByTrack.end() ? it->second.end : 1.0;
+}
+
 bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 {
     if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop())
@@ -2701,6 +2719,7 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
     if (track < 0 || !isPointInsideAudioClip(track, p))
         return false;
     selectedTrack = track;
+    restoreAudioDockClipBounds(track);
     dockMixerMode = false;
     dockStepSequencerMode = false;
     drumSamplerDockSelected = false;
@@ -2931,12 +2950,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         // These markers are independent of the transient audio selection.
         if (event.mods.isAltDown() && event.mods.isLeftButtonDown())
         {
-            if (audioClipBoundaryTrack != selectedTrack)
-            {
-                audioClipBoundaryTrack = selectedTrack;
-                audioClipStartFraction = 0.0;
-                audioClipEndFraction = 1.0;
-            }
+            restoreAudioDockClipBounds(selectedTrack);
             const double position = snapAudioDockFraction(audioDockFractionAt(p.x));
             if (event.mods.isShiftDown())
                 audioClipEndFraction = juce::jmax(audioClipStartFraction, position);
@@ -2947,6 +2961,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         const double visible = 1.0 / audioDockZoom;
         const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+        restoreAudioDockClipBounds(selectedTrack);
         if (audioClipBoundaryTrack == selectedTrack && event.mods.isLeftButtonDown())
         {
             const int startX = wave.getX() + (int) std::lround(
