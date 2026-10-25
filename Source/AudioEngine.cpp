@@ -1668,6 +1668,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             return linear;
         };
 
+        // Per-block transient envelope, shared by both output channels.
+        // A fast rise preserves attacks; a slower fall avoids abrupt
+        // switching back to granular playback. No allocation or locks.
+        float smoothedTransientBlend = 0.0f;
+        bool transientEnvelopePrimed = false;
+        const float transientAttackStep = (float) (1.0 - std::exp(-1.0 / (rate * 0.0015)));
+        const float transientReleaseStep = (float) (1.0 - std::exp(-1.0 / (rate * 0.025)));
         int currentSegment = 0;
         for (int s = 0; s < samplesToMix; ++s)
         {
@@ -1793,6 +1800,26 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // reduce zipper-like changes in the direct/granular mix.
                 transientBlend = attackBlend * attackBlend
                     * (3.0f - 2.0f * attackBlend);
+            }
+            if (granular)
+            {
+                if (!transientEnvelopePrimed)
+                {
+                    smoothedTransientBlend = transientBlend;
+                    transientEnvelopePrimed = true;
+                }
+                else
+                {
+                    const float step = transientBlend > smoothedTransientBlend
+                        ? transientAttackStep : transientReleaseStep;
+                    smoothedTransientBlend += step * (transientBlend - smoothedTransientBlend);
+                }
+                transientBlend = juce::jlimit(0.0f, 1.0f, smoothedTransientBlend);
+            }
+            else
+            {
+                // A new granular region starts with its own envelope.
+                transientEnvelopePrimed = false;
             }
             auto readGrain = [&](int channel) -> float
             {
