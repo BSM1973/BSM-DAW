@@ -54,6 +54,50 @@ def metrics(values, rate, boundary_size):
     return result
 
 
+
+def envelope_metrics(channel, rate):
+    """Short-time energy variation; descriptive, not a perceptual score."""
+    window = max(1, round(rate * 0.01))
+    rms = [math.sqrt(sum(x * x for x in channel[i:i + window]) /
+                     len(channel[i:i + window]))
+           for i in range(0, len(channel), window)]
+    changes = [abs(rms[i] - rms[i - 1]) for i in range(1, len(rms))]
+    return {"window_ms": 10, "max_rms_step": max(changes, default=0.0),
+            "mean_rms_step": sum(changes) / len(changes) if changes else 0.0}
+
+
+def transient_metrics(channel, rate):
+    """Measure energy immediately after strongest attack-like derivative."""
+    if len(channel) < 3:
+        return {"attack_position": None, "attack_peak": 0.0}
+    index = max(range(1, len(channel)), key=lambda i: abs(channel[i] - channel[i - 1]))
+    end = min(len(channel), index + max(1, round(rate * 0.01)))
+    return {"attack_position": index,
+            "attack_peak": max(abs(x) for x in channel[index:end])}
+
+
+def boundary_anomaly(channel, block):
+    """Flag boundary jumps compared with neighboring non-boundary derivatives.
+
+    Robust ratio alone is not a definitive audible-click classifier.
+    """
+    jumps = [abs(channel[i] - channel[i - 1]) for i in range(1, len(channel))]
+    if not jumps:
+        return {"max_ratio": 0.0, "suspect_positions": []}
+    sorted_jumps = sorted(jumps)
+    baseline = sorted_jumps[len(sorted_jumps) // 2]
+    floor = max(0.002, baseline * 25)
+    suspects = []
+    for i in range(block, len(channel), block):
+        delta = jumps[i - 1]
+        local = jumps[max(0, i - block // 2 - 1):min(len(jumps), i + block // 2)]
+        local_median = sorted(local)[len(local) // 2] if local else 0.0
+        if delta > floor and delta > max(0.002, local_median * 20):
+            suspects.append({"sample": i, "jump": delta})
+    return {"max_ratio": max((item["jump"] / max(baseline, 1e-8) for item in suspects), default=0.0),
+            "suspect_positions": suspects[:20]}
+
+
 def analyse(reference, rendered, ratio, boundary):
     ref_rate, ref = read_wav(reference)
     out_rate, out = read_wav(rendered)
@@ -72,6 +116,9 @@ def analyse(reference, rendered, ratio, boundary):
         "buffer_boundary_samples": boundary,
         "reference_metrics": metrics(ref, ref_rate, boundary),
         "render_metrics": metrics(out, out_rate, boundary),
+        "render_envelope": [envelope_metrics(ch, out_rate) for ch in out],
+        "render_attacks": [transient_metrics(ch, out_rate) for ch in out],
+        "boundary_anomalies": [boundary_anomaly(ch, boundary) for ch in out],
         "note": "Large jumps can be legitimate attacks; flagged positions require waveform inspection and listening.",
     }
 
@@ -91,7 +138,7 @@ def self_test():
         assert result["duration_ratio_pass"]
         assert result["channels"] == 2
         assert result["render_metrics"][0]["peak"] > result["render_metrics"][1]["peak"]
-        assert result["render_metrics"][0]["clipped_samples"] == 0
+        assert result["render_metrics"][0]["clipped_samples"] == 0\n        assert "render_envelope" in result and "boundary_anomalies" in result
         print("Riche WAV analyzer self-test: PASS")
 
 
