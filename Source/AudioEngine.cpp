@@ -1780,8 +1780,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const float energyRise = (float) ((recentEnergy - previousEnergy) / divisor);
                 const float localLevel = (float) (previousEnergy / divisor);
                 const float threshold = juce::jmax(0.012f, localLevel * 0.55f);
-                transientBlend = juce::jlimit(0.0f, 1.0f,
+                const float attackBlend = juce::jlimit(0.0f, 1.0f,
                     (energyRise - threshold) / juce::jmax(0.02f, threshold));
+                // Ease the transient crossfade at both endpoints to
+                // reduce zipper-like changes in the direct/granular mix.
+                transientBlend = attackBlend * attackBlend
+                    * (3.0f - 2.0f * attackBlend);
             }
             auto readGrain = [&](int channel) -> float
             {
