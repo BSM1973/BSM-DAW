@@ -346,6 +346,27 @@ void MainComponent::paint(juce::Graphics& g)
         }
         g.setColour(juce::Colour(0xff152b3b));
         g.fillRoundedRectangle(wave.toFloat(), 5.0f);
+        if (audioSelectionActive && audioSelectionTrack == selectedTrack)
+        {
+            const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
+            const double right = juce::jmax(audioSelectionStart, audioSelectionEnd);
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const int x1 = wave.getX() + (int) std::lround((left - offset) / visible * wave.getWidth());
+            const int x2 = wave.getX() + (int) std::lround((right - offset) / visible * wave.getWidth());
+            const auto selection = juce::Rectangle<int>(juce::jmax(wave.getX(), x1), wave.getY(),
+                juce::jmax(0, juce::jmin(wave.getRight(), x2) - juce::jmax(wave.getX(), x1)), wave.getHeight());
+            g.setColour(juce::Colour(0xff276d90).withAlpha(0.35f));
+            g.fillRect(selection);
+            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+            g.setColour(juce::Colour(0xffc3e8f7));
+            g.setFont(juce::Font(11.0f));
+            g.drawText("DEBUT " + juce::String(left * duration, 4) + " s   FIN "
+                + juce::String(right * duration, 4) + " s   DUREE "
+                + juce::String((right - left) * duration, 4) + " s",
+                inner.getX(), inner.getY() + 42, inner.getWidth(), 17,
+                juce::Justification::centredRight, true);
+        }
         const int cy = wave.getCentreY();
         g.setColour(juce::Colour(0xff44647a));
         g.drawHorizontalLine(cy, (float)wave.getX(), (float)wave.getRight());
@@ -2361,6 +2382,22 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
+juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
+{
+    const auto editor = juce::Rectangle<int>(310, getMixerTop() + 36,
+        juce::jmax(0, getWidth() - 310),
+        juce::jmax(0, getHeight() - getMixerTop() - 36));
+    return editor.reduced(14, 12).withTrimmedTop(74).reduced(0, 8);
+}
+
+double MainComponent::audioDockFractionAt(int x) const
+{
+    const auto wave = getAudioDockWaveBounds();
+    const double relative = juce::jlimit(0.0, 1.0,
+        (double) (x - wave.getX()) / (double) juce::jmax(1, wave.getWidth()));
+    return juce::jlimit(0.0, 1.0, audioDockScroll + relative / audioDockZoom);
+}
+
 void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
                                    const juce::MouseWheelDetails& wheel)
 {
@@ -2534,6 +2571,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // arrange editing tool can move, split or erase the clip.
     if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
         && openAudioClipInDockAt(p)) return;
+    if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu()
+        && getAudioDockWaveBounds().contains(p))
+    {
+        audioSelectionTrack = selectedTrack;
+        audioSelectionStart = audioSelectionEnd = audioDockFractionAt(p.x);
+        audioSelectionActive = true;
+        draggingAudioSelection = true;
+        repaint();
+        return;
+    }
     if (!dockCollapsed && !event.mods.isPopupMenu()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
         && p.x >= 8 && p.x < 156)
@@ -3000,6 +3049,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingAudioSelection)
+    {
+        audioSelectionEnd = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x);
+        repaint();
+        return;
+    }
     if (draggingDockHeight)
     {
         const int maximumHeight = juce::jmax(246, getHeight() - getArrangeTop() - 110);
@@ -3101,6 +3156,13 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingAudioSelection)
+    {
+        audioSelectionEnd = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x);
+        draggingAudioSelection = false;
+        repaint();
+        return;
+    }
     if (draggingDockHeight)
     {
         draggingDockHeight = false;
