@@ -221,6 +221,20 @@ public:
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int targetTrackIndex, juce::String& error);
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
+    // Clip metadata model: supports multiple independently positioned clips
+    // without changing the existing single-buffer playback path.
+    struct AudioClipMetadata
+    {
+        juce::String id;
+        juce::String sourceName;
+        double startSeconds = 0.0;
+        double lengthSeconds = 0.0;
+        double trimStartFraction = 0.0;
+        double trimEndFraction = 1.0;
+    };
+    std::vector<AudioClipMetadata> getAudioClips(int trackIndex) const;
+    bool addAudioClipMetadata(int trackIndex, const AudioClipMetadata& clip);
+    void clearAudioClipMetadata(int trackIndex);
     juce::String getAudioClipId(int trackIndex) const;
     void setAudioClipId(int trackIndex, const juce::String& id);
     void setAudioFileName(int trackIndex, const juce::String& name);
@@ -290,6 +304,7 @@ private:
         std::atomic<std::uint64_t> contentRevision { 0 };
         juce::String fileName;
         juce::String clipId;
+        std::vector<AudioClipMetadata> clipMetadata;
     };
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
