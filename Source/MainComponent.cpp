@@ -293,20 +293,23 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff92b7c8));
         g.setFont(juce::Font(11.0f));
         // Reserve the right-hand area for selection controls: no text overlap.
-        const int toolbarWidth = 280;
-        const int helpWidth = juce::jmax(0, inner.getWidth() - toolbarWidth - 12);
+        const bool compactSelectionBar = inner.getWidth() < 600;
+        const int toolbarWidth = juce::jmin(280, juce::jmax(0, inner.getWidth()));
+        const int helpWidth = compactSelectionBar ? inner.getWidth()
+            : juce::jmax(0, inner.getWidth() - toolbarWidth - 12);
         g.drawText("Molette : zoom  |  Maj + molette : deplacement  |  Zoom "
                        + juce::String(audioDockZoom, 1) + "x",
                    inner.getX(), inner.getY() + 23, helpWidth, 18,
                    juce::Justification::centredLeft, true);
         // Audio selection controls share the existing dock header.
-        const auto selectionBar = juce::Rectangle<int>(inner.getRight() - 280,
-            inner.getY() + 22, 280, 21);
+        const auto selectionBar = juce::Rectangle<int>(inner.getRight() - toolbarWidth,
+            inner.getY() + (compactSelectionBar ? 44 : 22), toolbarWidth, 21);
         const char* selectionLabels[] = { "TOUT", "EFFACER", "DEBUT", "FIN" };
         for (int buttonIndex = 0; buttonIndex < 4; ++buttonIndex)
         {
-            const auto button = selectionBar.withX(selectionBar.getX() + buttonIndex * 70)
-                                            .withWidth(67);
+            const int slotWidth = selectionBar.getWidth() / 4;
+            const auto button = selectionBar.withX(selectionBar.getX() + buttonIndex * slotWidth)
+                                            .withWidth(juce::jmax(0, slotWidth - 3));
             g.setColour(juce::Colour(0xff203b4d));
             g.fillRoundedRectangle(button.toFloat(), 3.0f);
             g.setColour(juce::Colour(0xff83bed4));
@@ -315,8 +318,9 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(selectionLabels[buttonIndex], button, juce::Justification::centred);
         }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
-        const auto ruler = inner.withTrimmedTop(46).withHeight(24);
-        const auto wave = inner.withTrimmedTop(74).reduced(0, 8);
+        const int rulerTop = compactSelectionBar ? 70 : 46;
+        const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
+        const auto wave = inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
         const auto rulerSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
         const int rulerSamples = rulerSnapshot != nullptr ? rulerSnapshot->getNumSamples() : 0;
         const double rulerDuration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
@@ -2615,11 +2619,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             juce::jmax(0, getWidth() - 310),
             juce::jmax(0, getHeight() - getMixerTop() - 36));
         const auto dockInner = dockEditor.reduced(14, 12);
-        const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - 280,
-            dockInner.getY() + 22, 280, 21);
+        const bool compact = dockInner.getWidth() < 600;
+        const int barWidth = juce::jmin(280, juce::jmax(0, dockInner.getWidth()));
+        const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - barWidth,
+            dockInner.getY() + (compact ? 44 : 22), barWidth, 21);
         if (selectionBar.contains(p))
         {
-            const int command = (p.x - selectionBar.getX()) / 70;
+            const int slotWidth = juce::jmax(1, selectionBar.getWidth() / 4);
+            const int command = juce::jlimit(0, 3, (p.x - selectionBar.getX()) / slotWidth);
             if (command == 0)
             {
                 audioSelectionTrack = selectedTrack;
