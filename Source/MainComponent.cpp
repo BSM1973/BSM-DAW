@@ -317,6 +317,16 @@ void MainComponent::paint(juce::Graphics& g)
             g.setFont(juce::Font(10.0f, juce::Font::bold));
             g.drawText(selectionLabels[buttonIndex], button, juce::Justification::centred);
         }
+        const auto formatButton = juce::Rectangle<int>(
+            inner.getX(), inner.getY() + (compactSelectionBar ? 44 : 46), 126, 20);
+        const char* formatNames[] = { "SECONDES", "MIN:SEC", "ECHANTILLONS", "MESURES" };
+        g.setColour(juce::Colour(0xff203b4d));
+        g.fillRoundedRectangle(formatButton.toFloat(), 3.0f);
+        g.setColour(juce::Colour(0xff83bed4));
+        g.drawRoundedRectangle(formatButton.toFloat(), 3.0f, 1.0f);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]) + "  v",
+                   formatButton, juce::Justification::centred);
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 70 : 46;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -2694,6 +2704,27 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const int barWidth = juce::jmin(280, juce::jmax(0, dockInner.getWidth()));
         const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - barWidth,
             dockInner.getY() + (compact ? 44 : 22), barWidth, 21);
+        const auto formatButton = juce::Rectangle<int>(dockInner.getX(),
+            dockInner.getY() + (compact ? 44 : 46), 126, 20);
+        if (formatButton.contains(p))
+        {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Secondes", true, audioDockTimeFormat == 0);
+            menu.addItem(2, "Minutes : secondes", true, audioDockTimeFormat == 1);
+            menu.addItem(3, "Echantillons", true, audioDockTimeFormat == 2);
+            menu.addItem(4, "Mesures / temps", true, audioDockTimeFormat == 3);
+            juce::Component::SafePointer<MainComponent> safeThis(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [safeThis](int result)
+                {
+                    if (safeThis != nullptr && result >= 1 && result <= 4)
+                    {
+                        safeThis->audioDockTimeFormat = result - 1;
+                        safeThis->repaint();
+                    }
+                });
+            return;
+        }
         if (selectionBar.contains(p))
         {
             const int slotWidth = juce::jmax(1, selectionBar.getWidth() / 4);
