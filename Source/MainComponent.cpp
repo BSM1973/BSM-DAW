@@ -3366,11 +3366,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 const int last = juce::jlimit(first + 1, sampleCount,
                                     juce::jmax(first + 1, mappedEnd));
                                 float lo = 0.0f, hi = 0.0f;
-                                for (int i = first; i < last; ++i)
+                                // Bound the work per pixel for very long
+                                // recordings; always include both interval
+                                // endpoints so narrow peaks remain represented.
+                                const int span = last - first;
+                                const int step = juce::jmax(1, span / 1024);
+                                for (int i = first; i < last; i += step)
                                 {
                                     lo = juce::jmin(lo, data[i]);
                                     hi = juce::jmax(hi, data[i]);
                                 }
+                                lo = juce::jmin(lo, data[last - 1]);
+                                hi = juce::jmax(hi, data[last - 1]);
                                 // Translucent envelope adds body; the brighter
                                 // central stroke keeps sharp transients readable.
                                 const float peakTop = centre - hi * amplitude;
