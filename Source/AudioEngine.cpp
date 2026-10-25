@@ -1699,12 +1699,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double grainIndex = std::floor(targetSample / hop);
             const int windowSamples = juce::jmax(8,
                 (int) std::llround(sourceRate * 0.002));
-            auto readGrain = [&](int channel) -> float
+            double grainPositions[2] = {};
+            float grainWeights[2] = {};
+            double grainWeightSum = 0.0;
+            if (granular)
             {
-                if (!granular)
-                    return readWarpedSample(channel, sourceSamplePosition);
-                float weighted = 0.0f;
-                double weightSum = 0.0;
                 for (int overlap = 0; overlap < 2; ++overlap)
                 {
                     const double origin = (grainIndex - overlap) * hop;
@@ -1712,9 +1711,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     if (phase < 0.0 || phase >= 1.0)
                         continue;
                     const double centreSeconds = (origin + 0.5 * grainLength) / rate;
-                    // Map each grain centre through the full marker curve.
-                    // Unlike clamping to the current segment, this preserves
-                    // continuity when a grain overlaps a Warp marker.
                     int grainSegment = 0;
                     while (grainSegment < markerCount - 2
                            && centreSeconds > targetMarkers[(size_t) (grainSegment + 1)])
@@ -1730,11 +1726,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         + (phase - 0.5) * grainLength * sourceRate / rate;
                     if (grainPosition < 0.0 || grainPosition > (double) lastSample)
                         continue;
-                    const double weight = 0.5 - 0.5 * std::cos(
-                        juce::MathConstants<double>::twoPi * phase);
-                    weighted += (float) weight * readWarpedSample(channel, grainPosition);
-                    weightSum += weight;
+                    const float weight = (float) (0.5 - 0.5 * std::cos(
+                        juce::MathConstants<double>::twoPi * phase));
+                    grainPositions[overlap] = grainPosition;
+                    grainWeights[overlap] = weight;
+                    grainWeightSum += weight;
                 }
+            }
+            auto readGrain = [&](int channel) -> float
+            {
+                if (!granular)
+                    return readWarpedSample(channel, sourceSamplePosition);
+                float weighted = 0.0f;
+                for (int overlap = 0; overlap < 2; ++overlap)
+                    if (grainWeights[overlap] > 0.0f)
+                        weighted += grainWeights[overlap]
+                            * readWarpedSample(channel, grainPositions[overlap]);
+                const double weightSum = grainWeightSum;
                 const float stretched = weightSum > 0.000001
                     ? weighted / (float) weightSum : 0.0f;
                 // Transient protection: detect steep local attacks in the
