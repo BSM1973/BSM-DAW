@@ -3120,7 +3120,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     };
                     addAndMakeVisible(apply);
                     reset.setButtonText("REINITIALISER LES MARQUEURS");
-                    reset.onClick = [this] { audio.resetTrackWarpMarkers(track); };
+                    reset.onClick = [this]
+                    {
+                        const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                            juce::MessageBoxIconType::QuestionIcon,
+                            "Liberty | Warp",
+                            "Reinitialiser les marqueurs Warp de cette piste ?",
+                            this);
+                        if (confirmed)
+                        {
+                            audio.resetTrackWarpMarkers(track);
+                            repaint();
+                        }
+                    };
                     addAndMakeVisible(reset);
                 }
                 void paint(juce::Graphics& g) override
