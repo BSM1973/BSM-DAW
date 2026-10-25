@@ -3271,13 +3271,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     if (!inWaveform(event.getPosition()))
                     {
-                        hoveredMarker = -1;
-                        repaint();
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
                         setMouseCursor(juce::MouseCursor::NormalCursor);
                         return;
                     }
                     bool nearMarker = false;
-                    hoveredMarker = -1;
+                    int newHoveredMarker = -1;
                     const int count = audio.getTrackWarpMarkerCount(track);
                     const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     for (int i = 1; i < count - 1; ++i)
@@ -3286,20 +3289,25 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         if (std::abs(event.x - x) <= 8)
                         {
                             nearMarker = true;
-                            hoveredMarker = i;
+                            newHoveredMarker = i;
                             break;
                         }
                     }
                     setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
                                               : juce::MouseCursor::CrosshairCursor);
-                    repaint();
+                    if (hoveredMarker != newHoveredMarker)
+                    {
+                        hoveredMarker = newHoveredMarker;
+                        repaint();
+                    }
                 }
                 void mouseExit(const juce::MouseEvent&) override
                 {
+                    const bool hadHover = hoveredMarker >= 0;
                     hoveredMarker = -1;
                     if (draggingMarker < 0 && !panning)
                         setMouseCursor(juce::MouseCursor::NormalCursor);
-                    repaint();
+                    if (hadHover) repaint();
                 }
                 bool inWaveform(juce::Point<int> point) const
                 {
