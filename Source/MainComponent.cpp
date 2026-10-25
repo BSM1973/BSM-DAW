@@ -2419,7 +2419,9 @@ juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
     const auto editor = juce::Rectangle<int>(310, getMixerTop() + 36,
         juce::jmax(0, getWidth() - 310),
         juce::jmax(0, getHeight() - getMixerTop() - 36));
-    return editor.reduced(14, 12).withTrimmedTop(74).reduced(0, 8);
+    const auto inner = editor.reduced(14, 12);
+    const int rulerTop = inner.getWidth() < 600 ? 70 : 46;
+    return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
 }
 
 double MainComponent::snapAudioDockFraction(double fraction) const
