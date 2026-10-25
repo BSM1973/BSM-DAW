@@ -415,6 +415,8 @@ bool MainComponent::resetProjectState()
     midiEngine.clear();
     resetLibertyTrackColours();
     resetLibertyTrackNames();
+    // Do not leak audio dock marker positions into a new project.
+    importAudioDockClipBounds(juce::ValueTree("AudioDockClipBounds"));
 
     for (int i = 0; i < audioEngine.getAudioTrackCount(); ++i)
         clearLibertyAudioClipResizeSource(audioEngine, i);
