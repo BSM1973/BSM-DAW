@@ -4836,7 +4836,8 @@ public:
     // separate selection overlay that may only exist in floating windows.
     void paintOverChildren(juce::Graphics& g) override
     {
-        if (!selectingRectangle) return;
+        // Never retain a selection marquee while the user is drawing notes.
+        if (!selectingRectangle || drawingNote || getLibertyActiveTool() != 7) return;
         const auto area = juce::Rectangle<int>::leftTopRightBottom(juce::jmin(rectangleStart.x, rectangleEnd.x), juce::jmin(rectangleStart.y, rectangleEnd.y), juce::jmax(rectangleStart.x, rectangleEnd.x), juce::jmax(rectangleStart.y, rectangleEnd.y));
         g.setColour(juce::Colour(0xff56bfd9).withAlpha(0.14f)); g.fillRect(area);
         g.setColour(juce::Colour(0xff56bfd9)); g.drawRect(area, 1);
@@ -5030,6 +5031,8 @@ public:
 
         if (tool == 1) // DRAW / DESSINER
         {
+            // A previous marquee must not survive into a note-creation gesture.
+            selectingRectangle = false;
             const auto start = tickFromX(e.x);
             const auto length = drawingDurationTicks();
             const int notePitch = snapPitchToScale(pitch);
