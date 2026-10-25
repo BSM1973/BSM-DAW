@@ -58,8 +58,8 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff0d1014));
-        g.setColour(juce::Colour(0xff343a44));
+        g.fillAll(juce::Colour(0xff101e2d));
+        g.setColour(juce::Colour(0xff344e66));
         g.drawHorizontalLine(0, 0.0f, (float)getWidth());
 
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack)) return;
@@ -198,12 +198,12 @@ private:
     {
         switch (mode)
         {
-            case 0: return "Beats";
-            case 1: return "Tones";
-            case 2: return "Texture";
-            case 3: return "Re-Pitch";
-            case 4: return "Complex";
-            default: return "Beats";
+            case 0: return "Brut";
+            case 1: return "Fluide";
+            case 2: return "Doux";
+            case 3: return "Precis";
+            case 4: return "Riche";
+            default: return "Brut";
         }
     }
 
@@ -211,9 +211,9 @@ private:
     {
         auto drawButton = [&g](juce::Rectangle<int> r, const juce::String& text, bool active)
         {
-            g.setColour(active ? juce::Colour(0xff315f7a) : juce::Colour(0xff252a31));
+            g.setColour(active ? juce::Colour(0xff31536e) : juce::Colour(0xff192d40));
             g.fillRoundedRectangle(r.toFloat(), 5.0f);
-            g.setColour(active ? juce::Colour(0xff72d8f5) : juce::Colour(0xff4b525c));
+            g.setColour(active ? juce::Colour(0xffd9ad65) : juce::Colour(0xff466078));
             g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(10.0f, juce::Font::bold));
@@ -224,7 +224,7 @@ private:
         drawButton(warpButton(), owner.audioEngine.isTrackWarpEnabled(selectedTrack) ? "WARP ON" : "WARP OFF",
                    owner.audioEngine.isTrackWarpEnabled(selectedTrack));
         drawButton(modeButton(), "MODE  " + modeName(owner.audioEngine.getTrackWarpMode(selectedTrack)), true);
-        drawButton(resetButton(), "RESET WARP", false);
+        drawButton(resetButton(), "MARQUEURS : RESET", false);
 
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(12.0f, juce::Font::bold));
