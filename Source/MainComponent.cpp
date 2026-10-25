@@ -3356,8 +3356,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             {
                                 const int first = juce::jlimit(0, sampleCount - 1,
                                     (int)(sourceTimeForTarget(fractionAt(left + x) * fullSeconds) / fullSeconds * sampleCount));
+                                // Include the full source interval for each
+                                // screen column, even around tightly warped
+                                // transients where the mapping becomes steep.
+                                const int mappedEnd = juce::jlimit(0, sampleCount,
+                                    (int)std::ceil(sourceTimeForTarget(
+                                        fractionAt(left + x + 1) * fullSeconds)
+                                        / fullSeconds * sampleCount));
                                 const int last = juce::jlimit(first + 1, sampleCount,
-                                    (int)(sourceTimeForTarget(fractionAt(left + x + 1) * fullSeconds) / fullSeconds * sampleCount));
+                                    juce::jmax(first + 1, mappedEnd));
                                 float lo = 0.0f, hi = 0.0f;
                                 for (int i = first; i < last; ++i)
                                 {
