@@ -2601,8 +2601,12 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
         else
         {
             const double previousZoom = audioDockZoom;
+            // Anchor zoom to the waveform's real drawing bounds, not the
+            // surrounding dock (which also contains the toolbar and margins).
+            const auto waveBounds = getAudioDockWaveBounds();
             const double relativeX = juce::jlimit(0.0, 1.0,
-                (double) (p.x - area.getX()) / (double) juce::jmax(1, area.getWidth()));
+                (double) (p.x - waveBounds.getX())
+                    / (double) juce::jmax(1, waveBounds.getWidth()));
             const double cursorPosition = audioDockScroll + relativeX / previousZoom;
             audioDockZoom = juce::jlimit(1.0, 100000000.0,
                 previousZoom * std::pow(1.35, (double) wheel.deltaY));
