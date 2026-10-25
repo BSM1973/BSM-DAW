@@ -367,8 +367,8 @@ private:
         }
 
         g.setColour(owner.audioEngine.isTrackWarpEnabled(selectedTrack)
-            ? juce::Colour(0xff69d4ff)
-            : juce::Colour(0xff78bfe8));
+            ? juce::Colour(0xffffcf75)
+            : juce::Colour(0xffd8b878));
         g.strokePath(upper, juce::PathStrokeType(1.2f));
         g.strokePath(lower, juce::PathStrokeType(1.2f));
         g.setColour(juce::Colour(0xff2d3540));
