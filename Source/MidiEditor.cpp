@@ -5234,26 +5234,29 @@ public:
         {
             owner.getMidiEngine().endGroupedEdit();
             drawingNote = false;
-           #if JUCE_DEBUG
+            // Release-safe diagnostic: inspect the floating editor hierarchy.
+            // Written to a user-accessible file instead of DBG (Debug-only).
             if (auto* top = getTopLevelComponent(); top != nullptr && top != this)
             {
-                DBG("[Liberty MIDI] Note creation finished; top-level=" + top->getName()
-                    + " children=" + juce::String(top->getNumChildComponents()));
+                juce::String report;
+                report << "Liberty MIDI floating editor - note creation\n";
+                report << "Top-level: " << top->getName()
+                       << " children=" << top->getNumChildComponents() << "\n";
                 for (int i = 0; i < top->getNumChildComponents(); ++i)
                     if (auto* child = top->getChildComponent(i))
-                        DBG("[Liberty MIDI] Window child " + juce::String(i)
-                            + " name=" + child->getName()
-                            + " bounds=" + child->getBounds().toString()
-                            + " visible=" + juce::String((int)child->isVisible()));
-                DBG("[Liberty MIDI] PianoRoll children=" + juce::String(getNumChildComponents()));
+                        report << "Window child " << i << " name=" << child->getName()
+                               << " bounds=" << child->getBounds().toString()
+                               << " visible=" << (int)child->isVisible() << "\n";
+                report << "PianoRoll children=" << getNumChildComponents() << "\n";
                 for (int i = 0; i < getNumChildComponents(); ++i)
                     if (auto* child = getChildComponent(i))
-                        DBG("[Liberty MIDI] PianoRoll child " + juce::String(i)
-                            + " name=" + child->getName()
-                            + " bounds=" + child->getBounds().toString()
-                            + " visible=" + juce::String((int)child->isVisible()));
+                        report << "PianoRoll child " << i << " name=" << child->getName()
+                               << " bounds=" << child->getBounds().toString()
+                               << " visible=" << (int)child->isVisible() << "\n";
+                const auto diagnostics = juce::File::getSpecialLocation(
+                    juce::File::userDocumentsDirectory).getChildFile("Liberty-MIDI-Diagnostic.txt");
+                diagnostics.replaceWithText(report);
             }
-           #endif
             // Explicitly invalidate the floating editor after note creation.
             // Otherwise the last transient drawing frame can remain visible
             // until the next note triggers another repaint.
