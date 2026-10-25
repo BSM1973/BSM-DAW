@@ -3401,7 +3401,7 @@ public:
 
     // Dynamic range processing around MIDI velocity 64. Ratio < 1 compresses,
     // ratio > 1 expands, while all note positions and expressive flags remain intact.
-    void scaleSelectedVelocityDynamics(double ratio, int centre = 64)
+    void scaleSelectedVelocityDynamics(double ratio, int centre = 64, int offset = 0)
     {
         if (ratio <= 0.0 || centre < 1 || centre > 127) return;
         auto& midi = owner.getMidiEngine();
@@ -3421,7 +3421,7 @@ public:
             });
             if (it == notes.end()) return;
             const auto scaled = juce::jlimit(1, 127,
-                juce::roundToInt(static_cast<double>(centre) + (static_cast<double>(it->velocity) - centre) * ratio));
+                juce::roundToInt(static_cast<double>(centre) + (static_cast<double>(it->velocity) - centre) * ratio + offset));
             changed = changed || it->velocity != static_cast<std::uint8_t>(scaled);
             it->velocity = static_cast<std::uint8_t>(scaled);
             updatedSelection.push_back(*it);
@@ -3437,14 +3437,17 @@ public:
     {
     public:
         MidiDynamicsContent(std::vector<int> values, int initialRatio, int initialCentre,
-                           std::function<void(double, int)> apply)
+                           std::function<void(double, int, int)> apply)
             : velocities(std::move(values)), onApply(std::move(apply))
         {
             initialIntensity = initialRatio;
             initialCentreValue = initialCentre;
-            setSize(540, 524);
+            setSize(540, 566);
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
+            configure(offset, -63.0, 63.0, 0.0, "");
+            offset.onValueChange = [this] { syncPresetFromControls(); repaint(); };
+            addAndMakeVisible(offset);
             intensity.onValueChange = [this]
             {
                 if (!applyingPreset) syncPresetFromControls();
@@ -3475,6 +3478,7 @@ public:
                 applyingPreset = true;
                 intensity.setValue(ratios[id - 2], juce::sendNotificationSync);
                 centre.setValue(64, juce::sendNotificationSync);
+                offset.setValue(0, juce::sendNotificationSync);
                 applyingPreset = false;
             };
             addAndMakeVisible(presets);
@@ -3482,7 +3486,7 @@ public:
             cancelButton.setButtonText(juce::String::fromUTF8("Annuler"));
             applyButton.onClick = [this]
             {
-                if (onApply) onApply(intensity.getValue() / 100.0, (int)centre.getValue());
+                if (onApply) onApply(intensity.getValue() / 100.0, (int)centre.getValue(), (int)offset.getValue());
                 if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
                     window->exitModalState(1);
             };
@@ -3497,6 +3501,7 @@ public:
                 applyingPreset = true;
                 intensity.setValue(initialIntensity, juce::sendNotificationSync);
                 centre.setValue(initialCentreValue, juce::sendNotificationSync);
+                offset.setValue(0, juce::sendNotificationSync);
                 applyingPreset = false;
                 syncPresetFromControls();
                 repaint();
@@ -3511,9 +3516,10 @@ public:
             presets.setBounds(184, 37, 325, 28);
             intensity.setBounds(184, 79, 325, 34);
             centre.setBounds(184, 122, 325, 34);
-            resetButton.setBounds(24, 474, 128, 32);
-            cancelButton.setBounds(288, 474, 100, 32);
-            applyButton.setBounds(400, 474, 110, 32);
+            offset.setBounds(184, 161, 325, 34);
+            resetButton.setBounds(24, 516, 128, 32);
+            cancelButton.setBounds(288, 516, 100, 32);
+            applyButton.setBounds(400, 516, 110, 32);
         }
 
         void paint(juce::Graphics& g) override
@@ -3526,23 +3532,24 @@ public:
             g.drawText(juce::String::fromUTF8("Préréglage"), 24, 37, 155, 28, juce::Justification::centredLeft);
             g.drawText(juce::String::fromUTF8("Intensité"), 24, 79, 155, 32, juce::Justification::centredLeft);
             g.drawText(juce::String::fromUTF8("Vélocité centrale"), 24, 122, 155, 32, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Décalage global"), 24, 161, 155, 32, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff91a9bf));
             g.setFont(juce::Font(12.0f));
-            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 173, 205, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("APERÇU  ·  AVANT / APRÈS"), 24, 215, 205, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xffefaa92));
-            g.fillRoundedRectangle(229.0f, 179.0f, 9.0f, 9.0f, 2.0f);
+            g.fillRoundedRectangle(229.0f, 221.0f, 9.0f, 9.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
             g.setFont(juce::Font(10.0f));
-            g.drawText(juce::String::fromUTF8("Limite"), 241, 172, 60, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Limite"), 241, 214, 60, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff587187));
-            g.fillRoundedRectangle(305.0f, 179.0f, 10.0f, 10.0f, 2.0f);
+            g.fillRoundedRectangle(305.0f, 221.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
-            g.drawText(juce::String::fromUTF8("Avant"), 320, 172, 62, 22, juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("Avant"), 320, 214, 62, 22, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff4b9de0));
-            g.fillRoundedRectangle(392.0f, 179.0f, 10.0f, 10.0f, 2.0f);
+            g.fillRoundedRectangle(392.0f, 221.0f, 10.0f, 10.0f, 2.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
-            g.drawText(juce::String::fromUTF8("Après"), 407, 172, 70, 22, juce::Justification::centredLeft);
-            const auto area = juce::Rectangle<float>(24.0f, 200.0f, 492.0f, 145.0f);
+            g.drawText(juce::String::fromUTF8("Après"), 407, 214, 70, 22, juce::Justification::centredLeft);
+            const auto area = juce::Rectangle<float>(24.0f, 242.0f, 492.0f, 145.0f);
             g.setColour(juce::Colour(0xff192634));
             g.fillRoundedRectangle(area, 7.0f);
             g.setColour(juce::Colour(0xff34495b));
@@ -3571,7 +3578,7 @@ public:
             for (const int value : velocities)
             {
                 const int transformed = juce::jlimit(1, 127,
-                    juce::roundToInt(transformCentre + (static_cast<double>(value) - transformCentre) * transformRatio));
+                    juce::roundToInt(transformCentre + (static_cast<double>(value) - transformCentre) * transformRatio + offset.getValue()));
                 originalMin = juce::jmin(originalMin, value);
                 originalMax = juce::jmax(originalMax, value);
                 transformedMin = juce::jmin(transformedMin, transformed);
@@ -3591,39 +3598,39 @@ public:
             }
             // Statistics cover every selected note, not just the graph sample.
             g.setColour(juce::Colour(0xff192634));
-            g.fillRoundedRectangle(24.0f, 350.0f, 492.0f, 52.0f, 6.0f);
+            g.fillRoundedRectangle(24.0f, 392.0f, 492.0f, 52.0f, 6.0f);
             g.setFont(juce::Font(12.0f));
             g.setColour(juce::Colour(0xffa9bdd0));
             g.drawText(juce::String::fromUTF8("AVANT    Min ") + juce::String(originalMin)
                 + "  ·  Max " + juce::String(originalMax)
                 + "  ·  Moy " + juce::String(originalSum / velocities.size(), 1),
-                24, 353, 492, 20, juce::Justification::centredLeft);
+                24, 395, 492, 20, juce::Justification::centredLeft);
             g.setColour(juce::Colour(0xff79b9ee));
             g.drawText(juce::String::fromUTF8("APRÈS    Min ") + juce::String(transformedMin)
                 + "  ·  Max " + juce::String(transformedMax)
                 + "  ·  Moy " + juce::String(transformedSum / velocities.size(), 1),
-                24, 376, 492, 20, juce::Justification::centredLeft);
+                24, 418, 492, 20, juce::Justification::centredLeft);
             const double meanDelta = (transformedSum - originalSum) / static_cast<double>(velocities.size());
             g.setFont(juce::Font(11.0f));
             g.setColour(juce::Colour(0xff91a9bf));
             g.drawText(juce::String::fromUTF8("Notes sélectionnées : ") + juce::String(velocities.size()),
-                24, 413, 245, 20, juce::Justification::centredLeft);
+                24, 455, 245, 20, juce::Justification::centredLeft);
             g.setColour(meanDelta > 0.05 ? juce::Colour(0xff7dcfa9)
                         : meanDelta < -0.05 ? juce::Colour(0xffefaa92)
                         : juce::Colour(0xff91a9bf));
             g.drawText(juce::String::fromUTF8("Écart moyen : ")
                 + (meanDelta > 0.0 ? "+" : "") + juce::String(meanDelta, 1),
-                270, 413, 246, 20, juce::Justification::centredRight);
+                270, 455, 246, 20, juce::Justification::centredRight);
             g.setFont(juce::Font(10.5f));
             g.setColour(juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Aux limites MIDI : ")
                 + juce::String(clippedLow) + " (1)  ·  " + juce::String(clippedHigh) + " (127)",
-                24, 433, 492, 17, juce::Justification::centredLeft);
+                24, 475, 492, 17, juce::Justification::centredLeft);
             g.setColour((newlyLimitedLow + newlyLimitedHigh) > 0 ? juce::Colour(0xffefaa92)
                         : juce::Colour(0xff7890a6));
             g.drawText(juce::String::fromUTF8("Nouvelles aux limites : ")
                 + juce::String(newlyLimitedLow) + " (1)  ·  " + juce::String(newlyLimitedHigh) + " (127)",
-                24, 451, 492, 17, juce::Justification::centredLeft);
+                24, 493, 492, 17, juce::Justification::centredLeft);
             // Keep the full selection represented even when it exceeds 96 notes.
             const auto count = juce::jmin(velocities.size(), static_cast<std::size_t>(96));
             const float width = (area.getWidth() - 42.0f) / static_cast<float>(count);
@@ -3634,7 +3641,7 @@ public:
                 const auto sourceIndex = (static_cast<std::size_t>(i) * velocities.size()) / count;
                 const int velocity = velocities[sourceIndex];
                 const int processed = juce::jlimit(1, 127,
-                    juce::roundToInt(pivot + (static_cast<double>(velocity) - pivot) * ratio));
+                    juce::roundToInt(pivot + (static_cast<double>(velocity) - pivot) * ratio + offset.getValue()));
                 const float x = area.getX() + 32.0f + static_cast<float>(i) * width;
                 const float originalHeight = static_cast<float>(velocity) / 127.0f * 118.0f;
                 const float processedHeight = static_cast<float>(processed) / 127.0f * 118.0f;
@@ -3648,19 +3655,19 @@ public:
             }
             // Draw the sample count last so high-velocity bars cannot cover the label.
             g.setColour(juce::Colour(0xff192634).withAlpha(0.88f));
-            g.fillRoundedRectangle(268.0f, 328.0f, 240.0f, 16.0f, 3.0f);
+            g.fillRoundedRectangle(268.0f, 370.0f, 240.0f, 16.0f, 3.0f);
             g.setColour(juce::Colour(0xffa9bdd0));
             g.setFont(juce::Font(10.0f));
             g.drawText(juce::String(previewCount) + " / " + juce::String(velocities.size())
                            + juce::String::fromUTF8(" notes affichées"),
-                       270, 329, 236, 14, juce::Justification::centredRight);
+                       270, 371, 236, 14, juce::Justification::centredRight);
         }
 
     private:
         void syncPresetFromControls()
         {
             int matchingPreset = 1;
-            if (juce::roundToInt(centre.getValue()) == 64)
+            if (juce::roundToInt(centre.getValue()) == 64 && juce::roundToInt(offset.getValue()) == 0)
             {
                 const int ratios[] = { 65, 100, 135, 180 };
                 for (int i = 0; i < 4; ++i)
@@ -3686,7 +3693,7 @@ public:
         }
         std::vector<int> velocities;
         std::function<void(double, int)> onApply;
-        juce::Slider intensity, centre;
+        juce::Slider intensity, centre, offset;
         juce::ComboBox presets;
         bool applyingPreset = false;
         juce::TextButton applyButton, cancelButton, resetButton;
@@ -3706,9 +3713,9 @@ public:
         options.useNativeTitleBar = false;
         options.resizable = false;
         options.content.setOwned(new MidiDynamicsContent(std::move(velocities), initialRatio, initialCentre,
-            [safe = juce::Component::SafePointer<PianoRoll>(this)](double ratio, int centre)
+            [safe = juce::Component::SafePointer<PianoRoll>(this)](double ratio, int centre, int offset)
             {
-                if (safe != nullptr) safe->scaleSelectedVelocityDynamics(ratio, centre);
+                if (safe != nullptr) safe->scaleSelectedVelocityDynamics(ratio, centre, offset);
             }));
         options.launchAsync();
     }
