@@ -2606,6 +2606,49 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && openAudioClipInDockAt(p)) return;
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu())
+    {
+        const auto dockEditor = juce::Rectangle<int>(310, getMixerTop() + 36,
+            juce::jmax(0, getWidth() - 310),
+            juce::jmax(0, getHeight() - getMixerTop() - 36));
+        const auto dockInner = dockEditor.reduced(14, 12);
+        const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - 280,
+            dockInner.getY() + 22, 280, 21);
+        if (selectionBar.contains(p))
+        {
+            const int command = (p.x - selectionBar.getX()) / 70;
+            if (command == 0)
+            {
+                audioSelectionTrack = selectedTrack;
+                audioSelectionStart = 0.0;
+                audioSelectionEnd = 1.0;
+                audioSelectionActive = true;
+            }
+            else if (command == 1)
+                audioSelectionActive = false;
+            else if (command == 2 || command == 3)
+            {
+                const double visibleStart = snapAudioDockFraction(audioDockScroll);
+                const double visibleEnd = snapAudioDockFraction(
+                    juce::jmin(1.0, audioDockScroll + 1.0 / audioDockZoom));
+                if (!audioSelectionActive || audioSelectionTrack != selectedTrack)
+                {
+                    audioSelectionStart = visibleStart;
+                    audioSelectionEnd = visibleEnd;
+                }
+                audioSelectionTrack = selectedTrack;
+                audioSelectionActive = true;
+                if (command == 2) audioSelectionStart = visibleStart;
+                else audioSelectionEnd = visibleEnd;
+                if (audioSelectionStart > audioSelectionEnd)
+                    std::swap(audioSelectionStart, audioSelectionEnd);
+            }
+            repaint();
+            return;
+        }
+    }
+    if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu()
         && getAudioDockWaveBounds().contains(p))
     {
