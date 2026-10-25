@@ -1692,15 +1692,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double localRatio = (sb - sa) / span * sourceRate / rate;
             const bool granular = mode == 4 && sourceRate > 0.0
                 && localRatio > 0.01 && std::abs(localRatio - 1.0) > 0.005;
+            constexpr double grainSeconds = 0.060;
+            const double grainLength = juce::jmax(64.0, grainSeconds * rate);
+            const double hop = grainLength * 0.5;
+            const double targetSample = (double) (mixStart - startSample + s);
+            const double grainIndex = std::floor(targetSample / hop);
+            const int windowSamples = juce::jmax(8,
+                (int) std::llround(sourceRate * 0.002));
             auto readGrain = [&](int channel) -> float
             {
                 if (!granular)
                     return readWarpedSample(channel, sourceSamplePosition);
-                constexpr double grainSeconds = 0.060;
-                const double grainLength = juce::jmax(64.0, grainSeconds * rate);
-                const double hop = grainLength * 0.5;
-                const double targetSample = (double) (mixStart - startSample + s);
-                const double grainIndex = std::floor(targetSample / hop);
                 float weighted = 0.0f;
                 double weightSum = 0.0;
                 for (int overlap = 0; overlap < 2; ++overlap)
@@ -1745,8 +1747,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Compare the recent and preceding short-time mean absolute
                 // amplitudes. A positive energy rise is more robust than
                 // a single-sample derivative, especially on pitched tones.
-                const int windowSamples = juce::jmax(8,
-                    (int) std::llround(sourceRate * 0.002));
                 double recentEnergy = 0.0;
                 double previousEnergy = 0.0;
                 for (int k = 0; k < 8; ++k)
