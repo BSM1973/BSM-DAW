@@ -1600,6 +1600,23 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     g.setColour(juce::Colour(0xff89d6e5));
                 }
                 g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, selected ? 1.5f : 1.0f);
+                // Additional clips are metadata-only until multi-source playback is wired.
+                // Draw them as distinct, clearly identified non-playing regions.
+                for (const auto& extra : audioEngine.getAudioClips(i))
+                {
+                    const int extraX = headerW + (int) std::round(extra.startSeconds * pixelsPerSecond);
+                    const int extraW = juce::jmax(1, (int) std::round(extra.lengthSeconds * pixelsPerSecond));
+                    const juce::Rectangle<int> extraBounds(extraX, clip.getY(), extraW, clip.getHeight());
+                    if (!extraBounds.intersects(row.withTrimmedLeft(headerW)))
+                        continue;
+                    g.setColour(juce::Colour(0xff304258));
+                    g.fillRoundedRectangle(extraBounds.toFloat(), 5.0f);
+                    g.setColour(juce::Colour(0xff8bb2d5));
+                    g.drawRoundedRectangle(extraBounds.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                    g.setFont(11.0f);
+                    g.drawFittedText(extra.sourceName.isNotEmpty() ? extra.sourceName : "Clip audio",
+                                     extraBounds.reduced(6, 3), juce::Justification::centredLeft, 1);
+                }
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
                     const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
