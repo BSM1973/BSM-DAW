@@ -29,6 +29,9 @@ jobs:
           restore-keys: |
             liberty-ccache-arm64-${{ runner.os }}-
 
+      - name: Validate Riche WAV analyzer
+        run: python3 Tests/RicheAudioValidation.py --self-test
+
       - name: Guard validated track header controls
         run: python3 Tests/TrackHeaderRegression.py
 
