@@ -1780,8 +1780,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const float energyRise = (float) ((recentEnergy - previousEnergy) / divisor);
                 const float localLevel = (float) (previousEnergy / divisor);
                 const float threshold = juce::jmax(0.012f, localLevel * 0.55f);
-                const float attackBlend = juce::jlimit(0.0f, 1.0f,
+                // Require both an absolute rise and a meaningful relative
+                // increase, avoiding false transients on sustained material.
+                const float relativeRise = energyRise
+                    / juce::jmax(0.02f, localLevel);
+                const float absoluteAttack = juce::jlimit(0.0f, 1.0f,
                     (energyRise - threshold) / juce::jmax(0.02f, threshold));
+                const float relativeAttack = juce::jlimit(0.0f, 1.0f,
+                    (relativeRise - 0.35f) / 0.65f);
+                const float attackBlend = absoluteAttack * relativeAttack;
                 // Ease the transient crossfade at both endpoints to
                 // reduce zipper-like changes in the direct/granular mix.
                 transientBlend = attackBlend * attackBlend
