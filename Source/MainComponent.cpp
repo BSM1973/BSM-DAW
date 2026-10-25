@@ -1609,9 +1609,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     const juce::Rectangle<int> extraBounds(extraX, clip.getY(), extraW, clip.getHeight());
                     if (!extraBounds.intersects(row.withTrimmedLeft(headerW)))
                         continue;
-                    g.setColour(juce::Colour(0xff304258));
+                    const bool extraSelected = selectedExtraAudioClipTrack == i
+                        && selectedExtraAudioClipId == extra.id;
+                    g.setColour(extraSelected ? juce::Colour(0xff38657c)
+                                              : juce::Colour(0xff304258));
                     g.fillRoundedRectangle(extraBounds.toFloat(), 5.0f);
-                    g.setColour(juce::Colour(0xff8bb2d5));
+                    g.setColour(extraSelected ? juce::Colour(0xffb5eafa)
+                                              : juce::Colour(0xff8bb2d5));
                     g.drawRoundedRectangle(extraBounds.toFloat().reduced(0.5f), 5.0f, 1.0f);
                     g.setFont(11.0f);
                     g.drawFittedText(extra.sourceName.isNotEmpty() ? extra.sourceName : "Clip audio",
@@ -2966,6 +2970,37 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // A listener attached recursively receives the original child event.
     // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
+    // Select metadata clips independently without invoking the legacy audio
+    // move/split tools, which currently operate on the primary track buffer.
+    if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
+        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int track = getAudioTrackAtPosition(p);
+        if (track >= 0)
+        {
+            const int rowH = getLibertyTrackRowHeight();
+            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            const auto clips = audioEngine.getAudioClips(track);
+            for (auto it = clips.rbegin(); it != clips.rend(); ++it)
+            {
+                const int x = trackHeaderWidth
+                    + (int) std::round(it->startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1,
+                    (int) std::round(it->lengthSeconds * pixelsPerSecond));
+                if (juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(p))
+                {
+                    selectedTrack = track;
+                    selectedExtraAudioClipTrack = track;
+                    selectedExtraAudioClipId = it->id;
+                    repaint();
+                    return;
+                }
+            }
+            selectedExtraAudioClipTrack = -1;
+            selectedExtraAudioClipId.clear();
+        }
+    }
     // Route the second press of an audio-clip double-click before any
     // arrange editing tool can move, split or erase the clip.
     if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
