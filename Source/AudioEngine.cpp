@@ -1701,8 +1701,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // supported ratio limits, avoiding an abrupt timbre switch.
             const float ratioBlend = granular
                 ? (float) juce::jlimit(0.0, 1.0,
-                    juce::jmin((localRatio - 0.20) / 0.10,
-                               (4.5 - localRatio) / 1.0))
+                    juce::jmin(juce::jmin((localRatio - 0.20) / 0.10,
+                                         (4.5 - localRatio) / 1.0),
+                               (std::abs(localRatio - 1.0) - 0.005) / 0.075))
                 : 0.0f;
             constexpr double grainSeconds = 0.060;
             const double grainLength = juce::jmax(64.0, grainSeconds * rate);
