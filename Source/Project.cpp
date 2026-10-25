@@ -698,6 +698,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             auto* element = clipsElement->createNewChildElement("Clip");
             element->setAttribute("id", clip.id);
             element->setAttribute("sourceName", clip.sourceName);
+            element->setAttribute("sourcePath", clip.sourcePath);
             element->setAttribute("startSeconds", clip.startSeconds);
             element->setAttribute("lengthSeconds", clip.lengthSeconds);
             element->setAttribute("trimStart", clip.trimStartFraction);
@@ -1380,11 +1381,17 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 AudioEngine::AudioClipMetadata clip;
                 clip.id = element->getStringAttribute("id");
                 clip.sourceName = element->getStringAttribute("sourceName");
+                clip.sourcePath = element->getStringAttribute("sourcePath");
                 clip.startSeconds = element->getDoubleAttribute("startSeconds", 0.0);
                 clip.lengthSeconds = element->getDoubleAttribute("lengthSeconds", 0.0);
                 clip.trimStartFraction = element->getDoubleAttribute("trimStart", 0.0);
                 clip.trimEndFraction = element->getDoubleAttribute("trimEnd", 1.0);
-                audioEngine.addAudioClipMetadata(index, clip);
+                if (audioEngine.addAudioClipMetadata(index, clip) && clip.sourcePath.isNotEmpty())
+                {
+                    juce::String clipLoadError;
+                    audioEngine.loadAudioClipSource(index, clip.id,
+                        juce::File(clip.sourcePath), clipLoadError);
+                }
             }
         }
     }
