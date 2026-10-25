@@ -59,6 +59,21 @@ jobs:
       - name: Run Drum Sampler regression tests
         run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
 
+      - name: Render and measure real Riche engine fixtures
+        run: |
+          python3 Tests/GenerateRicheFixtures.py build-fast/riche-fixtures
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for kind in drums voice guitar; do
+            for ratio in 0.75 1.5; do
+              for block in 64 256 1024; do
+                input="build-fast/riche-fixtures/${kind}.wav"
+                output="build-fast/riche-fixtures/${kind}-${ratio}-${block}.wav"
+                "$APP" --render-riche-test "$input" "$output" "$ratio" "$block"
+                python3 Tests/RicheAudioValidation.py --reference "$input" --render "$output" --ratio "$ratio" --boundary "$block" --json "build-fast/riche-fixtures/${kind}-${ratio}-${block}.json" > /dev/null
+              done
+            done
+          done
+
       - name: Verify application bundle
         run: |
           APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
