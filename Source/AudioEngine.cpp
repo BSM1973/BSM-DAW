@@ -1016,7 +1016,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear(); track.clipId.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
@@ -1208,6 +1208,15 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
 
 bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->loaded.load(std::memory_order_acquire); }
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
+juce::String AudioEngine::getAudioClipId(int trackIndex) const
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->clipId : juce::String{};
+}
+void AudioEngine::setAudioClipId(int trackIndex, const juce::String& id)
+{
+    if (isValidTrackIndex(trackIndex))
+        tracks[(size_t)trackIndex]->clipId = id;
+}
 void AudioEngine::setAudioFileName(int trackIndex, const juce::String& name) { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->fileName = name; }
 double AudioEngine::getAudioFileLengthSeconds(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->lengthSeconds.load() : 0.0; }
 void AudioEngine::setAudioFileLengthSeconds(int trackIndex, double seconds) noexcept
