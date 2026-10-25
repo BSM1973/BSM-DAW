@@ -1792,15 +1792,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // At source boundaries one grain can fall outside the
                 // buffer. Use the direct sample instead of producing a
                 // sudden silent gap when no valid grain remains.
+                const float directSample = readWarpedSample(channel, sourceSamplePosition);
                 const float stretched = weightSum > 0.000001
                     ? weighted / (float) weightSum
-                    : readWarpedSample(channel, sourceSamplePosition);
+                    : directSample;
+                // If only part of the overlap survives at a file edge,
+                // blend toward the direct sample instead of fully
+                // normalising a nearly silent, isolated grain.
+                const float edgeCoverage = (float) juce::jlimit(0.0, 1.0,
+                    weightSum / 0.5);
+                const float edgeSafeSample = stretched * edgeCoverage
+                    + directSample * (1.0f - edgeCoverage);
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
                 const float directBlend = 1.0f - ratioBlend * (1.0f - transientBlend);
-                return stretched * (1.0f - directBlend)
-                    + readWarpedSample(channel, sourceSamplePosition) * directBlend;
+                return edgeSafeSample * (1.0f - directBlend)
+                    + directSample * directBlend;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
