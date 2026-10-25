@@ -437,6 +437,7 @@ public:
     // Non-destructive clip boundaries in the audio dock (display state only).
     double audioClipStartFraction = 0.0, audioClipEndFraction = 1.0;
     int audioClipBoundaryTrack = -1;
+    int draggingAudioClipBoundary = 0; // 0 none, 1 start, 2 end
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
