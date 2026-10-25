@@ -3086,7 +3086,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             public:
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
-                    setSize(780, 430);
+                    setSize(900, 550);
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
@@ -3206,7 +3206,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 bool inWaveform(juce::Point<int> point) const
                 {
                     return point.x >= 40 && point.x < getWidth() - 40
-                        && point.y >= 350 && point.y <= 395;
+                        && point.y >= 350 && point.y <= getHeight() - 60;
                 }
                 double timeAt(int x) const
                 {
@@ -3229,7 +3229,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
                     g.setColour(juce::Colour(0xff142b41));
                     g.fillRoundedRectangle(26.0f, 318.0f, (float)getWidth() - 52.0f,
-                                           (float)juce::jmax(30, getHeight() - 405), 7.0f);
+                                           (float)juce::jmax(30, getHeight() - 350), 7.0f);
                     g.setColour(juce::Colour(0xff8faec5));
                     g.setFont(juce::Font(12.0f));
                     g.drawText("EDITION DES MARQUEURS", 40, 330, getWidth() - 80, 20,
@@ -3245,8 +3245,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int width = juce::jmax(1, right - left);
                         const int sampleCount = pcm->getNumSamples();
                         const float* data = pcm->getReadPointer(0);
-                        const float centre = 371.0f;
-                        const float amplitude = 19.0f;
+                        const float centre = (350.0f + (float)getHeight() - 60.0f) * 0.5f;
+                        const float amplitude = juce::jmax(19.0f, ((float)getHeight() - 410.0f) * 0.42f);
                         g.setColour(juce::Colour(0xff496579));
                         g.drawHorizontalLine((int)centre, (float)left, (float)right);
                         g.setColour(juce::Colour(0xffffcf75).withAlpha(0.85f));
@@ -3280,14 +3280,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const bool endpoint = marker == 0 || marker == markerCount - 1;
                         g.setColour(endpoint ? juce::Colour(0xff8196a8)
                                              : juce::Colour(0xffffc857));
-                        g.drawVerticalLine(x, 352.0f, 393.0f);
+                        g.drawVerticalLine(x, 352.0f, (float)getHeight() - 60.0f);
                         g.fillEllipse((float)x - 3.0f, 349.0f, 6.0f, 6.0f);
                     }
                     g.setColour(juce::Colour(0xffa7bfd1));
                     g.setFont(juce::Font(11.0f));
                     g.drawText("Marqueurs : " + juce::String(markerCount)
                                + "   |   Double-clic : ajouter  |  Glisser : deplacer  |  Clic droit : supprimer",
-                               40, 398, getWidth() - 80, 18, juce::Justification::centredLeft);
+                               40, getHeight() - 55, getWidth() - 80, 18, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
                                + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
