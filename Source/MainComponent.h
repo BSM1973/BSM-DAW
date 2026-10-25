@@ -428,6 +428,7 @@ public:
     // Audio dock navigation state (display-only; no changes to audio samples).
     double audioDockZoom = 1.0;
     double audioDockScroll = 0.0;
+    int audioDockTimeFormat = 0; // 0 seconds, 1 clock, 2 samples, 3 bars/beats
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
     int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
