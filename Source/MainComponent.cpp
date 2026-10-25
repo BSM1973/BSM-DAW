@@ -3048,10 +3048,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             menu.addItem(1, enabled ? "Desactiver Warp" : "Activer Warp");
             menu.addSeparator();
             // Existing engine interpolation modes, not Ableton algorithms.
-            const char* modes[] = { "Direct", "Lineaire", "Lisse", "Cubique", "Haute precision" };
+            const char* modes[] = { "Brut (sans interpolation)", "Fluide (lineaire)", "Doux (filtre)", "Precise (cubique)", "Riche (interpolation avancee)" };
             const int currentMode = audioEngine.getTrackWarpMode(selectedTrack);
             for (int mode = 0; mode < 5; ++mode)
                 menu.addItem(10 + mode, modes[mode], true, mode == currentMode);
+            menu.addSeparator();
+            juce::PopupMenu stretchMenu;
+            stretchMenu.addItem(30, "50 % (duree x 0,5)");
+            stretchMenu.addItem(31, "75 % (duree x 0,75)");
+            stretchMenu.addItem(32, "125 % (duree x 1,25)");
+            stretchMenu.addItem(33, "150 % (duree x 1,5)");
+            stretchMenu.addItem(34, "200 % (duree x 2)");
+            menu.addSubMenu("Etirement temporel (hauteur variable)", stretchMenu);
+            menu.addItem(40, "Reinitialiser le Warp et la duree");
             juce::Component::SafePointer<MainComponent> safeThis(this);
             const int trackIndex = selectedTrack;
             menu.showMenuAsync(juce::PopupMenu::Options(),
@@ -3065,6 +3074,29 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             !safeThis->audioEngine.isTrackWarpEnabled(trackIndex));
                     else if (result >= 10 && result < 15)
                         safeThis->audioEngine.setTrackWarpMode(trackIndex, result - 10);
+                    else if (result >= 30 && result <= 34)
+                    {
+                        const double factors[] = { 0.5, 0.75, 1.25, 1.5, 2.0 };
+                        const double currentLength = safeThis->audioEngine.getAudioFileLengthSeconds(trackIndex);
+                        if (currentLength > 0.0)
+                        {
+                            safeThis->audioEngine.setAudioFileLengthSeconds(trackIndex,
+                                currentLength * factors[result - 30]);
+                            safeThis->audioEngine.setTrackWarpEnabled(trackIndex, true);
+                            safeThis->audioEngine.resetTrackWarpMarkers(trackIndex);
+                        }
+                    }
+                    else if (result == 40)
+                    {
+                        const auto buffer = safeThis->audioEngine.getAudioBufferSnapshot(trackIndex);
+                        const double sourceRate = safeThis->audioEngine.getAudioBufferSampleRate(trackIndex);
+                        if (buffer != nullptr && sourceRate > 0.0)
+                        {
+                            safeThis->audioEngine.setAudioFileLengthSeconds(trackIndex,
+                                (double) buffer->getNumSamples() / sourceRate);
+                            safeThis->audioEngine.resetTrackWarpMarkers(trackIndex);
+                        }
+                    }
                     safeThis->repaint();
                 });
             return;
