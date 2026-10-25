@@ -4847,7 +4847,11 @@ public:
         if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
             || !isWithinPitchRows(e.y))
             return;
-        const int pitch = pitchFromY(e.y);
+        // Double-click must respect the currently selected MIDI tool.
+        // In particular, Select/Erase/Resize must not silently draw notes.
+        if (getLibertyActiveTool() != 1)
+            return;
+        const int pitch = snapPitchToScale(pitchFromY(e.y));
         const auto tick = tickFromX(e.x);
         if (owner.getMidiEngine().addNote(tick, drawingDurationTicks(), pitch, 100, 1))
         {
@@ -5234,33 +5238,6 @@ public:
         {
             owner.getMidiEngine().endGroupedEdit();
             drawingNote = false;
-            // One-shot in-app diagnostic, visible in Release without filesystem permissions.
-            // Do not interrupt every note: this is shown once per application session.
-            static bool diagnosticShown = false;
-            if (!diagnosticShown)
-            {
-                diagnosticShown = true;
-                juce::String report;
-                report << "Diagnostic Piano Roll - version 7c7bdb3+\\n";
-                if (auto* top = getTopLevelComponent(); top != nullptr)
-                {
-                    report << "Fenetre : " << top->getName()
-                           << " | composants : " << top->getNumChildComponents() << "\\n";
-                    for (int i = 0; i < top->getNumChildComponents(); ++i)
-                        if (auto* child = top->getChildComponent(i))
-                            report << "Fenetre[" << i << "] " << child->getName()
-                                   << " " << child->getBounds().toString() << "\\n";
-                }
-                report << "Piano Roll : " << getNumChildComponents() << " composants\\n";
-                for (int i = 0; i < getNumChildComponents(); ++i)
-                    if (auto* child = getChildComponent(i))
-                        report << "[" << i << "] " << child->getName()
-                               << " " << child->getBounds().toString()
-                               << " visible=" << (int)child->isVisible() << "\\n";
-                juce::AlertWindow::showMessageBoxAsync(
-                    juce::MessageBoxIconType::InfoIcon,
-                    "Liberty - Diagnostic Piano Roll", report, "Fermer");
-            }
             // Explicitly invalidate the floating editor after note creation.
             // Otherwise the last transient drawing frame can remain visible
             // until the next note triggers another repaint.
