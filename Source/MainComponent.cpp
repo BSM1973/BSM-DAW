@@ -505,20 +505,7 @@ void MainComponent::paint(juce::Graphics& g)
             const juce::String samples = "ECH " + juce::String(firstSample)
                 + " - " + juce::String(lastSample)
                 + "   (" + juce::String(lastSample - firstSample) + " echantillons)";
-            // Keep selection details inside the waveform rather than on top of
-            // the compact toolbar, format selector or time ruler.
-            const auto selectionInfo = juce::Rectangle<int>(
-                wave.getX() + 4, wave.getBottom() - 23,
-                juce::jmax(0, wave.getWidth() - 8), 19);
-            if (selectionInfo.getWidth() >= 80 && wave.getHeight() >= 28)
-            {
-                g.setColour(juce::Colour(0xff10283a).withAlpha(0.91f));
-                g.fillRoundedRectangle(selectionInfo.toFloat(), 3.0f);
-                g.setColour(juce::Colour(0xffc3e8f7));
-                g.drawText(timing + "   |   " + samples,
-                    selectionInfo.reduced(5, 0),
-                    juce::Justification::centredRight, true);
-            }
+
         }
         const int cy = wave.getCentreY();
         g.setColour(juce::Colour(0xff44647a));
@@ -607,6 +594,38 @@ void MainComponent::paint(juce::Graphics& g)
                 const float bottom = (float) cy - low * amplitude;
                 g.setColour(juce::Colour(0xff65c7e2));
                 g.drawVerticalLine(wave.getX() + x, top, bottom);
+            }
+        }
+        // Paint the selection readout after the waveform so the waveform
+        // strokes cannot obscure its translucent background or text.
+        if (audioSelectionActive && audioSelectionTrack == selectedTrack)
+        {
+            const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
+            const double right = juce::jmax(audioSelectionStart, audioSelectionEnd);
+            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+            const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+            const juce::int64 sampleCount = snapshot != nullptr ? snapshot->getNumSamples() : 0;
+            const juce::int64 firstSample = (juce::int64) std::llround(left * (double) sampleCount);
+            const juce::int64 lastSample = (juce::int64) std::llround(right * (double) sampleCount);
+            const juce::String timing = juce::String(left * duration, 3) + " - "
+                + juce::String(right * duration, 3) + " s ("
+                + juce::String((right - left) * duration, 3) + " s)";
+            const juce::String samples = juce::String(firstSample) + " - "
+                + juce::String(lastSample) + " ("
+                + juce::String(lastSample - firstSample) + " echantillons)";
+            // Keep selection details inside the waveform rather than on top of
+            // the compact toolbar, format selector or time ruler.
+            const auto selectionInfo = juce::Rectangle<int>(
+                wave.getX() + 4, wave.getBottom() - 23,
+                juce::jmax(0, wave.getWidth() - 8), 19);
+            if (selectionInfo.getWidth() >= 80 && wave.getHeight() >= 28)
+            {
+                g.setColour(juce::Colour(0xff10283a).withAlpha(0.91f));
+                g.fillRoundedRectangle(selectionInfo.toFloat(), 3.0f);
+                g.setColour(juce::Colour(0xffc3e8f7));
+                g.drawText(timing + "   |   " + samples,
+                    selectionInfo.reduced(5, 0),
+                    juce::Justification::centredRight, true);
             }
         }
     }
