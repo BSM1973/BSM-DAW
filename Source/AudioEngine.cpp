@@ -991,6 +991,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.loaded.store(false, std::memory_order_release);
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
+    track.clipId = juce::Uuid().toString();
     track.fileName = std::move(newFileName); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
