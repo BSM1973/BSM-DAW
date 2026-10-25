@@ -992,6 +992,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
+    track.clipMetadata.clear();
     track.fileName = std::move(newFileName); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
     track.warpSourceSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
@@ -1017,7 +1018,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear(); track.clipId.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear(); track.clipId.clear(); track.clipMetadata.clear();
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
@@ -1209,6 +1210,41 @@ bool AudioEngine::splitAudioTrack(int trackIndex, double splitProjectSeconds, in
 
 bool AudioEngine::hasAudioFile(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->loaded.load(std::memory_order_acquire); }
 juce::String AudioEngine::getAudioFileName(int trackIndex) const { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->fileName : juce::String{}; }
+std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getAudioClips(int trackIndex) const
+{
+    if (!isValidTrackIndex(trackIndex))
+        return {};
+    const juce::ScopedLock lock(stateLock);
+    return tracks[(size_t)trackIndex]->clipMetadata;
+}
+
+bool AudioEngine::addAudioClipMetadata(int trackIndex, const AudioClipMetadata& clip)
+{
+    if (!isValidTrackIndex(trackIndex) || clip.id.isEmpty()
+        || !std::isfinite(clip.startSeconds) || clip.startSeconds < 0.0
+        || !std::isfinite(clip.lengthSeconds) || clip.lengthSeconds <= 0.0
+        || !std::isfinite(clip.trimStartFraction) || !std::isfinite(clip.trimEndFraction)
+        || clip.trimStartFraction < 0.0 || clip.trimEndFraction > 1.0
+        || clip.trimStartFraction >= clip.trimEndFraction)
+        return false;
+    const juce::ScopedLock lock(stateLock);
+    auto& clips = tracks[(size_t)trackIndex]->clipMetadata;
+    for (const auto& existing : clips)
+        if (existing.id == clip.id)
+            return false;
+    try { clips.push_back(clip); }
+    catch (...) { return false; }
+    return true;
+}
+
+void AudioEngine::clearAudioClipMetadata(int trackIndex)
+{
+    if (!isValidTrackIndex(trackIndex))
+        return;
+    const juce::ScopedLock lock(stateLock);
+    tracks[(size_t)trackIndex]->clipMetadata.clear();
+}
+
 juce::String AudioEngine::getAudioClipId(int trackIndex) const
 {
     return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->clipId : juce::String{};
