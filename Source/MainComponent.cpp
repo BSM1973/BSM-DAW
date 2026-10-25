@@ -3153,7 +3153,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 void mouseDown(const juce::MouseEvent& event) override
                 {
                     draggingMarker = -1;
+                    panning = false;
                     if (!inWaveform(event.getPosition())) return;
+                    if (event.mods.isMiddleButtonDown() || event.mods.isAltDown())
+                    {
+                        panning = true;
+                        panStartX = event.x;
+                        panStartFraction = viewStart;
+                        return;
+                    }
                     const int count = audio.getTrackWarpMarkerCount(track);
                     for (int i = 1; i < count - 1; ++i)
                     {
@@ -3176,13 +3184,31 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
                 void mouseDrag(const juce::MouseEvent& event) override
                 {
+                    if (panning)
+                    {
+                        viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
+                            panStartFraction - (double)(event.x - panStartX)
+                            / ((double)juce::jmax(1, getWidth() - 80) * zoom));
+                        repaint();
+                        return;
+                    }
                     if (draggingMarker < 0) return;
                     audio.moveTrackWarpMarker(track, draggingMarker, timeAt(event.x));
                     repaint();
                 }
-                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; }
+                void mouseUp(const juce::MouseEvent&) override
+                {
+                    draggingMarker = -1;
+                    panning = false;
+                }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
+                    if (panning || (inWaveform(event.getPosition())
+                        && (event.mods.isAltDown() || event.mods.isMiddleButtonDown())))
+                    {
+                        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                        return;
+                    }
                     if (!inWaveform(event.getPosition()))
                     {
                         setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -3306,7 +3332,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(11.0f));
                     g.drawText("Marqueurs : " + juce::String(markerCount)
                                + "   |   Molette : zoom " + juce::String(zoom, 1) + "x"
-                               + "   |   Double-clic : ajouter  |  Glisser : deplacer  |  Clic droit : supprimer",
+                               + "   |   Alt+glisser : naviguer  |  Double-clic : ajouter  |  Glisser : deplacer",
                                40, getHeight() - 84, getWidth() - 80, 18, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
@@ -3330,6 +3356,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 int draggingMarker = -1;
                 double zoom = 1.0;
                 double viewStart = 0.0;
+                double panStartFraction = 0.0;
+                int panStartX = 0;
+                bool panning = false;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
                 juce::TextButton apply, reset;
