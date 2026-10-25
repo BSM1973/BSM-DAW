@@ -1789,8 +1789,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         weighted += grainWeights[overlap]
                             * readWarpedSample(channel, grainPositions[overlap]);
                 const double weightSum = grainWeightSum;
+                // At source boundaries one grain can fall outside the
+                // buffer. Use the direct sample instead of producing a
+                // sudden silent gap when no valid grain remains.
                 const float stretched = weightSum > 0.000001
-                    ? weighted / (float) weightSum : 0.0f;
+                    ? weighted / (float) weightSum
+                    : readWarpedSample(channel, sourceSamplePosition);
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
