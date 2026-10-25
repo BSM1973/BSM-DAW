@@ -3119,7 +3119,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                             && value <= (tempoMode ? 999.0 : 86400.0))
                                         {
                                             const double targetLength = tempoMode
-                                                ? oldLength * value / juce::jmax(1.0, editor->getCurrentBpm())
+                                                ? oldLength * value / juce::jmax(1.0, editor->getTempoBpm())
                                                 : value;
                                             editor->audioEngine.setAudioFileLengthSeconds(trackIndex, targetLength);
                                             editor->audioEngine.setTrackWarpEnabled(trackIndex, true);
