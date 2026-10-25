@@ -36,6 +36,11 @@ public:
     bool initialise();
     void shutdown();
 
+    // Headless regression entry point: render the existing audio callback
+    // without opening an audio device. Use on a stopped, dedicated engine.
+    bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
+                                 double renderSampleRate, int blockSamples);
+
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
     void selectMidiInput(const juce::String& identifier);
