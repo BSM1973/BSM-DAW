@@ -3043,6 +3043,91 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             juce::jmin(112, juce::jmax(0, dockInner.getRight() - focusButton.getRight() - 6)), 20);
         if (warpButton.getWidth() >= 55 && warpButton.contains(p))
         {
+            // Obsidian Warp inspector: a real resizable window rather than
+            // a cascading menu. Track operations stay on the existing engine.
+            class WarpInspector final : public juce::Component
+            {
+            public:
+                WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
+                {
+                    setSize(540, 340);
+                    enable.setButtonText("ACTIVER LE WARP");
+                    enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
+                    enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
+                    addAndMakeVisible(enable);
+                    const char* names[] = { "Brut", "Fluide", "Doux", "Precis", "Riche" };
+                    for (int i = 0; i < 5; ++i) mode.addItem(names[i], i + 1);
+                    mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
+                    mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
+                    addAndMakeVisible(mode);
+                    ratio.addItem("50 %", 1); ratio.addItem("75 %", 2);
+                    ratio.addItem("100 %", 3); ratio.addItem("125 %", 4);
+                    ratio.addItem("150 %", 5); ratio.addItem("200 %", 6);
+                    ratio.setSelectedId(3, juce::dontSendNotification);
+                    addAndMakeVisible(ratio);
+                    apply.setButtonText("APPLIQUER L'ETIREMENT");
+                    apply.onClick = [this]
+                    {
+                        const double factors[] = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
+                        const int id = ratio.getSelectedId();
+                        if (id < 1 || id > 6) return;
+                        const double length = audio.getAudioFileLengthSeconds(track);
+                        if (length > 0.0)
+                        {
+                            audio.setAudioFileLengthSeconds(track, length * factors[id - 1]);
+                            audio.setTrackWarpEnabled(track, true);
+                            enable.setToggleState(true, juce::dontSendNotification);
+                        }
+                    };
+                    addAndMakeVisible(apply);
+                    reset.setButtonText("REINITIALISER LES MARQUEURS");
+                    reset.onClick = [this] { audio.resetTrackWarpMarkers(track); };
+                    addAndMakeVisible(reset);
+                }
+                void paint(juce::Graphics& g) override
+                {
+                    g.fillAll(juce::Colour(0xff101e2d));
+                    g.setColour(juce::Colour(0xffe7edf5));
+                    g.setFont(juce::Font(22.0f, juce::Font::bold));
+                    g.drawText("WARP  /  ETIREMENT AUDIO", 26, 18, getWidth() - 52, 36,
+                               juce::Justification::centredLeft);
+                    g.setColour(juce::Colour(0xffd9ad65));
+                    g.fillRoundedRectangle(26.0f, 60.0f, (float)getWidth() - 52.0f, 2.0f, 1.0f);
+                    g.setColour(juce::Colour(0xffafc4d7));
+                    g.setFont(juce::Font(13.0f));
+                    g.drawText("ALGORITHME", 28, 125, 160, 20, juce::Justification::left);
+                    g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
+                    g.drawText("Les reglages utilisent le moteur Warp existant de Liberty.",
+                               28, getHeight() - 38, getWidth() - 56, 22, juce::Justification::left);
+                }
+                void resized() override
+                {
+                    enable.setBounds(28, 78, getWidth() - 56, 32);
+                    mode.setBounds(192, 122, getWidth() - 220, 28);
+                    ratio.setBounds(192, 176, getWidth() - 220, 28);
+                    apply.setBounds(28, 222, getWidth() - 56, 36);
+                    reset.setBounds(28, 270, getWidth() - 56, 28);
+                }
+            private:
+                AudioEngine& audio;
+                int track;
+                juce::ToggleButton enable;
+                juce::ComboBox mode, ratio;
+                juce::TextButton apply, reset;
+            };
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = "Liberty  |  Warp Audio";
+            options.dialogBackgroundColour = juce::Colour(0xff101e2d);
+            options.content.setOwned(new WarpInspector(audioEngine, selectedTrack));
+            options.componentToCentreAround = this;
+            options.escapeKeyTriggersCloseButton = true;
+            options.useNativeTitleBar = true;
+            options.resizable = true;
+            options.launchAsync();
+            return;
+        }
+        if (false)
+        {
             juce::PopupMenu menu;
             const bool enabled = audioEngine.isTrackWarpEnabled(selectedTrack);
             menu.addItem(1, enabled ? "Desactiver Warp" : "Activer Warp");
