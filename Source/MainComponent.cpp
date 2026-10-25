@@ -305,6 +305,7 @@ void MainComponent::paint(juce::Graphics& g)
         const auto selectionBar = juce::Rectangle<int>(inner.getRight() - toolbarWidth,
             inner.getY() + (compactSelectionBar ? 44 : 22), toolbarWidth, 21);
         const char* selectionLabels[] = { "TOUT", "EFFACER", "DEBUT", "FIN" };
+        const char* shortLabels[] = { "T", "X", "D", "F" };
         for (int buttonIndex = 0; buttonIndex < 4; ++buttonIndex)
         {
             const int slotWidth = selectionBar.getWidth() / 4;
@@ -315,10 +316,13 @@ void MainComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour(0xff83bed4));
             g.drawRoundedRectangle(button.toFloat(), 3.0f, 1.0f);
             g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(selectionLabels[buttonIndex], button, juce::Justification::centred);
+            g.drawText(slotWidth >= 48 ? selectionLabels[buttonIndex]
+                                        : shortLabels[buttonIndex],
+                       button, juce::Justification::centred);
         }
         const auto formatButton = juce::Rectangle<int>(
-            inner.getX(), inner.getY() + (compactSelectionBar ? 70 : 46), 126, 20);
+            inner.getX(), inner.getY() + (compactSelectionBar ? 70 : 46),
+            juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
         const char* formatNames[] = { "SECONDES", "MIN:SEC", "ECHANTILLONS", "MESURES" };
         g.setColour(juce::Colour(0xff203b4d));
         g.fillRoundedRectangle(formatButton.toFloat(), 3.0f);
@@ -2722,7 +2726,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - barWidth,
             dockInner.getY() + (compact ? 44 : 22), barWidth, 21);
         const auto formatButton = juce::Rectangle<int>(dockInner.getX(),
-            dockInner.getY() + (compact ? 70 : 46), 126, 20);
+            dockInner.getY() + (compact ? 70 : 46),
+            juce::jmin(126, juce::jmax(0, dockInner.getWidth())), 20);
         if (formatButton.contains(p))
         {
             juce::PopupMenu menu;
