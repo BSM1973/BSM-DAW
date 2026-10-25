@@ -296,7 +296,54 @@ void MainComponent::paint(juce::Graphics& g)
                        + juce::String(audioDockZoom, 1) + "x",
                    inner.getX(), inner.getY() + 23, inner.getWidth(), 18,
                    juce::Justification::centredLeft);
-        const auto wave = inner.withTrimmedTop(48).reduced(0, 8);
+        // Adaptive time ruler: seconds, milliseconds and individual samples.
+        const auto ruler = inner.withTrimmedTop(46).withHeight(24);
+        const auto wave = inner.withTrimmedTop(74).reduced(0, 8);
+        const auto rulerSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+        const int rulerSamples = rulerSnapshot != nullptr ? rulerSnapshot->getNumSamples() : 0;
+        const double rulerDuration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+        if (ruler.getWidth() > 10 && rulerSamples > 0 && rulerDuration > 0.0)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const double spanSeconds = rulerDuration * visible;
+            const double secondsPerPixel = spanSeconds / (double) ruler.getWidth();
+            const double samplesPerPixel = (double) rulerSamples * visible / (double) ruler.getWidth();
+            const bool sampleMode = samplesPerPixel < 12.0;
+            const bool milliMode = !sampleMode && spanSeconds < 1.0;
+            const double desiredStep = sampleMode ? samplesPerPixel * 85.0
+                                     : milliMode ? secondsPerPixel * 85000.0
+                                                 : secondsPerPixel * 85.0;
+            const double magnitude = std::pow(10.0, std::floor(std::log10(juce::jmax(1.0e-12, desiredStep))));
+            const double normalized = desiredStep / magnitude;
+            const double step = magnitude * (normalized <= 1.0 ? 1.0 : normalized <= 2.0 ? 2.0
+                                                : normalized <= 5.0 ? 5.0 : 10.0);
+            const double rangeStart = offset * (sampleMode ? (double) rulerSamples
+                                                 : milliMode ? rulerDuration * 1000.0 : rulerDuration);
+            const double rangeLength = visible * (sampleMode ? (double) rulerSamples
+                                                   : milliMode ? rulerDuration * 1000.0 : rulerDuration);
+            g.setColour(juce::Colour(0xff172d3d));
+            g.fillRect(ruler);
+            g.setColour(juce::Colour(0xff527184));
+            g.drawHorizontalLine(ruler.getBottom() - 1, (float) ruler.getX(), (float) ruler.getRight());
+            g.setFont(juce::Font(10.0f));
+            const double firstTick = std::ceil(rangeStart / step) * step;
+            for (double tick = firstTick; tick <= rangeStart + rangeLength;
+                 tick += step)
+            {
+                const int x = ruler.getX() + (int) std::lround(
+                    (tick - rangeStart) / rangeLength * (double) ruler.getWidth());
+                if (x < ruler.getX() || x >= ruler.getRight()) continue;
+                g.setColour(juce::Colour(0xff638ba2));
+                g.drawVerticalLine(x, (float) ruler.getBottom() - 7, (float) ruler.getBottom());
+                g.setColour(juce::Colour(0xffb9d4e2));
+                const juce::String label = sampleMode ? juce::String((juce::int64) std::llround(tick)) + " ech"
+                    : milliMode ? juce::String(tick, step < 1.0 ? 2 : 0) + " ms"
+                                : juce::String(tick, step < 1.0 ? 2 : 0) + " s";
+                g.drawText(label, x + 3, ruler.getY() + 1, 82, 15,
+                           juce::Justification::centredLeft, true);
+            }
+        }
         g.setColour(juce::Colour(0xff152b3b));
         g.fillRoundedRectangle(wave.toFloat(), 5.0f);
         const int cy = wave.getCentreY();
