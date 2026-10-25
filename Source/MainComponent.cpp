@@ -3294,6 +3294,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                               : juce::MouseCursor::CrosshairCursor);
                     repaint();
                 }
+                void mouseExit(const juce::MouseEvent&) override
+                {
+                    hoveredMarker = -1;
+                    if (draggingMarker < 0 && !panning)
+                        setMouseCursor(juce::MouseCursor::NormalCursor);
+                    repaint();
+                }
                 bool inWaveform(juce::Point<int> point) const
                 {
                     return point.x >= 40 && point.x < getWidth() - 40
