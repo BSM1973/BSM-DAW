@@ -292,10 +292,13 @@ void MainComponent::paint(juce::Graphics& g)
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff92b7c8));
         g.setFont(juce::Font(11.0f));
+        // Reserve the right-hand area for selection controls: no text overlap.
+        const int toolbarWidth = 280;
+        const int helpWidth = juce::jmax(0, inner.getWidth() - toolbarWidth - 12);
         g.drawText("Molette : zoom  |  Maj + molette : deplacement  |  Zoom "
                        + juce::String(audioDockZoom, 1) + "x",
-                   inner.getX(), inner.getY() + 23, inner.getWidth(), 18,
-                   juce::Justification::centredLeft);
+                   inner.getX(), inner.getY() + 23, helpWidth, 18,
+                   juce::Justification::centredLeft, true);
         // Audio selection controls share the existing dock header.
         const auto selectionBar = juce::Rectangle<int>(inner.getRight() - 280,
             inner.getY() + 22, 280, 21);
