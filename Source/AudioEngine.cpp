@@ -1738,15 +1738,29 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
-                const int attackIndex = juce::jlimit(1, lastSample,
+                const int attackIndex = juce::jlimit(0, lastSample,
                     (int) std::floor(sourceSamplePosition));
                 const float* attackData = audioBuffer->getReadPointer(
                     juce::jlimit(0, sourceChannels - 1, channel));
-                const float current = attackData[attackIndex];
-                const float previous = attackData[attackIndex - 1];
-                const float attack = std::abs(current - previous);
+                // Compare the recent and preceding short-time mean absolute
+                // amplitudes. A positive energy rise is more robust than
+                // a single-sample derivative, especially on pitched tones.
+                const int windowSamples = juce::jmax(8,
+                    (int) std::llround(sourceRate * 0.002));
+                double recentEnergy = 0.0;
+                double previousEnergy = 0.0;
+                for (int k = 0; k < 8; ++k)
+                {
+                    const int recentIndex = juce::jlimit(0, lastSample,
+                        attackIndex - k * windowSamples / 8);
+                    const int previousIndex = juce::jlimit(0, lastSample,
+                        attackIndex - windowSamples - k * windowSamples / 8);
+                    recentEnergy += std::abs(attackData[recentIndex]);
+                    previousEnergy += std::abs(attackData[previousIndex]);
+                }
+                const float energyRise = (float) ((recentEnergy - previousEnergy) / 8.0);
                 const float transientBlend = juce::jlimit(0.0f, 1.0f,
-                    (attack - 0.12f) * 5.0f);
+                    (energyRise - 0.035f) * 10.0f);
                 return stretched * (1.0f - transientBlend)
                     + readWarpedSample(channel, sourceSamplePosition) * transientBlend;
             };
