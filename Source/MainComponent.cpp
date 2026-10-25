@@ -3087,6 +3087,30 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
                     setSize(900, 550);
+                    cachedAudio = audio.getAudioBufferSnapshot(track);
+                    if (cachedAudio != nullptr)
+                    {
+                        const int count = cachedAudio->getNumSamples();
+                        const int channels = juce::jmin(2, cachedAudio->getNumChannels());
+                        for (int channel = 0; channel < channels; ++channel)
+                        {
+                            const float* data = cachedAudio->getReadPointer(channel);
+                            auto& lows = cachedLows[channel];
+                            auto& highs = cachedHighs[channel];
+                            for (int start = 0; start < count; start += cacheBlockSize)
+                            {
+                                const int end = juce::jmin(count, start + cacheBlockSize);
+                                float lo = 0.0f, hi = 0.0f;
+                                for (int i = start; i < end; ++i)
+                                {
+                                    lo = juce::jmin(lo, data[i]);
+                                    hi = juce::jmax(hi, data[i]);
+                                }
+                                lows.add(lo);
+                                highs.add(hi);
+                            }
+                        }
+                    }
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
@@ -3331,8 +3355,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     // Compact source waveform preview: preserve the full editor
                     // for marker interactions while exposing real audio here.
-                    const auto snapshot = audio.getAudioBufferSnapshot(track);
-                    const auto* pcm = snapshot.get();
+                    const auto* pcm = cachedAudio.get();
                     if (pcm != nullptr && pcm->getNumSamples() > 0
                         && pcm->getNumChannels() > 0)
                     {
@@ -3366,22 +3389,30 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 const int last = juce::jlimit(first + 1, sampleCount,
                                     juce::jmax(first + 1, mappedEnd));
                                 float lo = 0.0f, hi = 0.0f;
-                                // Bound the work per pixel for very long
-                                // recordings; always include both interval
-                                // endpoints so narrow peaks remain represented.
-                                const int span = last - first;
-                                // At detailed zoom levels, inspect every
-                                // sample to retain single-sample transients.
-                                // At overview zoom, keep the bounded scan.
-                                const int step = zoom >= 4.0
-                                    ? 1 : juce::jmax(1, (span + 1023) / 1024);
-                                for (int i = first; i < last; i += step)
+                                // Scan only partial boundary blocks; interior
+                                // blocks use cached exact min/max peaks.
+                                const int firstBlock = first / cacheBlockSize;
+                                const int lastBlock = (last - 1) / cacheBlockSize;
+                                const auto scan = [&](int begin, int end)
                                 {
-                                    lo = juce::jmin(lo, data[i]);
-                                    hi = juce::jmax(hi, data[i]);
+                                    for (int i = begin; i < end; ++i)
+                                    {
+                                        lo = juce::jmin(lo, data[i]);
+                                        hi = juce::jmax(hi, data[i]);
+                                    }
+                                };
+                                if (firstBlock == lastBlock)
+                                    scan(first, last);
+                                else
+                                {
+                                    scan(first, (firstBlock + 1) * cacheBlockSize);
+                                    for (int block = firstBlock + 1; block < lastBlock; ++block)
+                                    {
+                                        lo = juce::jmin(lo, cachedLows[channel][block]);
+                                        hi = juce::jmax(hi, cachedHighs[channel][block]);
+                                    }
+                                    scan(lastBlock * cacheBlockSize, last);
                                 }
-                                lo = juce::jmin(lo, data[last - 1]);
-                                hi = juce::jmax(hi, data[last - 1]);
                                 // Translucent envelope adds body; the brighter
                                 // central stroke keeps sharp transients readable.
                                 const float peakTop = centre - hi * amplitude;
@@ -3440,6 +3471,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     reset.setBounds(28, 270, getWidth() - 56, 28);
                 }
             private:
+                static constexpr int cacheBlockSize = 512;
+                std::shared_ptr<juce::AudioBuffer<float>> cachedAudio;
+                juce::Array<float> cachedLows[2], cachedHighs[2];
                 AudioEngine& audio;
                 int track;
                 double originalDuration = 0.0;
