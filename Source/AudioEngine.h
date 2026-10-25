@@ -231,9 +231,14 @@ public:
         double lengthSeconds = 0.0;
         double trimStartFraction = 0.0;
         double trimEndFraction = 1.0;
+        // Decoded source prepared outside the real-time audio callback.
+        std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
+        double sourceSampleRate = 0.0;
     };
     std::vector<AudioClipMetadata> getAudioClips(int trackIndex) const;
     bool addAudioClipMetadata(int trackIndex, const AudioClipMetadata& clip);
+    bool loadAudioClipSource(int trackIndex, const juce::String& clipId,
+                             const juce::File& sourceFile, juce::String& error);
     void clearAudioClipMetadata(int trackIndex);
     juce::String getAudioClipId(int trackIndex) const;
     void setAudioClipId(int trackIndex, const juce::String& id);
