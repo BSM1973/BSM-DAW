@@ -703,6 +703,11 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             element->setAttribute("lengthSeconds", clip.lengthSeconds);
             element->setAttribute("trimStart", clip.trimStartFraction);
             element->setAttribute("trimEnd", clip.trimEndFraction);
+            element->setAttribute("clipGain", (double) clip.clipGain);
+            element->setAttribute("pitchSemitones", clip.pitchSemitones);
+            element->setAttribute("reverse", clip.reverse);
+            element->setAttribute("fadeInSeconds", clip.fadeInSeconds);
+            element->setAttribute("fadeOutSeconds", clip.fadeOutSeconds);
         }
         const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
         juce::File sourceFile = trackSourceFiles[(size_t)i];
@@ -1386,6 +1391,11 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 clip.lengthSeconds = element->getDoubleAttribute("lengthSeconds", 0.0);
                 clip.trimStartFraction = element->getDoubleAttribute("trimStart", 0.0);
                 clip.trimEndFraction = element->getDoubleAttribute("trimEnd", 1.0);
+                clip.clipGain = (float) element->getDoubleAttribute("clipGain", 1.0);
+                clip.pitchSemitones = element->getDoubleAttribute("pitchSemitones", 0.0);
+                clip.reverse = element->getBoolAttribute("reverse", false);
+                clip.fadeInSeconds = element->getDoubleAttribute("fadeInSeconds", 0.0);
+                clip.fadeOutSeconds = element->getDoubleAttribute("fadeOutSeconds", 0.0);
                 if (audioEngine.addAudioClipMetadata(index, clip) && clip.sourcePath.isNotEmpty())
                 {
                     juce::String clipLoadError;
