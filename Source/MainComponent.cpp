@@ -3097,9 +3097,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             const float* data = cachedAudio->getReadPointer(channel);
                             auto& lows = cachedLows[channel];
                             auto& highs = cachedHighs[channel];
-                            for (int start = 0; start < count; start += cacheBlockSize)
+                            for (int start = 0; start < count; start += 512)
                             {
-                                const int end = juce::jmin(count, start + cacheBlockSize);
+                                const int end = juce::jmin(count, start + 512);
                                 float lo = 0.0f, hi = 0.0f;
                                 for (int i = start; i < end; ++i)
                                 {
@@ -3391,8 +3391,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 float lo = 0.0f, hi = 0.0f;
                                 // Scan only partial boundary blocks; interior
                                 // blocks use cached exact min/max peaks.
-                                const int firstBlock = first / cacheBlockSize;
-                                const int lastBlock = (last - 1) / cacheBlockSize;
+                                const int firstBlock = first / 512;
+                                const int lastBlock = (last - 1) / 512;
                                 const auto scan = [&](int begin, int end)
                                 {
                                     for (int i = begin; i < end; ++i)
@@ -3405,13 +3405,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                     scan(first, last);
                                 else
                                 {
-                                    scan(first, (firstBlock + 1) * cacheBlockSize);
+                                    scan(first, (firstBlock + 1) * 512);
                                     for (int block = firstBlock + 1; block < lastBlock; ++block)
                                     {
                                         lo = juce::jmin(lo, cachedLows[channel][block]);
                                         hi = juce::jmax(hi, cachedHighs[channel][block]);
                                     }
-                                    scan(lastBlock * cacheBlockSize, last);
+                                    scan(lastBlock * 512, last);
                                 }
                                 // Translucent envelope adds body; the brighter
                                 // central stroke keeps sharp transients readable.
@@ -3471,8 +3471,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     reset.setBounds(28, 270, getWidth() - 56, 28);
                 }
             private:
-                static constexpr int cacheBlockSize = 512;
-                std::shared_ptr<juce::AudioBuffer<float>> cachedAudio;
+                std::shared_ptr<const juce::AudioBuffer<float>> cachedAudio;
                 juce::Array<float> cachedLows[2], cachedHighs[2];
                 AudioEngine& audio;
                 int track;
