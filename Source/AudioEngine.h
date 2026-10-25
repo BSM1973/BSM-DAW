@@ -221,6 +221,8 @@ public:
     bool splitAudioTrack(int trackIndex, double splitProjectSeconds, int targetTrackIndex, juce::String& error);
     bool hasAudioFile(int trackIndex) const noexcept;
     juce::String getAudioFileName(int trackIndex) const;
+    juce::String getAudioClipId(int trackIndex) const;
+    void setAudioClipId(int trackIndex, const juce::String& id);
     void setAudioFileName(int trackIndex, const juce::String& name);
     double getAudioFileLengthSeconds(int trackIndex) const noexcept;
     void setAudioFileLengthSeconds(int trackIndex, double seconds) noexcept;
@@ -287,6 +289,7 @@ private:
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
         std::atomic<std::uint64_t> contentRevision { 0 };
         juce::String fileName;
+        juce::String clipId;
     };
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
