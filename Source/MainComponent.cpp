@@ -318,7 +318,7 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(selectionLabels[buttonIndex], button, juce::Justification::centred);
         }
         const auto formatButton = juce::Rectangle<int>(
-            inner.getX(), inner.getY() + (compactSelectionBar ? 44 : 46), 126, 20);
+            inner.getX(), inner.getY() + (compactSelectionBar ? 70 : 46), 126, 20);
         const char* formatNames[] = { "SECONDES", "MIN:SEC", "ECHANTILLONS", "MESURES" };
         g.setColour(juce::Colour(0xff203b4d));
         g.fillRoundedRectangle(formatButton.toFloat(), 3.0f);
@@ -328,7 +328,7 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]) + "  v",
                    formatButton, juce::Justification::centred);
         // Adaptive time ruler: seconds, milliseconds and individual samples.
-        const int rulerTop = compactSelectionBar ? 70 : 46;
+        const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
         const auto wave = inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
         const auto rulerSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
@@ -2516,7 +2516,7 @@ juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
         juce::jmax(0, getWidth() - 310),
         juce::jmax(0, getHeight() - getMixerTop() - 36));
     const auto inner = editor.reduced(14, 12);
-    const int rulerTop = inner.getWidth() < 600 ? 70 : 46;
+    const int rulerTop = inner.getWidth() < 600 ? 94 : 70;
     return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
 }
 
@@ -2722,7 +2722,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto selectionBar = juce::Rectangle<int>(dockInner.getRight() - barWidth,
             dockInner.getY() + (compact ? 44 : 22), barWidth, 21);
         const auto formatButton = juce::Rectangle<int>(dockInner.getX(),
-            dockInner.getY() + (compact ? 44 : 46), 126, 20);
+            dockInner.getY() + (compact ? 70 : 46), 126, 20);
         if (formatButton.contains(p))
         {
             juce::PopupMenu menu;
