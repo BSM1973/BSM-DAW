@@ -348,7 +348,9 @@ void MainComponent::paint(juce::Graphics& g)
             const bool sampleMode = audioDockTimeFormat == 2;
             const bool milliMode = audioDockTimeFormat == 0 && spanSeconds < 1.0;
             const bool beatMode = audioDockTimeFormat == 3;
-            const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm);
+            const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm)
+                * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+            const int beatsPerMeasure = juce::jmax(1, timeSignatureNumerator);
             const double unitsPerSecond = beatMode ? 1.0 / beatSeconds : 1.0;
             const double desiredStep = sampleMode ? samplesPerPixel * 85.0
                                      : milliMode ? secondsPerPixel * 85000.0
@@ -388,8 +390,8 @@ void MainComponent::paint(juce::Graphics& g)
                 const juce::int64 beatIndex = (juce::int64) std::floor(tick);
                 const juce::String label = sampleMode
                     ? juce::String((juce::int64) std::llround(tick)) + " ech"
-                    : beatMode ? juce::String(beatIndex / 4 + 1) + "."
-                        + juce::String(beatIndex % 4 + 1)
+                    : beatMode ? juce::String(beatIndex / beatsPerMeasure + 1) + "."
+                        + juce::String(beatIndex % beatsPerMeasure + 1)
                     : audioDockTimeFormat == 1 ? clock
                     : milliMode ? juce::String(tick, step < 1.0 ? 2 : 0) + " ms"
                                 : juce::String(tick, step < 1.0 ? 2 : 0) + " s";
@@ -443,12 +445,14 @@ void MainComponent::paint(juce::Graphics& g)
                     + ":" + juce::String(secondsPart).paddedLeft('0', 2)
                     + "." + juce::String(millisPart).paddedLeft('0', 3);
                 // Match the tooltip's primary value to the selected ruler format.
-                const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm);
+                const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm)
+                    * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
+                const int beatsPerMeasure = juce::jmax(1, timeSignatureNumerator);
                 const double beatPosition = seconds / beatSeconds;
                 const juce::int64 wholeBeat = (juce::int64) std::floor(beatPosition);
                 const juce::String musicalPosition =
-                    juce::String(wholeBeat / 4 + 1) + "."
-                    + juce::String(wholeBeat % 4 + 1) + "."
+                    juce::String(wholeBeat / beatsPerMeasure + 1) + "."
+                    + juce::String(wholeBeat % beatsPerMeasure + 1) + "."
                     + juce::String((int) std::floor(
                         (beatPosition - (double) wholeBeat) * 960.0));
                 const juce::String primaryValue = audioDockTimeFormat == 1 ? clock
