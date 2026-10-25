@@ -141,7 +141,45 @@ public:
         g.drawRect(0, 0, width, height, 1);
     }
 };
-class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
+// Test-only CLI: exercise Liberty's real audio engine without opening the UI.
+static bool renderRicheFixture(const juce::StringArray& args)
+{
+    if (args.size() != 5) return false;
+    const juce::File input(args[1]), output(args[2]);
+    const double ratio = args[3].getDoubleValue();
+    const int block = args[4].getIntValue();
+    if (!input.existsAsFile() || ratio <= 0.0 || ratio > 8.0 || block < 16 || block > 8192)
+        return false;
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(input));
+    if (!reader || reader->sampleRate <= 0.0 || reader->lengthInSamples <= 0)
+        return false;
+    const double rate = reader->sampleRate;
+    const double originalSeconds = (double) reader->lengthInSamples / rate;
+    const double targetSeconds = originalSeconds * ratio;
+    const auto count64 = (std::int64_t) std::llround(targetSeconds * rate);
+    if (count64 <= 0 || count64 > 48000 * 600) return false;
+    AudioEngine engine;
+    juce::AudioBuffer<float> empty(2, 0);
+    if (!engine.renderOfflineForTesting(empty, rate, block)) return false;
+    juce::String error;
+    if (!engine.loadAudioFileIntoTrack(0, input, error)) return false;
+    if (!engine.restoreTrackWarpState(0, true, 4,
+            { { 0.0, 0.0 }, { originalSeconds, targetSeconds } })) return false;
+    juce::AudioBuffer<float> rendered(2, (int) count64);
+    if (!engine.renderOfflineForTesting(rendered, rate, block)) return false;
+    output.getParentDirectory().createDirectory();
+    std::unique_ptr<juce::FileOutputStream> stream(output.createOutputStream());
+    if (!stream) return false;
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(stream.get(),
+        rate, 2, 24, {}, 0));
+    if (!writer) return false;
+    stream.release();
+    return writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples());
+}
+class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>0&&a[0]=="--render-riche-test"){const bool ok=renderRicheFixture(a);setApplicationReturnValue(ok?0:3);quit();return;}if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
 LibertyMenuLookAndFeel applicationMenuLookAndFeel;
 // First-run project chooser: custom-painted, scalable and blocking the editor
 // until the user explicitly chooses a session template.
