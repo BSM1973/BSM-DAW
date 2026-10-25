@@ -3245,7 +3245,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     double targetTime = dragStartTime + delta * precision;
                     // Never allow a marker to cross its neighbours. Leave
                     // a small time gap so the interpolation remains valid.
-                    const double gap = 0.001;
+                    // Keep a sample-sized safety interval when the source
+                    // rate is known, with a conservative fallback otherwise.
+                    const double sampleRate = audio.getAudioBufferSampleRate(track);
+                    const double gap = sampleRate > 0.0
+                        ? juce::jmax(0.0001, 1.0 / sampleRate) : 0.001;
                     const double previous = audio.getTrackWarpMarkerTargetSeconds(
                         track, draggingMarker - 1);
                     const double next = audio.getTrackWarpMarkerTargetSeconds(
