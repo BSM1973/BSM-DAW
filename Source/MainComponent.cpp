@@ -2351,7 +2351,9 @@ void MainComponent::activateDockTab(int index)
             drumSamplerDockSelected = false;
             break;
         case 1:
-            if (!editorTrack) return;
+            // Audio tracks have their own waveform editor in this same dock tab.
+            if (!editorTrack && !(selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+                                  && audioEngine.hasAudioFile(selectedTrack))) return;
             dockMixerMode = false;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = false;
