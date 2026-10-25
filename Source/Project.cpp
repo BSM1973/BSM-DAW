@@ -689,6 +689,18 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             }
             track->setAttribute("clipId", clipId);
         }
+        // Additional clip entries are metadata until multi-source playback is enabled.
+        auto* clipsElement = track->createNewChildElement("AudioClips");
+        for (const auto& clip : audioEngine.getAudioClips(i))
+        {
+            auto* element = clipsElement->createNewChildElement("Clip");
+            element->setAttribute("id", clip.id);
+            element->setAttribute("sourceName", clip.sourceName);
+            element->setAttribute("startSeconds", clip.startSeconds);
+            element->setAttribute("lengthSeconds", clip.lengthSeconds);
+            element->setAttribute("trimStart", clip.trimStartFraction);
+            element->setAttribute("trimEnd", clip.trimEndFraction);
+        }
         const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
         juce::File sourceFile = trackSourceFiles[(size_t)i];
         const bool expectsAudioMedia = audioSnapshot.loaded || sourceFile.getFullPathName().isNotEmpty();
@@ -1355,6 +1367,24 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (clipId.isEmpty())
             clipId = juce::Uuid().toString();
         audioEngine.setAudioClipId(index, clipId);
+        audioEngine.clearAudioClipMetadata(index);
+        if (const auto* clipsElement = trackElement->getChildByName("AudioClips"))
+        {
+            int imported = 0;
+            for (const auto* element : clipsElement->getChildIterator())
+            {
+                if (!element->hasTagName("Clip") || ++imported > 1024)
+                    continue;
+                AudioEngine::AudioClipMetadata clip;
+                clip.id = element->getStringAttribute("id");
+                clip.sourceName = element->getStringAttribute("sourceName");
+                clip.startSeconds = element->getDoubleAttribute("startSeconds", 0.0);
+                clip.lengthSeconds = element->getDoubleAttribute("lengthSeconds", 0.0);
+                clip.trimStartFraction = element->getDoubleAttribute("trimStart", 0.0);
+                clip.trimEndFraction = element->getDoubleAttribute("trimEnd", 1.0);
+                audioEngine.addAudioClipMetadata(index, clip);
+            }
+        }
     }
 
     // Resolve saved markers against the freshly loaded audio revision.
