@@ -3139,11 +3139,31 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     };
                     addAndMakeVisible(reset);
                 }
+                double sourceTimeForTarget(double targetSeconds) const
+                {
+                    const double length = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    targetSeconds = juce::jlimit(0.0, length, targetSeconds);
+                    if (!audio.isTrackWarpEnabled(track)) return targetSeconds;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    if (count < 2) return targetSeconds;
+                    for (int i = 0; i < count - 1; ++i)
+                    {
+                        const double ta = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                        const double tb = audio.getTrackWarpMarkerTargetSeconds(track, i + 1);
+                        if (targetSeconds < ta || targetSeconds > tb) continue;
+                        const double sa = audio.getTrackWarpMarkerSourceSeconds(track, i);
+                        const double sb = audio.getTrackWarpMarkerSourceSeconds(track, i + 1);
+                        const double alpha = juce::jlimit(0.0, 1.0,
+                            (targetSeconds - ta) / juce::jmax(0.000001, tb - ta));
+                        return sa + (sb - sa) * alpha;
+                    }
+                    return targetSeconds;
+                }
                 void mouseDoubleClick(const juce::MouseEvent& event) override
                 {
                     if (!inWaveform(event.getPosition())) return;
                     const double seconds = timeAt(event.x);
-                    if (audio.addTrackWarpMarker(track, seconds, seconds))
+                    if (audio.addTrackWarpMarker(track, sourceTimeForTarget(seconds), seconds))
                     {
                         audio.setTrackWarpEnabled(track, true);
                         enable.setToggleState(true, juce::dontSendNotification);
@@ -3335,9 +3355,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             for (int x = 0; x < width; ++x)
                             {
                                 const int first = juce::jlimit(0, sampleCount - 1,
-                                    (int)(fractionAt(left + x) * sampleCount));
+                                    (int)(sourceTimeForTarget(fractionAt(left + x) * fullSeconds) / fullSeconds * sampleCount));
                                 const int last = juce::jlimit(first + 1, sampleCount,
-                                    (int)(fractionAt(left + x + 1) * sampleCount));
+                                    (int)(sourceTimeForTarget(fractionAt(left + x + 1) * fullSeconds) / fullSeconds * sampleCount));
                                 float lo = 0.0f, hi = 0.0f;
                                 for (int i = first; i < last; ++i)
                                 {
