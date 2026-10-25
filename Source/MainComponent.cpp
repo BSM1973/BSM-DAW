@@ -576,7 +576,7 @@ void MainComponent::paint(juce::Graphics& g)
                         if (sample == firstSample) signal.startNewSubPath(x, y);
                         else signal.lineTo(x, y);
                     }
-                    g.setColour(juce::Colour(0xff79d9ee));
+                    g.setColour(juce::Colour(0xffffcf75));
                     g.strokePath(signal, juce::PathStrokeType(1.35f));
                     // At sample-level magnification show each actual sample point.
                     if (samplesPerPixel <= 0.5)
@@ -607,7 +607,7 @@ void MainComponent::paint(juce::Graphics& g)
                 }
                 const float top = (float) cy - high * amplitude;
                 const float bottom = (float) cy - low * amplitude;
-                g.setColour(juce::Colour(0xff65c7e2));
+                g.setColour(juce::Colour(0xffe6b65d));
                 g.drawVerticalLine(wave.getX() + x, top, bottom);
             }
         }
@@ -1646,8 +1646,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     // A soft underlay adds depth without altering waveform geometry.
                     g.setColour(juce::Colour(0xff0c2432).withAlpha(0.30f));
                     g.fillPath(waveform);
-                    g.setColour(selected ? juce::Colour(0xffc3f1f6)
-                                         : juce::Colour(0xff92c5d5));
+                    g.setColour(selected ? juce::Colour(0xffffd98c)
+                                         : juce::Colour(0xffd8b878));
                     g.fillPath(waveform);
                 }
                 // File names follow the same selected/inactive hierarchy as track headers.
