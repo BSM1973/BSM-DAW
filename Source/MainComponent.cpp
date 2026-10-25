@@ -3144,9 +3144,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     const double length = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     targetSeconds = juce::jlimit(0.0, length, targetSeconds);
-                    if (!audio.isTrackWarpEnabled(track)) return targetSeconds;
+                    const double sourceDuration = sourceLengthSeconds();
+                    if (!audio.isTrackWarpEnabled(track))
+                        return targetSeconds * sourceDuration / length;
                     const int count = audio.getTrackWarpMarkerCount(track);
-                    if (count < 2) return targetSeconds;
+                    if (count < 2) return targetSeconds * sourceDuration / length;
                     for (int i = 0; i < count - 1; ++i)
                     {
                         const double ta = audio.getTrackWarpMarkerTargetSeconds(track, i);
@@ -3158,7 +3160,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             (targetSeconds - ta) / juce::jmax(0.000001, tb - ta));
                         return sa + (sb - sa) * alpha;
                     }
-                    return targetSeconds;
+                    return targetSeconds * sourceDuration / length;
+                }
+                double sourceLengthSeconds() const
+                {
+                    const double sampleRate = audio.getAudioBufferSampleRate(track);
+                    if (cachedAudio != nullptr && sampleRate > 0.0)
+                        return juce::jmax(0.000001,
+                            (double) cachedAudio->getNumSamples() / sampleRate);
+                    return juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                 }
                 void mouseDoubleClick(const juce::MouseEvent& event) override
                 {
@@ -3390,14 +3400,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             for (int x = 0; x < width; ++x)
                             {
                                 const int first = juce::jlimit(0, sampleCount - 1,
-                                    (int)(sourceTimeForTarget(fractionAt(left + x) * fullSeconds) / fullSeconds * sampleCount));
+                                    (int)(sourceTimeForTarget(fractionAt(left + x) * fullSeconds) / sourceLengthSeconds() * sampleCount));
                                 // Include the full source interval for each
                                 // screen column, even around tightly warped
                                 // transients where the mapping becomes steep.
                                 const int mappedEnd = juce::jlimit(0, sampleCount,
                                     (int)std::ceil(sourceTimeForTarget(
                                         fractionAt(left + x + 1) * fullSeconds)
-                                        / fullSeconds * sampleCount));
+                                        / sourceLengthSeconds() * sampleCount));
                                 const int last = juce::jlimit(first + 1, sampleCount,
                                     juce::jmax(first + 1, mappedEnd));
                                 float lo = 0.0f, hi = 0.0f;
