@@ -3094,6 +3094,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const char* names[] = { "Brut", "Fluide", "Doux", "Precis", "Riche" };
                     for (int i = 0; i < 5; ++i) mode.addItem(names[i], i + 1);
                     mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
+                    mode.setTooltip("Choisir l'algorithme de traitement audio Warp.");
                     mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
                     addAndMakeVisible(mode);
                     ratio.addItem("50 %", 1); ratio.addItem("75 %", 2);
@@ -3103,8 +3104,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     // successive stretch factors.
                     originalDuration = audio.getAudioFileLengthSeconds(track);
                     ratio.setSelectedId(3, juce::dontSendNotification);
+                    ratio.setTooltip("Pourcentage de la duree de reference a l'ouverture de la fenetre.");
                     addAndMakeVisible(ratio);
                     apply.setButtonText("APPLIQUER L'ETIREMENT");
+                    apply.setTooltip("Appliquer le facteur choisi a la duree de reference.");
                     apply.onClick = [this]
                     {
                         const double factors[] = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
@@ -3120,6 +3123,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     };
                     addAndMakeVisible(apply);
                     reset.setButtonText("REINITIALISER LES MARQUEURS");
+                    reset.setTooltip("Supprimer les marqueurs Warp apres confirmation.");
                     reset.onClick = [this]
                     {
                         const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
