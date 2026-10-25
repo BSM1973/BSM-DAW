@@ -628,6 +628,28 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         drum->setAttribute("instrumentTrack", audioEngine.getDrumSamplerTrack());
     }
 
+    // Persist the currently loaded audio content's dock markers in the project.
+    // Content revision counters are runtime-only and must not be persisted as IDs.
+    auto* audioMarkers = project.createNewChildElement("AudioDockMarkers");
+    const auto markerState = exportAudioDockClipBounds();
+    for (int trackIndex = 0; trackIndex < getAudioTrackCount(); ++trackIndex)
+    {
+        if (!audioEngine.hasAudioFile(trackIndex))
+            continue;
+        const auto revision = juce::String(audioEngine.getAudioContentRevision(trackIndex));
+        for (const auto& marker : markerState)
+        {
+            if ((int) marker.getProperty("track", -1) != trackIndex
+                || marker.getProperty("revision").toString() != revision)
+                continue;
+            auto* entry = audioMarkers->createNewChildElement("Marker");
+            entry->setAttribute("track", trackIndex);
+            entry->setAttribute("start", (double) marker.getProperty("start"));
+            entry->setAttribute("end", (double) marker.getProperty("end"));
+            break;
+        }
+    }
+
     auto* midi = project.createNewChildElement("MIDI");
     midi->setAttribute("ticksPerQuarterNote", (int)MidiEngine::ticksPerQuarterNote);
     midi->setAttribute("track", 0);
@@ -1309,6 +1331,34 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             }
         }
     }
+    // Resolve saved markers against the freshly loaded audio revision.
+    // Older projects without this optional element retain default boundaries.
+    juce::ValueTree restoredMarkers("AudioDockClipBounds");
+    if (const auto* audioMarkers = project->getChildByName("AudioDockMarkers"))
+    {
+        for (const auto* marker : audioMarkers->getChildIterator())
+        {
+            if (!marker->hasTagName("Marker"))
+                continue;
+            const int trackIndex = marker->getIntAttribute("track", -1);
+            if (trackIndex < 0 || trackIndex >= getAudioTrackCount()
+                || !audioEngine.hasAudioFile(trackIndex))
+                continue;
+            const double start = marker->getDoubleAttribute("start", 0.0);
+            const double end = marker->getDoubleAttribute("end", 1.0);
+            if (!std::isfinite(start) || !std::isfinite(end)
+                || start < 0.0 || end > 1.0 || start > end)
+                continue;
+            juce::ValueTree entry("ClipBounds");
+            entry.setProperty("track", trackIndex, nullptr);
+            entry.setProperty("revision",
+                juce::String(audioEngine.getAudioContentRevision(trackIndex)), nullptr);
+            entry.setProperty("start", start, nullptr);
+            entry.setProperty("end", end, nullptr);
+            restoredMarkers.addChild(entry, -1, nullptr);
+        }
+    }
+    importAudioDockClipBounds(restoredMarkers);
     loadLibertyMultiMidiClips(*this, *project);
     loadStepSequencers(*project);
     updateMidiClipTiming();
