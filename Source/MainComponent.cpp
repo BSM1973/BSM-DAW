@@ -2387,7 +2387,27 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 
 void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
-    const auto p = event.getPosition();
+    const auto p = event.getEventRelativeTo(this).getPosition();
+    if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && audioSelectionActive && audioSelectionTrack == selectedTrack
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+    {
+        const auto wave = getAudioDockWaveBounds();
+        if (wave.contains(p))
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
+            const double right = juce::jmax(audioSelectionStart, audioSelectionEnd);
+            const int leftX = wave.getX() + (int) std::lround((left - offset) / visible * wave.getWidth());
+            const int rightX = wave.getX() + (int) std::lround((right - offset) / visible * wave.getWidth());
+            if (std::abs(p.x - leftX) <= 7 || std::abs(p.x - rightX) <= 7)
+            {
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                return;
+            }
+        }
+    }
     if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 9)
     {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
