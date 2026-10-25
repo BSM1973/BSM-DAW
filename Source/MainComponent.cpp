@@ -607,8 +607,14 @@ void MainComponent::paint(juce::Graphics& g)
                 }
                 const float top = (float) cy - high * amplitude;
                 const float bottom = (float) cy - low * amplitude;
-                g.setColour(juce::Colour(0xffe6b65d));
-                g.drawVerticalLine(wave.getX() + x, top, bottom);
+                // Layered peak envelope: translucent body and crisp extrema
+                // retain quiet detail without the opaque block appearance.
+                const float xPos = (float)(wave.getX() + x);
+                g.setColour(juce::Colour(0xffd8a85a).withAlpha(0.48f));
+                g.drawVerticalLine((int)xPos, top, bottom);
+                g.setColour(juce::Colour(0xffffdc96).withAlpha(0.95f));
+                g.fillRect(xPos, top, 1.0f, 1.0f);
+                g.fillRect(xPos, bottom - 1.0f, 1.0f);
             }
         }
         // Paint the selection readout after the waveform so the waveform
@@ -3126,7 +3132,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             options.launchAsync();
             return;
         }
-        if (false)
+        if (false) // Legacy popup retained temporarily for safe rollback.
         {
             juce::PopupMenu menu;
             const bool enabled = audioEngine.isTrackWarpEnabled(selectedTrack);
