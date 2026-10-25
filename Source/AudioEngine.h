@@ -227,6 +227,7 @@ public:
     {
         juce::String id;
         juce::String sourceName;
+        juce::String sourcePath;
         double startSeconds = 0.0;
         double lengthSeconds = 0.0;
         double trimStartFraction = 0.0;
