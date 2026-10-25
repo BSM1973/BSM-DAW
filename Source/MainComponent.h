@@ -443,6 +443,9 @@ public:
     std::uint64_t audioClipBoundaryRevision = 0;
     void saveAudioDockClipBounds();
     void restoreAudioDockClipBounds(int track);
+    // Serializable representation for eventual project-file integration.
+    juce::ValueTree exportAudioDockClipBounds() const;
+    void importAudioDockClipBounds(const juce::ValueTree& tree);
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
