@@ -390,6 +390,39 @@ void MainComponent::paint(juce::Graphics& g)
                                            8.0f, 18.0f, 3.0f);
                 }
             }
+            // Floating readout follows the active selection handle during drag.
+            if (draggingAudioSelection && wave.getWidth() > 140)
+            {
+                const double activeFraction = audioSelectionDragHandle == 1
+                    ? audioSelectionStart : audioSelectionEnd;
+                const double clipSeconds = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+                const auto audioSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+                const juce::int64 totalSamples = audioSnapshot != nullptr
+                    ? audioSnapshot->getNumSamples() : 0;
+                const juce::int64 samplePosition = (juce::int64) std::llround(
+                    activeFraction * (double) totalSamples);
+                const double seconds = activeFraction * clipSeconds;
+                const double milliseconds = seconds * 1000.0;
+                const juce::String readout = juce::String(seconds, 5) + " s  |  "
+                    + juce::String(milliseconds, 2) + " ms  |  "
+                    + juce::String(samplePosition) + " ech";
+                const int handleX = wave.getX() + (int) std::lround(
+                    (activeFraction - offset) / visible * wave.getWidth());
+                const int bubbleWidth = 250;
+                const int bubbleX = juce::jlimit(wave.getX(),
+                    juce::jmax(wave.getX(), wave.getRight() - bubbleWidth),
+                    handleX - bubbleWidth / 2);
+                const auto bubble = juce::Rectangle<int>(bubbleX, wave.getY() + 27,
+                    juce::jmin(bubbleWidth, wave.getWidth()), 25);
+                g.setColour(juce::Colour(0xff10283a));
+                g.fillRoundedRectangle(bubble.toFloat(), 5.0f);
+                g.setColour(juce::Colour(0xff71cbe5));
+                g.drawRoundedRectangle(bubble.toFloat(), 5.0f, 1.0f);
+                g.setColour(juce::Colour(0xffe0f4fb));
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                g.drawText(readout, bubble.reduced(7, 0),
+                    juce::Justification::centred, true);
+            }
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             g.setColour(juce::Colour(0xffc3e8f7));
             g.setFont(juce::Font(11.0f));
