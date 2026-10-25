@@ -3061,6 +3061,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             stretchMenu.addItem(34, "200 % (duree x 2)");
             menu.addSubMenu("Etirement temporel (hauteur variable)", stretchMenu);
             menu.addItem(40, "Reinitialiser le Warp et la duree");
+            menu.addItem(41, "Duree personnalisee...");
+            menu.addItem(42, "Adapter au tempo (BPM source)...");
             juce::Component::SafePointer<MainComponent> safeThis(this);
             const int trackIndex = selectedTrack;
             menu.showMenuAsync(juce::PopupMenu::Options(),
@@ -3085,6 +3087,48 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             safeThis->audioEngine.setTrackWarpEnabled(trackIndex, true);
                             safeThis->audioEngine.resetTrackWarpMarkers(trackIndex);
                         }
+                    }
+                    else if (result == 41 || result == 42)
+                    {
+                        const double oldLength = safeThis->audioEngine.getAudioFileLengthSeconds(trackIndex);
+                        if (oldLength <= 0.0)
+                            return;
+                        auto prompt = std::make_unique<juce::AlertWindow>(
+                            result == 41 ? "Duree du clip audio" : "Synchronisation au tempo",
+                            result == 41
+                                ? "Saisissez la nouvelle duree du clip en secondes."
+                                : "Saisissez le BPM d'origine du fichier audio.",
+                            juce::MessageBoxIconType::QuestionIcon);
+                        prompt->addTextEditor("valeur",
+                            juce::String(result == 41 ? oldLength : 120.0, 2),
+                            result == 41 ? "Secondes" : "BPM source");
+                        prompt->addButton("Appliquer", 1);
+                        prompt->addButton("Annuler", 0);
+                        auto* dialog = prompt.release();
+                        const bool tempoMode = result == 42;
+                        juce::Component::SafePointer<MainComponent> editor(safeThis.getComponent());
+                        dialog->enterModalState(true,
+                            juce::ModalCallbackFunction::create(
+                                [editor, trackIndex, oldLength, tempoMode, dialog](int answer)
+                                {
+                                    if (answer == 1 && editor != nullptr)
+                                    {
+                                        const auto input = dialog->getTextEditorContents("valeur").trim();
+                                        const double value = input.getDoubleValue();
+                                        if (input.isNotEmpty() && std::isfinite(value) && value > 0.0
+                                            && value <= (tempoMode ? 999.0 : 86400.0))
+                                        {
+                                            const double targetLength = tempoMode
+                                                ? oldLength * value / juce::jmax(1.0, editor->getCurrentBpm())
+                                                : value;
+                                            editor->audioEngine.setAudioFileLengthSeconds(trackIndex, targetLength);
+                                            editor->audioEngine.setTrackWarpEnabled(trackIndex, true);
+                                            editor->audioEngine.resetTrackWarpMarkers(trackIndex);
+                                            editor->repaint();
+                                        }
+                                    }
+                                    delete dialog;
+                                }), false);
                     }
                     else if (result == 40)
                     {
