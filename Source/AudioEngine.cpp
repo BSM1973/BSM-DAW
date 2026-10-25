@@ -1354,6 +1354,33 @@ std::uint64_t AudioEngine::getAudioContentRevision(int trackIndex) const noexcep
     return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->contentRevision.load(std::memory_order_relaxed) : 0;
 }
 
+bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
+                                          double renderSampleRate, int blockSamples)
+{
+    // Dedicated headless test instances only: do not call concurrently with
+    // the hardware callback or while the audio device is running.
+    if (initialised.load(std::memory_order_acquire) || renderSampleRate <= 0.0
+        || blockSamples <= 0 || destination.getNumChannels() < 1)
+        return false;
+    sampleRate.store(renderSampleRate, std::memory_order_relaxed);
+    bufferSize.store(blockSamples, std::memory_order_relaxed);
+    outputChannels.store(destination.getNumChannels(), std::memory_order_relaxed);
+    transportSamples.store(0, std::memory_order_relaxed);
+    playing.store(true, std::memory_order_relaxed);
+    juce::AudioIODeviceCallbackContext context {};
+    for (int offset = 0; offset < destination.getNumSamples(); offset += blockSamples)
+    {
+        const int count = juce::jmin(blockSamples, destination.getNumSamples() - offset);
+        float* channels[2] = { nullptr, nullptr };
+        const int n = juce::jmin(2, destination.getNumChannels());
+        for (int ch = 0; ch < n; ++ch)
+            channels[ch] = destination.getWritePointer(ch, offset);
+        audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
+    }
+    playing.store(false, std::memory_order_relaxed);
+    return true;
+}
+
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     if (device == nullptr) return;
