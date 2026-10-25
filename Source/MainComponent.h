@@ -33,6 +33,7 @@ public:
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     bool openAudioClipInDockAt(juce::Point<int> arrangePosition);
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent&) override;
@@ -424,6 +425,9 @@ public:
     }
 
     DockResizeHandle dockResizeHandle;
+    // Audio dock navigation state (display-only; no changes to audio samples).
+    double audioDockZoom = 1.0;
+    double audioDockScroll = 0.0;
     int mixerHeight = 492;
     bool dockCollapsed = false;
     juce::TextButton dockVisibilityButton;
