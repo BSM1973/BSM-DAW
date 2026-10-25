@@ -428,6 +428,11 @@ public:
     // Audio dock navigation state (display-only; no changes to audio samples).
     double audioDockZoom = 1.0;
     double audioDockScroll = 0.0;
+    double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
+    bool audioSelectionActive = false, draggingAudioSelection = false;
+    int audioSelectionTrack = -1;
+    juce::Rectangle<int> getAudioDockWaveBounds() const;
+    double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
     bool dockCollapsed = false;
     juce::TextButton dockVisibilityButton;
