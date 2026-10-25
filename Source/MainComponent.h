@@ -437,6 +437,8 @@ public:
     // Non-destructive clip boundaries in the audio dock (display state only).
     double audioClipStartFraction = 0.0, audioClipEndFraction = 1.0;
     int audioClipBoundaryTrack = -1;
+    int selectedExtraAudioClipTrack = -1;
+    juce::String selectedExtraAudioClipId;
     int draggingAudioClipBoundary = 0; // 0 none, 1 start, 2 end
     struct AudioDockClipBounds { double start = 0.0, end = 1.0; };
     std::map<std::pair<int, std::uint64_t>, AudioDockClipBounds> audioDockClipBoundsByContent;
