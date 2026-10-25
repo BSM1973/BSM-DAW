@@ -630,8 +630,15 @@ void MainComponent::paint(juce::Graphics& g)
         }
         // Boundary markers must be painted above the waveform, not underneath it.
         // Distinct clip-boundary guides; do not alter the underlying audio.
-        if (audioClipBoundaryTrack == selectedTrack && wave.getWidth() > 0)
+        if (wave.getWidth() > 0)
         {
+            const auto savedBounds = audioDockClipBoundsByTrack.find(selectedTrack);
+            const double displayedStart = audioClipBoundaryTrack == selectedTrack
+                ? audioClipStartFraction
+                : (savedBounds != audioDockClipBoundsByTrack.end() ? savedBounds->second.start : 0.0);
+            const double displayedEnd = audioClipBoundaryTrack == selectedTrack
+                ? audioClipEndFraction
+                : (savedBounds != audioDockClipBoundsByTrack.end() ? savedBounds->second.end : 1.0);
             const double visible = 1.0 / audioDockZoom;
             const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
             const auto drawBoundary = [&](double fraction, juce::Colour colour,
@@ -650,9 +657,9 @@ void MainComponent::paint(juce::Graphics& g)
                         juce::Justification::centredLeft, true);
                 }
             };
-            drawBoundary(audioClipStartFraction, juce::Colour(0xff73dfac), "DEB");
-            drawBoundary(audioClipEndFraction, juce::Colour(0xffffb870), "FIN");
-            if (draggingAudioClipBoundary != 0 && wave.getWidth() >= 150)
+            drawBoundary(displayedStart, juce::Colour(0xff73dfac), "DEB");
+            drawBoundary(displayedEnd, juce::Colour(0xffffb870), "FIN");
+            if (audioClipBoundaryTrack == selectedTrack && draggingAudioClipBoundary != 0 && wave.getWidth() >= 150)
             {
                 const double fraction = draggingAudioClipBoundary == 1
                     ? audioClipStartFraction : audioClipEndFraction;
