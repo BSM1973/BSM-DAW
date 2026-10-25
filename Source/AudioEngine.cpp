@@ -1705,6 +1705,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                          (4.5 - localRatio) / 1.0),
                                (std::abs(localRatio - 1.0) - 0.005) / 0.075))
                 : 0.0f;
+            // Use a smoothstep curve so the blend reaches its limits
+            // with zero slope instead of introducing a sharp corner.
+            const float smoothRatioBlend = ratioBlend * ratioBlend
+                * (3.0f - 2.0f * ratioBlend);
             constexpr double grainSeconds = 0.060;
             const double grainLength = juce::jmax(64.0, grainSeconds * rate);
             const double hop = grainLength * 0.5;
@@ -1806,7 +1810,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
-                const float directBlend = 1.0f - ratioBlend * (1.0f - transientBlend);
+                const float directBlend = 1.0f - smoothRatioBlend * (1.0f - transientBlend);
                 return edgeSafeSample * (1.0f - directBlend)
                     + directSample * directBlend;
             };
