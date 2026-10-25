@@ -4847,10 +4847,8 @@ public:
         if (!e.mods.isLeftButtonDown() || e.x < pianoKeyWidth
             || !isWithinPitchRows(e.y))
             return;
-        // Double-click must respect the currently selected MIDI tool.
-        // In particular, Select/Erase/Resize must not silently draw notes.
-        if (getLibertyActiveTool() != 1)
-            return;
+        // Double-click inserts a note regardless of the active editing tool,
+        // both in the dock and in the floating editor (same PianoRoll instance).
         const int pitch = snapPitchToScale(pitchFromY(e.y));
         const auto tick = tickFromX(e.x);
         if (owner.getMidiEngine().addNote(tick, drawingDurationTicks(), pitch, 100, 1))
