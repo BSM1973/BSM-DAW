@@ -3086,7 +3086,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             public:
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
-                    setSize(540, 340);
+                    setSize(780, 430);
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
@@ -3152,6 +3152,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(13.0f));
                     g.drawText("ALGORITHME", 28, 125, 160, 20, juce::Justification::left);
                     g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
+                    g.setColour(juce::Colour(0xff142b41));
+                    g.fillRoundedRectangle(26.0f, 318.0f, (float)getWidth() - 52.0f,
+                                           (float)juce::jmax(30, getHeight() - 405), 7.0f);
+                    g.setColour(juce::Colour(0xff8faec5));
+                    g.setFont(juce::Font(12.0f));
+                    g.drawText("EDITION DES MARQUEURS", 40, 330, getWidth() - 80, 20,
+                               juce::Justification::centredLeft);
+                    g.drawText("Double-clic sur la forme d'onde du dock : ajouter un marqueur",
+                               40, 354, getWidth() - 80, 20, juce::Justification::centredLeft);
+                    g.drawText("Glisser : deplacer  |  Clic droit : supprimer",
+                               40, 376, getWidth() - 80, 20, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
                                + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
