@@ -129,7 +129,15 @@ public:
         if (e.mods.isRightButtonDown())
         {
             if (marker > 0 && marker < owner.audioEngine.getTrackWarpMarkerCount(selectedTrack) - 1)
-                owner.audioEngine.removeTrackWarpMarker(selectedTrack, marker);
+            {
+                const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                    juce::MessageBoxIconType::QuestionIcon,
+                    "Liberty | Warp",
+                    "Supprimer ce marqueur Warp ?",
+                    this, nullptr);
+                if (confirmed)
+                    owner.audioEngine.removeTrackWarpMarker(selectedTrack, marker);
+            }
             repaint();
             return;
         }
