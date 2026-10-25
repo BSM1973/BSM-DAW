@@ -3203,12 +3203,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         return;
                     }
                     const int count = audio.getTrackWarpMarkerCount(track);
+                    int nearestMarker = -1;
+                    int nearestDistance = 9;
                     for (int i = 1; i < count - 1; ++i)
                     {
-                        const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
-                        const int x = xAt(audio.getTrackWarpMarkerTargetSeconds(track, i));
-                        if (std::abs(event.x - x) <= 8)
+                        const int distance = std::abs(event.x
+                            - xAt(audio.getTrackWarpMarkerTargetSeconds(track, i)));
+                        if (distance < nearestDistance)
                         {
+                            nearestDistance = distance;
+                            nearestMarker = i;
+                        }
+                    }
+                    if (nearestMarker >= 0)
+                    {
+                        const int i = nearestMarker;
                             if (event.mods.isRightButtonDown())
                             {
                                 const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
@@ -3224,7 +3233,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 dragStartTime = audio.getTrackWarpMarkerTargetSeconds(track, i);
                             }
                             return;
-                        }
                     }
                 }
                 void mouseDrag(const juce::MouseEvent& event) override
