@@ -3185,8 +3185,23 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
-                    setMouseCursor(inWaveform(event.getPosition())
-                        ? juce::MouseCursor::CrosshairCursor : juce::MouseCursor::NormalCursor);
+                    if (!inWaveform(event.getPosition()))
+                    {
+                        setMouseCursor(juce::MouseCursor::NormalCursor);
+                        return;
+                    }
+                    bool nearMarker = false;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    for (int i = 1; i < count - 1; ++i)
+                    {
+                        const int x = 40 + (int)std::llround(
+                            juce::jlimit(0.0, 1.0, audio.getTrackWarpMarkerTargetSeconds(track, i) / duration)
+                            * juce::jmax(1, getWidth() - 80));
+                        if (std::abs(event.x - x) <= 8) { nearMarker = true; break; }
+                    }
+                    setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
+                                              : juce::MouseCursor::CrosshairCursor);
                 }
                 bool inWaveform(juce::Point<int> point) const
                 {
