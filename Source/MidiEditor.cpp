@@ -3492,7 +3492,10 @@ public:
             cancelButton.setButtonText(juce::String::fromUTF8("Annuler"));
             applyButton.onClick = [this]
             {
-                if (onApply) onApply(intensity.getValue() / 100.0, (int)centre.getValue(), (int)offset.getValue());
+                if (onApply)
+                    onApply(intensity.getValue() / 100.0,
+                            juce::roundToInt(centre.getValue()),
+                            juce::roundToInt(offset.getValue()));
                 if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
                     window->exitModalState(1);
             };
