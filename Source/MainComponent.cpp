@@ -3099,6 +3099,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     ratio.addItem("50 %", 1); ratio.addItem("75 %", 2);
                     ratio.addItem("100 %", 3); ratio.addItem("125 %", 4);
                     ratio.addItem("150 %", 5); ratio.addItem("200 %", 6);
+                    // Display the current duration and avoid silently compounding
+                    // successive stretch factors.
+                    originalDuration = audio.getAudioFileLengthSeconds(track);
                     ratio.setSelectedId(3, juce::dontSendNotification);
                     addAndMakeVisible(ratio);
                     apply.setButtonText("APPLIQUER L'ETIREMENT");
@@ -3107,12 +3110,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const double factors[] = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
                         const int id = ratio.getSelectedId();
                         if (id < 1 || id > 6) return;
-                        const double length = audio.getAudioFileLengthSeconds(track);
-                        if (length > 0.0)
+                        if (originalDuration > 0.0)
                         {
-                            audio.setAudioFileLengthSeconds(track, length * factors[id - 1]);
+                            audio.setAudioFileLengthSeconds(track, originalDuration * factors[id - 1]);
                             audio.setTrackWarpEnabled(track, true);
                             enable.setToggleState(true, juce::dontSendNotification);
+                            repaint();
                         }
                     };
                     addAndMakeVisible(apply);
@@ -3133,6 +3136,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(13.0f));
                     g.drawText("ALGORITHME", 28, 125, 160, 20, juce::Justification::left);
                     g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
+                    g.drawText("Duree source : " + juce::String(originalDuration, 2)
+                               + " s    |    Duree actuelle : "
+                               + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
+                               28, getHeight() - 62, getWidth() - 56, 20, juce::Justification::left);
                     g.drawText("Les reglages utilisent le moteur Warp existant de Liberty.",
                                28, getHeight() - 38, getWidth() - 56, 22, juce::Justification::left);
                 }
@@ -3147,6 +3154,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             private:
                 AudioEngine& audio;
                 int track;
+                double originalDuration = 0.0;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
                 juce::TextButton apply, reset;
