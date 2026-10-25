@@ -1691,6 +1691,66 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         processTrackInsertChain();
     }
 
+    // Independent clips: immutable snapshots avoid locking or decoding on the
+    // audio thread. Mix only clips with an already decoded source buffer.
+    if (rate > 0.0 && numOutputChannels > 0)
+    {
+        const auto blockEnd = position + numSamples;
+        for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+        {
+            const auto& track = *tracks[(size_t) trackIndex];
+            if (track.muted.load(std::memory_order_relaxed)
+                || (anyPlaybackSolo && !track.solo.load(std::memory_order_relaxed)))
+                continue;
+            const auto snapshot = std::atomic_load(&track.playbackClips);
+            if (!snapshot)
+                continue;
+            const float gain = track.gain.load(std::memory_order_relaxed);
+            const float pan = track.pan.load(std::memory_order_relaxed);
+            const float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
+            const float rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
+            for (const auto& clip : *snapshot)
+            {
+                const auto& source = clip.sourceBuffer;
+                if (!source || source->getNumSamples() == 0 || clip.sourceSampleRate <= 0.0)
+                    continue;
+                const auto start = (std::int64_t) std::llround(clip.startSeconds * rate);
+                const auto end = start + (std::int64_t) std::llround(clip.lengthSeconds * rate);
+                if (blockEnd <= start || position >= end)
+                    continue;
+                const auto from = juce::jmax(position, start);
+                const auto to = juce::jmin(blockEnd, end);
+                const int last = source->getNumSamples() - 1;
+                const double sourceStart = clip.trimStartFraction * last;
+                const double sourceEnd = clip.trimEndFraction * last;
+                const double step = clip.sourceSampleRate / rate;
+                for (auto sample = from; sample < to; ++sample)
+                {
+                    const double sourcePosition = sourceStart + (double) (sample - start) * step;
+                    if (sourcePosition >= sourceEnd || sourcePosition > last)
+                        break;
+                    const int index = (int) sourcePosition;
+                    const int next = juce::jmin(last, index + 1);
+                    const float fraction = (float) (sourcePosition - index);
+                    const int outputIndex = (int) (sample - position);
+                    if (outputChannelData[0] != nullptr)
+                    {
+                        const float* data = source->getReadPointer(0);
+                        outputChannelData[0][outputIndex] +=
+                            (data[index] + (data[next] - data[index]) * fraction) * leftGain;
+                    }
+                    if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
+                    {
+                        const float* data = source->getReadPointer(
+                            juce::jmin(1, source->getNumChannels() - 1));
+                        outputChannelData[1][outputIndex] +=
+                            (data[index] + (data[next] - data[index]) * fraction) * rightGain;
+                    }
+                }
+            }
+        }
+    }
+
     const bool midiLaneMuted = midiTrackMuted.load(std::memory_order_relaxed);
     const bool midiLaneSolo = midiTrackSolo.load(std::memory_order_relaxed);
     if (rate > 0.0)
