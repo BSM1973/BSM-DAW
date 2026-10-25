@@ -3692,7 +3692,7 @@ public:
             slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xffedf4fc));
         }
         std::vector<int> velocities;
-        std::function<void(double, int)> onApply;
+        std::function<void(double, int, int)> onApply;
         juce::Slider intensity, centre, offset;
         juce::ComboBox presets;
         bool applyingPreset = false;
