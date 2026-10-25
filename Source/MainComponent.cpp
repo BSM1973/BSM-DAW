@@ -3013,8 +3013,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 (audioClipStartFraction - offset) / visible * wave.getWidth());
             const int endX = wave.getX() + (int) std::lround(
                 (audioClipEndFraction - offset) / visible * wave.getWidth());
-            if (std::abs(p.x - startX) <= 7) draggingAudioClipBoundary = 1;
-            else if (std::abs(p.x - endX) <= 7) draggingAudioClipBoundary = 2;
+            // At very small zoom levels both handles may overlap. Choose the
+            // closest handle, rather than always capturing the start marker.
+            const int startDistance = std::abs(p.x - startX);
+            const int endDistance = std::abs(p.x - endX);
+            if (startDistance <= 7 || endDistance <= 7)
+                draggingAudioClipBoundary = startDistance <= endDistance ? 1 : 2;
             if (draggingAudioClipBoundary != 0)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
