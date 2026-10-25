@@ -232,6 +232,12 @@ public:
         double lengthSeconds = 0.0;
         double trimStartFraction = 0.0;
         double trimEndFraction = 1.0;
+        // Non-destructive clip controls for the dock audio editor.
+        float clipGain = 1.0f;
+        double pitchSemitones = 0.0;
+        bool reverse = false;
+        double fadeInSeconds = 0.0;
+        double fadeOutSeconds = 0.0;
         // Decoded source prepared outside the real-time audio callback.
         std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
         double sourceSampleRate = 0.0;
