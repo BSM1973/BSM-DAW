@@ -3319,31 +3319,38 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int left = 40, right = getWidth() - 40;
                         const int width = juce::jmax(1, right - left);
                         const int sampleCount = pcm->getNumSamples();
-                        const float* data = pcm->getReadPointer(0);
-                        const float centre = (350.0f + (float)getHeight() - 96.0f) * 0.5f;
-                        const float amplitude = juce::jmax(19.0f, ((float)getHeight() - 442.0f) * 0.42f);
-                        g.setColour(juce::Colour(0xff496579));
-                        g.drawHorizontalLine((int)centre, (float)left, (float)right);
-                        g.setColour(juce::Colour(0xffffcf75).withAlpha(0.85f));
-                        for (int x = 0; x < width; ++x)
+                        const int channels = juce::jmin(2, pcm->getNumChannels());
+                        const float top = 352.0f;
+                        const float bottom = (float)getHeight() - 96.0f;
+                        const float laneHeight = (bottom - top) / (float)channels;
+                        for (int channel = 0; channel < channels; ++channel)
                         {
-                            const int first = juce::jlimit(0, sampleCount - 1,
-                                (int)(fractionAt(left + x) * sampleCount));
-                            const int last = juce::jlimit(first + 1, sampleCount,
-                                (int)(fractionAt(left + x + 1) * sampleCount));
-                            float lo = 0.0f, hi = 0.0f;
-                            for (int i = first; i < last; ++i)
+                            const float* data = pcm->getReadPointer(channel);
+                            const float centre = top + ((float)channel + 0.5f) * laneHeight;
+                            const float amplitude = juce::jmax(4.0f, laneHeight * 0.44f);
+                            g.setColour(juce::Colour(0xff496579));
+                            g.drawHorizontalLine((int)centre, (float)left, (float)right);
+                            g.setColour(channel == 0 ? juce::Colour(0xffffcf75)
+                                                     : juce::Colour(0xffe9a95b));
+                            for (int x = 0; x < width; ++x)
                             {
-                                lo = juce::jmin(lo, data[i]);
-                                hi = juce::jmax(hi, data[i]);
+                                const int first = juce::jlimit(0, sampleCount - 1,
+                                    (int)(fractionAt(left + x) * sampleCount));
+                                const int last = juce::jlimit(first + 1, sampleCount,
+                                    (int)(fractionAt(left + x + 1) * sampleCount));
+                                float lo = 0.0f, hi = 0.0f;
+                                for (int i = first; i < last; ++i)
+                                {
+                                    lo = juce::jmin(lo, data[i]);
+                                    hi = juce::jmax(hi, data[i]);
+                                }
+                                g.drawVerticalLine(left + x, centre - hi * amplitude,
+                                                   centre - lo * amplitude);
                             }
-                            g.drawVerticalLine(left + x, centre - hi * amplitude,
-                                               centre - lo * amplitude);
                         }
                     }
                     // Marker interaction is handled directly by this inspector.
-                    // Display the existing Warp markers against the same
-                    // reference waveform; editing remains in the dock editor.
+                    // Overlay the existing Warp markers on both waveform lanes.
                     const int markerCount = audio.getTrackWarpMarkerCount(track);
                     const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     const int plotWidth = juce::jmax(1, getWidth() - 80);
