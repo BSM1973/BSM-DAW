@@ -3271,19 +3271,28 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     if (!inWaveform(event.getPosition()))
                     {
+                        hoveredMarker = -1;
+                        repaint();
                         setMouseCursor(juce::MouseCursor::NormalCursor);
                         return;
                     }
                     bool nearMarker = false;
+                    hoveredMarker = -1;
                     const int count = audio.getTrackWarpMarkerCount(track);
                     const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
                     for (int i = 1; i < count - 1; ++i)
                     {
                         const int x = xAt(audio.getTrackWarpMarkerTargetSeconds(track, i));
-                        if (std::abs(event.x - x) <= 8) { nearMarker = true; break; }
+                        if (std::abs(event.x - x) <= 8)
+                        {
+                            nearMarker = true;
+                            hoveredMarker = i;
+                            break;
+                        }
                     }
                     setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
                                               : juce::MouseCursor::CrosshairCursor);
+                    repaint();
                 }
                 bool inWaveform(juce::Point<int> point) const
                 {
@@ -3494,7 +3503,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         if (x < 40 || x >= getWidth() - 40) continue;
                         const bool endpoint = marker == 0 || marker == markerCount - 1;
                         const bool active = marker == draggingMarker;
-                        if (active)
+                        const bool hovered = marker == hoveredMarker;
+                        if (active || hovered)
                         {
                             g.setColour(juce::Colour(0x55ffc857));
                             g.fillRect(x - 4, 352, 9, juce::jmax(1, getHeight() - 448));
@@ -3505,7 +3515,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             g.drawText(timeLabel, labelX, 359, 92, 20,
                                        juce::Justification::centred);
                         }
-                        g.setColour(active ? juce::Colour(0xffffe3a3)
+                        g.setColour((active || hovered) ? juce::Colour(0xffffe3a3)
                                     : endpoint ? juce::Colour(0xff8196a8)
                                                : juce::Colour(0xffffc857));
                         g.drawVerticalLine(x, 352.0f, (float)getHeight() - 60.0f);
@@ -3541,6 +3551,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 int track;
                 double originalDuration = 0.0;
                 int draggingMarker = -1;
+                int hoveredMarker = -1;
                 int dragStartX = 0;
                 double dragStartTime = 0.0;
                 double zoom = 1.0;
