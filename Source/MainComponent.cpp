@@ -2972,6 +2972,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioClipEndFraction = juce::jmax(audioClipStartFraction, position);
             else
                 audioClipStartFraction = juce::jmin(position, audioClipEndFraction);
+            saveAudioDockClipBounds();
             repaint();
             return;
         }
@@ -3489,6 +3490,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
             audioClipStartFraction = juce::jmin(fraction, audioClipEndFraction);
         else
             audioClipEndFraction = juce::jmax(fraction, audioClipStartFraction);
+        saveAudioDockClipBounds();
         repaint();
         return;
     }
@@ -3612,6 +3614,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
             audioClipStartFraction = juce::jmin(fraction, audioClipEndFraction);
         else
             audioClipEndFraction = juce::jmax(fraction, audioClipStartFraction);
+        saveAudioDockClipBounds();
         draggingAudioClipBoundary = 0;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
