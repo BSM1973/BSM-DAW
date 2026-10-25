@@ -3484,6 +3484,8 @@ public:
                 centre.setValue(64, juce::sendNotificationSync);
                 offset.setValue(0, juce::sendNotificationSync);
                 applyingPreset = false;
+                syncPresetFromControls();
+                repaint();
             };
             addAndMakeVisible(presets);
             applyButton.setButtonText(juce::String::fromUTF8("Appliquer"));
