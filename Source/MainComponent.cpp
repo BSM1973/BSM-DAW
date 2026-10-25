@@ -311,31 +311,31 @@ void MainComponent::paint(juce::Graphics& g)
             const int count = (int) waveformMin[index].size();
             const double visibleFraction = 1.0 / audioDockZoom;
             const double scroll = juce::jlimit(0.0, 1.0 - visibleFraction, audioDockScroll);
-            const int first = juce::jlimit(0, count - 1, (int) std::floor(scroll * (count - 1)));
-            const int last = juce::jlimit(first, count - 1,
-                (int) std::ceil((scroll + visibleFraction) * (count - 1)));
-            const int span = juce::jmax(1, last - first);
-            const float amplitude = (float) wave.getHeight() * 0.43f;
-            juce::Path shape;
-            for (int i = first; i <= last; ++i)
-            {
-                const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
-                                  * (float) (i - first) / (float) span;
-                const float y = (float) cy - waveformMax[index][(size_t)i] * amplitude;
-                if (i == first) shape.startNewSubPath(x, y);
-                else shape.lineTo(x, y);
-            }
-            for (int i = last; i >= first; --i)
-            {
-                const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
-                                  * (float) (i - first) / (float) span;
-                shape.lineTo(x, (float) cy - waveformMin[index][(size_t)i] * amplitude);
-            }
-            shape.closeSubPath();
+            const float amplitude = (float) wave.getHeight() * 0.47f;
+            const int columns = wave.getWidth();
+            // A true waveform is a per-pixel min/max amplitude envelope,
+            // not a smoothed polygon interpolated between sparse points.
+            // Each column includes every cached peak bin in its time range.
             const juce::Graphics::ScopedSaveState clipped(g);
             g.reduceClipRegion(wave);
-            g.setColour(juce::Colour(0xff60bbd4));
-            g.fillPath(shape);
+            for (int x = 0; x < columns; ++x)
+            {
+                const double t0 = scroll + visibleFraction * (double) x / (double) columns;
+                const double t1 = scroll + visibleFraction * (double) (x + 1) / (double) columns;
+                const int first = juce::jlimit(0, count - 1, (int) std::floor(t0 * count));
+                const int last = juce::jlimit(first + 1, count,
+                    (int) std::ceil(t1 * count));
+                float low = 1.0f, high = -1.0f;
+                for (int bin = first; bin < last; ++bin)
+                {
+                    low = juce::jmin(low, waveformMin[index][(size_t)bin]);
+                    high = juce::jmax(high, waveformMax[index][(size_t)bin]);
+                }
+                const float top = (float) cy - high * amplitude;
+                const float bottom = (float) cy - low * amplitude;
+                g.setColour(juce::Colour(0xff65c7e2));
+                g.drawVerticalLine(wave.getX() + x, top, bottom);
+            }
         }
     }
     else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
@@ -2077,7 +2077,9 @@ void MainComponent::rebuildWaveformCache(int trackIndex)
     const auto bufferSnapshot = audioEngine.getAudioBufferSnapshot(trackIndex);
     const auto* buffer = bufferSnapshot.get();
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
-    constexpr int points = 1200;
+    // Dense peak envelope for a professional, pixel-accurate dock display.
+    // Keep the existing arranger cache shared with the dock.
+    constexpr int points = 16384;
     auto& minCache = waveformMin[(size_t)trackIndex]; auto& maxCache = waveformMax[(size_t)trackIndex];
     minCache.resize(points, 0.0f); maxCache.resize(points, 0.0f);
     const auto totalSamples = buffer->getNumSamples(); const auto channels = buffer->getNumChannels();
