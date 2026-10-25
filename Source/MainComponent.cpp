@@ -290,7 +290,13 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawText("EDITEUR AUDIO  |  " + getTrackDisplayName(selectedTrack),
                    inner.getX(), inner.getY(), inner.getWidth(), 24,
                    juce::Justification::centredLeft);
-        const auto wave = inner.withTrimmedTop(36).reduced(0, 8);
+        g.setColour(juce::Colour(0xff92b7c8));
+        g.setFont(juce::Font(11.0f));
+        g.drawText("Molette : zoom  |  Maj + molette : deplacement  |  Zoom "
+                       + juce::String(audioDockZoom, 1) + "x",
+                   inner.getX(), inner.getY() + 23, inner.getWidth(), 18,
+                   juce::Justification::centredLeft);
+        const auto wave = inner.withTrimmedTop(48).reduced(0, 8);
         g.setColour(juce::Colour(0xff152b3b));
         g.fillRoundedRectangle(wave.toFloat(), 5.0f);
         const int cy = wave.getCentreY();
@@ -303,20 +309,26 @@ void MainComponent::paint(juce::Graphics& g)
             && wave.getWidth() > 2 && wave.getHeight() > 2)
         {
             const int count = (int) waveformMin[index].size();
+            const double visibleFraction = 1.0 / audioDockZoom;
+            const double scroll = juce::jlimit(0.0, 1.0 - visibleFraction, audioDockScroll);
+            const int first = juce::jlimit(0, count - 1, (int) std::floor(scroll * (count - 1)));
+            const int last = juce::jlimit(first, count - 1,
+                (int) std::ceil((scroll + visibleFraction) * (count - 1)));
+            const int span = juce::jmax(1, last - first);
             const float amplitude = (float) wave.getHeight() * 0.43f;
             juce::Path shape;
-            for (int i = 0; i < count; ++i)
+            for (int i = first; i <= last; ++i)
             {
                 const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
-                                  * (float) i / (float) juce::jmax(1, count - 1);
+                                  * (float) (i - first) / (float) span;
                 const float y = (float) cy - waveformMax[index][(size_t)i] * amplitude;
-                if (i == 0) shape.startNewSubPath(x, y);
+                if (i == first) shape.startNewSubPath(x, y);
                 else shape.lineTo(x, y);
             }
-            for (int i = count - 1; i >= 0; --i)
+            for (int i = last; i >= first; --i)
             {
                 const float x = (float) wave.getX() + (float) (wave.getWidth() - 1)
-                                  * (float) i / (float) juce::jmax(1, count - 1);
+                                  * (float) (i - first) / (float) span;
                 shape.lineTo(x, (float) cy - waveformMin[index][(size_t)i] * amplitude);
             }
             shape.closeSubPath();
@@ -2247,6 +2259,40 @@ void MainComponent::mouseMove(const juce::MouseEvent& event)
 void MainComponent::mouseExit(const juce::MouseEvent&)
 {
     setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
+                                   const juce::MouseWheelDetails& wheel)
+{
+    const auto p = event.getEventRelativeTo(this).getPosition();
+    const bool audioEditor = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && audioEngine.hasAudioFile(selectedTrack);
+    const auto area = juce::Rectangle<int>(310, getMixerTop() + 36,
+        juce::jmax(0, getWidth() - 310), juce::jmax(0, getHeight() - getMixerTop() - 36));
+    if (audioEditor && area.contains(p))
+    {
+        if (event.mods.isShiftDown())
+        {
+            const double visible = 1.0 / audioDockZoom;
+            audioDockScroll = juce::jlimit(0.0, 1.0 - visible,
+                audioDockScroll - (double) wheel.deltaY * visible * 0.22);
+        }
+        else
+        {
+            const double previousZoom = audioDockZoom;
+            const double relativeX = juce::jlimit(0.0, 1.0,
+                (double) (p.x - area.getX()) / (double) juce::jmax(1, area.getWidth()));
+            const double cursorPosition = audioDockScroll + relativeX / previousZoom;
+            audioDockZoom = juce::jlimit(1.0, 64.0,
+                previousZoom * std::pow(1.35, (double) wheel.deltaY));
+            audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom,
+                cursorPosition - relativeX / audioDockZoom);
+        }
+        repaint();
+        return;
+    }
+    juce::Component::mouseWheelMove(event, wheel);
 }
 
 bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
