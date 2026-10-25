@@ -2381,6 +2381,24 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // A listener attached recursively receives the original child event.
     // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
+    // Route the second press of an audio-clip double-click before any
+    // arrange editing tool can move, split or erase the clip.
+    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
+        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int audioTrack = getAudioTrackAtPosition(p);
+        if (audioTrack >= 0 && isPointInsideAudioClip(audioTrack, p))
+        {
+            selectedTrack = audioTrack;
+            dockMixerMode = false;
+            dockStepSequencerMode = false;
+            drumSamplerDockSelected = false;
+            if (dockCollapsed) dockCollapsed = false;
+            resized();
+            repaint();
+            return;
+        }
+    }
     if (!dockCollapsed && !event.mods.isPopupMenu()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
         && p.x >= 8 && p.x < 156)
