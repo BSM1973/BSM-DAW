@@ -1286,6 +1286,7 @@ bool AudioEngine::loadAudioClipSource(int trackIndex, const juce::String& clipId
         clip.sourceBuffer = decoded;
         clip.sourceSampleRate = reader->sampleRate;
         clip.sourceName = sourceFile.getFileName();
+        clip.sourcePath = sourceFile.getFullPathName();
         return true;
     }
     error = "Audio clip no longer exists.";
