@@ -434,6 +434,9 @@ public:
     int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
     double snapAudioDockFraction(double fraction) const;
     int audioSelectionTrack = -1;
+    // Non-destructive clip boundaries in the audio dock (display state only).
+    double audioClipStartFraction = 0.0, audioClipEndFraction = 1.0;
+    int audioClipBoundaryTrack = -1;
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
