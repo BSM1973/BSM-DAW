@@ -1690,8 +1690,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // advances at native source rate; grain centres follow the Warp
             // mapping. No allocation or locking is performed in this loop.
             const double localRatio = (sb - sa) / span * sourceRate / rate;
+            // Keep extreme ratios on the established interpolation path.
+            // The short-grain algorithm is intended for moderate stretches;
+            // beyond this range it may repeat or skip attacks excessively.
             const bool granular = mode == 4 && sourceRate > 0.0
-                && localRatio > 0.01 && std::abs(localRatio - 1.0) > 0.005;
+                && std::isfinite(localRatio)
+                && localRatio >= 0.25 && localRatio <= 4.0
+                && std::abs(localRatio - 1.0) > 0.005;
             constexpr double grainSeconds = 0.060;
             const double grainLength = juce::jmax(64.0, grainSeconds * rate);
             const double hop = grainLength * 0.5;
