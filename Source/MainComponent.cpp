@@ -358,6 +358,16 @@ void MainComponent::paint(juce::Graphics& g)
                 juce::jmax(0, juce::jmin(wave.getRight(), x2) - juce::jmax(wave.getX(), x1)), wave.getHeight());
             g.setColour(juce::Colour(0xff276d90).withAlpha(0.35f));
             g.fillRect(selection);
+            g.setColour(juce::Colour(0xff9ee4f3));
+            for (int handleX : { x1, x2 })
+            {
+                if (handleX >= wave.getX() && handleX < wave.getRight())
+                {
+                    g.drawVerticalLine(handleX, (float) wave.getY(), (float) wave.getBottom());
+                    g.fillRoundedRectangle((float) handleX - 4.0f, (float) wave.getY() + 4.0f,
+                                           8.0f, 18.0f, 3.0f);
+                }
+            }
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             g.setColour(juce::Colour(0xffc3e8f7));
             g.setFont(juce::Font(11.0f));
@@ -2390,6 +2400,14 @@ juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
     return editor.reduced(14, 12).withTrimmedTop(74).reduced(0, 8);
 }
 
+double MainComponent::snapAudioDockFraction(double fraction) const
+{
+    const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
+    const int samples = snapshot != nullptr ? snapshot->getNumSamples() : 0;
+    const double clamped = juce::jlimit(0.0, 1.0, fraction);
+    return samples > 0 ? std::round(clamped * samples) / (double) samples : clamped;
+}
+
 double MainComponent::audioDockFractionAt(int x) const
 {
     const auto wave = getAudioDockWaveBounds();
@@ -2576,8 +2594,27 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu()
         && getAudioDockWaveBounds().contains(p))
     {
+        const auto wave = getAudioDockWaveBounds();
+        const double visible = 1.0 / audioDockZoom;
+        const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+        audioSelectionDragHandle = 0;
+        if (audioSelectionActive && audioSelectionTrack == selectedTrack)
+        {
+            const double left = juce::jmin(audioSelectionStart, audioSelectionEnd);
+            const double right = juce::jmax(audioSelectionStart, audioSelectionEnd);
+            const int leftX = wave.getX() + (int) std::lround((left - offset) / visible * wave.getWidth());
+            const int rightX = wave.getX() + (int) std::lround((right - offset) / visible * wave.getWidth());
+            if (std::abs(p.x - leftX) <= 7) audioSelectionDragHandle = 1;
+            else if (std::abs(p.x - rightX) <= 7) audioSelectionDragHandle = 2;
+            if (audioSelectionDragHandle != 0)
+            {
+                audioSelectionStart = left;
+                audioSelectionEnd = right;
+            }
+        }
         audioSelectionTrack = selectedTrack;
-        audioSelectionStart = audioSelectionEnd = audioDockFractionAt(p.x);
+        if (audioSelectionDragHandle == 0)
+            audioSelectionStart = audioSelectionEnd = snapAudioDockFraction(audioDockFractionAt(p.x));
         audioSelectionActive = true;
         draggingAudioSelection = true;
         repaint();
@@ -3051,7 +3088,11 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
     if (draggingAudioSelection)
     {
-        audioSelectionEnd = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x);
+        const double fraction = snapAudioDockFraction(
+            audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x));
+        if (audioSelectionDragHandle == 1) audioSelectionStart = juce::jmin(fraction, audioSelectionEnd);
+        else if (audioSelectionDragHandle == 2) audioSelectionEnd = juce::jmax(fraction, audioSelectionStart);
+        else audioSelectionEnd = fraction;
         repaint();
         return;
     }
@@ -3158,7 +3199,11 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
     if (draggingAudioSelection)
     {
-        audioSelectionEnd = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x);
+        const double fraction = snapAudioDockFraction(
+            audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x));
+        if (audioSelectionDragHandle == 1) audioSelectionStart = juce::jmin(fraction, audioSelectionEnd);
+        else if (audioSelectionDragHandle == 2) audioSelectionEnd = juce::jmax(fraction, audioSelectionStart);
+        else audioSelectionEnd = fraction;
         draggingAudioSelection = false;
         repaint();
         return;
