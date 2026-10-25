@@ -29,6 +29,7 @@ public:
     void clear();
     bool addNote(std::int64_t startTick, std::int64_t lengthTicks, int pitch,
                  int velocity = 100, int channel = 1);
+    bool replaceNotes(const std::vector<NoteEvent>& replacement);
     bool removeNoteAt(std::int64_t startTick, int pitch, int channel = 1);
     bool deleteSelectedNote();
     bool selectNoteAt(std::int64_t startTick, int pitch, int channel = 1) noexcept;
@@ -42,8 +43,10 @@ public:
     void setSelectedNotes(const std::vector<NoteEvent>& selection) noexcept;
     std::size_t getNumSelectedNotes() const noexcept { return selectedNotes.size(); }
     bool moveSelectedNotesBy(std::int64_t deltaTicks, int deltaPitch);
+    bool resizeSelectedNotesBy(std::int64_t deltaTicks, bool fromLeftEdge);
     bool duplicateSelectedNotes(std::int64_t deltaTicks = ticksPerQuarterNote);
     bool deleteSelectedNotes();
+    bool quantizeSelectedNotes(std::int64_t gridTicks);
 
     bool undo();
     bool redo();

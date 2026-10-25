@@ -1,4 +1,21 @@
 #include "MainComponent.h"
+#include "LibertyDrumSampler.h"
+#include "MidiEditor.h"
+void closeFloatingStepSequencerWindow();
+void closeFloatingDrumSamplerWindow();
+void showFloatingDrumSamplerWindow(AudioEngine&);
+void resizeLibertyDynamicTrackController(MainComponent*);
+void resizeLibertyGridSnapController(MainComponent*);
+void clearLibertyAudioClipResizeSource(AudioEngine&, int);
+
+void resizeLibertyMixConsole(MainComponent*);
+void resizeLibertyBrowserResizeController(MainComponent*);
+void resizeLibertyMultiMidiClipController(MainComponent*);
+bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
+
+double getLibertyTimelinePixelsPerSecond() noexcept;
+int getLibertyTrackRowHeight() noexcept;
+int getLibertyActiveTool();
 
 namespace
 {
@@ -6,6 +23,12 @@ constexpr int menuNew = 1;
 constexpr int menuOpen = 2;
 constexpr int menuSave = 3;
 constexpr int menuSaveAs = 4;
+
+bool isSupportedAudioFile(const juce::String& path)
+{
+    const auto extension = juce::File(path).getFileExtension().toLowerCase();
+    return extension == ".wav" || extension == ".aif" || extension == ".aiff";
+}
 
 bool exportTrackToProjectMedia(const juce::File& projectFile,
                                int trackIndex,
@@ -38,31 +61,666 @@ bool exportTrackToProjectMedia(const juce::File& projectFile,
 
 MainComponent::MainComponent()
 {
-    setSize(1440, 820);
+    // Extra height is intentional: six 96+ px track rows plus the mixer must fit
+    // without controls colliding or being pushed under the mixer.
+    setSize(1440, 980);
+    waveformMin.resize((size_t) audioEngine.getAudioTrackCount());
+    waveformMax.resize((size_t) audioEngine.getAudioTrackCount());
+    trackSourceFiles.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioFileNames.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioLengths.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioStartSeconds.resize((size_t) audioEngine.getAudioTrackCount());
+    pendingAudioWarpStates.resize((size_t) audioEngine.getAudioTrackCount());
+    instrumentStepSequencers.resize((size_t) dynamicInstrumentTrackCount);
+    midiStepSequencers.resize((size_t) dynamicMidiTrackCount);
     audioEngine.initialise();
+    auto drumSampler = std::make_shared<LibertyDrumSampler>();
+    drumSampler->prepare(audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr
+        ? audioEngine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 44100.0);
+    audioEngine.setDrumSampler(std::move(drumSampler));
+    projectButton = std::make_unique<ProjectButton>(this);
     setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 
-MainComponent::~MainComponent() = default;
+MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
 void MainComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
     g.fillAll(juce::Colour(0xff0b0d10));
-    auto transport = bounds.removeFromTop(76);
-    auto mixer = bounds.removeFromBottom(210);
+    auto transport = bounds.removeFromTop(transportHeight);
+    auto mixer = bounds.removeFromBottom(mixerHeight);
     drawTransport(g, transport);
     drawTrackArea(g, bounds);
-    drawMixer(g, mixer);
+    // Visual dock boundary only; leave editor and tab hit areas unchanged.
+    g.setColour(juce::Colour(0xff070b10));
+    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
+    g.setColour(juce::Colour(0xff344452));
+    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 1);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.75f));
+    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
+               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
+    const auto editorArea = (isMidiDockTrack || showStepSequencer) ? mixer.withTrimmedTop(36) : mixer;
+    if (dockStepSequencerMode && isMidiDockTrack)
+        drawMidiStepSequencer(g, editorArea);
+    else if (showStepSequencer && dockStepSequencerMode)
+        drawStepSequencerDock(g, editorArea);
+    else
+        drawMixer(g, editorArea);
+
+    // Shared editor navigation for MIDI and instrument tracks.
+    const bool isMidi = selectedTrack >= getAudioTrackCount()
+                     && selectedTrack < instrumentFirst;
+    if (isMidi || showStepSequencer)
+    {
+        auto tabs = juce::Rectangle<int>(8, mixer.getY() + 4, 244, 28);
+        const auto piano = tabs.removeFromLeft(118);
+        const auto seq = juce::Rectangle<int>(piano.getRight() + 8, piano.getY(), 118, piano.getHeight());
+        const auto drawTab = [&](juce::Rectangle<int> rect, const juce::String& label, bool active)
+        {
+            g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff202c37));
+            g.fillRoundedRectangle(rect.toFloat(), 5.0f);
+            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.11f : 0.045f));
+            g.fillRoundedRectangle(rect.toFloat().withHeight(6.0f), 4.0f);
+            // Distinct inactive outlines improve dock navigation on graphite surfaces.
+            g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
+            g.drawRoundedRectangle(rect.toFloat().reduced(0.5f), 5.0f, active ? 1.5f : 1.0f);
+            if (active)
+                g.fillRoundedRectangle((float)rect.getX() + 8.0f, (float)rect.getBottom() - 3.0f,
+                                       (float)juce::jmax(1, rect.getWidth() - 16), 2.0f, 1.0f);
+            // Obsidian dock tabs: selected editor reads first, inactive tabs remain clear.
+            g.setColour(active ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+            g.setFont(juce::Font(12.0f, juce::Font::bold));
+            g.drawText(label, rect, juce::Justification::centred);
+        };
+        drawTab(piano, "PIANO ROLL", !dockStepSequencerMode);
+        drawTab(seq, "STEP SEQ", dockStepSequencerMode && showStepSequencer);
+        // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
+        drawTab(juce::Rectangle<int>(seq.getRight() + 8, seq.getY(), 148, seq.getHeight()), "DRUM SAMPLER", false);
+        if (showStepSequencer && dockStepSequencerMode)
+        {
+            const auto detach = juce::Rectangle<int>(416, mixer.getY() + 4, 106, 28);
+            g.setColour(juce::Colour(0xff202c37));
+            g.fillRoundedRectangle(detach.toFloat(), 5.0f);
+            // Match secondary dock actions to the Obsidian inactive-tab palette.
+            g.setColour(juce::Colour(0xff48606d));
+            g.drawRoundedRectangle(detach.toFloat().reduced(0.5f), 5.0f, 1.0f);
+            g.setColour(juce::Colour(0xffc2d8e2));
+            g.setFont(juce::Font(11.0f, juce::Font::bold));
+            g.drawText(juce::String::fromUTF8("D\xC3\x89TACHER"), detach, juce::Justification::centred);
+        }
+    }
+}
+
+namespace
+{
+class FloatingStepSequencerContent final : public juce::Component, private juce::Timer
+{
+public:
+    explicit FloatingStepSequencerContent(MainComponent& main) : owner(main)
+    {
+        startTimerHz(15);
+    }
+    void paint(juce::Graphics& g) override
+    {
+        owner.paintFloatingStepSequencer(g, getLocalBounds());
+    }
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        owner.clickFloatingStepSequencer(event.getPosition(), getLocalBounds());
+        repaint();
+    }
+private:
+    void timerCallback() override { repaint(); }
+    MainComponent& owner;
+};
+
+class FloatingStepSequencerWindow final : public juce::DocumentWindow
+{
+public:
+    explicit FloatingStepSequencerWindow(MainComponent& main)
+        : juce::DocumentWindow("Liberty - Step Sequencer", juce::Colour(0xff101821),
+                               juce::DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new FloatingStepSequencerContent(main), true);
+        setResizable(true, true);
+        setResizeLimits(760, 220, 2200, 700);
+        if (lastFloatingStepSequencerBounds.isEmpty())
+            centreWithSize(1200, 320);
+        else
+            setBounds(lastFloatingStepSequencerBounds);
+        setVisible(true);
+    }
+    void closeButtonPressed() override { setVisible(false); }
+    void moved() override { rememberBounds(); }
+    void resized() override
+    {
+        juce::DocumentWindow::resized();
+        rememberBounds();
+    }
+private:
+    void rememberBounds()
+    {
+        if (getWidth() >= 760 && getHeight() >= 220)
+            lastFloatingStepSequencerBounds = getBounds();
+    }
+public:
+    static juce::Rectangle<int> lastFloatingStepSequencerBounds;
+};
+juce::Rectangle<int> FloatingStepSequencerWindow::lastFloatingStepSequencerBounds;
+std::unique_ptr<FloatingStepSequencerWindow> floatingStepSequencerWindow;
+}
+
+void closeFloatingStepSequencerWindow() { floatingStepSequencerWindow.reset(); }
+class FloatingDrumSamplerWindow final : public juce::DocumentWindow
+{
+public:
+    explicit FloatingDrumSamplerWindow(LibertyDrumSampler& sampler)
+        : juce::DocumentWindow("Liberty - Drum Sampler", juce::Colour(0xff121c27),
+                               juce::DocumentWindow::closeButton)
+    {
+        setUsingNativeTitleBar(true);
+        setContentOwned(new LibertyDrumSamplerPanel(sampler), true);
+        setResizable(true, true);
+        setResizeLimits(740, 760, 2200, 1600);
+        centreWithSize(1050, 950);
+    }
+    void closeButtonPressed() override { setVisible(false); }
+};
+std::unique_ptr<FloatingDrumSamplerWindow> floatingDrumSamplerWindow;
+
+
+void closeFloatingDrumSamplerWindow() { floatingDrumSamplerWindow.reset(); }
+void showFloatingDrumSamplerWindow(AudioEngine& engine)
+{
+    auto sampler = engine.getDrumSampler();
+    if (!sampler) return;
+    if (!floatingDrumSamplerWindow)
+        floatingDrumSamplerWindow = std::make_unique<FloatingDrumSamplerWindow>(*sampler);
+    floatingDrumSamplerWindow->setVisible(true);
+    floatingDrumSamplerWindow->toFront(true);
+}
+
+void MainComponent::showFloatingStepSequencer()
+{
+    if (!floatingStepSequencerWindow)
+        floatingStepSequencerWindow = std::make_unique<FloatingStepSequencerWindow>(*this);
+    floatingStepSequencerWindow->setVisible(true);
+    floatingStepSequencerWindow->toFront(true);
+}
+
+void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
+{
+    const int audioTrackCount = getAudioTrackCount();
+    const int midiTrackCount = getMidiTrackCount();
+    const int instrumentTrackCount = getInstrumentTrackCount();
+    // Step Sequencer hit-test for the selected Instrument row.
+    {
+        if (p.y >= area.getY())
+        {
+            const int logicalRow = selectedTrack;
+            const int instrumentFirst = audioTrackCount + midiTrackCount;
+            if (logicalRow >= instrumentFirst && logicalRow < instrumentFirst + instrumentTrackCount)
+            {
+                const int instrumentIndex = logicalRow - instrumentFirst;
+                if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
+                {
+                    auto panel = area;
+                    const int dockInset = 8;
+                    panel = panel.reduced(dockInset, 6);
+                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
+                    {
+                        const int availableWidth = juce::jmax(1, panel.getWidth());
+                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
+                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
+                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
+                    };
+                    const int titleWidth = 132;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
+                    auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, 30);
+                    if (seqPlay.contains(p))
+                    {
+                        if (audioEngine.isStepPreviewPlaying()) audioEngine.setStepPreview(instrumentIndex, false);
+                        else if (!audioEngine.isPlaying()) audioEngine.setStepPreview(instrumentIndex, true);
+                        repaint(); return;
+                    }
+                    if (onOff.contains(p))
+                    {
+                        pattern->enabled = !pattern->enabled;
+                        publishInstrumentStepSequencer(instrumentIndex);
+                        repaint();
+                        return;
+                    }
+                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
+                    const int stepW = juce::jmax(12, juce::jmin(42, available / 16));
+                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
+                    for (int s = 0; s < 16; ++s)
+                    {
+                        const int absoluteStep = firstStep + s;
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
+                        if (pad.contains(p) && absoluteStep < pattern->stepCount)
+                        {
+                            stepSequencerSelectedStep = absoluteStep;
+                            pattern->steps[(size_t)absoluteStep].enabled = !pattern->steps[(size_t)absoluteStep].enabled;
+                            publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                        }
+                    }
+                    const int controlsY = panel.getY() + 42;
+                    auto hit = [&](int x, int w) { return stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16)).contains(p); };
+                    int cx = panel.getX();
+                    const int counts[] = {16,32,64};
+                    for (int n = 0; n < 3; ++n) { if (hit(cx,30)) { pattern->stepCount=counts[n]; stepSequencerPage=juce::jmin(stepSequencerPage,(counts[n]-1)/16); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=(n == 2 ? 42 : 34); }
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
+                    for (int r=0;r<5;++r) { if(hit(cx,38)) { pattern->stepTicks=rates[r]; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=42; }
+                    for (int m=0;m<3;++m) { if(hit(cx,34)) { pattern->rateModifier=(std::uint8_t)m; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=38; }
+                    if (hit(cx,44)) { pattern->direction=(LibertyStepSequencer::Direction)(((int)pattern->direction+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } cx+=48;
+                    if (hit(cx,62)) { pattern->swing = pattern->swing >= 0.50f ? 0.0f : pattern->swing + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    cx += 68;
+                    const int pages = juce::jmax(1,(pattern->stepCount+15)/16);
+                    for(int page=0;page<pages;++page) { if(hit(cx,30)) { stepSequencerPage=page; repaint(); return; } cx+=34; }
+                    const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
+                    auto& editStep = pattern->steps[(size_t)selectedStep];
+                    const int editY = controlsY + 36;
+                    auto editHit = [&](int x, int w) { return stretchedControl(x, w, editY, 26, 780).contains(p); };
+                    int ex = panel.getX() + 56;
+                    if (editHit(ex,64)) { editStep.pitch = (std::uint8_t)(editStep.pitch >= 84 ? 36 : editStep.pitch + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 68;
+                    if (editHit(ex,54)) { editStep.velocity = (std::uint8_t)(editStep.velocity >= 127 ? 20 : juce::jmin(127, (int)editStep.velocity + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 58;
+                    if (editHit(ex,66)) { editStep.gate = editStep.gate >= 1.0f ? 0.10f : juce::jmin(1.0f, editStep.gate + 0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
+                    if (editHit(ex,66)) { editStep.probability = (std::uint8_t)(editStep.probability >= 100 ? 10 : juce::jmin(100, (int)editStep.probability + 10)); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 70;
+                    if (editHit(ex,62)) { editStep.ratchet = (std::uint8_t)(editStep.ratchet >= 8 ? 1 : editStep.ratchet + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 66;
+                    if (editHit(ex,38)) { editStep.accent = !editStep.accent; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
+                    if (editHit(ex,48)) { editStep.octave = editStep.octave >= 2 ? -2 : editStep.octave + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 52;
+                    if (editHit(ex,38)) { editStep.tie = !editStep.tie; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 42;
+                    if (editHit(ex,42)) { editStep.channel = (std::uint8_t)(editStep.channel >= 16 ? 1 : editStep.channel + 1); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 46;
+                    if (editHit(ex,70)) { editStep.microTiming = editStep.microTiming >= 0.50f ? -0.50f : editStep.microTiming + 0.10f; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ex += 74;
+                    if (editHit(ex,76)) { editStep.chord=(LibertyStepSequencer::Chord)(((int)editStep.chord+1)%5); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    const int actionY = editY + 36;
+                    auto actionHit = [&](int x, int w) { return stretchedControl(x, w, actionY, 26, 1260).contains(p); };
+                    int ax = panel.getX();
+                    if (actionHit(ax,48)) { for (int s=0;s<pattern->stepCount;++s) pattern->steps[(size_t)s] = {}; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 52;
+                    if (actionHit(ax,58))
+                    {
+                        for (int s=0;s<pattern->stepCount;++s)
+                        {
+                            auto& st=pattern->steps[(size_t)s];
+                            const unsigned h=(unsigned)(s*1664525u+1013904223u);
+                            st.enabled=(h%100u)<55u; st.velocity=(std::uint8_t)(70u+(h%58u)); st.probability=(std::uint8_t)(70u+(h%31u));
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 62;
+                    if (actionHit(ax,62)) { std::reverse(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 66;
+                    if (actionHit(ax,56))
+                    {
+                        if(pattern->stepCount>1) std::rotate(pattern->steps.begin(), pattern->steps.begin()+pattern->stepCount-1, pattern->steps.begin()+pattern->stepCount);
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 60;
+                    if (actionHit(ax,72))
+                    {
+                        const int half=pattern->stepCount/2;
+                        if(half>0) for(int s=0;s<half && s+half<pattern->stepCount;++s) pattern->steps[(size_t)(s+half)]=pattern->steps[(size_t)s];
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 80;
+                    if (actionHit(ax,52)) { if (commitInstrumentStepSequencerToMidiClip(instrumentIndex, juce::jlimit(0, juce::jmax(0, getMidiTrackCount() - 1), stepSequencerMidiTarget))) repaint(); return; } ax += 56;
+                    if (actionHit(ax,58)) { draggingStepSequencerPattern=true; draggedStepSequencerInstrument=instrumentIndex; repaint(); return; } ax += 62;
+                    if (actionHit(ax,58)) { pattern->root=(std::uint8_t)((pattern->root+1)%12); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 62;
+                    if (actionHit(ax,82)) { pattern->scale=(LibertyStepSequencer::Scale)(((int)pattern->scale+1)%4); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 86;
+                    if (actionHit(ax,66)) { pattern->transpose=pattern->transpose>=12 ? -12 : pattern->transpose+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,52)) { pattern->octaveShift=pattern->octaveShift>=4 ? -4 : pattern->octaveShift+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 56;
+                    if (actionHit(ax,60)) { pattern->humanize=pattern->humanize>=1.0f ? 0.0f : juce::jmin(1.0f,pattern->humanize+0.10f); publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 64;
+                    if (actionHit(ax,68))
+                    {
+                        pattern->euclideanPulses = pattern->euclideanPulses >= pattern->stepCount ? 1 : pattern->euclideanPulses + 1;
+                        const int pulses = juce::jlimit(1, pattern->stepCount, pattern->euclideanPulses);
+                        for (int s=0; s<pattern->stepCount; ++s)
+                        {
+                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
+                            pattern->steps[(size_t)s].enabled = ((rotated * pulses) % pattern->stepCount) < pulses;
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    }
+                    ax += 72;
+                    if (actionHit(ax,70))
+                    {
+                        pattern->euclideanRotation = (pattern->euclideanRotation + 1) % juce::jmax(1,pattern->stepCount);
+                        const int pulses=juce::jlimit(1,pattern->stepCount,pattern->euclideanPulses);
+                        for(int s=0;s<pattern->stepCount;++s)
+                        {
+                            int rotated=(s-pattern->euclideanRotation)%pattern->stepCount; if(rotated<0) rotated+=pattern->stepCount;
+                            pattern->steps[(size_t)s].enabled=((rotated*pulses)%pattern->stepCount)<pulses;
+                        }
+                        publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                    } ax += 74;
+                    if (actionHit(ax,66)) { pattern->cycleSteps = pattern->cycleSteps >= pattern->stepCount ? 1 : pattern->cycleSteps + 1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 70;
+                    if (actionHit(ax,42)) { pattern->velocityLaneSteps=pattern->velocityLaneSteps>=pattern->cycleSteps?1:pattern->velocityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->gateLaneSteps=pattern->gateLaneSteps>=pattern->cycleSteps?1:pattern->gateLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->probabilityLaneSteps=pattern->probabilityLaneSteps>=pattern->cycleSteps?1:pattern->probabilityLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; } ax += 46;
+                    if (actionHit(ax,42)) { pattern->ratchetLaneSteps=pattern->ratchetLaneSteps>=pattern->cycleSteps?1:pattern->ratchetLaneSteps+1; publishInstrumentStepSequencer(instrumentIndex); repaint(); return; }
+                    ax += 46;
+                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
+                    if (createClipButton.contains(p))
+                    {
+                        createInstrumentPatternClip(instrumentIndex);
+                        return;
+                    }
+                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
+                    {
+                        for (int bankIndex=0; bankIndex<8; ++bankIndex)
+                        {
+                            const int gap = 5;
+                            const int width = juce::jmax(1, (panel.getWidth() - 7 * gap) / 8);
+                            const auto patRect = juce::Rectangle<int>(panel.getX() + bankIndex * (width + gap), panel.getBottom() - 30, width, 28);
+                            if (patRect.contains(p))
+                            {
+                                instrumentStepSequencers[(size_t)instrumentIndex].activePattern = bankIndex;
+                                stepSequencerPage = 0; stepSequencerSelectedStep = 0;
+                                publishInstrumentStepSequencer(instrumentIndex); repaint(); return;
+                            }
+                            ax += 48;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+}
+
+void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    // Obsidian editor surface matches the graphite hierarchy of the floating dock.
+    juce::ColourGradient surface(juce::Colour(0xff1b2833), (float)area.getX(), (float)area.getY(),
+                                 juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    g.setGradientFill(surface);
+    g.fillRect(area);
+    if (area.getWidth() < 360 || area.getHeight() < 220)
+    {
+        // Obsidian resize hint remains legible in compact floating windows.
+        g.setColour(juce::Colour(0xffc2d8e2));
+        g.setFont(juce::Font(13.0f));
+        g.drawFittedText("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI",
+                         area.reduced(12), juce::Justification::centred, 2);
+        return;
+    }
+    const int midiIndex = selectedTrack - getAudioTrackCount();
+    auto* pattern = getMidiStepSequencer(midiIndex);
+    if (!pattern) return;
+    const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
+    // Obsidian dock title echoes the selected-pattern turquoise hierarchy.
+    g.setColour(juce::Colour(0xffb8e8ec));
+    g.setFont(juce::Font(16.0f, juce::Font::bold));
+    g.drawText("STEP SEQ MIDI " + juce::String(midiIndex + 1), left, area.getY() + 8, 210, 28, juce::Justification::left);
+    // Quiet Obsidian header seam separates the title from pattern banks.
+    g.setColour(juce::Colour(0xff48606d).withAlpha(0.50f));
+    g.fillRect(left, area.getY() + 41, width, 1);
+    auto& bank = midiStepSequencers[(size_t)midiIndex];
+    for (int i = 0; i < 8; ++i)
+    {
+        const int bankStart = i * width / 8;
+        const int bankEnd = (i + 1) * width / 8;
+        auto r = juce::Rectangle<int>(left + bankStart, area.getY() + 48,
+                                      juce::jmax(1, bankEnd - bankStart - 5), 29);
+        const auto& bankPattern = bank.patterns[(size_t) i];
+        const int bankCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                               bankPattern.cycleSteps);
+        const bool hasNotes = std::any_of(bankPattern.steps.begin(),
+                                          bankPattern.steps.begin() + bankCycleSteps,
+                                          [](const auto& step) { return step.enabled; });
+        // Obsidian bank surfaces match inactive MIDI page navigation.
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
+        g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        // Every pattern bank has a defined edge; selection keeps the turquoise focus.
+        g.setColour(i == bank.activePattern ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                            : juce::Colour(0xff48606d).withAlpha(0.85f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        if (hasNotes)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillEllipse((float) r.getRight() - 9.0f, (float) r.getY() + 4.0f, 5.0f, 5.0f);
+        }
+        g.setColour(i == bank.activePattern ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+        g.setFont(juce::Font(r.getWidth() < 42 ? 10.0f : 12.0f, juce::Font::bold));
+        g.drawFittedText("P" + juce::String(i + 1), r.reduced(2, 0),
+                         juce::Justification::centred, 1);
+    }
+    const int steps = 16;
+    const int page = juce::jlimit(0, 3, stepSequencerPage);
+    const int firstStep = page * 16;
+    const int gap = 4, availableCellsWidth = width - (steps - 1) * gap;
+    for (int i = 0; i < steps; ++i)
+    {
+        const int cellStart = (i * availableCellsWidth) / steps;
+        const int cellEnd = ((i + 1) * availableCellsWidth) / steps;
+        const int cellWidth = cellEnd - cellStart;
+        auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
+        const bool active = pattern->steps[(size_t)(firstStep + i)].enabled;
+        const bool inCycle = firstStep + i < pattern->cycleSteps;
+        // Three visual levels: playable notes, empty steps and steps outside the cycle.
+        g.setColour(!inCycle ? juce::Colour(0xff18222c)
+                             : active ? juce::Colour(0xff54d6dc)
+                                      : juce::Colour(0xff304452));
+        g.fillRoundedRectangle(r.toFloat(), 4.0f);
+        if (i % 4 == 0)
+        {
+            // Group downbeats remain legible, but out-of-cycle cells recede.
+            // Obsidian downbeat outline: focused in-cycle, quiet outside the pattern.
+            g.setColour(inCycle ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                : juce::Colour(0xff48606d).withAlpha(0.40f));
+            g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 4.0f, 1.0f);
+        }
+        if (i > 0 && i % 4 == 0)
+        {
+            // Bar-group markers recede when the following group is outside the cycle.
+            // Obsidian rhythmic group markers: clearer in-cycle, subdued beyond cycle.
+            g.setColour(inCycle ? juce::Colour(0xff91bbc3).withAlpha(0.70f)
+                                : juce::Colour(0xff48606d).withAlpha(0.45f));
+            const float markerX = (float) r.getX() - 2.0f;
+            g.drawVerticalLine((int) markerX, (float) r.getY() + 5.0f,
+                               (float) r.getBottom() - 5.0f);
+        }
+        // Downbeat numbers read first on empty cells; active notes retain dark ink.
+        // Out-of-cycle labels follow the subdued Obsidian secondary-text palette.
+        g.setColour(!inCycle ? juce::Colour(0xff667d8d)
+                             : active ? juce::Colour(0xff10242b)
+                                      : (i % 4 == 0) ? juce::Colour(0xffeffcfd)
+                                                     : juce::Colour(0xffdce6ee));
+        g.setFont(juce::Font(cellWidth < 25 ? 10.0f : 12.0f, juce::Font::bold));
+        g.drawFittedText(juce::String(firstStep + i + 1), r.reduced(1, 0),
+                         juce::Justification::centred, 1);
+    }
+    g.setColour(juce::Colour(0xffb5c3d1));
+    g.setFont(juce::Font(12.0f));
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
+    const int playableCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->cycleSteps);
+    const bool hasPlayableNotes = std::any_of(pattern->steps.begin(),
+        pattern->steps.begin() + playableCycleSteps,
+        [](const auto& step) { return step.enabled; });
+    // Empty-pattern action shares the subdued graphite surface of inactive banks.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
+    g.fillRoundedRectangle(exportButton.toFloat(), 5.0f);
+    // Obsidian clip action: an available pattern is accented, an empty one recedes.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                 : juce::Colour(0xff48606d).withAlpha(0.70f));
+    g.drawRoundedRectangle(exportButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    // Empty-pattern status stays readable without competing with the enabled action.
+    g.setColour(hasPlayableNotes ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText(hasPlayableNotes ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
+               exportButton, juce::Justification::centred);
+    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
+    {
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
+        // Inactive page surfaces match the Obsidian MIDI editor graphite.
+        g.setColour(pageIndex == page ? juce::Colour(0xff23535d) : juce::Colour(0xff1b2833));
+        g.fillRoundedRectangle(pageRect.toFloat(), 5.0f);
+        // Obsidian page navigation: inactive pages remain outlined and legible.
+        g.setColour(pageIndex == page ? juce::Colour(0xff54d6dc).withAlpha(0.85f)
+                                       : juce::Colour(0xff48606d).withAlpha(0.85f));
+        g.drawRoundedRectangle(pageRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(pageIndex == page ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+        const bool compactPageButton = pageRect.getWidth() < 60;
+        g.drawFittedText(compactPageButton ? "P" + juce::String(pageIndex + 1)
+                                          : juce::String(pageIndex * 16 + 1) + "-" + juce::String((pageIndex + 1) * 16),
+                         pageRect.reduced(2, 0), juce::Justification::centred, 1);
+    }
+    g.setColour(juce::Colour(0xffb5c3d1));
+    g.setFont(juce::Font(12.0f));
+    const int safeCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                           pattern->cycleSteps);
+    const int activeSteps = (int) std::count_if(
+        pattern->steps.begin(), pattern->steps.begin() + safeCycleSteps,
+        [](const auto& step) { return step.enabled; });
+    const auto infoY = area.getY() + 197;
+    const auto patternCaption = "P" + juce::String(bank.activePattern + 1);
+    g.setColour(juce::Colour(0xff54d6dc));
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText(patternCaption, left, infoY, 28, 20, juce::Justification::left);
+    // Secondary pattern metadata stays legible against the Obsidian dock.
+    g.setColour(juce::Colour(0xffc2d8e2));
+    g.setFont(juce::Font(12.0f));
+    g.drawFittedText(juce::String(safeCycleSteps) + " pas  |  "
+                         + juce::String(activeSteps) + " notes  |  Piano Roll indépendant",
+                     left + 28, infoY, juce::jmax(1, width - 28), 20,
+                     juce::Justification::centredLeft, 1);
+}
+
+void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
+{
+    if (!area.contains(point) || area.getWidth() < 360 || area.getHeight() < 220)
+        return;
+    const int midiIndex = selectedTrack - getAudioTrackCount();
+    auto* pattern = getMidiStepSequencer(midiIndex);
+    if (!pattern) return;
+    const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
+    const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
+    if (exportButton.contains(point))
+    {
+        // Never create a timeline clip from an empty or disabled bank.
+        // In particular, inactive notes outside the cycle must not be
+        // mistaken for a playable Pattern.
+        const int playableCycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                                   pattern->cycleSteps);
+        const bool hasPlayableNotes = std::any_of(
+            pattern->steps.begin(), pattern->steps.begin() + playableCycleSteps,
+            [](const auto& step) { return step.enabled; });
+        if (!hasPlayableNotes)
+        {
+            repaint();
+            return;
+        }
+        // Render from a temporary normalized copy: exporting must not mutate
+        // the saved Pattern or mark the project dirty just by clicking Export.
+        auto exportPattern = *pattern;
+        exportPattern.enabled = true;
+        const auto notes = LibertyStepSequencer::render(exportPattern);
+        if (!notes.empty())
+        {
+            const double lengthSeconds = MidiEngine::tickToSeconds(
+                LibertyStepSequencer::getCycleLengthTicks(exportPattern), tempoBpm);
+            commitLibertySequencerMidiClip(*this, notes, midiIndex,
+                                           playheadSeconds, juce::jmax(0.01, lengthSeconds));
+        }
+        repaint();
+        return;
+    }
+    for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
+    {
+        const auto pageRect = juce::Rectangle<int>(left + 190 + pageIndex * ((width - 190) / 4), area.getY() + 161, juce::jmax(1, (width - 190) / 4 - 4), 29);
+        if (pageRect.contains(point))
+        {
+            // Page navigation is visual only: merely inspecting steps 49-64
+            // must not silently expand the musical length of the Pattern.
+            stepSequencerPage = pageIndex;
+            repaint();
+            return;
+        }
+    }
+    auto& bank = midiStepSequencers[(size_t)midiIndex];
+    for (int i = 0; i < 8; ++i)
+    {
+        const int bankStart = i * width / 8;
+        const int bankEnd = (i + 1) * width / 8;
+        auto r = juce::Rectangle<int>(left + bankStart, area.getY() + 48,
+                                      juce::jmax(1, bankEnd - bankStart - 5), 29);
+        if (r.contains(point))
+        {
+            bank.activePattern = i;
+            stepSequencerPage = 0;
+            stepSequencerSelectedStep = 0;
+            repaint();
+            return;
+        }
+    }
+    const int steps = 16;
+    const int page = juce::jlimit(0, 3, stepSequencerPage);
+    const int firstStep = page * 16;
+    const int gap = 4, availableCellsWidth = width - (steps - 1) * gap;
+    for (int i = 0; i < steps; ++i)
+    {
+        const int cellStart = (i * availableCellsWidth) / steps;
+        const int cellEnd = ((i + 1) * availableCellsWidth) / steps;
+        const int cellWidth = cellEnd - cellStart;
+        auto r = juce::Rectangle<int>(left + cellStart + i * gap, area.getY() + 95, cellWidth, 52);
+        if (r.contains(point))
+        {
+            auto& step = pattern->steps[(size_t)(firstStep + i)];
+            step.enabled = !step.enabled;
+            if (step.enabled)
+            {
+                // Only enabling a note extends the musical cycle. Disabling a
+                // step must never lengthen an otherwise shorter Pattern.
+                pattern->stepCount = juce::jmax(pattern->stepCount, firstStep + i + 1);
+                pattern->cycleSteps = juce::jmax(pattern->cycleSteps, pattern->stepCount);
+            }
+            // A bank with no enabled notes should not be exported as an
+            // active Pattern; preserve its length for later editing.
+            const int cycleSteps = juce::jlimit(1, LibertyStepSequencer::maxSteps,
+                                               pattern->cycleSteps);
+            pattern->enabled = std::any_of(pattern->steps.begin(),
+                                           pattern->steps.begin() + cycleSteps,
+                                           [](const auto& candidate) { return candidate.enabled; });
+            repaint();
+            return;
+        }
+    }
+}
+
+void MainComponent::clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area)
+{
+    if (selectedTrack >= getAudioTrackCount() && selectedTrack < getAudioTrackCount() + getMidiTrackCount())
+        clickMidiStepSequencer(point, area);
+    else
+        handleStepSequencerClick(point, area);
+}
+
+// Liberty Pro / Obsidian: transport palette is intentionally local to the
+// drawing layer. Keep all existing hit rectangles and transport behaviour.
+namespace LibertyProTransport
+{
+constexpr juce::uint32 surface = 0xff18212b;
+constexpr juce::uint32 outline = 0xff344452;
+constexpr juce::uint32 button = 0xff25323e;
+constexpr juce::uint32 accent = 0xff54d6dc;
+constexpr juce::uint32 text = 0xffe8eff7;
+constexpr juce::uint32 muted = 0xffb5c3d1;
 }
 
 void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    // LIBERTY UI RULE: every control and every text element gets its own explicit,
-    // non-overlapping rectangle. Never paint text underneath an interactive control.
-    g.setColour(juce::Colour(0xff15181d)); g.fillRect(area);
-    g.setColour(juce::Colour(0xff30353d)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
+    juce::ColourGradient transportSurface(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+                                          juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    g.setGradientFill(transportSurface);
+    g.fillRect(area);
+    g.setColour(juce::Colour(LibertyProTransport::outline)); g.drawHorizontalLine(area.getBottom() - 1, 0.0f, (float)getWidth());
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.45f));
+    g.fillRect(area.getX(), area.getBottom() - 2, juce::jmin(182, area.getWidth()), 1);
 
     const auto logoArea = juce::Rectangle<int>(0, 0, 182, 66);
     juce::ignoreUnused(logoArea);
@@ -83,8 +741,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     g.strokePath(wave, juce::PathStrokeType(2.0f));
 
     const juce::ColourGradient audioBarsGradient(
-        juce::Colour(0xff72d8f5), 18.0f, 18.0f,
-        juce::Colour(0xff4f82ff), 40.0f, 40.0f, false);
+        juce::Colour(LibertyProTransport::accent), 18.0f, 18.0f,
+        juce::Colour(0xff277eaa), 40.0f, 40.0f, false);
     g.setGradientFill(audioBarsGradient);
     g.fillRoundedRectangle(18.0f, 25.0f, 3.5f, 14.0f, 1.5f);
     g.fillRoundedRectangle(24.0f, 21.0f, 3.5f, 18.0f, 1.5f);
@@ -101,9 +759,24 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     for (int i = 0; i < 5; ++i)
     {
         auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
-        g.setColour(i == 2 && isPlaying ? juce::Colour(0xff2d965e) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f);
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.setColour(i == 2 && isPlaying ? juce::Colour(0xff206b70) : juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(r.toFloat(), 5.0f);
+        g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.055f));
+        g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(7.0f, (float)r.getHeight())), 4.0f);
+        // Primary transport action carries the accent; navigation stays graphite.
+        g.setColour(i == 2 ? juce::Colour(LibertyProTransport::accent)
+                           : juce::Colour(0xff526475).withAlpha(0.8f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 5.0f, i == 2 ? 1.5f : 1.0f);
+        if (i == 2)
+        {
+            g.setColour(juce::Colour(LibertyProTransport::accent).withAlpha(isPlaying ? 0.95f : 0.65f));
+            g.fillRoundedRectangle((float)r.getX() + 9.0f, (float)r.getBottom() - 3.0f,
+                                   (float)r.getWidth() - 18.0f, 2.0f, 1.0f);
+        }
+        // Keep the transport label legible against the active teal PLAY/STOP surface.
+        g.setColour(i == 2 && isPlaying ? juce::Colour(0xfff0fbfc)
+                                       : juce::Colour(i == 2 ? LibertyProTransport::accent
+                                                             : LibertyProTransport::text));
+        g.setFont(juce::Font(i == 2 ? 12.0f : 11.0f, juce::Font::bold));
         g.drawText(i == 2 && isPlaying ? "STOP" : labels[i], r, juce::Justification::centred);
     }
 
@@ -114,124 +787,670 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto measure = static_cast<long long>(std::floor(safeTime / secondsPerMeasure)) + 1;
     const auto beat = static_cast<int>(std::floor(std::fmod(safeTime, secondsPerMeasure) / secondsPerBeat)) + 1;
 
-    const auto positionBox = juce::Rectangle<int>(728, 34, 90, 36);
-    g.setColour(juce::Colour(0xff252a31));
+    const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
+    g.setColour(juce::Colour(0xff0b0f14));
     g.fillRoundedRectangle(positionBox.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff454b54));
-    g.drawRoundedRectangle(positionBox.toFloat(), 5.0f, 1.0f);
-    g.setColour(juce::Colour(0xffc9cdd3));
-    g.setFont(juce::Font(14.0f));
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.5f));
+    g.drawRoundedRectangle(positionBox.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
+    g.fillRoundedRectangle((float)positionBox.getX() + 8.0f, (float)positionBox.getBottom() - 3.0f,
+                           (float)positionBox.getWidth() - 16.0f, 2.0f, 1.0f);
+    // Musical position is the primary transport readout.
+    g.setColour(juce::Colour(0xffe9f9fa));
+    g.setFont(juce::Font(16.0f, juce::Font::bold));
     g.drawText(juce::String(measure) + ":" + juce::String(beat), positionBox, juce::Justification::centred);
 
+    // Read-only musical context: no new hit targets or transport behaviour.
+    const auto musicInfo = juce::Rectangle<int>(836, 34, 82, 36);
+    g.setColour(juce::Colour(0xff0b0f14));
+    g.fillRoundedRectangle(musicInfo.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
+    g.drawRoundedRectangle(musicInfo.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    // Secondary label recedes while numeric tempo and meter remain prominent.
+    g.setColour(juce::Colour(0xff8d9eae));
+    g.setFont(juce::Font(9.0f, juce::Font::bold));
+    g.drawText("BPM   /   SIGN", musicInfo.getX() + 4, musicInfo.getY() + 2,
+               musicInfo.getWidth() - 8, 12, juce::Justification::centred);
+    g.setColour(juce::Colour(0xffe8eff7));
+    g.setFont(juce::Font(12.0f, juce::Font::bold));
+    g.drawText(juce::String(tempoBpm, 0) + "  " + juce::String(timeSignatureNumerator)
+               + "/" + juce::String(timeSignatureDenominator),
+               musicInfo.getX() + 3, musicInfo.getY() + 16, musicInfo.getWidth() - 6, 17,
+               juce::Justification::centred);
+
     auto settingsButton = juce::Rectangle<int>(925, 10, 120, 24);
-    auto importButton = juce::Rectangle<int>(1055, 10, 120, 24);
-    for (auto r : { settingsButton, importButton }) { g.setColour(juce::Colour(0xff252a31)); g.fillRoundedRectangle(r.toFloat(), 5.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(r.toFloat(), 5.0f, 1.0f); }
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f, juce::Font::bold));
-    g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred); g.drawText("IMPORT TO TRACK", importButton, juce::Justification::centred);
+    g.setColour(juce::Colour(LibertyProTransport::button)); g.fillRoundedRectangle(settingsButton.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff526475).withAlpha(0.8f));
+    g.drawRoundedRectangle(settingsButton.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    g.setColour(juce::Colour(0xffb5c3d1)); g.setFont(juce::Font(11.0f, juce::Font::bold));
+    g.drawText("AUDIO SETTINGS", settingsButton, juce::Justification::centred);
 }
 
 void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    constexpr int headerW = 210, rulerH = 32, rowH = 70;
-    constexpr float pixelsPerSecond = 80.0f;
+    constexpr int headerW = trackHeaderWidth, rulerH = trackRulerHeight;
+    const int audioCount = audioEngine.getAudioTrackCount();
+    const int midiCount = getMidiTrackCount();
+    const int instrumentCount = getInstrumentTrackCount();
+    const int rowH = getLibertyTrackRowHeight();
+    const int scrollRows = getTrackScrollRows();
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
     const double secondsPerMeasure = secondsPerBeat * (double) juce::jmax(1, timeSignatureNumerator);
-    const float pixelsPerMeasure = static_cast<float>(secondsPerMeasure * pixelsPerSecond);
+    const float pixelsPerMeasure = (float)(secondsPerMeasure * pixelsPerSecond);
 
-    auto ruler = area.removeFromTop(rulerH); auto rows = area;
-    g.setColour(juce::Colour(0xff12151a)); g.fillRect(ruler); g.setColour(juce::Colour(0xff20242b)); g.fillRect(rows.withWidth(headerW)); g.setColour(juce::Colour(0xff111419)); g.fillRect(rows.withTrimmedLeft(headerW));
+    auto ruler = area.removeFromTop(rulerH);
+    auto rows = area;
+    // Deeper Obsidian ruler surface improves label and playhead contrast.
+    g.setColour(juce::Colour(0xff141e28)); g.fillRect(ruler);
+    // Distinct graphite corner anchors the track headers against the ruler.
+    g.setColour(juce::Colour(0xff1d2a35));
+    g.fillRect(ruler.withWidth(headerW));
+    // Continue the header/timeline seam through the ruler corner.
+    g.setColour(juce::Colour(0xff40515f));
+    g.drawVerticalLine(headerW - 1, (float)ruler.getY(), (float)ruler.getBottom());
+    g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
+    g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
+    // Thin boundary keeps the time ruler distinct from the track canvas.
+    g.setColour(juce::Colour(0xff344452));
+    g.drawHorizontalLine(ruler.getBottom() - 1, (float)area.getX(), (float)area.getRight());
 
-    g.setColour(juce::Colour(0xff353b44));
+    // Four-bar anchors stand out while intermediate measure lines recede.
     for (int measureIndex = 0; measureIndex < 100; ++measureIndex)
     {
-        const int x = headerW + static_cast<int>(std::round(measureIndex * pixelsPerMeasure));
+        const int x = headerW + (int)std::round(measureIndex * pixelsPerMeasure);
         if (x >= getWidth()) break;
+        g.setColour(measureIndex % 4 == 0 ? juce::Colour(0xff526475)
+                                          : juce::Colour(0xff2b3946));
         g.drawVerticalLine(x, (float)ruler.getY(), (float)rows.getBottom());
     }
-
-    g.setColour(juce::Colour(0xff777f89)); g.setFont(juce::Font(11.0f));
+    // Measure numbers are clearer at bar-group boundaries, subdued elsewhere.
+    g.setFont(juce::Font(11.0f));
     for (int i = 0; i < 100; ++i)
     {
-        const int x = headerW + static_cast<int>(std::round(i * pixelsPerMeasure));
+        const int x = headerW + (int)std::round(i * pixelsPerMeasure);
         if (x >= getWidth()) break;
+        g.setColour(i % 4 == 0 ? juce::Colour(0xffe2f0f3)
+                               : juce::Colour(0xff788d9f));
         g.drawText(juce::String(i + 1), x + 6, ruler.getY() + 7, 35, 18, juce::Justification::left);
     }
 
-    for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+    const int totalRows = audioCount + midiCount + instrumentCount;
+    // Draw the final partially visible row too, but clip it strictly to the
+    // arranger viewport. This makes the grid meet the mixer with no dead strip.
+    const int visibleRows = juce::jmax(1, (rows.getHeight() + rowH - 1) / rowH);
+    for (int logicalRow = scrollRows; logicalRow < totalRows && logicalRow < scrollRows + visibleRows; ++logicalRow)
     {
-        auto row = rows.removeFromTop(rowH); g.setColour(i % 2 ? juce::Colour(0xff14171c) : juce::Colour(0xff171a1f)); g.fillRect(row);
-        auto header = row.removeFromLeft(headerW); g.setColour(i == selectedTrack ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a)); g.fillRect(header);
-        g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold)); g.drawText("Audio " + juce::String(i + 1), header.getX() + 14, header.getY() + 8, 150, 22, juce::Justification::left);
-        g.setColour(i == selectedTrack ? juce::Colour(0xff9fc7e8) : juce::Colour(0xff747b85)); g.setFont(juce::Font(10.0f)); g.drawText(audioEngine.hasAudioFile(i) ? audioEngine.getAudioFileName(i) : "EMPTY AUDIO TRACK", header.getX() + 14, header.getY() + 36, 182, 16, juce::Justification::left, true);
-        auto clip = row.withTrimmedLeft(20).reduced(4);
-        if (audioEngine.hasAudioFile(i))
+        const int visibleIndex = logicalRow - scrollRows;
+        auto row = juce::Rectangle<int>(rows.getX(), rows.getY() + visibleIndex * rowH, rows.getWidth(), rowH);
+        if (row.getY() >= rows.getBottom()) break;
+        row = row.getIntersection(rows);
+        // The active lane has a subtle petrol tint; inactive lanes retain Obsidian alternation.
+        g.setColour(logicalRow == selectedTrack ? juce::Colour(0xff192c34)
+                     : logicalRow % 2 ? juce::Colour(0xff101821)
+                                      : juce::Colour(0xff151f29));
+        g.fillRect(row);
+        auto header = row.withWidth(headerW);
+        bool selected = false;
+        juce::String title;
+        if (logicalRow < audioCount)
         {
-            const auto desiredWidth = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
-            clip.setWidth(desiredWidth);
-            clip.setX(headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond)));
-            g.setColour(i == selectedTrack ? juce::Colour(0xff31506a) : juce::Colour(0xff294459)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff709fc5)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f);
-            if (!waveformMin[(size_t)i].empty())
+            const int i = logicalRow;
+            selected = selectedTrack == i;
+            title = "Audio " + juce::String(i + 1);
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
+            auto clip = row.withTrimmedLeft(headerW + 20).reduced(4);
+            if (audioEngine.hasAudioFile(i))
             {
-                const auto centreY = clip.getCentreY(); const auto amplitude = juce::jmax(1.0f, clip.getHeight() * 0.42f); const auto points = static_cast<int>(waveformMin[(size_t)i].size()); juce::Path waveform; waveform.preallocateSpace(points * 4);
-                for (int p = 0; p < points; ++p) { const auto x = clip.getX() + 4.0f + (clip.getWidth() - 8.0f) * (float)p / (float)juce::jmax(1, points - 1); const auto y = (float)centreY - waveformMax[(size_t)i][(size_t)p] * amplitude; if (p == 0) waveform.startNewSubPath(x, y); else waveform.lineTo(x, y); }
-                for (int p = points - 1; p >= 0; --p) { const auto x = clip.getX() + 4.0f + (clip.getWidth() - 8.0f) * (float)p / (float)juce::jmax(1, points - 1); waveform.lineTo(x, (float)centreY - waveformMin[(size_t)i][(size_t)p] * amplitude); }
-                waveform.closeSubPath(); g.setColour(juce::Colour(0xff9fc7e8)); g.fillPath(waveform);
+                clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
+                clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
+                g.setColour(selected ? juce::Colour(0xff37677c) : juce::Colour(0xff284b63)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                g.setColour(selected ? juce::Colour(0xff8ed9e4)
+                                     : juce::Colour(0xff5b8fa7));
+                g.drawRoundedRectangle(clip.toFloat().reduced(0.5f), 5.0f, 1.0f);
+                if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
+                {
+                    const auto centreY=clip.getCentreY(); const auto amplitude=juce::jmax(1.0f,clip.getHeight()*0.42f);
+                    const int points=(int)waveformMin[(size_t)i].size(); juce::Path waveform;
+                    for(int p=0;p<points;++p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);const auto y=(float)centreY-waveformMax[(size_t)i][(size_t)p]*amplitude;if(p==0)waveform.startNewSubPath(x,y);else waveform.lineTo(x,y);}
+                    for(int p=points-1;p>=0;--p){const auto x=clip.getX()+4.0f+(clip.getWidth()-8.0f)*(float)p/(float)juce::jmax(1,points-1);waveform.lineTo(x,(float)centreY-waveformMin[(size_t)i][(size_t)p]*amplitude);}
+                    waveform.closeSubPath();
+                    g.setColour(selected ? juce::Colour(0xffb7eaf3)
+                                         : juce::Colour(0xff83b7ca));
+                    g.fillPath(waveform);
+                }
+                // File names follow the same selected/inactive hierarchy as track headers.
+                g.setColour(selected ? juce::Colour(0xfff0fafb)
+                                     : juce::Colour(0xffc1d4e0));
+                g.setFont(juce::Font(11.0f));
+                g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
             }
-            g.setColour(juce::Colours::white); g.setFont(juce::Font(11.0f)); g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
-            if (i == selectedTrack && clip.getWidth() >= 110) { g.setColour(juce::Colour(0xffb9d9f0)); g.setFont(juce::Font(9.0f)); g.drawText("DRAG TO MOVE", clip.getX() + 8, clip.getBottom() - 16, 90, 12, juce::Justification::left); }
+        }
+        else if (logicalRow < audioCount + midiCount)
+        {
+            const int i = logicalRow - audioCount;
+            title = "MIDI " + juce::String(i + 1);
+            selected = selectedTrack == audioCount + i;
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
         }
         else
         {
-            g.setColour(juce::Colour(0xff242a31)); g.fillRoundedRectangle(clip.toFloat(), 5.0f); g.setColour(juce::Colour(0xff505862)); g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.0f); g.setColour(juce::Colour(0xff707780)); g.setFont(juce::Font(11.0f)); g.drawText("Select this track, then IMPORT AUDIO", clip, juce::Justification::centred);
+            const int i = logicalRow - audioCount - midiCount;
+            title = "Instrument " + juce::String(i + 1);
+            selected = selectedTrack == audioCount + midiCount + i;
+            g.setColour(selected ? juce::Colour(0xff23434c) : juce::Colour(0xff1b2833)); g.fillRect(header);
+
         }
+        g.setColour(juce::Colour(0xffe8eff7)); g.setFont(juce::Font(14.0f, juce::Font::bold));
+        if (selected)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRect(header.getX(), header.getY(), 3, header.getHeight());
+        }
+        // Selected track labels carry stronger contrast than inactive headers.
+        g.setColour(selected ? juce::Colour(0xfff0fafb)
+                             : juce::Colour(0xffb5c3d1));
+        g.drawText(title, header.getX()+14, header.getY()+8, 180, 22, juce::Justification::left);
+        // Draw the timeline grid inside EVERY visible row, including the
+        // final clipped row immediately above the mixer.  Previously the only
+        // vertical lines were painted before the rows; each row background then
+        // painted over them, which is why the last track could appear gridless.
+        {
+            const juce::Graphics::ScopedSaveState rowGridState(g);
+            g.reduceClipRegion(row.withTrimmedLeft(headerW));
+            g.setColour(juce::Colour(0xff202c37));
+            // Uniform 1/16 Arrange grid on every row, including the final clipped row.
+            constexpr int subdivisions = 16;
+            const float pixelsPerSubdivision = pixelsPerMeasure / (float) subdivisions;
+            for (int subdivisionIndex = 0; subdivisionIndex < 100 * subdivisions; ++subdivisionIndex)
+            {
+                const int x = headerW + (int) std::round(subdivisionIndex * pixelsPerSubdivision);
+                if (x >= row.getRight()) break;
+                if (x < headerW) continue;
+                const bool measureLine = (subdivisionIndex % subdivisions) == 0;
+                const bool beatLine = (subdivisionIndex % 4) == 0;
+                // Visual hierarchy only: bar > quarter-note beat > sixteenth subdivision.
+                g.setColour(measureLine ? (selected ? juce::Colour(0xff526b78)
+                                                    : juce::Colour(0xff445968))
+                                        : beatLine ? (selected ? juce::Colour(0xff344b59)
+                                                               : juce::Colour(0xff2c3b49))
+                                                   : juce::Colour(0xff202c37));
+                g.drawVerticalLine(x, (float) row.getY(), (float) row.getBottom());
+            }
+        }
+        if (logicalRow >= audioCount + midiCount)
+        {
+            const int instrumentIndex = logicalRow - audioCount - midiCount;
+            if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+            {
+                const auto& bank = instrumentStepSequencers[(size_t) instrumentIndex];
+                for (const auto& patternClip : bank.timelineClips)
+                {
+                    if (patternClip.lengthSeconds <= 0.0) continue;
+                    const int clipX = headerW + (int) std::round(patternClip.startSeconds * pixelsPerSecond);
+                    const int clipWidth = juce::jmax(1, (int) std::round(patternClip.lengthSeconds * pixelsPerSecond));
+                    auto clip = juce::Rectangle<int>(clipX, row.getY() + 5, clipWidth, juce::jmax(1, row.getHeight() - 10))
+                                    .getIntersection(row.withTrimmedLeft(headerW));
+                    if (!clip.isEmpty())
+                    {
+                        g.setColour(selected ? juce::Colour(0xff2b6168)
+                                             : juce::Colour(0xff1c3b44));
+                        g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                        g.setColour(selected ? juce::Colour(0xff8ae9eb)
+                                             : juce::Colour(0xff408d98));
+                        g.drawRoundedRectangle(clip.toFloat(), 5.0f, 1.2f);
+                        g.setColour(selected ? juce::Colour(0xfff0fafb)
+                                             : juce::Colour(0xffc1d4e0));
+                        g.setFont(juce::Font(11.0f, juce::Font::bold));
+                        g.drawText(patternClip.name, clip.reduced(7, 2), juce::Justification::centredLeft, true);
+                    }
+                }
+            }
+        }
+        // Stronger dividers only where the next track changes category.
+        const int nextRow = logicalRow + 1;
+        const bool categoryBoundary = (nextRow == audioCount && midiCount + instrumentCount > 0)
+                                   || (nextRow == audioCount + midiCount && instrumentCount > 0);
+        g.setColour(categoryBoundary ? juce::Colour(0xff526475)
+                                     : selected ? juce::Colour(0xff45616a)
+                                                : juce::Colour(0xff2b3946));
+        g.drawHorizontalLine(row.getBottom() - 1, 0.0f, (float)getWidth());
     }
 
-    auto midiRow = rows.removeFromTop(rowH);
-    auto instrumentRow = rows.removeFromTop(rowH);
-    for (auto row : { midiRow, instrumentRow }) { g.setColour(juce::Colour(0xff14171c)); g.fillRect(row); }
+    // Paint the seam after row backgrounds so it remains visible across every track.
+    g.setColour(juce::Colour(0xff40515f));
+    g.drawVerticalLine(headerW - 1, (float)rows.getY(), (float)rows.getBottom());
 
-    const bool midiSelected = selectedTrack < 0;
-    auto midiHeader = midiRow.removeFromLeft(headerW);
-    auto instrumentHeader = instrumentRow.removeFromLeft(headerW);
-    g.setColour(midiSelected ? juce::Colour(0xff263746) : juce::Colour(0xff1e232a));
-    g.fillRect(midiHeader);
-    g.setColour(juce::Colour(0xff1e232a));
-    g.fillRect(instrumentHeader);
-
-    g.setColour(juce::Colours::white); g.setFont(juce::Font(14.0f, juce::Font::bold));
-    g.drawText("MIDI 1", midiHeader.getX() + 14, midiHeader.getY() + 8, 150, 22, juce::Justification::left);
-    g.drawText("Instrument 1", instrumentHeader.getX() + 14, instrumentHeader.getY() + 8, 150, 22, juce::Justification::left);
-    g.setColour(midiSelected ? juce::Colour(0xff9fc7e8) : juce::Colour(0xff747b85)); g.setFont(juce::Font(10.0f));
-    g.drawText("MIDI", midiHeader.getX() + 14, midiHeader.getY() + 36, 150, 16, juce::Justification::left);
-    g.setColour(juce::Colour(0xff747b85));
-    g.drawText("INSTRUMENT", instrumentHeader.getX() + 14, instrumentHeader.getY() + 36, 150, 16, juce::Justification::left);
-
-    const float playheadX = headerW + (float)playheadSeconds * pixelsPerSecond;
-    if (playheadX >= headerW && playheadX <= (float)getWidth()) { g.setColour(juce::Colours::white); g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f); }
+    const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
+    if (playheadX >= headerW && playheadX <= (float)getWidth())
+    {
+        g.setColour(juce::Colour(0xffe4a85e));
+        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 2.0f);
+        // Small ruler-only locator; the transport position and hit areas are unchanged.
+        juce::Path playheadMarker;
+        playheadMarker.addTriangle(playheadX - 5.0f, (float)ruler.getY() + 2.0f,
+                                   playheadX + 5.0f, (float)ruler.getY() + 2.0f,
+                                   playheadX, (float)ruler.getY() + 10.0f);
+        g.fillPath(playheadMarker);
+    }
 }
 
+void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int> area)
+{
+    juce::ColourGradient dockGradient(juce::Colour(0xff202c37), (float)area.getX(), (float)area.getY(),
+                                      juce::Colour(0xff0b0f14), (float)area.getX(), (float)area.getBottom(), false);
+    g.setGradientFill(dockGradient);
+    g.fillRect(area);
+    g.setColour(juce::Colour(0xff070b10));
+    g.fillRect(area.getX(), area.getY(), area.getWidth(), 2);
+    g.setColour(juce::Colour(0xff344452));
+    g.fillRect(area.getX(), area.getY() + 2, area.getWidth(), 1);
+    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.8f));
+    g.fillRect(area.getX() + 8, area.getY() + 2,
+               juce::jmax(0, juce::jmin(144, area.getWidth() - 16)), 1);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const int instrumentIndex = selectedTrack - instrumentFirst;
+    if (instrumentIndex < 0 || instrumentIndex >= getInstrumentTrackCount()) return;
+    if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
+    {
+                    auto panel = area;
+                    const int dockInset = 8;
+                    panel = panel.reduced(dockInset, 6);
+                    const auto wideRow = [&](int index, int count, int y, int height)
+                    {
+                        const int gap = 5;
+                        const int width = juce::jmax(1, (panel.getWidth() - (count - 1) * gap) / count);
+                        return juce::Rectangle<int>(panel.getX() + index * (width + gap), y, width, height);
+                    };
+                    const auto stretchedControl = [&](int x, int w, int y, int h, int designWidth)
+                    {
+                        const int availableWidth = juce::jmax(1, panel.getWidth());
+                        const int left = panel.getX() + (int) std::round((double)(x - panel.getX()) * availableWidth / designWidth);
+                        const int right = panel.getX() + (int) std::round((double)(x - panel.getX() + w) * availableWidth / designWidth);
+                        return juce::Rectangle<int>(left, y, juce::jmax(1, right - left), h);
+                    };
+                    const int titleWidth = 132;
+                    auto onOff = juce::Rectangle<int>(panel.getX(), panel.getY(), titleWidth - 8 - 55, 30);
+                    g.setColour(pattern->enabled ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
+                    g.fillRoundedRectangle(onOff.toFloat(), 7.0f);
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(pattern->enabled ? 0.12f : 0.045f));
+                    g.fillRoundedRectangle(onOff.toFloat().withHeight(4.0f), 3.0f);
+                    if (pattern->enabled)
+                    {
+                        g.setColour(juce::Colour(0x4454d6dc));
+                        g.fillRoundedRectangle((float)onOff.getX() + 4.0f, (float)onOff.getY() + 3.0f,
+                                               (float)juce::jmax(1, onOff.getWidth() - 8), 4.0f, 2.0f);
+                    }
+                    g.setColour(pattern->enabled ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
+                    g.drawRoundedRectangle(onOff.toFloat(), 7.0f, 1.5f);
+                    // Obsidian enabled-state text remains clear without overpowering the dock.
+                    g.setColour(pattern->enabled ? juce::Colour(0xffeffcfd) : juce::Colour(0xffaabfcb));
+                    g.setFont(juce::Font(10.0f, juce::Font::bold));
+                    g.drawText(pattern->enabled ? "STEP SEQ ON" : "STEP SEQ OFF", onOff, juce::Justification::centred);
+                    const auto seqPlay = juce::Rectangle<int>(onOff.getRight(), onOff.getY(), 55, onOff.getHeight());
+                    const bool previewActive = audioEngine.isStepPreviewPlaying() && audioEngine.getStepPreviewTrack() == instrumentIndex;
+                    g.setColour(previewActive ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
+                    g.fillRoundedRectangle(seqPlay.toFloat(), 7.0f);
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(previewActive ? 0.12f : 0.045f));
+                    g.fillRoundedRectangle(seqPlay.toFloat().withHeight(4.0f), 3.0f);
+                    g.setColour(previewActive ? juce::Colour(0xff54d6dc) : juce::Colour(0xff667d8d));
+                    g.drawRoundedRectangle(seqPlay.toFloat(), 7.0f, 1.2f);
+                    if (previewActive)
+                    {
+                        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.85f));
+                        g.fillRoundedRectangle((float)seqPlay.getX() + 7.0f, (float)seqPlay.getBottom() - 4.0f,
+                                               (float)juce::jmax(1, seqPlay.getWidth() - 14), 2.0f, 1.0f);
+                    }
+                    // Obsidian preview transport: active STOP is crisp, idle PLAY stays secondary.
+                    g.setColour(previewActive ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+                    g.setFont(juce::Font(9.0f, juce::Font::bold));
+                    g.drawText(previewActive ? "STOP" : "PLAY", seqPlay, juce::Justification::centred);
+                    const int available = juce::jmax(0, panel.getWidth() - titleWidth);
+                    const int stepW = juce::jmax(1, available / 16);
+                    const int firstStep = juce::jlimit(0, 3, stepSequencerPage) * 16;
+                    for (int s = 0; s < 16; ++s)
+                    {
+                        const int absoluteStep = firstStep + s;
+                        auto pad = juce::Rectangle<int>(panel.getX() + titleWidth + (s * available) / 16, panel.getY(), juce::jmax(1, ((s + 1) * available) / 16 - (s * available) / 16 - 4), 30);
+                        const bool availableStep = absoluteStep < pattern->stepCount;
+                        const bool active = availableStep && pattern->steps[(size_t)absoluteStep].enabled;
+                        // Obsidian step hierarchy: active, available and out-of-pattern cells.
+                        g.setColour(active ? juce::Colour(0xff286674)
+                                           : (availableStep ? juce::Colour(0xff304452)
+                                                            : juce::Colour(0xff18222c)));
+                        g.fillRoundedRectangle(pad.toFloat(), 6.0f);
+                        if (availableStep)
+                        {
+                            g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.12f : 0.04f));
+                            g.fillRoundedRectangle(pad.toFloat().withHeight(3.0f), 2.0f);
+                        }
+                        if (active)
+                        {
+                            g.setColour(juce::Colour(0x4454d6dc));
+                            g.fillRoundedRectangle((float)pad.getX() + 2.0f, (float)pad.getY() + 2.0f,
+                                                   (float)juce::jmax(1, pad.getWidth() - 4), 5.0f, 2.0f);
+                        }
+                        if (s % 4 == 0)
+                        {
+                            g.setColour(active ? juce::Colour(0xffe8eff7) : juce::Colour(0xff667d8d));
+                            g.fillRoundedRectangle((float)pad.getX() + 2.0f, (float)pad.getY() + 4.0f,
+                                                   2.0f, (float)juce::jmax(1, pad.getHeight() - 8), 1.0f);
+                        }
+                        // Four-step accents follow the playable range; inactive cells recede.
+                        g.setColour(!availableStep ? juce::Colour(0xff344452)
+                                                   : (s % 4) == 0 ? juce::Colour(0xff91bbc3)
+                                                                  : juce::Colour(0xff48606d));
+                        g.drawRoundedRectangle(pad.toFloat(), 6.0f, 1.0f);
+                        if (active)
+                        {
+                            g.setColour(juce::Colour(0xff54d6dc));
+                            g.fillRoundedRectangle((float)pad.getX() + 5.0f, (float)pad.getBottom() - 4.0f,
+                                                   (float)juce::jmax(1, pad.getWidth() - 10), 2.0f, 1.0f);
+                        }
+                        // Obsidian step numbers: notes, group downbeats and out-of-range steps.
+                        g.setColour(!availableStep ? juce::Colour(0xff667d8d)
+                                                   : active ? juce::Colour(0xffeffcfd)
+                                                            : (s % 4) == 0 ? juce::Colour(0xffdceef1)
+                                                                           : juce::Colour(0xffb9ccd6));
+                        g.setFont(juce::Font(10.5f, juce::Font::bold));
+                        g.drawText(juce::String(absoluteStep + 1), pad, juce::Justification::centred);
+                    }
+                    const int controlsY = panel.getY() + 42;
+                    g.setColour(juce::Colour(0xff344452));
+                    g.fillRect(panel.getX(), controlsY - 7, panel.getWidth(), 1);
+                    g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.35f));
+                    g.fillRect(panel.getX(), controlsY - 7,
+                               juce::jmax(0, juce::jmin(96, panel.getWidth())), 1);
+                    g.setColour(juce::Colour(0xff344452).withAlpha(0.75f));
+                    g.fillRect(panel.getX(), controlsY + 30, panel.getWidth(), 1);
+                    g.setColour(juce::Colour(0xffc4adff).withAlpha(0.28f));
+                    g.fillRect(panel.getX(), controlsY + 30,
+                               juce::jmax(0, juce::jmin(72, panel.getWidth())), 1);
+                    g.setColour(juce::Colour(0xff344452).withAlpha(0.75f));
+                    g.fillRect(panel.getX(), controlsY + 66, panel.getWidth(), 1);
+                    // Subtle graphite end-cap completes the editor group without competing with its violet header.
+                    g.setColour(juce::Colour(0xff728394).withAlpha(0.22f));
+                    g.fillRect(panel.getX(), controlsY + 66,
+                               juce::jmax(0, juce::jmin(48, panel.getWidth())), 1);
+                    auto drawControl = [&](juce::String text, int x, int w, bool active)
+                    {
+                        auto r = stretchedControl(x, w, controlsY, 26, 550 + 34 * juce::jmax(1, (pattern->stepCount + 15) / 16));
+                        g.setColour(active ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.11f : 0.045f));
+                        g.fillRoundedRectangle(r.toFloat().withHeight(4.0f), 3.0f);
+                        if (active) { g.setColour(juce::Colour(0xff54d6dc)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
+                        // Obsidian rhythm controls: clear selection edge and restrained idle border.
+                        g.setColour(active ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
+                        g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
+                        // Obsidian rhythm controls: selected settings read brighter than idle ones.
+                        g.setColour(active ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+                        g.setFont(juce::Font(9.0f, juce::Font::bold));
+                        g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int cx = panel.getX();
+                    drawControl("16", cx, 30, pattern->stepCount == 16); cx += 34;
+                    drawControl("32", cx, 30, pattern->stepCount == 32); cx += 34;
+                    drawControl("64", cx, 30, pattern->stepCount == 64); cx += 42;
+                    const std::int64_t rates[] = { MidiEngine::ticksPerQuarterNote, MidiEngine::ticksPerQuarterNote/2, MidiEngine::ticksPerQuarterNote/4, MidiEngine::ticksPerQuarterNote/8, MidiEngine::ticksPerQuarterNote/16 };
+                    const char* rateNames[] = { "1/4", "1/8", "1/16", "1/32", "1/64" };
+                    for (int r = 0; r < 5; ++r) { drawControl(rateNames[r], cx, 38, pattern->stepTicks == rates[r]); cx += 42; }
+                    const char* modifierNames[] = { "STR", "TRI", "DOT" };
+                    for (int m=0;m<3;++m) { drawControl(modifierNames[m], cx, 34, pattern->rateModifier == m); cx += 38; }
+                    static constexpr const char* directionNames[] = { "FWD", "REV", "PING", "RND" };
+                    drawControl(directionNames[juce::jlimit(0,3,(int)pattern->direction)], cx, 44, pattern->direction != LibertyStepSequencer::Direction::Forward); cx += 48;
+                    drawControl("SW " + juce::String((int)std::round(pattern->swing * 100.0f)) + "%", cx, 62, pattern->swing > 0.0f); cx += 68;
+                    const int pages = juce::jmax(1, (pattern->stepCount + 15) / 16);
+                    for (int page = 0; page < pages; ++page) { drawControl("P" + juce::String(page + 1), cx, 30, stepSequencerPage == page); cx += 34; }
+                    const int selectedStep = juce::jlimit(0, pattern->stepCount - 1, stepSequencerSelectedStep);
+                    const auto& editStep = pattern->steps[(size_t)selectedStep];
+                    const int editY = controlsY + 36;
+                    auto drawEdit = [&](juce::String text, int x, int w, bool active)
+                    {
+                        auto r = stretchedControl(x, w, editY, 26, 780);
+                        g.setColour(active ? juce::Colour(0xff594780) : juce::Colour(0xff273143)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.12f : 0.045f));
+                        g.fillRoundedRectangle(r.toFloat().withHeight(4.0f), 3.0f);
+                        if (active) { g.setColour(juce::Colour(0xffc4adff)); g.fillRoundedRectangle((float)r.getX() + 5.0f, (float)r.getBottom() - 3.0f, (float)juce::jmax(1, r.getWidth() - 10), 2.0f, 1.0f); }
+                        // Obsidian note editing: violet selection with a legible slate idle edge.
+                        g.setColour(active ? juce::Colour(0xffc2aaff) : juce::Colour(0xff68788f));
+                        g.drawRoundedRectangle(r.toFloat(), 6.0f, active ? 1.5f : 1.0f);
+                        // Obsidian note editor: brighter violet-white focus, quieter idle labels.
+                        g.setColour(active ? juce::Colour(0xfff8f0ff) : juce::Colour(0xffbfc9dc));
+                        g.setFont(juce::Font(9.0f, juce::Font::bold));
+                        g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int ex = panel.getX();
+                    drawEdit("STEP " + juce::String(selectedStep + 1), ex, 52, true); ex += 56;
+                    drawEdit("NOTE " + juce::String((int)editStep.pitch + editStep.octave * 12), ex, 64, false); ex += 68;
+                    drawEdit("VEL " + juce::String((int)editStep.velocity), ex, 54, false); ex += 58;
+                    drawEdit("GATE " + juce::String((int)std::round(editStep.gate * 100.0f)) + "%", ex, 66, false); ex += 70;
+                    drawEdit("PROB " + juce::String((int)editStep.probability) + "%", ex, 66, false); ex += 70;
+                    drawEdit("RATCH x" + juce::String((int)editStep.ratchet), ex, 62, editStep.ratchet > 1); ex += 66;
+                    drawEdit("ACC", ex, 38, editStep.accent); ex += 42;
+                    drawEdit("OCT " + juce::String(editStep.octave), ex, 48, editStep.octave != 0); ex += 52;
+                    drawEdit("TIE", ex, 38, editStep.tie); ex += 42;
+                    drawEdit("CH " + juce::String((int)editStep.channel), ex, 42, editStep.channel != 1); ex += 46;
+                    drawEdit("MICRO " + juce::String((int)std::round(editStep.microTiming * 100.0f)) + "%", ex, 70, editStep.microTiming != 0.0f); ex += 74;
+                    static constexpr const char* chordNames[]={"OFF","MAJ","MIN","POWER","7TH"};
+                    drawEdit("CHORD " + juce::String(chordNames[juce::jlimit(0,4,(int)editStep.chord)]), ex, 76, editStep.chord != LibertyStepSequencer::Chord::Off);
+                    const int actionY = editY + 36;
+                    auto drawAction = [&](juce::String text, int x, int w)
+                    {
+                        auto r = stretchedControl(x, w, actionY, 26, 1260);
+                        g.setColour(juce::Colour(0xff25323e)); g.fillRoundedRectangle(r.toFloat(), 6.0f);
+                        g.setColour(juce::Colour(0xff3b5362));
+                        g.fillRoundedRectangle((float)r.getX() + 2.0f, (float)r.getY() + 2.0f,
+                                               (float)juce::jmax(1, r.getWidth() - 4), 2.0f, 1.0f);
+                        // Obsidian action row: readable graphite edges without a selection accent.
+                        g.setColour(juce::Colour(0xff48606d)); g.drawRoundedRectangle(r.toFloat(), 6.0f, 1.0f);
+                        g.setColour(juce::Colour(0xff172433));
+                        g.fillRoundedRectangle((float)r.getX() + 6.0f, (float)r.getBottom() - 3.0f,
+                                               (float)juce::jmax(1, r.getWidth() - 12), 1.0f, 0.5f);
+                        g.setColour(juce::Colour(0xffc2d8e2));
+                        g.setFont(juce::Font(9.0f, juce::Font::bold));
+                        g.drawText(text, r, juce::Justification::centred);
+                    };
+                    int ax = panel.getX();
+                    drawAction("CLEAR", ax, 48); ax += 52;
+                    drawAction("RANDOM", ax, 58); ax += 62;
+                    drawAction("REVERSE", ax, 62); ax += 66;
+                    drawAction("ROTATE", ax, 56); ax += 60;
+                    drawAction("DUPLICATE", ax, 72); ax += 80;
+                    drawAction("SEND MIDI", ax, 52); ax += 56;
+                    drawAction("DRAG CLIP", ax, 58); ax += 62;
+                    static constexpr const char* rootNames[] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
+                    static constexpr const char* scaleNames[] = {"OFF","MAJOR","MINOR","PENTA"};
+                    drawAction("ROOT " + juce::String(rootNames[juce::jlimit(0,11,(int)pattern->root)]), ax, 58); ax += 62;
+                    drawAction("SCALE " + juce::String(scaleNames[juce::jlimit(0,3,(int)pattern->scale)]), ax, 82); ax += 86;
+                    drawAction("TRANS " + juce::String(pattern->transpose), ax, 66); ax += 70;
+                    drawAction("OCT " + juce::String(pattern->octaveShift), ax, 52); ax += 56;
+                    drawAction("HUM " + juce::String((int)std::round(pattern->humanize * 100.0f)) + "%", ax, 60); ax += 64;
+                    
+                    drawAction("EUC " + juce::String(pattern->euclideanPulses) + "/" + juce::String(pattern->stepCount), ax, 68); ax += 72;
+                    drawAction("EUC ROT " + juce::String(pattern->euclideanRotation), ax, 70); ax += 74;
+                    drawAction("CYCLE " + juce::String(pattern->cycleSteps), ax, 66); ax += 70;
+                    drawAction("VL " + juce::String(pattern->velocityLaneSteps), ax, 42); ax += 46;
+                    drawAction("GL " + juce::String(pattern->gateLaneSteps), ax, 42); ax += 46;
+                    drawAction("PL " + juce::String(pattern->probabilityLaneSteps), ax, 42); ax += 46;
+                    drawAction("RL " + juce::String(pattern->ratchetLaneSteps), ax, 42);
+                    ax += 46;
+                    // Dedicated instrument-lane clip creation, separate from MIDI export.
+                    const auto createClipButton = juce::Rectangle<int>(panel.getX(), actionY + 30, 156, 23);
+                    g.setColour(juce::Colour(0xff23535d));
+                    g.fillRoundedRectangle(createClipButton.toFloat(), 5.0f);
+                    g.setColour(juce::Colour(0xffe8eff7).withAlpha(0.12f));
+                    g.fillRoundedRectangle(createClipButton.toFloat().withHeight(4.0f), 3.0f);
+                    g.setColour(juce::Colour(0xff54d6dc));
+                    g.drawRoundedRectangle(createClipButton.toFloat(), 5.0f, 1.2f);
+                    g.fillRoundedRectangle((float)createClipButton.getX() + 8.0f,
+                                           (float)createClipButton.getBottom() - 3.0f,
+                                           (float)juce::jmax(1, createClipButton.getWidth() - 16), 2.0f, 1.0f);
+                    g.setFont(juce::Font(10.0f, juce::Font::bold));
+                    // Obsidian clip creation follows the MIDI clip action hierarchy.
+                    g.setColour(juce::Colour(0xffeffcfd));
+                    g.drawText("CREATE PATTERN CLIP", createClipButton, juce::Justification::centred);
+                    if ((size_t)instrumentIndex < instrumentStepSequencers.size())
+                    {
+                        const auto activePattern = instrumentStepSequencers[(size_t)instrumentIndex].activePattern;
+                        for (int bankIndex = 0; bankIndex < 8; ++bankIndex)
+                        {
+                            const auto patRect = wideRow(bankIndex, 8, panel.getBottom() - 30, 28);
+                            ax = patRect.getX();
+                            const bool selectedPattern = bankIndex == activePattern;
+                            g.setColour(selectedPattern ? juce::Colour(0xff23535d) : juce::Colour(0xff25323e));
+                            g.fillRoundedRectangle(patRect.toFloat(), 6.0f);
+                            if (selectedPattern)
+                            {
+                                g.setColour(juce::Colour(0x4454d6dc));
+                                g.fillRoundedRectangle((float)patRect.getX() + 3.0f, (float)patRect.getY() + 2.0f,
+                                                       (float)juce::jmax(1, patRect.getWidth() - 6), 5.0f, 2.0f);
+                            }
+                            // Obsidian pattern banks match the MIDI P1-P8 focus hierarchy.
+                            g.setColour(selectedPattern ? juce::Colour(0xff54d6dc) : juce::Colour(0xff48606d));
+                            g.drawRoundedRectangle(patRect.toFloat(), 6.0f, selectedPattern ? 1.5f : 1.0f);
+                            g.setColour(selectedPattern ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
+                            g.setFont(juce::Font(11.0f, juce::Font::bold));
+                            g.drawText("PAT " + juce::String(bankIndex + 1), patRect, juce::Justification::centred);
+                            if (bankIndex == activePattern)
+                            {
+                                auto active = patRect;
+                                g.setColour(juce::Colour(0xffb6f2f2));
+                                g.fillRoundedRectangle((float)active.getX() + 9.0f, (float)active.getBottom() - 4.0f,
+                                                       (float)juce::jmax(1, active.getWidth() - 18), 2.0f, 1.0f);
+                            }
+                            ax += 48;
+                        }
+                    }
+                
+    }
+}
 void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour(juce::Colour(0xff101318)); g.fillRect(area);
-    for (int i = 0; i < AudioEngine::maxAudioTracks + 1; ++i)
+    // Obsidian mixer surface matches the arranger without altering strip geometry.
+    g.setColour(juce::Colour(0xff101821)); g.fillRect(area);
+
+    const int audioTracks = getAudioTrackCount();
+    const int instrumentTracks = getInstrumentTrackCount();
+    const int channelCount = audioTracks + instrumentTracks;
+
+    for (int channel = 0; channel < channelCount + 1; ++channel)
     {
-        auto c = juce::Rectangle<int>(220 + i * 125, area.getY() + 12, 116, area.getHeight() - 22); const bool master = i == AudioEngine::maxAudioTracks;
-        g.setColour(master ? juce::Colour(0xff1b2027) : juce::Colour(0xff171b20)); g.fillRoundedRectangle(c.toFloat(), 5.0f); g.setColour(juce::Colour(0xff343a44)); g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
-        const bool muted = !master && audioEngine.isTrackMuted(i); const bool solo = !master && audioEngine.isTrackSolo(i); g.setColour(juce::Colours::white); g.setFont(juce::Font(12.0f, juce::Font::bold)); g.drawText(master ? "MASTER" : "Audio " + juce::String(i + 1), c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
-        if (!master) { auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20); g.setColour(muted ? juce::Colour(0xff9b4545) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(mute.toFloat(), 4.0f); g.setColour(solo ? juce::Colour(0xff8b7a32) : juce::Colour(0xff252a31)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f); g.setColour(juce::Colour(0xff454b54)); g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f); g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f); g.setColour(juce::Colours::white); g.setFont(juce::Font(9.0f, juce::Font::bold)); g.drawText("M", mute, juce::Justification::centred); g.drawText("S", soloButton, juce::Justification::centred); }
-        const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45; auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop)); g.setColour(juce::Colour(0xff090b0e)); g.fillRoundedRectangle(fader, 3.0f);
-        const float gain = master ? audioEngine.getMasterGain() : audioEngine.getTrackGain(i); const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f); const auto knobY = fader.getBottom() - normalized * fader.getHeight(); g.setColour(juce::Colour(0xffd6d9de)); g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
-        const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain)); g.setColour(juce::Colour(0xff858c96)); g.setFont(juce::Font(10.0f)); g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred); g.drawText(master ? "MASTER" : "PAN " + juce::String(audioEngine.getTrackPan(i), 2), c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
+        const bool master = channel == channelCount;
+        const bool isAudio = channel < audioTracks;
+        const bool isInstrument = !master && !isAudio;
+        const int sourceIndex = isAudio ? channel : (channel - audioTracks);
+
+        auto c = juce::Rectangle<int>(220 + channel * 125, area.getY() + 12, 116, area.getHeight() - 22);
+        // Group dividers occupy the existing inter-strip gutter only.
+        if ((isInstrument && sourceIndex == 0) || master)
+        {
+            g.setColour(master ? juce::Colour(0xff54d6dc).withAlpha(0.48f)
+                               : juce::Colour(0xff427887).withAlpha(0.60f));
+            const int separatorX = c.getX() - 5;
+            g.drawVerticalLine(separatorX, (float)c.getY() + 9.0f, (float)c.getBottom() - 9.0f);
+        }
+        g.setColour(master ? juce::Colour(0xff26313d)
+                           : (isInstrument ? juce::Colour(0xff1d303b) : juce::Colour(0xff1c2732)));
+        g.fillRoundedRectangle(c.toFloat(), 5.0f);
+        g.setColour(master ? juce::Colour(0xff607989)
+                           : (isInstrument ? juce::Colour(0xff427887)
+                                           : juce::Colour(0xff405361)));
+        g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+        // A restrained turquoise header accent distinguishes the master bus.
+        if (master)
+        {
+            g.setColour(juce::Colour(0xff54d6dc));
+            g.fillRoundedRectangle(juce::Rectangle<float>((float)c.getX() + 12.0f, (float)c.getY() + 3.0f,
+                                                         (float)c.getWidth() - 24.0f, 2.0f), 1.0f);
+        }
+
+        const juce::String channelName = master ? "MASTER"
+                                                : (isAudio ? "Audio " + juce::String(sourceIndex + 1)
+                                                           : "Instrument " + juce::String(sourceIndex + 1));
+        // Mixer strip titles follow the Obsidian channel hierarchy.
+        g.setColour(master ? juce::Colour(0xfff0fafb)
+                           : (isInstrument ? juce::Colour(0xffb8e8ec)
+                                           : juce::Colour(0xffd1e0e9)));
+        g.setFont(juce::Font(12.0f, juce::Font::bold));
+        g.drawText(channelName, c.getX(), c.getY() + 8, c.getWidth(), 20, juce::Justification::centred);
+
+        // Audio channels keep their existing live mute/solo/gain/pan controls.
+        // Instrument strips are shown in the Arrange mini mixer now; their
+        // dedicated audio controls can be wired when per-instrument mixer state
+        // is introduced, without incorrectly controlling an audio track.
+        if (isAudio)
+        {
+            const bool muted = audioEngine.isTrackMuted(sourceIndex);
+            const bool solo = audioEngine.isTrackSolo(sourceIndex);
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            g.setColour(muted ? juce::Colour(0xffb15358) : juce::Colour(0xff253540)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
+            g.setColour(solo ? juce::Colour(0xffa18a3e) : juce::Colour(0xff253540)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
+            g.setColour(muted ? juce::Colour(0xffd57c80) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
+            g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+            g.setColour(muted ? juce::Colour(0xfffdf4f4) : juce::Colour(0xffb9ceda));
+            g.drawText("M", mute, juce::Justification::centred);
+            g.setColour(solo ? juce::Colour(0xfffff7db) : juce::Colour(0xffb9ceda));
+            g.drawText("S", soloButton, juce::Justification::centred);
+        }
+        else if (isInstrument)
+        {
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto soloButton = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            const bool muted = audioEngine.isInstrumentTrackMuted(sourceIndex);
+            const bool solo = audioEngine.isInstrumentTrackSolo(sourceIndex);
+            g.setColour(muted ? juce::Colour(0xffb15358) : juce::Colour(0xff253540)); g.fillRoundedRectangle(mute.toFloat(), 4.0f);
+            g.setColour(solo ? juce::Colour(0xffa18a3e) : juce::Colour(0xff253540)); g.fillRoundedRectangle(soloButton.toFloat(), 4.0f);
+            g.setColour(muted ? juce::Colour(0xffd57c80) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(mute.toFloat(), 4.0f, 1.0f);
+            g.setColour(solo ? juce::Colour(0xffcbb35e) : juce::Colour(0xff49606d));
+            g.drawRoundedRectangle(soloButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+            g.setColour(muted ? juce::Colour(0xfffdf4f4) : juce::Colour(0xffb9ceda));
+            g.drawText("M", mute, juce::Justification::centred);
+            g.setColour(solo ? juce::Colour(0xfffff7db) : juce::Colour(0xffb9ceda));
+            g.drawText("S", soloButton, juce::Justification::centred);
+        }
+
+        const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
+        auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
+        // Deep graphite fader rail complements the Obsidian mixer strips.
+        g.setColour(juce::Colour(0xff0c1720)); g.fillRoundedRectangle(fader, 3.0f);
+
+        const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : audioEngine.getInstrumentTrackGain(sourceIndex));
+        const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
+        const auto knobY = fader.getBottom() - normalized * fader.getHeight();
+        // Metallic Obsidian fader cap; preserve the existing handle geometry.
+        g.setColour(master ? juce::Colour(0xffc6e7ed) : juce::Colour(0xffb8c9d3));
+        g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
+        g.setColour(master ? juce::Colour(0xfff0fbfd) : juce::Colour(0xffe2edf2));
+        g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f), fader.getX() + 1.0f, fader.getRight() - 1.0f);
+
+        const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
+        // Obsidian mixer readouts: prioritize gain, keep pan as secondary metadata.
+        g.setFont(juce::Font(10.0f));
+        g.setColour(master ? juce::Colour(0xffd9f3f5) : juce::Colour(0xffc2d8e2));
+        g.drawText(db < -59.9f ? "-inf dB" : juce::String(db, 1) + " dB", c.getX(), c.getBottom() - 38, c.getWidth(), 16, juce::Justification::centred);
+        g.setColour(master ? juce::Colour(0xff91bbc3) : juce::Colour(0xff829eae));
+        g.drawText(master ? "MASTER" : (isAudio ? "PAN " + juce::String(audioEngine.getTrackPan(sourceIndex), 2) : "PAN " + juce::String(audioEngine.getInstrumentTrackPan(sourceIndex), 2)),
+                   c.getX(), c.getBottom() - 22, c.getWidth(), 16, juce::Justification::centred);
     }
 }
 
-void MainComponent::resized() { repaint(); }
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); repaint(); }
 
 void MainComponent::timerCallback()
 {
-    playheadSeconds = audioEngine.getCurrentTimeSeconds();
-    isPlaying = audioEngine.isPlaying();
-    repaint();
+    const auto newPlayhead = audioEngine.getCurrentTimeSeconds();
+    const bool newPlaying = audioEngine.isPlaying();
+    const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
+    playheadSeconds = newPlayhead;
+    isPlaying = newPlaying;
+    if (changed)
+        repaint(0, transportHeight, getWidth(), juce::jmax(0, getHeight() - transportHeight));
 }
 
 void MainComponent::openAudioSettings()
@@ -243,9 +1462,10 @@ void MainComponent::openAudioSettings()
 
 void MainComponent::rebuildWaveformCache(int trackIndex)
 {
-    if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks) return;
+    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount()) return;
     waveformMin[(size_t)trackIndex].clear(); waveformMax[(size_t)trackIndex].clear();
-    const auto* buffer = audioEngine.getAudioBuffer(trackIndex);
+    const auto bufferSnapshot = audioEngine.getAudioBufferSnapshot(trackIndex);
+    const auto* buffer = bufferSnapshot.get();
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
     constexpr int points = 1200;
     auto& minCache = waveformMin[(size_t)trackIndex]; auto& maxCache = waveformMax[(size_t)trackIndex];
@@ -262,33 +1482,76 @@ void MainComponent::rebuildWaveformCache(int trackIndex)
     }
 }
 
-void MainComponent::openAudioFile()
+bool MainComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
-    const int trackToLoad = selectedTrack;
-    audioFileChooser = std::make_unique<juce::FileChooser>("Import audio into Audio " + juce::String(trackToLoad + 1), juce::File{}, "*.wav;*.aif;*.aiff");
-    audioFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-        [this, trackToLoad](const juce::FileChooser& chooser)
+    for (const auto& path : files)
+        if (isSupportedAudioFile(path))
+            return true;
+    return false;
+}
+
+void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    const int trackToLoad = getAudioTrackAtPosition({ x, y });
+    if (trackToLoad < 0)
+        return;
+
+    juce::File file;
+    for (const auto& path : files)
+    {
+        if (isSupportedAudioFile(path))
         {
-            const auto file = chooser.getResult(); if (!file.existsAsFile()) return;
-            juce::String error;
-            if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error)) { juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Audio Import", error, "OK"); return; }
-            trackSourceFiles[(size_t)trackToLoad] = file;
-            selectedTrack = trackToLoad; isPlaying = false; playheadSeconds = 0.0; rebuildWaveformCache(trackToLoad); repaint();
-        });
+            file = juce::File(path);
+            break;
+        }
+    }
+
+    if (!file.existsAsFile())
+        return;
+
+    juce::String error;
+    if (!audioEngine.loadAudioFileIntoTrack(trackToLoad, file, error))
+    {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                               "Liberty - Audio Import",
+                                               error,
+                                               "OK");
+        return;
+    }
+
+    constexpr int headerW = 210;
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+    const double dropStartSeconds = x >= headerW ? juce::jmax(0.0, (x - headerW) / pixelsPerSecond) : 0.0;
+
+    trackSourceFiles[(size_t)trackToLoad] = file;
+    pendingAudioFileNames[(size_t)trackToLoad].clear();
+    pendingAudioLengths[(size_t)trackToLoad] = 0.0;
+    pendingAudioStartSeconds[(size_t)trackToLoad] = 0.0;
+    pendingAudioWarpStates[(size_t)trackToLoad] = {};
+    audioEngine.setTrackStartSeconds(trackToLoad, dropStartSeconds);
+    audioEngine.setPlaying(false);
+    selectedTrack = trackToLoad;
+    isPlaying = false;
+    rebuildWaveformCache(trackToLoad);
+    repaint();
 }
 
 int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
 {
-    constexpr int rulerH = 32, rowH = 70;
-    const int y = position.y - 76 - rulerH; if (y < 0) return -1;
-    const int track = y / rowH; return track >= 0 && track < AudioEngine::maxAudioTracks ? track : -1;
+    constexpr int rulerH = trackRulerHeight;
+    const int rowH = getLibertyTrackRowHeight();
+    const int y = position.y - getArrangeTop(); if (y < 0 || position.y >= getMixerTop()) return -1;
+    const int logicalRow = getTrackScrollRows() + y / rowH;
+    return logicalRow >= 0 && logicalRow < audioEngine.getAudioTrackCount() ? logicalRow : -1;
 }
 
 bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const
 {
-    if (trackIndex < 0 || trackIndex >= AudioEngine::maxAudioTracks || !audioEngine.hasAudioFile(trackIndex)) return false;
-    constexpr int headerW = 210, rulerH = 32, rowH = 70; constexpr float pixelsPerSecond = 80.0f;
-    const int rowY = 76 + rulerH + trackIndex * rowH;
+    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount() || !audioEngine.hasAudioFile(trackIndex)) return false;
+    constexpr int headerW = trackHeaderWidth, rulerH = trackRulerHeight;
+    const int rowH = getLibertyTrackRowHeight();
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+    const int rowY = getArrangeTop() + (trackIndex - getTrackScrollRows()) * rowH;
     const int x = headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond));
     const int width = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)));
     return juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(position);
@@ -296,35 +1559,213 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
 
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
-    const int mixerTop = getHeight() - 210; if (event.position.y < mixerTop) return false;
-    for (int i = 0; i < AudioEngine::maxAudioTracks + 1; ++i)
+    const int mixerTop = getMixerTop(); if (event.position.y < mixerTop) return false;
+    const int audioTracks = getAudioTrackCount();
+    const int instrumentTracks = getInstrumentTrackCount();
+    const int channelCount = audioTracks + instrumentTracks;
+
+    for (int channel = 0; channel < channelCount + 1; ++channel)
     {
-        auto c = juce::Rectangle<int>(220 + i * 125, mixerTop + 12, 116, 188); if (!c.contains(event.getPosition())) continue;
-        if (i < AudioEngine::maxAudioTracks)
+        auto c = juce::Rectangle<int>(220 + channel * 125, mixerTop + 12, 116, 188);
+        if (!c.contains(event.getPosition())) continue;
+
+        const bool master = channel == channelCount;
+        const bool isAudio = channel < audioTracks;
+
+        if (!master)
         {
-            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20); auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
-            const bool isMouseDown = event.mouseDownPosition.toInt() == event.getPosition();
-            if (isMouseDown && mute.contains(event.getPosition())) { audioEngine.setTrackMuted(i, !audioEngine.isTrackMuted(i)); repaint(); return true; }
-            if (isMouseDown && solo.contains(event.getPosition())) { audioEngine.setTrackSolo(i, !audioEngine.isTrackSolo(i)); repaint(); return true; }
+            auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
+            auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
+            const int sourceIndex = isAudio ? channel : channel - audioTracks;
+            if (mute.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackMuted(sourceIndex,!audioEngine.isTrackMuted(sourceIndex)); else audioEngine.setInstrumentTrackMuted(sourceIndex,!audioEngine.isInstrumentTrackMuted(sourceIndex)); repaint(); return true; }
+            if (solo.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackSolo(sourceIndex,!audioEngine.isTrackSolo(sourceIndex)); else audioEngine.setInstrumentTrackSolo(sourceIndex,!audioEngine.isInstrumentTrackSolo(sourceIndex)); repaint(); return true; }
         }
+
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
         if (event.position.y >= faderTop && event.position.y <= faderBottom)
         {
             const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
-            const float gain = n * 2.0f; if (i == AudioEngine::maxAudioTracks) audioEngine.setMasterGain(gain); else audioEngine.setTrackGain(i, gain); repaint(); return true;
+            const float gain = n * 2.0f;
+            if (master) audioEngine.setMasterGain(gain); else if (isAudio) audioEngine.setTrackGain(channel, gain); else audioEngine.setInstrumentTrackGain(channel - audioTracks, gain);
+            repaint();
+            return true;
         }
-        if (i < AudioEngine::maxAudioTracks && event.position.y >= c.getBottom() - 28)
+
+        if (!master && event.position.y >= c.getBottom() - 28)
         {
-            const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f); audioEngine.setTrackPan(i, pan); repaint(); return true;
+            const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f);
+            if (isAudio) audioEngine.setTrackPan(channel, pan); else audioEngine.setInstrumentTrackPan(channel - audioTracks, pan);
+            repaint();
+            return true;
         }
+
+        // The click belongs to a visible instrument strip, but it has no
+        // per-instrument mixer state yet. Consume it so it cannot leak through
+        // to arranger hit-testing underneath the fixed mini mixer.
+        return true;
     }
     return false;
+}
+
+void MainComponent::mouseMove(const juce::MouseEvent& event)
+{
+    const auto p = event.getPosition();
+    bool overPatternClip = false;
+    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows()
+                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int instrumentIndex = row - getAudioTrackCount() - getMidiTrackCount();
+        if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+        {
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            for (const auto& clip : instrumentStepSequencers[(size_t) instrumentIndex].timelineClips)
+            {
+                const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                if (clip.lengthSeconds > 0.0 && p.x >= left && p.x < left + width)
+                {
+                    overPatternClip = true;
+                    break;
+                }
+            }
+        }
+    }
+    setMouseCursor(overPatternClip ? juce::MouseCursor::DraggingHandCursor
+                                   : juce::MouseCursor::NormalCursor);
+}
+
+void MainComponent::mouseExit(const juce::MouseEvent&)
+{
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    const auto p = event.getPosition();    if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
+    const int rowH = getLibertyTrackRowHeight();
+    const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
+    const int instrumentIndex = logicalRow - getAudioTrackCount() - getMidiTrackCount();
+    if (instrumentIndex < 0 || instrumentIndex >= (int) instrumentStepSequencers.size()) return;
+    auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+    for (int i = (int) clips.size() - 1; i >= 0; --i)
+    {
+        auto& clip = clips[(size_t) i];
+        const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+        const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+        if (p.x < left || p.x >= left + width) continue;
+        auto* renameDialog = new juce::AlertWindow("Rename Pattern Clip", "Enter a name for this clip:",
+                                                     juce::AlertWindow::NoIcon);
+        renameDialog->addTextEditor("name", clip.name, "Clip name:");
+        renameDialog->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        renameDialog->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        renameDialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safeThis, instrumentIndex, i, renameDialog](int result)
+            {
+                if (result != 1 || safeThis == nullptr) return;
+                if (instrumentIndex < 0 || instrumentIndex >= (int) safeThis->instrumentStepSequencers.size()) return;
+                auto& savedClips = safeThis->instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                if (i < 0 || i >= (int) savedClips.size()) return;
+                const auto name = renameDialog->getTextEditorContents("name").trim();
+                if (name.isNotEmpty())
+                {
+                    savedClips[(size_t) i].name = name.substring(0, 64);
+                    safeThis->repaint();
+                }
+            }), true);
+        return;
+    }
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
-    if (handleMixerMouse(event)) return;
+
+    // Pattern clips take priority over timeline creation and editor shortcuts.
+    // A second click is handled by mouseDoubleClick (rename), never by clip creation.
+    if (p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int row = getTrackScrollRows()
+                      + (p.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+        const int instrumentIndex = row - instrumentFirst;
+        if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+        {
+            auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            for (int clipIndex = (int) clips.size() - 1; clipIndex >= 0; --clipIndex)
+            {
+                const auto& clip = clips[(size_t) clipIndex];
+                const int left = trackHeaderWidth + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                if (p.x < left || p.x >= left + width) continue;
+                selectedTrack = row;
+                if (event.getNumberOfClicks() == 1)
+                {
+                    draggedPatternInstrument = instrumentIndex;
+                    draggedPatternClip = clipIndex;
+                    dragStartMouseX = (float) p.x;
+                    dragStartSeconds = clip.startSeconds;
+                }
+                else
+                {
+                    draggedPatternInstrument = -1;
+                    draggedPatternClip = -1;
+                }
+                repaint();
+                return;
+            }
+        }
+    }
+    if (dockStepSequencerMode && selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount()
+        && juce::Rectangle<int>(416, getMixerTop() + 4, 106, 28).contains(p))
+    {
+        showFloatingStepSequencer();
+        return;
+    }
+    if (juce::Rectangle<int>(260, getMixerTop() + 4, 148, 28).contains(p))
+    {
+        const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
+        if (selectedTrack >= getAudioTrackCount()
+            && selectedTrack < firstInstrument + getInstrumentTrackCount())
+        {
+            showFloatingDrumSamplerWindow(audioEngine);
+            return;
+        }
+    }
+    const int dockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool selectedMidi = selectedTrack >= getAudioTrackCount()
+                           && selectedTrack < dockInstrumentFirst;
+    const bool selectedInstrument = selectedTrack >= dockInstrumentFirst
+                                 && selectedTrack < dockInstrumentFirst + getInstrumentTrackCount();
+    if ((selectedMidi || selectedInstrument) && p.y >= getMixerTop() + 4
+        && p.y < getMixerTop() + 32)
+    {
+        const int tabX = 8;
+        if (p.x >= tabX && p.x < tabX + 118)
+        {
+            dockStepSequencerMode = false;
+            openLibertyMidiEditor(*this);
+            repaint();
+            return;
+        }
+        if (p.x >= tabX + 126 && p.x < tabX + 244)
+        {
+            // MIDI-track Pattern playback needs its own routing and persistence;
+            // do not pretend the instrument sequencer edits the selected MIDI track.
+            if (selectedInstrument || selectedMidi) dockStepSequencerMode = true;
+            repaint();
+            return;
+        }
+    }
+
+    const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
+                                      && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
+    if (!stepSequencerDockActive && handleMixerMouse(event)) return;
 
     const auto rewindButton = juce::Rectangle<int>(215, 38, 56, 28);
     const auto previousButton = juce::Rectangle<int>(277, 38, 56, 28);
@@ -376,7 +1817,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     if (forwardButton.contains(p))
     {
         double projectEnd = 0.0;
-        for (int i = 0; i < AudioEngine::maxAudioTracks; ++i)
+        for (int i = 0; i < audioEngine.getAudioTrackCount(); ++i)
             if (audioEngine.hasAudioFile(i))
                 projectEnd = juce::jmax(projectEnd, audioEngine.getTrackStartSeconds(i) + audioEngine.getAudioFileLengthSeconds(i));
         const double snappedEnd = std::ceil(projectEnd / secondsPerMeasure - 1.0e-9) * secondsPerMeasure;
@@ -389,12 +1830,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
 
     if (juce::Rectangle<int>(925, 10, 120, 24).contains(p)) { openAudioSettings(); return; }
-    if (juce::Rectangle<int>(1055, 10, 120, 24).contains(p)) { openAudioFile(); return; }
 
     constexpr int headerW = 210, rulerH = 32;
+    const int audioTrackCount = audioEngine.getAudioTrackCount();
+    const int midiTrackCount = getMidiTrackCount();
+    const int instrumentTrackCount = getInstrumentTrackCount();
+    const int rowH = getLibertyTrackRowHeight();
+    const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
     if (p.y >= 76 && p.y < 76 + rulerH && p.x >= headerW)
     {
-        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
+        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / pixelsPerSecond);
         const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
         audioEngine.setCurrentTimeSeconds(snappedTime);
         playheadSeconds = snappedTime;
@@ -402,12 +1847,100 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
+    const bool instrumentDockSelected = selectedTrack >= getAudioTrackCount() + getMidiTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
+    if (p.y >= getMixerTop() && dockStepSequencerMode && instrumentDockSelected)
+    {
+        handleStepSequencerClick(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
+        return;
+    }
+    const bool midiDockSelected = selectedTrack >= getAudioTrackCount()
+        && selectedTrack < getAudioTrackCount() + getMidiTrackCount();
+    if (p.y >= getMixerTop() && dockStepSequencerMode && midiDockSelected)
+    {
+        clickMidiStepSequencer(p, juce::Rectangle<int>(0, getMixerTop() + 36, getWidth(), mixerHeight - 36));
+        return;
+    }
+
     const int track = getAudioTrackAtPosition(p);
     if (track >= 0)
     {
+        if (selectedTrack != track) dockStepSequencerMode = false;
         selectedTrack = track;
         if (isPointInsideAudioClip(track, p))
         {
+            const int tool = getLibertyActiveTool();
+            const double clickTime = juce::jmax(0.0, (double)(p.x - headerW) / pixelsPerSecond);
+
+            if (tool == 2) // SPLIT / COUPER
+            {
+                int newTrack = -1;
+                for (int i = 0; i < getAudioTrackCount(); ++i)
+                    if (i != track
+                        && !audioEngine.hasAudioFile(i)
+                        && trackSourceFiles[(size_t)i].getFullPathName().isEmpty())
+                    {
+                        newTrack = i;
+                        break;
+                    }
+                if (newTrack < 0)
+                    newTrack = addAudioTrack();
+
+                juce::String error;
+                if (audioEngine.splitAudioTrack(track, clickTime, newTrack, error))
+                {
+                    trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)track];
+                    pendingAudioFileNames[(size_t)newTrack].clear();
+                    pendingAudioLengths[(size_t)newTrack] = 0.0;
+                    pendingAudioStartSeconds[(size_t)newTrack] = 0.0;
+                    pendingAudioWarpStates[(size_t)newTrack] = {};
+                    rebuildWaveformCache(track);
+                    rebuildWaveformCache(newTrack);
+                    selectedTrack = newTrack;
+                }
+                else
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           "Liberty - Split", error, "OK");
+                repaint();
+                return;
+            }
+
+            if (tool == 3) // ERASE / EFFACER
+            {
+                clearLibertyAudioClipResizeSource(audioEngine, track);
+                audioEngine.clearAudioTrack(track);
+                isPlaying = false;
+                playheadSeconds = 0.0;
+                trackSourceFiles[(size_t)track] = juce::File{};
+                pendingAudioFileNames[(size_t)track].clear();
+                pendingAudioLengths[(size_t)track] = 0.0;
+                pendingAudioStartSeconds[(size_t)track] = 0.0;
+                pendingAudioWarpStates[(size_t)track] = {};
+                waveformMin[(size_t)track].clear();
+                waveformMax[(size_t)track].clear();
+                draggingClip = false;
+                draggedTrack = -1;
+                repaint();
+                return;
+            }
+
+            if (tool == 8) // MUTE / MUET
+            {
+                audioEngine.setTrackMuted(track, !audioEngine.isTrackMuted(track));
+                repaint();
+                return;
+            }
+
+            // RESIZE and STRETCH are handled by the dedicated edge handles.
+            if (tool == 4 || tool == 5)
+            {
+                draggingClip = false;
+                draggedTrack = -1;
+                repaint();
+                return;
+            }
+
+            // SELECT keeps the validated clip move workflow unchanged.
             draggingClip = true;
             draggedTrack = track;
             dragStartMouseX = (float)p.x;
@@ -417,9 +1950,50 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
+    // Select every dynamic MIDI and Instrument row, including after vertical scrolling.
+    const int rowOffset = p.y - getArrangeTop();
+    if (rowOffset >= 0 && p.y < getMixerTop())
+    {
+        const int logicalRow = getTrackScrollRows() + rowOffset / rowH;
+        const int midiFirst = audioTrackCount;
+        const int instrumentFirst = midiFirst + midiTrackCount;
+        const int totalRows = instrumentFirst + instrumentTrackCount;
+
+        if (logicalRow >= midiFirst && logicalRow < totalRows)
+        {
+            if (selectedTrack != logicalRow) dockStepSequencerMode = false;
+            selectedTrack = logicalRow;
+            if (logicalRow >= instrumentFirst && p.x >= headerW)
+            {
+                const int instrumentIndex = logicalRow - instrumentFirst;
+                if (instrumentIndex >= 0 && instrumentIndex < (int) instrumentStepSequencers.size())
+                {
+                    auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
+                    for (int clipIndex = (int) clips.size() - 1; clipIndex >= 0; --clipIndex)
+                    {
+                        const auto& clip = clips[(size_t) clipIndex];
+                        const int left = headerW + (int) std::round(clip.startSeconds * pixelsPerSecond);
+                        const int width = juce::jmax(1, (int) std::round(clip.lengthSeconds * pixelsPerSecond));
+                        if (p.x >= left && p.x < left + width)
+                        {
+                            draggedPatternInstrument = instrumentIndex;
+                            draggedPatternClip = clipIndex;
+                            dragStartMouseX = (float) p.x;
+                            dragStartSeconds = clip.startSeconds;
+                            repaint();
+                            return;
+                        }
+                    }
+                }
+            }
+            repaint();
+            return;
+        }
+    }
+
     if (p.y >= 76 && p.y < getHeight() - 210 && p.x >= headerW)
     {
-        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / 80.0);
+        const double rawTime = juce::jmax(0.0, (double)(p.x - headerW) / pixelsPerSecond);
         const double snappedTime = std::round(rawTime / secondsPerMeasure) * secondsPerMeasure;
         audioEngine.setCurrentTimeSeconds(snappedTime);
         playheadSeconds = snappedTime;
@@ -429,11 +2003,88 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingStepSequencerPattern)
+    {
+        repaint();
+        return;
+    }
+    if (draggedPatternInstrument >= 0 && draggedPatternClip >= 0)
+    {
+        if (draggedPatternInstrument < (int) instrumentStepSequencers.size())
+        {
+            auto& clips = instrumentStepSequencers[(size_t) draggedPatternInstrument].timelineClips;
+            if (draggedPatternClip < (int) clips.size())
+            {
+                const double deltaSeconds = ((double) event.position.x - (double) dragStartMouseX)
+                                            / getLibertyTimelinePixelsPerSecond();
+                const double target = juce::jmax(0.0, dragStartSeconds + deltaSeconds);
+                // Snap by integer MIDI ticks so dragging and tempo changes share
+                // the same musical coordinate system (1/16 = 240 ticks).
+                constexpr auto sixteenthTicks = MidiEngine::ticksPerQuarterNote / 4;
+                const auto targetTick = juce::jmax<std::int64_t>(
+                    0, MidiEngine::secondsToTick(target, tempoBpm));
+                const auto snappedTick = ((targetTick + sixteenthTicks / 2) / sixteenthTicks)
+                                         * sixteenthTicks;
+                clips[(size_t) draggedPatternClip].startSeconds =
+                    MidiEngine::tickToSeconds(snappedTick, tempoBpm);
+                repaint();
+            }
+        }
+        return;
+    }
     if (draggingClip && draggedTrack >= 0)
     {
-        constexpr float pixelsPerSecond = 80.0f;
+        const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
         const double deltaSeconds = ((double)event.position.x - (double)dragStartMouseX) / pixelsPerSecond;
         audioEngine.setTrackStartSeconds(draggedTrack, juce::jmax(0.0, dragStartSeconds + deltaSeconds)); repaint(); return;
     }
     handleMixerMouse(event);
+}
+
+void MainComponent::mouseUp(const juce::MouseEvent& event)
+{
+    if (draggingStepSequencerPattern)
+    {
+        const auto p = event.getPosition();
+        // A pattern drop must originate from an actual drag. A plain click,
+        // including either click of a double-click, must not create a clip.
+        if (event.getDistanceFromDragStart() < 5)
+        {
+            draggingStepSequencerPattern = false;
+            draggedStepSequencerInstrument = -1;
+            repaint();
+            return;
+        }
+        const int rowH = getLibertyTrackRowHeight();
+        const int rowOffset = p.y - getArrangeTop();
+        if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= 210)
+        {
+            const int logicalRow = getTrackScrollRows() + rowOffset / juce::jmax(1, rowH);
+            const int midiLane = logicalRow - getAudioTrackCount();
+            const int instrumentLane = midiLane - getMidiTrackCount();
+            if ((midiLane >= 0 && midiLane < getMidiTrackCount())
+                || (instrumentLane >= 0 && instrumentLane < getInstrumentTrackCount()))
+            {
+                const double dropTime = juce::jmax(0.0, (double)(p.x - 210) / getLibertyTimelinePixelsPerSecond());
+                const double oldPlayhead = playheadSeconds;
+                playheadSeconds = dropTime;
+                if (midiLane >= 0 && midiLane < getMidiTrackCount())
+                    commitInstrumentStepSequencerToMidiClip(draggedStepSequencerInstrument, midiLane);
+                else if (instrumentLane == draggedStepSequencerInstrument)
+                    createInstrumentPatternClip(instrumentLane);
+                playheadSeconds = oldPlayhead;
+            }
+        }
+        draggingStepSequencerPattern = false;
+        draggedStepSequencerInstrument = -1;
+        repaint();
+        return;
+    }
+    if (draggedPatternInstrument >= 0 && draggedPatternClip >= 0
+        && event.getDistanceFromDragStart() >= 3)
+        publishInstrumentArrangementClips(draggedPatternInstrument);
+    draggedPatternInstrument = -1;
+    draggedPatternClip = -1;
+    draggingClip = false;
+    draggedTrack = -1;
 }
