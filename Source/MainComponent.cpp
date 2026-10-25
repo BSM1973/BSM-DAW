@@ -3370,7 +3370,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                 // recordings; always include both interval
                                 // endpoints so narrow peaks remain represented.
                                 const int span = last - first;
-                                const int step = juce::jmax(1, span / 1024);
+                                // At detailed zoom levels, inspect every
+                                // sample to retain single-sample transients.
+                                // At overview zoom, keep the bounded scan.
+                                const int step = zoom >= 4.0
+                                    ? 1 : juce::jmax(1, (span + 1023) / 1024);
                                 for (int i = first; i < last; i += step)
                                 {
                                     lo = juce::jmin(lo, data[i]);
