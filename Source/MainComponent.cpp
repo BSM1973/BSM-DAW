@@ -3139,6 +3139,66 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     };
                     addAndMakeVisible(reset);
                 }
+                void mouseDoubleClick(const juce::MouseEvent& event) override
+                {
+                    if (!inWaveform(event.getPosition())) return;
+                    const double seconds = timeAt(event.x);
+                    if (audio.addTrackWarpMarker(track, seconds, seconds))
+                    {
+                        audio.setTrackWarpEnabled(track, true);
+                        enable.setToggleState(true, juce::dontSendNotification);
+                        repaint();
+                    }
+                }
+                void mouseDown(const juce::MouseEvent& event) override
+                {
+                    draggingMarker = -1;
+                    if (!inWaveform(event.getPosition())) return;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    for (int i = 1; i < count - 1; ++i)
+                    {
+                        const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                        const int x = 40 + (int)std::llround(
+                            juce::jlimit(0.0, 1.0, audio.getTrackWarpMarkerTargetSeconds(track, i) / duration)
+                            * juce::jmax(1, getWidth() - 80));
+                        if (std::abs(event.x - x) <= 8)
+                        {
+                            if (event.mods.isRightButtonDown())
+                            {
+                                const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                                    juce::MessageBoxIconType::QuestionIcon,
+                                    "Liberty | Warp", "Supprimer ce marqueur Warp ?", this, nullptr);
+                                if (confirmed) audio.removeTrackWarpMarker(track, i);
+                                repaint();
+                            }
+                            else draggingMarker = i;
+                            return;
+                        }
+                    }
+                }
+                void mouseDrag(const juce::MouseEvent& event) override
+                {
+                    if (draggingMarker < 0) return;
+                    audio.moveTrackWarpMarker(track, draggingMarker, timeAt(event.x));
+                    repaint();
+                }
+                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; }
+                void mouseMove(const juce::MouseEvent& event) override
+                {
+                    setMouseCursor(inWaveform(event.getPosition())
+                        ? juce::MouseCursor::CrosshairCursor : juce::MouseCursor::NormalCursor);
+                }
+                bool inWaveform(juce::Point<int> point) const
+                {
+                    return point.x >= 40 && point.x < getWidth() - 40
+                        && point.y >= 350 && point.y <= 395;
+                }
+                double timeAt(int x) const
+                {
+                    const double fraction = juce::jlimit(0.0, 1.0,
+                        (double)(x - 40) / (double)juce::jmax(1, getWidth() - 80));
+                    return fraction * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                }
                 void paint(juce::Graphics& g) override
                 {
                     g.fillAll(juce::Colour(0xff101e2d));
@@ -3191,8 +3251,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                                centre - lo * amplitude);
                         }
                     }
-                    g.drawText("Double-clic sur la forme d'onde du dock : ajouter un marqueur",
-                               40, 354, getWidth() - 80, 20, juce::Justification::centredLeft);
+                    // Marker interaction is handled directly by this inspector.
                     // Display the existing Warp markers against the same
                     // reference waveform; editing remains in the dock editor.
                     const int markerCount = audio.getTrackWarpMarkerCount(track);
@@ -3212,7 +3271,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setColour(juce::Colour(0xffa7bfd1));
                     g.setFont(juce::Font(11.0f));
                     g.drawText("Marqueurs : " + juce::String(markerCount)
-                               + "   |   Edition interactive disponible dans le dock Warp",
+                               + "   |   Double-clic : ajouter  |  Glisser : deplacer  |  Clic droit : supprimer",
                                40, 398, getWidth() - 80, 18, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
@@ -3233,6 +3292,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 AudioEngine& audio;
                 int track;
                 double originalDuration = 0.0;
+                int draggingMarker = -1;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
                 juce::TextButton apply, reset;
