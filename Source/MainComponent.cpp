@@ -393,9 +393,17 @@ void MainComponent::paint(juce::Graphics& g)
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             g.setColour(juce::Colour(0xffc3e8f7));
             g.setFont(juce::Font(11.0f));
-            g.drawText("DEBUT " + juce::String(left * duration, 4) + " s   FIN "
-                + juce::String(right * duration, 4) + " s   DUREE "
-                + juce::String((right - left) * duration, 4) + " s",
+            const auto pcm = audioEngine.getAudioBufferSnapshot(selectedTrack);
+            const juce::int64 sampleCount = pcm != nullptr ? pcm->getNumSamples() : 0;
+            const juce::int64 firstSample = (juce::int64) std::llround(left * (double) sampleCount);
+            const juce::int64 lastSample = (juce::int64) std::llround(right * (double) sampleCount);
+            const juce::String timing = "DEBUT " + juce::String(left * duration, 4)
+                + " s   FIN " + juce::String(right * duration, 4)
+                + " s   DUREE " + juce::String((right - left) * duration, 4) + " s";
+            const juce::String samples = "ECH " + juce::String(firstSample)
+                + " - " + juce::String(lastSample)
+                + "   (" + juce::String(lastSample - firstSample) + " echantillons)";
+            g.drawText(timing + "   |   " + samples,
                 inner.getX(), inner.getY() + 42, inner.getWidth(), 17,
                 juce::Justification::centredRight, true);
         }
