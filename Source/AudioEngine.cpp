@@ -1668,11 +1668,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             return linear;
         };
 
-        // Per-block transient envelope, shared by both output channels.
-        // A fast rise preserves attacks; a slower fall avoids abrupt
-        // switching back to granular playback. No allocation or locks.
-        float smoothedTransientBlend = 0.0f;
-        bool transientEnvelopePrimed = false;
+        // Persist the envelope between contiguous audio callbacks, but
+        // discard stale values after seeking, looping or replacing audio.
+        const auto currentRevision = track.contentRevision.load(std::memory_order_relaxed);
+        if (track.richeNextSample != mixStart || track.richeContentRevision != currentRevision)
+            track.richeTransientPrimed = false;
+        track.richeContentRevision = currentRevision;
         const float transientAttackStep = (float) (1.0 - std::exp(-1.0 / (rate * 0.0015)));
         const float transientReleaseStep = (float) (1.0 - std::exp(-1.0 / (rate * 0.025)));
         int currentSegment = 0;
@@ -1803,23 +1804,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             }
             if (granular)
             {
-                if (!transientEnvelopePrimed)
+                if (!track.richeTransientPrimed)
                 {
-                    smoothedTransientBlend = transientBlend;
-                    transientEnvelopePrimed = true;
+                    track.richeTransientEnvelope = transientBlend;
+                    track.richeTransientPrimed = true;
                 }
                 else
                 {
-                    const float step = transientBlend > smoothedTransientBlend
+                    const float step = transientBlend > track.richeTransientEnvelope
                         ? transientAttackStep : transientReleaseStep;
-                    smoothedTransientBlend += step * (transientBlend - smoothedTransientBlend);
+                    track.richeTransientEnvelope += step * (transientBlend - track.richeTransientEnvelope);
                 }
-                transientBlend = juce::jlimit(0.0f, 1.0f, smoothedTransientBlend);
+                transientBlend = juce::jlimit(0.0f, 1.0f, track.richeTransientEnvelope);
             }
             else
             {
                 // A new granular region starts with its own envelope.
-                transientEnvelopePrimed = false;
+                track.richeTransientPrimed = false;
             }
             auto readGrain = [&](int channel) -> float
             {
@@ -1863,6 +1864,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
                 outputChannelData[1][outputOffset + s] += readGrain(sourceChannels == 1 ? 0 : 1) * rightGain;
         }
+        track.richeNextSample = mixEnd;
 
         processTrackInsertChain();
     }
