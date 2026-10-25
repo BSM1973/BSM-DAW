@@ -3193,8 +3193,27 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     g.drawText("Double-clic sur la forme d'onde du dock : ajouter un marqueur",
                                40, 354, getWidth() - 80, 20, juce::Justification::centredLeft);
-                    g.drawText("Glisser : deplacer  |  Clic droit : supprimer",
-                               40, 376, getWidth() - 80, 20, juce::Justification::centredLeft);
+                    // Display the existing Warp markers against the same
+                    // reference waveform; editing remains in the dock editor.
+                    const int markerCount = audio.getTrackWarpMarkerCount(track);
+                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    const int plotWidth = juce::jmax(1, getWidth() - 80);
+                    for (int marker = 0; marker < markerCount; ++marker)
+                    {
+                        const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, marker);
+                        const int x = 40 + (int)std::llround(
+                            juce::jlimit(0.0, 1.0, seconds / duration) * plotWidth);
+                        const bool endpoint = marker == 0 || marker == markerCount - 1;
+                        g.setColour(endpoint ? juce::Colour(0xff8196a8)
+                                             : juce::Colour(0xffffc857));
+                        g.drawVerticalLine(x, 352.0f, 393.0f);
+                        g.fillEllipse((float)x - 3.0f, 349.0f, 6.0f, 6.0f);
+                    }
+                    g.setColour(juce::Colour(0xffa7bfd1));
+                    g.setFont(juce::Font(11.0f));
+                    g.drawText("Marqueurs : " + juce::String(markerCount)
+                               + "   |   Edition interactive disponible dans le dock Warp",
+                               40, 398, getWidth() - 80, 18, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
                                + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
