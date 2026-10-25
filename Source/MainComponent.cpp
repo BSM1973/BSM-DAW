@@ -475,9 +475,20 @@ void MainComponent::paint(juce::Graphics& g)
             const juce::String samples = "ECH " + juce::String(firstSample)
                 + " - " + juce::String(lastSample)
                 + "   (" + juce::String(lastSample - firstSample) + " echantillons)";
-            g.drawText(timing + "   |   " + samples,
-                inner.getX(), inner.getY() + 42, inner.getWidth(), 17,
-                juce::Justification::centredRight, true);
+            // Keep selection details inside the waveform rather than on top of
+            // the compact toolbar, format selector or time ruler.
+            const auto selectionInfo = juce::Rectangle<int>(
+                wave.getX() + 4, wave.getBottom() - 23,
+                juce::jmax(0, wave.getWidth() - 8), 19);
+            if (selectionInfo.getWidth() > 0 && wave.getHeight() >= 28)
+            {
+                g.setColour(juce::Colour(0xff10283a).withAlpha(0.91f));
+                g.fillRoundedRectangle(selectionInfo.toFloat(), 3.0f);
+                g.setColour(juce::Colour(0xffc3e8f7));
+                g.drawText(timing + "   |   " + samples,
+                    selectionInfo.reduced(5, 0),
+                    juce::Justification::centredRight, true);
+            }
         }
         const int cy = wave.getCentreY();
         g.setColour(juce::Colour(0xff44647a));
