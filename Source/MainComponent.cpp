@@ -644,16 +644,20 @@ void MainComponent::paint(juce::Graphics& g)
             const auto drawBoundary = [&](double fraction, juce::Colour colour,
                                           const juce::String& label)
             {
-                const int x = wave.getX() + (int) std::lround(
-                    (fraction - offset) / visible * wave.getWidth());
-                if (x >= wave.getX() && x < wave.getRight())
+                const double position = (fraction - offset) / visible;
+                if (position >= 0.0 && position <= 1.0)
                 {
+                    // Keep markers at exact clip edges visible and grabbable.
+                    const int x = juce::jlimit(wave.getX(), wave.getRight() - 1,
+                        wave.getX() + (int) std::lround(position * wave.getWidth()));
                     g.setColour(colour);
                     g.drawVerticalLine(x, (float) wave.getY(), (float) wave.getBottom());
-                    g.fillRoundedRectangle((float) x - 4.0f,
+                    const int handleX = juce::jlimit(wave.getX(), wave.getRight() - 8, x - 4);
+                    g.fillRoundedRectangle((float) handleX,
                         (float) wave.getY() + 2.0f, 8.0f, 17.0f, 2.5f);
                     g.setColour(juce::Colour(0xff0e2432));
-                    g.drawText(label, x + 6, wave.getY() + 3, 34, 15,
+                    const int labelX = x + 40 <= wave.getRight() ? x + 6 : x - 39;
+                    g.drawText(label, labelX, wave.getY() + 3, 34, 15,
                         juce::Justification::centredLeft, true);
                 }
             };
