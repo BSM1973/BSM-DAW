@@ -5234,6 +5234,26 @@ public:
         {
             owner.getMidiEngine().endGroupedEdit();
             drawingNote = false;
+           #if JUCE_DEBUG
+            if (auto* top = getTopLevelComponent(); top != nullptr && top != this)
+            {
+                DBG("[Liberty MIDI] Note creation finished; top-level=" + top->getName()
+                    + " children=" + juce::String(top->getNumChildComponents()));
+                for (int i = 0; i < top->getNumChildComponents(); ++i)
+                    if (auto* child = top->getChildComponent(i))
+                        DBG("[Liberty MIDI] Window child " + juce::String(i)
+                            + " name=" + child->getName()
+                            + " bounds=" + child->getBounds().toString()
+                            + " visible=" + juce::String((int)child->isVisible()));
+                DBG("[Liberty MIDI] PianoRoll children=" + juce::String(getNumChildComponents()));
+                for (int i = 0; i < getNumChildComponents(); ++i)
+                    if (auto* child = getChildComponent(i))
+                        DBG("[Liberty MIDI] PianoRoll child " + juce::String(i)
+                            + " name=" + child->getName()
+                            + " bounds=" + child->getBounds().toString()
+                            + " visible=" + juce::String((int)child->isVisible()));
+            }
+           #endif
             // Explicitly invalidate the floating editor after note creation.
             // Otherwise the last transient drawing frame can remain visible
             // until the next note triggers another repaint.
