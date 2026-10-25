@@ -2735,6 +2735,64 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
     juce::Component::mouseWheelMove(event, wheel);
 }
 
+juce::ValueTree MainComponent::exportAudioDockClipBounds() const
+{
+    juce::ValueTree root("AudioDockClipBounds");
+    for (const auto& entry : audioDockClipBoundsByContent)
+    {
+        juce::ValueTree marker("ClipBounds");
+        marker.setProperty("track", entry.first.first, nullptr);
+        marker.setProperty("revision", juce::String(entry.first.second), nullptr);
+        marker.setProperty("start", entry.second.start, nullptr);
+        marker.setProperty("end", entry.second.end, nullptr);
+        root.addChild(marker, -1, nullptr);
+    }
+    // Include the currently edited clip even if no track switch occurred.
+    if (audioClipBoundaryTrack >= 0)
+    {
+        for (int i = root.getNumChildren() - 1; i >= 0; --i)
+        {
+            const auto child = root.getChild(i);
+            if ((int) child.getProperty("track") == audioClipBoundaryTrack
+                && child.getProperty("revision").toString()
+                    == juce::String(audioClipBoundaryRevision))
+                root.removeChild(i, nullptr);
+        }
+        juce::ValueTree current("ClipBounds");
+        current.setProperty("track", audioClipBoundaryTrack, nullptr);
+        current.setProperty("revision", juce::String(audioClipBoundaryRevision), nullptr);
+        current.setProperty("start", audioClipStartFraction, nullptr);
+        current.setProperty("end", audioClipEndFraction, nullptr);
+        root.addChild(current, -1, nullptr);
+    }
+    return root;
+}
+
+void MainComponent::importAudioDockClipBounds(const juce::ValueTree& tree)
+{
+    if (!tree.hasType("AudioDockClipBounds"))
+        return;
+    audioDockClipBoundsByContent.clear();
+    audioClipBoundaryTrack = -1;
+    audioClipBoundaryRevision = 0;
+    audioClipStartFraction = 0.0;
+    audioClipEndFraction = 1.0;
+    for (const auto& child : tree)
+    {
+        if (!child.hasType("ClipBounds"))
+            continue;
+        const int track = (int) child.getProperty("track", -1);
+        const auto revision = child.getProperty("revision", "0")
+            .toString().getLargeIntValue();
+        const double start = (double) child.getProperty("start", 0.0);
+        const double end = (double) child.getProperty("end", 1.0);
+        if (track < 0 || revision < 0 || !std::isfinite(start)
+            || !std::isfinite(end) || start < 0.0 || end > 1.0 || start > end)
+            continue;
+        audioDockClipBoundsByContent[{track, (std::uint64_t) revision}] = {start, end};
+    }
+}
+
 void MainComponent::saveAudioDockClipBounds()
 {
     if (audioClipBoundaryTrack >= 0)
