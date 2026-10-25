@@ -442,9 +442,21 @@ void MainComponent::paint(juce::Graphics& g)
                 const juce::String clock = juce::String(minutesPart).paddedLeft('0', 2)
                     + ":" + juce::String(secondsPart).paddedLeft('0', 2)
                     + "." + juce::String(millisPart).paddedLeft('0', 3);
-                const juce::String readout = clock + "  |  "
-                    + juce::String(seconds, 5) + " s  |  "
-                    + juce::String(samplePosition) + " ech";
+                // Match the tooltip's primary value to the selected ruler format.
+                const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm);
+                const double beatPosition = seconds / beatSeconds;
+                const juce::int64 wholeBeat = (juce::int64) std::floor(beatPosition);
+                const juce::String musicalPosition =
+                    juce::String(wholeBeat / 4 + 1) + "."
+                    + juce::String(wholeBeat % 4 + 1) + "."
+                    + juce::String((int) std::floor(
+                        (beatPosition - (double) wholeBeat) * 960.0));
+                const juce::String primaryValue = audioDockTimeFormat == 1 ? clock
+                    : audioDockTimeFormat == 2 ? juce::String(samplePosition) + " ech"
+                    : audioDockTimeFormat == 3 ? musicalPosition
+                    : juce::String(seconds, 5) + " s";
+                const juce::String readout = primaryValue + "  |  "
+                    + clock + "  |  " + juce::String(samplePosition) + " ech";
                 const int handleX = wave.getX() + (int) std::lround(
                     (activeFraction - offset) / visible * wave.getWidth());
                 const int bubbleWidth = 290;
