@@ -3446,7 +3446,11 @@ public:
             configure(intensity, 0.0, 300.0, initialRatio, "%");
             configure(centre, 1.0, 127.0, initialCentre, "");
             configure(offset, -63.0, 63.0, 0.0, "");
-            offset.onValueChange = [this] { syncPresetFromControls(); repaint(); };
+            offset.onValueChange = [this]
+            {
+                if (!applyingPreset) syncPresetFromControls();
+                repaint();
+            };
             addAndMakeVisible(offset);
             intensity.onValueChange = [this]
             {
