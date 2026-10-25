@@ -3273,12 +3273,42 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.drawText("ALGORITHME", 28, 125, 160, 20, juce::Justification::left);
                     g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
                     g.setColour(juce::Colour(0xff142b41));
-                    g.fillRoundedRectangle(26.0f, 318.0f, (float)getWidth() - 52.0f,
+                    g.fillRoundedRectangle(26.0f, 306.0f, (float)getWidth() - 52.0f,
                                            (float)juce::jmax(30, getHeight() - 350), 7.0f);
                     g.setColour(juce::Colour(0xff8faec5));
                     g.setFont(juce::Font(12.0f));
-                    g.drawText("EDITION DES MARQUEURS", 40, 330, getWidth() - 80, 20,
+                    g.drawText("EDITION DES MARQUEURS", 40, 311, getWidth() - 80, 20,
                                juce::Justification::centredLeft);
+                    // Adaptive time ruler: readable divisions from milliseconds to minutes.
+                    const double fullSeconds = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    const double visibleSeconds = fullSeconds / zoom;
+                    const double desiredStep = visibleSeconds / juce::jmax(1.0, (double)(getWidth() - 80) / 100.0);
+                    const double decade = std::pow(10.0, std::floor(std::log10(juce::jmax(0.000001, desiredStep))));
+                    double tickStep = decade;
+                    for (double multiplier : { 1.0, 2.0, 5.0, 10.0 })
+                    {
+                        tickStep = decade * multiplier;
+                        if (tickStep >= desiredStep) break;
+                    }
+                    const double beginSeconds = viewStart * fullSeconds;
+                    const double endSeconds = (viewStart + 1.0 / zoom) * fullSeconds;
+                    g.setColour(juce::Colour(0xff203b52));
+                    g.fillRect(40, 333, juce::jmax(1, getWidth() - 80), 17);
+                    const int firstTick = (int)std::ceil(beginSeconds / tickStep);
+                    const int lastTick = (int)std::floor(endSeconds / tickStep);
+                    for (int tick = firstTick; tick <= lastTick && tick < firstTick + 1000; ++tick)
+                    {
+                        const double seconds = tick * tickStep;
+                        const int x = xAt(seconds);
+                        g.setColour(juce::Colour(0xff6c8ba3));
+                        g.drawVerticalLine(x, 345.0f, 350.0f);
+                        g.setColour(juce::Colour(0xffd4e0e9));
+                        const juce::String label = tickStep < 1.0
+                            ? juce::String(seconds, 2) + " s"
+                            : juce::String(seconds, tickStep < 10.0 ? 1 : 0) + " s";
+                        g.setFont(juce::Font(10.0f));
+                        g.drawText(label, x + 3, 333, 78, 12, juce::Justification::left);
+                    }
                     // Compact source waveform preview: preserve the full editor
                     // for marker interactions while exposing real audio here.
                     const auto snapshot = audio.getAudioBufferSnapshot(track);
