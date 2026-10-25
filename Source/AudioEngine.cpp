@@ -1237,6 +1237,61 @@ bool AudioEngine::addAudioClipMetadata(int trackIndex, const AudioClipMetadata& 
     return true;
 }
 
+bool AudioEngine::loadAudioClipSource(int trackIndex, const juce::String& clipId,
+                                      const juce::File& sourceFile, juce::String& error)
+{
+    error.clear();
+    if (!isValidTrackIndex(trackIndex) || clipId.isEmpty())
+    {
+        error = "Invalid audio clip.";
+        return false;
+    }
+    if (!sourceFile.existsAsFile())
+    {
+        error = "Audio clip source file not found.";
+        return false;
+    }
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(sourceFile));
+    if (!reader || reader->lengthInSamples <= 0
+        || reader->lengthInSamples > std::numeric_limits<int>::max()
+        || reader->sampleRate <= 0.0)
+    {
+        error = "Unsupported or invalid audio clip source.";
+        return false;
+    }
+    std::shared_ptr<juce::AudioBuffer<float>> decoded;
+    try
+    {
+        decoded = std::make_shared<juce::AudioBuffer<float>>(
+            juce::jlimit(1, 2, (int) reader->numChannels),
+            (int) reader->lengthInSamples);
+    }
+    catch (...)
+    {
+        error = "Not enough memory for audio clip source.";
+        return false;
+    }
+    if (!reader->read(decoded.get(), 0, decoded->getNumSamples(), 0, true, true))
+    {
+        error = "Unable to decode audio clip source.";
+        return false;
+    }
+    const juce::ScopedLock lock(stateLock);
+    for (auto& clip : tracks[(size_t)trackIndex]->clipMetadata)
+    {
+        if (clip.id != clipId)
+            continue;
+        clip.sourceBuffer = decoded;
+        clip.sourceSampleRate = reader->sampleRate;
+        clip.sourceName = sourceFile.getFileName();
+        return true;
+    }
+    error = "Audio clip no longer exists.";
+    return false;
+}
+
 void AudioEngine::clearAudioClipMetadata(int trackIndex)
 {
     if (!isValidTrackIndex(trackIndex))
