@@ -430,6 +430,8 @@ public:
     double audioDockScroll = 0.0;
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
+    int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
+    double snapAudioDockFraction(double fraction) const;
     int audioSelectionTrack = -1;
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
