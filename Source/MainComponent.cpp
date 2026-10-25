@@ -3537,9 +3537,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             g.fillRect(x - 4, 352, 9, juce::jmax(1, getHeight() - 448));
                             g.setColour(juce::Colour(0xffffd98b));
                             g.setFont(juce::Font(12.0f, juce::Font::bold));
-                            const juce::String timeLabel = juce::String(seconds, 3) + " s";
-                            const int labelX = juce::jlimit(40, juce::jmax(40, getWidth() - 132), x - 46);
-                            g.drawText(timeLabel, labelX, 359, 92, 20,
+                            const juce::String timeLabel = juce::String(seconds, 4) + " s";
+                            const int labelX = juce::jlimit(40, juce::jmax(40, getWidth() - 142), x - 51);
+                            g.drawText(timeLabel, labelX, 359, 102, 20,
                                        juce::Justification::centred);
                         }
                         g.setColour((active || hovered) ? juce::Colour(0xffffe3a3)
