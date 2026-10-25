@@ -3250,6 +3250,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     draggingMarker = -1;
                     panning = false;
+                    repaint();
                 }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
@@ -3483,8 +3484,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int x = xAt(seconds);
                         if (x < 40 || x >= getWidth() - 40) continue;
                         const bool endpoint = marker == 0 || marker == markerCount - 1;
-                        g.setColour(endpoint ? juce::Colour(0xff8196a8)
-                                             : juce::Colour(0xffffc857));
+                        const bool active = marker == draggingMarker;
+                        if (active)
+                        {
+                            g.setColour(juce::Colour(0x55ffc857));
+                            g.fillRect(x - 4, 352, 9, juce::jmax(1, getHeight() - 448));
+                            g.setColour(juce::Colour(0xffffd98b));
+                            g.setFont(juce::Font(12.0f, juce::Font::bold));
+                            const juce::String timeLabel = juce::String(seconds, 3) + " s";
+                            const int labelX = juce::jlimit(40, juce::jmax(40, getWidth() - 132), x - 46);
+                            g.drawText(timeLabel, labelX, 359, 92, 20,
+                                       juce::Justification::centred);
+                        }
+                        g.setColour(active ? juce::Colour(0xffffe3a3)
+                                    : endpoint ? juce::Colour(0xff8196a8)
+                                               : juce::Colour(0xffffc857));
                         g.drawVerticalLine(x, 352.0f, (float)getHeight() - 60.0f);
                         g.fillEllipse((float)x - 3.0f, 349.0f, 6.0f, 6.0f);
                     }
