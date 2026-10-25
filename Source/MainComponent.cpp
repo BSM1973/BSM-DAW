@@ -341,19 +341,24 @@ void MainComponent::paint(juce::Graphics& g)
             const double spanSeconds = rulerDuration * visible;
             const double secondsPerPixel = spanSeconds / (double) ruler.getWidth();
             const double samplesPerPixel = (double) rulerSamples * visible / (double) ruler.getWidth();
-            const bool sampleMode = samplesPerPixel < 12.0;
-            const bool milliMode = !sampleMode && spanSeconds < 1.0;
+            const bool sampleMode = audioDockTimeFormat == 2;
+            const bool milliMode = audioDockTimeFormat == 0 && spanSeconds < 1.0;
+            const bool beatMode = audioDockTimeFormat == 3;
+            const double beatSeconds = 60.0 / juce::jmax(1.0, tempoBpm);
+            const double unitsPerSecond = beatMode ? 1.0 / beatSeconds : 1.0;
             const double desiredStep = sampleMode ? samplesPerPixel * 85.0
                                      : milliMode ? secondsPerPixel * 85000.0
-                                                 : secondsPerPixel * 85.0;
+                                                 : secondsPerPixel * 85.0 * unitsPerSecond;
             const double magnitude = std::pow(10.0, std::floor(std::log10(juce::jmax(1.0e-12, desiredStep))));
             const double normalized = desiredStep / magnitude;
             const double step = magnitude * (normalized <= 1.0 ? 1.0 : normalized <= 2.0 ? 2.0
                                                 : normalized <= 5.0 ? 5.0 : 10.0);
             const double rangeStart = offset * (sampleMode ? (double) rulerSamples
-                                                 : milliMode ? rulerDuration * 1000.0 : rulerDuration);
+                                                 : milliMode ? rulerDuration * 1000.0
+                                                 : rulerDuration * unitsPerSecond);
             const double rangeLength = visible * (sampleMode ? (double) rulerSamples
-                                                   : milliMode ? rulerDuration * 1000.0 : rulerDuration);
+                                                   : milliMode ? rulerDuration * 1000.0
+                                                   : rulerDuration * unitsPerSecond);
             g.setColour(juce::Colour(0xff172d3d));
             g.fillRect(ruler);
             g.setColour(juce::Colour(0xff527184));
@@ -369,7 +374,19 @@ void MainComponent::paint(juce::Graphics& g)
                 g.setColour(juce::Colour(0xff638ba2));
                 g.drawVerticalLine(x, (float) ruler.getBottom() - 7, (float) ruler.getBottom());
                 g.setColour(juce::Colour(0xffb9d4e2));
-                const juce::String label = sampleMode ? juce::String((juce::int64) std::llround(tick)) + " ech"
+                const double tickSeconds = sampleMode
+                    ? tick * rulerDuration / (double) rulerSamples
+                    : milliMode ? tick / 1000.0 : tick / unitsPerSecond;
+                const juce::int64 clockMs = (juce::int64) std::llround(tickSeconds * 1000.0);
+                const juce::String clock = juce::String(clockMs / 60000).paddedLeft('0', 2)
+                    + ":" + juce::String((clockMs / 1000) % 60).paddedLeft('0', 2)
+                    + "." + juce::String(clockMs % 1000).paddedLeft('0', 3);
+                const juce::int64 beatIndex = (juce::int64) std::floor(tick);
+                const juce::String label = sampleMode
+                    ? juce::String((juce::int64) std::llround(tick)) + " ech"
+                    : beatMode ? juce::String(beatIndex / 4 + 1) + "."
+                        + juce::String(beatIndex % 4 + 1)
+                    : audioDockTimeFormat == 1 ? clock
                     : milliMode ? juce::String(tick, step < 1.0 ? 2 : 0) + " ms"
                                 : juce::String(tick, step < 1.0 ? 2 : 0) + " s";
                 g.drawText(label, x + 3, ruler.getY() + 1, 82, 15,
