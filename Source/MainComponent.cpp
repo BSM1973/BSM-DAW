@@ -3126,7 +3126,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             juce::MessageBoxIconType::QuestionIcon,
                             "Liberty | Warp",
                             "Reinitialiser les marqueurs Warp de cette piste ?",
-                            this);
+                            this, nullptr);
                         if (confirmed)
                         {
                             audio.resetTrackWarpMarkers(track);
