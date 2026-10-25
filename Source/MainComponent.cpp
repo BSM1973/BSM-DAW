@@ -3228,7 +3228,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 bool inWaveform(juce::Point<int> point) const
                 {
                     return point.x >= 40 && point.x < getWidth() - 40
-                        && point.y >= 350 && point.y <= getHeight() - 92;
+                        && point.y >= 350 && point.y <= getHeight() - 96;
                 }
                 void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
                 {
@@ -3320,7 +3320,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int width = juce::jmax(1, right - left);
                         const int sampleCount = pcm->getNumSamples();
                         const float* data = pcm->getReadPointer(0);
-                        const float centre = (350.0f + (float)getHeight() - 92.0f) * 0.5f;
+                        const float centre = (350.0f + (float)getHeight() - 96.0f) * 0.5f;
                         const float amplitude = juce::jmax(19.0f, ((float)getHeight() - 442.0f) * 0.42f);
                         g.setColour(juce::Colour(0xff496579));
                         g.drawHorizontalLine((int)centre, (float)left, (float)right);
@@ -3360,16 +3360,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     g.setColour(juce::Colour(0xffa7bfd1));
                     g.setFont(juce::Font(11.0f));
+                    g.setColour(juce::Colour(0xffd5e3ee));
                     g.drawText("Marqueurs : " + juce::String(markerCount)
-                               + "   |   Molette : zoom " + juce::String(zoom, 1) + "x"
-                               + "   |   Alt+glisser : naviguer  |  Double-clic : ajouter  |  Glisser : deplacer",
-                               40, getHeight() - 84, getWidth() - 80, 18, juce::Justification::centredLeft);
+                               + "    |    Zoom : " + juce::String(zoom, 1) + "x",
+                               40, getHeight() - 87, getWidth() - 80, 17, juce::Justification::centredLeft);
+                    g.setColour(juce::Colour(0xff9db9cb));
+                    g.drawText("Molette : zoom   |   Alt+glisser : naviguer   |   Double-clic : ajouter   |   Glisser : deplacer   |   Clic droit : supprimer",
+                               40, getHeight() - 69, getWidth() - 80, 17, juce::Justification::centredLeft);
                     g.drawText("Duree source : " + juce::String(originalDuration, 2)
                                + " s    |    Duree actuelle : "
                                + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
-                               28, getHeight() - 62, getWidth() - 56, 20, juce::Justification::left);
-                    g.drawText("Les reglages utilisent le moteur Warp existant de Liberty.",
-                               28, getHeight() - 38, getWidth() - 56, 22, juce::Justification::left);
+                               28, getHeight() - 47, getWidth() - 56, 18, juce::Justification::left);
+                    // Footer intentionally reserved for duration readout.
                 }
                 void resized() override
                 {
