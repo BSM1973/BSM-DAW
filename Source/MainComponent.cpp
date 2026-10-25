@@ -642,7 +642,7 @@ void MainComponent::paint(juce::Graphics& g)
                         g.drawVerticalLine(pixel, top, bottom);
                         g.setColour(juce::Colour(0xffffd68b).withAlpha(0.90f));
                         g.fillRect((float)pixel, top, 1.0f, 1.0f);
-                        g.fillRect((float)pixel, bottom - 1.0f, 1.0f);
+                        g.fillRect((float)pixel, bottom - 1.0f, 1.0f, 1.0f);
                     }
                 }
             }
