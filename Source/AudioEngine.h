@@ -311,6 +311,7 @@ private:
         juce::String fileName;
         juce::String clipId;
         std::vector<AudioClipMetadata> clipMetadata;
+        std::shared_ptr<const std::vector<AudioClipMetadata>> playbackClips;
     };
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
