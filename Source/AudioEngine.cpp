@@ -1822,8 +1822,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
                 const float directBlend = 1.0f - smoothRatioBlend * (1.0f - transientBlend);
-                return edgeSafeSample * (1.0f - directBlend)
-                    + directSample * directBlend;
+                // Equal-power crossfade helps prevent perceived level
+                // dips while transitioning between unrelated grain phases
+                // and the direct transient signal.
+                const float blend = juce::jlimit(0.0f, 1.0f, directBlend);
+                const float gainGrain = std::sqrt(1.0f - blend);
+                const float gainDirect = std::sqrt(blend);
+                return edgeSafeSample * gainGrain
+                    + directSample * gainDirect;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
