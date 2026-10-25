@@ -403,12 +403,20 @@ void MainComponent::paint(juce::Graphics& g)
                     activeFraction * (double) totalSamples);
                 const double seconds = activeFraction * clipSeconds;
                 const double milliseconds = seconds * 1000.0;
-                const juce::String readout = juce::String(seconds, 5) + " s  |  "
-                    + juce::String(milliseconds, 2) + " ms  |  "
+                // Round once to milliseconds so 59.9996s becomes 01:00.000.
+                const juce::int64 totalMilliseconds = (juce::int64) std::llround(milliseconds);
+                const juce::int64 minutesPart = totalMilliseconds / 60000;
+                const juce::int64 secondsPart = (totalMilliseconds / 1000) % 60;
+                const juce::int64 millisPart = totalMilliseconds % 1000;
+                const juce::String clock = juce::String(minutesPart).paddedLeft('0', 2)
+                    + ":" + juce::String(secondsPart).paddedLeft('0', 2)
+                    + "." + juce::String(millisPart).paddedLeft('0', 3);
+                const juce::String readout = clock + "  |  "
+                    + juce::String(seconds, 5) + " s  |  "
                     + juce::String(samplePosition) + " ech";
                 const int handleX = wave.getX() + (int) std::lround(
                     (activeFraction - offset) / visible * wave.getWidth());
-                const int bubbleWidth = 250;
+                const int bubbleWidth = 290;
                 const int bubbleX = juce::jlimit(wave.getX(),
                     juce::jmax(wave.getX(), wave.getRight() - bubbleWidth),
                     handleX - bubbleWidth / 2);
