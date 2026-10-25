@@ -3242,8 +3242,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
                         / ((double)juce::jmax(1, getWidth() - 80) * zoom);
                     const double precision = event.mods.isShiftDown() ? 0.1 : 1.0;
-                    audio.moveTrackWarpMarker(track, draggingMarker,
-                        dragStartTime + delta * precision);
+                    double targetTime = dragStartTime + delta * precision;
+                    // Never allow a marker to cross its neighbours. Leave
+                    // a small time gap so the interpolation remains valid.
+                    const double gap = 0.001;
+                    const double previous = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker - 1);
+                    const double next = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker + 1);
+                    targetTime = juce::jlimit(previous + gap,
+                        juce::jmax(previous + gap, next - gap), targetTime);
+                    audio.moveTrackWarpMarker(track, draggingMarker, targetTime);
                     repaint();
                 }
                 void mouseUp(const juce::MouseEvent&) override
