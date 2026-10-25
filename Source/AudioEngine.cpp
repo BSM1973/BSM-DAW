@@ -1733,8 +1733,22 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     weighted += (float) weight * readWarpedSample(channel, grainPosition);
                     weightSum += weight;
                 }
-                return weightSum > 0.000001
+                const float stretched = weightSum > 0.000001
                     ? weighted / (float) weightSum : 0.0f;
+                // Transient protection: detect steep local attacks in the
+                // original signal and favour the direct Warp sample for a
+                // short region. This reduces grain smearing on percussion.
+                const int attackIndex = juce::jlimit(1, lastSample,
+                    (int) std::floor(sourceSamplePosition));
+                const float* attackData = audioBuffer->getReadPointer(
+                    juce::jlimit(0, sourceChannels - 1, channel));
+                const float current = attackData[attackIndex];
+                const float previous = attackData[attackIndex - 1];
+                const float attack = std::abs(current - previous);
+                const float transientBlend = juce::jlimit(0.0f, 1.0f,
+                    (attack - 0.12f) * 5.0f);
+                return stretched * (1.0f - transientBlend)
+                    + readWarpedSample(channel, sourceSamplePosition) * transientBlend;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
                 outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
