@@ -2590,6 +2590,34 @@ void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && audioEngine.hasAudioFile(selectedTrack))
+    {
+        const auto wave = getAudioDockWaveBounds();
+        if (wave.contains(p))
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const auto revision = audioEngine.getAudioContentRevision(selectedTrack);
+            const auto it = audioDockClipBoundsByContent.find({selectedTrack, revision});
+            const bool live = audioClipBoundaryTrack == selectedTrack
+                && audioClipBoundaryRevision == revision;
+            const double start = live ? audioClipStartFraction
+                : (it != audioDockClipBoundsByContent.end() ? it->second.start : 0.0);
+            const double end = live ? audioClipEndFraction
+                : (it != audioDockClipBoundsByContent.end() ? it->second.end : 1.0);
+            const int startX = wave.getX() + (int) std::lround(
+                (start - offset) / visible * wave.getWidth());
+            const int endX = wave.getX() + (int) std::lround(
+                (end - offset) / visible * wave.getWidth());
+            if (std::abs(p.x - startX) <= 7 || std::abs(p.x - endX) <= 7)
+            {
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                return;
+            }
+        }
+    }
+    if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && audioSelectionActive && audioSelectionTrack == selectedTrack
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
     {
