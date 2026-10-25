@@ -439,7 +439,8 @@ public:
     int audioClipBoundaryTrack = -1;
     int draggingAudioClipBoundary = 0; // 0 none, 1 start, 2 end
     struct AudioDockClipBounds { double start = 0.0, end = 1.0; };
-    std::map<int, AudioDockClipBounds> audioDockClipBoundsByTrack;
+    std::map<std::pair<int, std::uint64_t>, AudioDockClipBounds> audioDockClipBoundsByContent;
+    std::uint64_t audioClipBoundaryRevision = 0;
     void saveAudioDockClipBounds();
     void restoreAudioDockClipBounds(int track);
     juce::Rectangle<int> getAudioDockWaveBounds() const;
