@@ -480,7 +480,7 @@ void MainComponent::paint(juce::Graphics& g)
             const auto selectionInfo = juce::Rectangle<int>(
                 wave.getX() + 4, wave.getBottom() - 23,
                 juce::jmax(0, wave.getWidth() - 8), 19);
-            if (selectionInfo.getWidth() > 0 && wave.getHeight() >= 28)
+            if (selectionInfo.getWidth() >= 80 && wave.getHeight() >= 28)
             {
                 g.setColour(juce::Colour(0xff10283a).withAlpha(0.91f));
                 g.fillRoundedRectangle(selectionInfo.toFloat(), 3.0f);
