@@ -138,7 +138,8 @@ def self_test():
         assert result["duration_ratio_pass"]
         assert result["channels"] == 2
         assert result["render_metrics"][0]["peak"] > result["render_metrics"][1]["peak"]
-        assert result["render_metrics"][0]["clipped_samples"] == 0\n        assert "render_envelope" in result and "boundary_anomalies" in result
+        assert result["render_metrics"][0]["clipped_samples"] == 0
+        assert "render_envelope" in result and "boundary_anomalies" in result
         print("Riche WAV analyzer self-test: PASS")
 
 
