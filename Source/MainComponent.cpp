@@ -3250,10 +3250,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         track, draggingMarker - 1);
                     const double next = audio.getTrackWarpMarkerTargetSeconds(
                         track, draggingMarker + 1);
-                    targetTime = juce::jlimit(previous + gap,
-                        juce::jmax(previous + gap, next - gap), targetTime);
-                    audio.moveTrackWarpMarker(track, draggingMarker, targetTime);
-                    repaint();
+                    const double minimum = previous + gap;
+                    const double maximum = next - gap;
+                    if (minimum >= maximum) return;
+                    targetTime = juce::jlimit(minimum, maximum, targetTime);
+                    const double currentTime = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker);
+                    if (std::abs(targetTime - currentTime) < 0.0000001) return;
+                    if (audio.moveTrackWarpMarker(track, draggingMarker, targetTime))
+                        repaint();
                 }
                 void mouseUp(const juce::MouseEvent&) override
                 {
