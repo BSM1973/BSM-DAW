@@ -317,9 +317,9 @@ private:
     {
         const auto outer = waveformBounds();
         const auto area = waveformPlotBounds();
-        g.setColour(juce::Colour(0xff14181e));
+        g.setColour(juce::Colour(0xff14283b));
         g.fillRoundedRectangle(outer.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xff3b424c));
+        g.setColour(juce::Colour(0xff476078));
         g.drawRoundedRectangle(outer.toFloat(), 5.0f, 1.0f);
         drawTimeline(g);
 
@@ -347,7 +347,7 @@ private:
 
             int start = juce::jlimit(0, samples - 1, (int)std::floor(sourceA * samplesPerSecond));
             int end = juce::jlimit(start + 1, samples, (int)std::ceil(sourceB * samplesPerSecond));
-            const int step = juce::jmax(1, (end - start) / 48);
+            const int step = 1; // Exact peak envelope: never skip short transients.
 
             float lo = 0.0f, hi = 0.0f;
             for (int s = start; s < end; s += step)
@@ -448,7 +448,7 @@ private:
     void showModeMenu()
     {
         juce::PopupMenu menu;
-        const juce::StringArray modes { "Beats", "Tones", "Texture", "Re-Pitch", "Complex" };
+        const juce::StringArray modes { "Brut", "Fluide", "Doux", "Precis", "Riche" };
         const int current = owner.audioEngine.getTrackWarpMode(selectedTrack);
         for (int i = 0; i < modes.size(); ++i)
             menu.addItem(i + 1, modes[i], true, current == i);
