@@ -3159,6 +3159,38 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(12.0f));
                     g.drawText("EDITION DES MARQUEURS", 40, 330, getWidth() - 80, 20,
                                juce::Justification::centredLeft);
+                    // Compact source waveform preview: preserve the full editor
+                    // for marker interactions while exposing real audio here.
+                    const auto snapshot = audio.getAudioBufferSnapshot(track);
+                    const auto* pcm = snapshot.get();
+                    if (pcm != nullptr && pcm->getNumSamples() > 0
+                        && pcm->getNumChannels() > 0)
+                    {
+                        const int left = 40, right = getWidth() - 40;
+                        const int width = juce::jmax(1, right - left);
+                        const int sampleCount = pcm->getNumSamples();
+                        const float* data = pcm->getReadPointer(0);
+                        const float centre = 371.0f;
+                        const float amplitude = 19.0f;
+                        g.setColour(juce::Colour(0xff496579));
+                        g.drawHorizontalLine((int)centre, (float)left, (float)right);
+                        g.setColour(juce::Colour(0xffffcf75).withAlpha(0.85f));
+                        for (int x = 0; x < width; ++x)
+                        {
+                            const int first = juce::jlimit(0, sampleCount - 1,
+                                (int)((int64_t)x * sampleCount / width));
+                            const int last = juce::jlimit(first + 1, sampleCount,
+                                (int)((int64_t)(x + 1) * sampleCount / width));
+                            float lo = 0.0f, hi = 0.0f;
+                            for (int i = first; i < last; ++i)
+                            {
+                                lo = juce::jmin(lo, data[i]);
+                                hi = juce::jmax(hi, data[i]);
+                            }
+                            g.drawVerticalLine(left + x, centre - hi * amplitude,
+                                               centre - lo * amplitude);
+                        }
+                    }
                     g.drawText("Double-clic sur la forme d'onde du dock : ajouter un marqueur",
                                40, 354, getWidth() - 80, 20, juce::Justification::centredLeft);
                     g.drawText("Glisser : deplacer  |  Clic droit : supprimer",
