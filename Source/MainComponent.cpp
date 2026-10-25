@@ -632,13 +632,16 @@ void MainComponent::paint(juce::Graphics& g)
         // Distinct clip-boundary guides; do not alter the underlying audio.
         if (wave.getWidth() > 0)
         {
-            const auto savedBounds = audioDockClipBoundsByTrack.find(selectedTrack);
-            const double displayedStart = audioClipBoundaryTrack == selectedTrack
+            const auto revision = audioEngine.getAudioContentRevision(selectedTrack);
+            const auto savedBounds = audioDockClipBoundsByContent.find({selectedTrack, revision});
+            const bool currentContent = audioClipBoundaryTrack == selectedTrack
+                && audioClipBoundaryRevision == revision;
+            const double displayedStart = currentContent
                 ? audioClipStartFraction
-                : (savedBounds != audioDockClipBoundsByTrack.end() ? savedBounds->second.start : 0.0);
-            const double displayedEnd = audioClipBoundaryTrack == selectedTrack
+                : (savedBounds != audioDockClipBoundsByContent.end() ? savedBounds->second.start : 0.0);
+            const double displayedEnd = currentContent
                 ? audioClipEndFraction
-                : (savedBounds != audioDockClipBoundsByTrack.end() ? savedBounds->second.end : 1.0);
+                : (savedBounds != audioDockClipBoundsByContent.end() ? savedBounds->second.end : 1.0);
             const double visible = 1.0 / audioDockZoom;
             const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
             const auto drawBoundary = [&](double fraction, juce::Colour colour,
@@ -2707,19 +2710,21 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
 void MainComponent::saveAudioDockClipBounds()
 {
     if (audioClipBoundaryTrack >= 0)
-        audioDockClipBoundsByTrack[audioClipBoundaryTrack] =
+        audioDockClipBoundsByContent[{audioClipBoundaryTrack, audioClipBoundaryRevision}] =
             { audioClipStartFraction, audioClipEndFraction };
 }
 
 void MainComponent::restoreAudioDockClipBounds(int track)
 {
-    if (audioClipBoundaryTrack == track)
+    const auto revision = audioEngine.getAudioContentRevision(track);
+    if (audioClipBoundaryTrack == track && audioClipBoundaryRevision == revision)
         return;
     saveAudioDockClipBounds();
     audioClipBoundaryTrack = track;
-    const auto it = audioDockClipBoundsByTrack.find(track);
-    audioClipStartFraction = it != audioDockClipBoundsByTrack.end() ? it->second.start : 0.0;
-    audioClipEndFraction = it != audioDockClipBoundsByTrack.end() ? it->second.end : 1.0;
+    audioClipBoundaryRevision = revision;
+    const auto it = audioDockClipBoundsByContent.find({track, revision});
+    audioClipStartFraction = it != audioDockClipBoundsByContent.end() ? it->second.start : 0.0;
+    audioClipEndFraction = it != audioDockClipBoundsByContent.end() ? it->second.end : 1.0;
 }
 
 bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
