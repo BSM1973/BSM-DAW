@@ -636,8 +636,13 @@ private:
         }
         if (floatingWindow != nullptr)
         {
-            if (!floatingWindow->isVisible()) attachToDock();
-            else { repaint(); return; }
+            if (!floatingWindow->isVisible())
+            {
+                attachToDock();
+                return;
+            }
+            repaint();
+            return;
         }
         const auto wanted = juce::Rectangle<int>(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
         if (getBounds() != wanted) setBounds(wanted);
