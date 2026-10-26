@@ -2526,11 +2526,130 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     g.restoreState();
 }
 
+
+class LibertyFloatingAudioHost final : public juce::DocumentWindow
+{
+public:
+    explicit LibertyFloatingAudioHost(std::function<void()> close)
+        : juce::DocumentWindow("Liberty | Éditeur audio", juce::Colour(0xff101e2d),
+                               juce::DocumentWindow::closeButton),
+          onClose(std::move(close))
+    {
+        setUsingNativeTitleBar(true);
+        setResizable(true, true);
+    }
+    void closeButtonPressed() override { if (onClose) onClose(); }
+    std::function<void()> onClose;
+};
+
+void MainComponent::ensureSharedAudioEditor()
+{
+    if (floatingAudioHost || dockCollapsed || dockMixerMode
+        || selectedTrack < 0 || selectedTrack >= getAudioTrackCount()
+        || !audioEngine.hasAudioFile(selectedTrack))
+        return;
+    if (sharedAudioEditor && sharedAudioEditorTrack == selectedTrack) return;
+    sharedAudioEditor.reset();
+    sharedAudioEditorTrack = selectedTrack;
+    sharedAudioEditor.reset(new LibertyAudioEditorComponent(audioEngine, selectedTrack,
+                [this, trackIndex = selectedTrack](double seconds)
+                { return snapAudioDockWarpTime(seconds, trackIndex); },
+                [this, trackIndex = selectedTrack](double start, double end, bool enabled)
+                {
+                    if (trackIndex != selectedTrack) return;
+                    const double duration = audioEngine.getAudioFileLengthSeconds(trackIndex);
+                    if (duration <= 0.0 || start < 0.0 || end < 0.0)
+                    {
+                        audioDockLoopEnabled = false;
+                        return;
+                    }
+                    audioDockLoopStartFraction = juce::jlimit(0.0, 1.0, juce::jmin(start, end) / duration);
+                    audioDockLoopEndFraction = juce::jlimit(0.0, 1.0, juce::jmax(start, end) / duration);
+                    audioDockLoopEnabled = enabled && audioDockLoopEndFraction > audioDockLoopStartFraction;
+                    repaint();
+                },
+                [this] { showAudioDockSnapDialog(); },
+                [this] { showAudioDockTimeFormatDialog(); },
+                [this] { audioDockTransientEnabled = !audioDockTransientEnabled;
+                         if (audioDockTransientEnabled) refreshAudioDockTransientMarkers(selectedTrack);
+                         repaint(); },
+                [this, trackIndex = selectedTrack]()
+                {
+                    if (!audioDockTransientEnabled) return std::vector<double>{};
+                    const auto it = audioDockAutomaticMarkers.find(trackIndex);
+                    return it != audioDockAutomaticMarkers.end() ? it->second : std::vector<double>{};
+                },
+                [this, trackIndex = selectedTrack](double onset)
+                {
+                    auto it = audioDockAutomaticMarkers.find(trackIndex);
+                    if (it == audioDockAutomaticMarkers.end()) return;
+                    auto& markers = it->second;
+                    // Automatic transients also create Warp markers: remove the matching
+                    // engine marker before dropping the visual marker from the shared list.
+                    const int count = audioEngine.getTrackWarpMarkerCount(trackIndex);
+                    for (int marker = count - 2; marker > 0; --marker)
+                    {
+                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(trackIndex, marker)
+                                     - onset) < 0.0005)
+                        {
+                            audioEngine.removeTrackWarpMarker(trackIndex, marker);
+                            break;
+                        }
+                    }
+                    markers.erase(std::remove_if(markers.begin(), markers.end(),
+                        [onset](double t) { return std::abs(t - onset) < 0.0005; }), markers.end());
+                    repaint();
+                },
+                [this] { return audioDockZoom; },
+                [this](double value)
+                {
+                    audioDockZoom = juce::jlimit(1.0, 64.0, value);
+                    audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom, audioDockScroll);
+                    repaint();
+                },
+                [this] { return audioDockTimeFormat; }));
+    addAndMakeVisible(*sharedAudioEditor);
+    layoutSharedAudioEditor();
+}
+
+void MainComponent::layoutSharedAudioEditor()
+{
+    if (!sharedAudioEditor || floatingAudioHost) return;
+    const bool visible = !dockCollapsed && !dockMixerMode
+        && selectedTrack == sharedAudioEditorTrack
+        && audioEngine.hasAudioFile(selectedTrack);
+    sharedAudioEditor->setVisible(visible);
+    if (visible)
+    {
+        sharedAudioEditor->setBounds(310, getMixerTop() + 36,
+            juce::jmax(0, getWidth() - 310),
+            juce::jmax(0, getHeight() - getMixerTop() - 36));
+        sharedAudioEditor->toFront(false);
+    }
+}
+
+void MainComponent::closeFloatingAudioEditor()
+{
+    if (!floatingAudioHost || !sharedAudioEditor) return;
+    floatingAudioHost->setVisible(false);
+    floatingAudioHost->clearContentComponent();
+    addAndMakeVisible(*sharedAudioEditor);
+    auto* owner = this;
+    juce::Component::SafePointer<MainComponent> safeOwner(owner);
+    juce::MessageManager::callAsync([safeOwner]
+    {
+        if (safeOwner != nullptr)
+        {
+            safeOwner->floatingAudioHost.reset();
+            safeOwner->layoutSharedAudioEditor();
+        }
+    });
+}
 void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
     dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
     dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
-    dockVisibilityButton.toFront(false); updateMixerHorizontalScrollBar(); repaint(); }
+    dockVisibilityButton.toFront(false); updateMixerHorizontalScrollBar(); ensureSharedAudioEditor(); layoutSharedAudioEditor(); repaint(); }
 
 void MainComponent::timerCallback()
 {
@@ -2551,6 +2670,8 @@ void MainComponent::timerCallback()
     resizeLibertyDynamicTrackController(this);
     ensureLibertyPageModeCoordinator(this);
     ensureLibertyAudioRecordingController(this);
+    ensureSharedAudioEditor();
+    layoutSharedAudioEditor();
     ensureLibertyTrackHeaderMixControls(this);
     ensureLibertyBrowserController(this);
     if (!durationPaletteOpen) dockResizeHandle.toFront(false);
@@ -4302,71 +4423,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     {
         if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
         {
-            juce::DialogWindow::LaunchOptions options;
-            options.dialogTitle = "Liberty | Editeur Audio";
-            options.dialogBackgroundColour = juce::Colour(0xff101e2d);
-            options.content.setOwned(new LibertyAudioEditorComponent(audioEngine, selectedTrack,
-                [this, trackIndex = selectedTrack](double seconds)
-                { return snapAudioDockWarpTime(seconds, trackIndex); },
-                [this, trackIndex = selectedTrack](double start, double end, bool enabled)
-                {
-                    if (trackIndex != selectedTrack) return;
-                    const double duration = audioEngine.getAudioFileLengthSeconds(trackIndex);
-                    if (duration <= 0.0 || start < 0.0 || end < 0.0)
-                    {
-                        audioDockLoopEnabled = false;
-                        return;
-                    }
-                    audioDockLoopStartFraction = juce::jlimit(0.0, 1.0, juce::jmin(start, end) / duration);
-                    audioDockLoopEndFraction = juce::jlimit(0.0, 1.0, juce::jmax(start, end) / duration);
-                    audioDockLoopEnabled = enabled && audioDockLoopEndFraction > audioDockLoopStartFraction;
-                    repaint();
-                },
-                [this] { showAudioDockSnapDialog(); },
-                [this] { showAudioDockTimeFormatDialog(); },
-                [this] { audioDockTransientEnabled = !audioDockTransientEnabled;
-                         if (audioDockTransientEnabled) refreshAudioDockTransientMarkers(selectedTrack);
-                         repaint(); },
-                [this, trackIndex = selectedTrack]()
-                {
-                    if (!audioDockTransientEnabled) return std::vector<double>{};
-                    const auto it = audioDockAutomaticMarkers.find(trackIndex);
-                    return it != audioDockAutomaticMarkers.end() ? it->second : std::vector<double>{};
-                },
-                [this, trackIndex = selectedTrack](double onset)
-                {
-                    auto it = audioDockAutomaticMarkers.find(trackIndex);
-                    if (it == audioDockAutomaticMarkers.end()) return;
-                    auto& markers = it->second;
-                    // Automatic transients also create Warp markers: remove the matching
-                    // engine marker before dropping the visual marker from the shared list.
-                    const int count = audioEngine.getTrackWarpMarkerCount(trackIndex);
-                    for (int marker = count - 2; marker > 0; --marker)
-                    {
-                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(trackIndex, marker)
-                                     - onset) < 0.0005)
-                        {
-                            audioEngine.removeTrackWarpMarker(trackIndex, marker);
-                            break;
-                        }
-                    }
-                    markers.erase(std::remove_if(markers.begin(), markers.end(),
-                        [onset](double t) { return std::abs(t - onset) < 0.0005; }), markers.end());
-                    repaint();
-                },
-                [this] { return audioDockZoom; },
-                [this](double value)
-                {
-                    audioDockZoom = juce::jlimit(1.0, 64.0, value);
-                    audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom, audioDockScroll);
-                    repaint();
-                },
-                [this] { return audioDockTimeFormat; }));
-            options.componentToCentreAround = this;
-            options.escapeKeyTriggersCloseButton = true;
-            options.useNativeTitleBar = true;
-            options.resizable = true;
-            options.launchAsync();
+            if (!sharedAudioEditor || sharedAudioEditorTrack != selectedTrack)
+                ensureSharedAudioEditor();
+            if (sharedAudioEditor && !floatingAudioHost)
+            {
+                sharedAudioEditor->setVisible(false);
+                floatingAudioHost = std::make_unique<LibertyFloatingAudioHost>(
+                    [this] { closeFloatingAudioEditor(); });
+                floatingAudioHost->setContentNonOwned(sharedAudioEditor.get(), false);
+                floatingAudioHost->centreWithSize(980, 550);
+                floatingAudioHost->setVisible(true);
+            }
         }
         else if (selectedEditorTrack)
             openLibertyMidiEditor(*this);
