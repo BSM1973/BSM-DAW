@@ -12,6 +12,8 @@ public:
     struct Marker { double seconds = 0.0; bool transient = false; };
     std::function<std::shared_ptr<const juce::AudioBuffer<float>>()> getBuffer;
     std::function<double()> getDuration;
+    std::function<double()> getSourceDuration;
+    std::function<std::vector<std::pair<double, double>>()> getWarpPairs;
     std::function<std::vector<Marker>()> getMarkers;
     std::function<void(double, const juce::MouseEvent&)> onPress;
     std::function<void(double, const juce::MouseEvent&)> onMove;
@@ -142,14 +144,25 @@ public:
         const auto pcm = getBuffer ? getBuffer() : nullptr;
         if (!pcm || pcm->getNumChannels() < 1 || pcm->getNumSamples() < 2) return;
         const int count = pcm->getNumSamples(), centre = getHeight() / 2;
+        const auto warpPairs = getWarpPairs ? getWarpPairs()
+            : std::vector<std::pair<double, double>>{};
+        const double targetDuration = getDuration ? getDuration() : 0.0;
+        const double sourceDuration = getSourceDuration ? getSourceDuration() : targetDuration;
+        const auto sourceFraction = [&](double targetFraction)
+        {
+            return sourceFractionForTarget(targetFraction, targetDuration,
+                sourceDuration, warpPairs);
+        };
         const float* data = pcm->getReadPointer(0);
         g.setColour(juce::Colour(0xff52c5e8));
         for (int x = 0; x < getWidth(); ++x)
         {
+            const double leftFraction = (double)x / juce::jmax(1, getWidth()) / zoom;
+            const double rightFraction = (double)(x + 1) / juce::jmax(1, getWidth()) / zoom;
             const int first = juce::jlimit(0, count - 1,
-                (int)((double)x / juce::jmax(1, getWidth()) / zoom * count));
-            const int last = juce::jmin(count, first + juce::jmax(1,
-                (int)(count / (double)juce::jmax(1, getWidth()) / zoom)));
+                (int)(sourceFraction(leftFraction) * count));
+            const int last = juce::jlimit(first + 1, count,
+                (int)std::ceil(sourceFraction(rightFraction) * count));
             float peak = 0.0f;
             for (int i = first; i < last; ++i) peak = juce::jmax(peak, std::abs(data[i]));
             const int h = (int)(peak * (getHeight() - 12) * 0.5f);
