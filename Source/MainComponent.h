@@ -33,6 +33,7 @@ public:
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
+    bool handleAudioDockMouseDown(const juce::MouseEvent& event);
     void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     bool handleAudioDockMouseWheel(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel);
