@@ -42,7 +42,11 @@ public:
         if (stopped.exchange(true)) return;
         stopTimer();
         owner.removeMouseListener(&ownerListener);
-        if (floatingWindow != nullptr) attachToDock();
+        if (floatingWindow != nullptr)
+        {
+            floatingWindow->setContentNonOwned(nullptr, false);
+            floatingWindow.reset();
+        }
         setVisible(false);
     }
 
@@ -69,7 +73,12 @@ public:
     void detachToWindow()
     {
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack)) return;
-        if (floatingWindow != nullptr) { floatingWindow->toFront(true); return; }
+        if (floatingWindow != nullptr)
+        {
+            floatingWindow->setVisible(true);
+            floatingWindow->toFront(true);
+            return;
+        }
         auto window = std::make_unique<LibertyAudioFloatingWindow>();
         window->setUsingNativeTitleBar(true);
         owner.removeChildComponent(this);
