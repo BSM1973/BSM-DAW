@@ -431,6 +431,7 @@ public:
     bool audioDockSnapEnabled = true;
     bool audioDockTransientEnabled = false;
     double audioDockTransientSensitivity = 50.0;
+    void refreshAudioDockTransientMarkers(int track);
     std::map<int, std::vector<double>> audioDockAutomaticMarkers;
     int audioDockSnapDivision = 4; // Subdivisions per beat: 1, 2, 4, 8, 16.
     int draggingDockWarpMarker = -1;
