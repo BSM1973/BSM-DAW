@@ -3910,6 +3910,30 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && getAudioDockWaveBounds().contains(p))
     {
         const auto wave = getAudioDockWaveBounds();
+        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+        if (duration > 0.0 && std::isfinite(duration))
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
+            int nearest = -1, distance = 9;
+            for (int i = 1; i < count - 1; ++i)
+            {
+                const double target = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
+                if (!std::isfinite(target)) continue;
+                const int x = wave.getX() + (int)std::lround(
+                    (target / duration - offset) / visible * wave.getWidth());
+                const int d = std::abs(p.x - x);
+                if (d < distance) { distance = d; nearest = i; }
+            }
+            if (nearest > 0 && event.mods.isLeftButtonDown() && !event.mods.isAltDown())
+            {
+                draggingDockWarpMarker = nearest;
+                draggingDockWarpTrack = selectedTrack;
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                return;
+            }
+        }
         // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
         // These markers are independent of the transient audio selection.
         if (event.mods.isAltDown() && event.mods.isLeftButtonDown())
