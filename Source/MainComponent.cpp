@@ -4311,13 +4311,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     std::function<void()> openSnapSettings,
                     std::function<void()> openTimeSettings,
                     std::function<void()> openTransientSettings,
-                    std::function<std::vector<double>()> readTransients)
+                    std::function<std::vector<double>()> readTransients,
+                    std::function<void(double)> removeTransient)
                     : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid)),
                       publishLoop(std::move(updateLoop)),
                       snapSettings(std::move(openSnapSettings)),
                       timeSettings(std::move(openTimeSettings)),
                       transientSettings(std::move(openTransientSettings)),
-                      transientMarkers(std::move(readTransients))
+                      transientMarkers(std::move(readTransients)),
+                      eraseTransient(std::move(removeTransient))
                 {
                     setSize(980, 550);
                     warp.setButtonText("WARP");
@@ -4412,6 +4414,22 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (!bounds.contains(event.getPosition())) return;
                     const double seconds = secondsAt(event.x);
                     draggingMarker = -1;
+                    if (event.mods.isRightButtonDown() && transientMarkers && eraseTransient)
+                    {
+                        const auto markers = transientMarkers();
+                        const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
+                        for (const double onset : markers)
+                        {
+                            const int x = bounds.getX() + (int)std::round(
+                                onset / duration * bounds.getWidth() * zoom);
+                            if (std::abs(x - event.x) <= 7)
+                            {
+                                eraseTransient(onset);
+                                repaint();
+                                return;
+                            }
+                        }
+                    }
                     if (selection.getToggleState())
                     {
                         selecting = true;
@@ -4544,6 +4562,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 std::function<void(double, double, bool)> publishLoop;
                 std::function<void()> snapSettings, timeSettings, transientSettings;
                 std::function<std::vector<double>()> transientMarkers;
+                std::function<void(double)> eraseTransient;
                 juce::ToggleButton snap, loop, selection;
                 std::function<double(double)> musicalSnap;
                 double selectionBegin = -1.0, selectionEnd = -1.0;
@@ -4581,6 +4600,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (!audioDockTransientEnabled) return std::vector<double>{};
                     const auto it = audioDockAutomaticMarkers.find(trackIndex);
                     return it != audioDockAutomaticMarkers.end() ? it->second : std::vector<double>{};
+                },
+                [this, trackIndex = selectedTrack](double onset)
+                {
+                    auto it = audioDockAutomaticMarkers.find(trackIndex);
+                    if (it == audioDockAutomaticMarkers.end()) return;
+                    auto& markers = it->second;
+                    markers.erase(std::remove_if(markers.begin(), markers.end(),
+                        [onset](double t) { return std::abs(t - onset) < 0.0001; }), markers.end());
+                    repaint();
                 }));
             options.componentToCentreAround = this;
             options.escapeKeyTriggersCloseButton = true;
