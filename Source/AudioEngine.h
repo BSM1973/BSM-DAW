@@ -175,6 +175,8 @@ public:
     float getTrackClipGain(int trackIndex) const noexcept;
     void setTrackClipPitch(int trackIndex, double semitones) noexcept;
     double getTrackClipPitch(int trackIndex) const noexcept;
+    void setTrackClipReverse(int trackIndex, bool enabled) noexcept;
+    bool isTrackClipReversed(int trackIndex) const noexcept;
     void setTrackPan(int trackIndex, float pan) noexcept;
     float getTrackPan(int trackIndex) const noexcept;
     void setTrackMuted(int trackIndex, bool muted) noexcept;
@@ -310,6 +312,7 @@ private:
         std::atomic<float> gain { 1.0f };
         std::atomic<float> clipGain { 1.0f };
         std::atomic<double> clipPitch { 0.0 };
+        std::atomic<bool> clipReverse { false };
         std::atomic<float> pan { 0.0f };
         std::atomic<bool> muted { false };
         std::atomic<bool> solo { false };
