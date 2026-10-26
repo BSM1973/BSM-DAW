@@ -723,7 +723,9 @@ void MainComponent::paint(juce::Graphics& g)
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
                 * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
-            const double step = beat / (double)juce::jmax(1, audioDockSnapDivision);
+            const double step = audioDockSnapDivision < 0
+        ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
+        : beat / (double)juce::jmax(1, audioDockSnapDivision);
             if (duration > 0.0 && std::isfinite(duration) && step > 0.0)
             {
                 const double visible = 1.0 / audioDockZoom;
@@ -2862,7 +2864,9 @@ double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
     if (!audioDockSnapEnabled || !std::isfinite(seconds)) return seconds;
     const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
         * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
-    const double step = beat / (double)juce::jmax(1, audioDockSnapDivision);
+    const double step = audioDockSnapDivision < 0
+        ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
+        : beat / (double)juce::jmax(1, audioDockSnapDivision);
     const double start = audioEngine.getTrackStartSeconds(track);
     return juce::jlimit(0.0, juce::jmax(0.0, audioEngine.getAudioFileLengthSeconds(track)),
         std::round((start + seconds) / step) * step - start);
@@ -3614,7 +3618,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             }
         }
         // Warp editing owns ordinary clicks. Ctrl+drag retains audio selection.
-        if (audioEngine.isTrackWarpEnabled(selectedTrack) && !event.mods.isCtrlDown()
+        if (audioEngine.isTrackWarpEnabled(selectedTrack)
+            && !event.mods.isCtrlDown() && !event.mods.isCommandDown()
             && !event.mods.isAltDown())
         {
             audioSelectionActive = false;
