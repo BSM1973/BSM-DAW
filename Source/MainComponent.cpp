@@ -4448,6 +4448,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         waveformBounds(), audio.getAudioFileLengthSeconds(track), zoom, 0.0 };
                     return viewport.pixelAt(seconds);
                 }
+                LibertyAudioWaveformView::WarpEditActions warpActions()
+                {
+                    return {
+                        [this](double source, double target)
+                        { return audio.addTrackWarpMarker(track, source, target); },
+                        [this](int index, double target)
+                        { audio.moveTrackWarpMarker(track, index, target); },
+                        [this](int index)
+                        { audio.removeTrackWarpMarker(track, index); }
+                    };
+                }
                 void mouseDown(const juce::MouseEvent& event) override
                 {
                     const auto bounds = waveformBounds();
@@ -4487,12 +4498,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (nearest >= 0) draggingMarker = nearest + 1;
                     if (event.mods.isRightButtonDown())
                     {
-                        if (draggingMarker > 0) audio.removeTrackWarpMarker(track, draggingMarker);
+                        if (draggingMarker > 0) warpActions().remove(draggingMarker);
                         draggingMarker = -1;
                     }
                     else if (draggingMarker < 0)
                     {
-                        audio.addTrackWarpMarker(track, seconds, seconds);
+                        warpActions().add(seconds, seconds);
                     }
                     repaint();
                 }
@@ -4506,7 +4517,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     if (draggingMarker > 0)
                     {
-                        audio.moveTrackWarpMarker(track, draggingMarker, secondsAt(event.x));
+                        warpActions().drag(draggingMarker, secondsAt(event.x));
                         repaint();
                     }
                 }
