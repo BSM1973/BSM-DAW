@@ -3501,8 +3501,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
         // Automatic transient detection is available via Shift+click on WARP.
         // Analysis is performed on the UI thread, never in the audio callback.
-        if (warpButton.contains(p) && event.mods.isShiftDown()
-            && !event.mods.isAltDown())
+        if (warpButton.getWidth() >= 55 && warpButton.contains(p)
+            && event.mods.isShiftDown() && event.mods.isLeftButtonDown())
         {
             const auto buffer = audioEngine.getAudioBufferSnapshot(selectedTrack);
             const double sampleRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
@@ -3531,9 +3531,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const double rise = juce::jmax(0.0,
                         energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
                     background = 0.97 * background + 0.03 * rise;
-                    if (rise > 0.018 && rise > background * 2.8
-                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)]
-                        && energy[(size_t)frame] >= energy[(size_t)(frame + 1)])
+                    if (rise > 0.008 && rise > background * 1.8
+                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
                         candidates.emplace_back(rise, frame);
                 }
                 std::sort(candidates.begin(), candidates.end(),
@@ -3556,8 +3555,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const double seconds = (double)frame * hop / sampleRate;
                     audioEngine.addTrackWarpMarker(selectedTrack, seconds, seconds);
                 }
-                // The markers are editable even with time stretching disabled.
-                audioEngine.setTrackWarpEnabled(selectedTrack, false);
+                // Show detected markers immediately; keep the warp engine enabled.
+                audioEngine.setTrackWarpEnabled(selectedTrack, true);
                 repaint();
             }
             return;
