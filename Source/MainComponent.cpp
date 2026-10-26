@@ -209,7 +209,7 @@ MainComponent::MainComponent()
     startTimerHz(30);
 }
 
-MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
+MainComponent::~MainComponent() { attachAudioDockSurface(); closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
 bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
@@ -234,6 +234,51 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 4.0f);
     g.setColour(juce::Colour(0xfff8b84d));
     g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
+}
+
+struct MainComponent::AudioDockFloatingWindow final : juce::DocumentWindow
+{
+    explicit AudioDockFloatingWindow(MainComponent& owner)
+        : juce::DocumentWindow("Liberty — Éditeur audio",
+                               juce::Colour(0xff0b1521),
+                               juce::DocumentWindow::closeButton),
+          main(owner)
+    {
+        setUsingNativeTitleBar(true);
+        setResizable(true, true);
+        setResizeLimits(560, 300, 4096, 2160);
+    }
+    void closeButtonPressed() override
+    {
+        juce::Component::SafePointer<MainComponent> safeMain(&main);
+        juce::MessageManager::callAsync([safeMain]
+        {
+            if (safeMain != nullptr)
+                safeMain->attachAudioDockSurface();
+        });
+    }
+    MainComponent& main;
+};
+
+void MainComponent::detachAudioDockSurface()
+{
+    if (audioDockFloatingWindow != nullptr) return;
+    audioDockFloatingWindow = std::make_unique<AudioDockFloatingWindow>(*this);
+    audioDockSurface.setVisible(true);
+    audioDockFloatingWindow->setContentNonOwned(&audioDockSurface, false);
+    audioDockFloatingWindow->centreWithSize(1080, 560);
+    audioDockFloatingWindow->setVisible(true);
+}
+
+void MainComponent::attachAudioDockSurface()
+{
+    if (audioDockFloatingWindow == nullptr) return;
+    audioDockFloatingWindow->setVisible(false);
+    audioDockFloatingWindow->clearContentComponent();
+    addAndMakeVisible(audioDockSurface);
+    audioDockSurface.setBounds(getAudioDockEditorBounds());
+    audioDockFloatingWindow.reset();
+    resized();
 }
 
 void LibertyAudioDockSurface::paint(juce::Graphics& g)
