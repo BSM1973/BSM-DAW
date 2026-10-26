@@ -27,7 +27,12 @@ public:
         formantSemitones = juce::jlimit(-12.0, 12.0, formantSemitones);
         const int channels = input.getNumChannels();
         const int sourceLength = input.getNumSamples();
-        const int outputLength = juce::jmax(1, (int)std::llround(sourceLength * durationRatio));
+        // Cap output allocation before converting to int; oversized jobs
+        // must be rejected instead of overflowing the sample count.
+        const double requestedSamples = (double)sourceLength * durationRatio;
+        if (!std::isfinite(requestedSamples) || requestedSamples > 50000000.0)
+            return juce::AudioBuffer<float>(juce::jmax(1, channels), 1);
+        const int outputLength = juce::jmax(1, (int)std::llround(requestedSamples));
         juce::AudioBuffer<float> output(juce::jmax(1, channels), outputLength);
         output.clear();
         if (channels == 0 || sourceLength < fftSize) return output;
