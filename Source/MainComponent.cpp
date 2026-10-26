@@ -559,10 +559,35 @@ void MainComponent::paint(juce::Graphics& g)
             const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
             const auto* pcm = snapshot.get();
             const int sampleCount = pcm != nullptr ? pcm->getNumSamples() : 0;
+            // Map dock target-time pixels back to source PCM through Warp markers.
+            // Recalculate on every repaint so dragging updates the waveform live.
+            const double targetDuration = juce::jmax(0.000001,
+                audioEngine.getAudioFileLengthSeconds(selectedTrack));
+            const double sourceRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
+            const double sourceDuration = sourceRate > 0.0 && sampleCount > 0
+                ? (double)sampleCount / sourceRate : targetDuration;
+            const int warpCount = audioEngine.getTrackWarpMarkerCount(selectedTrack);
+            const bool showWarpShape = audioEngine.isTrackWarpEnabled(selectedTrack) && warpCount >= 2;
+            const auto sourceFractionForTarget = [&](double targetFraction)
+            {
+                if (!showWarpShape) return targetFraction;
+                const double target = juce::jlimit(0.0, targetDuration, targetFraction * targetDuration);
+                for (int i = 0; i < warpCount - 1; ++i)
+                {
+                    const double ta = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
+                    const double tb = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i + 1);
+                    if (target > tb && i < warpCount - 2) continue;
+                    const double sa = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i);
+                    const double sb = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i + 1);
+                    const double alpha = juce::jlimit(0.0, 1.0, (target - ta) / juce::jmax(0.000001, tb - ta));
+                    return juce::jlimit(0.0, 1.0, (sa + (sb - sa) * alpha) / juce::jmax(0.000001, sourceDuration));
+                }
+                return targetFraction;
+            };
             const double samplesPerPixel = columns > 0
                 ? (double) sampleCount * visibleFraction / (double) columns : 0.0;
             if (pcm != nullptr && pcm->getNumChannels() > 0 && sampleCount > 1
-                && samplesPerPixel <= 2.0 && columns > 1)
+                && samplesPerPixel <= 2.0 && columns > 1 && !showWarpShape)
             {
                 const int channels = juce::jmin(2, pcm->getNumChannels());
                 for (int channel = 0; channel < channels; ++channel)
@@ -623,8 +648,8 @@ void MainComponent::paint(juce::Graphics& g)
                     const float* samples = usePCM ? pcm->getReadPointer(channel) : nullptr;
                     for (int x = 0; x < columns; ++x)
                     {
-                        const double t0 = scroll + visibleFraction * (double)x / (double)columns;
-                        const double t1 = scroll + visibleFraction * (double)(x + 1) / (double)columns;
+                        const double t0 = sourceFractionForTarget(scroll + visibleFraction * (double)x / (double)columns);
+                        const double t1 = sourceFractionForTarget(scroll + visibleFraction * (double)(x + 1) / (double)columns);
                         float low = 1.0f, high = -1.0f;
                         if (usePCM)
                         {
