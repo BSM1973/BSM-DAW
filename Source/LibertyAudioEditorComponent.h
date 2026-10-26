@@ -202,6 +202,14 @@ public:
             repaint();
             return;
         }
+        const auto formatButton = juce::Rectangle<int>(
+            toolbar.getX(), toolbar.getY() + (compact ? 70 : 46),
+            juce::jmin(126, juce::jmax(0, toolbar.getWidth())), 20);
+        if (formatButton.contains(event.getPosition()))
+        {
+            if (!event.mods.isRightButtonDown() && timeSettings) timeSettings();
+            return;
+        }
         const auto bounds = waveformBounds();
         if (!bounds.contains(event.getPosition())) return;
         const double seconds = secondsAt(event.x);
