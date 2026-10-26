@@ -4606,8 +4606,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     auto it = audioDockAutomaticMarkers.find(trackIndex);
                     if (it == audioDockAutomaticMarkers.end()) return;
                     auto& markers = it->second;
+                    // Automatic transients also create Warp markers: remove the matching
+                    // engine marker before dropping the visual marker from the shared list.
+                    const int count = audioEngine.getTrackWarpMarkerCount(trackIndex);
+                    for (int marker = count - 2; marker > 0; --marker)
+                    {
+                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(trackIndex, marker)
+                                     - onset) < 0.0005)
+                        {
+                            audioEngine.removeTrackWarpMarker(trackIndex, marker);
+                            break;
+                        }
+                    }
                     markers.erase(std::remove_if(markers.begin(), markers.end(),
-                        [onset](double t) { return std::abs(t - onset) < 0.0001; }), markers.end());
+                        [onset](double t) { return std::abs(t - onset) < 0.0005; }), markers.end());
                     repaint();
                 }));
             options.componentToCentreAround = this;
