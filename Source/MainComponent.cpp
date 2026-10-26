@@ -244,6 +244,37 @@ void LibertyAudioDockSurface::paint(juce::Graphics& g)
     main.paintExistingAudioDock(g, getBounds());
 }
 
+void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
+{
+    main.mouseMove(e.getEventRelativeTo(&main));
+}
+
+void LibertyAudioDockSurface::mouseDown(const juce::MouseEvent& e)
+{
+    main.mouseDown(e.getEventRelativeTo(&main));
+}
+
+void LibertyAudioDockSurface::mouseDrag(const juce::MouseEvent& e)
+{
+    main.mouseDrag(e.getEventRelativeTo(&main));
+}
+
+void LibertyAudioDockSurface::mouseUp(const juce::MouseEvent& e)
+{
+    main.mouseUp(e.getEventRelativeTo(&main));
+}
+
+void LibertyAudioDockSurface::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    main.mouseDoubleClick(e.getEventRelativeTo(&main));
+}
+
+void LibertyAudioDockSurface::mouseWheelMove(const juce::MouseEvent& e,
+                                             const juce::MouseWheelDetails& w)
+{
+    main.mouseWheelMove(e.getEventRelativeTo(&main), w);
+}
+
 void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                                            juce::Rectangle<int> audioEditorBounds)
 {
