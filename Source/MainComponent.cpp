@@ -2870,28 +2870,89 @@ double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
 
 void MainComponent::showAudioDockSnapDialog()
 {
-    juce::PopupMenu menu;
-    menu.addSectionHeader("LIBERTY  |  SNAP AUDIO");
-    menu.addItem(1, "Snap active", true, audioDockSnapEnabled);
-    menu.addSeparator();
-    const int divisions[] = { 1, 2, 4, 8, 16 };
-    const char* labels[] = { "1/4  Noire", "1/8  Croche", "1/16  Double croche",
-                              "1/32  Triple croche", "1/64  Quadruple croche" };
-    for (int i = 0; i < 5; ++i)
-        menu.addItem(i + 10, labels[i], true, audioDockSnapDivision == divisions[i]);
-    juce::Component::SafePointer<MainComponent> safe(this);
-    menu.showMenuAsync(juce::PopupMenu::Options(), [safe](int result)
+    // A dedicated, resizable Liberty-style panel instead of a PopupMenu.
+    class SnapDialog final : public juce::Component
     {
-        if (safe == nullptr || result <= 0) return;
-        if (result == 1) safe->audioDockSnapEnabled = !safe->audioDockSnapEnabled;
-        else if (result >= 10 && result < 15)
+    public:
+        explicit SnapDialog(MainComponent& parent) : owner(parent)
         {
-            const int divisions[] = { 1, 2, 4, 8, 16 };
-            safe->audioDockSnapDivision = divisions[result - 10];
-            safe->audioDockSnapEnabled = true;
+            setSize(450, 410);
+            enabled.setButtonText("ACTIVER L'AIMANTATION");
+            enabled.setToggleState(owner.audioDockSnapEnabled, juce::dontSendNotification);
+            enabled.onClick = [this]
+            {
+                owner.audioDockSnapEnabled = enabled.getToggleState();
+                owner.repaint();
+                repaint();
+            };
+            addAndMakeVisible(enabled);
+            const char* labels[] = {
+                "1/4  |  Noire", "1/8  |  Croche", "1/16  |  Double croche",
+                "1/32  |  Triple croche", "1/64  |  Quadruple croche",
+                "1 MESURE", "2 MESURES", "4 MESURES"
+            };
+            const int values[] = { 1, 2, 4, 8, 16, -1, -2, -4 };
+            for (int i = 0; i < 8; ++i)
+            {
+                auto* button = choices.add(new juce::TextButton(labels[i]));
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff21394f));
+                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff356282));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9e8f3));
+                button->onClick = [this, i, values]
+                {
+                    owner.audioDockSnapDivision = values[i];
+                    owner.audioDockSnapEnabled = true;
+                    enabled.setToggleState(true, juce::dontSendNotification);
+                    owner.repaint();
+                    repaint();
+                };
+                addAndMakeVisible(button);
+            }
         }
-        safe->repaint();
-    });
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff101e2d));
+            g.setColour(juce::Colour(0xffffcf85));
+            g.setFont(juce::Font(21.0f, juce::Font::bold));
+            g.drawText("GRILLE ET SNAP AUDIO", 24, 16, getWidth() - 48, 34,
+                juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff96b6ce));
+            g.setFont(juce::Font(12.0f));
+            g.drawText("RESOLUTION MUSICALE", 26, 105, getWidth() - 52, 22,
+                juce::Justification::centredLeft);
+            const int values[] = { 1, 2, 4, 8, 16, -1, -2, -4 };
+            for (int i = 0; i < choices.size(); ++i)
+                if (owner.audioDockSnapDivision == values[i])
+                {
+                    g.setColour(juce::Colour(0xffffc857));
+                    g.fillRoundedRectangle(choices[i]->getBounds().expanded(3).toFloat(), 5.0f);
+                }
+            g.setColour(juce::Colour(0xff7e9fb6));
+            g.drawText("Maj + glisser : deplacement libre des marqueurs Warp",
+                26, getHeight() - 39, getWidth() - 52, 19, juce::Justification::centredLeft);
+        }
+        void resized() override
+        {
+            enabled.setBounds(26, 65, getWidth() - 52, 30);
+            const int width = (getWidth() - 70) / 2;
+            for (int i = 0; i < choices.size(); ++i)
+                choices[i]->setBounds(26 + (i % 2) * (width + 18),
+                    135 + (i / 2) * 52, width, 37);
+        }
+    private:
+        MainComponent& owner;
+        juce::ToggleButton enabled;
+        juce::OwnedArray<juce::TextButton> choices;
+    };
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "Liberty  |  Grille et Snap";
+    options.dialogBackgroundColour = juce::Colour(0xff101e2d);
+    options.content.setOwned(new SnapDialog(*this));
+    options.componentToCentreAround = this;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.launchAsync();
 }
 
 double MainComponent::snapAudioDockFraction(double fraction) const
