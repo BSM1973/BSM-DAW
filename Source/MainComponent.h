@@ -35,6 +35,7 @@ public:
     void mouseDown(const juce::MouseEvent& event) override;
     bool handleAudioDockMouseDown(const juce::MouseEvent& event);
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    bool handleAudioDockMouseDoubleClick(const juce::MouseEvent& event);
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     bool handleAudioDockMouseWheel(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel);
     bool openAudioClipInDockAt(juce::Point<int> arrangePosition);
