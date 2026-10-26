@@ -10,7 +10,7 @@ class LibertyAudioWaveformView final : public juce::Component
 {
 public:
     struct Marker { double seconds = 0.0; bool transient = false; };
-    std::function<std::shared_ptr<juce::AudioBuffer<float>>()> getBuffer;
+    std::function<std::shared_ptr<const juce::AudioBuffer<float>>()> getBuffer;
     std::function<double()> getDuration;
     std::function<std::vector<Marker>()> getMarkers;
     std::function<void(double, const juce::MouseEvent&)> onPress;
