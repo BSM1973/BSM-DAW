@@ -5,6 +5,7 @@
 void renderLibertyPerformAudio(AudioEngine*, float* const*, int, int);
 void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 #include "PluginHost.h"
+#include "LibertySpectralWarp.h"
 #include "OneKnobEffects.h"
 #include <algorithm>
 #include <cmath>
@@ -661,6 +662,13 @@ void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
     track.warpMode.store(clampedMode, std::memory_order_relaxed);
     if (snapshot != nullptr)
         std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+}
+
+juce::AudioBuffer<float> AudioEngine::renderSpectralWarpOffline(
+    const juce::AudioBuffer<float>& input, double durationRatio,
+    double pitchSemitones, double formantSemitones)
+{
+    return LibertySpectralWarp::render(input, durationRatio, pitchSemitones, formantSemitones);
 }
 
 void AudioEngine::setTrackWarpFormant(int trackIndex, double semitones) noexcept
