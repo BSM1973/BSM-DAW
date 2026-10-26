@@ -247,6 +247,7 @@ public:
         g.fillAll(juce::Colour(0xff101e2d));
         LibertyAudioEditorHeader::paint(g, getLocalBounds(),
             "Piste " + juce::String(track + 1), zoom);
+        LibertyAudioEditorHeader::paintSelectionButtons(g, getLocalBounds().reduced(14, 12));
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
