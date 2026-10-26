@@ -1775,7 +1775,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // with zero slope instead of introducing a sharp corner.
             const float smoothRatioBlend = ratioBlend * ratioBlend
                 * (3.0f - 2.0f * ratioBlend);
-            constexpr double grainSeconds = 0.060;
+            // Mode-dependent overlap-add windows. This is a low-latency
+            // time-domain foundation, not yet a spectral/formant engine.
+            const double grainSeconds = mode == 1 ? 0.024   // Drums: short attacks
+                : mode == 2 ? 0.045                         // Vocal: medium grains
+                : mode == 3 ? 0.085                         // Granulaire: long grains
+                : mode == 4 ? 0.050                         // Pitch: separate future shifter
+                : mode == 5 ? 0.180                         // Texture: broad smearing
+                : 0.075;                                    // Ultra Best: balanced
             const double grainLength = juce::jmax(64.0, grainSeconds * rate);
             const double hop = grainLength * 0.5;
             const double targetSample = (double) (mixStart - startSample + s);
@@ -1907,7 +1914,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 // Transient protection: detect steep local attacks in the
                 // original signal and favour the direct Warp sample for a
                 // short region. This reduces grain smearing on percussion.
-                const float directBlend = 1.0f - smoothRatioBlend * (1.0f - transientBlend);
+                const float transientProtection = mode == 1 ? 1.0f
+                    : mode == 2 ? 0.55f : mode == 5 ? 0.05f : 0.35f;
+                const float directBlend = 1.0f - smoothRatioBlend
+                    * (1.0f - transientBlend * transientProtection);
                 // Equal-power crossfade helps prevent perceived level
                 // dips while transitioning between unrelated grain phases
                 // and the direct transient signal.
