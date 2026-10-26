@@ -234,56 +234,9 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
 }
 
-void MainComponent::paint(juce::Graphics& g)
+void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
+                                           juce::Rectangle<int> audioEditorBounds)
 {
-    auto bounds = getLocalBounds();
-    // Liberty Pro design system: shared canvas across transport, arrange and dock.
-    g.fillAll(LibertyUI::Colour::canvas);
-    auto transport = bounds.removeFromTop(transportHeight);
-    auto mixer = bounds.removeFromBottom(juce::jmin(dockCollapsed ? 32 : mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
-    drawTransport(g, transport);
-    {
-        // Clip the complete arranger paint pass, including partially visible track controls.
-        const juce::Graphics::ScopedSaveState arrangeClip(g);
-        g.reduceClipRegion(bounds);
-        drawTrackArea(g, bounds);
-    }
-    if (dockCollapsed)
-    {
-        g.setColour(juce::Colour(0xff182530));
-        g.fillRect(mixer);
-        g.setColour(juce::Colour(0xff40515f));
-        g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 1);
-        g.setColour(juce::Colour(0xffb8e8ec));
-        g.setFont(juce::Font(12.0f));
-        g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
-        return;
-    }
-    // Permanent visible gold resize rail, drawn across the full draggable boundary.
-    g.setColour(juce::Colour(0xffb88732));
-    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
-    g.setColour(juce::Colour(0xffffdf83));
-    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
-    // Visual dock boundary only; leave editor and tab hit areas unchanged.
-    g.setColour(juce::Colour(0xff070b10));
-    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
-    g.setColour(juce::Colour(0xffd7ad53));
-    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 3);
-    g.setColour(juce::Colour(0xffffdf87));
-    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
-               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
-    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
-    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
-    const bool isAudioDockTrack = selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
-                                  && audioEngine.hasAudioFile(selectedTrack);
-    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
-        ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    // Keep the existing audio editor rendering isolated from other dock modes.
-    // The graphics context is explicit so it can later be hosted by a JUCE child.
-    const auto paintExistingAudioDock = [&](juce::Graphics& audioGraphics,
-                                             juce::Rectangle<int> audioEditorBounds)
-    {
         auto& g = audioGraphics;
         // The complete audio editor uses these explicit bounds; all other dock modes
         // continue using their existing editorArea without modification.
@@ -951,7 +904,55 @@ void MainComponent::paint(juce::Graphics& g)
                     juce::Justification::centred, true);
             }
         }
-        };
+}
+
+void MainComponent::paint(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+    // Liberty Pro design system: shared canvas across transport, arrange and dock.
+    g.fillAll(LibertyUI::Colour::canvas);
+    auto transport = bounds.removeFromTop(transportHeight);
+    auto mixer = bounds.removeFromBottom(juce::jmin(dockCollapsed ? 32 : mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
+    drawTransport(g, transport);
+    {
+        // Clip the complete arranger paint pass, including partially visible track controls.
+        const juce::Graphics::ScopedSaveState arrangeClip(g);
+        g.reduceClipRegion(bounds);
+        drawTrackArea(g, bounds);
+    }
+    if (dockCollapsed)
+    {
+        g.setColour(juce::Colour(0xff182530));
+        g.fillRect(mixer);
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 1);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(12.0f));
+        g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
+        return;
+    }
+    // Permanent visible gold resize rail, drawn across the full draggable boundary.
+    g.setColour(juce::Colour(0xffb88732));
+    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
+    g.setColour(juce::Colour(0xffffdf83));
+    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
+    // Visual dock boundary only; leave editor and tab hit areas unchanged.
+    g.setColour(juce::Colour(0xff070b10));
+    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
+    g.setColour(juce::Colour(0xffd7ad53));
+    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 3);
+    g.setColour(juce::Colour(0xffffdf87));
+    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
+               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
+    const bool isAudioDockTrack = selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+                                  && audioEngine.hasAudioFile(selectedTrack);
+    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
+        ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
+    // Keep the existing audio editor rendering isolated from other dock modes.
+    // The graphics context is explicit so it can later be hosted by a JUCE child.
     if (!dockMixerMode && isAudioDockTrack)
         paintExistingAudioDock(g, editorArea);
         else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
