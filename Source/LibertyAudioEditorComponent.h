@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <cmath>
 
-// Standalone audio editor component, decoupled from MainComponent.
-// Next stage: host the exact same dock controls and painter in this component.
+// Reusable audio editor component, decoupled from MainComponent.
+// The shared waveform child owns the waveform and marker rendering.
 class LibertyAudioEditorComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -251,60 +251,7 @@ public:
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
-        return; // The shared child view owns waveform, selections and marker painting.
-        auto bounds = waveformBounds();
-        g.setColour(juce::Colour(0xff172d42));
-        g.fillRoundedRectangle(bounds.toFloat(), 8.0f);
-        const auto source = audio.getAudioBufferSnapshot(track);
-        if (!source || source->getNumSamples() < 2) return;
-        const int count = source->getNumSamples();
-        const float* data = source->getReadPointer(0);
-        g.setColour(juce::Colour(0xff52c5e8));
-        const int centre = bounds.getCentreY();
-        for (int x = bounds.getX()+4; x < bounds.getRight()-4; ++x)
-        {
-            const int first = juce::jlimit(0, count - 1, (int)((double)(x-bounds.getX()) / bounds.getWidth() / zoom * count));
-            const int last = juce::jmin(count, first + juce::jmax(1, (int)(count / bounds.getWidth() / zoom)));
-            float peak = 0.0f;
-            for (int i = first; i < last; ++i)
-                peak = juce::jmax(peak, std::abs(data[i]));
-            const int height = (int)(peak * (bounds.getHeight()-12) * 0.5f);
-            g.drawVerticalLine(x, (float)(centre-height), (float)(centre+height));
-        }
-        if (selectionBegin >= 0.0 && selectionEnd >= 0.0)
-        {
-            const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
-            const int left = bounds.getX() + (int)std::round(
-                juce::jmin(selectionBegin, selectionEnd) / duration * bounds.getWidth() * zoom);
-            const int right = bounds.getX() + (int)std::round(
-                juce::jmax(selectionBegin, selectionEnd) / duration * bounds.getWidth() * zoom);
-            const auto selected = juce::Rectangle<int>(
-                juce::jmax(bounds.getX(), left), bounds.getY(),
-                juce::jmax(0, juce::jmin(bounds.getRight(), right) - juce::jmax(bounds.getX(), left)),
-                bounds.getHeight());
-            g.setColour(loop.getToggleState() ? juce::Colour(0xff2d927c).withAlpha(0.24f)
-                                               : juce::Colour(0xff6baeea).withAlpha(0.23f));
-            g.fillRect(selected);
-        }
-        if (transientMarkers)
-        {
-            const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
-            g.setColour(juce::Colour(0xff59d8b7).withAlpha(0.8f));
-            for (const double seconds : transientMarkers())
-            {
-                const int x = markerPixel(seconds);
-                if (x >= bounds.getX() && x < bounds.getRight())
-                    g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
-            }
-        }
-        g.setColour(juce::Colour(0xffffba66));
-        for (int i = 0; i < audio.getTrackWarpMarkerCount(track); ++i)
-        {
-            const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, i);
-            const int x = markerPixel(seconds);
-            if (x >= bounds.getX() && x < bounds.getRight())
-                g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
-        }
+        // The shared waveform child owns waveform, selection and marker rendering.
     }
 private:
     void timerCallback() override { waveform.zoom = zoom;
