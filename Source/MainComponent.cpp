@@ -4666,7 +4666,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
 }
 
-void MainComponent::mouseDrag(const juce::MouseEvent& event)
+bool MainComponent::handleAudioDockMouseDrag(const juce::MouseEvent& event)
 {
     if (draggingAudioDockNavigator)
     {
@@ -4679,7 +4679,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
                 (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
             repaint();
         }
-        return;
+        return true;
     }
 
     if (draggingAudioDockLoopMarker != 0)
@@ -4696,7 +4696,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
             audioDockLoopEndFraction = juce::jlimit(
                 juce::jmin(1.0, audioDockLoopStartFraction + minimum), 1.0, fraction);
         repaint();
-        return;
+        return true;
     }
     if (draggingDockWarpMarker > 0 && draggingDockWarpTrack >= 0)
     {
@@ -4706,7 +4706,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
         if (std::isfinite(target))
             audioEngine.moveTrackWarpMarker(draggingDockWarpTrack, draggingDockWarpMarker, target);
         repaint();
-        return;
+        return true;
     }
 
     if (draggingAudioClipBoundary != 0)
@@ -4719,7 +4719,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
             audioClipEndFraction = juce::jmax(fraction, audioClipStartFraction);
         saveAudioDockClipBounds();
         repaint();
-        return;
+        return true;
     }
 
     if (draggingAudioSelection)
@@ -4730,8 +4730,14 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
         else if (audioSelectionDragHandle == 2) audioSelectionEnd = juce::jmax(fraction, audioSelectionStart);
         else audioSelectionEnd = fraction;
         repaint();
-        return;
+        return true;
     }
+    return false;
+}
+
+void MainComponent::mouseDrag(const juce::MouseEvent& event)
+{
+    if (handleAudioDockMouseDrag(event)) return;
     if (draggingDockHeight)
     {
         const int maximumHeight = juce::jmax(246, getHeight() - getArrangeTop() - 110);
