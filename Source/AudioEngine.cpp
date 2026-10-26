@@ -1750,7 +1750,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
             const double sourceSamplePosition = (clipReversed
-                ? juce::jmax(0.0, (double)lastSample / sourceRate - sourceSeconds * clipPitchRatio)
+                ? juce::jmax(0.0, (double)lastSample / sourceRate - sourceSeconds)
                 : sourceSeconds) * sourceRate;
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
             // advances at native source rate; grain centres follow the Warp
