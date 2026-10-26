@@ -3271,7 +3271,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         }
                         return;
                     }
-                    if (draggingMarker < 0) return;
+                    if (draggingMarker < 0
+                        || draggingMarker >= audio.getTrackWarpMarkerCount(track) - 1)
+                        return;
                     const double delta = (double)(event.x - dragStartX)
                         * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
                         / ((double)juce::jmax(1, getWidth() - 80) * zoom);
