@@ -16,6 +16,46 @@ public:
     std::function<void(double, const juce::MouseEvent&)> onPress;
     std::function<void(double, const juce::MouseEvent&)> onMove;
     std::function<void(double, const juce::MouseEvent&)> onRelease;
+    // Shared interaction geometry: each host keeps its own gesture semantics.
+    struct Viewport
+    {
+        juce::Rectangle<int> bounds;
+        double duration = 0.0;
+        double zoom = 1.0;
+        double scroll = 0.0;
+        double visibleFraction() const noexcept { return 1.0 / juce::jmax(1.0, zoom); }
+        double clampedScroll() const noexcept
+        {
+            return juce::jlimit(0.0, 1.0 - visibleFraction(), scroll);
+        }
+        double secondsAt(int pixel) const noexcept
+        {
+            if (bounds.getWidth() <= 0) return 0.0;
+            const double fraction = clampedScroll()
+                + ((double)(pixel - bounds.getX()) / bounds.getWidth()) * visibleFraction();
+            return juce::jlimit(0.0, juce::jmax(0.0, duration),
+                fraction * juce::jmax(0.0, duration));
+        }
+        int pixelAt(double seconds) const noexcept
+        {
+            if (duration <= 0.0 || bounds.getWidth() <= 0) return bounds.getX();
+            return bounds.getX() + (int)std::round(
+                (seconds / duration - clampedScroll()) / visibleFraction() * bounds.getWidth());
+        }
+        int nearestMarker(double seconds, const std::vector<Marker>& markers,
+                          int tolerancePixels = 7) const noexcept
+        {
+            const int cursor = pixelAt(seconds);
+            int best = -1, distance = tolerancePixels + 1;
+            for (int i = 0; i < (int)markers.size(); ++i)
+            {
+                const int delta = std::abs(pixelAt(markers[(size_t)i].seconds) - cursor);
+                if (delta < distance) { distance = delta; best = i; }
+            }
+            return best;
+        }
+    };
+
     // Dock and floating editor can both use the same painter without
     // surrendering their own advanced waveform rendering and mouse tools.
     static void paintSharedMarkers(juce::Graphics& g, juce::Rectangle<int> bounds,
