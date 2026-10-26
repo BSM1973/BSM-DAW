@@ -620,21 +620,19 @@ void MainComponent::paint(juce::Graphics& g)
                 ? (double)sampleCount / sourceRate : targetDuration;
             const int warpCount = audioEngine.getTrackWarpMarkerCount(selectedTrack);
             const bool showWarpShape = audioEngine.isTrackWarpEnabled(selectedTrack) && warpCount >= 2;
+            std::vector<std::pair<double, double>> sharedWarpMarkers;
+            if (showWarpShape)
+            {
+                sharedWarpMarkers.reserve((size_t)warpCount);
+                for (int i = 0; i < warpCount; ++i)
+                    sharedWarpMarkers.emplace_back(
+                        audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i),
+                        audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i));
+            }
             const auto sourceFractionForTarget = [&](double targetFraction)
             {
-                if (!showWarpShape) return targetFraction;
-                const double target = juce::jlimit(0.0, targetDuration, targetFraction * targetDuration);
-                for (int i = 0; i < warpCount - 1; ++i)
-                {
-                    const double ta = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
-                    const double tb = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i + 1);
-                    if (target > tb && i < warpCount - 2) continue;
-                    const double sa = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i);
-                    const double sb = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i + 1);
-                    const double alpha = juce::jlimit(0.0, 1.0, (target - ta) / juce::jmax(0.000001, tb - ta));
-                    return juce::jlimit(0.0, 1.0, (sa + (sb - sa) * alpha) / juce::jmax(0.000001, sourceDuration));
-                }
-                return targetFraction;
+                return LibertyAudioWaveformView::sourceFractionForTarget(
+                    targetFraction, targetDuration, sourceDuration, sharedWarpMarkers);
             };
             const double samplesPerPixel = columns > 0
                 ? (double) sampleCount * visibleFraction / (double) columns : 0.0;
