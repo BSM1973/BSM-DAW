@@ -273,6 +273,8 @@ public:
     bool isTrackWarpEnabled(int trackIndex) const noexcept;
     void setTrackWarpMode(int trackIndex, int mode) noexcept;
     int getTrackWarpMode(int trackIndex) const noexcept;
+    static juce::AudioBuffer<float> renderSpectralWarpOffline(const juce::AudioBuffer<float>& input,
+        double durationRatio, double pitchSemitones, double formantSemitones);
     void setTrackWarpFormant(int trackIndex, double semitones) noexcept;
     double getTrackWarpFormant(int trackIndex) const noexcept;
     void resetTrackWarpMarkers(int trackIndex) noexcept;
