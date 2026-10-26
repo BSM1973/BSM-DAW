@@ -329,7 +329,7 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff83bed4));
         g.drawRoundedRectangle(formatButton.toFloat(), 3.0f, 1.0f);
         g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]) + "  v",
+        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]),
                    formatButton, juce::Justification::centred);
         // Ableton-style focus: fit the selected audio range to the dock width.
         const auto focusButton = juce::Rectangle<int>(
@@ -3536,21 +3536,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         if (formatButton.contains(p))
         {
-            juce::PopupMenu menu;
-            menu.addItem(1, "Secondes", true, audioDockTimeFormat == 0);
-            menu.addItem(2, "Minutes : secondes", true, audioDockTimeFormat == 1);
-            menu.addItem(3, "Echantillons", true, audioDockTimeFormat == 2);
-            menu.addItem(4, "Mesures / temps", true, audioDockTimeFormat == 3);
-            juce::Component::SafePointer<MainComponent> safeThis(this);
-            menu.showMenuAsync(juce::PopupMenu::Options(),
-                [safeThis](int result)
-                {
-                    if (safeThis != nullptr && result >= 1 && result <= 4)
-                    {
-                        safeThis->audioDockTimeFormat = result - 1;
-                        safeThis->repaint();
-                    }
-                });
+            showAudioDockTimeFormatDialog();
             return;
         }
         if (selectionBar.contains(p))
