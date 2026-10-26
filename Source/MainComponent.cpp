@@ -737,6 +737,25 @@ void MainComponent::paint(juce::Graphics& g)
                 }
             }
         }
+        // Shared JUCE marker overlay: the dock retains its PCM/Warp-aware
+        // renderer and advanced editing gestures underneath this layer.
+        {
+            std::vector<LibertyAudioWaveformView::Marker> sharedMarkers;
+            const auto automatic = audioDockAutomaticMarkers.find(selectedTrack);
+            if (automatic != audioDockAutomaticMarkers.end())
+                for (const double t : automatic->second)
+                    sharedMarkers.push_back({ t, true });
+            const double duration = juce::jmax(0.001,
+                audioEngine.getAudioFileLengthSeconds(selectedTrack));
+            const double visible = 1.0 / juce::jmax(1.0, audioDockZoom);
+            const double scroll = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            LibertyAudioWaveformView::paintSharedMarkers(g, wave, sharedMarkers,
+                [wave, duration, visible, scroll](double seconds)
+                {
+                    return wave.getX() + (int)std::round(
+                        ((seconds / duration) - scroll) / visible * wave.getWidth());
+                });
+        }
         // Paint the selection readout after the waveform so the waveform
         // strokes cannot obscure its translucent background or text.
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
