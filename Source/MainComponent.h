@@ -474,6 +474,7 @@ public:
     juce::ValueTree exportAudioDockClipBounds() const;
     void importAudioDockClipBounds(const juce::ValueTree& tree);
     juce::Rectangle<int> getAudioDockEditorBounds() const;
+    juce::Rectangle<int> getAudioDockWaveBoundsFor(juce::Rectangle<int> editorBounds) const;
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
