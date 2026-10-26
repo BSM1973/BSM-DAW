@@ -3383,6 +3383,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (!inWaveform(event.getPosition()) || wheel.deltaY == 0.0f
                         || !std::isfinite((double) wheel.deltaY)) return;
                     const double anchor = timeAt(event.x);
+                    if (!std::isfinite(anchor)) return;
                     const double fraction = juce::jlimit(0.0, 1.0,
                         (double)(event.x - 40) / (double)juce::jmax(1, getWidth() - 80));
                     const double newZoom = juce::jlimit(1.0, 32.0,
