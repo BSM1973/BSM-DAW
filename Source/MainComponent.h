@@ -25,9 +25,15 @@ public:
     explicit LibertyAudioDockSurface(MainComponent& owner) : main(owner)
     {
         setName("LibertyAudioDockSurface");
-        setInterceptsMouseClicks(false, false);
+        setInterceptsMouseClicks(true, false);
     }
     void paint(juce::Graphics& g) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
 private:
     MainComponent& main;
 };
