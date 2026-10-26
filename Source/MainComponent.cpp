@@ -279,10 +279,11 @@ void MainComponent::paint(juce::Graphics& g)
                                   && audioEngine.hasAudioFile(selectedTrack);
     const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
         ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    // Keep the complete, existing audio-dock renderer together as one callable unit.
-    // This is the first non-visual extraction step toward a reparentable editor.
-    const auto paintExistingAudioDock = [&]()
+    // Keep the existing audio editor rendering isolated from other dock modes.
+    // The graphics context is explicit so it can later be hosted by a JUCE child.
+    const auto paintExistingAudioDock = [&](juce::Graphics& audioGraphics)
     {
+        auto& g = audioGraphics;
         // First audio-dock surface: a non-destructive, scalable waveform view.
         // It reuses the waveform cache already drawn by the arranger.
         g.setColour(juce::Colour(0xff0b1521));
@@ -945,7 +946,7 @@ void MainComponent::paint(juce::Graphics& g)
         }
         };
     if (!dockMixerMode && isAudioDockTrack)
-        paintExistingAudioDock();
+        paintExistingAudioDock(g);
         else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
