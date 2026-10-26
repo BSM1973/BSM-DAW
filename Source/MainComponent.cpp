@@ -3707,6 +3707,27 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             const double visible = 1.0 / audioDockZoom;
             const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            // Capture dedicated dock-loop handles before Warp or audio selection.
+            // Loop handles use the same zoomed waveform coordinates as paint().
+            if (audioDockLoopEnabled && event.mods.isLeftButtonDown()
+                && !event.mods.isAltDown())
+            {
+                const auto markerX = [&](double fraction)
+                {
+                    return wave.getX() + (int)std::lround(
+                        (fraction - offset) / visible * wave.getWidth());
+                };
+                const int startDistance = std::abs(p.x - markerX(audioDockLoopStartFraction));
+                const int endDistance = std::abs(p.x - markerX(audioDockLoopEndFraction));
+                if (startDistance <= 9 || endDistance <= 9)
+                {
+                    draggingAudioDockLoopMarker = startDistance <= endDistance ? 1 : 2;
+                    draggingAudioSelection = false;
+                    draggingDockWarpMarker = -1;
+                    setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                    return;
+                }
+            }
             const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
             int nearest = -1, distance = 9;
             for (int i = 1; i < count - 1; ++i)
@@ -4260,6 +4281,22 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingAudioDockLoopMarker != 0)
+    {
+        const double fraction = event.mods.isShiftDown()
+            ? audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x)
+            : snapAudioDockFraction(audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x));
+        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+        const double minimum = duration > 0.0 ? juce::jmin(0.5, 0.001 / duration) : 0.0;
+        if (draggingAudioDockLoopMarker == 1)
+            audioDockLoopStartFraction = juce::jlimit(0.0,
+                juce::jmax(0.0, audioDockLoopEndFraction - minimum), fraction);
+        else
+            audioDockLoopEndFraction = juce::jlimit(
+                juce::jmin(1.0, audioDockLoopStartFraction + minimum), 1.0, fraction);
+        repaint();
+        return;
+    }
     if (draggingDockWarpMarker > 0 && draggingDockWarpTrack >= 0)
     {
         const double duration = audioEngine.getAudioFileLengthSeconds(draggingDockWarpTrack);
@@ -4395,6 +4432,13 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingAudioDockLoopMarker != 0)
+    {
+        draggingAudioDockLoopMarker = 0;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+        return;
+    }
     if (draggingDockWarpMarker > 0)
     {
         draggingDockWarpMarker = -1;
