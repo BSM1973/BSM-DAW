@@ -3351,7 +3351,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
                 void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
                 {
-                    if (!inWaveform(event.getPosition()) || wheel.deltaY == 0.0f) return;
+                    if (!inWaveform(event.getPosition()) || wheel.deltaY == 0.0f
+                        || !std::isfinite((double) wheel.deltaY)) return;
                     const double anchor = timeAt(event.x);
                     const double fraction = juce::jlimit(0.0, 1.0,
                         (double)(event.x - 40) / (double)juce::jmax(1, getWidth() - 80));
