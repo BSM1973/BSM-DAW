@@ -2558,8 +2558,17 @@ void MainComponent::timerCallback()
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
-    // Follow draggable loop markers without changing MIDI clip playback.
-    audioEngine.setLoopTransportEndSeconds(loopEnabled && loopEndSeconds > loopStartSeconds ? loopEndSeconds : 0.0);
+    // The dock loop is independent of the arrangement loop settings.
+    const bool dockLoopValid = audioDockLoopEnabled && !dockCollapsed && !dockMixerMode
+        && !dockStepSequencerMode && selectedTrack >= 0
+        && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack)
+        && audioDockLoopEndFraction > audioDockLoopStartFraction;
+    const double dockClipStart = dockLoopValid ? audioEngine.getTrackStartSeconds(selectedTrack) : 0.0;
+    const double dockDuration = dockLoopValid ? audioEngine.getAudioFileLengthSeconds(selectedTrack) : 0.0;
+    const double dockLoopStart = dockClipStart + audioDockLoopStartFraction * dockDuration;
+    const double dockLoopEnd = dockClipStart + audioDockLoopEndFraction * dockDuration;
+    audioEngine.setLoopTransportEndSeconds(dockLoopValid ? dockLoopEnd
+        : loopEnabled && loopEndSeconds > loopStartSeconds ? loopEndSeconds : 0.0);
     double transportTime = audioEngine.getCurrentTimeSeconds();
     if (punchWaitingForIn && audioEngine.isPlaying()
         && transportTime >= punchInSeconds)
@@ -2580,7 +2589,12 @@ void MainComponent::timerCallback()
             audioEngine.setPlaying(true);
             transportTime = punchOutSeconds;
         }
-        if (loopEnabled && loopEndSeconds > loopStartSeconds
+        if (dockLoopValid && transportTime >= dockLoopEnd)
+        {
+            audioEngine.setCurrentTimeSeconds(dockLoopStart);
+            transportTime = dockLoopStart;
+        }
+        else if (!dockLoopValid && loopEnabled && loopEndSeconds > loopStartSeconds
             && transportTime >= loopEndSeconds)
         {
             audioEngine.setCurrentTimeSeconds(loopStartSeconds);
