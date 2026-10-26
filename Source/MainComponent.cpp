@@ -3185,7 +3185,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         || event.mods.isAltDown() || event.mods.isMiddleButtonDown()
                         || event.mods.isRightButtonDown()) return;
                     const double seconds = timeAt(event.x);
-                    if (audio.addTrackWarpMarker(track, sourceTimeForTarget(seconds), seconds))
+                    const double sourceSeconds = sourceTimeForTarget(seconds);
+                    if (!std::isfinite(seconds) || !std::isfinite(sourceSeconds))
+                        return;
+                    if (audio.addTrackWarpMarker(track, sourceSeconds, seconds))
                     {
                         audio.setTrackWarpEnabled(track, true);
                         enable.setToggleState(true, juce::dontSendNotification);
