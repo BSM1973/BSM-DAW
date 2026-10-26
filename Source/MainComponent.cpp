@@ -4369,7 +4369,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     audioDockZoom = juce::jlimit(1.0, 64.0, value);
                     audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom, audioDockScroll);
                     repaint();
-                }));
+                },
+                [this] { return audioDockTimeFormat; }));
             options.componentToCentreAround = this;
             options.escapeKeyTriggersCloseButton = true;
             options.useNativeTitleBar = true;
