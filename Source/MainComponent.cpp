@@ -293,24 +293,7 @@ void MainComponent::paint(juce::Graphics& g)
         const bool compactSelectionBar = inner.getWidth() < 600;
         const int toolbarWidth = juce::jmin(280, juce::jmax(0, inner.getWidth()));
         // Audio selection controls share the existing dock header.
-        const auto selectionBar = juce::Rectangle<int>(inner.getRight() - toolbarWidth,
-            inner.getY() + (compactSelectionBar ? 44 : 22), toolbarWidth, 21);
-        const char* selectionLabels[] = { "TOUT", "EFFACER", "DEBUT", "FIN" };
-        const char* shortLabels[] = { "T", "X", "D", "F" };
-        for (int buttonIndex = 0; buttonIndex < 4; ++buttonIndex)
-        {
-            const int slotWidth = selectionBar.getWidth() / 4;
-            const auto button = selectionBar.withX(selectionBar.getX() + buttonIndex * slotWidth)
-                                            .withWidth(juce::jmax(0, slotWidth - 3));
-            g.setColour(juce::Colour(0xff203b4d));
-            g.fillRoundedRectangle(button.toFloat(), 3.0f);
-            g.setColour(juce::Colour(0xff83bed4));
-            g.drawRoundedRectangle(button.toFloat(), 3.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(slotWidth >= 48 ? selectionLabels[buttonIndex]
-                                        : shortLabels[buttonIndex],
-                       button, juce::Justification::centred);
-        }
+        LibertyAudioEditorHeader::paintSelectionButtons(g, inner);
         const auto formatButton = juce::Rectangle<int>(
             inner.getX(), inner.getY() + (compactSelectionBar ? 70 : 46),
             juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
