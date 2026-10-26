@@ -16,6 +16,28 @@ public:
     std::function<void(double, const juce::MouseEvent&)> onPress;
     std::function<void(double, const juce::MouseEvent&)> onMove;
     std::function<void(double, const juce::MouseEvent&)> onRelease;
+    // Shared piecewise-linear Warp transform, used by both waveform hosts.
+    // Marker pairs are { sourceSeconds, targetSeconds } in ascending target order.
+    static double sourceFractionForTarget(double targetFraction, double targetDuration,
+                                         double sourceDuration,
+                                         const std::vector<std::pair<double, double>>& markers)
+    {
+        if (markers.size() < 2) return targetFraction;
+        const double target = juce::jlimit(0.0, targetDuration,
+            targetFraction * targetDuration);
+        for (size_t i = 0; i + 1 < markers.size(); ++i)
+        {
+            const double ta = markers[i].second, tb = markers[i + 1].second;
+            if (target > tb && i + 2 < markers.size()) continue;
+            const double alpha = juce::jlimit(0.0, 1.0,
+                (target - ta) / juce::jmax(0.000001, tb - ta));
+            return juce::jlimit(0.0, 1.0,
+                (markers[i].first + (markers[i + 1].first - markers[i].first) * alpha)
+                / juce::jmax(0.000001, sourceDuration));
+        }
+        return targetFraction;
+    }
+
     // Shared interaction geometry: each host keeps its own gesture semantics.
     struct Viewport
     {
