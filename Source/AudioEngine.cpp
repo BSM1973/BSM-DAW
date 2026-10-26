@@ -674,6 +674,8 @@ void AudioEngine::setTrackStartSeconds(int trackIndex, double seconds) noexcept 
 void AudioEngine::setTrackWarpEnabled(int trackIndex, bool enabled) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&tracks[(size_t)trackIndex]->spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     auto& track = *tracks[(size_t)trackIndex];
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
     std::shared_ptr<WarpMarkerSnapshot> snapshot;
@@ -696,6 +698,8 @@ bool AudioEngine::isTrackWarpEnabled(int trackIndex) const noexcept
 void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&tracks[(size_t)trackIndex]->spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     auto& track = *tracks[(size_t)trackIndex];
     const int clampedMode = juce::jlimit(0, 5, mode);
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
@@ -721,6 +725,8 @@ juce::AudioBuffer<float> AudioEngine::renderSpectralWarpOffline(
 void AudioEngine::setTrackWarpFormant(int trackIndex, double semitones) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&tracks[(size_t)trackIndex]->spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     tracks[(size_t)trackIndex]->warpFormant.store(
         juce::jlimit(-12.0, 12.0, semitones), std::memory_order_relaxed);
 }
@@ -740,6 +746,8 @@ int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
 void AudioEngine::resetTrackWarpMarkers(int trackIndex) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&tracks[(size_t)trackIndex]->spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     auto& track = *tracks[(size_t)trackIndex];
     const double targetLength = juce::jmax(0.0, track.lengthSeconds.load(std::memory_order_relaxed));
     const auto buffer = std::atomic_load(&track.buffer);
