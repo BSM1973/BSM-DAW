@@ -3582,46 +3582,9 @@ void MainComponent::activateDockTab(int index)
     repaint();
 }
 
-void MainComponent::mouseDown(const juce::MouseEvent& event)
+bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
 {
-    // A listener attached recursively receives the original child event.
-    // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
-    // Select metadata clips independently without invoking the legacy audio
-    // move/split tools, which currently operate on the primary track buffer.
-    if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
-        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
-    {
-        const int track = getAudioTrackAtPosition(p);
-        if (track >= 0)
-        {
-            const int rowH = getLibertyTrackRowHeight();
-            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
-            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
-            const auto clips = audioEngine.getAudioClips(track);
-            for (auto it = clips.rbegin(); it != clips.rend(); ++it)
-            {
-                const int x = trackHeaderWidth
-                    + (int) std::round(it->startSeconds * pixelsPerSecond);
-                const int width = juce::jmax(1,
-                    (int) std::round(it->lengthSeconds * pixelsPerSecond));
-                if (juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(p))
-                {
-                    selectedTrack = track;
-                    selectedExtraAudioClipTrack = track;
-                    selectedExtraAudioClipId = it->id;
-                    repaint();
-                    return;
-                }
-            }
-            selectedExtraAudioClipTrack = -1;
-            selectedExtraAudioClipId.clear();
-        }
-    }
-    // Route the second press of an audio-clip double-click before any
-    // arrange editing tool can move, split or erase the clip.
-    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
-        && openAudioClipInDockAt(p)) return;
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu())
@@ -3664,7 +3627,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             audioEngine.setTrackClipReverse(selectedTrack,
                 !audioEngine.isTrackClipReversed(selectedTrack));
             repaint();
-            return;
+            return true;
         }
         if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
             || (warpButton.contains(p) && event.mods.isCtrlDown()))
@@ -3775,7 +3738,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             options.useNativeTitleBar = true;
             options.resizable = false;
             options.launchAsync();
-            return;
+            return true;
         }
         // Automatic transient detection is available via Shift+click on WARP.
         // Analysis is performed on the UI thread, never in the audio callback.
@@ -3785,7 +3748,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             audioDockTransientEnabled = !audioDockTransientEnabled;
             refreshAudioDockTransientMarkers(selectedTrack);
-            return;
+            return true;
         }
         if (loopButton.getWidth() >= 48 && loopButton.contains(p))
         {
@@ -3796,7 +3759,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioDockLoopEndFraction = juce::jmax(audioSelectionStart, audioSelectionEnd);
             }
             repaint();
-            return;
+            return true;
         }
         if (snapButton.getWidth() >= 50 && snapButton.contains(p))
         {
@@ -3804,10 +3767,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             {
                 audioDockSnapEnabled = !audioDockSnapEnabled;
                 repaint();
-                return;
+                return true;
             }
             showAudioDockSnapDialog();
-            return;
+            return true;
         }
         if (warpButton.getWidth() >= 55 && warpButton.contains(p))
         {
@@ -3816,7 +3779,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioEngine.setTrackWarpEnabled(selectedTrack,
                     !audioEngine.isTrackWarpEnabled(selectedTrack));
                 repaint();
-                return;
+                return true;
             }
             // Obsidian Warp inspector: a real resizable window rather than
             // a cascading menu. Track operations stay on the existing engine.
@@ -3852,7 +3815,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     {
                         const double factors[] = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
                         const int id = ratio.getSelectedId();
-                        if (id < 1 || id > 6 || originalDuration <= 0.0) return;
+                        if (id < 1 || id > 6 || originalDuration <= 0.0) return true;
                         audio.setAudioFileLengthSeconds(track, originalDuration * factors[id - 1]);
                         audio.setTrackWarpEnabled(track, true);
                         enable.setToggleState(true, juce::dontSendNotification);
@@ -3901,7 +3864,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             options.useNativeTitleBar = true;
             options.resizable = true;
             options.launchAsync();
-            return;
+            return true;
         }
         if (false) // Legacy popup retained temporarily for safe rollback.
         {
@@ -3932,7 +3895,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     if (safeThis == nullptr || trackIndex < 0
                         || trackIndex >= safeThis->getAudioTrackCount())
-                        return;
+                        return true;
                     if (result == 1)
                         safeThis->audioEngine.setTrackWarpEnabled(trackIndex,
                             !safeThis->audioEngine.isTrackWarpEnabled(trackIndex));
@@ -3958,7 +3921,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const double sourceDuration = sourceBuffer != nullptr && sourceRate > 0.0
                             ? (double) sourceBuffer->getNumSamples() / sourceRate : 0.0;
                         if (oldLength <= 0.0 || (result == 42 && sourceDuration <= 0.0))
-                            return;
+                            return true;
                         auto prompt = std::make_unique<juce::AlertWindow>(
                             result == 41 ? "Duree du clip audio" : "Synchronisation au tempo",
                             result == 41
@@ -4009,7 +3972,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     safeThis->repaint();
                 });
-            return;
+            return true;
         }
         if (focusButton.getWidth() >= 45 && focusButton.contains(p))
         {
@@ -4027,12 +3990,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
             }
             repaint();
-            return;
+            return true;
         }
         if (formatButton.contains(p))
         {
             showAudioDockTimeFormatDialog();
-            return;
+            return true;
         }
         if (selectionBar.contains(p))
         {
@@ -4065,7 +4028,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     std::swap(audioSelectionStart, audioSelectionEnd);
             }
             repaint();
-            return;
+            return true;
         }
     }
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -4083,7 +4046,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
             draggingAudioDockNavigator = true;
             repaint();
-            return;
+            return true;
         }
         const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
         if (duration > 0.0 && std::isfinite(duration))
@@ -4108,7 +4071,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     draggingAudioSelection = false;
                     draggingDockWarpMarker = -1;
                     setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                    return;
+                    return true;
                 }
             }
             const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
@@ -4127,7 +4090,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 draggingDockWarpMarker = nearest;
                 draggingDockWarpTrack = selectedTrack;
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return;
+                return true;
             }
         }
         // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
@@ -4142,7 +4105,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 audioClipStartFraction = juce::jmin(position, audioClipEndFraction);
             saveAudioDockClipBounds();
             repaint();
-            return;
+            return true;
         }
         const double visible = 1.0 / audioDockZoom;
         const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
@@ -4162,7 +4125,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             if (draggingAudioClipBoundary != 0)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return;
+                return true;
             }
         }
         // Preserve boundary dragging even when Warp is enabled.
@@ -4173,7 +4136,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             audioSelectionActive = false;
             draggingAudioSelection = false;
             repaint();
-            return;
+            return true;
         }
         audioSelectionDragHandle = 0;
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
@@ -4196,9 +4159,54 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         audioSelectionActive = true;
         draggingAudioSelection = true;
         repaint();
-        return;
+        return true;
     }
-    if (!dockCollapsed && !event.mods.isPopupMenu()
+    
+    return false;
+}
+
+void MainComponent::mouseDown(const juce::MouseEvent& event)
+{
+    // A listener attached recursively receives the original child event.
+    // Always convert to MainComponent coordinates before dock hit-testing.
+    const auto p = event.getEventRelativeTo(this).getPosition();
+    // Select metadata clips independently without invoking the legacy audio
+    // move/split tools, which currently operate on the primary track buffer.
+    if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
+        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int track = getAudioTrackAtPosition(p);
+        if (track >= 0)
+        {
+            const int rowH = getLibertyTrackRowHeight();
+            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            const auto clips = audioEngine.getAudioClips(track);
+            for (auto it = clips.rbegin(); it != clips.rend(); ++it)
+            {
+                const int x = trackHeaderWidth
+                    + (int) std::round(it->startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1,
+                    (int) std::round(it->lengthSeconds * pixelsPerSecond));
+                if (juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(p))
+                {
+                    selectedTrack = track;
+                    selectedExtraAudioClipTrack = track;
+                    selectedExtraAudioClipId = it->id;
+                    repaint();
+                    return;
+                }
+            }
+            selectedExtraAudioClipTrack = -1;
+            selectedExtraAudioClipId.clear();
+        }
+    }
+    // Route the second press of an audio-clip double-click before any
+    // arrange editing tool can move, split or erase the clip.
+    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
+        && openAudioClipInDockAt(p)) return;
+    if (handleAudioDockMouseDown(event)) return;
+if (!dockCollapsed && !event.mods.isPopupMenu()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
         && p.x >= 8 && p.x < 156)
     {
