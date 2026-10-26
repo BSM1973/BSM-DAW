@@ -4332,6 +4332,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     formants.setValue(audio.getTrackWarpFormant(track), juce::dontSendNotification);
                     formants.onValueChange = [this] { audio.setTrackWarpFormant(track, formants.getValue()); };
                     addAndMakeVisible(formants);
+                    zoomIn.setButtonText("+");
+                    zoomOut.setButtonText("-");
+                    snap.setButtonText("SNAP");
+                    snap.setToggleState(true, juce::dontSendNotification);
+                    resetMarkers.setButtonText("REINIT. MARQUEURS");
+                    zoomIn.onClick = [this] { zoom = juce::jmin(64.0, zoom * 2.0); repaint(); };
+                    zoomOut.onClick = [this] { zoom = juce::jmax(1.0, zoom * 0.5); repaint(); };
+                    resetMarkers.onClick = [this] { audio.resetTrackWarpMarkers(track); repaint(); };
+                    addAndMakeVisible(zoomIn);
+                    addAndMakeVisible(zoomOut);
+                    addAndMakeVisible(snap);
+                    addAndMakeVisible(resetMarkers);
                     startTimerHz(12);
                 }
                 void resized() override
@@ -4340,7 +4352,64 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     mode.setBounds(145, 52, 220, 32);
                     pitch.setBounds(90, 110, getWidth() - 120, 32);
                     formants.setBounds(90, 157, getWidth() - 120, 32);
+                    zoomOut.setBounds(24, 200, 36, 28);
+                    zoomIn.setBounds(65, 200, 36, 28);
+                    snap.setBounds(116, 200, 90, 28);
+                    resetMarkers.setBounds(220, 200, 180, 28);
                 }
+                juce::Rectangle<int> waveformBounds() const
+                {
+                    auto bounds = getLocalBounds().reduced(24);
+                    bounds.removeFromTop(235);
+                    return bounds;
+                }
+                double secondsAt(int x) const
+                {
+                    const double duration = audio.getAudioFileLengthSeconds(track);
+                    const auto bounds = waveformBounds();
+                    if (bounds.getWidth() < 1 || duration <= 0.0) return 0.0;
+                    const double fraction = juce::jlimit(0.0, 1.0,
+                        ((double)(x - bounds.getX()) / bounds.getWidth()) / zoom);
+                    double seconds = fraction * duration;
+                    if (snap.getToggleState())
+                        seconds = std::round(seconds * 4.0) / 4.0;
+                    return seconds;
+                }
+                void mouseDown(const juce::MouseEvent& event) override
+                {
+                    const auto bounds = waveformBounds();
+                    if (!bounds.contains(event.getPosition())) return;
+                    const double seconds = secondsAt(event.x);
+                    draggingMarker = -1;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    for (int i = 1; i < count - 1; ++i)
+                    {
+                        const double target = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                        const int markerX = bounds.getX() + (int)std::round(
+                            target / juce::jmax(0.001, audio.getAudioFileLengthSeconds(track))
+                            * bounds.getWidth() * zoom);
+                        if (std::abs(markerX - event.x) < 9) { draggingMarker = i; break; }
+                    }
+                    if (event.mods.isRightButtonDown())
+                    {
+                        if (draggingMarker > 0) audio.removeTrackWarpMarker(track, draggingMarker);
+                        draggingMarker = -1;
+                    }
+                    else if (draggingMarker < 0)
+                    {
+                        audio.addTrackWarpMarker(track, seconds, seconds);
+                    }
+                    repaint();
+                }
+                void mouseDrag(const juce::MouseEvent& event) override
+                {
+                    if (draggingMarker > 0)
+                    {
+                        audio.moveTrackWarpMarker(track, draggingMarker, secondsAt(event.x));
+                        repaint();
+                    }
+                }
+                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; }
                 void paint(juce::Graphics& g) override
                 {
                     g.fillAll(juce::Colour(0xff101e2d));
@@ -4351,8 +4420,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(13.0f));
                     g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
                     g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
-                    auto bounds = getLocalBounds().reduced(24);
-                    bounds.removeFromTop(205);
+                    auto bounds = waveformBounds();
                     g.setColour(juce::Colour(0xff172d42));
                     g.fillRoundedRectangle(bounds.toFloat(), 8.0f);
                     const auto source = audio.getAudioBufferSnapshot(track);
@@ -4363,13 +4431,23 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const int centre = bounds.getCentreY();
                     for (int x = bounds.getX()+4; x < bounds.getRight()-4; ++x)
                     {
-                        const int first = (int)((double)(x-bounds.getX()) / bounds.getWidth() * count);
-                        const int last = juce::jmin(count, first + juce::jmax(1, count / bounds.getWidth()));
+                        const int first = juce::jlimit(0, count - 1, (int)((double)(x-bounds.getX()) / bounds.getWidth() / zoom * count));
+                        const int last = juce::jmin(count, first + juce::jmax(1, (int)(count / bounds.getWidth() / zoom)));
                         float peak = 0.0f;
                         for (int i = first; i < last; ++i)
                             peak = juce::jmax(peak, std::abs(data[i]));
                         const int height = (int)(peak * (bounds.getHeight()-12) * 0.5f);
                         g.drawVerticalLine(x, (float)(centre-height), (float)(centre+height));
+                    }
+                    g.setColour(juce::Colour(0xffffba66));
+                    for (int i = 0; i < audio.getTrackWarpMarkerCount(track); ++i)
+                    {
+                        const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                        const int x = bounds.getX() + (int)std::round(seconds /
+                            juce::jmax(0.001, audio.getAudioFileLengthSeconds(track))
+                            * bounds.getWidth() * zoom);
+                        if (x >= bounds.getX() && x < bounds.getRight())
+                            g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
                     }
                 }
             private:
@@ -4379,6 +4457,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 juce::ToggleButton warp;
                 juce::ComboBox mode;
                 juce::Slider pitch, formants;
+                juce::TextButton zoomIn, zoomOut, resetMarkers;
+                juce::ToggleButton snap;
+                double zoom = 1.0;
+                int draggingMarker = -1;
             };
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = "Liberty | Editeur Audio";
