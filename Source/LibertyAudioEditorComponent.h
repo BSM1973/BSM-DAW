@@ -124,25 +124,28 @@ public:
     }
     void resized() override
     {
-        warp.setBounds(24, 52, 100, 32);
-        mode.setBounds(145, 52, 220, 32);
-        pitch.setBounds(90, 110, getWidth() - 120, 32);
-        formants.setBounds(90, 157, getWidth() - 120, 32);
-        zoomOut.setBounds(24, 200, 36, 28);
-        zoomIn.setBounds(65, 200, 36, 28);
-        snap.setBounds(116, 200, 90, 28);
-        resetMarkers.setBounds(220, 200, 180, 28);
-        selection.setBounds(410, 200, 120, 28);
-        loop.setBounds(540, 200, 110, 28);
-        snapOptions.setBounds(660, 200, 100, 28);
-        timeOptions.setBounds(770, 200, 100, 28);
-        transientOptions.setBounds(24, 235, 160, 28);
+        // Keep the shared dock header and selection/time/Warp controls unobstructed.
+        // The interactive plugin controls begin below that header.
+        const int contentWidth = juce::jmax(0, getWidth() - 48);
+        warp.setBounds(24, 104, juce::jmin(100, contentWidth), 30);
+        mode.setBounds(145, 104, juce::jmin(220, juce::jmax(0, getWidth() - 169)), 30);
+        pitch.setBounds(90, 148, juce::jmax(0, getWidth() - 120), 30);
+        formants.setBounds(90, 188, juce::jmax(0, getWidth() - 120), 30);
+        zoomOut.setBounds(24, 232, 36, 28);
+        zoomIn.setBounds(65, 232, 36, 28);
+        snap.setBounds(116, 232, 90, 28);
+        resetMarkers.setBounds(220, 232, 180, 28);
+        selection.setBounds(410, 232, 120, 28);
+        loop.setBounds(540, 232, 110, 28);
+        snapOptions.setBounds(660, 232, 100, 28);
+        timeOptions.setBounds(770, 232, 100, 28);
+        transientOptions.setBounds(24, 270, 160, 28);
         waveform.setBounds(waveformBounds());
     }
     juce::Rectangle<int> waveformBounds() const
     {
         auto bounds = getLocalBounds().reduced(24);
-        bounds.removeFromTop(270);
+        bounds.removeFromTop(300);
         return bounds;
     }
     // Shared time/viewport transform for rendering and mouse interactions.
@@ -302,8 +305,8 @@ public:
         LibertyAudioEditorHeader::paintWarpToggle(g, warpButton,
             audio.isTrackWarpEnabled(track));
         g.setFont(juce::Font(13.0f));
-        g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
-        g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
+        g.drawText("PITCH", 24, 148, 66, 30, juce::Justification::centredLeft);
+        g.drawText("FORMANTS", 24, 188, 75, 30, juce::Justification::centredLeft);
         // The shared waveform child owns waveform, selection and marker rendering.
     }
 private:
