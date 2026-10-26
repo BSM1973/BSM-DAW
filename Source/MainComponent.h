@@ -435,7 +435,13 @@ public:
     double snapAudioDockWarpTime(double seconds, int track) const;
     void showAudioDockSnapDialog();
 
-    int audioDockTimeFormat = 0; // 0 seconds, 1 clock, 2 samples, 3 bars/beats
+    int audioDockTimeFormat = 3; // Default: bars/beats.
+    void showAudioDockTimeFormatDialog();
+    bool audioDockLoopEnabled = false;
+    double audioDockLoopStartFraction = 0.0;
+    double audioDockLoopEndFraction = 1.0;
+    int draggingAudioDockLoopMarker = 0; // 1 start, 2 end.
+
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
     int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
