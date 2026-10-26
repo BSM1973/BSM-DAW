@@ -4105,16 +4105,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
             }
             const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
-            int nearest = -1, distance = 9;
+            std::vector<LibertyAudioWaveformView::Marker> candidates;
+            std::vector<int> markerIndices;
             for (int i = 1; i < count - 1; ++i)
             {
                 const double target = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
                 if (!std::isfinite(target)) continue;
-                const int x = wave.getX() + (int)std::lround(
-                    (target / duration - offset) / visible * wave.getWidth());
-                const int d = std::abs(p.x - x);
-                if (d < distance) { distance = d; nearest = i; }
+                candidates.push_back({ target, false });
+                markerIndices.push_back(i);
             }
+            const LibertyAudioWaveformView::Viewport viewport {
+                wave, duration, audioDockZoom, audioDockScroll };
+            const double cursorSeconds = viewport.secondsAt(p.x);
+            const int candidate = viewport.nearestMarker(cursorSeconds, candidates, 8);
+            const int nearest = candidate >= 0 ? markerIndices[(size_t)candidate] : -1;
             if (nearest > 0 && event.mods.isLeftButtonDown() && !event.mods.isAltDown())
             {
                 draggingDockWarpMarker = nearest;
