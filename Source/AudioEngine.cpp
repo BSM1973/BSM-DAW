@@ -1092,6 +1092,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
+    track.spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&track.spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
@@ -1103,6 +1105,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.warpTargetSeconds[0].store(0.0, std::memory_order_relaxed);
     track.warpSourceSeconds[1].store(newLengthSeconds, std::memory_order_relaxed);
     track.warpTargetSeconds[1].store(newLengthSeconds, std::memory_order_relaxed);
+    track.spectralGeneration.fetch_add(1, std::memory_order_release);
+    std::atomic_store(&track.spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     track.warpMarkerCount.store(2, std::memory_order_release);
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
