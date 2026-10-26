@@ -279,6 +279,12 @@ public:
         LibertyAudioEditorHeader::paint(g, getLocalBounds(),
             "Piste " + juce::String(track + 1), zoom);
         LibertyAudioEditorHeader::paintSelectionButtons(g, getLocalBounds().reduced(14, 12));
+        const auto inner = getLocalBounds().reduced(14, 12);
+        const bool compact = inner.getWidth() < 600;
+        const auto formatButton = juce::Rectangle<int>(
+            inner.getX(), inner.getY() + (compact ? 70 : 46),
+            juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
+        LibertyAudioEditorHeader::paintTimeFormat(g, formatButton, 3);
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
