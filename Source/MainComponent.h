@@ -428,6 +428,13 @@ public:
     // Audio dock navigation state (display-only; no changes to audio samples).
     double audioDockZoom = 1.0;
     double audioDockScroll = 0.0;
+    bool audioDockSnapEnabled = true;
+    int audioDockSnapDivision = 4; // Subdivisions per beat: 1, 2, 4, 8, 16.
+    int draggingDockWarpMarker = -1;
+    int draggingDockWarpTrack = -1;
+    double snapAudioDockWarpTime(double seconds, int track) const;
+    void showAudioDockSnapDialog();
+
     int audioDockTimeFormat = 0; // 0 seconds, 1 clock, 2 samples, 3 bars/beats
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
