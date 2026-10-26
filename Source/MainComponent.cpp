@@ -3200,6 +3200,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto warpButton = juce::Rectangle<int>(
             focusButton.getRight() + 6, formatButton.getY(),
             juce::jmin(112, juce::jmax(0, dockInner.getRight() - focusButton.getRight() - 6)), 20);
+        const auto snapButton = juce::Rectangle<int>(
+            warpButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(110, juce::jmax(0, dockInner.getRight() - warpButton.getRight() - 6)), 20);
+        if (snapButton.getWidth() >= 50 && snapButton.contains(p))
+        {
+            showAudioDockSnapDialog();
+            return;
+        }
         if (warpButton.getWidth() >= 55 && warpButton.contains(p))
         {
             // Obsidian Warp inspector: a real resizable window rather than
