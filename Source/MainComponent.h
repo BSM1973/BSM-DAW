@@ -38,6 +38,7 @@ public:
     bool handleAudioDockMouseWheel(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel);
     bool openAudioClipInDockAt(juce::Point<int> arrangePosition);
     void mouseDrag(const juce::MouseEvent& event) override;
+    bool handleAudioDockMouseDrag(const juce::MouseEvent& event);
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
