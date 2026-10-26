@@ -316,17 +316,8 @@ void MainComponent::paint(juce::Graphics& g)
         const auto warpButton = juce::Rectangle<int>(
             focusButton.getRight() + 6, formatButton.getY(),
             juce::jmin(112, juce::jmax(0, inner.getRight() - focusButton.getRight() - 6)), 20);
-        if (warpButton.getWidth() >= 55)
-        {
-            const bool warpOn = audioEngine.isTrackWarpEnabled(selectedTrack);
-            g.setColour(warpOn ? juce::Colour(0xff285b76) : juce::Colour(0xff203b4d));
-            g.fillRoundedRectangle(warpButton.toFloat(), 3.0f);
-            g.setColour(warpOn ? juce::Colour(0xffa4e1f2) : juce::Colour(0xff83bed4));
-            g.drawRoundedRectangle(warpButton.toFloat(), 3.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(warpOn ? "WARP : ON" : "WARP : OFF",
-                       warpButton, juce::Justification::centred);
-        }
+        LibertyAudioEditorHeader::paintWarpToggle(g, warpButton,
+            audioEngine.isTrackWarpEnabled(selectedTrack));
         const auto snapButton = juce::Rectangle<int>(
             warpButton.getRight() + 6, formatButton.getY(),
             juce::jmin(110, juce::jmax(0, inner.getRight() - warpButton.getRight() - 6)), 20);
