@@ -4396,6 +4396,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     bounds.removeFromTop(270);
                     return bounds;
                 }
+                // Shared time/viewport transform for rendering and mouse interactions.
                 double secondsAt(int x) const
                 {
                     const double duration = audio.getAudioFileLengthSeconds(track);
@@ -4407,6 +4408,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (snap.getToggleState() && musicalSnap)
                         seconds = musicalSnap(seconds);
                     return seconds;
+                }
+                int markerPixel(double seconds) const
+                {
+                    const auto bounds = waveformBounds();
+                    const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
+                    return bounds.getX() + (int)std::round(seconds / duration * bounds.getWidth() * zoom);
                 }
                 void mouseDown(const juce::MouseEvent& event) override
                 {
@@ -4420,8 +4427,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
                         for (const double onset : markers)
                         {
-                            const int x = bounds.getX() + (int)std::round(
-                                onset / duration * bounds.getWidth() * zoom);
+                            const int x = markerPixel(onset);
                             if (std::abs(x - event.x) <= 7)
                             {
                                 eraseTransient(onset);
@@ -4442,9 +4448,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int i = 1; i < count - 1; ++i)
                     {
                         const double target = audio.getTrackWarpMarkerTargetSeconds(track, i);
-                        const int markerX = bounds.getX() + (int)std::round(
-                            target / juce::jmax(0.001, audio.getAudioFileLengthSeconds(track))
-                            * bounds.getWidth() * zoom);
+                        const int markerX = markerPixel(target);
                         if (std::abs(markerX - event.x) < 9) { draggingMarker = i; break; }
                     }
                     if (event.mods.isRightButtonDown())
@@ -4533,8 +4537,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         g.setColour(juce::Colour(0xff59d8b7).withAlpha(0.8f));
                         for (const double seconds : transientMarkers())
                         {
-                            const int x = bounds.getX() + (int)std::round(
-                                seconds / duration * bounds.getWidth() * zoom);
+                            const int x = markerPixel(seconds);
                             if (x >= bounds.getX() && x < bounds.getRight())
                                 g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
                         }
@@ -4543,9 +4546,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     for (int i = 0; i < audio.getTrackWarpMarkerCount(track); ++i)
                     {
                         const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, i);
-                        const int x = bounds.getX() + (int)std::round(seconds /
-                            juce::jmax(0.001, audio.getAudioFileLengthSeconds(track))
-                            * bounds.getWidth() * zoom);
+                        const int x = markerPixel(seconds);
                         if (x >= bounds.getX() && x < bounds.getRight())
                             g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
                     }
