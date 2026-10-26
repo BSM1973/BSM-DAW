@@ -2907,7 +2907,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
     return false;
 }
 
-void MainComponent::mouseMove(const juce::MouseEvent& event)
+bool MainComponent::handleAudioDockMouseMove(const juce::MouseEvent& event)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -2934,7 +2934,7 @@ void MainComponent::mouseMove(const juce::MouseEvent& event)
             if (std::abs(p.x - startX) <= 7 || std::abs(p.x - endX) <= 7)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return;
+                return true;
             }
         }
     }
@@ -2954,10 +2954,18 @@ void MainComponent::mouseMove(const juce::MouseEvent& event)
             if (std::abs(p.x - leftX) <= 7 || std::abs(p.x - rightX) <= 7)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return;
+                return true;
             }
         }
     }
+
+    return false;
+}
+
+void MainComponent::mouseMove(const juce::MouseEvent& event)
+{
+    const auto p = event.getEventRelativeTo(this).getPosition();
+    if (handleAudioDockMouseMove(event)) return;
     if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 9)
     {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
