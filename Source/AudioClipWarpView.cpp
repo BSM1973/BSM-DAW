@@ -144,7 +144,10 @@ public:
     {
         if (mixerButton().contains(e.getPosition()))
         {
-            hideView();
+            if (floatingWindow != nullptr)
+                attachToDock();
+            else
+                hideView();
             return;
         }
 
