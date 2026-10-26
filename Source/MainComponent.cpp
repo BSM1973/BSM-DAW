@@ -4474,12 +4474,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         return;
                     }
                     const int count = audio.getTrackWarpMarkerCount(track);
+                    std::vector<LibertyAudioWaveformView::Marker> candidates;
                     for (int i = 1; i < count - 1; ++i)
-                    {
-                        const double target = audio.getTrackWarpMarkerTargetSeconds(track, i);
-                        const int markerX = markerPixel(target);
-                        if (std::abs(markerX - event.x) < 9) { draggingMarker = i; break; }
-                    }
+                        candidates.push_back({ audio.getTrackWarpMarkerTargetSeconds(track, i), false });
+                    const LibertyAudioWaveformView::Viewport viewport {
+                        waveformBounds(), audio.getAudioFileLengthSeconds(track), zoom, 0.0 };
+                    const int nearest = viewport.nearestMarker(seconds, candidates, 8);
+                    if (nearest >= 0) draggingMarker = nearest + 1;
                     if (event.mods.isRightButtonDown())
                     {
                         if (draggingMarker > 0) audio.removeTrackWarpMarker(track, draggingMarker);
