@@ -4301,7 +4301,97 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     if (juce::Rectangle<int>(174, dockTop + 44, 28, 28).contains(p))
     {
-        openLibertyMidiEditor(*this);
+        if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+        {
+            class DetachedAudioEditor final : public juce::Component, private juce::Timer
+            {
+            public:
+                DetachedAudioEditor(AudioEngine& engine, int trackIndex)
+                    : audio(engine), track(trackIndex)
+                {
+                    setSize(980, 550);
+                    warp.setButtonText("WARP");
+                    warp.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
+                    warp.onClick = [this] { audio.setTrackWarpEnabled(track, warp.getToggleState()); };
+                    addAndMakeVisible(warp);
+                    const juce::StringArray modes { "Warp Ultra Best", "Warp Drums", "Warp Vocal",
+                        "Warp Granulaire", "Warp Pitch", "Warp Texture" };
+                    mode.addItemList(modes, 1);
+                    mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
+                    mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
+                    addAndMakeVisible(mode);
+                    pitch.setSliderStyle(juce::Slider::LinearHorizontal);
+                    pitch.setTextBoxStyle(juce::Slider::TextBoxRight, false, 80, 24);
+                    pitch.setRange(-24.0, 24.0, 0.1);
+                    pitch.setValue(audio.getTrackClipPitch(track), juce::dontSendNotification);
+                    pitch.onValueChange = [this] { audio.setTrackClipPitch(track, pitch.getValue()); };
+                    addAndMakeVisible(pitch);
+                    formants.setSliderStyle(juce::Slider::LinearHorizontal);
+                    formants.setTextBoxStyle(juce::Slider::TextBoxRight, false, 80, 24);
+                    formants.setRange(-12.0, 12.0, 0.1);
+                    formants.setValue(audio.getTrackWarpFormant(track), juce::dontSendNotification);
+                    formants.onValueChange = [this] { audio.setTrackWarpFormant(track, formants.getValue()); };
+                    addAndMakeVisible(formants);
+                    startTimerHz(12);
+                }
+                void resized() override
+                {
+                    warp.setBounds(24, 52, 100, 32);
+                    mode.setBounds(145, 52, 220, 32);
+                    pitch.setBounds(90, 110, getWidth() - 120, 32);
+                    formants.setBounds(90, 157, getWidth() - 120, 32);
+                }
+                void paint(juce::Graphics& g) override
+                {
+                    g.fillAll(juce::Colour(0xff101e2d));
+                    g.setColour(juce::Colour(0xff7fd4f5));
+                    g.setFont(juce::Font(22.0f, juce::Font::bold));
+                    g.drawText("LIBERTY  |  EDITEUR AUDIO DETACHE", 24, 12, getWidth()-48, 32,
+                        juce::Justification::centredLeft);
+                    g.setFont(juce::Font(13.0f));
+                    g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
+                    g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
+                    auto bounds = getLocalBounds().reduced(24);
+                    bounds.removeFromTop(205);
+                    g.setColour(juce::Colour(0xff172d42));
+                    g.fillRoundedRectangle(bounds.toFloat(), 8.0f);
+                    const auto source = audio.getAudioBufferSnapshot(track);
+                    if (!source || source->getNumSamples() < 2) return;
+                    const int count = source->getNumSamples();
+                    const float* data = source->getReadPointer(0);
+                    g.setColour(juce::Colour(0xff52c5e8));
+                    const int centre = bounds.getCentreY();
+                    for (int x = bounds.getX()+4; x < bounds.getRight()-4; ++x)
+                    {
+                        const int first = (int)((double)(x-bounds.getX()) / bounds.getWidth() * count);
+                        const int last = juce::jmin(count, first + juce::jmax(1, count / bounds.getWidth()));
+                        float peak = 0.0f;
+                        for (int i = first; i < last; ++i)
+                            peak = juce::jmax(peak, std::abs(data[i]));
+                        const int height = (int)(peak * (bounds.getHeight()-12) * 0.5f);
+                        g.drawVerticalLine(x, (float)(centre-height), (float)(centre+height));
+                    }
+                }
+            private:
+                void timerCallback() override { repaint(); }
+                AudioEngine& audio;
+                int track;
+                juce::ToggleButton warp;
+                juce::ComboBox mode;
+                juce::Slider pitch, formants;
+            };
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = "Liberty | Editeur Audio";
+            options.dialogBackgroundColour = juce::Colour(0xff101e2d);
+            options.content.setOwned(new DetachedAudioEditor(audioEngine, selectedTrack));
+            options.componentToCentreAround = this;
+            options.escapeKeyTriggersCloseButton = true;
+            options.useNativeTitleBar = true;
+            options.resizable = true;
+            options.launchAsync();
+        }
+        else if (selectedEditorTrack)
+            openLibertyMidiEditor(*this);
         return;
     }
     if (selectedEditorTrack && juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
