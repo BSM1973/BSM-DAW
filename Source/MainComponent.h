@@ -31,6 +31,7 @@ public:
     void paintExistingAudioDock(juce::Graphics& g, juce::Rectangle<int> editorBounds);
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
+    bool handleAudioDockMouseMove(const juce::MouseEvent& event);
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
     bool handleAudioDockMouseDown(const juce::MouseEvent& event);
