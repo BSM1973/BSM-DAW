@@ -215,6 +215,21 @@ public:
             if (!event.mods.isRightButtonDown() && timeSettings) timeSettings();
             return;
         }
+        const auto warpButton = juce::Rectangle<int>(
+            formatButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(112, juce::jmax(0, toolbar.getRight() - formatButton.getRight() - 6)), 20);
+        if (warpButton.getWidth() >= 55 && warpButton.contains(event.getPosition()))
+        {
+            if (!event.mods.isRightButtonDown())
+            {
+                const bool enabled = !audio.isTrackWarpEnabled(track);
+                audio.setTrackWarpEnabled(track, enabled);
+                warp.setToggleState(enabled, juce::dontSendNotification);
+                waveform.repaint();
+                repaint();
+            }
+            return;
+        }
         const auto bounds = waveformBounds();
         if (!bounds.contains(event.getPosition())) return;
         const double seconds = secondsAt(event.x);
