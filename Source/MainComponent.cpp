@@ -3807,8 +3807,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
                     addAndMakeVisible(enable);
-                    const char* names[] = { "Brut", "Fluide", "Doux", "Precis", "Riche" };
-                    for (int i = 0; i < 5; ++i) mode.addItem(names[i], i + 1);
+                    const char* names[] = { "Warp Ultra Best", "Warp Drums", "Warp Vocal", "Warp Granulaire", "Warp Pitch", "Warp Texture" };
+                    for (int i = 0; i < 6; ++i) mode.addItem(names[i], i + 1);
                     mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
                     mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
                     addAndMakeVisible(mode);
