@@ -2872,6 +2872,68 @@ double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
         std::round((start + seconds) / step) * step - start);
 }
 
+void MainComponent::showAudioDockTimeFormatDialog()
+{
+    class FormatDialog final : public juce::Component
+    {
+    public:
+        explicit FormatDialog(MainComponent& parent) : owner(parent)
+        {
+            setSize(420, 320);
+            const char* labels[] = { "SECONDES", "MINUTES : SECONDES",
+                                     "ECHANTILLONS", "MESURES / TEMPS" };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto* button = choices.add(new juce::TextButton(labels[i]));
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff20394f));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe0edf6));
+                button->onClick = [this, i]
+                {
+                    owner.audioDockTimeFormat = i;
+                    owner.repaint();
+                    repaint();
+                };
+                addAndMakeVisible(button);
+            }
+        }
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff101e2d));
+            g.setColour(juce::Colour(0xffffcf85));
+            g.setFont(juce::Font(20.0f, juce::Font::bold));
+            g.drawText("AFFICHAGE TEMPOREL", 24, 18, getWidth() - 48, 32,
+                juce::Justification::centredLeft);
+            g.setColour(juce::Colour(0xff9ebbd0));
+            g.setFont(juce::Font(12.0f));
+            g.drawText("Choisir l'unite de la regle du dock audio",
+                26, 56, getWidth() - 52, 20, juce::Justification::centredLeft);
+            if (owner.audioDockTimeFormat >= 0 && owner.audioDockTimeFormat < choices.size())
+            {
+                g.setColour(juce::Colour(0xffffc857));
+                g.drawRoundedRectangle(choices[owner.audioDockTimeFormat]->getBounds()
+                    .expanded(3).toFloat(), 6.0f, 2.0f);
+            }
+        }
+        void resized() override
+        {
+            for (int i = 0; i < choices.size(); ++i)
+                choices[i]->setBounds(28, 95 + i * 52, getWidth() - 56, 38);
+        }
+    private:
+        MainComponent& owner;
+        juce::OwnedArray<juce::TextButton> choices;
+    };
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "Liberty  |  Affichage temporel";
+    options.dialogBackgroundColour = juce::Colour(0xff101e2d);
+    options.content.setOwned(new FormatDialog(*this));
+    options.componentToCentreAround = this;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.launchAsync();
+}
+
 void MainComponent::showAudioDockSnapDialog()
 {
     // A dedicated, resizable Liberty-style panel instead of a PopupMenu.
