@@ -749,12 +749,10 @@ void MainComponent::paint(juce::Graphics& g)
                 audioEngine.getAudioFileLengthSeconds(selectedTrack));
             const double visible = 1.0 / juce::jmax(1.0, audioDockZoom);
             const double scroll = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const LibertyAudioWaveformView::Viewport viewport { wave, duration,
+                audioDockZoom, audioDockScroll };
             LibertyAudioWaveformView::paintSharedMarkers(g, wave, sharedMarkers,
-                [wave, duration, visible, scroll](double seconds)
-                {
-                    return wave.getX() + (int)std::round(
-                        ((seconds / duration) - scroll) / visible * wave.getWidth());
-                });
+                [viewport](double seconds) { return viewport.pixelAt(seconds); });
         }
         // Paint the selection readout after the waveform so the waveform
         // strokes cannot obscure its translucent background or text.
