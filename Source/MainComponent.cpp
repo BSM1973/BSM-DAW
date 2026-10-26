@@ -3301,15 +3301,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 void mouseUp(const juce::MouseEvent& event) override
                 {
                     const bool wasDragging = draggingMarker >= 0 || panning;
+                    const bool hadHover = hoveredMarker >= 0;
                     draggingMarker = -1;
                     panning = false;
                     hoveredMarker = -1;
                     setMouseCursor(juce::MouseCursor::NormalCursor);
                     if (wasDragging)
-                    {
                         mouseMove(event);
+                    if (wasDragging || hadHover)
                         repaint();
-                    }
                 }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
