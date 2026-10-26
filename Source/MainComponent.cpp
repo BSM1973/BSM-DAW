@@ -19,6 +19,7 @@ constexpr juce::uint32 libertyTrackPalette[33] = {
 #include "LibertyDesignSystem.h"
 void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
+void detachLibertyAudioClipWarpView(MainComponent&, int);
 void showFloatingDrumSamplerWindow(AudioEngine&);
 void resizeLibertyDynamicTrackController(MainComponent*);
 void ensureLibertyPageModeCoordinator(MainComponent*);
@@ -4301,7 +4302,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     if (juce::Rectangle<int>(174, dockTop + 44, 28, 28).contains(p))
     {
-        openLibertyMidiEditor(*this);
+        if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+            && audioEngine.hasAudioFile(selectedTrack))
+            detachLibertyAudioClipWarpView(*this, selectedTrack);
+        else
+            openLibertyMidiEditor(*this);
         return;
     }
     if (selectedEditorTrack && juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
