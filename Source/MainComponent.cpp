@@ -2788,6 +2788,17 @@ juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
     return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
 }
 
+double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
+{
+    if (!audioDockSnapEnabled || !std::isfinite(seconds)) return seconds;
+    const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
+        * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
+    const double step = beat / (double)juce::jmax(1, audioDockSnapDivision);
+    const double start = audioEngine.getTrackStartSeconds(track);
+    return juce::jlimit(0.0, juce::jmax(0.0, audioEngine.getAudioFileLengthSeconds(track)),
+        std::round((start + seconds) / step) * step - start);
+}
+
 double MainComponent::snapAudioDockFraction(double fraction) const
 {
     const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
@@ -4423,6 +4434,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingDockWarpMarker > 0 && draggingDockWarpTrack >= 0)
+    {
+        const double duration = audioEngine.getAudioFileLengthSeconds(draggingDockWarpTrack);
+        const double raw = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x) * duration;
+        const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, draggingDockWarpTrack);
+        if (std::isfinite(target))
+            audioEngine.moveTrackWarpMarker(draggingDockWarpTrack, draggingDockWarpMarker, target);
+        repaint();
+        return;
+    }
+
     if (draggingAudioClipBoundary != 0)
     {
         const double fraction = snapAudioDockFraction(
@@ -4547,6 +4569,15 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingDockWarpMarker > 0)
+    {
+        draggingDockWarpMarker = -1;
+        draggingDockWarpTrack = -1;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+        return;
+    }
+
     if (draggingAudioClipBoundary != 0)
     {
         const double fraction = snapAudioDockFraction(
