@@ -2965,7 +2965,25 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             if (duration > 0.0 && std::isfinite(duration))
             {
-                const double target = audioDockFractionAt(click.x) * duration;
+                const double visible = 1.0 / audioDockZoom;
+                const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+                const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
+                for (int i = 1; i < count - 1; ++i)
+                {
+                    const double markerTime = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
+                    if (!std::isfinite(markerTime)) continue;
+                    const int markerX = getAudioDockWaveBounds().getX() + (int)std::lround(
+                        (markerTime / duration - offset) / visible * getAudioDockWaveBounds().getWidth());
+                    if (std::abs(click.x - markerX) <= 8)
+                    {
+                        audioEngine.removeTrackWarpMarker(selectedTrack, i);
+                        draggingDockWarpMarker = -1;
+                        repaint();
+                        return;
+                    }
+                }
+                const double raw = audioDockFractionAt(click.x) * duration;
+                const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, selectedTrack);
                 if (std::isfinite(target) && audioEngine.addTrackWarpMarker(selectedTrack, target, target))
                 {
                     audioEngine.setTrackWarpEnabled(selectedTrack, true);
