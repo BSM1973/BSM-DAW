@@ -66,6 +66,13 @@ public:
     void hideView()
     {
         draggingMarker = -1;
+        if (floatingWindow != nullptr)
+        {
+            floatingWindow->setContentNonOwned(nullptr, false);
+            floatingWindow->setVisible(false);
+            floatingWindow.reset();
+            owner.addChildComponent(this);
+        }
         setVisible(false);
         owner.repaint();
     }
@@ -269,7 +276,7 @@ private:
 
         void mouseDown(const juce::MouseEvent& e) override
         {
-            if (view.stopped.load()) return;
+            if (view.stopped.load() || view.floatingWindow != nullptr) return;
             if (e.eventComponent == &view || view.isParentOf(e.eventComponent)) return;
 
             const auto relative = e.getEventRelativeTo(&view.owner);
