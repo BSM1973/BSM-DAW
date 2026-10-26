@@ -750,6 +750,26 @@ void MainComponent::paint(juce::Graphics& g)
                 }
             }
         }
+        // Independent audio-dock loop region, never reuses arrangement loop markers.
+        if (audioDockLoopEnabled && wave.getWidth() > 0)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const auto loopX = [&](double fraction)
+            {
+                return wave.getX() + (int)std::lround(
+                    (fraction - offset) / visible * wave.getWidth());
+            };
+            const int left = loopX(audioDockLoopStartFraction);
+            const int right = loopX(audioDockLoopEndFraction);
+            const juce::Graphics::ScopedSaveState loopClip(g);
+            g.reduceClipRegion(wave);
+            g.setColour(juce::Colour(0x2234d9b1));
+            g.fillRect(left, wave.getY(), juce::jmax(0, right - left), wave.getHeight());
+            g.setColour(juce::Colour(0xff39d7b5));
+            g.drawVerticalLine(left, (float)wave.getY(), (float)wave.getBottom());
+            g.drawVerticalLine(right, (float)wave.getY(), (float)wave.getBottom());
+        }
         // Warp markers and the arrangement transport share the dock's time scale.
         if (wave.getWidth() > 0)
         {
