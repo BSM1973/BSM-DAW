@@ -287,7 +287,7 @@ void MainComponent::paint(juce::Graphics& g)
         auto& g = audioGraphics;
         // The complete audio editor uses these explicit bounds; all other dock modes
         // continue using their existing editorArea without modification.
-        const auto editorArea = audioEditorBounds;
+        const auto editorArea = audioEditorBounds.intersected(getLocalBounds());
         // First audio-dock surface: a non-destructive, scalable waveform view.
         // It reuses the waveform cache already drawn by the arranger.
         g.setColour(juce::Colour(0xff0b1521));
