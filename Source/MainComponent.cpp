@@ -3499,6 +3499,44 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto loopButton = juce::Rectangle<int>(
             snapButton.getRight() + 6, formatButton.getY(),
             juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
+        // Clip-specific audio controls, independent from mixer track gain.
+        if (warpButton.contains(p) && event.mods.isCtrlDown())
+        {
+            juce::PopupMenu menu;
+            menu.addSectionHeader("FICHIER AUDIO | GAIN ET PITCH");
+            menu.addItem(1, "Gain -6 dB");
+            menu.addItem(2, "Gain -3 dB");
+            menu.addItem(3, "Gain 0 dB");
+            menu.addItem(4, "Gain +3 dB");
+            menu.addItem(5, "Gain +6 dB");
+            menu.addSeparator();
+            menu.addItem(10, "Pitch -12 demi-tons");
+            menu.addItem(11, "Pitch -1 demi-ton");
+            menu.addItem(12, "Pitch 0");
+            menu.addItem(13, "Pitch +1 demi-ton");
+            menu.addItem(14, "Pitch +12 demi-tons");
+            const int track = selectedTrack;
+            juce::Component::SafePointer<MainComponent> safeThis(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [safeThis, track](int result)
+                {
+                    if (safeThis == nullptr || track < 0 || track >= safeThis->getAudioTrackCount())
+                        return;
+                    if (result >= 1 && result <= 5)
+                    {
+                        const double db[] = {-6.0, -3.0, 0.0, 3.0, 6.0};
+                        safeThis->audioEngine.setTrackClipGain(track,
+                            (float)std::pow(10.0, db[result - 1] / 20.0));
+                    }
+                    else if (result >= 10 && result <= 14)
+                    {
+                        const double pitch[] = {-12.0, -1.0, 0.0, 1.0, 12.0};
+                        safeThis->audioEngine.setTrackClipPitch(track, pitch[result - 10]);
+                    }
+                    safeThis->repaint();
+                });
+            return;
+        }
         // Automatic transient detection is available via Shift+click on WARP.
         // Analysis is performed on the UI thread, never in the audio callback.
         if (warpButton.getWidth() >= 55 && warpButton.contains(p)
