@@ -240,7 +240,9 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
         auto& g = audioGraphics;
         // The complete audio editor uses these explicit bounds; all other dock modes
         // continue using their existing editorArea without modification.
-        const auto editorArea = audioEditorBounds.getIntersection(getLocalBounds());
+        // The renderer is host-independent: a floating JUCE component may supply
+        // its own graphics context and bounds, rather than the main-window bounds.
+        const auto editorArea = audioEditorBounds;
         if (editorArea.isEmpty()) return;
         juce::Graphics::ScopedSaveState audioDockGraphicsState(g);
         g.reduceClipRegion(editorArea);
