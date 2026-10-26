@@ -3290,7 +3290,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         track, draggingMarker + 1);
                     const double minimum = previous + gap;
                     const double maximum = next - gap;
-                    if (minimum >= maximum) return;
+                    if (!std::isfinite(previous) || !std::isfinite(next)
+                        || !std::isfinite(targetTime) || minimum >= maximum)
+                        return;
                     targetTime = juce::jlimit(minimum, maximum, targetTime);
                     const double currentTime = audio.getTrackWarpMarkerTargetSeconds(
                         track, draggingMarker);
