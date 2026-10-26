@@ -171,6 +171,25 @@ public:
     }
     void mouseDown(const juce::MouseEvent& event) override
     {
+        const auto toolbar = getLocalBounds().reduced(14, 12);
+        const bool compact = toolbar.getWidth() < 600;
+        const int barWidth = juce::jmin(280, juce::jmax(0, toolbar.getWidth()));
+        const auto bar = juce::Rectangle<int>(toolbar.getRight() - barWidth,
+            toolbar.getY() + (compact ? 44 : 22), barWidth, 21);
+        if (bar.contains(event.getPosition()))
+        {
+            const int slot = juce::jlimit(0, 3,
+                (event.x - bar.getX()) * 4 / juce::jmax(1, bar.getWidth()));
+            const double duration = audio.getAudioFileLengthSeconds(track);
+            if (slot == 0) { selectionBegin = 0.0; selectionEnd = duration; }
+            else if (slot == 1) { selectionBegin = -1.0; selectionEnd = -1.0; }
+            else if (slot == 2) { selectionBegin = secondsAt(waveformBounds().getX()); }
+            else { selectionEnd = secondsAt(waveformBounds().getRight()); }
+            syncLoop();
+            waveform.repaint();
+            repaint();
+            return;
+        }
         const auto bounds = waveformBounds();
         if (!bounds.contains(event.getPosition())) return;
         const double seconds = secondsAt(event.x);
