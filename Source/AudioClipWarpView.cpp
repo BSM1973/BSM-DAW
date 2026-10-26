@@ -66,6 +66,7 @@ public:
 
         drawControls(g);
         drawWaveform(g);
+        drawScrollbar(g);
     }
 
     void mouseMove(const juce::MouseEvent& e) override
@@ -123,6 +124,12 @@ public:
             return;
         }
 
+        if (scrollbarBounds().contains(e.getPosition()))
+        {
+            scrolling = true;
+            scrollToX(e.x);
+            return;
+        }
         if (!waveformPlotBounds().contains(e.getPosition())) return;
 
         const int marker = markerAtX(e.x);
@@ -151,9 +158,11 @@ public:
 
     void mouseDoubleClick(const juce::MouseEvent& e) override
     {
-        if (!waveformPlotBounds().contains(e.getPosition()) || selectedTrack < 0) return;
-        const double time = timeForX(e.x);
-        if (owner.audioEngine.addTrackWarpMarker(selectedTrack, time, time))
+        if (!waveformPlotBounds().contains(e.getPosition()) || selectedTrack < 0
+            || e.mods.isRightButtonDown() || e.mods.isAltDown()) return;
+        const double time = snapTime(timeForX(e.x));
+        const double source = sourceTimeForTarget(time);
+        if (std::isfinite(source) && owner.audioEngine.addTrackWarpMarker(selectedTrack, source, time))
         {
             owner.audioEngine.setTrackWarpEnabled(selectedTrack, true);
             repaint();
@@ -162,14 +171,35 @@ public:
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        if (scrolling) { scrollToX(e.x); return; }
         if (draggingMarker <= 0 || selectedTrack < 0) return;
-        owner.audioEngine.moveTrackWarpMarker(selectedTrack, draggingMarker, timeForX(e.x));
+        owner.audioEngine.moveTrackWarpMarker(selectedTrack, draggingMarker, snapTime(timeForX(e.x)));
         repaint();
     }
 
     void mouseUp(const juce::MouseEvent&) override
     {
         draggingMarker = -1;
+        scrolling = false;
+    }
+
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+    {
+        if (!waveformBounds().contains(e.getPosition()) || !std::isfinite((double)wheel.deltaY)) return;
+        if (e.mods.isShiftDown() || std::abs(wheel.deltaX) > std::abs(wheel.deltaY))
+        {
+            const double delta = std::abs(wheel.deltaX) > std::abs(wheel.deltaY) ? wheel.deltaX : wheel.deltaY;
+            viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom, viewStart - delta / zoom);
+        }
+        else if (wheel.deltaY != 0.0f)
+        {
+            const double fraction = juce::jlimit(0.0, 1.0, (double)(e.x - waveformPlotBounds().getX() - 4)
+                / (double)juce::jmax(1, waveformPlotBounds().getWidth() - 8));
+            const double anchor = viewStart + fraction / zoom;
+            zoom = juce::jlimit(1.0, 32.0, zoom * (wheel.deltaY > 0 ? 1.25 : 0.8));
+            viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom, anchor - fraction / zoom);
+        }
+        repaint();
     }
 
 private:
@@ -206,7 +236,8 @@ private:
     juce::Rectangle<int> warpButton() const { return { 84, 10, 74, 24 }; }
     juce::Rectangle<int> modeButton() const { return { 10, 44, 148, 27 }; }
     juce::Rectangle<int> resetButton() const { return { 10, 79, 148, 24 }; }
-    juce::Rectangle<int> waveformBounds() const { return { 174, 12, juce::jmax(1, getWidth() - 188), juce::jmax(1, getHeight() - 24) }; }
+    juce::Rectangle<int> waveformBounds() const { return { 174, 12, juce::jmax(1, getWidth() - 188), juce::jmax(1, getHeight() - 44) }; }
+    juce::Rectangle<int> scrollbarBounds() const { auto r = waveformBounds(); return { r.getX(), getHeight() - 23, r.getWidth(), 13 }; }
     juce::Rectangle<int> timelineBounds() const { return waveformBounds().withHeight(24); }
     juce::Rectangle<int> waveformPlotBounds() const { return waveformBounds().withTrimmedTop(24); }
 
@@ -279,6 +310,35 @@ private:
         return targetSeconds;
     }
 
+    double snapTime(double seconds) const
+    {
+        const double beat = 60.0 / juce::jmax(1.0, owner.tempoBpm)
+            * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
+        const double step = beat / 4.0;
+        const double clipStart = owner.audioEngine.getTrackStartSeconds(selectedTrack);
+        const double length = juce::jmax(0.0, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
+        return juce::jlimit(0.0, length, std::round((seconds + clipStart) / step) * step - clipStart);
+    }
+
+    void scrollToX(int x)
+    {
+        const auto r = scrollbarBounds();
+        const double fraction = juce::jlimit(0.0, 1.0, (double)(x - r.getX()) / (double)juce::jmax(1, r.getWidth()));
+        viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom, fraction - 0.5 / zoom);
+        repaint();
+    }
+
+    void drawScrollbar(juce::Graphics& g)
+    {
+        const auto r = scrollbarBounds();
+        g.setColour(juce::Colour(0xff1a3045));
+        g.fillRoundedRectangle(r.toFloat(), 4.0f);
+        const int width = juce::jmax(12, (int)std::round(r.getWidth() / zoom));
+        const int x = r.getX() + (int)std::round(viewStart * r.getWidth());
+        g.setColour(juce::Colour(0xff6889a4));
+        g.fillRoundedRectangle(juce::Rectangle<int>(x, r.getY(), width, r.getHeight()).toFloat(), 4.0f);
+    }
+
     void drawTimeline(juce::Graphics& g)
     {
         const auto r = timelineBounds();
@@ -292,8 +352,8 @@ private:
         const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner.tempoBpm)
             * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
         const double secondsPerMeasure = secondsPerBeat * (double)juce::jmax(1, owner.timeSignatureNumerator);
-        const double startProject = clipStart;
-        const double endProject = clipStart + length;
+        const double startProject = clipStart + viewStart * length;
+        const double endProject = startProject + length / zoom;
 
         const long long firstMeasure = juce::jmax<long long>(0, (long long)std::floor(startProject / secondsPerMeasure));
         const long long lastMeasure = (long long)std::ceil(endProject / secondsPerMeasure) + 1;
@@ -302,7 +362,7 @@ private:
         {
             const double projectTime = (double)m * secondsPerMeasure;
             const double localTime = projectTime - clipStart;
-            if (localTime < -0.000001 || localTime > length + 0.000001) continue;
+            if (localTime < viewStart * length || localTime > (viewStart + 1.0 / zoom) * length) continue;
             const int x = xForTime(localTime);
             g.setColour(juce::Colour(0xff798491));
             g.drawVerticalLine(x, (float)r.getY() + 3.0f, (float)r.getBottom());
@@ -313,7 +373,7 @@ private:
             for (int beat = 1; beat < owner.timeSignatureNumerator; ++beat)
             {
                 const double beatLocal = localTime + beat * secondsPerBeat;
-                if (beatLocal <= 0.0 || beatLocal >= length) continue;
+                if (beatLocal < viewStart * length || beatLocal > (viewStart + 1.0 / zoom) * length) continue;
                 const int bx = xForTime(beatLocal);
                 g.setColour(juce::Colour(0xff46505b));
                 g.drawVerticalLine(bx, (float)r.getBottom() - 7.0f, (float)r.getBottom());
@@ -335,6 +395,21 @@ private:
         const auto* buffer = bufferSnapshot.get();
         if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0) return;
 
+        g.saveState();
+        g.reduceClipRegion(area);
+        const double clipStart = owner.audioEngine.getTrackStartSeconds(selectedTrack);
+        const double beatSeconds = 60.0 / juce::jmax(1.0, owner.tempoBpm)
+            * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
+        const double gridStep = beatSeconds / 4.0;
+        const double lengthForGrid = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
+        const double first = clipStart + viewStart * lengthForGrid;
+        const double last = first + lengthForGrid / zoom;
+        for (double t = std::ceil(first / gridStep) * gridStep; t <= last; t += gridStep)
+        {
+            const int gx = xForTime(t - clipStart);
+            g.setColour(juce::Colour(0xff304356));
+            g.drawVerticalLine(gx, (float)area.getY(), (float)area.getBottom());
+        }
         const int centreY = area.getCentreY();
         const float amplitude = (float)area.getHeight() * 0.43f;
         const int width = juce::jmax(1, area.getWidth() - 8);
@@ -347,8 +422,8 @@ private:
         bool first = true;
         for (int px = 0; px < width; ++px)
         {
-            const double targetA = ((double)px / (double)width) * length;
-            const double targetB = ((double)(px + 1) / (double)width) * length;
+            const double targetA = (viewStart + (double)px / ((double)width * zoom)) * length;
+            const double targetB = (viewStart + (double)(px + 1) / ((double)width * zoom)) * length;
             double sourceA = sourceTimeForTarget(targetA);
             double sourceB = sourceTimeForTarget(targetB);
             if (sourceB < sourceA) std::swap(sourceA, sourceB);
@@ -409,11 +484,17 @@ private:
         }
 
         const double localPlayhead = owner.audioEngine.getCurrentTimeSeconds() - owner.audioEngine.getTrackStartSeconds(selectedTrack);
-        if (localPlayhead >= 0.0 && localPlayhead <= length)
+        if (localPlayhead >= viewStart * length && localPlayhead <= (viewStart + 1.0 / zoom) * length)
         {
             const int x = xForTime(localPlayhead);
             g.setColour(juce::Colours::white.withAlpha(0.9f));
-            g.drawVerticalLine(x, (float)timelineBounds().getY(), (float)area.getBottom());
+            g.drawVerticalLine(x, (float)area.getY(), (float)area.getBottom());
+        }
+        g.restoreState();
+        if (localPlayhead >= viewStart * length && localPlayhead <= (viewStart + 1.0 / zoom) * length)
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.drawVerticalLine(xForTime(localPlayhead), (float)timelineBounds().getY(), (float)timelineBounds().getBottom());
         }
     }
 
@@ -421,7 +502,7 @@ private:
     {
         const auto area = waveformPlotBounds();
         const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
-        const double n = juce::jlimit(0.0, 1.0, seconds / length);
+        const double n = (seconds / length - viewStart) * zoom;
         return area.getX() + 4 + (int)std::llround(n * (double)juce::jmax(1, area.getWidth() - 8));
     }
 
@@ -431,7 +512,7 @@ private:
         const double length = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
         const double n = juce::jlimit(0.0, 1.0,
             ((double)x - (double)area.getX() - 4.0) / (double)juce::jmax(1, area.getWidth() - 8));
-        return n * length;
+        return (viewStart + n / zoom) * length;
     }
 
     int markerAtX(int x) const
@@ -491,6 +572,9 @@ private:
     std::atomic<bool> stopped { false };
     int selectedTrack = -1;
     int draggingMarker = -1;
+    bool scrolling = false;
+    double zoom = 1.0;
+    double viewStart = 0.0;
 };
 
 std::map<MainComponent*, std::unique_ptr<AudioClipWarpView>> controllers;
