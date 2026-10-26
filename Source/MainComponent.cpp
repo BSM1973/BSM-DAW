@@ -3248,8 +3248,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                             else
                             {
                                 draggingMarker = i;
+                                hoveredMarker = -1;
                                 dragStartX = event.x;
                                 dragStartTime = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                                repaint();
                             }
                             return;
                     }
