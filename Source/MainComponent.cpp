@@ -3000,11 +3000,16 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
+juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
+{
+    return {310, getMixerTop() + 36,
+            juce::jmax(0, getWidth() - 310),
+            juce::jmax(0, getHeight() - getMixerTop() - 36)};
+}
+
 juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
 {
-    const auto editor = juce::Rectangle<int>(310, getMixerTop() + 36,
-        juce::jmax(0, getWidth() - 310),
-        juce::jmax(0, getHeight() - getMixerTop() - 36));
+    const auto editor = getAudioDockEditorBounds();
     const auto inner = editor.reduced(14, 12);
     const int rulerTop = inner.getWidth() < 600 ? 94 : 70;
     return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
@@ -3302,8 +3307,7 @@ bool MainComponent::handleAudioDockMouseWheel(const juce::MouseEvent& event,
     const bool audioEditor = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack);
-    const auto area = juce::Rectangle<int>(310, getMixerTop() + 36,
-        juce::jmax(0, getWidth() - 310), juce::jmax(0, getHeight() - getMixerTop() - 36));
+    const auto area = getAudioDockEditorBounds();
     if (audioEditor && area.contains(p))
     {
         if (event.mods.isShiftDown())
@@ -3604,9 +3608,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu())
     {
-        const auto dockEditor = juce::Rectangle<int>(310, getMixerTop() + 36,
-            juce::jmax(0, getWidth() - 310),
-            juce::jmax(0, getHeight() - getMixerTop() - 36));
+        const auto dockEditor = getAudioDockEditorBounds();
         const auto dockInner = dockEditor.reduced(14, 12);
         const bool compact = dockInner.getWidth() < 600;
         const int barWidth = juce::jmin(280, juce::jmax(0, dockInner.getWidth()));
