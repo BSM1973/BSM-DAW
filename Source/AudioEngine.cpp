@@ -663,6 +663,20 @@ void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
         std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
 }
 
+void AudioEngine::setTrackWarpFormant(int trackIndex, double semitones) noexcept
+{
+    if (!isValidTrackIndex(trackIndex)) return;
+    tracks[(size_t)trackIndex]->warpFormant.store(
+        juce::jlimit(-12.0, 12.0, semitones), std::memory_order_relaxed);
+}
+
+double AudioEngine::getTrackWarpFormant(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex)
+        ? tracks[(size_t)trackIndex]->warpFormant.load(std::memory_order_relaxed)
+        : 0.0;
+}
+
 int AudioEngine::getTrackWarpMode(int trackIndex) const noexcept
 {
     return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->warpMode.load(std::memory_order_relaxed) : 0;
