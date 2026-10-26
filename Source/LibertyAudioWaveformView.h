@@ -16,6 +16,22 @@ public:
     std::function<void(double, const juce::MouseEvent&)> onPress;
     std::function<void(double, const juce::MouseEvent&)> onMove;
     std::function<void(double, const juce::MouseEvent&)> onRelease;
+    // Dock and floating editor can both use the same painter without
+    // surrendering their own advanced waveform rendering and mouse tools.
+    static void paintSharedMarkers(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                   const std::vector<Marker>& markers,
+                                   const std::function<int(double)>& toPixel)
+    {
+        const juce::Graphics::ScopedSaveState clipped(g);
+        g.reduceClipRegion(bounds);
+        for (const auto& marker : markers)
+        {
+            const int x = toPixel(marker.seconds);
+            if (x < bounds.getX() || x >= bounds.getRight()) continue;
+            g.setColour(juce::Colour(marker.transient ? 0xff59d8b7 : 0xffffba66));
+            g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
+        }
+    }
     double zoom = 1.0;
     double selectionStart = -1.0, selectionEnd = -1.0;
     bool loopSelection = false;
