@@ -3245,10 +3245,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     if (panning)
                     {
-                        viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
+                        const double nextStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
                             panStartFraction - (double)(event.x - panStartX)
                             / ((double)juce::jmax(1, getWidth() - 80) * zoom));
-                        repaint();
+                        if (std::abs(nextStart - viewStart) > 0.000000001)
+                        {
+                            viewStart = nextStart;
+                            repaint();
+                        }
                         return;
                     }
                     if (draggingMarker < 0) return;
