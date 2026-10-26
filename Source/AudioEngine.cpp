@@ -571,6 +571,24 @@ bool AudioEngine::removeAudioTrack(int trackIndex)
     return removed;
 }
 
+void AudioEngine::setTrackClipGain(int trackIndex, float gain) noexcept
+{
+    if (isValidTrackIndex(trackIndex) && std::isfinite(gain))
+        tracks[(size_t)trackIndex]->clipGain.store(juce::jlimit(0.0f, 4.0f, gain));
+}
+float AudioEngine::getTrackClipGain(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->clipGain.load() : 1.0f;
+}
+void AudioEngine::setTrackClipPitch(int trackIndex, double semitones) noexcept
+{
+    if (isValidTrackIndex(trackIndex) && std::isfinite(semitones))
+        tracks[(size_t)trackIndex]->clipPitch.store(juce::jlimit(-24.0, 24.0, semitones));
+}
+double AudioEngine::getTrackClipPitch(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->clipPitch.load() : 0.0;
+}
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
 float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
 void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
@@ -1596,7 +1614,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         if (samplesToMix <= 0) continue;
         const auto outputOffset = static_cast<int>(mixStart - position);
         const auto sourceOffset = static_cast<int>(mixStart - startSample);
-        const auto gain = track.gain.load(); const auto pan = track.pan.load();
+        const auto gain = track.gain.load() * track.clipGain.load(); const auto pan = track.pan.load();
+        const double clipPitchRatio = std::pow(2.0, track.clipPitch.load() / 12.0);
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = audioBuffer->getNumChannels();
 
@@ -1630,7 +1649,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
             if (sourceRate <= 0.0) continue;
             const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
-            const double sourceStep = sourceRate / rate;
+            const double sourceStep = sourceRate / rate * clipPitchRatio;
             for (int s = 0; s < samplesToMix; ++s)
             {
                 const double sourcePosition = juce::jlimit(0.0, static_cast<double>(lastSample),
