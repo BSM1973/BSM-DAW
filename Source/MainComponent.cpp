@@ -3298,12 +3298,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (audio.moveTrackWarpMarker(track, draggingMarker, targetTime))
                         repaint();
                 }
-                void mouseUp(const juce::MouseEvent&) override
+                void mouseUp(const juce::MouseEvent& event) override
                 {
+                    const bool wasDragging = draggingMarker >= 0 || panning;
                     draggingMarker = -1;
                     panning = false;
                     hoveredMarker = -1;
                     setMouseCursor(juce::MouseCursor::NormalCursor);
+                    if (wasDragging)
+                        mouseMove(event);
                     repaint();
                 }
                 void mouseMove(const juce::MouseEvent& event) override
