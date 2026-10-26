@@ -59,4 +59,15 @@ struct LibertyAudioEditorHeader
         g.drawText(juce::String(names[juce::jlimit(0, 3, format)]),
                    bounds, juce::Justification::centred);
     }
+    static void paintWarpToggle(juce::Graphics& g, juce::Rectangle<int> bounds, bool enabled)
+    {
+        if (bounds.getWidth() < 55) return;
+        g.setColour(enabled ? juce::Colour(0xff285b76) : juce::Colour(0xff203b4d));
+        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+        g.setColour(enabled ? juce::Colour(0xffa4e1f2) : juce::Colour(0xff83bed4));
+        g.drawRoundedRectangle(bounds.toFloat(), 3.0f, 1.0f);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText(enabled ? "WARP : ON" : "WARP : OFF",
+                   bounds, juce::Justification::centred);
+    }
 };
