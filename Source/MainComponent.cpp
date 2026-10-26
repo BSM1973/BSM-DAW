@@ -3424,6 +3424,18 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
+    const auto dockWarpActions = [this](int track)
+    {
+        return LibertyAudioWaveformView::WarpEditActions {
+            [this, track](double source, double target)
+            { return audioEngine.addTrackWarpMarker(track, source, target); },
+            [this, track](int index, double target)
+            { audioEngine.moveTrackWarpMarker(track, index, target); },
+            [this, track](int index)
+            { audioEngine.removeTrackWarpMarker(track, index); }
+        };
+    };
+
     const auto click = event.getPosition();
     // The real audio dock is painted by MainComponent, not AudioClipWarpView.
     // Insert markers here so double-clicks reach the waveform users actually see.
