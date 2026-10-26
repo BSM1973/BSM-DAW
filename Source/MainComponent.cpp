@@ -3073,6 +3073,25 @@ double MainComponent::snapAudioDockFraction(double fraction) const
     const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
     const int samples = snapshot != nullptr ? snapshot->getNumSamples() : 0;
     const double clamped = juce::jlimit(0.0, 1.0, fraction);
+    if (audioDockSnapEnabled)
+    {
+        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+        if (duration > 0.0 && std::isfinite(duration))
+        {
+            const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
+                * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
+            const double step = audioDockSnapDivision < 0
+                ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
+                : beat / (double)juce::jmax(1, audioDockSnapDivision);
+            if (step > 0.0 && std::isfinite(step))
+            {
+                const double clipStart = audioEngine.getTrackStartSeconds(selectedTrack);
+                const double time = clipStart + clamped * duration;
+                return juce::jlimit(0.0, 1.0,
+                    (std::round(time / step) * step - clipStart) / duration);
+            }
+        }
+    }
     return samples > 0 ? std::round(clamped * samples) / (double) samples : clamped;
 }
 
@@ -3451,11 +3470,24 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         if (snapButton.getWidth() >= 50 && snapButton.contains(p))
         {
+            if (event.mods.isAltDown())
+            {
+                audioDockSnapEnabled = !audioDockSnapEnabled;
+                repaint();
+                return;
+            }
             showAudioDockSnapDialog();
             return;
         }
         if (warpButton.getWidth() >= 55 && warpButton.contains(p))
         {
+            if (event.mods.isAltDown())
+            {
+                audioEngine.setTrackWarpEnabled(selectedTrack,
+                    !audioEngine.isTrackWarpEnabled(selectedTrack));
+                repaint();
+                return;
+            }
             // Obsidian Warp inspector: a real resizable window rather than
             // a cascading menu. Track operations stay on the existing engine.
             class WarpInspector final : public juce::Component
