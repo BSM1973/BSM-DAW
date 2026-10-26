@@ -360,6 +360,19 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(warpOn ? "WARP : ON" : "WARP : OFF",
                        warpButton, juce::Justification::centred);
         }
+        const auto snapButton = juce::Rectangle<int>(
+            warpButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(110, juce::jmax(0, inner.getRight() - warpButton.getRight() - 6)), 20);
+        if (snapButton.getWidth() >= 50)
+        {
+            g.setColour(audioDockSnapEnabled ? juce::Colour(0xff355674) : juce::Colour(0xff203344));
+            g.fillRoundedRectangle(snapButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xffd9ad65));
+            g.drawRoundedRectangle(snapButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(audioDockSnapEnabled ? "SNAP ON" : "SNAP OFF",
+                snapButton, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -2797,6 +2810,32 @@ double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
     const double start = audioEngine.getTrackStartSeconds(track);
     return juce::jlimit(0.0, juce::jmax(0.0, audioEngine.getAudioFileLengthSeconds(track)),
         std::round((start + seconds) / step) * step - start);
+}
+
+void MainComponent::showAudioDockSnapDialog()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader("LIBERTY  |  SNAP AUDIO");
+    menu.addItem(1, "Snap active", true, audioDockSnapEnabled);
+    menu.addSeparator();
+    const int divisions[] = { 1, 2, 4, 8, 16 };
+    const char* labels[] = { "1/4  Noire", "1/8  Croche", "1/16  Double croche",
+                              "1/32  Triple croche", "1/64  Quadruple croche" };
+    for (int i = 0; i < 5; ++i)
+        menu.addItem(i + 10, labels[i], true, audioDockSnapDivision == divisions[i]);
+    juce::Component::SafePointer<MainComponent> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safe](int result)
+    {
+        if (safe == nullptr || result <= 0) return;
+        if (result == 1) safe->audioDockSnapEnabled = !safe->audioDockSnapEnabled;
+        else if (result >= 10 && result < 15)
+        {
+            const int divisions[] = { 1, 2, 4, 8, 16 };
+            safe->audioDockSnapDivision = divisions[result - 10];
+            safe->audioDockSnapEnabled = true;
+        }
+        safe->repaint();
+    });
 }
 
 double MainComponent::snapAudioDockFraction(double fraction) const
