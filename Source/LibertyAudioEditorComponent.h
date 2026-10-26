@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "AudioEngine.h"
 #include "LibertyAudioWaveformView.h"
+#include "LibertyAudioEditorHeader.h"
 #include <functional>
 #include <vector>
 #include <algorithm>
@@ -244,10 +245,8 @@ public:
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff101e2d));
-        g.setColour(juce::Colour(0xff7fd4f5));
-        g.setFont(juce::Font(22.0f, juce::Font::bold));
-        g.drawText("LIBERTY  |  EDITEUR AUDIO DETACHE", 24, 12, getWidth()-48, 32,
-            juce::Justification::centredLeft);
+        LibertyAudioEditorHeader::paint(g, getLocalBounds(),
+            "Piste " + juce::String(track + 1), zoom);
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
