@@ -3499,6 +3499,69 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto loopButton = juce::Rectangle<int>(
             snapButton.getRight() + 6, formatButton.getY(),
             juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
+        // Automatic transient detection is available via Shift+click on WARP.
+        // Analysis is performed on the UI thread, never in the audio callback.
+        if (warpButton.contains(p) && event.mods.isShiftDown()
+            && !event.mods.isAltDown())
+        {
+            const auto buffer = audioEngine.getAudioBufferSnapshot(selectedTrack);
+            const double sampleRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
+            if (buffer != nullptr && sampleRate > 0.0 && buffer->getNumSamples() > 1024)
+            {
+                const int hop = juce::jmax(64, (int)std::round(sampleRate * 0.005));
+                const int minimumGap = juce::jmax(1, (int)std::round(0.055 * sampleRate / hop));
+                const int frames = buffer->getNumSamples() / hop;
+                std::vector<double> energy((size_t)frames, 0.0);
+                for (int frame = 0; frame < frames; ++frame)
+                {
+                    double total = 0.0;
+                    for (int channel = 0; channel < buffer->getNumChannels(); ++channel)
+                    {
+                        const float* data = buffer->getReadPointer(channel, frame * hop);
+                        for (int sample = 0; sample < hop; ++sample)
+                            total += (double)data[sample] * data[sample];
+                    }
+                    energy[(size_t)frame] = std::sqrt(total /
+                        (double)(hop * juce::jmax(1, buffer->getNumChannels())));
+                }
+                std::vector<std::pair<double, int>> candidates;
+                double background = 0.0;
+                for (int frame = 2; frame + 1 < frames; ++frame)
+                {
+                    const double rise = juce::jmax(0.0,
+                        energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
+                    background = 0.97 * background + 0.03 * rise;
+                    if (rise > 0.018 && rise > background * 2.8
+                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)]
+                        && energy[(size_t)frame] >= energy[(size_t)(frame + 1)])
+                        candidates.emplace_back(rise, frame);
+                }
+                std::sort(candidates.begin(), candidates.end(),
+                    [](const auto& a, const auto& b) { return a.first > b.first; });
+                std::vector<int> chosen;
+                const int capacity = juce::jmax(0, AudioEngine::maxWarpMarkers - 2);
+                for (const auto& candidate : candidates)
+                {
+                    if ((int)chosen.size() >= capacity) break;
+                    bool separated = true;
+                    for (const int previous : chosen)
+                        if (std::abs(previous - candidate.second) < minimumGap)
+                        { separated = false; break; }
+                    if (separated) chosen.push_back(candidate.second);
+                }
+                std::sort(chosen.begin(), chosen.end());
+                audioEngine.resetTrackWarpMarkers(selectedTrack);
+                for (const int frame : chosen)
+                {
+                    const double seconds = (double)frame * hop / sampleRate;
+                    audioEngine.addTrackWarpMarker(selectedTrack, seconds, seconds);
+                }
+                // The markers are editable even with time stretching disabled.
+                audioEngine.setTrackWarpEnabled(selectedTrack, false);
+                repaint();
+            }
+            return;
+        }
         if (loopButton.getWidth() >= 48 && loopButton.contains(p))
         {
             audioDockLoopEnabled = !audioDockLoopEnabled;
