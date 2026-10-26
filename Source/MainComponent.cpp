@@ -4307,8 +4307,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             {
             public:
                 DetachedAudioEditor(AudioEngine& engine, int trackIndex,
-                    std::function<double(double)> snapToMusicalGrid)
-                    : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid))
+                    std::function<double(double)> snapToMusicalGrid,
+                    std::function<void(double, double, bool)> updateLoop,
+                    std::function<void()> openSnapSettings,
+                    std::function<void()> openTimeSettings,
+                    std::function<void()> openTransientSettings)
+                    : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid)),
+                      publishLoop(std::move(updateLoop)),
+                      snapSettings(std::move(openSnapSettings)),
+                      timeSettings(std::move(openTimeSettings)),
+                      transientSettings(std::move(openTransientSettings))
                 {
                     setSize(980, 550);
                     warp.setButtonText("WARP");
@@ -4339,10 +4347,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     snap.setToggleState(true, juce::dontSendNotification);
                     loop.setButtonText("BOUCLE");
                     loop.setClickingTogglesState(true);
+                    loop.onClick = [this] { syncLoop(); repaint(); };
                     addAndMakeVisible(loop);
                     selection.setButtonText("SELECTION");
                     selection.setClickingTogglesState(true);
                     addAndMakeVisible(selection);
+                    snapOptions.setButtonText("GRILLE...");
+                    timeOptions.setButtonText("TEMPS...");
+                    transientOptions.setButtonText("TRANSITOIRES...");
+                    snapOptions.onClick = [this] { if (snapSettings) snapSettings(); };
+                    timeOptions.onClick = [this] { if (timeSettings) timeSettings(); };
+                    transientOptions.onClick = [this] { if (transientSettings) transientSettings(); };
+                    addAndMakeVisible(snapOptions);
+                    addAndMakeVisible(timeOptions);
+                    addAndMakeVisible(transientOptions);
                     resetMarkers.setButtonText("REINIT. MARQUEURS");
                     zoomIn.onClick = [this] { zoom = juce::jmin(64.0, zoom * 2.0); repaint(); };
                     zoomOut.onClick = [this] { zoom = juce::jmax(1.0, zoom * 0.5); repaint(); };
@@ -4365,11 +4383,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     resetMarkers.setBounds(220, 200, 180, 28);
                     selection.setBounds(410, 200, 120, 28);
                     loop.setBounds(540, 200, 110, 28);
+                    snapOptions.setBounds(660, 200, 100, 28);
+                    timeOptions.setBounds(770, 200, 100, 28);
+                    transientOptions.setBounds(24, 235, 160, 28);
                 }
                 juce::Rectangle<int> waveformBounds() const
                 {
                     auto bounds = getLocalBounds().reduced(24);
-                    bounds.removeFromTop(235);
+                    bounds.removeFromTop(270);
                     return bounds;
                 }
                 double secondsAt(int x) const
@@ -4432,7 +4453,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         repaint();
                     }
                 }
-                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; selecting = false; }
+                void mouseUp(const juce::MouseEvent&) override
+                {
+                    if (selecting) syncLoop();
+                    draggingMarker = -1;
+                    selecting = false;
+                }
+                void syncLoop()
+                {
+                    if (publishLoop)
+                        publishLoop(selectionBegin, selectionEnd, loop.getToggleState());
+                }
                 void paint(juce::Graphics& g) override
                 {
                     g.fillAll(juce::Colour(0xff101e2d));
@@ -4496,6 +4527,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 juce::ComboBox mode;
                 juce::Slider pitch, formants;
                 juce::TextButton zoomIn, zoomOut, resetMarkers;
+                juce::TextButton snapOptions, timeOptions, transientOptions;
+                std::function<void(double, double, bool)> publishLoop;
+                std::function<void()> snapSettings, timeSettings, transientSettings;
                 juce::ToggleButton snap, loop, selection;
                 std::function<double(double)> musicalSnap;
                 double selectionBegin = -1.0, selectionEnd = -1.0;
@@ -4508,7 +4542,26 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             options.dialogBackgroundColour = juce::Colour(0xff101e2d);
             options.content.setOwned(new DetachedAudioEditor(audioEngine, selectedTrack,
                 [this, trackIndex = selectedTrack](double seconds)
-                { return snapAudioDockWarpTime(seconds, trackIndex); }));
+                { return snapAudioDockWarpTime(seconds, trackIndex); },
+                [this, trackIndex = selectedTrack](double start, double end, bool enabled)
+                {
+                    if (trackIndex != selectedTrack) return;
+                    const double duration = audioEngine.getAudioFileLengthSeconds(trackIndex);
+                    if (duration <= 0.0 || start < 0.0 || end < 0.0)
+                    {
+                        audioDockLoopEnabled = false;
+                        return;
+                    }
+                    audioDockLoopStartFraction = juce::jlimit(0.0, 1.0, juce::jmin(start, end) / duration);
+                    audioDockLoopEndFraction = juce::jlimit(0.0, 1.0, juce::jmax(start, end) / duration);
+                    audioDockLoopEnabled = enabled && audioDockLoopEndFraction > audioDockLoopStartFraction;
+                    repaint();
+                },
+                [this] { showAudioDockSnapDialog(); },
+                [this] { showAudioDockTimeFormatDialog(); },
+                [this] { audioDockTransientEnabled = !audioDockTransientEnabled;
+                         if (audioDockTransientEnabled) refreshAudioDockTransientMarkers(selectedTrack);
+                         repaint(); }));
             options.componentToCentreAround = this;
             options.escapeKeyTriggersCloseButton = true;
             options.useNativeTitleBar = true;
