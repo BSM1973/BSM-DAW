@@ -2614,8 +2614,7 @@ void MainComponent::timerCallback()
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
     // The dock loop is independent of the arrangement loop settings.
-    const bool dockLoopValid = audioDockLoopEnabled && !dockCollapsed && !dockMixerMode
-        && !dockStepSequencerMode && selectedTrack >= 0
+    const bool dockLoopValid = audioDockLoopEnabled && selectedTrack >= 0
         && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack)
         && audioDockLoopEndFraction > audioDockLoopStartFraction;
     // Clip boundary markers define a non-destructive playback window.
@@ -4311,12 +4310,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     std::function<void(double, double, bool)> updateLoop,
                     std::function<void()> openSnapSettings,
                     std::function<void()> openTimeSettings,
-                    std::function<void()> openTransientSettings)
+                    std::function<void()> openTransientSettings,
+                    std::function<std::vector<double>()> readTransients)
                     : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid)),
                       publishLoop(std::move(updateLoop)),
                       snapSettings(std::move(openSnapSettings)),
                       timeSettings(std::move(openTimeSettings)),
-                      transientSettings(std::move(openTransientSettings))
+                      transientSettings(std::move(openTransientSettings)),
+                      transientMarkers(std::move(readTransients))
                 {
                     setSize(980, 550);
                     warp.setButtonText("WARP");
@@ -4508,6 +4509,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                                                            : juce::Colour(0xff6baeea).withAlpha(0.23f));
                         g.fillRect(selected);
                     }
+                    if (transientMarkers)
+                    {
+                        const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
+                        g.setColour(juce::Colour(0xff59d8b7).withAlpha(0.8f));
+                        for (const double seconds : transientMarkers())
+                        {
+                            const int x = bounds.getX() + (int)std::round(
+                                seconds / duration * bounds.getWidth() * zoom);
+                            if (x >= bounds.getX() && x < bounds.getRight())
+                                g.drawVerticalLine(x, (float)bounds.getY(), (float)bounds.getBottom());
+                        }
+                    }
                     g.setColour(juce::Colour(0xffffba66));
                     for (int i = 0; i < audio.getTrackWarpMarkerCount(track); ++i)
                     {
@@ -4530,6 +4543,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 juce::TextButton snapOptions, timeOptions, transientOptions;
                 std::function<void(double, double, bool)> publishLoop;
                 std::function<void()> snapSettings, timeSettings, transientSettings;
+                std::function<std::vector<double>()> transientMarkers;
                 juce::ToggleButton snap, loop, selection;
                 std::function<double(double)> musicalSnap;
                 double selectionBegin = -1.0, selectionEnd = -1.0;
@@ -4561,7 +4575,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 [this] { showAudioDockTimeFormatDialog(); },
                 [this] { audioDockTransientEnabled = !audioDockTransientEnabled;
                          if (audioDockTransientEnabled) refreshAudioDockTransientMarkers(selectedTrack);
-                         repaint(); }));
+                         repaint(); },
+                [this, trackIndex = selectedTrack]()
+                {
+                    if (!audioDockTransientEnabled) return std::vector<double>{};
+                    const auto it = audioDockAutomaticMarkers.find(trackIndex);
+                    return it != audioDockAutomaticMarkers.end() ? it->second : std::vector<double>{};
+                }));
             options.componentToCentreAround = this;
             options.escapeKeyTriggersCloseButton = true;
             options.useNativeTitleBar = true;
