@@ -3511,10 +3511,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto loopButton = juce::Rectangle<int>(
             snapButton.getRight() + 6, formatButton.getY(),
             juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
+        const auto transientButton = juce::Rectangle<int>(
+            loopButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(98, juce::jmax(0, dockInner.getRight() - loopButton.getRight() - 6)), 20);
         // Dedicated visible button; Ctrl+click on WARP remains a shortcut.
         const auto gainPitchButton = juce::Rectangle<int>(
-            loopButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(114, juce::jmax(0, dockInner.getRight() - loopButton.getRight() - 6)), 20);
+            transientButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(114, juce::jmax(0, dockInner.getRight() - transientButton.getRight() - 6)), 20);
         if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
             || (warpButton.contains(p) && event.mods.isCtrlDown()))
         {
@@ -3561,9 +3564,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         // Automatic transient detection is available via Shift+click on WARP.
         // Analysis is performed on the UI thread, never in the audio callback.
-        if (warpButton.getWidth() >= 55 && warpButton.contains(p)
-            && event.mods.isShiftDown() && event.mods.isLeftButtonDown())
+        if ((warpButton.getWidth() >= 55 && warpButton.contains(p)
+             && event.mods.isShiftDown() && event.mods.isLeftButtonDown())
+            || (transientButton.getWidth() >= 65 && transientButton.contains(p)))
         {
+            audioDockTransientEnabled = !audioDockTransientEnabled;
             const auto buffer = audioEngine.getAudioBufferSnapshot(selectedTrack);
             const double sampleRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
             if (buffer != nullptr && sampleRate > 0.0 && buffer->getNumSamples() > 1024)
@@ -3585,13 +3590,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         (double)(hop * juce::jmax(1, buffer->getNumChannels())));
                 }
                 std::vector<std::pair<double, int>> candidates;
+                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
+                const double threshold = 0.030 - 0.00027 * sensitivity;
+                const double backgroundFactor = 4.0 - 0.032 * sensitivity;
                 double background = 0.0;
                 for (int frame = 2; frame + 1 < frames; ++frame)
                 {
                     const double rise = juce::jmax(0.0,
                         energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
                     background = 0.97 * background + 0.03 * rise;
-                    if (rise > 0.008 && rise > background * 1.8
+                    if (rise > threshold && rise > background * backgroundFactor
                         && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
                         candidates.emplace_back(rise, frame);
                 }
@@ -3609,11 +3617,30 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (separated) chosen.push_back(candidate.second);
                 }
                 std::sort(chosen.begin(), chosen.end());
-                audioEngine.resetTrackWarpMarkers(selectedTrack);
-                for (const int frame : chosen)
+                // Remove only markers created by the previous automatic pass.
+                auto& automatic = audioDockAutomaticMarkers[selectedTrack];
+                for (const double previous : automatic)
                 {
-                    const double seconds = (double)frame * hop / sampleRate;
-                    audioEngine.addTrackWarpMarker(selectedTrack, seconds, seconds);
+                    const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
+                    for (int i = count - 2; i > 0; --i)
+                    {
+                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i)
+                                     - previous) < 0.0005)
+                        {
+                            audioEngine.removeTrackWarpMarker(selectedTrack, i);
+                            break;
+                        }
+                    }
+                }
+                automatic.clear();
+                if (audioDockTransientEnabled)
+                {
+                    for (const int frame : chosen)
+                    {
+                        const double seconds = (double)frame * hop / sampleRate;
+                        if (audioEngine.addTrackWarpMarker(selectedTrack, seconds, seconds))
+                            automatic.push_back(seconds);
+                    }
                 }
                 // Show detected markers immediately; keep the warp engine enabled.
                 audioEngine.setTrackWarpEnabled(selectedTrack, true);
