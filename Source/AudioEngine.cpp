@@ -649,7 +649,7 @@ void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
 {
     if (!isValidTrackIndex(trackIndex)) return;
     auto& track = *tracks[(size_t)trackIndex];
-    const int clampedMode = juce::jlimit(0, 4, mode);
+    const int clampedMode = juce::jlimit(0, 5, mode);
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
     std::shared_ptr<WarpMarkerSnapshot> snapshot;
     if (current != nullptr)
@@ -1690,7 +1690,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             targetMarkers[(size_t)marker] = warpSnapshot->target[(size_t)marker];
         }
 
-        const int mode = juce::jlimit(0, 4, warpSnapshot->mode);
+        const int mode = juce::jlimit(0, 5, warpSnapshot->mode);
         const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
 
         auto readWarpedSample = [&](int channel, double samplePosition) -> float
