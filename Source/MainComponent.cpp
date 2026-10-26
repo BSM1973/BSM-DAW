@@ -386,9 +386,22 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(audioDockLoopEnabled ? "LOOP ON" : "LOOP OFF",
                 loopButton, juce::Justification::centred);
         }
-        const auto gainPitchButton = juce::Rectangle<int>(
+        const auto transientButton = juce::Rectangle<int>(
             loopButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(114, juce::jmax(0, inner.getRight() - loopButton.getRight() - 6)), 20);
+            juce::jmin(98, juce::jmax(0, inner.getRight() - loopButton.getRight() - 6)), 20);
+        if (transientButton.getWidth() >= 65)
+        {
+            g.setColour(audioDockTransientEnabled ? juce::Colour(0xff246a62) : juce::Colour(0xff29475f));
+            g.fillRoundedRectangle(transientButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff79d7c4));
+            g.drawRoundedRectangle(transientButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(audioDockTransientEnabled ? "TRANS ON" : "TRANS OFF",
+                transientButton, juce::Justification::centred);
+        }
+        const auto gainPitchButton = juce::Rectangle<int>(
+            transientButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(114, juce::jmax(0, inner.getRight() - transientButton.getRight() - 6)), 20);
         if (gainPitchButton.getWidth() >= 65)
         {
             g.setColour(juce::Colour(0xff29475f));
@@ -396,7 +409,20 @@ void MainComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour(0xff7fcbea));
             g.drawRoundedRectangle(gainPitchButton.toFloat(), 4.0f, 1.0f);
             g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("GAIN / PITCH", gainPitchButton, juce::Justification::centred);
+            g.drawText("PROPRIETES", gainPitchButton, juce::Justification::centred);
+        }
+        const auto reverseButton = juce::Rectangle<int>(
+            gainPitchButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(84, juce::jmax(0, inner.getRight() - gainPitchButton.getRight() - 6)), 20);
+        if (reverseButton.getWidth() >= 55)
+        {
+            g.setColour(audioEngine.isTrackClipReversed(selectedTrack)
+                ? juce::Colour(0xff654c86) : juce::Colour(0xff29475f));
+            g.fillRoundedRectangle(reverseButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xffc6a6f2));
+            g.drawRoundedRectangle(reverseButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("REVERSE", reverseButton, juce::Justification::centred);
         }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
@@ -3518,6 +3544,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto gainPitchButton = juce::Rectangle<int>(
             transientButton.getRight() + 6, formatButton.getY(),
             juce::jmin(114, juce::jmax(0, dockInner.getRight() - transientButton.getRight() - 6)), 20);
+        const auto reverseButton = juce::Rectangle<int>(
+            gainPitchButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(84, juce::jmax(0, dockInner.getRight() - gainPitchButton.getRight() - 6)), 20);
+        if (reverseButton.getWidth() >= 55 && reverseButton.contains(p))
+        {
+            audioEngine.setTrackClipReverse(selectedTrack,
+                !audioEngine.isTrackClipReversed(selectedTrack));
+            repaint();
+            return;
+        }
         if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
             || (warpButton.contains(p) && event.mods.isCtrlDown()))
         {
