@@ -47,4 +47,16 @@ struct LibertyAudioEditorHeader
                        button, juce::Justification::centred);
         }
     }
+    static void paintTimeFormat(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                int format)
+    {
+        const char* names[] = { "SECONDES", "MIN:SEC", "ÉCHANTILLONS", "MESURES" };
+        g.setColour(juce::Colour(0xff203b4d));
+        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+        g.setColour(juce::Colour(0xff83bed4));
+        g.drawRoundedRectangle(bounds.toFloat(), 3.0f, 1.0f);
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText(juce::String(names[juce::jlimit(0, 3, format)]),
+                   bounds, juce::Justification::centred);
+    }
 };
