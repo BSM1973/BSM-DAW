@@ -1759,7 +1759,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // Keep extreme ratios on the established interpolation path.
             // The short-grain algorithm is intended for moderate stretches;
             // beyond this range it may repeat or skip attacks excessively.
-            const bool granular = mode == 4 && !clipReversed && std::abs(clipPitchRatio - 1.0) < 0.0001 && sourceRate > 0.0
+            const bool granular = !clipReversed && std::abs(clipPitchRatio - 1.0) < 0.0001 && sourceRate > 0.0
                 && std::isfinite(localRatio)
                 && localRatio >= 0.20 && localRatio <= 4.5
                 && std::abs(localRatio - 1.0) > 0.005;
