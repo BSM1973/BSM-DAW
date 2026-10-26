@@ -59,6 +59,7 @@ public:
         zoomIn.setButtonText("+");
         zoomOut.setButtonText("-");
         snap.setButtonText("SNAP");
+        snap.setClickingTogglesState(true);
         snap.setToggleState(true, juce::dontSendNotification);
         loop.setButtonText("BOUCLE");
         loop.setClickingTogglesState(true);
@@ -178,13 +179,24 @@ public:
             toolbar.getY() + (compact ? 44 : 22), barWidth, 21);
         if (bar.contains(event.getPosition()))
         {
+            if (event.mods.isRightButtonDown()) return;
             const int slot = juce::jlimit(0, 3,
                 (event.x - bar.getX()) * 4 / juce::jmax(1, bar.getWidth()));
             const double duration = audio.getAudioFileLengthSeconds(track);
             if (slot == 0) { selectionBegin = 0.0; selectionEnd = duration; }
             else if (slot == 1) { selectionBegin = -1.0; selectionEnd = -1.0; }
-            else if (slot == 2) { selectionBegin = secondsAt(waveformBounds().getX()); }
-            else { selectionEnd = secondsAt(waveformBounds().getRight()); }
+            else if (slot == 2)
+            {
+                selectionBegin = juce::jlimit(0.0, duration,
+                    selectionEnd >= 0.0 ? selectionEnd : 0.0);
+                if (selectionEnd < 0.0) selectionEnd = duration;
+            }
+            else
+            {
+                selectionEnd = juce::jlimit(0.0, duration,
+                    selectionBegin >= 0.0 ? selectionBegin : duration);
+                if (selectionBegin < 0.0) selectionBegin = 0.0;
+            }
             syncLoop();
             waveform.repaint();
             repaint();
