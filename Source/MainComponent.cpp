@@ -3306,8 +3306,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     hoveredMarker = -1;
                     setMouseCursor(juce::MouseCursor::NormalCursor);
                     if (wasDragging)
+                    {
                         mouseMove(event);
-                    repaint();
+                        repaint();
+                    }
                 }
                 void mouseMove(const juce::MouseEvent& event) override
                 {
