@@ -692,6 +692,37 @@ void MainComponent::paint(juce::Graphics& g)
                     juce::Justification::centredRight, true);
             }
         }
+        // Subdivision grid aligned to project beats and the audio clip's position.
+        if (wave.getWidth() > 0)
+        {
+            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+            const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
+                * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
+            const double step = beat / (double)juce::jmax(1, audioDockSnapDivision);
+            if (duration > 0.0 && std::isfinite(duration) && step > 0.0)
+            {
+                const double visible = 1.0 / audioDockZoom;
+                const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+                const double clipStart = audioEngine.getTrackStartSeconds(selectedTrack);
+                const double first = clipStart + duration * offset;
+                const double last = first + duration * visible;
+                if (step / (duration * visible) * wave.getWidth() >= 7.0)
+                {
+                    const juce::Graphics::ScopedSaveState gridClip(g);
+                    g.reduceClipRegion(wave);
+                    for (double t = std::ceil(first / step) * step; t <= last; t += step)
+                    {
+                        const int x = wave.getX() + (int)std::lround(
+                            ((t - clipStart) / duration - offset) / visible * wave.getWidth());
+                        const double beatIndex = t / beat;
+                        const bool strong = std::abs(beatIndex - std::round(beatIndex)) < 0.0001;
+                        g.setColour(strong ? juce::Colour(0xff55718a).withAlpha(0.55f)
+                                           : juce::Colour(0xff40546a).withAlpha(0.35f));
+                        g.drawVerticalLine(x, (float)wave.getY(), (float)wave.getBottom());
+                    }
+                }
+            }
+        }
         // Warp markers and the arrangement transport share the dock's time scale.
         if (wave.getWidth() > 0)
         {
