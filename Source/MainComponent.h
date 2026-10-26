@@ -40,6 +40,7 @@ public:
     void mouseDrag(const juce::MouseEvent& event) override;
     bool handleAudioDockMouseDrag(const juce::MouseEvent& event);
     void mouseUp(const juce::MouseEvent&) override;
+    bool handleAudioDockMouseUp(const juce::MouseEvent& event);
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
     void auditionPianoKey(int lane, int pitch, bool on) { audioEngine.sendPianoPreviewMidi(lane, on ? juce::MidiMessage::noteOn(1, pitch, (juce::uint8)100) : juce::MidiMessage::noteOff(1, pitch)); }
