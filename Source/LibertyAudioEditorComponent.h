@@ -296,6 +296,11 @@ public:
             juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
         LibertyAudioEditorHeader::paintTimeFormat(g, formatButton,
             getTimeFormat ? getTimeFormat() : 3);
+        const auto warpButton = juce::Rectangle<int>(
+            formatButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(112, juce::jmax(0, inner.getRight() - formatButton.getRight() - 6)), 20);
+        LibertyAudioEditorHeader::paintWarpToggle(g, warpButton,
+            audio.isTrackWarpEnabled(track));
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
