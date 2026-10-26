@@ -690,8 +690,12 @@ void shutdownLibertyAudioClipWarpView()
 
 void detachLibertyAudioClipWarpView(MainComponent& owner, int track)
 {
-    const auto it = controllers.find(&owner);
-    if (it == controllers.end() || !it->second) return;
+    if (track < 0 || track >= owner.getAudioTrackCount()
+        || !owner.audioEngine.hasAudioFile(track)) return;
+    auto it = controllers.find(&owner);
+    if (it == controllers.end())
+        it = controllers.emplace(&owner, std::make_unique<AudioClipWarpView>(owner)).first;
+    if (!it->second) return;
     it->second->showTrack(track);
     it->second->detachToWindow();
 }
