@@ -3801,7 +3801,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             public:
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
-                    setSize(470, 300);
+                    setSize(470, 365);
                     originalDuration = audio.getAudioFileLengthSeconds(track);
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
@@ -3812,6 +3812,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
                     mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
                     addAndMakeVisible(mode);
+                    formant.setSliderStyle(juce::Slider::LinearHorizontal);
+                    formant.setTextBoxStyle(juce::Slider::TextBoxRight, false, 75, 24);
+                    formant.setRange(-12.0, 12.0, 0.1);
+                    formant.setTextValueSuffix(" demi-tons");
+                    formant.setValue(audio.getTrackWarpFormant(track), juce::dontSendNotification);
+                    formant.onValueChange = [this] { audio.setTrackWarpFormant(track, formant.getValue()); };
+                    addAndMakeVisible(formant);
                     const char* ratios[] = { "50 %", "75 %", "100 %", "125 %", "150 %", "200 %" };
                     for (int i = 0; i < 6; ++i) ratio.addItem(ratios[i], i + 1);
                     ratio.setSelectedId(3, juce::dontSendNotification);
@@ -3840,8 +3847,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(13.0f));
                     g.drawText("Algorithme", 28, 112, 145, 24, juce::Justification::centredLeft);
                     g.drawText("Duree relative", 28, 162, 145, 24, juce::Justification::centredLeft);
+                    g.drawText("Formants vocaux (reserve au moteur spectral)", 28, 264, getWidth()-56, 22, juce::Justification::centredLeft);
                     g.drawText("Duree actuelle : " + juce::String(audio.getAudioFileLengthSeconds(track), 3) + " s",
-                        28, 263, getWidth() - 56, 20, juce::Justification::centredLeft);
+                        28, 328, getWidth() - 56, 20, juce::Justification::centredLeft);
                 }
                 void resized() override
                 {
@@ -3849,6 +3857,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     mode.setBounds(175, 110, getWidth() - 205, 28);
                     ratio.setBounds(175, 160, getWidth() - 205, 28);
                     apply.setBounds(28, 211, getWidth() - 56, 36);
+                    formant.setBounds(28, 287, getWidth() - 56, 30);
                 }
             private:
                 AudioEngine& audio;
@@ -3856,6 +3865,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 double originalDuration = 0.0;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
+                juce::Slider formant;
                 juce::TextButton apply;
             };
             juce::DialogWindow::LaunchOptions options;
