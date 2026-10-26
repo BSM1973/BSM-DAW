@@ -16,6 +16,28 @@ public:
     std::function<void(double, const juce::MouseEvent&)> onPress;
     std::function<void(double, const juce::MouseEvent&)> onMove;
     std::function<void(double, const juce::MouseEvent&)> onRelease;
+    // Centralized editing dispatch. Hosts supply the AudioEngine operations,
+    // keeping their own SNAP, gesture priorities and undo policy.
+    struct WarpEditActions
+    {
+        std::function<bool(double, double)> create;
+        std::function<void(int, double)> move;
+        std::function<void(int)> erase;
+        bool add(double sourceSeconds, double targetSeconds) const
+        {
+            return create ? create(sourceSeconds, targetSeconds) : false;
+        }
+        void drag(int index, double targetSeconds) const
+        {
+            if (move && index > 0 && std::isfinite(targetSeconds))
+                move(index, targetSeconds);
+        }
+        void remove(int index) const
+        {
+            if (erase && index > 0) erase(index);
+        }
+    };
+
     // Shared piecewise-linear Warp transform, used by both waveform hosts.
     // Marker pairs are { sourceSeconds, targetSeconds } in ascending target order.
     static double sourceFractionForTarget(double targetFraction, double targetDuration,
