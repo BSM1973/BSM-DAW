@@ -3196,7 +3196,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 {
                     draggingMarker = -1;
                     panning = false;
-                    if (!inWaveform(event.getPosition())) return;
+                    if (!inWaveform(event.getPosition()))
+                    {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        return;
+                    }
                     if (event.mods.isMiddleButtonDown() || event.mods.isAltDown())
                     {
                         if (hoveredMarker != -1)
