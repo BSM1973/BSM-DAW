@@ -391,7 +391,7 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
-        const auto wave = inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
+        const auto wave = getAudioDockWaveBoundsFor(editorArea);
         const auto rulerSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
         const int rulerSamples = rulerSnapshot != nullptr ? rulerSnapshot->getNumSamples() : 0;
         const double rulerDuration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
@@ -3007,12 +3007,16 @@ juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
             juce::jmax(0, getHeight() - getMixerTop() - 36)};
 }
 
-juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
+juce::Rectangle<int> MainComponent::getAudioDockWaveBoundsFor(juce::Rectangle<int> editor) const
 {
-    const auto editor = getAudioDockEditorBounds();
     const auto inner = editor.reduced(14, 12);
     const int rulerTop = inner.getWidth() < 600 ? 94 : 70;
     return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
+}
+
+juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
+{
+    return getAudioDockWaveBoundsFor(getAudioDockEditorBounds());
 }
 
 double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
