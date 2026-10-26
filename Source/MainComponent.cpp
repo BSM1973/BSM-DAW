@@ -3357,6 +3357,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         (double)(event.x - 40) / (double)juce::jmax(1, getWidth() - 80));
                     const double newZoom = juce::jlimit(1.0, 32.0,
                         zoom * (wheel.deltaY > 0.0f ? 1.25 : 0.8));
+                    if (std::abs(newZoom - zoom) < 0.000001) return;
                     zoom = newZoom;
                     viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
                         anchor / juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
