@@ -3181,7 +3181,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
                 void mouseDoubleClick(const juce::MouseEvent& event) override
                 {
-                    if (!inWaveform(event.getPosition())) return;
+                    if (!inWaveform(event.getPosition())
+                        || event.mods.isAltDown() || event.mods.isMiddleButtonDown()
+                        || event.mods.isRightButtonDown()) return;
                     const double seconds = timeAt(event.x);
                     if (audio.addTrackWarpMarker(track, sourceTimeForTarget(seconds), seconds))
                     {
