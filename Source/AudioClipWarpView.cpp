@@ -14,6 +14,14 @@ juce::String getLibertyTrackName(int track);
 
 namespace
 {
+class LibertyAudioFloatingWindow final : public juce::DocumentWindow
+{
+public:
+    LibertyAudioFloatingWindow()
+        : juce::DocumentWindow("Liberty - Audio", juce::Colour(0xff101e2d), closeButton) {}
+    void closeButtonPressed() override { setVisible(false); }
+};
+
 class AudioClipWarpView final : public juce::Component, private juce::Timer
 {
 public:
@@ -43,7 +51,8 @@ public:
         if (track < 0 || track >= owner.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(track)) return;
         selectedTrack = track;
         owner.selectedTrack = track;
-        setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
+        if (floatingWindow == nullptr)
+            setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
         setVisible(true);
         toFront(false);
         repaint();
@@ -61,9 +70,7 @@ public:
     {
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack)) return;
         if (floatingWindow != nullptr) { floatingWindow->toFront(true); return; }
-        auto window = std::make_unique<juce::DocumentWindow>(
-            "Liberty - Audio", juce::Colour(0xff101e2d),
-            juce::DocumentWindow::closeButton);
+        auto window = std::make_unique<LibertyAudioFloatingWindow>();
         window->setUsingNativeTitleBar(true);
         owner.removeChildComponent(this);
         window->setContentNonOwned(this, false);
@@ -622,7 +629,7 @@ private:
     }
 
     MainComponent& owner;
-    std::unique_ptr<juce::DocumentWindow> floatingWindow;
+    std::unique_ptr<LibertyAudioFloatingWindow> floatingWindow;
     OwnerListener ownerListener;
     std::atomic<bool> stopped { false };
     int selectedTrack = -1;
