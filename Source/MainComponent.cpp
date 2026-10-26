@@ -3197,6 +3197,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (!inWaveform(event.getPosition())) return;
                     if (event.mods.isMiddleButtonDown() || event.mods.isAltDown())
                     {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
                         panning = true;
                         panStartX = event.x;
                         panStartFraction = viewStart;
