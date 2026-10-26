@@ -34,6 +34,7 @@ public:
         if (stopped.exchange(true)) return;
         stopTimer();
         owner.removeMouseListener(&ownerListener);
+        if (floatingWindow != nullptr) attachToDock();
         setVisible(false);
     }
 
@@ -54,6 +55,35 @@ public:
         draggingMarker = -1;
         setVisible(false);
         owner.repaint();
+    }
+
+    void detachToWindow()
+    {
+        if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack)) return;
+        if (floatingWindow != nullptr) { floatingWindow->toFront(true); return; }
+        auto window = std::make_unique<juce::DocumentWindow>(
+            "Liberty - Audio", juce::Colour(0xff101e2d),
+            juce::DocumentWindow::closeButton);
+        window->setUsingNativeTitleBar(true);
+        owner.removeChildComponent(this);
+        window->setContentNonOwned(this, false);
+        window->setResizable(true, true);
+        window->setResizeLimits(700, 300, 2400, 1600);
+        window->centreWithSize(1100, 550);
+        floatingWindow = std::move(window);
+        floatingWindow->setVisible(true);
+        setVisible(true);
+    }
+
+    void attachToDock()
+    {
+        if (floatingWindow == nullptr) return;
+        floatingWindow->setContentNonOwned(nullptr, false);
+        floatingWindow->setVisible(false);
+        floatingWindow.reset();
+        owner.addAndMakeVisible(this);
+        setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
+        repaint();
     }
 
     void paint(juce::Graphics& g) override
@@ -581,12 +611,18 @@ private:
             hideView();
             return;
         }
+        if (floatingWindow != nullptr)
+        {
+            if (!floatingWindow->isVisible()) attachToDock();
+            else { repaint(); return; }
+        }
         const auto wanted = juce::Rectangle<int>(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
         if (getBounds() != wanted) setBounds(wanted);
         repaint();
     }
 
     MainComponent& owner;
+    std::unique_ptr<juce::DocumentWindow> floatingWindow;
     OwnerListener ownerListener;
     std::atomic<bool> stopped { false };
     int selectedTrack = -1;
@@ -634,4 +670,12 @@ Bootstrap bootstrap;
 void shutdownLibertyAudioClipWarpView()
 {
     bootstrap.shutdown();
+}
+
+void detachLibertyAudioClipWarpView(MainComponent& owner, int track)
+{
+    const auto it = controllers.find(&owner);
+    if (it == controllers.end() || !it->second) return;
+    it->second->showTrack(track);
+    it->second->detachToWindow();
 }
