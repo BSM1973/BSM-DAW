@@ -373,6 +373,19 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(audioDockSnapEnabled ? "SNAP ON" : "SNAP OFF",
                 snapButton, juce::Justification::centred);
         }
+        const auto loopButton = juce::Rectangle<int>(
+            snapButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(100, juce::jmax(0, inner.getRight() - snapButton.getRight() - 6)), 20);
+        if (loopButton.getWidth() >= 48)
+        {
+            g.setColour(audioDockLoopEnabled ? juce::Colour(0xff276957) : juce::Colour(0xff203b4d));
+            g.fillRoundedRectangle(loopButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff39d7b5));
+            g.drawRoundedRectangle(loopButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(audioDockLoopEnabled ? "LOOP ON" : "LOOP OFF",
+                loopButton, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -3408,6 +3421,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto snapButton = juce::Rectangle<int>(
             warpButton.getRight() + 6, formatButton.getY(),
             juce::jmin(110, juce::jmax(0, dockInner.getRight() - warpButton.getRight() - 6)), 20);
+        const auto loopButton = juce::Rectangle<int>(
+            snapButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
+        if (loopButton.getWidth() >= 48 && loopButton.contains(p))
+        {
+            audioDockLoopEnabled = !audioDockLoopEnabled;
+            if (audioSelectionActive && audioSelectionTrack == selectedTrack)
+            {
+                audioDockLoopStartFraction = juce::jmin(audioSelectionStart, audioSelectionEnd);
+                audioDockLoopEndFraction = juce::jmax(audioSelectionStart, audioSelectionEnd);
+            }
+            repaint();
+            return;
+        }
         if (snapButton.getWidth() >= 50 && snapButton.contains(p))
         {
             showAudioDockSnapDialog();
