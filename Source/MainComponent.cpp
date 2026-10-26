@@ -4837,13 +4837,13 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
     handleMixerMouse(event);
 }
 
-void MainComponent::mouseUp(const juce::MouseEvent& event)
+bool MainComponent::handleAudioDockMouseUp(const juce::MouseEvent& event)
 {
     if (draggingAudioDockNavigator)
     {
         draggingAudioDockNavigator = false;
         repaint();
-        return;
+        return true;
     }
 
     if (draggingAudioDockLoopMarker != 0)
@@ -4851,7 +4851,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         draggingAudioDockLoopMarker = 0;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
-        return;
+        return true;
     }
     if (draggingDockWarpMarker > 0)
     {
@@ -4859,7 +4859,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         draggingDockWarpTrack = -1;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
-        return;
+        return true;
     }
 
     if (draggingAudioClipBoundary != 0)
@@ -4874,7 +4874,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         draggingAudioClipBoundary = 0;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
-        return;
+        return true;
     }
 
     if (draggingAudioSelection)
@@ -4886,8 +4886,15 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         else audioSelectionEnd = fraction;
         draggingAudioSelection = false;
         repaint();
-        return;
+        return true;
     }
+
+    return false;
+}
+
+void MainComponent::mouseUp(const juce::MouseEvent& event)
+{
+    if (handleAudioDockMouseUp(event)) return;
     if (draggingDockHeight)
     {
         draggingDockHeight = false;
