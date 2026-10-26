@@ -47,6 +47,8 @@ public:
             floatingWindow->setContentNonOwned(nullptr, false);
             floatingWindow.reset();
         }
+        if (getParentComponent() == &owner)
+            owner.removeChildComponent(this);
         setVisible(false);
     }
 
