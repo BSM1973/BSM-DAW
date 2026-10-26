@@ -4421,6 +4421,24 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     addAndMakeVisible(resetMarkers);
                     waveform.getBuffer = [this] { return audio.getAudioBufferSnapshot(track); };
                     waveform.getDuration = [this] { return audio.getAudioFileLengthSeconds(track); };
+                    waveform.getSourceDuration = [this]
+                    {
+                        const auto pcm = audio.getAudioBufferSnapshot(track);
+                        const double rate = audio.getAudioBufferSampleRate(track);
+                        return pcm && rate > 0.0 ? pcm->getNumSamples() / rate
+                                                 : audio.getAudioFileLengthSeconds(track);
+                    };
+                    waveform.getWarpPairs = [this]
+                    {
+                        std::vector<std::pair<double, double>> pairs;
+                        if (!audio.isTrackWarpEnabled(track)) return pairs;
+                        const int count = audio.getTrackWarpMarkerCount(track);
+                        pairs.reserve((size_t)count);
+                        for (int index = 0; index < count; ++index)
+                            pairs.emplace_back(audio.getTrackWarpMarkerSourceSeconds(track, index),
+                                               audio.getTrackWarpMarkerTargetSeconds(track, index));
+                        return pairs;
+                    };
                     waveform.getMarkers = [this]
                     {
                         std::vector<LibertyAudioWaveformView::Marker> markers;
