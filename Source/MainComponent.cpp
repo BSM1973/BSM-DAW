@@ -3429,11 +3429,9 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
     return true;
 }
 
-void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
+bool MainComponent::handleAudioDockMouseDoubleClick(const juce::MouseEvent& event)
 {
-    const auto click = event.getPosition();
-    // The real audio dock is painted by MainComponent, not AudioClipWarpView.
-    // Insert markers here so double-clicks reach the waveform users actually see.
+    const auto click = event.getEventRelativeTo(this).getPosition();
     if (click.y >= getMixerTop())
     {
         if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -3459,7 +3457,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                         audioEngine.removeTrackWarpMarker(selectedTrack, i);
                         draggingDockWarpMarker = -1;
                         repaint();
-                        return;
+                        return true;
                     }
                 }
                 audioSelectionActive = false;
@@ -3473,8 +3471,17 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                 }
             }
         }
-        return;
+        return true;
     }
+    return false;
+}
+
+void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    const auto click = event.getPosition();
+    // The real audio dock is painted by MainComponent, not AudioClipWarpView.
+    // Insert markers here so double-clicks reach the waveform users actually see.
+    if (handleAudioDockMouseDoubleClick(event)) return;
     if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
     {
         const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
