@@ -964,7 +964,7 @@ void MainComponent::paint(juce::Graphics& g)
     // Keep the existing audio editor rendering isolated from other dock modes.
     // The graphics context is explicit so it can later be hosted by a JUCE child.
     if (!dockMixerMode && isAudioDockTrack)
-        paintExistingAudioDock(g, editorArea);
+        audioDockSurface.repaint();
         else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
