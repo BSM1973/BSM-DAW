@@ -679,6 +679,41 @@ void MainComponent::paint(juce::Graphics& g)
                     juce::Justification::centredRight, true);
             }
         }
+        // Warp markers and the arrangement transport share the dock's time scale.
+        if (wave.getWidth() > 0)
+        {
+            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+            if (duration > 0.0 && std::isfinite(duration))
+            {
+                const double visible = 1.0 / audioDockZoom;
+                const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+                const int markerCount = audioEngine.getTrackWarpMarkerCount(selectedTrack);
+                for (int marker = 1; marker < markerCount - 1; ++marker)
+                {
+                    const double seconds = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, marker);
+                    const double fraction = seconds / duration;
+                    if (!std::isfinite(fraction) || fraction < offset || fraction > offset + visible) continue;
+                    const int x = wave.getX() + (int)std::lround((fraction - offset) / visible * wave.getWidth());
+                    g.setColour(juce::Colour(0xffffc857));
+                    g.drawVerticalLine(x, (float)wave.getY(), (float)wave.getBottom());
+                    g.fillEllipse((float)x - 4.0f, (float)wave.getY() + 3.0f, 8.0f, 8.0f);
+                }
+                const double playhead = audioEngine.getCurrentTimeSeconds()
+                    - audioEngine.getTrackStartSeconds(selectedTrack);
+                const double fraction = playhead / duration;
+                if (std::isfinite(fraction) && fraction >= offset && fraction <= offset + visible)
+                {
+                    const int x = wave.getX() + (int)std::lround((fraction - offset) / visible * wave.getWidth());
+                    g.setColour(juce::Colour(0xfffff1d2));
+                    g.fillRect(x, ruler.getY(), 2, wave.getBottom() - ruler.getY());
+                    juce::Path triangle;
+                    triangle.addTriangle((float)x - 5.0f, (float)ruler.getY(),
+                        (float)x + 7.0f, (float)ruler.getY(),
+                        (float)x + 1.0f, (float)ruler.getY() + 7.0f);
+                    g.fillPath(triangle);
+                }
+            }
+        }
         // Boundary markers must be painted above the waveform, not underneath it.
         // Distinct clip-boundary guides; do not alter the underlying audio.
         if (wave.getWidth() > 0)
@@ -2906,9 +2941,29 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto click = event.getPosition();
-    // Double-clicks on the dock are mixer interactions, never MIDI-editor shortcuts.
-    // The first mouseDown already handles M/S/fader/pan; do not dispatch again.
-    if (click.y >= getMixerTop()) return;
+    // The real audio dock is painted by MainComponent, not AudioClipWarpView.
+    // Insert markers here so double-clicks reach the waveform users actually see.
+    if (click.y >= getMixerTop())
+    {
+        if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+            && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+            && audioEngine.hasAudioFile(selectedTrack)
+            && !event.mods.isRightButtonDown() && !event.mods.isAltDown()
+            && getAudioDockWaveBounds().contains(click))
+        {
+            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
+            if (duration > 0.0 && std::isfinite(duration))
+            {
+                const double target = audioDockFractionAt(click.x) * duration;
+                if (std::isfinite(target) && audioEngine.addTrackWarpMarker(selectedTrack, target, target))
+                {
+                    audioEngine.setTrackWarpEnabled(selectedTrack, true);
+                    repaint();
+                }
+            }
+        }
+        return;
+    }
     if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
     {
         const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
