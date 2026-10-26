@@ -3061,6 +3061,88 @@ void MainComponent::showAudioDockTimeFormatDialog()
     options.launchAsync();
 }
 
+void MainComponent::refreshAudioDockTransientMarkers(int track)
+{
+            const auto buffer = audioEngine.getAudioBufferSnapshot(track);
+            const double sampleRate = audioEngine.getAudioBufferSampleRate(track);
+            if (buffer != nullptr && sampleRate > 0.0 && buffer->getNumSamples() > 1024)
+            {
+                const int hop = juce::jmax(64, (int)std::round(sampleRate * 0.005));
+                const int minimumGap = juce::jmax(1, (int)std::round(0.055 * sampleRate / hop));
+                const int frames = buffer->getNumSamples() / hop;
+                std::vector<double> energy((size_t)frames, 0.0);
+                for (int frame = 0; frame < frames; ++frame)
+                {
+                    double total = 0.0;
+                    for (int channel = 0; channel < buffer->getNumChannels(); ++channel)
+                    {
+                        const float* data = buffer->getReadPointer(channel, frame * hop);
+                        for (int sample = 0; sample < hop; ++sample)
+                            total += (double)data[sample] * data[sample];
+                    }
+                    energy[(size_t)frame] = std::sqrt(total /
+                        (double)(hop * juce::jmax(1, buffer->getNumChannels())));
+                }
+                std::vector<std::pair<double, int>> candidates;
+                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
+                const double threshold = 0.030 - 0.00027 * sensitivity;
+                const double backgroundFactor = 4.0 - 0.032 * sensitivity;
+                double background = 0.0;
+                for (int frame = 2; frame + 1 < frames; ++frame)
+                {
+                    const double rise = juce::jmax(0.0,
+                        energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
+                    background = 0.97 * background + 0.03 * rise;
+                    if (rise > threshold && rise > background * backgroundFactor
+                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
+                        candidates.emplace_back(rise, frame);
+                }
+                std::sort(candidates.begin(), candidates.end(),
+                    [](const auto& a, const auto& b) { return a.first > b.first; });
+                std::vector<int> chosen;
+                const int capacity = juce::jmax(0, AudioEngine::maxWarpMarkers - 2);
+                for (const auto& candidate : candidates)
+                {
+                    if ((int)chosen.size() >= capacity) break;
+                    bool separated = true;
+                    for (const int previous : chosen)
+                        if (std::abs(previous - candidate.second) < minimumGap)
+                        { separated = false; break; }
+                    if (separated) chosen.push_back(candidate.second);
+                }
+                std::sort(chosen.begin(), chosen.end());
+                // Remove only markers created by the previous automatic pass.
+                auto& automatic = audioDockAutomaticMarkers[track];
+                for (const double previous : automatic)
+                {
+                    const int count = audioEngine.getTrackWarpMarkerCount(track);
+                    for (int i = count - 2; i > 0; --i)
+                    {
+                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(track, i)
+                                     - previous) < 0.0005)
+                        {
+                            audioEngine.removeTrackWarpMarker(track, i);
+                            break;
+                        }
+                    }
+                }
+                automatic.clear();
+                if (audioDockTransientEnabled)
+                {
+                    for (const int frame : chosen)
+                    {
+                        const double seconds = (double)frame * hop / sampleRate;
+                        if (audioEngine.addTrackWarpMarker(track, seconds, seconds))
+                            automatic.push_back(seconds);
+                    }
+                }
+                // Show detected markers immediately; keep the warp engine enabled.
+                audioEngine.setTrackWarpEnabled(track, true);
+                repaint();
+            }
+
+}
+
 void MainComponent::showAudioDockSnapDialog()
 {
     // A dedicated, resizable Liberty-style panel instead of a PopupMenu.
@@ -3576,6 +3658,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     sensitivity.onValueChange = [this]
                     {
                         owner.audioDockTransientSensitivity = sensitivity.getValue();
+                        if (owner.audioDockTransientEnabled)
+                            owner.refreshAudioDockTransientMarkers(track);
                         owner.repaint();
                     };
                     gain.onValueChange = [this]
@@ -3670,83 +3754,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             || (transientButton.getWidth() >= 65 && transientButton.contains(p)))
         {
             audioDockTransientEnabled = !audioDockTransientEnabled;
-            const auto buffer = audioEngine.getAudioBufferSnapshot(selectedTrack);
-            const double sampleRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
-            if (buffer != nullptr && sampleRate > 0.0 && buffer->getNumSamples() > 1024)
-            {
-                const int hop = juce::jmax(64, (int)std::round(sampleRate * 0.005));
-                const int minimumGap = juce::jmax(1, (int)std::round(0.055 * sampleRate / hop));
-                const int frames = buffer->getNumSamples() / hop;
-                std::vector<double> energy((size_t)frames, 0.0);
-                for (int frame = 0; frame < frames; ++frame)
-                {
-                    double total = 0.0;
-                    for (int channel = 0; channel < buffer->getNumChannels(); ++channel)
-                    {
-                        const float* data = buffer->getReadPointer(channel, frame * hop);
-                        for (int sample = 0; sample < hop; ++sample)
-                            total += (double)data[sample] * data[sample];
-                    }
-                    energy[(size_t)frame] = std::sqrt(total /
-                        (double)(hop * juce::jmax(1, buffer->getNumChannels())));
-                }
-                std::vector<std::pair<double, int>> candidates;
-                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
-                const double threshold = 0.030 - 0.00027 * sensitivity;
-                const double backgroundFactor = 4.0 - 0.032 * sensitivity;
-                double background = 0.0;
-                for (int frame = 2; frame + 1 < frames; ++frame)
-                {
-                    const double rise = juce::jmax(0.0,
-                        energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
-                    background = 0.97 * background + 0.03 * rise;
-                    if (rise > threshold && rise > background * backgroundFactor
-                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
-                        candidates.emplace_back(rise, frame);
-                }
-                std::sort(candidates.begin(), candidates.end(),
-                    [](const auto& a, const auto& b) { return a.first > b.first; });
-                std::vector<int> chosen;
-                const int capacity = juce::jmax(0, AudioEngine::maxWarpMarkers - 2);
-                for (const auto& candidate : candidates)
-                {
-                    if ((int)chosen.size() >= capacity) break;
-                    bool separated = true;
-                    for (const int previous : chosen)
-                        if (std::abs(previous - candidate.second) < minimumGap)
-                        { separated = false; break; }
-                    if (separated) chosen.push_back(candidate.second);
-                }
-                std::sort(chosen.begin(), chosen.end());
-                // Remove only markers created by the previous automatic pass.
-                auto& automatic = audioDockAutomaticMarkers[selectedTrack];
-                for (const double previous : automatic)
-                {
-                    const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
-                    for (int i = count - 2; i > 0; --i)
-                    {
-                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i)
-                                     - previous) < 0.0005)
-                        {
-                            audioEngine.removeTrackWarpMarker(selectedTrack, i);
-                            break;
-                        }
-                    }
-                }
-                automatic.clear();
-                if (audioDockTransientEnabled)
-                {
-                    for (const int frame : chosen)
-                    {
-                        const double seconds = (double)frame * hop / sampleRate;
-                        if (audioEngine.addTrackWarpMarker(selectedTrack, seconds, seconds))
-                            automatic.push_back(seconds);
-                    }
-                }
-                // Show detected markers immediately; keep the warp engine enabled.
-                audioEngine.setTrackWarpEnabled(selectedTrack, true);
-                repaint();
-            }
+            refreshAudioDockTransientMarkers(selectedTrack);
             return;
         }
         if (loopButton.getWidth() >= 48 && loopButton.contains(p))
