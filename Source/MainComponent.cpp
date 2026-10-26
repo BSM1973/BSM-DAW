@@ -4306,8 +4306,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             class DetachedAudioEditor final : public juce::Component, private juce::Timer
             {
             public:
-                DetachedAudioEditor(AudioEngine& engine, int trackIndex)
-                    : audio(engine), track(trackIndex)
+                DetachedAudioEditor(AudioEngine& engine, int trackIndex,
+                    std::function<double(double)> snapToMusicalGrid)
+                    : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid))
                 {
                     setSize(980, 550);
                     warp.setButtonText("WARP");
@@ -4336,6 +4337,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     zoomOut.setButtonText("-");
                     snap.setButtonText("SNAP");
                     snap.setToggleState(true, juce::dontSendNotification);
+                    loop.setButtonText("BOUCLE");
+                    loop.setClickingTogglesState(true);
+                    addAndMakeVisible(loop);
+                    selection.setButtonText("SELECTION");
+                    selection.setClickingTogglesState(true);
+                    addAndMakeVisible(selection);
                     resetMarkers.setButtonText("REINIT. MARQUEURS");
                     zoomIn.onClick = [this] { zoom = juce::jmin(64.0, zoom * 2.0); repaint(); };
                     zoomOut.onClick = [this] { zoom = juce::jmax(1.0, zoom * 0.5); repaint(); };
@@ -4356,6 +4363,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     zoomIn.setBounds(65, 200, 36, 28);
                     snap.setBounds(116, 200, 90, 28);
                     resetMarkers.setBounds(220, 200, 180, 28);
+                    selection.setBounds(410, 200, 120, 28);
+                    loop.setBounds(540, 200, 110, 28);
                 }
                 juce::Rectangle<int> waveformBounds() const
                 {
@@ -4371,8 +4380,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     const double fraction = juce::jlimit(0.0, 1.0,
                         ((double)(x - bounds.getX()) / bounds.getWidth()) / zoom);
                     double seconds = fraction * duration;
-                    if (snap.getToggleState())
-                        seconds = std::round(seconds * 4.0) / 4.0;
+                    if (snap.getToggleState() && musicalSnap)
+                        seconds = musicalSnap(seconds);
                     return seconds;
                 }
                 void mouseDown(const juce::MouseEvent& event) override
@@ -4381,6 +4390,14 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (!bounds.contains(event.getPosition())) return;
                     const double seconds = secondsAt(event.x);
                     draggingMarker = -1;
+                    if (selection.getToggleState())
+                    {
+                        selecting = true;
+                        selectionBegin = seconds;
+                        selectionEnd = seconds;
+                        repaint();
+                        return;
+                    }
                     const int count = audio.getTrackWarpMarkerCount(track);
                     for (int i = 1; i < count - 1; ++i)
                     {
@@ -4403,13 +4420,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 }
                 void mouseDrag(const juce::MouseEvent& event) override
                 {
+                    if (selecting)
+                    {
+                        selectionEnd = secondsAt(event.x);
+                        repaint();
+                        return;
+                    }
                     if (draggingMarker > 0)
                     {
                         audio.moveTrackWarpMarker(track, draggingMarker, secondsAt(event.x));
                         repaint();
                     }
                 }
-                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; }
+                void mouseUp(const juce::MouseEvent&) override { draggingMarker = -1; selecting = false; }
                 void paint(juce::Graphics& g) override
                 {
                     g.fillAll(juce::Colour(0xff101e2d));
@@ -4439,6 +4462,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const int height = (int)(peak * (bounds.getHeight()-12) * 0.5f);
                         g.drawVerticalLine(x, (float)(centre-height), (float)(centre+height));
                     }
+                    if (selectionBegin >= 0.0 && selectionEnd >= 0.0)
+                    {
+                        const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
+                        const int left = bounds.getX() + (int)std::round(
+                            juce::jmin(selectionBegin, selectionEnd) / duration * bounds.getWidth() * zoom);
+                        const int right = bounds.getX() + (int)std::round(
+                            juce::jmax(selectionBegin, selectionEnd) / duration * bounds.getWidth() * zoom);
+                        const auto selected = juce::Rectangle<int>(
+                            juce::jmax(bounds.getX(), left), bounds.getY(),
+                            juce::jmax(0, juce::jmin(bounds.getRight(), right) - juce::jmax(bounds.getX(), left)),
+                            bounds.getHeight());
+                        g.setColour(loop.getToggleState() ? juce::Colour(0xff2d927c).withAlpha(0.24f)
+                                                           : juce::Colour(0xff6baeea).withAlpha(0.23f));
+                        g.fillRect(selected);
+                    }
                     g.setColour(juce::Colour(0xffffba66));
                     for (int i = 0; i < audio.getTrackWarpMarkerCount(track); ++i)
                     {
@@ -4458,14 +4496,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 juce::ComboBox mode;
                 juce::Slider pitch, formants;
                 juce::TextButton zoomIn, zoomOut, resetMarkers;
-                juce::ToggleButton snap;
+                juce::ToggleButton snap, loop, selection;
+                std::function<double(double)> musicalSnap;
+                double selectionBegin = -1.0, selectionEnd = -1.0;
+                bool selecting = false;
                 double zoom = 1.0;
                 int draggingMarker = -1;
             };
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = "Liberty | Editeur Audio";
             options.dialogBackgroundColour = juce::Colour(0xff101e2d);
-            options.content.setOwned(new DetachedAudioEditor(audioEngine, selectedTrack));
+            options.content.setOwned(new DetachedAudioEditor(audioEngine, selectedTrack,
+                [this, trackIndex = selectedTrack](double seconds)
+                { return snapAudioDockWarpTime(seconds, trackIndex); }));
             options.componentToCentreAround = this;
             options.escapeKeyTriggersCloseButton = true;
             options.useNativeTitleBar = true;
