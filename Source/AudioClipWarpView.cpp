@@ -60,7 +60,8 @@ public:
         if (floatingWindow == nullptr)
             setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
         setVisible(true);
-        toFront(false);
+        if (floatingWindow != nullptr) floatingWindow->toFront(false);
+        else toFront(false);
         repaint();
         owner.repaint();
     }
