@@ -589,6 +589,14 @@ double AudioEngine::getTrackClipPitch(int trackIndex) const noexcept
 {
     return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->clipPitch.load() : 0.0;
 }
+void AudioEngine::setTrackClipReverse(int trackIndex, bool enabled) noexcept
+{
+    if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->clipReverse.store(enabled);
+}
+bool AudioEngine::isTrackClipReversed(int trackIndex) const noexcept
+{
+    return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->clipReverse.load();
+}
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
 float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
 void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
@@ -1616,6 +1624,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto sourceOffset = static_cast<int>(mixStart - startSample);
         const auto gain = track.gain.load() * track.clipGain.load(); const auto pan = track.pan.load();
         const double clipPitchRatio = std::pow(2.0, track.clipPitch.load() / 12.0);
+        const bool clipReversed = track.clipReverse.load();
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = audioBuffer->getNumChannels();
 
@@ -1652,8 +1661,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceStep = sourceRate / rate * clipPitchRatio;
             for (int s = 0; s < samplesToMix; ++s)
             {
+                const double forwardPosition = (static_cast<double>(sourceOffset) + s) * sourceStep;
                 const double sourcePosition = juce::jlimit(0.0, static_cast<double>(lastSample),
-                                                          (static_cast<double>(sourceOffset) + s) * sourceStep);
+                    clipReversed ? (double)lastSample - forwardPosition : forwardPosition);
                 const int i1 = static_cast<int>(std::floor(sourcePosition));
                 const int i2 = juce::jmin(lastSample, i1 + 1);
                 const float frac = static_cast<float>(sourcePosition - static_cast<double>(i1));
@@ -1739,7 +1749,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceSeconds = sa + (sb - sa) * alpha;
 
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
-            const double sourceSamplePosition = sourceSeconds * sourceRate;
+            const double sourceSamplePosition = (clipReversed
+                ? juce::jmax(0.0, (double)lastSample / sourceRate - sourceSeconds * clipPitchRatio)
+                : sourceSeconds * clipPitchRatio) * sourceRate;
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
             // advances at native source rate; grain centres follow the Warp
             // mapping. No allocation or locking is performed in this loop.
@@ -1747,7 +1759,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // Keep extreme ratios on the established interpolation path.
             // The short-grain algorithm is intended for moderate stretches;
             // beyond this range it may repeat or skip attacks excessively.
-            const bool granular = mode == 4 && sourceRate > 0.0
+            const bool granular = mode == 4 && !clipReversed && std::abs(clipPitchRatio - 1.0) < 0.0001 && sourceRate > 0.0
                 && std::isfinite(localRatio)
                 && localRatio >= 0.20 && localRatio <= 4.5
                 && std::abs(localRatio - 1.0) > 0.005;
