@@ -22,7 +22,8 @@ public:
         std::function<std::vector<double>()> readTransients,
         std::function<void(double)> removeTransient,
         std::function<double()> readDockZoom,
-        std::function<void(double)> writeDockZoom)
+        std::function<void(double)> writeDockZoom,
+        std::function<int()> readTimeFormat = {})
         : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid)),
           publishLoop(std::move(updateLoop)),
           snapSettings(std::move(openSnapSettings)),
@@ -30,7 +31,8 @@ public:
           transientSettings(std::move(openTransientSettings)),
           transientMarkers(std::move(readTransients)),
           eraseTransient(std::move(removeTransient)),
-          getDockZoom(std::move(readDockZoom)), setDockZoom(std::move(writeDockZoom))
+          getDockZoom(std::move(readDockZoom)), setDockZoom(std::move(writeDockZoom)),
+          getTimeFormat(std::move(readTimeFormat))
     {
         zoom = getDockZoom ? getDockZoom() : 1.0;
         setSize(980, 550);
@@ -292,7 +294,8 @@ public:
         const auto formatButton = juce::Rectangle<int>(
             inner.getX(), inner.getY() + (compact ? 70 : 46),
             juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
-        LibertyAudioEditorHeader::paintTimeFormat(g, formatButton, 3);
+        LibertyAudioEditorHeader::paintTimeFormat(g, formatButton,
+            getTimeFormat ? getTimeFormat() : 3);
         g.setFont(juce::Font(13.0f));
         g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
         g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
@@ -318,6 +321,7 @@ private:
     std::function<void(double)> eraseTransient;
     std::function<double()> getDockZoom;
     std::function<void(double)> setDockZoom;
+    std::function<int()> getTimeFormat;
     juce::ToggleButton snap, loop, selection;
     std::function<double(double)> musicalSnap;
     double selectionBegin = -1.0, selectionEnd = -1.0;
