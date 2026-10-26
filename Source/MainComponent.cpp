@@ -2578,6 +2578,17 @@ void MainComponent::timerCallback()
         && !dockStepSequencerMode && selectedTrack >= 0
         && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack)
         && audioDockLoopEndFraction > audioDockLoopStartFraction;
+    // Clip boundary markers define a non-destructive playback window.
+    // Loop selection has priority when explicitly enabled.
+    const bool clipBoundsValid = !dockLoopValid && !dockCollapsed && !dockMixerMode
+        && !dockStepSequencerMode && selectedTrack >= 0
+        && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack);
+    if (clipBoundsValid)
+        restoreAudioDockClipBounds(selectedTrack);
+    const double clipStartTime = clipBoundsValid ? audioEngine.getTrackStartSeconds(selectedTrack) : 0.0;
+    const double clipDuration = clipBoundsValid ? audioEngine.getAudioFileLengthSeconds(selectedTrack) : 0.0;
+    const double clipBoundaryStart = clipStartTime + audioClipStartFraction * clipDuration;
+    const double clipBoundaryEnd = clipStartTime + audioClipEndFraction * clipDuration;
     const double dockClipStart = dockLoopValid ? audioEngine.getTrackStartSeconds(selectedTrack) : 0.0;
     const double dockDuration = dockLoopValid ? audioEngine.getAudioFileLengthSeconds(selectedTrack) : 0.0;
     const double dockLoopStart = dockClipStart + audioDockLoopStartFraction * dockDuration;
@@ -2603,6 +2614,22 @@ void MainComponent::timerCallback()
             audioEngine.setCurrentTimeSeconds(punchOutSeconds);
             audioEngine.setPlaying(true);
             transportTime = punchOutSeconds;
+        }
+        if (clipBoundsValid && clipDuration > 0.0
+            && audioClipEndFraction > audioClipStartFraction
+            && (audioClipStartFraction > 0.0 || audioClipEndFraction < 1.0)
+            && transportTime >= clipStartTime && transportTime < clipBoundaryStart)
+        {
+            audioEngine.setCurrentTimeSeconds(clipBoundaryStart);
+            transportTime = clipBoundaryStart;
+        }
+        if (clipBoundsValid && clipDuration > 0.0
+            && audioClipEndFraction < 1.0 && transportTime >= clipBoundaryEnd
+            && transportTime < clipStartTime + clipDuration)
+        {
+            audioEngine.setPlaying(false);
+            audioEngine.setCurrentTimeSeconds(clipBoundaryEnd);
+            transportTime = clipBoundaryEnd;
         }
         if (dockLoopValid && transportTime >= dockLoopEnd)
         {
