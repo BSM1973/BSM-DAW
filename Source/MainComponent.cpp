@@ -3449,7 +3449,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                         (markerTime / duration - offset) / visible * getAudioDockWaveBounds().getWidth());
                     if (std::abs(click.x - markerX) <= 8)
                     {
-                        audioEngine.removeTrackWarpMarker(selectedTrack, i);
+                        dockWarpActions(selectedTrack).remove(i);
                         draggingDockWarpMarker = -1;
                         repaint();
                         return;
@@ -3459,7 +3459,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                 draggingAudioSelection = false;
                 const double raw = audioDockFractionAt(click.x) * duration;
                 const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, selectedTrack);
-                if (std::isfinite(target) && audioEngine.addTrackWarpMarker(selectedTrack, target, target))
+                if (std::isfinite(target) && dockWarpActions(selectedTrack).add(target, target))
                 {
                     audioEngine.setTrackWarpEnabled(selectedTrack, true);
                     repaint();
@@ -3577,6 +3577,17 @@ void MainComponent::activateDockTab(int index)
 
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
+    const auto dockWarpActions = [this](int track)
+    {
+        return LibertyAudioWaveformView::WarpEditActions {
+            [this, track](double source, double target)
+            { return audioEngine.addTrackWarpMarker(track, source, target); },
+            [this, track](int index, double target)
+            { audioEngine.moveTrackWarpMarker(track, index, target); },
+            [this, track](int index)
+            { audioEngine.removeTrackWarpMarker(track, index); }
+        };
+    };
     // A listener attached recursively receives the original child event.
     // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
@@ -5058,7 +5069,12 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
         const double raw = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x) * duration;
         const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, draggingDockWarpTrack);
         if (std::isfinite(target))
-            audioEngine.moveTrackWarpMarker(draggingDockWarpTrack, draggingDockWarpMarker, target);
+            LibertyAudioWaveformView::WarpEditActions {
+                {},
+                [this](int index, double seconds)
+                { audioEngine.moveTrackWarpMarker(draggingDockWarpTrack, index, seconds); },
+                {}
+            }.drag(draggingDockWarpMarker, target);
         repaint();
         return;
     }
