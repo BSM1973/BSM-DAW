@@ -440,7 +440,8 @@ public:
     bool audioDockLoopEnabled = false;
     double audioDockLoopStartFraction = 0.0;
     double audioDockLoopEndFraction = 1.0;
-    int draggingAudioDockLoopMarker = 0; // 1 start, 2 end.
+    int draggingAudioDockLoopMarker = 0;
+    bool draggingAudioDockNavigator = false; // 1 start, 2 end.
 
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
