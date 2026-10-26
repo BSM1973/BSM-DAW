@@ -1,6 +1,7 @@
 double snapLibertyTimelineTime(double seconds, double bpm) noexcept;
 double getLibertySnapStepSeconds(double bpm) noexcept;
 #include "MainComponent.h"
+#include "LibertyAudioWaveformView.h"
 void ensureLibertyTrackHeaderMixControls(MainComponent* owner);
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
@@ -4372,6 +4373,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     addAndMakeVisible(zoomOut);
                     addAndMakeVisible(snap);
                     addAndMakeVisible(resetMarkers);
+                    waveform.getBuffer = [this] { return audio.getAudioBufferSnapshot(track); };
+                    waveform.getDuration = [this] { return audio.getAudioFileLengthSeconds(track); };
+                    waveform.getMarkers = [this]
+                    {
+                        std::vector<LibertyAudioWaveformView::Marker> markers;
+                        if (transientMarkers)
+                            for (double t : transientMarkers()) markers.push_back({ t, true });
+                        for (int index = 0; index < audio.getTrackWarpMarkerCount(track); ++index)
+                            markers.push_back({ audio.getTrackWarpMarkerTargetSeconds(track, index), false });
+                        return markers;
+                    };
+                    waveform.onPress = [this](double, const juce::MouseEvent& e) { mouseDown(e.getEventRelativeTo(this)); };
+                    waveform.onMove = [this](double, const juce::MouseEvent& e) { mouseDrag(e.getEventRelativeTo(this)); };
+                    waveform.onRelease = [this](double, const juce::MouseEvent& e) { mouseUp(e.getEventRelativeTo(this)); };
+                    addAndMakeVisible(waveform);
                     startTimerHz(12);
                 }
                 void resized() override
@@ -4389,6 +4405,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     snapOptions.setBounds(660, 200, 100, 28);
                     timeOptions.setBounds(770, 200, 100, 28);
                     transientOptions.setBounds(24, 235, 160, 28);
+                    waveform.setBounds(waveformBounds());
                 }
                 juce::Rectangle<int> waveformBounds() const
                 {
@@ -4497,6 +4514,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     g.setFont(juce::Font(13.0f));
                     g.drawText("PITCH", 24, 110, 66, 32, juce::Justification::centredLeft);
                     g.drawText("FORMANTS", 24, 157, 75, 32, juce::Justification::centredLeft);
+                    return; // The shared child view owns waveform, selections and marker painting.
                     auto bounds = waveformBounds();
                     g.setColour(juce::Colour(0xff172d42));
                     g.fillRoundedRectangle(bounds.toFloat(), 8.0f);
@@ -4552,7 +4570,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                 }
             private:
-                void timerCallback() override { repaint(); }
+                void timerCallback() override { waveform.zoom = zoom;
+                    waveform.selectionStart = selectionBegin;
+                    waveform.selectionEnd = selectionEnd;
+                    waveform.loopSelection = loop.getToggleState();
+                    waveform.repaint(); }
+                LibertyAudioWaveformView waveform;
                 AudioEngine& audio;
                 int track;
                 juce::ToggleButton warp;
