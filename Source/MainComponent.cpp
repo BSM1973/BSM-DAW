@@ -3287,8 +3287,8 @@ double MainComponent::audioDockFractionAt(int x) const
     return juce::jlimit(0.0, 1.0, audioDockScroll + relative / audioDockZoom);
 }
 
-void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
-                                   const juce::MouseWheelDetails& wheel)
+bool MainComponent::handleAudioDockMouseWheel(const juce::MouseEvent& event,
+                                               const juce::MouseWheelDetails& wheel)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
     const bool audioEditor = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -3320,8 +3320,16 @@ void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
                 cursorPosition - relativeX / audioDockZoom);
         }
         repaint();
-        return;
+        return true;
     }
+
+    return false;
+}
+
+void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
+                                   const juce::MouseWheelDetails& wheel)
+{
+    if (handleAudioDockMouseWheel(event, wheel)) return;
     juce::Component::mouseWheelMove(event, wheel);
 }
 
