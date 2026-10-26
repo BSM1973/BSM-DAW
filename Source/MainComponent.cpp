@@ -2655,7 +2655,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     g.restoreState();
 }
 
-void MainComponent::resized() { audioDockSurface.setBounds(getAudioDockEditorBounds()); resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
+void MainComponent::resized() { if (audioDockFloatingWindow == nullptr) audioDockSurface.setBounds(getAudioDockEditorBounds()); resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
     dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
     dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
@@ -2678,8 +2678,11 @@ void MainComponent::timerCallback()
     const bool showAudioSurface = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack);
-    audioDockSurface.setBounds(getAudioDockEditorBounds());
-    audioDockSurface.setVisible(showAudioSurface);
+    if (audioDockFloatingWindow == nullptr)
+    {
+        audioDockSurface.setBounds(getAudioDockEditorBounds());
+        audioDockSurface.setVisible(showAudioSurface);
+    }
     if (showAudioSurface) audioDockSurface.repaint();
 
     // Attach the real REC controller directly from the live MainComponent.
@@ -4449,7 +4452,7 @@ if (!dockCollapsed && !event.mods.isPopupMenu()
     {
         if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
             && audioEngine.hasAudioFile(selectedTrack))
-            detachLibertyAudioClipWarpView(*this, selectedTrack);
+            detachAudioDockSurface();
         else
             openLibertyMidiEditor(*this);
         return;
