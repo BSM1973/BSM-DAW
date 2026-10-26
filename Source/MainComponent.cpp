@@ -999,10 +999,12 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawLine((float)x + 21, (float)y + 7, (float)x + 21, (float)y + 12, 1.6f);
         };
         detachIcon(44);
-        detachIcon(76);
-        drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
-        // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
-        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
+        if (!isAudioDockTrack)
+        {
+            detachIcon(76);
+            drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
+            drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
+        }
 
     }
 }
@@ -4302,12 +4304,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         openLibertyMidiEditor(*this);
         return;
     }
-    if (juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
+    if (selectedEditorTrack && juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
     }
-    if (juce::Rectangle<int>(8, dockTop + 108, 148, 28).contains(p))
+    if (selectedInstrument && juce::Rectangle<int>(8, dockTop + 108, 148, 28).contains(p))
     {
         if (selectedInstrument)
         {
@@ -4341,7 +4343,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         return;
     }
-    if (juce::Rectangle<int>(8, dockTop + 76, 148, 28).contains(p))
+    if (selectedEditorTrack && juce::Rectangle<int>(8, dockTop + 76, 148, 28).contains(p))
     {
         if (selectedEditorTrack)
         {
