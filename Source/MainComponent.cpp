@@ -297,14 +297,7 @@ void MainComponent::paint(juce::Graphics& g)
         const auto formatButton = juce::Rectangle<int>(
             inner.getX(), inner.getY() + (compactSelectionBar ? 70 : 46),
             juce::jmin(126, juce::jmax(0, inner.getWidth())), 20);
-        const char* formatNames[] = { "SECONDES", "MIN:SEC", "ECHANTILLONS", "MESURES" };
-        g.setColour(juce::Colour(0xff203b4d));
-        g.fillRoundedRectangle(formatButton.toFloat(), 3.0f);
-        g.setColour(juce::Colour(0xff83bed4));
-        g.drawRoundedRectangle(formatButton.toFloat(), 3.0f, 1.0f);
-        g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]),
-                   formatButton, juce::Justification::centred);
+        LibertyAudioEditorHeader::paintTimeFormat(g, formatButton, audioDockTimeFormat);
         // Ableton-style focus: fit the selected audio range to the dock width.
         const auto focusButton = juce::Rectangle<int>(
             formatButton.getRight() + 6, formatButton.getY(),
