@@ -284,9 +284,14 @@ void MainComponent::attachAudioDockSurface()
 void LibertyAudioDockSurface::paint(juce::Graphics& g)
 {
     juce::Graphics::ScopedSaveState saved(g);
-    const auto origin = getPosition();
-    g.addTransform(juce::AffineTransform::translation((float) -origin.x, (float) -origin.y));
-    main.paintExistingAudioDock(g, getBounds());
+    // The painter uses MainComponent coordinates. Preserve that coordinate
+    // system even when this component has a different parent window.
+    const auto editor = main.getAudioDockEditorBounds();
+    const auto bounds = juce::Rectangle<int>(editor.getPosition(),
+                                            juce::Point<int>(getWidth(), getHeight()));
+    g.addTransform(juce::AffineTransform::translation(
+        (float) -editor.getX(), (float) -editor.getY()));
+    main.paintExistingAudioDock(g, bounds);
 }
 
 void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
