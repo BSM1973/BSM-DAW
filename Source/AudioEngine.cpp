@@ -1751,7 +1751,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceRate = track.bufferSampleRate.load(std::memory_order_relaxed);
             const double sourceSamplePosition = (clipReversed
                 ? juce::jmax(0.0, (double)lastSample / sourceRate - sourceSeconds * clipPitchRatio)
-                : sourceSeconds * clipPitchRatio) * sourceRate;
+                : sourceSeconds) * sourceRate;
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
             // advances at native source rate; grain centres follow the Warp
             // mapping. No allocation or locking is performed in this loop.
@@ -1759,17 +1759,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // Keep extreme ratios on the established interpolation path.
             // The short-grain algorithm is intended for moderate stretches;
             // beyond this range it may repeat or skip attacks excessively.
-            const bool granular = !clipReversed && std::abs(clipPitchRatio - 1.0) < 0.0001 && sourceRate > 0.0
+            const bool granular = !clipReversed && sourceRate > 0.0
                 && std::isfinite(localRatio)
                 && localRatio >= 0.20 && localRatio <= 4.5
-                && std::abs(localRatio - 1.0) > 0.005;
+                && (std::abs(localRatio - 1.0) > 0.005 || std::abs(clipPitchRatio - 1.0) > 0.005);
             // Smoothly blend into the direct interpolation near the
             // supported ratio limits, avoiding an abrupt timbre switch.
             const float ratioBlend = granular
                 ? (float) juce::jlimit(0.0, 1.0,
                     juce::jmin(juce::jmin((localRatio - 0.20) / 0.10,
                                          (4.5 - localRatio) / 1.0),
-                               (std::abs(localRatio - 1.0) - 0.005) / 0.075))
+                               (juce::jmax(std::abs(localRatio - 1.0), std::abs(clipPitchRatio - 1.0)) - 0.005) / 0.075))
                 : 0.0f;
             // Use a smoothstep curve so the blend reaches its limits
             // with zero slope instead of introducing a sharp corner.
@@ -1813,7 +1813,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         (centreSeconds - grainTa) / juce::jmax(0.000001, grainTb - grainTa));
                     const double mappedSeconds = grainSa + (grainSb - grainSa) * grainAlpha;
                     const double grainPosition = mappedSeconds * sourceRate
-                        + (phase - 0.5) * grainLength * sourceRate / rate;
+                        + (phase - 0.5) * grainLength * sourceRate / rate * clipPitchRatio;
                     if (grainPosition < 0.0 || grainPosition > (double) lastSample)
                         continue;
                     // Fast, smooth raised-cosine approximation avoids a
