@@ -1681,6 +1681,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             continue;
         }
 
+        // Reject malformed or empty sources before any channel pointer access.
+        if (audioBuffer->getNumSamples() < 2 || sourceChannels < 1
+            || track.bufferSampleRate.load(std::memory_order_relaxed) <= 0.0)
+            continue;
         const int markerCount = juce::jlimit(2, maxWarpMarkers, rawMarkerCount);
         std::array<double, maxWarpMarkers> sourceMarkers {};
         std::array<double, maxWarpMarkers> targetMarkers {};
