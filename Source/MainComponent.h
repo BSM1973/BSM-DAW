@@ -28,6 +28,7 @@ public:
     MainComponent();
     ~MainComponent() override;
     void paint(juce::Graphics& g) override;
+    void paintExistingAudioDock(juce::Graphics& g, juce::Rectangle<int> editorBounds);
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
