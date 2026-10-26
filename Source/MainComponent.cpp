@@ -3083,27 +3083,33 @@ void MainComponent::refreshAudioDockTransientMarkers(int track)
                     energy[(size_t)frame] = std::sqrt(total /
                         (double)(hop * juce::jmax(1, buffer->getNumChannels())));
                 }
+                // Rank attacks by relative onset strength rather than a fixed
+                // absolute amplitude threshold. Sensitivity therefore controls
+                // the number of displayed markers even for quiet recordings.
                 std::vector<std::pair<double, int>> candidates;
-                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
-                const double threshold = 0.030 - 0.00027 * sensitivity;
-                const double backgroundFactor = 4.0 - 0.032 * sensitivity;
                 double background = 0.0;
                 for (int frame = 2; frame + 1 < frames; ++frame)
                 {
                     const double rise = juce::jmax(0.0,
                         energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
-                    background = 0.97 * background + 0.03 * rise;
-                    if (rise > threshold && rise > background * backgroundFactor
+                    background = 0.985 * background + 0.015 * rise;
+                    if (rise > 0.000001 && rise > background * 1.25
                         && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
                         candidates.emplace_back(rise, frame);
                 }
                 std::sort(candidates.begin(), candidates.end(),
                     [](const auto& a, const auto& b) { return a.first > b.first; });
+                // More sensitivity = more transients, not just a lower threshold.
+                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
+                const int available = juce::jmax(0, AudioEngine::maxWarpMarkers - 2
+                    - (audioEngine.getTrackWarpMarkerCount(track) - 2
+                       - (int)audioDockAutomaticMarkers[track].size()));
+                const int targetCount = juce::jlimit(0, available,
+                    (int)std::round((sensitivity / 100.0) * available));
                 std::vector<int> chosen;
-                const int capacity = juce::jmax(0, AudioEngine::maxWarpMarkers - 2);
                 for (const auto& candidate : candidates)
                 {
-                    if ((int)chosen.size() >= capacity) break;
+                    if ((int)chosen.size() >= targetCount) break;
                     bool separated = true;
                     for (const int previous : chosen)
                         if (std::abs(previous - candidate.second) < minimumGap)
