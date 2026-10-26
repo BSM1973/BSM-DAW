@@ -3519,7 +3519,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             || (warpButton.contains(p) && event.mods.isCtrlDown()))
         {
             juce::PopupMenu menu;
-            menu.addSectionHeader("FICHIER AUDIO | GAIN ET PITCH");
+            menu.addSectionHeader("PROPRIETES AUDIO | GAIN / PITCH / REVERSE");
             menu.addItem(1, "Gain -6 dB");
             menu.addItem(2, "Gain -3 dB");
             menu.addItem(3, "Gain 0 dB");
@@ -3531,6 +3531,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             menu.addItem(12, "Pitch 0");
             menu.addItem(13, "Pitch +1 demi-ton");
             menu.addItem(14, "Pitch +12 demi-tons");
+            menu.addSeparator();
+            menu.addItem(20, "REVERSE : lecture inversee", true,
+                audioEngine.isTrackClipReversed(selectedTrack));
             const int track = selectedTrack;
             juce::Component::SafePointer<MainComponent> safeThis(this);
             menu.showMenuAsync(juce::PopupMenu::Options(),
@@ -3549,6 +3552,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                         const double pitch[] = {-12.0, -1.0, 0.0, 1.0, 12.0};
                         safeThis->audioEngine.setTrackClipPitch(track, pitch[result - 10]);
                     }
+                    else if (result == 20)
+                        safeThis->audioEngine.setTrackClipReverse(track,
+                            !safeThis->audioEngine.isTrackClipReversed(track));
                     safeThis->repaint();
                 });
             return;
