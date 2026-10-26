@@ -234,6 +234,14 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
 }
 
+void LibertyAudioDockSurface::paint(juce::Graphics& g)
+{
+    juce::Graphics::ScopedSaveState saved(g);
+    const auto origin = getPosition();
+    g.addTransform(juce::AffineTransform::translation((float) -origin.x, (float) -origin.y));
+    main.paintExistingAudioDock(g, getBounds());
+}
+
 void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                                            juce::Rectangle<int> audioEditorBounds)
 {
