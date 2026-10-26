@@ -4355,15 +4355,19 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     std::function<void()> openTimeSettings,
                     std::function<void()> openTransientSettings,
                     std::function<std::vector<double>()> readTransients,
-                    std::function<void(double)> removeTransient)
+                    std::function<void(double)> removeTransient,
+                    std::function<double()> readDockZoom,
+                    std::function<void(double)> writeDockZoom)
                     : audio(engine), track(trackIndex), musicalSnap(std::move(snapToMusicalGrid)),
                       publishLoop(std::move(updateLoop)),
                       snapSettings(std::move(openSnapSettings)),
                       timeSettings(std::move(openTimeSettings)),
                       transientSettings(std::move(openTransientSettings)),
                       transientMarkers(std::move(readTransients)),
-                      eraseTransient(std::move(removeTransient))
+                      eraseTransient(std::move(removeTransient)),
+                      getDockZoom(std::move(readDockZoom)), setDockZoom(std::move(writeDockZoom))
                 {
+                    zoom = getDockZoom ? getDockZoom() : 1.0;
                     setSize(980, 550);
                     warp.setButtonText("WARP");
                     warp.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
@@ -4408,8 +4412,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     addAndMakeVisible(timeOptions);
                     addAndMakeVisible(transientOptions);
                     resetMarkers.setButtonText("REINIT. MARQUEURS");
-                    zoomIn.onClick = [this] { zoom = juce::jmin(64.0, zoom * 2.0); repaint(); };
-                    zoomOut.onClick = [this] { zoom = juce::jmax(1.0, zoom * 0.5); repaint(); };
+                    zoomIn.onClick = [this] { zoom = juce::jmin(64.0, zoom * 2.0); if (setDockZoom) setDockZoom(zoom); repaint(); };
+                    zoomOut.onClick = [this] { zoom = juce::jmax(1.0, zoom * 0.5); if (setDockZoom) setDockZoom(zoom); repaint(); };
                     resetMarkers.onClick = [this] { audio.resetTrackWarpMarkers(track); repaint(); };
                     addAndMakeVisible(zoomIn);
                     addAndMakeVisible(zoomOut);
@@ -4638,6 +4642,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 std::function<void()> snapSettings, timeSettings, transientSettings;
                 std::function<std::vector<double>()> transientMarkers;
                 std::function<void(double)> eraseTransient;
+                std::function<double()> getDockZoom;
+                std::function<void(double)> setDockZoom;
                 juce::ToggleButton snap, loop, selection;
                 std::function<double(double)> musicalSnap;
                 double selectionBegin = -1.0, selectionEnd = -1.0;
@@ -4695,6 +4701,13 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     }
                     markers.erase(std::remove_if(markers.begin(), markers.end(),
                         [onset](double t) { return std::abs(t - onset) < 0.0005; }), markers.end());
+                    repaint();
+                },
+                [this] { return audioDockZoom; },
+                [this](double value)
+                {
+                    audioDockZoom = juce::jlimit(1.0, 64.0, value);
+                    audioDockScroll = juce::jlimit(0.0, 1.0 - 1.0 / audioDockZoom, audioDockScroll);
                     repaint();
                 }));
             options.componentToCentreAround = this;
