@@ -402,9 +402,9 @@ private:
             * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
         const double gridStep = beatSeconds / 4.0;
         const double lengthForGrid = juce::jmax(0.000001, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
-        const double first = clipStart + viewStart * lengthForGrid;
-        const double last = first + lengthForGrid / zoom;
-        for (double t = std::ceil(first / gridStep) * gridStep; t <= last; t += gridStep)
+        const double firstVisibleTime = clipStart + viewStart * lengthForGrid;
+        const double lastVisibleTime = firstVisibleTime + lengthForGrid / zoom;
+        for (double t = std::ceil(firstVisibleTime / gridStep) * gridStep; t <= lastVisibleTime; t += gridStep)
         {
             const int gx = xForTime(t - clipStart);
             g.setColour(juce::Colour(0xff304356));
