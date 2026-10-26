@@ -4431,21 +4431,18 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 // Shared time/viewport transform for rendering and mouse interactions.
                 double secondsAt(int x) const
                 {
-                    const double duration = audio.getAudioFileLengthSeconds(track);
-                    const auto bounds = waveformBounds();
-                    if (bounds.getWidth() < 1 || duration <= 0.0) return 0.0;
-                    const double fraction = juce::jlimit(0.0, 1.0,
-                        ((double)(x - bounds.getX()) / bounds.getWidth()) / zoom);
-                    double seconds = fraction * duration;
+                    const LibertyAudioWaveformView::Viewport viewport {
+                        waveformBounds(), audio.getAudioFileLengthSeconds(track), zoom, 0.0 };
+                    double seconds = viewport.secondsAt(x);
                     if (snap.getToggleState() && musicalSnap)
                         seconds = musicalSnap(seconds);
                     return seconds;
                 }
                 int markerPixel(double seconds) const
                 {
-                    const auto bounds = waveformBounds();
-                    const double duration = juce::jmax(0.001, audio.getAudioFileLengthSeconds(track));
-                    return bounds.getX() + (int)std::round(seconds / duration * bounds.getWidth() * zoom);
+                    const LibertyAudioWaveformView::Viewport viewport {
+                        waveformBounds(), audio.getAudioFileLengthSeconds(track), zoom, 0.0 };
+                    return viewport.pixelAt(seconds);
                 }
                 void mouseDown(const juce::MouseEvent& event) override
                 {
