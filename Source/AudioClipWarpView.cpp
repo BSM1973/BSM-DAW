@@ -160,9 +160,20 @@ public:
     {
         if (!waveformPlotBounds().contains(e.getPosition()) || selectedTrack < 0
             || e.mods.isRightButtonDown() || e.mods.isAltDown()) return;
-        const double time = snapTime(timeForX(e.x));
+        // Double-clicking an existing marker removes it, as in a sample editor.
+        const int existing = markerAtX(e.x);
+        const int count = owner.audioEngine.getTrackWarpMarkerCount(selectedTrack);
+        if (existing > 0 && existing < count - 1)
+        {
+            owner.audioEngine.removeTrackWarpMarker(selectedTrack, existing);
+            repaint();
+            return;
+        }
+        const double rawTime = timeForX(e.x);
+        const double time = e.mods.isShiftDown() ? rawTime : snapTime(rawTime);
         const double source = sourceTimeForTarget(time);
-        if (std::isfinite(source) && owner.audioEngine.addTrackWarpMarker(selectedTrack, source, time))
+        if (std::isfinite(time) && std::isfinite(source)
+            && owner.audioEngine.addTrackWarpMarker(selectedTrack, source, time))
         {
             owner.audioEngine.setTrackWarpEnabled(selectedTrack, true);
             repaint();
@@ -173,7 +184,9 @@ public:
     {
         if (scrolling) { scrollToX(e.x); return; }
         if (draggingMarker <= 0 || selectedTrack < 0) return;
-        owner.audioEngine.moveTrackWarpMarker(selectedTrack, draggingMarker, snapTime(timeForX(e.x)));
+        const double time = e.mods.isShiftDown() ? timeForX(e.x) : snapTime(timeForX(e.x));
+        if (std::isfinite(time))
+            owner.audioEngine.moveTrackWarpMarker(selectedTrack, draggingMarker, time);
         repaint();
     }
 
@@ -317,7 +330,9 @@ private:
         const double step = beat / 4.0;
         const double clipStart = owner.audioEngine.getTrackStartSeconds(selectedTrack);
         const double length = juce::jmax(0.0, owner.audioEngine.getAudioFileLengthSeconds(selectedTrack));
-        return juce::jlimit(0.0, length, std::round((seconds + clipStart) / step) * step - clipStart);
+        // Avoid snapping a new marker onto an endpoint or an existing marker.
+        const double snapped = std::round((seconds + clipStart) / step) * step - clipStart;
+        return juce::jlimit(0.0, length, snapped);
     }
 
     void scrollToX(int x)
@@ -483,17 +498,21 @@ private:
             }
         }
 
-        const double localPlayhead = owner.audioEngine.getCurrentTimeSeconds() - owner.audioEngine.getTrackStartSeconds(selectedTrack);
-        if (localPlayhead >= viewStart * length && localPlayhead <= (viewStart + 1.0 / zoom) * length)
+        // Use the same project transport time as the arrangement playhead.
+        const double localPlayhead = owner.audioEngine.getCurrentTimeSeconds()
+            - owner.audioEngine.getTrackStartSeconds(selectedTrack);
+        if (std::isfinite(localPlayhead) && localPlayhead >= viewStart * length
+            && localPlayhead <= (viewStart + 1.0 / zoom) * length)
         {
             const int x = xForTime(localPlayhead);
-            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.setColour(juce::Colour(0xffffe5ac));
             g.drawVerticalLine(x, (float)area.getY(), (float)area.getBottom());
         }
         g.restoreState();
-        if (localPlayhead >= viewStart * length && localPlayhead <= (viewStart + 1.0 / zoom) * length)
+        if (std::isfinite(localPlayhead) && localPlayhead >= viewStart * length
+            && localPlayhead <= (viewStart + 1.0 / zoom) * length)
         {
-            g.setColour(juce::Colours::white.withAlpha(0.9f));
+            g.setColour(juce::Colour(0xffffe5ac));
             g.drawVerticalLine(xForTime(localPlayhead), (float)timelineBounds().getY(), (float)timelineBounds().getBottom());
         }
     }
