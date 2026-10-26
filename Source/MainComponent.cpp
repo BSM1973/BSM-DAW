@@ -2599,6 +2599,13 @@ void MainComponent::timerCallback()
                 break;
             }
 
+    const bool showAudioSurface = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
+        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && audioEngine.hasAudioFile(selectedTrack);
+    audioDockSurface.setBounds(getAudioDockEditorBounds());
+    audioDockSurface.setVisible(showAudioSurface);
+    if (showAudioSurface) audioDockSurface.repaint();
+
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
     resizeLibertyDynamicTrackController(this);
