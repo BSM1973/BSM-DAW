@@ -273,6 +273,8 @@ public:
     bool isTrackWarpEnabled(int trackIndex) const noexcept;
     void setTrackWarpMode(int trackIndex, int mode) noexcept;
     int getTrackWarpMode(int trackIndex) const noexcept;
+    void setTrackWarpFormant(int trackIndex, double semitones) noexcept;
+    double getTrackWarpFormant(int trackIndex) const noexcept;
     void resetTrackWarpMarkers(int trackIndex) noexcept;
     bool restoreTrackWarpState(int trackIndex, bool enabled, int mode, const std::vector<std::pair<double, double>>& markers) noexcept;
     bool addTrackWarpMarker(int trackIndex, double sourceSeconds, double targetSeconds) noexcept;
@@ -322,6 +324,7 @@ private:
         std::atomic<double> startSeconds { 0.0 };
         std::atomic<bool> warpEnabled { false };
         std::atomic<int> warpMode { 0 };
+        std::atomic<double> warpFormant { 0.0 };
         std::atomic<int> warpMarkerCount { 0 };
         std::array<std::atomic<double>, maxWarpMarkers> warpSourceSeconds {};
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
