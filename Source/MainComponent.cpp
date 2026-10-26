@@ -818,6 +818,21 @@ void MainComponent::paint(juce::Graphics& g)
                 }
             }
         }
+        // Horizontal waveform navigator: viewport thumb reflects zoom and scroll.
+        if (wave.getWidth() > 24)
+        {
+            const auto rail = juce::Rectangle<int>(wave.getX(), wave.getBottom() - 11,
+                wave.getWidth(), 9);
+            g.setColour(juce::Colour(0xff122638));
+            g.fillRoundedRectangle(rail.toFloat(), 4.0f);
+            const double visible = 1.0 / audioDockZoom;
+            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
+            const int thumbX = rail.getX() + (int)std::round(offset * rail.getWidth());
+            const int thumbW = juce::jmax(12, (int)std::round(visible * rail.getWidth()));
+            g.setColour(juce::Colour(0xff569ac2));
+            g.fillRoundedRectangle(juce::Rectangle<int>(thumbX, rail.getY(),
+                juce::jmin(thumbW, rail.getRight() - thumbX), rail.getHeight()).toFloat(), 4.0f);
+        }
         // Boundary markers must be painted above the waveform, not underneath it.
         // Distinct clip-boundary guides; do not alter the underlying audio.
         if (wave.getWidth() > 0)
@@ -848,7 +863,7 @@ void MainComponent::paint(juce::Graphics& g)
                     const int handleX = juce::jlimit(wave.getX(), wave.getRight() - 8, x - 4);
                     g.fillRoundedRectangle((float) handleX,
                         (float) wave.getY() + 2.0f, 8.0f, 17.0f, 2.5f);
-                    g.setColour(juce::Colour(0xff0e2432));
+                    g.setColour(juce::Colour(0xffffffff));
                     const int labelX = x + 40 <= wave.getRight() ? x + 6 : x - 39;
                     g.drawText(label, labelX, wave.getY() + 3, 34, 15,
                         juce::Justification::centredLeft, true);
@@ -3734,6 +3749,17 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         && getAudioDockWaveBounds().contains(p))
     {
         const auto wave = getAudioDockWaveBounds();
+        const auto navigationRail = juce::Rectangle<int>(wave.getX(), wave.getBottom() - 13,
+            wave.getWidth(), 13);
+        if (navigationRail.contains(p) && wave.getWidth() > 24)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            audioDockScroll = juce::jlimit(0.0, 1.0 - visible,
+                (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
+            draggingAudioDockNavigator = true;
+            repaint();
+            return;
+        }
         const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
         if (duration > 0.0 && std::isfinite(duration))
         {
@@ -4313,6 +4339,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingAudioDockNavigator)
+    {
+        const auto wave = getAudioDockWaveBounds();
+        if (wave.getWidth() > 24)
+        {
+            const double visible = 1.0 / audioDockZoom;
+            const auto p = event.getEventRelativeTo(this).getPosition();
+            audioDockScroll = juce::jlimit(0.0, 1.0 - visible,
+                (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
+            repaint();
+        }
+        return;
+    }
+
     if (draggingAudioDockLoopMarker != 0)
     {
         const double fraction = event.mods.isShiftDown()
@@ -4464,6 +4504,13 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingAudioDockNavigator)
+    {
+        draggingAudioDockNavigator = false;
+        repaint();
+        return;
+    }
+
     if (draggingAudioDockLoopMarker != 0)
     {
         draggingAudioDockLoopMarker = 0;
