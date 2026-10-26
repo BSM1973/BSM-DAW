@@ -3052,6 +3052,8 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                         return;
                     }
                 }
+                audioSelectionActive = false;
+                draggingAudioSelection = false;
                 const double raw = audioDockFractionAt(click.x) * duration;
                 const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, selectedTrack);
                 if (std::isfinite(target) && audioEngine.addTrackWarpMarker(selectedTrack, target, target))
@@ -3524,6 +3526,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
+        }
+        // Warp editing owns ordinary clicks. Ctrl+drag retains audio selection.
+        if (audioEngine.isTrackWarpEnabled(selectedTrack) && !event.mods.isCtrlDown()
+            && !event.mods.isAltDown())
+        {
+            audioSelectionActive = false;
+            draggingAudioSelection = false;
+            repaint();
+            return;
         }
         // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
         // These markers are independent of the transient audio selection.
