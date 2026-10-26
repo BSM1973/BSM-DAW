@@ -3,6 +3,7 @@ double getLibertySnapStepSeconds(double bpm) noexcept;
 #include "MainComponent.h"
 #include "LibertyAudioWaveformView.h"
 #include "LibertyAudioEditorComponent.h"
+#include "LibertyAudioEditorHeader.h"
 void ensureLibertyTrackHeaderMixControls(MainComponent* owner);
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
@@ -287,22 +288,10 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff0b1521));
         g.fillRect(editorArea);
         const auto inner = editorArea.reduced(14, 12);
-        g.setColour(juce::Colour(0xffdcebf4));
-        g.setFont(juce::Font(15.0f, juce::Font::bold));
-        g.drawText("EDITEUR AUDIO  |  " + getTrackDisplayName(selectedTrack),
-                   inner.getX(), inner.getY(), inner.getWidth(), 24,
-                   juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff92b7c8));
-        g.setFont(juce::Font(11.0f));
-        // Reserve the right-hand area for selection controls: no text overlap.
+        LibertyAudioEditorHeader::paint(g, editorArea,
+            getTrackDisplayName(selectedTrack), audioDockZoom);
         const bool compactSelectionBar = inner.getWidth() < 600;
         const int toolbarWidth = juce::jmin(280, juce::jmax(0, inner.getWidth()));
-        const int helpWidth = compactSelectionBar ? inner.getWidth()
-            : juce::jmax(0, inner.getWidth() - toolbarWidth - 12);
-        g.drawText("Molette : zoom  |  Maj + molette : deplacement  |  Zoom "
-                       + juce::String(audioDockZoom, 1) + "x",
-                   inner.getX(), inner.getY() + 23, helpWidth, 18,
-                   juce::Justification::centredLeft, true);
         // Audio selection controls share the existing dock header.
         const auto selectionBar = juce::Rectangle<int>(inner.getRight() - toolbarWidth,
             inner.getY() + (compactSelectionBar ? 44 : 22), toolbarWidth, 21);
