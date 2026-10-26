@@ -3557,45 +3557,110 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
             || (warpButton.contains(p) && event.mods.isCtrlDown()))
         {
-            juce::PopupMenu menu;
-            menu.addSectionHeader("PROPRIETES AUDIO | GAIN / PITCH / REVERSE");
-            menu.addItem(1, "Gain -6 dB");
-            menu.addItem(2, "Gain -3 dB");
-            menu.addItem(3, "Gain 0 dB");
-            menu.addItem(4, "Gain +3 dB");
-            menu.addItem(5, "Gain +6 dB");
-            menu.addSeparator();
-            menu.addItem(10, "Pitch -12 demi-tons");
-            menu.addItem(11, "Pitch -1 demi-ton");
-            menu.addItem(12, "Pitch 0");
-            menu.addItem(13, "Pitch +1 demi-ton");
-            menu.addItem(14, "Pitch +12 demi-tons");
-            menu.addSeparator();
-            menu.addItem(20, "REVERSE : lecture inversee", true,
-                audioEngine.isTrackClipReversed(selectedTrack));
-            const int track = selectedTrack;
-            juce::Component::SafePointer<MainComponent> safeThis(this);
-            menu.showMenuAsync(juce::PopupMenu::Options(),
-                [safeThis, track](int result)
+            class AudioPropertiesDialog final : public juce::Component
+            {
+            public:
+                AudioPropertiesDialog(MainComponent& parent, int index) : owner(parent), track(index)
                 {
-                    if (safeThis == nullptr || track < 0 || track >= safeThis->getAudioTrackCount())
-                        return;
-                    if (result >= 1 && result <= 5)
+                    setSize(560, 420);
+                    setupKnob(gain, " dB", -48.0, 12.0, 0.1,
+                        20.0 * std::log10(juce::jmax(0.00001f, owner.audioEngine.getTrackClipGain(track))));
+                    setupKnob(pitch, " demi-tons", -24.0, 24.0, 0.01,
+                        owner.audioEngine.getTrackClipPitch(track));
+                    sensitivity.setSliderStyle(juce::Slider::LinearHorizontal);
+                    sensitivity.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
+                    sensitivity.setRange(0.0, 100.0, 1.0);
+                    sensitivity.setValue(owner.audioDockTransientSensitivity, juce::dontSendNotification);
+                    sensitivity.setColour(juce::Slider::trackColourId, juce::Colour(0xff45b7df));
+                    sensitivity.setColour(juce::Slider::thumbColourId, juce::Colour(0xffb1eaff));
+                    sensitivity.onValueChange = [this]
                     {
-                        const double db[] = {-6.0, -3.0, 0.0, 3.0, 6.0};
-                        safeThis->audioEngine.setTrackClipGain(track,
-                            (float)std::pow(10.0, db[result - 1] / 20.0));
-                    }
-                    else if (result >= 10 && result <= 14)
+                        owner.audioDockTransientSensitivity = sensitivity.getValue();
+                        owner.repaint();
+                    };
+                    gain.onValueChange = [this]
                     {
-                        const double pitch[] = {-12.0, -1.0, 0.0, 1.0, 12.0};
-                        safeThis->audioEngine.setTrackClipPitch(track, pitch[result - 10]);
-                    }
-                    else if (result == 20)
-                        safeThis->audioEngine.setTrackClipReverse(track,
-                            !safeThis->audioEngine.isTrackClipReversed(track));
-                    safeThis->repaint();
-                });
+                        owner.audioEngine.setTrackClipGain(track,
+                            (float)std::pow(10.0, gain.getValue() / 20.0));
+                        owner.repaint();
+                    };
+                    pitch.onValueChange = [this]
+                    {
+                        owner.audioEngine.setTrackClipPitch(track, pitch.getValue());
+                        owner.repaint();
+                    };
+                    reverse.setButtonText("LECTURE INVERSEE (REVERSE)");
+                    reverse.setToggleState(owner.audioEngine.isTrackClipReversed(track),
+                        juce::dontSendNotification);
+                    reverse.onClick = [this]
+                    {
+                        owner.audioEngine.setTrackClipReverse(track, reverse.getToggleState());
+                        owner.repaint();
+                    };
+                    reset.setButtonText("REINITIALISER GAIN ET PITCH");
+                    reset.onClick = [this]
+                    {
+                        gain.setValue(0.0);
+                        pitch.setValue(0.0);
+                    };
+                    addAndMakeVisible(gain);
+                    addAndMakeVisible(pitch);
+                    addAndMakeVisible(sensitivity);
+                    addAndMakeVisible(reverse);
+                    addAndMakeVisible(reset);
+                }
+                void paint(juce::Graphics& g) override
+                {
+                    g.fillAll(juce::Colour(0xff101e2d));
+                    g.setColour(juce::Colour(0xff172d42));
+                    g.fillRoundedRectangle(getLocalBounds().reduced(14).toFloat(), 12.0f);
+                    g.setColour(juce::Colour(0xff7fd4f5));
+                    g.setFont(juce::Font(22.0f, juce::Font::bold));
+                    g.drawText("PROPRIETES AUDIO", 28, 22, getWidth()-56, 38,
+                        juce::Justification::centredLeft);
+                    g.setColour(juce::Colour(0xffa5c5d9));
+                    g.setFont(juce::Font(13.0f, juce::Font::bold));
+                    g.drawText("GAIN DU FICHIER", 40, 85, 210, 24, juce::Justification::centred);
+                    g.drawText("PITCH DU FICHIER", 300, 85, 210, 24, juce::Justification::centred);
+                    g.drawText("SENSIBILITE DES TRANSITOIRES", 35, 270,
+                        getWidth()-70, 23, juce::Justification::centredLeft);
+                }
+                void resized() override
+                {
+                    gain.setBounds(65, 112, 170, 142);
+                    pitch.setBounds(325, 112, 170, 142);
+                    sensitivity.setBounds(35, 297, getWidth()-70, 34);
+                    reverse.setBounds(35, 344, 260, 32);
+                    reset.setBounds(305, 344, 220, 32);
+                }
+            private:
+                static void setupKnob(juce::Slider& slider, const juce::String& suffix,
+                                      double low, double high, double step, double value)
+                {
+                    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+                    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 120, 24);
+                    slider.setRange(low, high, step);
+                    slider.setTextValueSuffix(suffix);
+                    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff44b8e6));
+                    slider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff243d55));
+                    slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffb8edff));
+                    slider.setValue(value, juce::dontSendNotification);
+                }
+                MainComponent& owner;
+                int track;
+                juce::Slider gain, pitch, sensitivity;
+                juce::ToggleButton reverse;
+                juce::TextButton reset;
+            };
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = "Liberty | Proprietes audio";
+            options.dialogBackgroundColour = juce::Colour(0xff101e2d);
+            options.content.setOwned(new AudioPropertiesDialog(*this, selectedTrack));
+            options.componentToCentreAround = this;
+            options.escapeKeyTriggersCloseButton = true;
+            options.useNativeTitleBar = true;
+            options.resizable = false;
+            options.launchAsync();
             return;
         }
         // Automatic transient detection is available via Shift+click on WARP.
