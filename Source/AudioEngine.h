@@ -11,6 +11,7 @@
 #include <memory>
 #include <map>
 #include <vector>
+#include <thread>
 
 class AudioEngine final : private juce::AudioIODeviceCallback, private juce::MidiInputCallback
 {
@@ -332,6 +333,11 @@ private:
         std::array<std::atomic<double>, maxWarpMarkers> warpTargetSeconds {};
         std::shared_ptr<WarpMarkerSnapshot> warpMarkerSnapshot;
         std::shared_ptr<juce::AudioBuffer<float>> buffer;
+        std::shared_ptr<juce::AudioBuffer<float>> spectralCache;
+        std::atomic<std::uint64_t> spectralGeneration { 0 };
+        std::atomic<std::uint64_t> spectralReadyGeneration { 0 };
+        // Callback-owned crossfade state.
+        float spectralBlend = 0.0f;
         std::atomic<std::uint64_t> contentRevision { 0 };
         // Audio-callback-owned Riche envelope; never accessed by the UI thread.
         float richeTransientEnvelope = 0.0f;
@@ -418,6 +424,9 @@ private:
     std::atomic<int> drumSamplerTrack { -1 };
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
+    std::atomic<bool> spectralWorkerStop { false };
+    std::thread spectralWorker;
+    void runSpectralWorker();
     std::shared_ptr<juce::AudioBuffer<float>> diagnosticPublishedBuffer;
     std::array<MidiPlaybackNote, maxMidiPlaybackNotes> midiPlaybackNotes;
     std::vector<std::unique_ptr<InstrumentPlaybackState>> instrumentPlayback;
