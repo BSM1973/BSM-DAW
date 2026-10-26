@@ -25,4 +25,26 @@ struct LibertyAudioEditorHeader
                    inner.getX(), inner.getY() + 23, helpWidth, 18,
                    juce::Justification::centredLeft, true);
     }
+    static void paintSelectionButtons(juce::Graphics& g, juce::Rectangle<int> inner)
+    {
+        const bool compact = inner.getWidth() < 600;
+        const int toolbarWidth = juce::jmin(280, juce::jmax(0, inner.getWidth()));
+        const auto bar = juce::Rectangle<int>(inner.getRight() - toolbarWidth,
+            inner.getY() + (compact ? 44 : 22), toolbarWidth, 21);
+        const char* labels[] = { "TOUT", "EFFACER", "DÉBUT", "FIN" };
+        const char* shortLabels[] = { "T", "X", "D", "F" };
+        for (int index = 0; index < 4; ++index)
+        {
+            const int width = bar.getWidth() / 4;
+            const auto button = bar.withX(bar.getX() + index * width)
+                                   .withWidth(juce::jmax(0, width - 3));
+            g.setColour(juce::Colour(0xff203b4d));
+            g.fillRoundedRectangle(button.toFloat(), 3.0f);
+            g.setColour(juce::Colour(0xff83bed4));
+            g.drawRoundedRectangle(button.toFloat(), 3.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText(width >= 48 ? labels[index] : shortLabels[index],
+                       button, juce::Justification::centred);
+        }
+    }
 };
