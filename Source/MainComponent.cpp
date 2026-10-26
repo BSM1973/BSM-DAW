@@ -3226,13 +3226,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                     if (nearestMarker >= 0)
                     {
                         const int i = nearestMarker;
-                            if (event.mods.isRightButtonDown())
+                        if (event.mods.isRightButtonDown())
                             {
                                 const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
                                     juce::MessageBoxIconType::QuestionIcon,
                                     "Liberty | Warp", "Supprimer ce marqueur Warp ?", this, nullptr);
-                                if (confirmed) audio.removeTrackWarpMarker(track, i);
-                                repaint();
+                                if (confirmed && audio.removeTrackWarpMarker(track, i))
+                                {
+                                    hoveredMarker = -1;
+                                    repaint();
+                                }
                             }
                             else
                             {
