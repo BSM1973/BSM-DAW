@@ -1762,6 +1762,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         if (audioBuffer->getNumSamples() < 2 || sourceChannels < 1
             || track.bufferSampleRate.load(std::memory_order_relaxed) <= 0.0)
             continue;
+        const auto spectral = std::atomic_load(&track.spectralCache);
+        const bool spectralReady = spectral != nullptr
+            && track.spectralReadyGeneration.load(std::memory_order_acquire)
+                == track.spectralGeneration.load(std::memory_order_acquire)
+            && (warpSnapshot->mode == 0 || warpSnapshot->mode == 2)
+            && rawMarkerCount == 2 && spectral->getNumSamples() > 1;
+        const float spectralStep = (float)(1.0 / juce::jmax(1.0, rate * 0.015));
         const int markerCount = juce::jlimit(2, maxWarpMarkers, rawMarkerCount);
         std::array<double, maxWarpMarkers> sourceMarkers {};
         std::array<double, maxWarpMarkers> targetMarkers {};
@@ -1817,6 +1824,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         for (int s = 0; s < samplesToMix; ++s)
         {
             const double targetSeconds = (double)(mixStart - startSample + s) / rate;
+            track.spectralBlend = juce::jlimit(0.0f, 1.0f,
+                track.spectralBlend + (spectralReady ? spectralStep : -spectralStep));
 
             while (currentSegment < markerCount - 2 && targetSeconds > targetMarkers[(size_t)(currentSegment + 1)])
                 ++currentSegment;
@@ -2008,10 +2017,25 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 return edgeSafeSample * gainGrain
                     + directSample * gainDirect;
             };
+            auto readMixed = [&](int channel) -> float
+            {
+                const float fallback = readGrain(channel);
+                if (!spectralReady || track.spectralBlend <= 0.0f)
+                    return fallback;
+                const double cachePosition = targetSeconds * rate;
+                const int index = juce::jlimit(0, spectral->getNumSamples() - 2,
+                    (int)std::floor(cachePosition));
+                const float fraction = (float)juce::jlimit(0.0, 1.0, cachePosition - index);
+                const float* cached = spectral->getReadPointer(
+                    juce::jlimit(0, spectral->getNumChannels() - 1, channel));
+                const float processed = cached[index] + (cached[index + 1] - cached[index]) * fraction;
+                return fallback * (1.0f - track.spectralBlend)
+                    + processed * track.spectralBlend;
+            };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                outputChannelData[0][outputOffset + s] += readGrain(0) * leftGain;
+                outputChannelData[0][outputOffset + s] += readMixed(0) * leftGain;
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                outputChannelData[1][outputOffset + s] += readGrain(sourceChannels == 1 ? 0 : 1) * rightGain;
+                outputChannelData[1][outputOffset + s] += readMixed(sourceChannels == 1 ? 0 : 1) * rightGain;
         }
         track.richeNextSample = mixEnd;
 
