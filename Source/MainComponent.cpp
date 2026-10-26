@@ -3665,16 +3665,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 return;
             }
         }
-        // Warp editing owns ordinary clicks. Ctrl+drag retains audio selection.
-        if (audioEngine.isTrackWarpEnabled(selectedTrack)
-            && !event.mods.isCtrlDown() && !event.mods.isCommandDown()
-            && !event.mods.isAltDown())
-        {
-            audioSelectionActive = false;
-            draggingAudioSelection = false;
-            repaint();
-            return;
-        }
         // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
         // These markers are independent of the transient audio selection.
         if (event.mods.isAltDown() && event.mods.isLeftButtonDown())
@@ -3709,6 +3699,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
+        }
+        // Preserve boundary dragging even when Warp is enabled.
+        // Ordinary clicks edit Warp; Cmd/Ctrl+drag selects audio.
+        if (audioEngine.isTrackWarpEnabled(selectedTrack)
+            && !event.mods.isCtrlDown() && !event.mods.isCommandDown())
+        {
+            audioSelectionActive = false;
+            draggingAudioSelection = false;
+            repaint();
+            return;
         }
         audioSelectionDragHandle = 0;
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
