@@ -386,6 +386,18 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(audioDockLoopEnabled ? "LOOP ON" : "LOOP OFF",
                 loopButton, juce::Justification::centred);
         }
+        const auto gainPitchButton = juce::Rectangle<int>(
+            loopButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(114, juce::jmax(0, inner.getRight() - loopButton.getRight() - 6)), 20);
+        if (gainPitchButton.getWidth() >= 65)
+        {
+            g.setColour(juce::Colour(0xff29475f));
+            g.fillRoundedRectangle(gainPitchButton.toFloat(), 4.0f);
+            g.setColour(juce::Colour(0xff7fcbea));
+            g.drawRoundedRectangle(gainPitchButton.toFloat(), 4.0f, 1.0f);
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("GAIN / PITCH", gainPitchButton, juce::Justification::centred);
+        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
@@ -3499,8 +3511,12 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         const auto loopButton = juce::Rectangle<int>(
             snapButton.getRight() + 6, formatButton.getY(),
             juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
-        // Clip-specific audio controls, independent from mixer track gain.
-        if (warpButton.contains(p) && event.mods.isCtrlDown())
+        // Dedicated visible button; Ctrl+click on WARP remains a shortcut.
+        const auto gainPitchButton = juce::Rectangle<int>(
+            loopButton.getRight() + 6, formatButton.getY(),
+            juce::jmin(114, juce::jmax(0, dockInner.getRight() - loopButton.getRight() - 6)), 20);
+        if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
+            || (warpButton.contains(p) && event.mods.isCtrlDown()))
         {
             juce::PopupMenu menu;
             menu.addSectionHeader("FICHIER AUDIO | GAIN ET PITCH");
