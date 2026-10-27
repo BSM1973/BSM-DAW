@@ -4311,16 +4311,9 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                 return true;
             }
         }
-        // Preserve boundary dragging even when Warp is enabled.
-        // Ordinary clicks edit Warp; Cmd/Ctrl+drag selects audio.
-        if (audioEngine.isTrackWarpEnabled(selectedTrack)
-            && !event.mods.isCtrlDown() && !event.mods.isCommandDown())
-        {
-            audioSelectionActive = false;
-            draggingAudioSelection = false;
-            repaint();
-            return true;
-        }
+        // Ordinary left-drag must select audio, including when Warp is on.
+        // Warp markers and clip boundary handles are handled above, before
+        // starting a selection. Never swallow the click just because Warp is enabled.
         audioSelectionDragHandle = 0;
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
         {
