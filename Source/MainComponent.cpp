@@ -267,14 +267,15 @@ void MainComponent::detachAudioDockSurface()
         // PLAY and other main-window actions can change native window focus.
         // Reusing the detach icon must always recover the existing editor.
         audioDockFloatingWindow->setVisible(true);
-        audioDockSurface.setVisible(true);
+        if (floatingAudioDockSurface != nullptr) floatingAudioDockSurface->setVisible(true);
         audioDockFloatingWindow->toFront(true);
         return;
     }
     audioDockFloatingWindow = std::make_unique<AudioDockFloatingWindow>(*this);
     audioDockFloatingWindow->setAlwaysOnTop(true);
-    audioDockFloatingWindow->setContentNonOwned(&audioDockSurface, false);
-    audioDockSurface.setVisible(true);
+    floatingAudioDockSurface = std::make_unique<LibertyAudioDockSurface>(*this);
+    audioDockFloatingWindow->setContentNonOwned(floatingAudioDockSurface.get(), false);
+    floatingAudioDockSurface->setVisible(true);
     audioDockFloatingWindow->centreWithSize(1080, 560);
     audioDockFloatingWindow->setVisible(true);
     audioDockFloatingWindow->toFront(true);
@@ -286,8 +287,8 @@ void MainComponent::attachAudioDockSurface()
     audioDockFloatingWindow->setVisible(false);
     audioDockFloatingWindow->clearContentComponent();
     audioDockFloatingWindow.reset();
-    // Restore ownership to the original dock before recalculating geometry.
-    // No editor or audio state is destroyed when the window closes.
+    floatingAudioDockSurface.reset();
+    // The original dock editor was never detached or destroyed.
     addChildComponent(audioDockSurface);
     audioDockSurface.setVisible(false);
     audioDockSurface.setBounds(getAudioDockEditorBounds());
@@ -2740,6 +2741,7 @@ void MainComponent::timerCallback()
         audioDockSurface.setVisible(showAudioSurface);
     }
     if (showAudioSurface) audioDockSurface.repaint();
+    if (floatingAudioDockSurface != nullptr) floatingAudioDockSurface->repaint();
 
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
@@ -3167,9 +3169,9 @@ juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
     const int editorLeft = juce::jmin(310, juce::jmax(0, getWidth()));
     const juce::Point<int> dockOrigin(editorLeft, editorTop);
     if (audioDockFloatingWindow != nullptr
-        && audioDockSurface.getParentComponent() == audioDockFloatingWindow.get())
-        return {dockOrigin, juce::Point<int>(audioDockSurface.getWidth(),
-                                             audioDockSurface.getHeight())};
+        && floatingAudioDockSurface != nullptr)
+        return {dockOrigin, juce::Point<int>(floatingAudioDockSurface->getWidth(),
+                                             floatingAudioDockSurface->getHeight())};
     return {dockOrigin,
             juce::Point<int>(juce::jmax(0, getWidth() - editorLeft),
                              juce::jmax(0, getHeight() - editorTop))};
