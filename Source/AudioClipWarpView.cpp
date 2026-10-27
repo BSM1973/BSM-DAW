@@ -284,8 +284,7 @@ private:
         {
             // The complete audio dock editor is already reparented into its own
             // floating window. Never raise the legacy Warp overlay over it.
-            if (view.stopped.load() || view.floatingWindow != nullptr
-                || view.owner.audioDockFloatingWindow != nullptr) return;
+            if (view.stopped.load() || view.floatingWindow != nullptr) return;
             // The legacy overlay must not intercept the current audio dock.
             if (!view.owner.dockCollapsed && !view.owner.dockMixerMode
                 && !view.owner.dockStepSequencerMode
