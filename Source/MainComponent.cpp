@@ -2698,11 +2698,14 @@ void MainComponent::timerCallback()
         && audioEngine.hasAudioFile(selectedTrack);
     if (audioDockFloatingWindow == nullptr)
     {
-        audioDockSurface.setBounds(getAudioDockEditorBounds());
-        audioDockSurface.setVisible(showAudioSurface);
-        // Keep the actual editor above other dock surfaces, not behind them.
-        // The left navigation remains in its own region (x < 220).
-        if (showAudioSurface) audioDockSurface.toFront(false);
+        // Update the embedded component in dock coordinates every frame.
+        // Its bounds must never extend into the arranger, even after resize.
+        const auto dockEditorBounds = getAudioDockEditorBounds()
+            .getIntersection(juce::Rectangle<int>(0, getMixerTop(), getWidth(),
+                                                  juce::jmax(0, getHeight() - getMixerTop())));
+        audioDockSurface.setBounds(dockEditorBounds);
+        audioDockSurface.setVisible(showAudioSurface && !dockEditorBounds.isEmpty());
+        if (audioDockSurface.isVisible()) audioDockSurface.toFront(false);
     }
     if (showAudioSurface) audioDockSurface.repaint();
 
@@ -3121,14 +3124,19 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
 
 juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
 {
-    const juce::Point<int> dockOrigin(310, getMixerTop() + 36);
+    // Dock geometry is always measured from the current dock top, never from
+    // the floating window or a previous resize. Clip to the main view.
+    const int dockTop = juce::jlimit(0, getHeight(), getMixerTop());
+    const int editorTop = juce::jlimit(dockTop, getHeight(), dockTop + 36);
+    const int editorLeft = juce::jmin(310, juce::jmax(0, getWidth()));
+    const juce::Point<int> dockOrigin(editorLeft, editorTop);
     if (audioDockFloatingWindow != nullptr
         && audioDockSurface.getParentComponent() == audioDockFloatingWindow.get())
         return {dockOrigin, juce::Point<int>(audioDockSurface.getWidth(),
                                              audioDockSurface.getHeight())};
     return {dockOrigin,
-            juce::Point<int>(juce::jmax(0, getWidth() - dockOrigin.x),
-                             juce::jmax(0, getHeight() - dockOrigin.y))};
+            juce::Point<int>(juce::jmax(0, getWidth() - editorLeft),
+                             juce::jmax(0, getHeight() - editorTop))};
 }
 
 juce::Rectangle<int> MainComponent::getAudioDockWaveBoundsFor(juce::Rectangle<int> editor) const
