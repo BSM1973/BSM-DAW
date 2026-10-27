@@ -313,6 +313,7 @@ juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEv
     // logical dock coordinates used by the existing Warp/selection handlers.
     const auto dockOrigin = main.getAudioDockEditorBounds().getPosition();
     const auto translated = e.getPosition().toFloat() + dockOrigin.toFloat();
+    const auto translatedDown = e.getMouseDownPosition().toFloat() + dockOrigin.toFloat();
     // JUCE's withNewPosition keeps the original eventComponent. Rebase the
     // event onto MainComponent before assigning logical dock coordinates;
     // otherwise its next getEventRelativeTo(&main) re-applies desktop offsets.
@@ -321,7 +322,7 @@ juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEv
     // translate the coordinates a second time. Rebase on MainComponent.
     return juce::MouseEvent(e.source, translated, e.mods, e.pressure,
                             e.orientation, e.rotation, e.tiltX, e.tiltY,
-                            &main, &main, e.eventTime, translated,
+                            &main, &main, e.eventTime, translatedDown,
                             e.mouseDownTime, e.getNumberOfClicks(),
                             e.mouseWasDraggedSinceMouseDown());
 }
@@ -1083,7 +1084,7 @@ void MainComponent::paint(juce::Graphics& g)
         // Render the established audio editor directly in the dock. Its
         // waveform must not be a child component floating over the arranger.
         if (audioDockFloatingWindow == nullptr)
-            paintExistingAudioDock(g, editorArea);
+            paintExistingAudioDock(g, getAudioDockEditorBounds());
         else
         {
             g.setColour(juce::Colour(0xff0b1521));
@@ -3165,8 +3166,7 @@ juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
     const int editorTop = juce::jlimit(dockTop, getHeight(), dockTop + 36);
     const int editorLeft = juce::jmin(310, juce::jmax(0, getWidth()));
     const juce::Point<int> dockOrigin(editorLeft, editorTop);
-    if (audioDockFloatingWindow != nullptr
-        && audioDockSurface.getParentComponent() == audioDockFloatingWindow.get())
+    if (audioDockFloatingWindow != nullptr)
         return {dockOrigin, juce::Point<int>(audioDockSurface.getWidth(),
                                              audioDockSurface.getHeight())};
     return {dockOrigin,
