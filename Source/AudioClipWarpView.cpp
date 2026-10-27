@@ -634,7 +634,7 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
-        if (!isVisible()) return;
+        if (!isVisible() && floatingWindow == nullptr) return;
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack))
         {
             hideView();
