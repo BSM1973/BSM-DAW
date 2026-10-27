@@ -286,6 +286,12 @@ private:
             // floating window. Never raise the legacy Warp overlay over it.
             if (view.stopped.load() || view.floatingWindow != nullptr
                 || view.owner.audioDockFloatingWindow != nullptr) return;
+            // The legacy overlay must not intercept the current audio dock.
+            if (!view.owner.dockCollapsed && !view.owner.dockMixerMode
+                && !view.owner.dockStepSequencerMode
+                && view.owner.selectedTrack >= 0
+                && view.owner.selectedTrack < view.owner.getAudioTrackCount()
+                && view.owner.audioEngine.hasAudioFile(view.owner.selectedTrack)) return;
             if (e.eventComponent == &view || view.isParentOf(e.eventComponent)) return;
 
             const auto relative = e.getEventRelativeTo(&view.owner);
@@ -639,6 +645,17 @@ private:
         if (stopped.load()) return;
         if (!isVisible() && floatingWindow == nullptr) return;
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack))
+        {
+            hideView();
+            return;
+        }
+        // The original audio dock is the sole interactive editor in the main
+        // window. Do not overlay its controls with this obsolete 210px panel.
+        if (floatingWindow == nullptr && !owner.dockCollapsed
+            && !owner.dockMixerMode && !owner.dockStepSequencerMode
+            && owner.selectedTrack >= 0
+            && owner.selectedTrack < owner.getAudioTrackCount()
+            && owner.audioEngine.hasAudioFile(owner.selectedTrack))
         {
             hideView();
             return;
