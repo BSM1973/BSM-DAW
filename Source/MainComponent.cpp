@@ -285,15 +285,10 @@ void MainComponent::attachAudioDockSurface()
 
 void LibertyAudioDockSurface::paint(juce::Graphics& g)
 {
-    juce::Graphics::ScopedSaveState saved(g);
-    // The painter uses MainComponent coordinates. Preserve that coordinate
-    // system even when this component has a different parent window.
-    const auto editor = main.getAudioDockEditorBounds();
-    const auto bounds = juce::Rectangle<int>(editor.getPosition(),
-                                            juce::Point<int>(getWidth(), getHeight()));
-    g.addTransform(juce::AffineTransform::translation(
-        (float) -editor.getX(), (float) -editor.getY()));
-    main.paintExistingAudioDock(g, bounds);
+    // A JUCE child always paints in its own local coordinates. The previous
+    // absolute dock-origin transform moved the waveform outside the clipping
+    // region, especially after resizing or detaching the editor.
+    main.paintExistingAudioDock(g, getLocalBounds());
 }
 
 juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEvent& e) const
