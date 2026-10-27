@@ -998,7 +998,10 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawLine((float)x + 16, (float)y + 7, (float)x + 21, (float)y + 7, 1.6f);
             g.drawLine((float)x + 21, (float)y + 7, (float)x + 21, (float)y + 12, 1.6f);
         };
-        detachIcon(44);
+        if (!isAudioDockTrack)
+        {
+            detachIcon(44);
+        }
         if (!isAudioDockTrack)
         {
             detachIcon(76);
