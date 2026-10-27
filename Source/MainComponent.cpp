@@ -278,7 +278,8 @@ void MainComponent::attachAudioDockSurface()
     audioDockFloatingWindow.reset();
     // Restore ownership to the original dock before recalculating geometry.
     // No editor or audio state is destroyed when the window closes.
-    addAndMakeVisible(audioDockSurface);
+    addChildComponent(audioDockSurface);
+    audioDockSurface.setVisible(false);
     audioDockSurface.setBounds(getAudioDockEditorBounds());
     resized();
 }
@@ -1060,7 +1061,17 @@ void MainComponent::paint(juce::Graphics& g)
     // Keep the existing audio editor rendering isolated from other dock modes.
     // The graphics context is explicit so it can later be hosted by a JUCE child.
     if (!dockMixerMode && isAudioDockTrack)
-        audioDockSurface.repaint();
+    {
+        // Render the established audio editor directly in the dock. Its
+        // waveform must not be a child component floating over the arranger.
+        if (audioDockFloatingWindow == nullptr)
+            paintExistingAudioDock(g, editorArea);
+        else
+        {
+            g.setColour(juce::Colour(0xff0b1521));
+            g.fillRect(editorArea);
+        }
+    }
         else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
@@ -2704,8 +2715,10 @@ void MainComponent::timerCallback()
             .getIntersection(juce::Rectangle<int>(0, getMixerTop(), getWidth(),
                                                   juce::jmax(0, getHeight() - getMixerTop())));
         audioDockSurface.setBounds(dockEditorBounds);
-        audioDockSurface.setVisible(showAudioSurface && !dockEditorBounds.isEmpty());
-        if (audioDockSurface.isVisible()) audioDockSurface.toFront(false);
+        // The embedded editor is painted by MainComponent itself, as it was
+        // before detaching was introduced. Only the detached window owns the
+        // JUCE child surface, preventing it from covering the arranger.
+        audioDockSurface.setVisible(false);
     }
     if (showAudioSurface) audioDockSurface.repaint();
 
