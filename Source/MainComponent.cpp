@@ -296,10 +296,11 @@ void MainComponent::attachAudioDockSurface()
 
 void LibertyAudioDockSurface::paint(juce::Graphics& g)
 {
-    // A JUCE child always paints in its own local coordinates. The previous
-    // absolute dock-origin transform moved the waveform outside the clipping
-    // region, especially after resizing or detaching the editor.
-    main.paintExistingAudioDock(g, getLocalBounds());
+    // Embedded: MainComponent paints the established editor at dock coordinates.
+    // This child is only its transparent input surface, so visuals never move.
+    // Floating: the same editor is painted in the child's local coordinates.
+    if (getParentComponent() != &main)
+        main.paintExistingAudioDock(g, getLocalBounds());
 }
 
 juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEvent& e) const
@@ -2735,7 +2736,7 @@ void MainComponent::timerCallback()
         // The embedded editor is painted by MainComponent itself, as it was
         // before detaching was introduced. Only the detached window owns the
         // JUCE child surface, preventing it from covering the arranger.
-        audioDockSurface.setVisible(false);
+        audioDockSurface.setVisible(showAudioSurface);
     }
     if (showAudioSurface) audioDockSurface.repaint();
 
@@ -2761,6 +2762,10 @@ void MainComponent::timerCallback()
     if (!durationPaletteOpen && (dockNavigationHitLayer.isVisible())) dockNavigationHitLayer.toFront(false);
     dockVisibilityButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (!durationPaletteOpen && (dockVisibilityButton.isVisible())) dockVisibilityButton.toFront(false);
+    // Give the dock's transparent input surface priority over legacy overlays.
+    // Its bounds cover only the audio editor, never the arranger or dock tabs.
+    if (audioDockFloatingWindow == nullptr && showAudioSurface && !durationPaletteOpen)
+        audioDockSurface.toFront(false);
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
