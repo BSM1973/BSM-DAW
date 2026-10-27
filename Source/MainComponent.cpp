@@ -294,35 +294,49 @@ void LibertyAudioDockSurface::paint(juce::Graphics& g)
     main.paintExistingAudioDock(g, bounds);
 }
 
+juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEvent& e) const
+{
+    if (getParentComponent() == &main)
+        return e.getEventRelativeTo(&main);
+
+    // The floating component lives in a separate desktop window. Mapping via
+    // getEventRelativeTo(main) would use desktop positions rather than the
+    // logical dock coordinates used by the existing Warp/selection handlers.
+    const auto dockOrigin = main.getAudioDockEditorBounds().getPosition();
+    const auto translated = e.getPosition().toFloat()
+        + dockOrigin.toFloat();
+    return e.withNewPosition(translated);
+}
+
 void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
 {
-    main.mouseMove(e.getEventRelativeTo(&main));
+    main.mouseMove(toAudioEditorEvent(e));
 }
 
 void LibertyAudioDockSurface::mouseDown(const juce::MouseEvent& e)
 {
-    main.mouseDown(e.getEventRelativeTo(&main));
+    main.mouseDown(toAudioEditorEvent(e));
 }
 
 void LibertyAudioDockSurface::mouseDrag(const juce::MouseEvent& e)
 {
-    main.mouseDrag(e.getEventRelativeTo(&main));
+    main.mouseDrag(toAudioEditorEvent(e));
 }
 
 void LibertyAudioDockSurface::mouseUp(const juce::MouseEvent& e)
 {
-    main.mouseUp(e.getEventRelativeTo(&main));
+    main.mouseUp(toAudioEditorEvent(e));
 }
 
 void LibertyAudioDockSurface::mouseDoubleClick(const juce::MouseEvent& e)
 {
-    main.mouseDoubleClick(e.getEventRelativeTo(&main));
+    main.mouseDoubleClick(toAudioEditorEvent(e));
 }
 
 void LibertyAudioDockSurface::mouseWheelMove(const juce::MouseEvent& e,
                                              const juce::MouseWheelDetails& w)
 {
-    main.mouseWheelMove(e.getEventRelativeTo(&main), w);
+    main.mouseWheelMove(toAudioEditorEvent(e), w);
 }
 
 void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
