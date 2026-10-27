@@ -2705,6 +2705,9 @@ void MainComponent::timerCallback()
     {
         audioDockSurface.setBounds(getAudioDockEditorBounds());
         audioDockSurface.setVisible(showAudioSurface);
+        // Keep the actual editor above other dock surfaces, not behind them.
+        // The left navigation remains in its own region (x < 220).
+        if (showAudioSurface) audioDockSurface.toFront(false);
     }
     if (showAudioSurface) audioDockSurface.repaint();
 
