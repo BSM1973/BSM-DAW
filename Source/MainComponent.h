@@ -19,26 +19,6 @@ void refreshLibertyRecordingTrackLayout(MainComponent* owner);
 void refreshLibertyTrackHeaderMixLayout(MainComponent* owner);
 bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
 
-class LibertyAudioDockSurface final : public juce::Component
-{
-public:
-    explicit LibertyAudioDockSurface(MainComponent& owner) : main(owner)
-    {
-        setName("LibertyAudioDockSurface");
-        setInterceptsMouseClicks(true, false);
-    }
-    void paint(juce::Graphics& g) override;
-    juce::MouseEvent toAudioEditorEvent(const juce::MouseEvent& e) const;
-    void mouseMove(const juce::MouseEvent& e) override;
-    void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseUp(const juce::MouseEvent& e) override;
-    void mouseDoubleClick(const juce::MouseEvent& e) override;
-    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
-private:
-    MainComponent& main;
-};
-
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
                             private juce::Timer,
@@ -48,22 +28,15 @@ public:
     MainComponent();
     ~MainComponent() override;
     void paint(juce::Graphics& g) override;
-    void paintExistingAudioDock(juce::Graphics& g, juce::Rectangle<int> editorBounds);
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
-    bool handleAudioDockMouseMove(const juce::MouseEvent& event);
     void mouseExit(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
-    bool handleAudioDockMouseDown(const juce::MouseEvent& event);
     void mouseDoubleClick(const juce::MouseEvent& event) override;
-    bool handleAudioDockMouseDoubleClick(const juce::MouseEvent& event);
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
-    bool handleAudioDockMouseWheel(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel);
     bool openAudioClipInDockAt(juce::Point<int> arrangePosition);
     void mouseDrag(const juce::MouseEvent& event) override;
-    bool handleAudioDockMouseDrag(const juce::MouseEvent& event);
     void mouseUp(const juce::MouseEvent&) override;
-    bool handleAudioDockMouseUp(const juce::MouseEvent& event);
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
     void auditionPianoKey(int lane, int pitch, bool on) { audioEngine.sendPianoPreviewMidi(lane, on ? juce::MidiMessage::noteOn(1, pitch, (juce::uint8)100) : juce::MidiMessage::noteOff(1, pitch)); }
@@ -455,25 +428,7 @@ public:
     // Audio dock navigation state (display-only; no changes to audio samples).
     double audioDockZoom = 1.0;
     double audioDockScroll = 0.0;
-    bool audioDockSnapEnabled = true;
-    bool audioDockTransientEnabled = false;
-    double audioDockTransientSensitivity = 50.0;
-    void refreshAudioDockTransientMarkers(int track);
-    std::map<int, std::vector<double>> audioDockAutomaticMarkers;
-    int audioDockSnapDivision = 4; // Subdivisions per beat: 1, 2, 4, 8, 16.
-    int draggingDockWarpMarker = -1;
-    int draggingDockWarpTrack = -1;
-    double snapAudioDockWarpTime(double seconds, int track) const;
-    void showAudioDockSnapDialog();
-
-    int audioDockTimeFormat = 3; // Default: bars/beats.
-    void showAudioDockTimeFormatDialog();
-    bool audioDockLoopEnabled = false;
-    double audioDockLoopStartFraction = 0.0;
-    double audioDockLoopEndFraction = 1.0;
-    int draggingAudioDockLoopMarker = 0;
-    bool draggingAudioDockNavigator = false; // 1 start, 2 end.
-
+    int audioDockTimeFormat = 0; // 0 seconds, 1 clock, 2 samples, 3 bars/beats
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
     int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
@@ -493,8 +448,6 @@ public:
     // Serializable representation for eventual project-file integration.
     juce::ValueTree exportAudioDockClipBounds() const;
     void importAudioDockClipBounds(const juce::ValueTree& tree);
-    juce::Rectangle<int> getAudioDockEditorBounds() const;
-    juce::Rectangle<int> getAudioDockWaveBoundsFor(juce::Rectangle<int> editorBounds) const;
     juce::Rectangle<int> getAudioDockWaveBounds() const;
     double audioDockFractionAt(int x) const;
     int mixerHeight = 492;
@@ -1192,12 +1145,5 @@ private:
         return &bank.patterns[(size_t)bank.activePattern];
     }
     std::vector<InstrumentStepSequencerBank> instrumentStepSequencers; bool dockStepSequencerMode = false; bool dockMixerMode = true; bool drumSamplerDockSelected = false; int stepSequencerPage = 0; int stepSequencerSelectedStep = 0; int stepSequencerMidiTarget = 0; bool draggingStepSequencerPattern = false; int draggedStepSequencerInstrument = -1; std::map<int, juce::String> customTrackNames; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int armedInstrumentTrack = -1; int monitoredInstrumentTrack = -1; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; int draggedPatternInstrument = -1; int draggedPatternClip = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
-    void detachAudioDockSurface();
-    void attachAudioDockSurface();
-    struct AudioDockFloatingWindow;
-    std::unique_ptr<AudioDockFloatingWindow> audioDockFloatingWindow;
-    LibertyAudioDockSurface audioDockSurface { *this };
-    // The floating editor is an independent view of the same MainComponent audio state.
-    std::unique_ptr<LibertyAudioDockSurface> floatingAudioDockSurface;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
