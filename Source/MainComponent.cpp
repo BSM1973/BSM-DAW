@@ -19,7 +19,6 @@ constexpr juce::uint32 libertyTrackPalette[33] = {
 #include "LibertyDesignSystem.h"
 void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
-void detachLibertyAudioClipWarpView(MainComponent&, int);
 void showFloatingDrumSamplerWindow(AudioEngine&);
 void resizeLibertyDynamicTrackController(MainComponent*);
 void ensureLibertyPageModeCoordinator(MainComponent*);
@@ -98,8 +97,6 @@ void MainComponent::updateLoopPunchButtons()
 
 MainComponent::MainComponent()
 {
-    addAndMakeVisible(audioDockSurface);
-    audioDockSurface.setVisible(false);
     addAndMakeVisible(dockMixerInputLayer);
     mixerHorizontalScrollBar.addListener(this);
     addAndMakeVisible(mixerHorizontalScrollBar);
@@ -209,7 +206,7 @@ MainComponent::MainComponent()
     startTimerHz(30);
 }
 
-MainComponent::~MainComponent() { attachAudioDockSurface(); closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
+MainComponent::~MainComponent() { closeFloatingDrumSamplerWindow(); closeFloatingStepSequencerWindow(); }
 
 bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
@@ -236,141 +233,53 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
 }
 
-struct MainComponent::AudioDockFloatingWindow final : juce::DocumentWindow
+void MainComponent::paint(juce::Graphics& g)
 {
-    explicit AudioDockFloatingWindow(MainComponent& owner)
-        : juce::DocumentWindow("Liberty — Éditeur audio",
-                               juce::Colour(0xff0b1521),
-                               juce::DocumentWindow::closeButton),
-          main(owner)
+    auto bounds = getLocalBounds();
+    // Liberty Pro design system: shared canvas across transport, arrange and dock.
+    g.fillAll(LibertyUI::Colour::canvas);
+    auto transport = bounds.removeFromTop(transportHeight);
+    auto mixer = bounds.removeFromBottom(juce::jmin(dockCollapsed ? 32 : mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
+    drawTransport(g, transport);
     {
-        setUsingNativeTitleBar(true);
-        setResizable(true, true);
-        setResizeLimits(560, 300, 4096, 2160);
+        // Clip the complete arranger paint pass, including partially visible track controls.
+        const juce::Graphics::ScopedSaveState arrangeClip(g);
+        g.reduceClipRegion(bounds);
+        drawTrackArea(g, bounds);
     }
-    void closeButtonPressed() override
+    if (dockCollapsed)
     {
-        juce::Component::SafePointer<MainComponent> safeMain(&main);
-        juce::MessageManager::callAsync([safeMain]
-        {
-            if (safeMain != nullptr)
-                safeMain->attachAudioDockSurface();
-        });
-    }
-    MainComponent& main;
-};
-
-void MainComponent::detachAudioDockSurface()
-{
-    if (audioDockFloatingWindow != nullptr)
-    {
-        // PLAY and other main-window actions can change native window focus.
-        // Reusing the detach icon must always recover the existing editor.
-        audioDockFloatingWindow->setVisible(true);
-        if (floatingAudioDockSurface != nullptr) floatingAudioDockSurface->setVisible(true);
-        audioDockFloatingWindow->toFront(true);
+        g.setColour(juce::Colour(0xff182530));
+        g.fillRect(mixer);
+        g.setColour(juce::Colour(0xff40515f));
+        g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 1);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(12.0f));
+        g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
         return;
     }
-    audioDockFloatingWindow = std::make_unique<AudioDockFloatingWindow>(*this);
-    audioDockFloatingWindow->setAlwaysOnTop(true);
-    floatingAudioDockSurface = std::make_unique<LibertyAudioDockSurface>(*this);
-    audioDockFloatingWindow->setContentNonOwned(floatingAudioDockSurface.get(), false);
-    floatingAudioDockSurface->setVisible(true);
-    audioDockFloatingWindow->centreWithSize(1080, 560);
-    audioDockFloatingWindow->setVisible(true);
-    audioDockFloatingWindow->toFront(true);
-}
-
-void MainComponent::attachAudioDockSurface()
-{
-    if (audioDockFloatingWindow == nullptr) return;
-    audioDockFloatingWindow->setVisible(false);
-    audioDockFloatingWindow->clearContentComponent();
-    audioDockFloatingWindow.reset();
-    floatingAudioDockSurface.reset();
-    // The original dock editor was never detached or destroyed.
-    addChildComponent(audioDockSurface);
-    audioDockSurface.setVisible(false);
-    audioDockSurface.setBounds(getAudioDockEditorBounds());
-    resized();
-}
-
-void LibertyAudioDockSurface::paint(juce::Graphics& g)
-{
-    // Embedded: MainComponent paints the established editor at dock coordinates.
-    // This child is only its transparent input surface, so visuals never move.
-    // Floating: the same editor is painted in the child's local coordinates.
-    if (getParentComponent() != &main)
-        main.paintExistingAudioDock(g, getLocalBounds());
-}
-
-juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEvent& e) const
-{
-    if (getParentComponent() == &main)
-        return e.getEventRelativeTo(&main);
-
-    // The floating component lives in a separate desktop window. Mapping via
-    // getEventRelativeTo(main) would use desktop positions rather than the
-    // logical dock coordinates used by the existing Warp/selection handlers.
-    const auto dockOrigin = main.getAudioDockEditorBounds().getPosition();
-    const auto translated = e.getPosition().toFloat() + dockOrigin.toFloat();
-    const auto translatedDown = e.getMouseDownPosition().toFloat() + dockOrigin.toFloat();
-    // JUCE's withNewPosition keeps the original eventComponent. Rebase the
-    // event onto MainComponent before assigning logical dock coordinates;
-    // otherwise its next getEventRelativeTo(&main) re-applies desktop offsets.
-    // JUCE MouseEvent coordinates are relative to eventComponent. Forwarding
-    // an event whose eventComponent is the floating child makes the receiver
-    // translate the coordinates a second time. Rebase on MainComponent.
-    return juce::MouseEvent(e.source, translated, e.mods, e.pressure,
-                            e.orientation, e.rotation, e.tiltX, e.tiltY,
-                            &main, &main, e.eventTime, translatedDown,
-                            e.mouseDownTime, e.getNumberOfClicks(),
-                            e.mouseWasDraggedSinceMouseDown());
-}
-
-void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
-{
-    main.handleAudioDockMouseMove(toAudioEditorEvent(e));
-}
-
-void LibertyAudioDockSurface::mouseDown(const juce::MouseEvent& e)
-{
-    main.handleAudioDockMouseDown(toAudioEditorEvent(e));
-}
-
-void LibertyAudioDockSurface::mouseDrag(const juce::MouseEvent& e)
-{
-    main.handleAudioDockMouseDrag(toAudioEditorEvent(e));
-}
-
-void LibertyAudioDockSurface::mouseUp(const juce::MouseEvent& e)
-{
-    main.handleAudioDockMouseUp(toAudioEditorEvent(e));
-}
-
-void LibertyAudioDockSurface::mouseDoubleClick(const juce::MouseEvent& e)
-{
-    main.handleAudioDockMouseDoubleClick(toAudioEditorEvent(e));
-}
-
-void LibertyAudioDockSurface::mouseWheelMove(const juce::MouseEvent& e,
-                                             const juce::MouseWheelDetails& w)
-{
-    main.handleAudioDockMouseWheel(toAudioEditorEvent(e), w);
-}
-
-void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
-                                           juce::Rectangle<int> audioEditorBounds)
-{
-        auto& g = audioGraphics;
-        // The complete audio editor uses these explicit bounds; all other dock modes
-        // continue using their existing editorArea without modification.
-        // The renderer is host-independent: a floating JUCE component may supply
-        // its own graphics context and bounds, rather than the main-window bounds.
-        const auto editorArea = audioEditorBounds;
-        if (editorArea.isEmpty()) return;
-        juce::Graphics::ScopedSaveState audioDockGraphicsState(g);
-        g.reduceClipRegion(editorArea);
+    // Permanent visible gold resize rail, drawn across the full draggable boundary.
+    g.setColour(juce::Colour(0xffb88732));
+    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
+    g.setColour(juce::Colour(0xffffdf83));
+    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
+    // Visual dock boundary only; leave editor and tab hit areas unchanged.
+    g.setColour(juce::Colour(0xff070b10));
+    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
+    g.setColour(juce::Colour(0xffd7ad53));
+    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 3);
+    g.setColour(juce::Colour(0xffffdf87));
+    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
+               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
+    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
+    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
+    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
+    const bool isAudioDockTrack = selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+                                  && audioEngine.hasAudioFile(selectedTrack);
+    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
+        ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
+    if (!dockMixerMode && isAudioDockTrack)
+    {
         // First audio-dock surface: a non-destructive, scalable waveform view.
         // It reuses the waveform cache already drawn by the arranger.
         g.setColour(juce::Colour(0xff0b1521));
@@ -420,7 +329,7 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
         g.setColour(juce::Colour(0xff83bed4));
         g.drawRoundedRectangle(formatButton.toFloat(), 3.0f, 1.0f);
         g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]),
+        g.drawText(juce::String(formatNames[juce::jlimit(0, 3, audioDockTimeFormat)]) + "  v",
                    formatButton, juce::Justification::centred);
         // Ableton-style focus: fit the selected audio range to the dock width.
         const auto focusButton = juce::Rectangle<int>(
@@ -451,74 +360,10 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
             g.drawText(warpOn ? "WARP : ON" : "WARP : OFF",
                        warpButton, juce::Justification::centred);
         }
-        const auto snapButton = juce::Rectangle<int>(
-            warpButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(110, juce::jmax(0, inner.getRight() - warpButton.getRight() - 6)), 20);
-        if (snapButton.getWidth() >= 50)
-        {
-            g.setColour(audioDockSnapEnabled ? juce::Colour(0xff355674) : juce::Colour(0xff203344));
-            g.fillRoundedRectangle(snapButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xffd9ad65));
-            g.drawRoundedRectangle(snapButton.toFloat(), 4.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(audioDockSnapEnabled ? "SNAP ON" : "SNAP OFF",
-                snapButton, juce::Justification::centred);
-        }
-        const auto loopButton = juce::Rectangle<int>(
-            snapButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(100, juce::jmax(0, inner.getRight() - snapButton.getRight() - 6)), 20);
-        if (loopButton.getWidth() >= 48)
-        {
-            g.setColour(audioDockLoopEnabled ? juce::Colour(0xff276957) : juce::Colour(0xff203b4d));
-            g.fillRoundedRectangle(loopButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff39d7b5));
-            g.drawRoundedRectangle(loopButton.toFloat(), 4.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(audioDockLoopEnabled ? "LOOP ON" : "LOOP OFF",
-                loopButton, juce::Justification::centred);
-        }
-        const auto transientButton = juce::Rectangle<int>(
-            loopButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(98, juce::jmax(0, inner.getRight() - loopButton.getRight() - 6)), 20);
-        if (transientButton.getWidth() >= 65)
-        {
-            g.setColour(audioDockTransientEnabled ? juce::Colour(0xff246a62) : juce::Colour(0xff29475f));
-            g.fillRoundedRectangle(transientButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff79d7c4));
-            g.drawRoundedRectangle(transientButton.toFloat(), 4.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText(audioDockTransientEnabled ? "TRANS ON" : "TRANS OFF",
-                transientButton, juce::Justification::centred);
-        }
-        const auto gainPitchButton = juce::Rectangle<int>(
-            transientButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(114, juce::jmax(0, inner.getRight() - transientButton.getRight() - 6)), 20);
-        if (gainPitchButton.getWidth() >= 65)
-        {
-            g.setColour(juce::Colour(0xff29475f));
-            g.fillRoundedRectangle(gainPitchButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xff7fcbea));
-            g.drawRoundedRectangle(gainPitchButton.toFloat(), 4.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("PROPRIETES", gainPitchButton, juce::Justification::centred);
-        }
-        const auto reverseButton = juce::Rectangle<int>(
-            gainPitchButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(84, juce::jmax(0, inner.getRight() - gainPitchButton.getRight() - 6)), 20);
-        if (reverseButton.getWidth() >= 55)
-        {
-            g.setColour(audioEngine.isTrackClipReversed(selectedTrack)
-                ? juce::Colour(0xff654c86) : juce::Colour(0xff29475f));
-            g.fillRoundedRectangle(reverseButton.toFloat(), 4.0f);
-            g.setColour(juce::Colour(0xffc6a6f2));
-            g.drawRoundedRectangle(reverseButton.toFloat(), 4.0f, 1.0f);
-            g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("REVERSE", reverseButton, juce::Justification::centred);
-        }
         // Adaptive time ruler: seconds, milliseconds and individual samples.
         const int rulerTop = compactSelectionBar ? 94 : 70;
         const auto ruler = inner.withTrimmedTop(rulerTop).withHeight(24);
-        const auto wave = getAudioDockWaveBoundsFor(editorArea);
+        const auto wave = inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
         const auto rulerSnapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
         const int rulerSamples = rulerSnapshot != nullptr ? rulerSnapshot->getNumSamples() : 0;
         const double rulerDuration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
@@ -701,35 +546,10 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
             const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
             const auto* pcm = snapshot.get();
             const int sampleCount = pcm != nullptr ? pcm->getNumSamples() : 0;
-            // Map dock target-time pixels back to source PCM through Warp markers.
-            // Recalculate on every repaint so dragging updates the waveform live.
-            const double targetDuration = juce::jmax(0.000001,
-                audioEngine.getAudioFileLengthSeconds(selectedTrack));
-            const double sourceRate = audioEngine.getAudioBufferSampleRate(selectedTrack);
-            const double sourceDuration = sourceRate > 0.0 && sampleCount > 0
-                ? (double)sampleCount / sourceRate : targetDuration;
-            const int warpCount = audioEngine.getTrackWarpMarkerCount(selectedTrack);
-            const bool showWarpShape = audioEngine.isTrackWarpEnabled(selectedTrack) && warpCount >= 2;
-            const auto sourceFractionForTarget = [&](double targetFraction)
-            {
-                if (!showWarpShape) return targetFraction;
-                const double target = juce::jlimit(0.0, targetDuration, targetFraction * targetDuration);
-                for (int i = 0; i < warpCount - 1; ++i)
-                {
-                    const double ta = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
-                    const double tb = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i + 1);
-                    if (target > tb && i < warpCount - 2) continue;
-                    const double sa = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i);
-                    const double sb = audioEngine.getTrackWarpMarkerSourceSeconds(selectedTrack, i + 1);
-                    const double alpha = juce::jlimit(0.0, 1.0, (target - ta) / juce::jmax(0.000001, tb - ta));
-                    return juce::jlimit(0.0, 1.0, (sa + (sb - sa) * alpha) / juce::jmax(0.000001, sourceDuration));
-                }
-                return targetFraction;
-            };
             const double samplesPerPixel = columns > 0
                 ? (double) sampleCount * visibleFraction / (double) columns : 0.0;
             if (pcm != nullptr && pcm->getNumChannels() > 0 && sampleCount > 1
-                && samplesPerPixel <= 2.0 && columns > 1 && !showWarpShape)
+                && samplesPerPixel <= 2.0 && columns > 1)
             {
                 const int channels = juce::jmin(2, pcm->getNumChannels());
                 for (int channel = 0; channel < channels; ++channel)
@@ -790,8 +610,8 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                     const float* samples = usePCM ? pcm->getReadPointer(channel) : nullptr;
                     for (int x = 0; x < columns; ++x)
                     {
-                        const double t0 = sourceFractionForTarget(scroll + visibleFraction * (double)x / (double)columns);
-                        const double t1 = sourceFractionForTarget(scroll + visibleFraction * (double)(x + 1) / (double)columns);
+                        const double t0 = scroll + visibleFraction * (double)x / (double)columns;
+                        const double t1 = scroll + visibleFraction * (double)(x + 1) / (double)columns;
                         float low = 1.0f, high = -1.0f;
                         if (usePCM)
                         {
@@ -859,59 +679,6 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                     juce::Justification::centredRight, true);
             }
         }
-        // Subdivision grid aligned to project beats and the audio clip's position.
-        if (wave.getWidth() > 0)
-        {
-            const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
-            const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
-                * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
-            const double step = audioDockSnapDivision < 0
-        ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
-        : beat / (double)juce::jmax(1, audioDockSnapDivision);
-            if (duration > 0.0 && std::isfinite(duration) && step > 0.0)
-            {
-                const double visible = 1.0 / audioDockZoom;
-                const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-                const double clipStart = audioEngine.getTrackStartSeconds(selectedTrack);
-                const double first = clipStart + duration * offset;
-                const double last = first + duration * visible;
-                if (step / (duration * visible) * wave.getWidth() >= 7.0)
-                {
-                    const juce::Graphics::ScopedSaveState gridClip(g);
-                    g.reduceClipRegion(wave);
-                    for (double t = std::ceil(first / step) * step; t <= last; t += step)
-                    {
-                        const int x = wave.getX() + (int)std::lround(
-                            ((t - clipStart) / duration - offset) / visible * wave.getWidth());
-                        const double beatIndex = t / beat;
-                        const bool strong = std::abs(beatIndex - std::round(beatIndex)) < 0.0001;
-                        g.setColour(strong ? juce::Colour(0xff55718a).withAlpha(0.55f)
-                                           : juce::Colour(0xff40546a).withAlpha(0.35f));
-                        g.drawVerticalLine(x, (float)wave.getY(), (float)wave.getBottom());
-                    }
-                }
-            }
-        }
-        // Independent audio-dock loop region, never reuses arrangement loop markers.
-        if (audioDockLoopEnabled && wave.getWidth() > 0)
-        {
-            const double visible = 1.0 / audioDockZoom;
-            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-            const auto loopX = [&](double fraction)
-            {
-                return wave.getX() + (int)std::lround(
-                    (fraction - offset) / visible * wave.getWidth());
-            };
-            const int left = loopX(audioDockLoopStartFraction);
-            const int right = loopX(audioDockLoopEndFraction);
-            const juce::Graphics::ScopedSaveState loopClip(g);
-            g.reduceClipRegion(wave);
-            g.setColour(juce::Colour(0x2234d9b1));
-            g.fillRect(left, wave.getY(), juce::jmax(0, right - left), wave.getHeight());
-            g.setColour(juce::Colour(0xff39d7b5));
-            g.drawVerticalLine(left, (float)wave.getY(), (float)wave.getBottom());
-            g.drawVerticalLine(right, (float)wave.getY(), (float)wave.getBottom());
-        }
         // Warp markers and the arrangement transport share the dock's time scale.
         if (wave.getWidth() > 0)
         {
@@ -947,21 +714,6 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                 }
             }
         }
-        // Horizontal waveform navigator: viewport thumb reflects zoom and scroll.
-        if (wave.getWidth() > 24)
-        {
-            const auto rail = juce::Rectangle<int>(wave.getX(), wave.getBottom() - 11,
-                wave.getWidth(), 9);
-            g.setColour(juce::Colour(0xff122638));
-            g.fillRoundedRectangle(rail.toFloat(), 4.0f);
-            const double visible = 1.0 / audioDockZoom;
-            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-            const int thumbX = rail.getX() + (int)std::round(offset * rail.getWidth());
-            const int thumbW = juce::jmax(12, (int)std::round(visible * rail.getWidth()));
-            g.setColour(juce::Colour(0xff569ac2));
-            g.fillRoundedRectangle(juce::Rectangle<int>(thumbX, rail.getY(),
-                juce::jmin(thumbW, rail.getRight() - thumbX), rail.getHeight()).toFloat(), 4.0f);
-        }
         // Boundary markers must be painted above the waveform, not underneath it.
         // Distinct clip-boundary guides; do not alter the underlying audio.
         if (wave.getWidth() > 0)
@@ -992,7 +744,7 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                     const int handleX = juce::jlimit(wave.getX(), wave.getRight() - 8, x - 4);
                     g.fillRoundedRectangle((float) handleX,
                         (float) wave.getY() + 2.0f, 8.0f, 17.0f, 2.5f);
-                    g.setColour(juce::Colour(0xffffffff));
+                    g.setColour(juce::Colour(0xff0e2432));
                     const int labelX = x + 40 <= wave.getRight() ? x + 6 : x - 39;
                     g.drawText(label, labelX, wave.getY() + 3, 34, 15,
                         juce::Justification::centredLeft, true);
@@ -1031,68 +783,8 @@ void MainComponent::paintExistingAudioDock(juce::Graphics& audioGraphics,
                     juce::Justification::centred, true);
             }
         }
-}
-
-void MainComponent::paint(juce::Graphics& g)
-{
-    auto bounds = getLocalBounds();
-    // Liberty Pro design system: shared canvas across transport, arrange and dock.
-    g.fillAll(LibertyUI::Colour::canvas);
-    auto transport = bounds.removeFromTop(transportHeight);
-    auto mixer = bounds.removeFromBottom(juce::jmin(dockCollapsed ? 32 : mixerHeight, juce::jmax(0, bounds.getHeight() - trackRulerHeight)));
-    drawTransport(g, transport);
-    {
-        // Clip the complete arranger paint pass, including partially visible track controls.
-        const juce::Graphics::ScopedSaveState arrangeClip(g);
-        g.reduceClipRegion(bounds);
-        drawTrackArea(g, bounds);
     }
-    if (dockCollapsed)
-    {
-        g.setColour(juce::Colour(0xff182530));
-        g.fillRect(mixer);
-        g.setColour(juce::Colour(0xff40515f));
-        g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 1);
-        g.setColour(juce::Colour(0xffb8e8ec));
-        g.setFont(juce::Font(12.0f));
-        g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
-        return;
-    }
-    // Permanent visible gold resize rail, drawn across the full draggable boundary.
-    g.setColour(juce::Colour(0xffb88732));
-    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
-    g.setColour(juce::Colour(0xffffdf83));
-    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
-    // Visual dock boundary only; leave editor and tab hit areas unchanged.
-    g.setColour(juce::Colour(0xff070b10));
-    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
-    g.setColour(juce::Colour(0xffd7ad53));
-    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 3);
-    g.setColour(juce::Colour(0xffffdf87));
-    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
-               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
-    const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
-    const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
-    const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
-    const bool isAudioDockTrack = selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
-                                  && audioEngine.hasAudioFile(selectedTrack);
-    const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
-        ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    // Keep the existing audio editor rendering isolated from other dock modes.
-    // The graphics context is explicit so it can later be hosted by a JUCE child.
-    if (!dockMixerMode && isAudioDockTrack)
-    {
-        // Render the established audio editor directly in the dock. Its
-        // waveform must not be a child component floating over the arranger.
-        if (audioDockFloatingWindow == nullptr)
-            paintExistingAudioDock(g, editorArea);
-        else
-        {
-            g.setColour(juce::Colour(0xff0b1521));
-            g.fillRect(editorArea);
-        }
-    }
-        else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
+    else if (!dockMixerMode && dockStepSequencerMode && isMidiDockTrack)
         drawMidiStepSequencer(g, editorArea);
     else if (!dockMixerMode && showStepSequencer && dockStepSequencerMode)
         drawStepSequencerDock(g, editorArea);
@@ -1150,12 +842,10 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawLine((float)x + 21, (float)y + 7, (float)x + 21, (float)y + 12, 1.6f);
         };
         detachIcon(44);
-        if (!isAudioDockTrack)
-        {
-            detachIcon(76);
-            drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
-            drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
-        }
+        detachIcon(76);
+        drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
+        // Keep Drum Sampler directly beside STEP SEQ, matching the editor tabs.
+        drawTab(juce::Rectangle<int>(8, seq.getBottom() + 4, 148, seq.getHeight()), "DRUM SAMPLER", drumSamplerActive);
 
     }
 }
@@ -2704,7 +2394,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     g.restoreState();
 }
 
-void MainComponent::resized() { if (audioDockFloatingWindow == nullptr) audioDockSurface.setBounds(getAudioDockEditorBounds()); resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
+void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDynamicTrackController(this); ensureLibertyPageModeCoordinator(this); resizeLibertyGridSnapController(this); resizeLibertyBrowserResizeController(this); resizeLibertyMultiMidiClipController(this); dockResizeHandle.setBounds(0, getMixerTop() - 7, getWidth(), 14); dockResizeHandle.setVisible(!dockCollapsed); dockVisibilityButton.setBounds(juce::jmax(0, getWidth()-43), dockCollapsed ? getMixerTop()+3 : getMixerTop()+8, 30, 26); dockVisibilityButton.toFront(false); dockMixerInputLayer.setBounds(0, getMixerTop(), getWidth(), juce::jmax(0, getHeight() - getMixerTop())); dockMixerInputLayer.setVisible(dockMixerMode && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)); dockMixerInputLayer.toFront(false); if (!dockCollapsed) dockResizeHandle.toFront(false); dockVisibilityButton.toFront(false);
     dockNavigationHitLayer.setBounds(0, getMixerTop(), 220, juce::jmax(0, getHeight() - getMixerTop()));
     dockNavigationHitLayer.setVisible(!dockCollapsed && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (dockNavigationHitLayer.isVisible()) dockNavigationHitLayer.toFront(false);
@@ -2723,27 +2413,6 @@ void MainComponent::timerCallback()
                 durationPaletteOpen = true;
                 break;
             }
-
-    const bool showAudioSurface = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
-        && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
-        && audioEngine.hasAudioFile(selectedTrack);
-    if (audioDockFloatingWindow == nullptr)
-    {
-        // Update the embedded component in dock coordinates every frame.
-        // Its bounds must never extend into the arranger, even after resize.
-        const auto dockEditorBounds = getAudioDockEditorBounds()
-            .getIntersection(juce::Rectangle<int>(0, getMixerTop(), getWidth(),
-                                                  juce::jmax(0, getHeight() - getMixerTop())));
-        audioDockSurface.setBounds(dockEditorBounds);
-        // The embedded editor is painted by MainComponent itself, as it was
-        // before detaching was introduced. Only the detached window owns the
-        // JUCE child surface, preventing it from covering the arranger.
-        // The original dock is painted and hit-tested by MainComponent.
-        // A child input overlay masks controls and breaks drag selection.
-        audioDockSurface.setVisible(false);
-    }
-    if (showAudioSurface) audioDockSurface.repaint();
-    if (floatingAudioDockSurface != nullptr) floatingAudioDockSurface->repaint();
 
     // Attach the real REC controller directly from the live MainComponent.
     // Do not depend on desktop window discovery or an extra drawn placeholder.
@@ -2767,9 +2436,6 @@ void MainComponent::timerCallback()
     if (!durationPaletteOpen && (dockNavigationHitLayer.isVisible())) dockNavigationHitLayer.toFront(false);
     dockVisibilityButton.setVisible(!isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this));
     if (!durationPaletteOpen && (dockVisibilityButton.isVisible())) dockVisibilityButton.toFront(false);
-    // Give the dock's transparent input surface priority over legacy overlays.
-    // Its bounds cover only the audio editor, never the arranger or dock tabs.
-    // Never raise an embedded audio input overlay over the original dock.
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
@@ -2788,28 +2454,8 @@ void MainComponent::timerCallback()
     // Keep audio render states allocated for instrument lanes even without MIDI clips.
     // Otherwise plugin GUI keyboards have no audio processing path at all.
     audioEngine.ensureInstrumentPlaybackTracks(getInstrumentTrackCount());
-    // The dock loop is independent of the arrangement loop settings.
-    const bool dockLoopValid = audioDockLoopEnabled && !dockCollapsed && !dockMixerMode
-        && !dockStepSequencerMode && selectedTrack >= 0
-        && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack)
-        && audioDockLoopEndFraction > audioDockLoopStartFraction;
-    // Clip boundary markers define a non-destructive playback window.
-    // Loop selection has priority when explicitly enabled.
-    const bool clipBoundsValid = !dockLoopValid && !dockCollapsed && !dockMixerMode
-        && !dockStepSequencerMode && selectedTrack >= 0
-        && selectedTrack < getAudioTrackCount() && audioEngine.hasAudioFile(selectedTrack);
-    if (clipBoundsValid)
-        restoreAudioDockClipBounds(selectedTrack);
-    const double clipStartTime = clipBoundsValid ? audioEngine.getTrackStartSeconds(selectedTrack) : 0.0;
-    const double clipDuration = clipBoundsValid ? audioEngine.getAudioFileLengthSeconds(selectedTrack) : 0.0;
-    const double clipBoundaryStart = clipStartTime + audioClipStartFraction * clipDuration;
-    const double clipBoundaryEnd = clipStartTime + audioClipEndFraction * clipDuration;
-    const double dockClipStart = dockLoopValid ? audioEngine.getTrackStartSeconds(selectedTrack) : 0.0;
-    const double dockDuration = dockLoopValid ? audioEngine.getAudioFileLengthSeconds(selectedTrack) : 0.0;
-    const double dockLoopStart = dockClipStart + audioDockLoopStartFraction * dockDuration;
-    const double dockLoopEnd = dockClipStart + audioDockLoopEndFraction * dockDuration;
-    audioEngine.setLoopTransportEndSeconds(dockLoopValid ? dockLoopEnd
-        : loopEnabled && loopEndSeconds > loopStartSeconds ? loopEndSeconds : 0.0);
+    // Follow draggable loop markers without changing MIDI clip playback.
+    audioEngine.setLoopTransportEndSeconds(loopEnabled && loopEndSeconds > loopStartSeconds ? loopEndSeconds : 0.0);
     double transportTime = audioEngine.getCurrentTimeSeconds();
     if (punchWaitingForIn && audioEngine.isPlaying()
         && transportTime >= punchInSeconds)
@@ -2830,28 +2476,7 @@ void MainComponent::timerCallback()
             audioEngine.setPlaying(true);
             transportTime = punchOutSeconds;
         }
-        if (clipBoundsValid && clipDuration > 0.0
-            && audioClipEndFraction > audioClipStartFraction
-            && (audioClipStartFraction > 0.0 || audioClipEndFraction < 1.0)
-            && transportTime >= clipStartTime && transportTime < clipBoundaryStart)
-        {
-            audioEngine.setCurrentTimeSeconds(clipBoundaryStart);
-            transportTime = clipBoundaryStart;
-        }
-        if (clipBoundsValid && clipDuration > 0.0
-            && audioClipEndFraction < 1.0 && transportTime >= clipBoundaryEnd
-            && transportTime < clipStartTime + clipDuration)
-        {
-            audioEngine.setPlaying(false);
-            audioEngine.setCurrentTimeSeconds(clipBoundaryEnd);
-            transportTime = clipBoundaryEnd;
-        }
-        if (dockLoopValid && transportTime >= dockLoopEnd)
-        {
-            audioEngine.setCurrentTimeSeconds(dockLoopStart);
-            transportTime = dockLoopStart;
-        }
-        else if (!dockLoopValid && loopEnabled && loopEndSeconds > loopStartSeconds
+        if (loopEnabled && loopEndSeconds > loopStartSeconds
             && transportTime >= loopEndSeconds)
         {
             audioEngine.setCurrentTimeSeconds(loopStartSeconds);
@@ -3068,7 +2693,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
     return false;
 }
 
-bool MainComponent::handleAudioDockMouseMove(const juce::MouseEvent& event)
+void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -3095,7 +2720,7 @@ bool MainComponent::handleAudioDockMouseMove(const juce::MouseEvent& event)
             if (std::abs(p.x - startX) <= 7 || std::abs(p.x - endX) <= 7)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return true;
+                return;
             }
         }
     }
@@ -3115,18 +2740,10 @@ bool MainComponent::handleAudioDockMouseMove(const juce::MouseEvent& event)
             if (std::abs(p.x - leftX) <= 7 || std::abs(p.x - rightX) <= 7)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return true;
+                return;
             }
         }
     }
-
-    return false;
-}
-
-void MainComponent::mouseMove(const juce::MouseEvent& event)
-{
-    const auto p = event.getEventRelativeTo(this).getPosition();
-    if (handleAudioDockMouseMove(event)) return;
     if (draggingDockHeight || std::abs(p.y - getMixerTop()) <= 9)
     {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
@@ -3161,283 +2778,14 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
-juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
+juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
 {
-    // Dock geometry is always measured from the current dock top, never from
-    // the floating window or a previous resize. Clip to the main view.
-    const int dockTop = juce::jlimit(0, getHeight(), getMixerTop());
-    const int editorTop = juce::jlimit(dockTop, getHeight(), dockTop + 36);
-    const int editorLeft = juce::jmin(310, juce::jmax(0, getWidth()));
-    const juce::Point<int> dockOrigin(editorLeft, editorTop);
-    if (audioDockFloatingWindow != nullptr
-        && floatingAudioDockSurface != nullptr)
-        return {dockOrigin, juce::Point<int>(floatingAudioDockSurface->getWidth(),
-                                             floatingAudioDockSurface->getHeight())};
-    return {dockOrigin,
-            juce::Point<int>(juce::jmax(0, getWidth() - editorLeft),
-                             juce::jmax(0, getHeight() - editorTop))};
-}
-
-juce::Rectangle<int> MainComponent::getAudioDockWaveBoundsFor(juce::Rectangle<int> editor) const
-{
+    const auto editor = juce::Rectangle<int>(310, getMixerTop() + 36,
+        juce::jmax(0, getWidth() - 310),
+        juce::jmax(0, getHeight() - getMixerTop() - 36));
     const auto inner = editor.reduced(14, 12);
     const int rulerTop = inner.getWidth() < 600 ? 94 : 70;
     return inner.withTrimmedTop(rulerTop + 28).reduced(0, 8);
-}
-
-juce::Rectangle<int> MainComponent::getAudioDockWaveBounds() const
-{
-    return getAudioDockWaveBoundsFor(getAudioDockEditorBounds());
-}
-
-double MainComponent::snapAudioDockWarpTime(double seconds, int track) const
-{
-    if (!audioDockSnapEnabled || !std::isfinite(seconds)) return seconds;
-    const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
-        * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
-    const double step = audioDockSnapDivision < 0
-        ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
-        : beat / (double)juce::jmax(1, audioDockSnapDivision);
-    const double start = audioEngine.getTrackStartSeconds(track);
-    return juce::jlimit(0.0, juce::jmax(0.0, audioEngine.getAudioFileLengthSeconds(track)),
-        std::round((start + seconds) / step) * step - start);
-}
-
-void MainComponent::showAudioDockTimeFormatDialog()
-{
-    class FormatDialog final : public juce::Component
-    {
-    public:
-        explicit FormatDialog(MainComponent& parent) : owner(parent)
-        {
-            setSize(420, 320);
-            const char* labels[] = { "SECONDES", "MINUTES : SECONDES",
-                                     "ECHANTILLONS", "MESURES / TEMPS" };
-            for (int i = 0; i < 4; ++i)
-            {
-                auto* button = choices.add(new juce::TextButton(labels[i]));
-                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff20394f));
-                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe0edf6));
-                button->onClick = [this, i]
-                {
-                    owner.audioDockTimeFormat = i;
-                    owner.repaint();
-                    repaint();
-                };
-                addAndMakeVisible(button);
-            }
-        }
-        void paint(juce::Graphics& g) override
-        {
-            g.fillAll(juce::Colour(0xff101e2d));
-            g.setColour(juce::Colour(0xffffcf85));
-            g.setFont(juce::Font(20.0f, juce::Font::bold));
-            g.drawText("AFFICHAGE TEMPOREL", 24, 18, getWidth() - 48, 32,
-                juce::Justification::centredLeft);
-            g.setColour(juce::Colour(0xff9ebbd0));
-            g.setFont(juce::Font(12.0f));
-            g.drawText("Choisir l'unite de la regle du dock audio",
-                26, 56, getWidth() - 52, 20, juce::Justification::centredLeft);
-            if (owner.audioDockTimeFormat >= 0 && owner.audioDockTimeFormat < choices.size())
-            {
-                g.setColour(juce::Colour(0xffffc857));
-                g.drawRoundedRectangle(choices[owner.audioDockTimeFormat]->getBounds()
-                    .expanded(3).toFloat(), 6.0f, 2.0f);
-            }
-        }
-        void resized() override
-        {
-            for (int i = 0; i < choices.size(); ++i)
-                choices[i]->setBounds(28, 95 + i * 52, getWidth() - 56, 38);
-        }
-    private:
-        MainComponent& owner;
-        juce::OwnedArray<juce::TextButton> choices;
-    };
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Liberty  |  Affichage temporel";
-    options.dialogBackgroundColour = juce::Colour(0xff101e2d);
-    options.content.setOwned(new FormatDialog(*this));
-    options.componentToCentreAround = this;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = true;
-    options.launchAsync();
-}
-
-void MainComponent::refreshAudioDockTransientMarkers(int track)
-{
-            const auto buffer = audioEngine.getAudioBufferSnapshot(track);
-            const double sampleRate = audioEngine.getAudioBufferSampleRate(track);
-            if (buffer != nullptr && sampleRate > 0.0 && buffer->getNumSamples() > 1024)
-            {
-                const int hop = juce::jmax(64, (int)std::round(sampleRate * 0.005));
-                const int minimumGap = juce::jmax(1, (int)std::round(0.055 * sampleRate / hop));
-                const int frames = buffer->getNumSamples() / hop;
-                std::vector<double> energy((size_t)frames, 0.0);
-                for (int frame = 0; frame < frames; ++frame)
-                {
-                    double total = 0.0;
-                    for (int channel = 0; channel < buffer->getNumChannels(); ++channel)
-                    {
-                        const float* data = buffer->getReadPointer(channel, frame * hop);
-                        for (int sample = 0; sample < hop; ++sample)
-                            total += (double)data[sample] * data[sample];
-                    }
-                    energy[(size_t)frame] = std::sqrt(total /
-                        (double)(hop * juce::jmax(1, buffer->getNumChannels())));
-                }
-                // Rank attacks by relative onset strength rather than a fixed
-                // absolute amplitude threshold. Sensitivity therefore controls
-                // the number of displayed markers even for quiet recordings.
-                std::vector<std::pair<double, int>> candidates;
-                double background = 0.0;
-                for (int frame = 2; frame + 1 < frames; ++frame)
-                {
-                    const double rise = juce::jmax(0.0,
-                        energy[(size_t)frame] - energy[(size_t)(frame - 2)]);
-                    background = 0.985 * background + 0.015 * rise;
-                    if (rise > 0.000001 && rise > background * 1.25
-                        && energy[(size_t)frame] > energy[(size_t)(frame - 1)])
-                        candidates.emplace_back(rise, frame);
-                }
-                std::sort(candidates.begin(), candidates.end(),
-                    [](const auto& a, const auto& b) { return a.first > b.first; });
-                // More sensitivity = more transients, not just a lower threshold.
-                const double sensitivity = juce::jlimit(0.0, 100.0, audioDockTransientSensitivity);
-                const int available = juce::jmax(0, AudioEngine::maxWarpMarkers - 2
-                    - (audioEngine.getTrackWarpMarkerCount(track) - 2
-                       - (int)audioDockAutomaticMarkers[track].size()));
-                const int targetCount = juce::jlimit(0, available,
-                    (int)std::round((sensitivity / 100.0) * available));
-                std::vector<int> chosen;
-                for (const auto& candidate : candidates)
-                {
-                    if ((int)chosen.size() >= targetCount) break;
-                    bool separated = true;
-                    for (const int previous : chosen)
-                        if (std::abs(previous - candidate.second) < minimumGap)
-                        { separated = false; break; }
-                    if (separated) chosen.push_back(candidate.second);
-                }
-                std::sort(chosen.begin(), chosen.end());
-                // Remove only markers created by the previous automatic pass.
-                auto& automatic = audioDockAutomaticMarkers[track];
-                for (const double previous : automatic)
-                {
-                    const int count = audioEngine.getTrackWarpMarkerCount(track);
-                    for (int i = count - 2; i > 0; --i)
-                    {
-                        if (std::abs(audioEngine.getTrackWarpMarkerSourceSeconds(track, i)
-                                     - previous) < 0.0005)
-                        {
-                            audioEngine.removeTrackWarpMarker(track, i);
-                            break;
-                        }
-                    }
-                }
-                automatic.clear();
-                if (audioDockTransientEnabled)
-                {
-                    for (const int frame : chosen)
-                    {
-                        const double seconds = (double)frame * hop / sampleRate;
-                        if (audioEngine.addTrackWarpMarker(track, seconds, seconds))
-                            automatic.push_back(seconds);
-                    }
-                }
-                // Show detected markers immediately; keep the warp engine enabled.
-                audioEngine.setTrackWarpEnabled(track, true);
-                repaint();
-            }
-
-}
-
-void MainComponent::showAudioDockSnapDialog()
-{
-    // A dedicated, resizable Liberty-style panel instead of a PopupMenu.
-    class SnapDialog final : public juce::Component
-    {
-    public:
-        explicit SnapDialog(MainComponent& parent) : owner(parent)
-        {
-            setSize(450, 410);
-            enabled.setButtonText("ACTIVER L'AIMANTATION");
-            enabled.setToggleState(owner.audioDockSnapEnabled, juce::dontSendNotification);
-            enabled.onClick = [this]
-            {
-                owner.audioDockSnapEnabled = enabled.getToggleState();
-                owner.repaint();
-                repaint();
-            };
-            addAndMakeVisible(enabled);
-            const char* labels[] = {
-                "1/4  |  Noire", "1/8  |  Croche", "1/16  |  Double croche",
-                "1/32  |  Triple croche", "1/64  |  Quadruple croche",
-                "1 MESURE", "2 MESURES", "4 MESURES"
-            };
-            const int values[] = { 1, 2, 4, 8, 16, -1, -2, -4 };
-            for (int i = 0; i < 8; ++i)
-            {
-                auto* button = choices.add(new juce::TextButton(labels[i]));
-                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff21394f));
-                button->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff356282));
-                button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9e8f3));
-                button->onClick = [this, i, values]
-                {
-                    owner.audioDockSnapDivision = values[i];
-                    owner.audioDockSnapEnabled = true;
-                    enabled.setToggleState(true, juce::dontSendNotification);
-                    owner.repaint();
-                    repaint();
-                };
-                addAndMakeVisible(button);
-            }
-        }
-        void paint(juce::Graphics& g) override
-        {
-            g.fillAll(juce::Colour(0xff101e2d));
-            g.setColour(juce::Colour(0xffffcf85));
-            g.setFont(juce::Font(21.0f, juce::Font::bold));
-            g.drawText("GRILLE ET SNAP AUDIO", 24, 16, getWidth() - 48, 34,
-                juce::Justification::centredLeft);
-            g.setColour(juce::Colour(0xff96b6ce));
-            g.setFont(juce::Font(12.0f));
-            g.drawText("RESOLUTION MUSICALE", 26, 105, getWidth() - 52, 22,
-                juce::Justification::centredLeft);
-            const int values[] = { 1, 2, 4, 8, 16, -1, -2, -4 };
-            for (int i = 0; i < choices.size(); ++i)
-                if (owner.audioDockSnapDivision == values[i])
-                {
-                    g.setColour(juce::Colour(0xffffc857));
-                    g.fillRoundedRectangle(choices[i]->getBounds().expanded(3).toFloat(), 5.0f);
-                }
-            g.setColour(juce::Colour(0xff7e9fb6));
-            g.drawText("Maj + glisser : deplacement libre des marqueurs Warp",
-                26, getHeight() - 39, getWidth() - 52, 19, juce::Justification::centredLeft);
-        }
-        void resized() override
-        {
-            enabled.setBounds(26, 65, getWidth() - 52, 30);
-            const int width = (getWidth() - 70) / 2;
-            for (int i = 0; i < choices.size(); ++i)
-                choices[i]->setBounds(26 + (i % 2) * (width + 18),
-                    135 + (i / 2) * 52, width, 37);
-        }
-    private:
-        MainComponent& owner;
-        juce::ToggleButton enabled;
-        juce::OwnedArray<juce::TextButton> choices;
-    };
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Liberty  |  Grille et Snap";
-    options.dialogBackgroundColour = juce::Colour(0xff101e2d);
-    options.content.setOwned(new SnapDialog(*this));
-    options.componentToCentreAround = this;
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = true;
-    options.launchAsync();
 }
 
 double MainComponent::snapAudioDockFraction(double fraction) const
@@ -3445,25 +2793,6 @@ double MainComponent::snapAudioDockFraction(double fraction) const
     const auto snapshot = audioEngine.getAudioBufferSnapshot(selectedTrack);
     const int samples = snapshot != nullptr ? snapshot->getNumSamples() : 0;
     const double clamped = juce::jlimit(0.0, 1.0, fraction);
-    if (audioDockSnapEnabled)
-    {
-        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
-        if (duration > 0.0 && std::isfinite(duration))
-        {
-            const double beat = 60.0 / juce::jmax(1.0, tempoBpm)
-                * (4.0 / (double)juce::jmax(1, timeSignatureDenominator));
-            const double step = audioDockSnapDivision < 0
-                ? beat * (double)juce::jmax(1, timeSignatureNumerator) * (double)(-audioDockSnapDivision)
-                : beat / (double)juce::jmax(1, audioDockSnapDivision);
-            if (step > 0.0 && std::isfinite(step))
-            {
-                const double clipStart = audioEngine.getTrackStartSeconds(selectedTrack);
-                const double time = clipStart + clamped * duration;
-                return juce::jlimit(0.0, 1.0,
-                    (std::round(time / step) * step - clipStart) / duration);
-            }
-        }
-    }
     return samples > 0 ? std::round(clamped * samples) / (double) samples : clamped;
 }
 
@@ -3475,14 +2804,15 @@ double MainComponent::audioDockFractionAt(int x) const
     return juce::jlimit(0.0, 1.0, audioDockScroll + relative / audioDockZoom);
 }
 
-bool MainComponent::handleAudioDockMouseWheel(const juce::MouseEvent& event,
-                                               const juce::MouseWheelDetails& wheel)
+void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
+                                   const juce::MouseWheelDetails& wheel)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
     const bool audioEditor = !dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack);
-    const auto area = getAudioDockEditorBounds();
+    const auto area = juce::Rectangle<int>(310, getMixerTop() + 36,
+        juce::jmax(0, getWidth() - 310), juce::jmax(0, getHeight() - getMixerTop() - 36));
     if (audioEditor && area.contains(p))
     {
         if (event.mods.isShiftDown())
@@ -3507,16 +2837,8 @@ bool MainComponent::handleAudioDockMouseWheel(const juce::MouseEvent& event,
                 cursorPosition - relativeX / audioDockZoom);
         }
         repaint();
-        return true;
+        return;
     }
-
-    return false;
-}
-
-void MainComponent::mouseWheelMove(const juce::MouseEvent& event,
-                                   const juce::MouseWheelDetails& wheel)
-{
-    if (handleAudioDockMouseWheel(event, wheel)) return;
     juce::Component::mouseWheelMove(event, wheel);
 }
 
@@ -3616,9 +2938,11 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
     return true;
 }
 
-bool MainComponent::handleAudioDockMouseDoubleClick(const juce::MouseEvent& event)
+void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    const auto click = event.getEventRelativeTo(this).getPosition();
+    const auto click = event.getPosition();
+    // The real audio dock is painted by MainComponent, not AudioClipWarpView.
+    // Insert markers here so double-clicks reach the waveform users actually see.
     if (click.y >= getMixerTop())
     {
         if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -3630,27 +2954,7 @@ bool MainComponent::handleAudioDockMouseDoubleClick(const juce::MouseEvent& even
             const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
             if (duration > 0.0 && std::isfinite(duration))
             {
-                const double visible = 1.0 / audioDockZoom;
-                const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-                const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
-                for (int i = 1; i < count - 1; ++i)
-                {
-                    const double markerTime = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
-                    if (!std::isfinite(markerTime)) continue;
-                    const int markerX = getAudioDockWaveBounds().getX() + (int)std::lround(
-                        (markerTime / duration - offset) / visible * getAudioDockWaveBounds().getWidth());
-                    if (std::abs(click.x - markerX) <= 8)
-                    {
-                        audioEngine.removeTrackWarpMarker(selectedTrack, i);
-                        draggingDockWarpMarker = -1;
-                        repaint();
-                        return true;
-                    }
-                }
-                audioSelectionActive = false;
-                draggingAudioSelection = false;
-                const double raw = audioDockFractionAt(click.x) * duration;
-                const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, selectedTrack);
+                const double target = audioDockFractionAt(click.x) * duration;
                 if (std::isfinite(target) && audioEngine.addTrackWarpMarker(selectedTrack, target, target))
                 {
                     audioEngine.setTrackWarpEnabled(selectedTrack, true);
@@ -3658,17 +2962,8 @@ bool MainComponent::handleAudioDockMouseDoubleClick(const juce::MouseEvent& even
                 }
             }
         }
-        return true;
+        return;
     }
-    return false;
-}
-
-void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
-{
-    const auto click = event.getPosition();
-    // The real audio dock is painted by MainComponent, not AudioClipWarpView.
-    // Insert markers here so double-clicks reach the waveform users actually see.
-    if (handleAudioDockMouseDoubleClick(event)) return;
     if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
     {
         const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
@@ -3776,19 +3071,53 @@ void MainComponent::activateDockTab(int index)
     repaint();
 }
 
-bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
+void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
+    // A listener attached recursively receives the original child event.
+    // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
-    // Handle a second press directly in the audio editor. JUCE does not
-    // always deliver mouseDoubleClick to the same component after reparenting.
+    // Select metadata clips independently without invoking the legacy audio
+    // move/split tools, which currently operate on the primary track buffer.
+    if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
+        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int track = getAudioTrackAtPosition(p);
+        if (track >= 0)
+        {
+            const int rowH = getLibertyTrackRowHeight();
+            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
+            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
+            const auto clips = audioEngine.getAudioClips(track);
+            for (auto it = clips.rbegin(); it != clips.rend(); ++it)
+            {
+                const int x = trackHeaderWidth
+                    + (int) std::round(it->startSeconds * pixelsPerSecond);
+                const int width = juce::jmax(1,
+                    (int) std::round(it->lengthSeconds * pixelsPerSecond));
+                if (juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(p))
+                {
+                    selectedTrack = track;
+                    selectedExtraAudioClipTrack = track;
+                    selectedExtraAudioClipId = it->id;
+                    repaint();
+                    return;
+                }
+            }
+            selectedExtraAudioClipTrack = -1;
+            selectedExtraAudioClipId.clear();
+        }
+    }
+    // Route the second press of an audio-clip double-click before any
+    // arrange editing tool can move, split or erase the clip.
     if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
-        && !event.mods.isAltDown() && getAudioDockWaveBounds().contains(p))
-        return handleAudioDockMouseDoubleClick(event);
+        && openAudioClipInDockAt(p)) return;
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu())
     {
-        const auto dockEditor = getAudioDockEditorBounds();
+        const auto dockEditor = juce::Rectangle<int>(310, getMixerTop() + 36,
+            juce::jmax(0, getWidth() - 310),
+            juce::jmax(0, getHeight() - getMixerTop() - 36));
         const auto dockInner = dockEditor.reduced(14, 12);
         const bool compact = dockInner.getWidth() < 600;
         const int barWidth = juce::jmin(280, juce::jmax(0, dockInner.getWidth()));
@@ -3803,181 +3132,8 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
         const auto warpButton = juce::Rectangle<int>(
             focusButton.getRight() + 6, formatButton.getY(),
             juce::jmin(112, juce::jmax(0, dockInner.getRight() - focusButton.getRight() - 6)), 20);
-        const auto snapButton = juce::Rectangle<int>(
-            warpButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(110, juce::jmax(0, dockInner.getRight() - warpButton.getRight() - 6)), 20);
-        const auto loopButton = juce::Rectangle<int>(
-            snapButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(100, juce::jmax(0, dockInner.getRight() - snapButton.getRight() - 6)), 20);
-        const auto transientButton = juce::Rectangle<int>(
-            loopButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(98, juce::jmax(0, dockInner.getRight() - loopButton.getRight() - 6)), 20);
-        // Dedicated visible button; Ctrl+click on WARP remains a shortcut.
-        const auto gainPitchButton = juce::Rectangle<int>(
-            transientButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(114, juce::jmax(0, dockInner.getRight() - transientButton.getRight() - 6)), 20);
-        const auto reverseButton = juce::Rectangle<int>(
-            gainPitchButton.getRight() + 6, formatButton.getY(),
-            juce::jmin(84, juce::jmax(0, dockInner.getRight() - gainPitchButton.getRight() - 6)), 20);
-        if (reverseButton.getWidth() >= 55 && reverseButton.contains(p))
-        {
-            audioEngine.setTrackClipReverse(selectedTrack,
-                !audioEngine.isTrackClipReversed(selectedTrack));
-            repaint();
-            return true;
-        }
-        if ((gainPitchButton.getWidth() >= 65 && gainPitchButton.contains(p))
-            || (warpButton.contains(p) && event.mods.isCtrlDown()))
-        {
-            class AudioPropertiesDialog final : public juce::Component
-            {
-            public:
-                AudioPropertiesDialog(MainComponent& parent, int index) : owner(parent), track(index)
-                {
-                    setSize(560, 420);
-                    setupKnob(gain, " dB", -48.0, 12.0, 0.1,
-                        20.0 * std::log10(juce::jmax(0.00001f, owner.audioEngine.getTrackClipGain(track))));
-                    setupKnob(pitch, " demi-tons", -24.0, 24.0, 0.01,
-                        owner.audioEngine.getTrackClipPitch(track));
-                    sensitivity.setSliderStyle(juce::Slider::LinearHorizontal);
-                    sensitivity.setTextBoxStyle(juce::Slider::TextBoxRight, false, 72, 24);
-                    sensitivity.setRange(0.0, 100.0, 1.0);
-                    sensitivity.setValue(owner.audioDockTransientSensitivity, juce::dontSendNotification);
-                    sensitivity.setColour(juce::Slider::trackColourId, juce::Colour(0xff45b7df));
-                    sensitivity.setColour(juce::Slider::thumbColourId, juce::Colour(0xffb1eaff));
-                    sensitivity.onValueChange = [this]
-                    {
-                        owner.audioDockTransientSensitivity = sensitivity.getValue();
-                        if (owner.audioDockTransientEnabled)
-                            owner.refreshAudioDockTransientMarkers(track);
-                        owner.repaint();
-                    };
-                    gain.onValueChange = [this]
-                    {
-                        owner.audioEngine.setTrackClipGain(track,
-                            (float)std::pow(10.0, gain.getValue() / 20.0));
-                        owner.repaint();
-                    };
-                    pitch.onValueChange = [this]
-                    {
-                        owner.audioEngine.setTrackClipPitch(track, pitch.getValue());
-                        owner.repaint();
-                    };
-                    reverse.setButtonText("LECTURE INVERSEE (REVERSE)");
-                    reverse.setToggleState(owner.audioEngine.isTrackClipReversed(track),
-                        juce::dontSendNotification);
-                    reverse.onClick = [this]
-                    {
-                        owner.audioEngine.setTrackClipReverse(track, reverse.getToggleState());
-                        owner.repaint();
-                    };
-                    reset.setButtonText("REINITIALISER GAIN ET PITCH");
-                    reset.onClick = [this]
-                    {
-                        gain.setValue(0.0);
-                        pitch.setValue(0.0);
-                    };
-                    addAndMakeVisible(gain);
-                    addAndMakeVisible(pitch);
-                    addAndMakeVisible(sensitivity);
-                    addAndMakeVisible(reverse);
-                    addAndMakeVisible(reset);
-                }
-                void paint(juce::Graphics& g) override
-                {
-                    g.fillAll(juce::Colour(0xff101e2d));
-                    g.setColour(juce::Colour(0xff172d42));
-                    g.fillRoundedRectangle(getLocalBounds().reduced(14).toFloat(), 12.0f);
-                    g.setColour(juce::Colour(0xff7fd4f5));
-                    g.setFont(juce::Font(22.0f, juce::Font::bold));
-                    g.drawText("PROPRIETES AUDIO", 28, 22, getWidth()-56, 38,
-                        juce::Justification::centredLeft);
-                    g.setColour(juce::Colour(0xffa5c5d9));
-                    g.setFont(juce::Font(13.0f, juce::Font::bold));
-                    g.drawText("GAIN DU FICHIER", 40, 85, 210, 24, juce::Justification::centred);
-                    g.drawText("PITCH DU FICHIER", 300, 85, 210, 24, juce::Justification::centred);
-                    g.drawText("SENSIBILITE DES TRANSITOIRES", 35, 270,
-                        getWidth()-70, 23, juce::Justification::centredLeft);
-                }
-                void resized() override
-                {
-                    gain.setBounds(65, 112, 170, 142);
-                    pitch.setBounds(325, 112, 170, 142);
-                    sensitivity.setBounds(35, 297, getWidth()-70, 34);
-                    reverse.setBounds(35, 344, 260, 32);
-                    reset.setBounds(305, 344, 220, 32);
-                }
-            private:
-                static void setupKnob(juce::Slider& slider, const juce::String& suffix,
-                                      double low, double high, double step, double value)
-                {
-                    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-                    slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 120, 24);
-                    slider.setRange(low, high, step);
-                    slider.setTextValueSuffix(suffix);
-                    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff44b8e6));
-                    slider.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff243d55));
-                    slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xffb8edff));
-                    slider.setValue(value, juce::dontSendNotification);
-                }
-                MainComponent& owner;
-                int track;
-                juce::Slider gain, pitch, sensitivity;
-                juce::ToggleButton reverse;
-                juce::TextButton reset;
-            };
-            juce::DialogWindow::LaunchOptions options;
-            options.dialogTitle = "Liberty | Proprietes audio";
-            options.dialogBackgroundColour = juce::Colour(0xff101e2d);
-            options.content.setOwned(new AudioPropertiesDialog(*this, selectedTrack));
-            options.componentToCentreAround = this;
-            options.escapeKeyTriggersCloseButton = true;
-            options.useNativeTitleBar = true;
-            options.resizable = false;
-            options.launchAsync();
-            return true;
-        }
-        // Automatic transient detection is available via Shift+click on WARP.
-        // Analysis is performed on the UI thread, never in the audio callback.
-        if ((warpButton.getWidth() >= 55 && warpButton.contains(p)
-             && event.mods.isShiftDown() && event.mods.isLeftButtonDown())
-            || (transientButton.getWidth() >= 65 && transientButton.contains(p)))
-        {
-            audioDockTransientEnabled = !audioDockTransientEnabled;
-            refreshAudioDockTransientMarkers(selectedTrack);
-            return true;
-        }
-        if (loopButton.getWidth() >= 48 && loopButton.contains(p))
-        {
-            audioDockLoopEnabled = !audioDockLoopEnabled;
-            if (audioSelectionActive && audioSelectionTrack == selectedTrack)
-            {
-                audioDockLoopStartFraction = juce::jmin(audioSelectionStart, audioSelectionEnd);
-                audioDockLoopEndFraction = juce::jmax(audioSelectionStart, audioSelectionEnd);
-            }
-            repaint();
-            return true;
-        }
-        if (snapButton.getWidth() >= 50 && snapButton.contains(p))
-        {
-            if (event.mods.isAltDown())
-            {
-                audioDockSnapEnabled = !audioDockSnapEnabled;
-                repaint();
-                return true;
-            }
-            showAudioDockSnapDialog();
-            return true;
-        }
         if (warpButton.getWidth() >= 55 && warpButton.contains(p))
         {
-            if (event.mods.isAltDown())
-            {
-                audioEngine.setTrackWarpEnabled(selectedTrack,
-                    !audioEngine.isTrackWarpEnabled(selectedTrack));
-                repaint();
-                return true;
-            }
             // Obsidian Warp inspector: a real resizable window rather than
             // a cascading menu. Track operations stay on the existing engine.
             class WarpInspector final : public juce::Component
@@ -3985,72 +3141,567 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
             public:
                 WarpInspector(AudioEngine& engine, int index) : audio(engine), track(index)
                 {
-                    setSize(470, 365);
-                    originalDuration = audio.getAudioFileLengthSeconds(track);
+                    setSize(900, 550);
+                    rebuildPeakCache(audio.getAudioBufferSnapshot(track));
                     enable.setButtonText("ACTIVER LE WARP");
                     enable.setToggleState(audio.isTrackWarpEnabled(track), juce::dontSendNotification);
                     enable.onClick = [this] { audio.setTrackWarpEnabled(track, enable.getToggleState()); };
                     addAndMakeVisible(enable);
-                    const char* names[] = { "Warp Ultra Best", "Warp Drums", "Warp Vocal", "Warp Granulaire", "Warp Pitch", "Warp Texture" };
-                    for (int i = 0; i < 6; ++i) mode.addItem(names[i], i + 1);
+                    const char* names[] = { "Brut", "Fluide", "Doux", "Precis", "Riche" };
+                    for (int i = 0; i < 5; ++i) mode.addItem(names[i], i + 1);
                     mode.setSelectedId(audio.getTrackWarpMode(track) + 1, juce::dontSendNotification);
+                    mode.setTooltip("Choisir l'algorithme de traitement audio Warp.");
                     mode.onChange = [this] { audio.setTrackWarpMode(track, mode.getSelectedId() - 1); };
                     addAndMakeVisible(mode);
-                    formant.setSliderStyle(juce::Slider::LinearHorizontal);
-                    formant.setTextBoxStyle(juce::Slider::TextBoxRight, false, 75, 24);
-                    formant.setRange(-12.0, 12.0, 0.1);
-                    formant.setTextValueSuffix(" demi-tons");
-                    formant.setValue(audio.getTrackWarpFormant(track), juce::dontSendNotification);
-                    formant.onValueChange = [this] { audio.setTrackWarpFormant(track, formant.getValue()); };
-                    addAndMakeVisible(formant);
-                    const char* ratios[] = { "50 %", "75 %", "100 %", "125 %", "150 %", "200 %" };
-                    for (int i = 0; i < 6; ++i) ratio.addItem(ratios[i], i + 1);
+                    ratio.addItem("50 %", 1); ratio.addItem("75 %", 2);
+                    ratio.addItem("100 %", 3); ratio.addItem("125 %", 4);
+                    ratio.addItem("150 %", 5); ratio.addItem("200 %", 6);
+                    // Display the current duration and avoid silently compounding
+                    // successive stretch factors.
+                    originalDuration = audio.getAudioFileLengthSeconds(track);
                     ratio.setSelectedId(3, juce::dontSendNotification);
+                    ratio.setTooltip("Pourcentage de la duree de reference a l'ouverture de la fenetre.");
                     addAndMakeVisible(ratio);
-                    apply.setButtonText("APPLIQUER LA DUREE RELATIVE");
+                    apply.setButtonText("APPLIQUER L'ETIREMENT");
+                    apply.setTooltip("Appliquer le facteur choisi a la duree de reference.");
                     apply.onClick = [this]
                     {
                         const double factors[] = { 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
                         const int id = ratio.getSelectedId();
-                        if (id < 1 || id > 6 || originalDuration <= 0.0) return true;
-                        audio.setAudioFileLengthSeconds(track, originalDuration * factors[id - 1]);
+                        if (id < 1 || id > 6) return;
+                        if (originalDuration > 0.0)
+                        {
+                            audio.setAudioFileLengthSeconds(track, originalDuration * factors[id - 1]);
+                            audio.setTrackWarpEnabled(track, true);
+                            enable.setToggleState(true, juce::dontSendNotification);
+                            repaint();
+                        }
+                    };
+                    addAndMakeVisible(apply);
+                    reset.setButtonText("REINITIALISER LES MARQUEURS");
+                    reset.setTooltip("Supprimer les marqueurs Warp apres confirmation.");
+                    reset.onClick = [this]
+                    {
+                        const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                            juce::MessageBoxIconType::QuestionIcon,
+                            "Liberty | Warp",
+                            "Reinitialiser les marqueurs Warp de cette piste ?",
+                            this, nullptr);
+                        if (confirmed)
+                        {
+                            audio.resetTrackWarpMarkers(track);
+                            repaint();
+                        }
+                    };
+                    addAndMakeVisible(reset);
+                }
+                double sourceTimeForTarget(double targetSeconds) const
+                {
+                    const double length = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    targetSeconds = juce::jlimit(0.0, length, targetSeconds);
+                    const double sourceDuration = sourceLengthSeconds();
+                    if (!audio.isTrackWarpEnabled(track))
+                        return targetSeconds * sourceDuration / length;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    if (count < 2) return targetSeconds * sourceDuration / length;
+                    for (int i = 0; i < count - 1; ++i)
+                    {
+                        const double ta = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                        const double tb = audio.getTrackWarpMarkerTargetSeconds(track, i + 1);
+                        if (targetSeconds < ta || targetSeconds > tb) continue;
+                        const double sa = audio.getTrackWarpMarkerSourceSeconds(track, i);
+                        const double sb = audio.getTrackWarpMarkerSourceSeconds(track, i + 1);
+                        const double alpha = juce::jlimit(0.0, 1.0,
+                            (targetSeconds - ta) / juce::jmax(0.000001, tb - ta));
+                        return sa + (sb - sa) * alpha;
+                    }
+                    // Clamp outside the marker range to the nearest
+                    // endpoint instead of falling back to linear mapping,
+                    // which could make the waveform jump at the boundary.
+                    const double firstTarget = audio.getTrackWarpMarkerTargetSeconds(track, 0);
+                    const double lastTarget = audio.getTrackWarpMarkerTargetSeconds(track, count - 1);
+                    if (targetSeconds <= firstTarget)
+                        return audio.getTrackWarpMarkerSourceSeconds(track, 0);
+                    if (targetSeconds >= lastTarget)
+                        return audio.getTrackWarpMarkerSourceSeconds(track, count - 1);
+                    return targetSeconds * sourceDuration / length;
+                }
+                double sourceLengthSeconds() const
+                {
+                    const double sampleRate = audio.getAudioBufferSampleRate(track);
+                    if (cachedAudio != nullptr && sampleRate > 0.0)
+                        return juce::jmax(0.000001,
+                            (double) cachedAudio->getNumSamples() / sampleRate);
+                    return juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                }
+                void mouseDoubleClick(const juce::MouseEvent& event) override
+                {
+                    if (!inWaveform(event.getPosition())
+                        || event.mods.isAltDown() || event.mods.isMiddleButtonDown()
+                        || event.mods.isRightButtonDown()) return;
+                    const double seconds = timeAt(event.x);
+                    const double sourceSeconds = sourceTimeForTarget(seconds);
+                    if (!std::isfinite(seconds) || !std::isfinite(sourceSeconds))
+                        return;
+                    if (audio.addTrackWarpMarker(track, sourceSeconds, seconds))
+                    {
                         audio.setTrackWarpEnabled(track, true);
                         enable.setToggleState(true, juce::dontSendNotification);
                         repaint();
-                    };
-                    addAndMakeVisible(apply);
+                    }
+                }
+                void mouseDown(const juce::MouseEvent& event) override
+                {
+                    draggingMarker = -1;
+                    panning = false;
+                    if (!inWaveform(event.getPosition()))
+                    {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        return;
+                    }
+                    if (event.mods.isMiddleButtonDown() || event.mods.isAltDown())
+                    {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                        panning = true;
+                        panStartX = event.x;
+                        panStartFraction = viewStart;
+                        return;
+                    }
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    int nearestMarker = -1;
+                    int nearestDistance = 9;
+                    for (int i = 1; i < count - 1; ++i)
+                    {
+                        const int distance = std::abs(event.x
+                            - xAt(audio.getTrackWarpMarkerTargetSeconds(track, i)));
+                        if (distance < nearestDistance)
+                        {
+                            nearestDistance = distance;
+                            nearestMarker = i;
+                        }
+                    }
+                    if (nearestMarker >= 0)
+                    {
+                        const int i = nearestMarker;
+                        if (event.mods.isRightButtonDown())
+                            {
+                                const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
+                                    juce::MessageBoxIconType::QuestionIcon,
+                                    "Liberty | Warp", "Supprimer ce marqueur Warp ?", this, nullptr);
+                                if (confirmed && audio.removeTrackWarpMarker(track, i))
+                                {
+                                    hoveredMarker = -1;
+                                    repaint();
+                                }
+                            }
+                            else
+                            {
+                                draggingMarker = i;
+                                hoveredMarker = -1;
+                                dragStartX = event.x;
+                                dragStartTime = audio.getTrackWarpMarkerTargetSeconds(track, i);
+                                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                                repaint();
+                            }
+                            return;
+                    }
+                }
+                void mouseDrag(const juce::MouseEvent& event) override
+                {
+                    if (panning)
+                    {
+                        const double nextStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
+                            panStartFraction - (double)(event.x - panStartX)
+                            / ((double)juce::jmax(1, getWidth() - 80) * zoom));
+                        if (std::abs(nextStart - viewStart) > 0.000000001)
+                        {
+                            viewStart = nextStart;
+                            repaint();
+                        }
+                        return;
+                    }
+                    if (draggingMarker < 0
+                        || draggingMarker >= audio.getTrackWarpMarkerCount(track) - 1)
+                        return;
+                    const double delta = (double)(event.x - dragStartX)
+                        * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
+                        / ((double)juce::jmax(1, getWidth() - 80) * zoom);
+                    const double precision = event.mods.isShiftDown() ? 0.1 : 1.0;
+                    double targetTime = dragStartTime + delta * precision;
+                    // Never allow a marker to cross its neighbours. Leave
+                    // a small time gap so the interpolation remains valid.
+                    // Keep a sample-sized safety interval when the source
+                    // rate is known, with a conservative fallback otherwise.
+                    const double sampleRate = audio.getAudioBufferSampleRate(track);
+                    const double gap = sampleRate > 0.0
+                        ? juce::jmax(0.0001, 1.0 / sampleRate) : 0.001;
+                    const double previous = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker - 1);
+                    const double next = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker + 1);
+                    const double minimum = previous + gap;
+                    const double maximum = next - gap;
+                    if (!std::isfinite(previous) || !std::isfinite(next)
+                        || !std::isfinite(targetTime) || minimum >= maximum)
+                        return;
+                    targetTime = juce::jlimit(minimum, maximum, targetTime);
+                    const double currentTime = audio.getTrackWarpMarkerTargetSeconds(
+                        track, draggingMarker);
+                    if (std::abs(targetTime - currentTime) < 0.0000001) return;
+                    if (audio.moveTrackWarpMarker(track, draggingMarker, targetTime))
+                        repaint();
+                }
+                void mouseUp(const juce::MouseEvent& event) override
+                {
+                    const bool wasDragging = draggingMarker >= 0 || panning;
+                    const bool hadHover = hoveredMarker >= 0;
+                    draggingMarker = -1;
+                    panning = false;
+                    hoveredMarker = -1;
+                    setMouseCursor(juce::MouseCursor::NormalCursor);
+                    if (wasDragging)
+                        mouseMove(event);
+                    if (wasDragging || hadHover)
+                        repaint();
+                }
+                void mouseMove(const juce::MouseEvent& event) override
+                {
+                    if (draggingMarker >= 0)
+                    {
+                        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                        return;
+                    }
+                    if (panning || (inWaveform(event.getPosition())
+                        && (event.mods.isAltDown() || event.mods.isMiddleButtonDown())))
+                    {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                        return;
+                    }
+                    if (!inWaveform(event.getPosition()))
+                    {
+                        if (hoveredMarker != -1)
+                        {
+                            hoveredMarker = -1;
+                            repaint();
+                        }
+                        setMouseCursor(juce::MouseCursor::NormalCursor);
+                        return;
+                    }
+                    int newHoveredMarker = -1;
+                    int nearestDistance = 9;
+                    const int count = audio.getTrackWarpMarkerCount(track);
+                    for (int i = 1; i < count - 1; ++i)
+                    {
+                        const int distance = std::abs(event.x
+                            - xAt(audio.getTrackWarpMarkerTargetSeconds(track, i)));
+                        if (distance < nearestDistance)
+                        {
+                            nearestDistance = distance;
+                            newHoveredMarker = i;
+                        }
+                    }
+                    const bool nearMarker = newHoveredMarker >= 0;
+                    setMouseCursor(nearMarker ? juce::MouseCursor::LeftRightResizeCursor
+                                              : juce::MouseCursor::CrosshairCursor);
+                    if (hoveredMarker != newHoveredMarker)
+                    {
+                        hoveredMarker = newHoveredMarker;
+                        repaint();
+                    }
+                }
+                void mouseExit(const juce::MouseEvent&) override
+                {
+                    const bool hadHover = hoveredMarker >= 0;
+                    hoveredMarker = -1;
+                    if (draggingMarker < 0 && !panning)
+                        setMouseCursor(juce::MouseCursor::NormalCursor);
+                    if (hadHover) repaint();
+                }
+                bool inWaveform(juce::Point<int> point) const
+                {
+                    return point.x >= 40 && point.x < getWidth() - 40
+                        && point.y >= 350 && point.y <= getHeight() - 96;
+                }
+                void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+                {
+                    if (!inWaveform(event.getPosition()) || wheel.deltaY == 0.0f
+                        || !std::isfinite((double) wheel.deltaY)) return;
+                    const double anchor = timeAt(event.x);
+                    if (!std::isfinite(anchor)) return;
+                    const double fraction = juce::jlimit(0.0, 1.0,
+                        (double)(event.x - 40) / (double)juce::jmax(1, getWidth() - 80));
+                    const double newZoom = juce::jlimit(1.0, 32.0,
+                        zoom * (wheel.deltaY > 0.0f ? 1.25 : 0.8));
+                    if (std::abs(newZoom - zoom) < 0.000001) return;
+                    zoom = newZoom;
+                    viewStart = juce::jlimit(0.0, 1.0 - 1.0 / zoom,
+                        anchor / juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track))
+                        - fraction / zoom);
+                    repaint();
+                }
+                double fractionAt(int x) const
+                {
+                    return viewStart + juce::jlimit(0.0, 1.0,
+                        (double)(x - 40) / (double)juce::jmax(1, getWidth() - 80)) / zoom;
+                }
+                int xAt(double seconds) const
+                {
+                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    return 40 + (int)std::llround(
+                        (seconds / duration - viewStart) * zoom * juce::jmax(1, getWidth() - 80));
+                }
+                double timeAt(int x) const
+                {
+                    return fractionAt(x) * juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                }
+                void rebuildPeakCache(std::shared_ptr<const juce::AudioBuffer<float>> snapshot)
+                {
+                    cachedAudio = snapshot;
+                    for (int channel = 0; channel < 2; ++channel)
+                    {
+                        cachedLows[channel].clearQuick();
+                        cachedHighs[channel].clearQuick();
+                    }
+                    if (cachedAudio != nullptr)
+                    {
+                        const int count = cachedAudio->getNumSamples();
+                        const int channels = juce::jmin(2, cachedAudio->getNumChannels());
+                        for (int channel = 0; channel < channels; ++channel)
+                        {
+                            const float* data = cachedAudio->getReadPointer(channel);
+                            auto& lows = cachedLows[channel];
+                            auto& highs = cachedHighs[channel];
+                            for (int start = 0; start < count; start += 512)
+                            {
+                                const int end = juce::jmin(count, start + 512);
+                                float lo = 0.0f, hi = 0.0f;
+                                for (int i = start; i < end; ++i)
+                                {
+                                    lo = juce::jmin(lo, data[i]);
+                                    hi = juce::jmax(hi, data[i]);
+                                }
+                                lows.add(lo);
+                                highs.add(hi);
+                            }
+                        }
+                    }
                 }
                 void paint(juce::Graphics& g) override
                 {
+                    const auto currentAudio = audio.getAudioBufferSnapshot(track);
+                    if (currentAudio != cachedAudio)
+                        rebuildPeakCache(currentAudio);
                     g.fillAll(juce::Colour(0xff101e2d));
-                    g.setColour(juce::Colour(0xffffd18a));
-                    g.setFont(juce::Font(20.0f, juce::Font::bold));
-                    g.drawText("WARP  |  ETIREMENT AUDIO", 24, 18, getWidth() - 48, 34,
-                        juce::Justification::centredLeft);
-                    g.setColour(juce::Colour(0xffb6cbdb));
+                    g.setColour(juce::Colour(0xffe7edf5));
+                    g.setFont(juce::Font(22.0f, juce::Font::bold));
+                    g.drawText("WARP  /  ETIREMENT AUDIO", 26, 18, getWidth() - 52, 36,
+                               juce::Justification::centredLeft);
+                    g.setColour(juce::Colour(0xffd9ad65));
+                    g.fillRoundedRectangle(26.0f, 60.0f, (float)getWidth() - 52.0f, 2.0f, 1.0f);
+                    g.setColour(juce::Colour(0xffafc4d7));
                     g.setFont(juce::Font(13.0f));
-                    g.drawText("Algorithme", 28, 112, 145, 24, juce::Justification::centredLeft);
-                    g.drawText("Duree relative", 28, 162, 145, 24, juce::Justification::centredLeft);
-                    g.drawText("Formants vocaux (reserve au moteur spectral)", 28, 264, getWidth()-56, 22, juce::Justification::centredLeft);
-                    g.drawText("Duree actuelle : " + juce::String(audio.getAudioFileLengthSeconds(track), 3) + " s",
-                        28, 328, getWidth() - 56, 20, juce::Justification::centredLeft);
+                    g.drawText("ALGORITHME", 28, 125, 160, 20, juce::Justification::left);
+                    g.drawText("DUREE RELATIVE", 28, 179, 160, 20, juce::Justification::left);
+                    g.setColour(juce::Colour(0xff142b41));
+                    g.fillRoundedRectangle(26.0f, 306.0f, (float)getWidth() - 52.0f,
+                                           (float)juce::jmax(30, getHeight() - 350), 7.0f);
+                    g.setColour(juce::Colour(0xff8faec5));
+                    g.setFont(juce::Font(12.0f));
+                    g.drawText("EDITION DES MARQUEURS", 40, 311, getWidth() - 80, 20,
+                               juce::Justification::centredLeft);
+                    // Adaptive time ruler: readable divisions from milliseconds to minutes.
+                    const double fullSeconds = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    const double visibleSeconds = fullSeconds / zoom;
+                    const double desiredStep = visibleSeconds / juce::jmax(1.0, (double)(getWidth() - 80) / 100.0);
+                    const double decade = std::pow(10.0, std::floor(std::log10(juce::jmax(0.000001, desiredStep))));
+                    double tickStep = decade;
+                    for (double multiplier : { 1.0, 2.0, 5.0, 10.0 })
+                    {
+                        tickStep = decade * multiplier;
+                        if (tickStep >= desiredStep) break;
+                    }
+                    const double beginSeconds = viewStart * fullSeconds;
+                    const double endSeconds = (viewStart + 1.0 / zoom) * fullSeconds;
+                    g.setColour(juce::Colour(0xff203b52));
+                    g.fillRect(40, 333, juce::jmax(1, getWidth() - 80), 17);
+                    const int firstTick = (int)std::ceil(beginSeconds / tickStep);
+                    const int lastTick = (int)std::floor(endSeconds / tickStep);
+                    for (int tick = firstTick; tick <= lastTick && tick < firstTick + 1000; ++tick)
+                    {
+                        const double seconds = tick * tickStep;
+                        const int x = xAt(seconds);
+                        g.setColour(juce::Colour(0xff6c8ba3));
+                        g.drawVerticalLine(x, 345.0f, 350.0f);
+                        g.setColour(juce::Colour(0xffd4e0e9));
+                        const juce::String label = tickStep < 1.0
+                            ? juce::String(seconds, 2) + " s"
+                            : juce::String(seconds, tickStep < 10.0 ? 1 : 0) + " s";
+                        g.setFont(juce::Font(10.0f));
+                        g.drawText(label, x + 3, 333, 78, 12, juce::Justification::left);
+                    }
+                    // Compact source waveform preview: preserve the full editor
+                    // for marker interactions while exposing real audio here.
+                    const auto* pcm = cachedAudio.get();
+                    if (pcm != nullptr && pcm->getNumSamples() > 0
+                        && pcm->getNumChannels() > 0)
+                    {
+                        const int left = 40, right = getWidth() - 40;
+                        const int width = juce::jmax(1, right - left);
+                        const int sampleCount = pcm->getNumSamples();
+                        const int channels = juce::jmin(2, pcm->getNumChannels());
+                        const float top = 352.0f;
+                        const float bottom = (float)getHeight() - 96.0f;
+                        const float laneHeight = (bottom - top) / (float)channels;
+                        for (int channel = 0; channel < channels; ++channel)
+                        {
+                            const float* data = pcm->getReadPointer(channel);
+                            const float centre = top + ((float)channel + 0.5f) * laneHeight;
+                            const float amplitude = juce::jmax(4.0f, laneHeight * 0.44f);
+                            g.setColour(juce::Colour(0xff496579));
+                            g.drawHorizontalLine((int)centre, (float)left, (float)right);
+                            g.setColour(channel == 0 ? juce::Colour(0xffffcf75)
+                                                     : juce::Colour(0xffe9a95b));
+                            for (int x = 0; x < width; ++x)
+                            {
+                                const int first = juce::jlimit(0, sampleCount - 1,
+                                    (int)(sourceTimeForTarget(fractionAt(left + x) * fullSeconds) / sourceLengthSeconds() * sampleCount));
+                                // Include the full source interval for each
+                                // screen column, even around tightly warped
+                                // transients where the mapping becomes steep.
+                                const int mappedEnd = juce::jlimit(0, sampleCount,
+                                    (int)std::ceil(sourceTimeForTarget(
+                                        fractionAt(left + x + 1) * fullSeconds)
+                                        / sourceLengthSeconds() * sampleCount));
+                                const int last = juce::jlimit(first + 1, sampleCount,
+                                    juce::jmax(first + 1, mappedEnd));
+                                float lo = 0.0f, hi = 0.0f;
+                                // Scan only partial boundary blocks; interior
+                                // blocks use cached exact min/max peaks.
+                                const int firstBlock = first / 512;
+                                const int lastBlock = (last - 1) / 512;
+                                const auto scan = [&](int begin, int end)
+                                {
+                                    for (int i = begin; i < end; ++i)
+                                    {
+                                        lo = juce::jmin(lo, data[i]);
+                                        hi = juce::jmax(hi, data[i]);
+                                    }
+                                };
+                                if (firstBlock == lastBlock)
+                                    scan(first, last);
+                                else
+                                {
+                                    scan(first, (firstBlock + 1) * 512);
+                                    for (int block = firstBlock + 1; block < lastBlock; ++block)
+                                    {
+                                        lo = juce::jmin(lo, cachedLows[channel][block]);
+                                        hi = juce::jmax(hi, cachedHighs[channel][block]);
+                                    }
+                                    scan(lastBlock * 512, last);
+                                }
+                                // Translucent envelope adds body; the brighter
+                                // central stroke keeps sharp transients readable.
+                                const float peakTop = centre - hi * amplitude;
+                                const float peakBottom = centre - lo * amplitude;
+                                const auto amber = channel == 0 ? juce::Colour(0xffffcf75)
+                                                                : juce::Colour(0xffe9a95b);
+                                g.setColour(amber.withAlpha(0.30f));
+                                g.drawVerticalLine(left + x, peakTop, peakBottom);
+                                g.setColour(amber.withAlpha(0.92f));
+                                g.drawVerticalLine(left + x, peakTop, peakBottom);
+                                if (hi > 0.82f || lo < -0.82f)
+                                {
+                                    g.setColour(juce::Colour(0xffffe8a9));
+                                    g.fillRect(left + x, (int)std::floor(peakTop), 1, 2);
+                                }
+                            }
+                        }
+                    }
+                    // Marker interaction is handled directly by this inspector.
+                    // Overlay the existing Warp markers on both waveform lanes.
+                    const int markerCount = audio.getTrackWarpMarkerCount(track);
+                    const double duration = juce::jmax(0.000001, audio.getAudioFileLengthSeconds(track));
+                    const int plotWidth = juce::jmax(1, getWidth() - 80);
+                    for (int marker = 0; marker < markerCount; ++marker)
+                    {
+                        const double seconds = audio.getTrackWarpMarkerTargetSeconds(track, marker);
+                        const int x = xAt(seconds);
+                        if (x < 40 || x >= getWidth() - 40) continue;
+                        const bool endpoint = marker == 0 || marker == markerCount - 1;
+                        const bool active = marker == draggingMarker;
+                        const bool hovered = marker == hoveredMarker;
+                        if (active || hovered)
+                        {
+                            g.setColour(juce::Colour(0x55ffc857));
+                            g.fillRect(x - 4, 352, 9, juce::jmax(1, getHeight() - 448));
+                            g.setColour(juce::Colour(0xffffd98b));
+                            g.setFont(juce::Font(12.0f, juce::Font::bold));
+                            const juce::String timeLabel = juce::String(seconds, 4) + " s";
+                            const int labelX = juce::jlimit(40, juce::jmax(40, getWidth() - 142), x - 51);
+                            g.drawText(timeLabel, labelX, 359, 102, 20,
+                                       juce::Justification::centred);
+                        }
+                        g.setColour((active || hovered) ? juce::Colour(0xffffe3a3)
+                                    : endpoint ? juce::Colour(0xff8196a8)
+                                               : juce::Colour(0xffffc857));
+                        g.drawVerticalLine(x, 352.0f, (float)getHeight() - 60.0f);
+                        g.fillEllipse((float)x - 3.0f, 349.0f, 6.0f, 6.0f);
+                    }
+                    g.setColour(juce::Colour(0xffa7bfd1));
+                    g.setFont(juce::Font(11.0f));
+                    g.setColour(juce::Colour(0xffd5e3ee));
+                    g.drawText("Marqueurs : " + juce::String(markerCount)
+                               + "    |    Zoom : " + juce::String(zoom, 1) + "x",
+                               40, getHeight() - 87, getWidth() - 80, 17, juce::Justification::centredLeft);
+                    g.setColour(juce::Colour(0xff9db9cb));
+                    g.drawText("Molette : zoom   |   Alt+glisser : naviguer   |   Double-clic : ajouter   |   Glisser : deplacer   |   Clic droit : supprimer",
+                               40, getHeight() - 69, getWidth() - 80, 17, juce::Justification::centredLeft);
+                    g.drawText("Duree source : " + juce::String(originalDuration, 2)
+                               + " s    |    Duree actuelle : "
+                               + juce::String(audio.getAudioFileLengthSeconds(track), 2) + " s",
+                               28, getHeight() - 47, getWidth() - 56, 18, juce::Justification::left);
+                    // Footer intentionally reserved for duration readout.
                 }
                 void resized() override
                 {
-                    enable.setBounds(28, 70, getWidth() - 56, 28);
-                    mode.setBounds(175, 110, getWidth() - 205, 28);
-                    ratio.setBounds(175, 160, getWidth() - 205, 28);
-                    apply.setBounds(28, 211, getWidth() - 56, 36);
-                    formant.setBounds(28, 287, getWidth() - 56, 30);
+                    enable.setBounds(28, 78, getWidth() - 56, 32);
+                    mode.setBounds(192, 122, getWidth() - 220, 28);
+                    ratio.setBounds(192, 176, getWidth() - 220, 28);
+                    apply.setBounds(28, 222, getWidth() - 56, 36);
+                    reset.setBounds(28, 270, getWidth() - 56, 28);
                 }
             private:
+                std::shared_ptr<const juce::AudioBuffer<float>> cachedAudio;
+                juce::Array<float> cachedLows[2], cachedHighs[2];
                 AudioEngine& audio;
                 int track;
                 double originalDuration = 0.0;
+                int draggingMarker = -1;
+                int hoveredMarker = -1;
+                int dragStartX = 0;
+                double dragStartTime = 0.0;
+                double zoom = 1.0;
+                double viewStart = 0.0;
+                double panStartFraction = 0.0;
+                int panStartX = 0;
+                bool panning = false;
                 juce::ToggleButton enable;
                 juce::ComboBox mode, ratio;
-                juce::Slider formant;
-                juce::TextButton apply;
+                juce::TextButton apply, reset;
             };
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle = "Liberty  |  Warp Audio";
@@ -4061,7 +3712,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
             options.useNativeTitleBar = true;
             options.resizable = true;
             options.launchAsync();
-            return true;
+            return;
         }
         if (false) // Legacy popup retained temporarily for safe rollback.
         {
@@ -4092,7 +3743,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                 {
                     if (safeThis == nullptr || trackIndex < 0
                         || trackIndex >= safeThis->getAudioTrackCount())
-                        return true;
+                        return;
                     if (result == 1)
                         safeThis->audioEngine.setTrackWarpEnabled(trackIndex,
                             !safeThis->audioEngine.isTrackWarpEnabled(trackIndex));
@@ -4118,7 +3769,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                         const double sourceDuration = sourceBuffer != nullptr && sourceRate > 0.0
                             ? (double) sourceBuffer->getNumSamples() / sourceRate : 0.0;
                         if (oldLength <= 0.0 || (result == 42 && sourceDuration <= 0.0))
-                            return true;
+                            return;
                         auto prompt = std::make_unique<juce::AlertWindow>(
                             result == 41 ? "Duree du clip audio" : "Synchronisation au tempo",
                             result == 41
@@ -4169,7 +3820,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                     }
                     safeThis->repaint();
                 });
-            return true;
+            return;
         }
         if (focusButton.getWidth() >= 45 && focusButton.contains(p))
         {
@@ -4187,12 +3838,26 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                 }
             }
             repaint();
-            return true;
+            return;
         }
         if (formatButton.contains(p))
         {
-            showAudioDockTimeFormatDialog();
-            return true;
+            juce::PopupMenu menu;
+            menu.addItem(1, "Secondes", true, audioDockTimeFormat == 0);
+            menu.addItem(2, "Minutes : secondes", true, audioDockTimeFormat == 1);
+            menu.addItem(3, "Echantillons", true, audioDockTimeFormat == 2);
+            menu.addItem(4, "Mesures / temps", true, audioDockTimeFormat == 3);
+            juce::Component::SafePointer<MainComponent> safeThis(this);
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [safeThis](int result)
+                {
+                    if (safeThis != nullptr && result >= 1 && result <= 4)
+                    {
+                        safeThis->audioDockTimeFormat = result - 1;
+                        safeThis->repaint();
+                    }
+                });
+            return;
         }
         if (selectionBar.contains(p))
         {
@@ -4225,7 +3890,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                     std::swap(audioSelectionStart, audioSelectionEnd);
             }
             repaint();
-            return true;
+            return;
         }
     }
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
@@ -4234,62 +3899,6 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
         && getAudioDockWaveBounds().contains(p))
     {
         const auto wave = getAudioDockWaveBounds();
-        const auto navigationRail = juce::Rectangle<int>(wave.getX(), wave.getBottom() - 13,
-            wave.getWidth(), 13);
-        if (navigationRail.contains(p) && wave.getWidth() > 24)
-        {
-            const double visible = 1.0 / audioDockZoom;
-            audioDockScroll = juce::jlimit(0.0, 1.0 - visible,
-                (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
-            draggingAudioDockNavigator = true;
-            repaint();
-            return true;
-        }
-        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
-        if (duration > 0.0 && std::isfinite(duration))
-        {
-            const double visible = 1.0 / audioDockZoom;
-            const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
-            // Capture dedicated dock-loop handles before Warp or audio selection.
-            // Loop handles use the same zoomed waveform coordinates as paint().
-            if (audioDockLoopEnabled && event.mods.isLeftButtonDown()
-                && !event.mods.isAltDown())
-            {
-                const auto markerX = [&](double fraction)
-                {
-                    return wave.getX() + (int)std::lround(
-                        (fraction - offset) / visible * wave.getWidth());
-                };
-                const int startDistance = std::abs(p.x - markerX(audioDockLoopStartFraction));
-                const int endDistance = std::abs(p.x - markerX(audioDockLoopEndFraction));
-                if (startDistance <= 9 || endDistance <= 9)
-                {
-                    draggingAudioDockLoopMarker = startDistance <= endDistance ? 1 : 2;
-                    draggingAudioSelection = false;
-                    draggingDockWarpMarker = -1;
-                    setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                    return true;
-                }
-            }
-            const int count = audioEngine.getTrackWarpMarkerCount(selectedTrack);
-            int nearest = -1, distance = 9;
-            for (int i = 1; i < count - 1; ++i)
-            {
-                const double target = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
-                if (!std::isfinite(target)) continue;
-                const int x = wave.getX() + (int)std::lround(
-                    (target / duration - offset) / visible * wave.getWidth());
-                const int d = std::abs(p.x - x);
-                if (d < distance) { distance = d; nearest = i; }
-            }
-            if (nearest > 0 && event.mods.isLeftButtonDown() && !event.mods.isAltDown())
-            {
-                draggingDockWarpMarker = nearest;
-                draggingDockWarpTrack = selectedTrack;
-                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return true;
-            }
-        }
         // Alt+left click sets the clip start; Alt+Shift+left click sets its end.
         // These markers are independent of the transient audio selection.
         if (event.mods.isAltDown() && event.mods.isLeftButtonDown())
@@ -4302,7 +3911,7 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
                 audioClipStartFraction = juce::jmin(position, audioClipEndFraction);
             saveAudioDockClipBounds();
             repaint();
-            return true;
+            return;
         }
         const double visible = 1.0 / audioDockZoom;
         const double offset = juce::jlimit(0.0, 1.0 - visible, audioDockScroll);
@@ -4322,12 +3931,9 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
             if (draggingAudioClipBoundary != 0)
             {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-                return true;
+                return;
             }
         }
-        // Ordinary left-drag must select audio, including when Warp is on.
-        // Warp markers and clip boundary handles are handled above, before
-        // starting a selection. Never swallow the click just because Warp is enabled.
         audioSelectionDragHandle = 0;
         if (audioSelectionActive && audioSelectionTrack == selectedTrack)
         {
@@ -4349,54 +3955,9 @@ bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
         audioSelectionActive = true;
         draggingAudioSelection = true;
         repaint();
-        return true;
+        return;
     }
-    
-    return false;
-}
-
-void MainComponent::mouseDown(const juce::MouseEvent& event)
-{
-    // A listener attached recursively receives the original child event.
-    // Always convert to MainComponent coordinates before dock hit-testing.
-    const auto p = event.getEventRelativeTo(this).getPosition();
-    // Select metadata clips independently without invoking the legacy audio
-    // move/split tools, which currently operate on the primary track buffer.
-    if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
-        && p.x >= trackHeaderWidth && p.y >= getArrangeTop() && p.y < getMixerTop())
-    {
-        const int track = getAudioTrackAtPosition(p);
-        if (track >= 0)
-        {
-            const int rowH = getLibertyTrackRowHeight();
-            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
-            const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
-            const auto clips = audioEngine.getAudioClips(track);
-            for (auto it = clips.rbegin(); it != clips.rend(); ++it)
-            {
-                const int x = trackHeaderWidth
-                    + (int) std::round(it->startSeconds * pixelsPerSecond);
-                const int width = juce::jmax(1,
-                    (int) std::round(it->lengthSeconds * pixelsPerSecond));
-                if (juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(p))
-                {
-                    selectedTrack = track;
-                    selectedExtraAudioClipTrack = track;
-                    selectedExtraAudioClipId = it->id;
-                    repaint();
-                    return;
-                }
-            }
-            selectedExtraAudioClipTrack = -1;
-            selectedExtraAudioClipId.clear();
-        }
-    }
-    // Route the second press of an audio-clip double-click before any
-    // arrange editing tool can move, split or erase the clip.
-    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
-        && openAudioClipInDockAt(p)) return;
-    if (handleAudioDockMouseDown(event)) return;
-if (!dockCollapsed && !event.mods.isPopupMenu()
+    if (!dockCollapsed && !event.mods.isPopupMenu()
         && !isLibertyMixConsoleVisible(this) && !isLibertyPerformVisible(this)
         && p.x >= 8 && p.x < 156)
     {
@@ -4521,19 +4082,15 @@ if (!dockCollapsed && !event.mods.isPopupMenu()
         && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     if (juce::Rectangle<int>(174, dockTop + 44, 28, 28).contains(p))
     {
-        if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
-            && audioEngine.hasAudioFile(selectedTrack))
-            detachAudioDockSurface();
-        else
-            openLibertyMidiEditor(*this);
+        openLibertyMidiEditor(*this);
         return;
     }
-    if (selectedEditorTrack && juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
+    if (juce::Rectangle<int>(174, dockTop + 76, 28, 28).contains(p))
     {
         showFloatingStepSequencer();
         return;
     }
-    if (selectedInstrument && juce::Rectangle<int>(8, dockTop + 108, 148, 28).contains(p))
+    if (juce::Rectangle<int>(8, dockTop + 108, 148, 28).contains(p))
     {
         if (selectedInstrument)
         {
@@ -4567,7 +4124,7 @@ if (!dockCollapsed && !event.mods.isPopupMenu()
         }
         return;
     }
-    if (selectedEditorTrack && juce::Rectangle<int>(8, dockTop + 76, 148, 28).contains(p))
+    if (juce::Rectangle<int>(8, dockTop + 76, 148, 28).contains(p))
     {
         if (selectedEditorTrack)
         {
@@ -4864,49 +4421,8 @@ if (!dockCollapsed && !event.mods.isPopupMenu()
     }
 }
 
-bool MainComponent::handleAudioDockMouseDrag(const juce::MouseEvent& event)
+void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
-    if (draggingAudioDockNavigator)
-    {
-        const auto wave = getAudioDockWaveBounds();
-        if (wave.getWidth() > 24)
-        {
-            const double visible = 1.0 / audioDockZoom;
-            const auto p = event.getEventRelativeTo(this).getPosition();
-            audioDockScroll = juce::jlimit(0.0, 1.0 - visible,
-                (double)(p.x - wave.getX()) / wave.getWidth() - visible * 0.5);
-            repaint();
-        }
-        return true;
-    }
-
-    if (draggingAudioDockLoopMarker != 0)
-    {
-        const double fraction = event.mods.isShiftDown()
-            ? audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x)
-            : snapAudioDockFraction(audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x));
-        const double duration = audioEngine.getAudioFileLengthSeconds(selectedTrack);
-        const double minimum = duration > 0.0 ? juce::jmin(0.5, 0.001 / duration) : 0.0;
-        if (draggingAudioDockLoopMarker == 1)
-            audioDockLoopStartFraction = juce::jlimit(0.0,
-                juce::jmax(0.0, audioDockLoopEndFraction - minimum), fraction);
-        else
-            audioDockLoopEndFraction = juce::jlimit(
-                juce::jmin(1.0, audioDockLoopStartFraction + minimum), 1.0, fraction);
-        repaint();
-        return true;
-    }
-    if (draggingDockWarpMarker > 0 && draggingDockWarpTrack >= 0)
-    {
-        const double duration = audioEngine.getAudioFileLengthSeconds(draggingDockWarpTrack);
-        const double raw = audioDockFractionAt(event.getEventRelativeTo(this).getPosition().x) * duration;
-        const double target = event.mods.isShiftDown() ? raw : snapAudioDockWarpTime(raw, draggingDockWarpTrack);
-        if (std::isfinite(target))
-            audioEngine.moveTrackWarpMarker(draggingDockWarpTrack, draggingDockWarpMarker, target);
-        repaint();
-        return true;
-    }
-
     if (draggingAudioClipBoundary != 0)
     {
         const double fraction = snapAudioDockFraction(
@@ -4917,7 +4433,7 @@ bool MainComponent::handleAudioDockMouseDrag(const juce::MouseEvent& event)
             audioClipEndFraction = juce::jmax(fraction, audioClipStartFraction);
         saveAudioDockClipBounds();
         repaint();
-        return true;
+        return;
     }
 
     if (draggingAudioSelection)
@@ -4928,14 +4444,8 @@ bool MainComponent::handleAudioDockMouseDrag(const juce::MouseEvent& event)
         else if (audioSelectionDragHandle == 2) audioSelectionEnd = juce::jmax(fraction, audioSelectionStart);
         else audioSelectionEnd = fraction;
         repaint();
-        return true;
+        return;
     }
-    return false;
-}
-
-void MainComponent::mouseDrag(const juce::MouseEvent& event)
-{
-    if (handleAudioDockMouseDrag(event)) return;
     if (draggingDockHeight)
     {
         const int maximumHeight = juce::jmax(246, getHeight() - getArrangeTop() - 110);
@@ -5035,31 +4545,8 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
     handleMixerMouse(event);
 }
 
-bool MainComponent::handleAudioDockMouseUp(const juce::MouseEvent& event)
+void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
-    if (draggingAudioDockNavigator)
-    {
-        draggingAudioDockNavigator = false;
-        repaint();
-        return true;
-    }
-
-    if (draggingAudioDockLoopMarker != 0)
-    {
-        draggingAudioDockLoopMarker = 0;
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        repaint();
-        return true;
-    }
-    if (draggingDockWarpMarker > 0)
-    {
-        draggingDockWarpMarker = -1;
-        draggingDockWarpTrack = -1;
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        repaint();
-        return true;
-    }
-
     if (draggingAudioClipBoundary != 0)
     {
         const double fraction = snapAudioDockFraction(
@@ -5072,7 +4559,7 @@ bool MainComponent::handleAudioDockMouseUp(const juce::MouseEvent& event)
         draggingAudioClipBoundary = 0;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
-        return true;
+        return;
     }
 
     if (draggingAudioSelection)
@@ -5084,15 +4571,8 @@ bool MainComponent::handleAudioDockMouseUp(const juce::MouseEvent& event)
         else audioSelectionEnd = fraction;
         draggingAudioSelection = false;
         repaint();
-        return true;
+        return;
     }
-
-    return false;
-}
-
-void MainComponent::mouseUp(const juce::MouseEvent& event)
-{
-    if (handleAudioDockMouseUp(event)) return;
     if (draggingDockHeight)
     {
         draggingDockHeight = false;
