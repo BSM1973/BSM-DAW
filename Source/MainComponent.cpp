@@ -315,7 +315,14 @@ juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEv
     // JUCE's withNewPosition keeps the original eventComponent. Rebase the
     // event onto MainComponent before assigning logical dock coordinates;
     // otherwise its next getEventRelativeTo(&main) re-applies desktop offsets.
-    return e.getEventRelativeTo(&main).withNewPosition(translated);
+    // JUCE MouseEvent coordinates are relative to eventComponent. Forwarding
+    // an event whose eventComponent is the floating child makes the receiver
+    // translate the coordinates a second time. Rebase on MainComponent.
+    return juce::MouseEvent(e.source, translated, e.mods, e.pressure,
+                            e.orientation, e.rotation, e.tiltX, e.tiltY,
+                            &main, &main, e.eventTime, translated,
+                            e.mouseDownTime, e.getNumberOfClicks(),
+                            e.mouseWasDraggedSinceMouseDown());
 }
 
 void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
