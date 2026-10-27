@@ -14,14 +14,6 @@ juce::String getLibertyTrackName(int track);
 
 namespace
 {
-class LibertyAudioFloatingWindow final : public juce::DocumentWindow
-{
-public:
-    LibertyAudioFloatingWindow()
-        : juce::DocumentWindow("Liberty - Audio", juce::Colour(0xff101e2d), closeButton) {}
-    void closeButtonPressed() override { setVisible(false); }
-};
-
 class AudioClipWarpView final : public juce::Component, private juce::Timer
 {
 public:
@@ -42,13 +34,6 @@ public:
         if (stopped.exchange(true)) return;
         stopTimer();
         owner.removeMouseListener(&ownerListener);
-        if (floatingWindow != nullptr)
-        {
-            floatingWindow->setContentNonOwned(nullptr, false);
-            floatingWindow.reset();
-        }
-        if (getParentComponent() == &owner)
-            owner.removeChildComponent(this);
         setVisible(false);
     }
 
@@ -57,11 +42,9 @@ public:
         if (track < 0 || track >= owner.getAudioTrackCount() || !owner.audioEngine.hasAudioFile(track)) return;
         selectedTrack = track;
         owner.selectedTrack = track;
-        if (floatingWindow == nullptr)
-            setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
+        setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
         setVisible(true);
-        if (floatingWindow != nullptr) floatingWindow->toFront(false);
-        else toFront(false);
+        toFront(false);
         repaint();
         owner.repaint();
     }
@@ -69,47 +52,8 @@ public:
     void hideView()
     {
         draggingMarker = -1;
-        if (floatingWindow != nullptr)
-        {
-            floatingWindow->setContentNonOwned(nullptr, false);
-            floatingWindow->setVisible(false);
-            floatingWindow.reset();
-            owner.addChildComponent(this);
-        }
         setVisible(false);
         owner.repaint();
-    }
-
-    void detachToWindow()
-    {
-        if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack)) return;
-        if (floatingWindow != nullptr)
-        {
-            floatingWindow->setVisible(true);
-            floatingWindow->toFront(true);
-            return;
-        }
-        auto window = std::make_unique<LibertyAudioFloatingWindow>();
-        window->setUsingNativeTitleBar(true);
-        owner.removeChildComponent(this);
-        window->setContentNonOwned(this, false);
-        window->setResizable(true, true);
-        window->setResizeLimits(700, 300, 2400, 1600);
-        window->centreWithSize(1100, 550);
-        floatingWindow = std::move(window);
-        floatingWindow->setVisible(true);
-        setVisible(true);
-    }
-
-    void attachToDock()
-    {
-        if (floatingWindow == nullptr) return;
-        floatingWindow->setContentNonOwned(nullptr, false);
-        floatingWindow->setVisible(false);
-        floatingWindow.reset();
-        owner.addAndMakeVisible(this);
-        setBounds(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
-        repaint();
     }
 
     void paint(juce::Graphics& g) override
@@ -147,10 +91,7 @@ public:
     {
         if (mixerButton().contains(e.getPosition()))
         {
-            if (floatingWindow != nullptr)
-                attachToDock();
-            else
-                hideView();
+            hideView();
             return;
         }
 
@@ -282,15 +223,7 @@ private:
 
         void mouseDown(const juce::MouseEvent& e) override
         {
-            // The complete audio dock editor is already reparented into its own
-            // floating window. Never raise the legacy Warp overlay over it.
-            if (view.stopped.load() || view.floatingWindow != nullptr) return;
-            // The legacy overlay must not intercept the current audio dock.
-            if (!view.owner.dockCollapsed && !view.owner.dockMixerMode
-                && !view.owner.dockStepSequencerMode
-                && view.owner.selectedTrack >= 0
-                && view.owner.selectedTrack < view.owner.getAudioTrackCount()
-                && view.owner.audioEngine.hasAudioFile(view.owner.selectedTrack)) return;
+            if (view.stopped.load()) return;
             if (e.eventComponent == &view || view.isParentOf(e.eventComponent)) return;
 
             const auto relative = e.getEventRelativeTo(&view.owner);
@@ -642,31 +575,10 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
-        if (!isVisible() && floatingWindow == nullptr) return;
+        if (!isVisible()) return;
         if (selectedTrack < 0 || !owner.audioEngine.hasAudioFile(selectedTrack))
         {
             hideView();
-            return;
-        }
-        // The original audio dock is the sole interactive editor in the main
-        // window. Do not overlay its controls with this obsolete 210px panel.
-        if (floatingWindow == nullptr && !owner.dockCollapsed
-            && !owner.dockMixerMode && !owner.dockStepSequencerMode
-            && owner.selectedTrack >= 0
-            && owner.selectedTrack < owner.getAudioTrackCount()
-            && owner.audioEngine.hasAudioFile(owner.selectedTrack))
-        {
-            hideView();
-            return;
-        }
-        if (floatingWindow != nullptr)
-        {
-            if (!floatingWindow->isVisible())
-            {
-                attachToDock();
-                return;
-            }
-            repaint();
             return;
         }
         const auto wanted = juce::Rectangle<int>(0, juce::jmax(0, owner.getHeight() - 210), owner.getWidth(), 210);
@@ -675,7 +587,6 @@ private:
     }
 
     MainComponent& owner;
-    std::unique_ptr<LibertyAudioFloatingWindow> floatingWindow;
     OwnerListener ownerListener;
     std::atomic<bool> stopped { false };
     int selectedTrack = -1;
@@ -723,16 +634,4 @@ Bootstrap bootstrap;
 void shutdownLibertyAudioClipWarpView()
 {
     bootstrap.shutdown();
-}
-
-void detachLibertyAudioClipWarpView(MainComponent& owner, int track)
-{
-    if (track < 0 || track >= owner.getAudioTrackCount()
-        || !owner.audioEngine.hasAudioFile(track)) return;
-    auto it = controllers.find(&owner);
-    if (it == controllers.end())
-        it = controllers.emplace(&owner, std::make_unique<AudioClipWarpView>(owner)).first;
-    if (!it->second) return;
-    it->second->showTrack(track);
-    it->second->detachToWindow();
 }
