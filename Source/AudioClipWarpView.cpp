@@ -282,7 +282,10 @@ private:
 
         void mouseDown(const juce::MouseEvent& e) override
         {
-            if (view.stopped.load() || view.floatingWindow != nullptr) return;
+            // The complete audio dock editor is already reparented into its own
+            // floating window. Never raise the legacy Warp overlay over it.
+            if (view.stopped.load() || view.floatingWindow != nullptr
+                || view.owner.audioDockFloatingWindow != nullptr) return;
             if (e.eventComponent == &view || view.isParentOf(e.eventComponent)) return;
 
             const auto relative = e.getEventRelativeTo(&view.owner);
