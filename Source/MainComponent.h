@@ -428,7 +428,25 @@ public:
     // Audio dock navigation state (display-only; no changes to audio samples).
     double audioDockZoom = 1.0;
     double audioDockScroll = 0.0;
-    int audioDockTimeFormat = 0; // 0 seconds, 1 clock, 2 samples, 3 bars/beats
+    bool audioDockSnapEnabled = true;
+    bool audioDockTransientEnabled = false;
+    double audioDockTransientSensitivity = 50.0;
+    void refreshAudioDockTransientMarkers(int track);
+    std::map<int, std::vector<double>> audioDockAutomaticMarkers;
+    int audioDockSnapDivision = 4; // Subdivisions per beat: 1, 2, 4, 8, 16.
+    int draggingDockWarpMarker = -1;
+    int draggingDockWarpTrack = -1;
+    double snapAudioDockWarpTime(double seconds, int track) const;
+    void showAudioDockSnapDialog();
+
+    int audioDockTimeFormat = 3; // Default: bars/beats.
+    void showAudioDockTimeFormatDialog();
+    bool audioDockLoopEnabled = false;
+    double audioDockLoopStartFraction = 0.0;
+    double audioDockLoopEndFraction = 1.0;
+    int draggingAudioDockLoopMarker = 0;
+    bool draggingAudioDockNavigator = false; // 1 start, 2 end.
+
     double audioSelectionStart = 0.0, audioSelectionEnd = 0.0;
     bool audioSelectionActive = false, draggingAudioSelection = false;
     int audioSelectionDragHandle = 0; // 0: new selection, 1: start, 2: end
