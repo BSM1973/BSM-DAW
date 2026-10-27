@@ -262,12 +262,22 @@ struct MainComponent::AudioDockFloatingWindow final : juce::DocumentWindow
 
 void MainComponent::detachAudioDockSurface()
 {
-    if (audioDockFloatingWindow != nullptr) return;
+    if (audioDockFloatingWindow != nullptr)
+    {
+        // PLAY and other main-window actions can change native window focus.
+        // Reusing the detach icon must always recover the existing editor.
+        audioDockFloatingWindow->setVisible(true);
+        audioDockSurface.setVisible(true);
+        audioDockFloatingWindow->toFront(true);
+        return;
+    }
     audioDockFloatingWindow = std::make_unique<AudioDockFloatingWindow>(*this);
-    audioDockSurface.setVisible(true);
+    audioDockFloatingWindow->setAlwaysOnTop(true);
     audioDockFloatingWindow->setContentNonOwned(&audioDockSurface, false);
+    audioDockSurface.setVisible(true);
     audioDockFloatingWindow->centreWithSize(1080, 560);
     audioDockFloatingWindow->setVisible(true);
+    audioDockFloatingWindow->toFront(true);
 }
 
 void MainComponent::attachAudioDockSurface()
