@@ -28,6 +28,7 @@ public:
         setInterceptsMouseClicks(true, false);
     }
     void paint(juce::Graphics& g) override;
+    juce::MouseEvent toAudioEditorEvent(const juce::MouseEvent& e) const;
     void mouseMove(const juce::MouseEvent& e) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
