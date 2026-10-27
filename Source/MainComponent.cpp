@@ -275,9 +275,11 @@ void MainComponent::attachAudioDockSurface()
     if (audioDockFloatingWindow == nullptr) return;
     audioDockFloatingWindow->setVisible(false);
     audioDockFloatingWindow->clearContentComponent();
+    audioDockFloatingWindow.reset();
+    // Restore ownership to the original dock before recalculating geometry.
+    // No editor or audio state is destroyed when the window closes.
     addAndMakeVisible(audioDockSurface);
     audioDockSurface.setBounds(getAudioDockEditorBounds());
-    audioDockFloatingWindow.reset();
     resized();
 }
 
