@@ -3105,9 +3105,14 @@ void MainComponent::mouseExit(const juce::MouseEvent&)
 
 juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
 {
-    return {310, getMixerTop() + 36,
-            juce::jmax(0, getWidth() - 310),
-            juce::jmax(0, getHeight() - getMixerTop() - 36)};
+    const juce::Point<int> dockOrigin(310, getMixerTop() + 36);
+    if (audioDockFloatingWindow != nullptr
+        && audioDockSurface.getParentComponent() == audioDockFloatingWindow.get())
+        return {dockOrigin, juce::Point<int>(audioDockSurface.getWidth(),
+                                             audioDockSurface.getHeight())};
+    return {dockOrigin,
+            juce::Point<int>(juce::jmax(0, getWidth() - dockOrigin.x),
+                             juce::jmax(0, getHeight() - dockOrigin.y))};
 }
 
 juce::Rectangle<int> MainComponent::getAudioDockWaveBoundsFor(juce::Rectangle<int> editor) const
