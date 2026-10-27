@@ -1084,7 +1084,7 @@ void MainComponent::paint(juce::Graphics& g)
         // Render the established audio editor directly in the dock. Its
         // waveform must not be a child component floating over the arranger.
         if (audioDockFloatingWindow == nullptr)
-            paintExistingAudioDock(g, getAudioDockEditorBounds());
+            paintExistingAudioDock(g, editorArea);
         else
         {
             g.setColour(juce::Colour(0xff0b1521));
@@ -3166,7 +3166,8 @@ juce::Rectangle<int> MainComponent::getAudioDockEditorBounds() const
     const int editorTop = juce::jlimit(dockTop, getHeight(), dockTop + 36);
     const int editorLeft = juce::jmin(310, juce::jmax(0, getWidth()));
     const juce::Point<int> dockOrigin(editorLeft, editorTop);
-    if (audioDockFloatingWindow != nullptr)
+    if (audioDockFloatingWindow != nullptr
+        && audioDockSurface.getParentComponent() == audioDockFloatingWindow.get())
         return {dockOrigin, juce::Point<int>(audioDockSurface.getWidth(),
                                              audioDockSurface.getHeight())};
     return {dockOrigin,
