@@ -303,9 +303,11 @@ juce::MouseEvent LibertyAudioDockSurface::toAudioEditorEvent(const juce::MouseEv
     // getEventRelativeTo(main) would use desktop positions rather than the
     // logical dock coordinates used by the existing Warp/selection handlers.
     const auto dockOrigin = main.getAudioDockEditorBounds().getPosition();
-    const auto translated = e.getPosition().toFloat()
-        + dockOrigin.toFloat();
-    return e.withNewPosition(translated);
+    const auto translated = e.getPosition().toFloat() + dockOrigin.toFloat();
+    // JUCE's withNewPosition keeps the original eventComponent. Rebase the
+    // event onto MainComponent before assigning logical dock coordinates;
+    // otherwise its next getEventRelativeTo(&main) re-applies desktop offsets.
+    return e.getEventRelativeTo(&main).withNewPosition(translated);
 }
 
 void LibertyAudioDockSurface::mouseMove(const juce::MouseEvent& e)
