@@ -3770,6 +3770,11 @@ void MainComponent::activateDockTab(int index)
 bool MainComponent::handleAudioDockMouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getEventRelativeTo(this).getPosition();
+    // Handle a second press directly in the audio editor. JUCE does not
+    // always deliver mouseDoubleClick to the same component after reparenting.
+    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
+        && !event.mods.isAltDown() && getAudioDockWaveBounds().contains(p))
+        return handleAudioDockMouseDoubleClick(event);
     if (!dockCollapsed && !dockMixerMode && !dockStepSequencerMode
         && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
         && audioEngine.hasAudioFile(selectedTrack) && !event.mods.isPopupMenu())
