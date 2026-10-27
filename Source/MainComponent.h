@@ -1197,5 +1197,7 @@ private:
     struct AudioDockFloatingWindow;
     std::unique_ptr<AudioDockFloatingWindow> audioDockFloatingWindow;
     LibertyAudioDockSurface audioDockSurface { *this };
+    // The floating editor is an independent view of the same MainComponent audio state.
+    std::unique_ptr<LibertyAudioDockSurface> floatingAudioDockSurface;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };
