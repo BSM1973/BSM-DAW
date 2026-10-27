@@ -2738,7 +2738,9 @@ void MainComponent::timerCallback()
         // The embedded editor is painted by MainComponent itself, as it was
         // before detaching was introduced. Only the detached window owns the
         // JUCE child surface, preventing it from covering the arranger.
-        audioDockSurface.setVisible(showAudioSurface);
+        // The original dock is painted and hit-tested by MainComponent.
+        // A child input overlay masks controls and breaks drag selection.
+        audioDockSurface.setVisible(false);
     }
     if (showAudioSurface) audioDockSurface.repaint();
     if (floatingAudioDockSurface != nullptr) floatingAudioDockSurface->repaint();
@@ -2767,8 +2769,7 @@ void MainComponent::timerCallback()
     if (!durationPaletteOpen && (dockVisibilityButton.isVisible())) dockVisibilityButton.toFront(false);
     // Give the dock's transparent input surface priority over legacy overlays.
     // Its bounds cover only the audio editor, never the arranger or dock tabs.
-    if (audioDockFloatingWindow == nullptr && showAudioSurface && !durationPaletteOpen)
-        audioDockSurface.toFront(false);
+    // Never raise an embedded audio input overlay over the original dock.
     const int dockY = getMixerTop();
     const int firstInstrument = getAudioTrackCount() + getMidiTrackCount();
     const bool editableTrack = selectedTrack >= getAudioTrackCount()
