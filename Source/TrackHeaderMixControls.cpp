@@ -39,9 +39,37 @@ public:
  }
 };
 struct Controls{std::unique_ptr<juce::Slider>vol,pan;std::unique_ptr<juce::TextButton>mute,solo;std::unique_ptr<juce::Component>mask;std::unique_ptr<juce::ComboBox>midiInput;std::unique_ptr<juce::TextButton>instrumentGui;};
+// Dedicated hit target above the header overlays. The narrow grip owns the
+// entire drag gesture instead of relying on mouse propagation through controls.
+class ArrangeReorderGrip final : public juce::Component
+{
+public:
+ explicit ArrangeReorderGrip(MainComponent& main) : owner(main)
+ {
+     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+     setInterceptsMouseClicks(true, false);
+ }
+ void mouseDown(const juce::MouseEvent& e) override
+ {
+     if (e.mods.isLeftButtonDown() && !e.mods.isPopupMenu())
+         owner.mouseDown(e.getEventRelativeTo(&owner));
+ }
+ void mouseDrag(const juce::MouseEvent& e) override
+ {
+     if (owner.draggingArrangeTrack >= 0)
+         owner.mouseDrag(e.getEventRelativeTo(&owner));
+ }
+ void mouseUp(const juce::MouseEvent& e) override
+ {
+     if (owner.draggingArrangeTrack >= 0)
+         owner.mouseUp(e.getEventRelativeTo(&owner));
+ }
+private:
+ MainComponent& owner;
+};
 class TrackHeaderMixControls final:public juce::Component,private juce::Timer{
 public:
- explicit TrackHeaderMixControls(MainComponent&o):owner(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
+ explicit TrackHeaderMixControls(MainComponent&o):owner(o),reorderGrip(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);addAndMakeVisible(reorderGrip);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
  ~TrackHeaderMixControls()override{shutdown();clear();}
  void shutdown(){if(stopped.exchange(true))return;stopTimer();owner.removeMouseListener(this);setVisible(false);}
  void mouseDown(const juce::MouseEvent& e) override
@@ -158,6 +186,9 @@ if(isAudio(i))
 auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScrollWheelEnabled(false);v->setLookAndFeel(&volumeLf);v->setVelocityBasedMode(false);v->setRange(0,2,.001);v->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);v->setTooltip("Volume de la piste (double-clic = 0 dB)");v->setDoubleClickReturnValue(true,1.0);v->textFromValueFunction=[](double value){return value <= 0.00001 ? juce::String("-inf dB") : juce::String(20.0*std::log10(value),1)+" dB";};v->valueFromTextFunction=[](const juce::String& text){return juce::jlimit(0.0,2.0,std::pow(10.0,text.getDoubleValue()/20.0));};v->onValueChange=[this,i,v]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackGain(i,(float)v->getValue());else owner.audioEngine.setInstrumentTrackGain(i-owner.getAudioTrackCount(),(float)v->getValue());};auto*p=c.pan.get();p->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);p->setRotaryParameters(juce::MathConstants<float>::pi * 1.25f,juce::MathConstants<float>::pi * 2.75f,true);p->setDoubleClickReturnValue(true,0.0);p->setTooltip("PAN : gauche / centre / droite (double-clic = centre)");p->setRange(-1,1,.001);p->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);p->setLookAndFeel(&lf);p->onValueChange=[this,i,p]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackPan(i,(float)p->getValue());else owner.audioEngine.setInstrumentTrackPan(i-owner.getAudioTrackCount(),(float)p->getValue());};c.mute->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackMuted(i,!owner.audioEngine.isTrackMuted(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackMuted(t,!owner.audioEngine.isInstrumentTrackMuted(t));}};c.solo->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackSolo(i,!owner.audioEngine.isTrackSolo(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackSolo(t,!owner.audioEngine.isInstrumentTrackSolo(t));}};for(auto*b:{c.mute.get(),c.solo.get()}){b->setMouseClickGrabsKeyboardFocus(false);b->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*b);}addAndMakeVisible(*v);addAndMakeVisible(*p);addAndMakeVisible(*c.mask);controls.push_back(std::move(c));}}
  void layout()
  {
+     reorderGrip.setBounds(0, owner.getArrangeTop(), 14,
+                           juce::jmax(0, owner.getMixerTop() - owner.getArrangeTop()));
+     reorderGrip.toFront(false);
      constexpr int rightMargin=18;
      for (int i=0;i<(int)controls.size();++i)
      {
@@ -234,7 +265,7 @@ for(int i=0;i<(int)controls.size();++i)
 for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner.getAudioTrackCount();float gain=isAudio(i)?owner.audioEngine.getTrackGain(i):owner.audioEngine.getInstrumentTrackGain(t);float pan=isAudio(i)?owner.audioEngine.getTrackPan(i):owner.audioEngine.getInstrumentTrackPan(t);c.vol->setValue(gain,juce::dontSendNotification);c.pan->setValue(pan,juce::dontSendNotification);bool m=isAudio(i)?owner.audioEngine.isTrackMuted(i):owner.audioEngine.isInstrumentTrackMuted(t),s=isAudio(i)?owner.audioEngine.isTrackSolo(i):owner.audioEngine.isInstrumentTrackSolo(t);c.mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xff9b4545):juce::Colour(0xff31363e));c.solo->setColour(juce::TextButton::buttonColourId,s?juce::Colour(0xff8b7a32):juce::Colour(0xff31363e));if(c.instrumentGui)c.instrumentGui->setColour(juce::TextButton::buttonColourId,LibertyPluginHost::instance().isInstrumentEditorVisibleForTrack(t)?juce::Colour(0xff24535d):juce::Colour(0xff263644));}syncing=false;}
  void clear(){for(auto&c:controls){if(c.pan)c.pan->setLookAndFeel(nullptr);if(c.vol)c.vol->setLookAndFeel(nullptr);}controls.clear();}
  void timerCallback()override{if(stopped)return;if(isLibertyMixConsoleVisible(&owner)||isLibertyPerformVisible(&owner)){setVisible(false);return;}setVisible(true);const auto headerBounds = juce::Rectangle<int>(0, 0, owner.trackHeaderWidth, juce::jmax(0, owner.getMixerTop()));if(getBounds()!=headerBounds)setBounds(headerBounds);ensure();layout();sync();toFront(false);repaint();}
- MainComponent&owner;PanLF lf;VolumeLF volumeLf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
+ MainComponent&owner;ArrangeReorderGrip reorderGrip;PanLF lf;VolumeLF volumeLf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
 };
 std::map<MainComponent*,std::unique_ptr<TrackHeaderMixControls>>controllers;
 void ensureTrackControls(MainComponent* owner){if(owner!=nullptr&&!controllers.count(owner))controllers.emplace(owner,std::make_unique<TrackHeaderMixControls>(*owner));}
