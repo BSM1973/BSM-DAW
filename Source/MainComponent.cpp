@@ -3516,11 +3516,11 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
     }
     if (click.x >= 12 && click.x < trackHeaderWidth && click.y >= getArrangeTop() && click.y < getMixerTop())
     {
-        const int row = getTrackScrollRows() + (click.y - getArrangeTop()) / juce::jmax(1, getLibertyTrackRowHeight());
+        const int row = getArrangeTrackAtY(click.y);
         const int total = getAudioTrackCount() + getMidiTrackCount() + getInstrumentTrackCount();
         if (row >= 0 && row < total)
         {
-            const int y = getArrangeTop() + (row - getTrackScrollRows()) * getLibertyTrackRowHeight();
+            const int y = getArrangeTrackTop(row);
             const bool audio = row < getAudioTrackCount();
             const bool instrument = row >= getAudioTrackCount() + getMidiTrackCount();
             if (click.y >= y + 5 && click.y < y + 34 && click.x < 106)
@@ -3546,7 +3546,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
     if (openAudioClipInDockAt(p)) return;
     if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop()) return;
     const int rowH = getLibertyTrackRowHeight();
-    const int logicalRow = getTrackScrollRows() + (p.y - getArrangeTop()) / juce::jmax(1, rowH);
+    const int logicalRow = getArrangeTrackAtY(p.y);
     const int instrumentIndex = logicalRow - getAudioTrackCount() - getMidiTrackCount();
     if (instrumentIndex < 0 || instrumentIndex >= (int) instrumentStepSequencers.size()) return;
     auto& clips = instrumentStepSequencers[(size_t) instrumentIndex].timelineClips;
@@ -3648,7 +3648,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (track >= 0)
         {
             const int rowH = getLibertyTrackRowHeight();
-            const int rowY = getArrangeTop() + (track - getTrackScrollRows()) * rowH;
+            const int rowY = getArrangeTrackTop(track);
             const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
             const auto clips = audioEngine.getAudioClips(track);
             for (auto it = clips.rbegin(); it != clips.rend(); ++it)
@@ -4606,7 +4606,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         {
             const bool audioLane = logicalRow < audioTrackCount;
             const int channel = audioLane ? logicalRow : logicalRow - instrumentFirst;
-            const int rowY = getArrangeTop() + (logicalRow - getTrackScrollRows()) * rowH;
+            const int rowY = getArrangeTrackTop(logicalRow);
             const int stripY = rowY + rowH - 30;
             if (!audioLane && juce::Rectangle<int>(108,rowY+7,46,24).contains(p))
             {
@@ -5048,7 +5048,7 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         const int rowOffset = p.y - getArrangeTop();
         if (rowOffset >= 0 && p.y < getMixerTop() && p.x >= trackHeaderWidth)
         {
-            const int logicalRow = getTrackScrollRows() + rowOffset / juce::jmax(1, rowH);
+            const int logicalRow = getArrangeTrackAtY(p.y);
             const int midiLane = logicalRow - getAudioTrackCount();
             const int instrumentLane = midiLane - getMidiTrackCount();
             if ((midiLane >= 0 && midiLane < getMidiTrackCount())
