@@ -1003,6 +1003,30 @@ void MainComponent::paint(juce::Graphics& g)
         {
             detachIcon(44);
         }
+        // Audio FX rack: one clickable nameplate per occupied effect slot.
+        if (isAudioDockTrack && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+        {
+            auto& host = LibertyPluginHost::instance();
+            const int rackTop = mixer.getY() + 88;
+            const int rackBottom = juce::jmin(mixer.getBottom() - 8, getHeight() - 8);
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                if (!host.hasEffectForTrackSlot(selectedTrack, slot)) continue;
+                const int y = rackTop + slot * 31;
+                if (y + 27 > rackBottom) break;
+                const auto badge = juce::Rectangle<int>(8, y, 194, 27);
+                const bool editorAvailable = true;
+                juce::ignoreUnused(editorAvailable);
+                g.setColour(juce::Colour(0xff1b3443));
+                g.fillRoundedRectangle(badge.toFloat(), 6.0f);
+                g.setColour(juce::Colour(0xff5bbbc8));
+                g.drawRoundedRectangle(badge.toFloat().reduced(0.5f), 6.0f, 1.2f);
+                g.setColour(juce::Colour(0xffe5f5fa));
+                g.setFont(juce::Font(11.0f, juce::Font::bold));
+                g.drawFittedText(juce::String(slot + 1) + "  " + host.getEffectNameForTrackSlot(selectedTrack, slot),
+                                 badge.reduced(9, 2), juce::Justification::centredLeft, 1);
+            }
+        }
         if (!isAudioDockTrack)
         {
             detachIcon(76);
@@ -4363,6 +4387,21 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     const int lowerDockInstrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool stepSequencerDockActive = selectedTrack >= lowerDockInstrumentFirst
                                       && selectedTrack < lowerDockInstrumentFirst + getInstrumentTrackCount();
+    // Audio FX nameplates open the native editor of the corresponding slot.
+    if (!dockCollapsed && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && p.x >= 8 && p.x < 202 && p.y >= getMixerTop() + 88)
+    {
+        const int slot = (p.y - getMixerTop() - 88) / 31;
+        const int slotTop = getMixerTop() + 88 + slot * 31;
+        if (slot >= 0 && slot < LibertyPluginHost::effectSlotsPerTrack
+            && p.y < slotTop + 27 && p.y + 1 < getHeight() - 8
+            && LibertyPluginHost::instance().hasEffectForTrackSlot(selectedTrack, slot))
+        {
+            LibertyPluginHost::instance().showEditorForTrackSlot(selectedTrack, slot);
+            repaint();
+            return;
+        }
+    }
     // Mixer strips take their own mouse events regardless of the selected track.
     // In particular, never let an audio strip click fall through to an editor.
     if (p.y >= getMixerTop() && dockMixerMode
