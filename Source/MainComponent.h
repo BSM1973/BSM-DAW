@@ -279,19 +279,18 @@ public:
     }
     int getArrangeTrackTop(int logicalRow) const noexcept
     {
-        int y = getArrangeTop();
+        const int displayRow = getDisplayRowForLogicalTrack(logicalRow);
         const int first = getTrackScrollRows();
-        // Scrolled-out tracks must remain above the viewport, not collapse
-        // onto the first visible row and stack their native controls there.
-        if (logicalRow < first)
+        int y = getArrangeTop();
+        if (displayRow < first)
         {
-            for (int row = logicalRow; row < first; ++row)
-                y -= getArrangeTrackHeight(row);
+            for (int row = displayRow; row < first; ++row)
+                y -= getArrangeTrackHeight(getLogicalTrackAtDisplayRow(row));
         }
         else
         {
-            for (int row = first; row < logicalRow; ++row)
-                y += getArrangeTrackHeight(row);
+            for (int row = first; row < displayRow; ++row)
+                y += getArrangeTrackHeight(getLogicalTrackAtDisplayRow(row));
         }
         return y;
     }
@@ -301,8 +300,9 @@ public:
         int top = getArrangeTop();
         for (int row = getTrackScrollRows(); row < getTotalArrangeTrackCount(); ++row)
         {
-            top += getArrangeTrackHeight(row);
-            if (y < top) return row;
+            const int logical = getLogicalTrackAtDisplayRow(row);
+            top += getArrangeTrackHeight(logical);
+            if (y < top) return logical;
         }
         return -1;
     }
