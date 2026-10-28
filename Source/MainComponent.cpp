@@ -1849,8 +1849,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     const int totalRows = audioCount + midiCount + instrumentCount;
     // Draw the final partially visible row too, but clip it strictly to the
     // arranger viewport. This makes the grid meet the mixer with no dead strip.
-    for (int logicalRow = scrollRows; logicalRow < totalRows; ++logicalRow)
+    for (int displayRow = scrollRows; displayRow < totalRows; ++displayRow)
     {
+        const int logicalRow = getLogicalTrackAtDisplayRow(displayRow);
         const int laneTop = getArrangeTrackTop(logicalRow);
         const int laneHeight = getArrangeTrackHeight(logicalRow);
         auto row = juce::Rectangle<int>(rows.getX(), laneTop, rows.getWidth(), laneHeight);
@@ -2870,23 +2871,20 @@ void MainComponent::filesDropped(const juce::StringArray& files, int x, int y)
 
 int MainComponent::getAudioTrackAtPosition(juce::Point<int> position) const
 {
-    constexpr int rulerH = trackRulerHeight;
-    const int rowH = getLibertyTrackRowHeight();
-    const int y = position.y - getArrangeTop(); if (y < 0 || position.y >= getMixerTop()) return -1;
-    const int logicalRow = getTrackScrollRows() + y / rowH;
+    const int logicalRow = getArrangeTrackAtY(position.y);
     return logicalRow >= 0 && logicalRow < audioEngine.getAudioTrackCount() ? logicalRow : -1;
 }
 
 bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> position) const
 {
-    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount() || !audioEngine.hasAudioFile(trackIndex)) return false;
-    constexpr int headerW = trackHeaderWidth, rulerH = trackRulerHeight;
-    const int rowH = getLibertyTrackRowHeight();
+    if (trackIndex < 0 || trackIndex >= audioEngine.getAudioTrackCount()
+        || !audioEngine.hasAudioFile(trackIndex)) return false;
+    const int rowY = getArrangeTrackTop(trackIndex);
+    const int rowH = getArrangeTrackHeight(trackIndex);
     const double pixelsPerSecond = getLibertyTimelinePixelsPerSecond();
-    const int rowY = getArrangeTop() + (trackIndex - getTrackScrollRows()) * rowH;
-    const int x = headerW + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond));
+    const int x = trackHeaderWidth + static_cast<int>(std::round(audioEngine.getTrackStartSeconds(trackIndex) * pixelsPerSecond));
     const int width = juce::jmax(1, static_cast<int>(std::round(audioEngine.getAudioFileLengthSeconds(trackIndex) * pixelsPerSecond)));
-    return juce::Rectangle<int>(x, rowY + 4, width, rowH - 8).contains(position);
+    return juce::Rectangle<int>(x, rowY + 4, width, juce::jmax(1,rowH - 8)).contains(position);
 }
 
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
