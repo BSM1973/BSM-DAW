@@ -978,7 +978,7 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff0b0d10));
         g.fillRect(editorArea);
     }
-    else
+    else if (!dockFxMode)
         drawMixer(g, editorArea);
 
     const bool drumSamplerActive = drumSamplerDockSelected && isLibertyFloatingDrumSamplerVisible();
@@ -1013,7 +1013,7 @@ void MainComponent::paint(juce::Graphics& g)
             drawTab(juce::Rectangle<int>(8, mixer.getY() + 76, 148, 28), "FX", dockFxMode);
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28),
                 isAudioDockTrack ? "AUDIO" : "PIANO ROLL",
-                !dockMixerMode && !dockStepSequencerMode);
+                !dockMixerMode && !dockStepSequencerMode && !dockFxMode);
         // Detach icons aligned with their editors (not the Mixer).
         const auto detachIcon = [&](int top)
         {
@@ -3586,11 +3586,13 @@ void MainComponent::activateDockTab(int index)
     switch (index)
     {
         case 0:
+            dockFxMode = false;
             dockMixerMode = true;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = false;
             break;
         case 1:
+            dockFxMode = false;
             // Audio tracks have their own waveform editor in this same dock tab.
             if (!editorTrack && !(selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
                                   && audioEngine.hasAudioFile(selectedTrack))) return;
@@ -3599,13 +3601,24 @@ void MainComponent::activateDockTab(int index)
             drumSamplerDockSelected = false;
             break;
         case 2:
-            if (!editorTrack) return;
-            dockMixerMode = false;
-            dockStepSequencerMode = true;
+            if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+            {
+                dockFxMode = true;
+                dockMixerMode = false;
+                dockStepSequencerMode = false;
+            }
+            else
+            {
+                if (!editorTrack) return;
+                dockFxMode = false;
+                dockMixerMode = false;
+                dockStepSequencerMode = true;
+            }
             drumSamplerDockSelected = false;
             break;
         case 3:
             if (!instrumentTrack) return;
+            dockFxMode = false;
             dockMixerMode = true;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = true;
@@ -4415,6 +4428,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         if (selectedEditorTrack || (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
                                     && audioEngine.hasAudioFile(selectedTrack)))
         {
+            dockFxMode = false;
             dockMixerMode = false;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = false;
