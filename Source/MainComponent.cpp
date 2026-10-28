@@ -1029,7 +1029,8 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(label, rect, juce::Justification::centred);
         };
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
-        if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+        const bool audioSelected = selectedTrack >= 0 && selectedTrack < getAudioTrackCount();
+        if (audioSelected)
             drawTab(juce::Rectangle<int>(8, mixer.getY() + 76, 148, 28), "FX", dockFxMode);
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28),
                 isAudioDockTrack ? "AUDIO" : "PIANO ROLL",
@@ -1046,11 +1047,11 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawLine((float)x + 16, (float)y + 7, (float)x + 21, (float)y + 7, 1.6f);
             g.drawLine((float)x + 21, (float)y + 7, (float)x + 21, (float)y + 12, 1.6f);
         };
-        if (!isAudioDockTrack)
+        if (!audioSelected)
         {
             detachIcon(44);
         }
-        if (!isAudioDockTrack)
+        if (!audioSelected)
         {
             detachIcon(76);
             drawTab(seq, "STEP SEQ", !dockMixerMode && dockStepSequencerMode && (showStepSequencer || isMidi));
