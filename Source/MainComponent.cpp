@@ -2479,13 +2479,15 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     for (int channel = 0; channel < channelCount + 1; ++channel)
     {
         const bool master = channel == channelCount;
-        const bool isAudio = channel < audioTracks;
+        const int logicalTrack = master ? -1 : getArrangeMixerLogicalTrack(channel);
+        const bool isAudio = !master && logicalTrack < audioTracks;
         const bool isInstrument = !master && !isAudio;
-        const int sourceIndex = isAudio ? channel : (channel - audioTracks);
+        const int sourceIndex = isAudio ? logicalTrack
+            : logicalTrack - audioTracks - getMidiTrackCount();
 
         auto c = juce::Rectangle<int>(220 + channel * 125 - mixerHorizontalOffset, area.getY() + 12, 116, area.getHeight() - 22);
         // Group dividers occupy the existing inter-strip gutter only.
-        if ((isInstrument && sourceIndex == 0) || master)
+        if (master)
         {
             g.setColour(master ? juce::Colour(0xff54d6dc).withAlpha(0.48f)
                                : juce::Colour(0xff427887).withAlpha(0.60f));
@@ -2501,8 +2503,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
         // The mini mixer shares the arranger's single selectedTrack index.
         // Instrument lanes follow MIDI lanes in the arranger.
-        const int dockLogicalTrack = master ? -1
-            : (isAudio ? sourceIndex : audioTracks + getMidiTrackCount() + sourceIndex);
+        const int dockLogicalTrack = logicalTrack;
         const bool dockSelected = !master && selectedTrack == dockLogicalTrack;
         if (dockSelected)
         {
@@ -2517,8 +2518,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         // Instrument tracks follow MIDI tracks in the arranger index.
         if (!master)
         {
-            const int arrangeTrack = isAudio ? sourceIndex
-                                            : audioTracks + getMidiTrackCount() + sourceIndex;
+            const int arrangeTrack = logicalTrack;
             const int colourId = getLibertyTrackColourId(arrangeTrack);
 
             if (colourId > 0 && colourId < 33)
@@ -2911,11 +2911,11 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         if (!c.contains(event.getPosition())) continue;
 
         const bool master = channel == channelCount;
-        const bool isAudio = channel < audioTracks;
+        const int logical = master ? -1 : getArrangeMixerLogicalTrack(channel);
+        const bool isAudio = !master && logical < audioTracks;
+        const int sourceIndex = isAudio ? logical : logical - audioTracks - getMidiTrackCount();
         if (!master)
         {
-            const int logical = isAudio ? channel
-                : audioTracks + getMidiTrackCount() + (channel - audioTracks);
             if (selectedTrack != logical) { dockStepSequencerMode = false; dockMixerMode = true; }
             selectedTrack = logical;
             repaint(); // Selection focus must update even on a plain strip click.
@@ -2925,7 +2925,6 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         {
             auto mute = juce::Rectangle<int>(c.getX() + 8, c.getY() + 32, 44, 20);
             auto solo = juce::Rectangle<int>(c.getX() + 58, c.getY() + 32, 44, 20);
-            const int sourceIndex = isAudio ? channel : channel - audioTracks;
             if (mute.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackMuted(sourceIndex,!audioEngine.isTrackMuted(sourceIndex)); else audioEngine.setInstrumentTrackMuted(sourceIndex,!audioEngine.isInstrumentTrackMuted(sourceIndex)); repaint(); return true; }
             if (solo.contains(event.getPosition())) { if (isAudio) audioEngine.setTrackSolo(sourceIndex,!audioEngine.isTrackSolo(sourceIndex)); else audioEngine.setInstrumentTrackSolo(sourceIndex,!audioEngine.isInstrumentTrackSolo(sourceIndex)); repaint(); return true; }
         }
@@ -2935,7 +2934,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         {
             const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
             const float gain = n * 2.0f;
-            if (master) audioEngine.setMasterGain(gain); else if (isAudio) audioEngine.setTrackGain(channel, gain); else audioEngine.setInstrumentTrackGain(channel - audioTracks, gain);
+            if (master) audioEngine.setMasterGain(gain); else if (isAudio) audioEngine.setTrackGain(sourceIndex, gain); else audioEngine.setInstrumentTrackGain(sourceIndex, gain);
             repaint();
             return true;
         }
@@ -2943,7 +2942,7 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         if (!master && event.position.y >= c.getBottom() - 28)
         {
             const float pan = juce::jlimit(-1.0f, 1.0f, ((float)event.position.x - (float)c.getCentreX()) / 45.0f);
-            if (isAudio) audioEngine.setTrackPan(channel, pan); else audioEngine.setInstrumentTrackPan(channel - audioTracks, pan);
+            if (isAudio) audioEngine.setTrackPan(sourceIndex, pan); else audioEngine.setInstrumentTrackPan(sourceIndex, pan);
             repaint();
             return true;
         }
