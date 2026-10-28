@@ -1982,18 +1982,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                 g.drawRoundedRectangle(monRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
                 g.setColour(monitoring ? juce::Colours::white : juce::Colour(0xffd6e5ee));
                 g.drawText("MON", monRect, juce::Justification::centred);
-                // Native plugin editor toggle, separate from REC and MON.
-                const auto guiRect = juce::Rectangle<int>(header.getX() + 210, header.getY() + 7, 28, 24);
-                const bool guiOpen = LibertyPluginHost::instance().isInstrumentEditorVisibleForTrack(channel);
-                g.setColour(guiOpen ? juce::Colour(0xff24535d) : juce::Colour(0xff202c37));
-                g.fillRoundedRectangle(guiRect.toFloat(), 5.0f);
-                g.setColour(guiOpen ? juce::Colour(0xff54d6dc) : juce::Colour(0xff607887));
-                g.drawRoundedRectangle(guiRect.toFloat().reduced(0.5f), 5.0f, 1.0f);
-                g.setColour(guiOpen ? juce::Colours::white : juce::Colour(0xffd6e5ee));
-                for (int key = 0; key < 5; ++key)
-                    g.drawRect(guiRect.getX() + 4 + key * 4, guiRect.getY() + 7, 4, 11, 1);
-                g.fillRect(guiRect.getX() + 7, guiRect.getY() + 7, 2, 6);
-                g.fillRect(guiRect.getX() + 15, guiRect.getY() + 7, 2, 6);
+
             }
             // Interactive M/S/VOL/PAN controls are rendered by TrackHeaderMixControls.
             // VOL and PAN are real interactive controls rendered by
@@ -4501,13 +4490,6 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
                 monitoredInstrumentTrack = monitoredInstrumentTrack == channel ? -1 : channel;
                 audioEngine.setMonitoredInstrumentTrack(monitoredInstrumentTrack);
                 selectedTrack = logicalRow; repaint(); return;
-            }
-            if (!audioLane && juce::Rectangle<int>(210,rowY+7,28,24).contains(p))
-            {
-                selectedTrack = logicalRow;
-                LibertyPluginHost::instance().toggleInstrumentEditorForTrack(channel);
-                repaint();
-                return;
             }
             // The JUCE TrackHeaderMixControls own Mute, Solo, Volume and Pan.
             // Legacy rectangles overlapped empty header space and changed gain
