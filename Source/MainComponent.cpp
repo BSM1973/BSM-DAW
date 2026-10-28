@@ -279,7 +279,32 @@ void MainComponent::paint(juce::Graphics& g)
                                   && audioEngine.hasAudioFile(selectedTrack);
     const auto editorArea = (!dockMixerMode && (isMidiDockTrack || showStepSequencer || isAudioDockTrack))
         ? mixer.withTrimmedTop(36).withTrimmedLeft(310) : mixer;
-    if (!dockMixerMode && isAudioDockTrack)
+    if (dockFxMode && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+    {
+        auto& host = LibertyPluginHost::instance();
+        const auto rack = mixer.withTrimmedLeft(220).reduced(18, 16);
+        g.setColour(juce::Colour(0xff101d2b));
+        g.fillRoundedRectangle(rack.toFloat(), 9.0f);
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.setFont(juce::Font(16.0f, juce::Font::bold));
+        g.drawText("EFFETS AUDIO", rack.getX()+18, rack.getY()+10, 260, 30, juce::Justification::centredLeft);
+        for (int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
+        {
+            const int y=rack.getY()+52+slot*38;
+            if(y+32>rack.getBottom())break;
+            const auto badge=juce::Rectangle<int>(rack.getX()+16,y,juce::jmin(360,rack.getWidth()-32),32);
+            const bool loaded=host.hasEffectForTrackSlot(selectedTrack,slot);
+            g.setColour(loaded?juce::Colour(0xff214456):juce::Colour(0xff1b2834));
+            g.fillRoundedRectangle(badge.toFloat(),6.0f);
+            g.setColour(loaded?juce::Colour(0xff57c8d2):juce::Colour(0xff405766));
+            g.drawRoundedRectangle(badge.toFloat().reduced(.5f),6.0f,1.0f);
+            g.setColour(loaded?juce::Colour(0xfff0fbff):juce::Colour(0xff8ba1ae));
+            g.setFont(juce::Font(12.0f,juce::Font::bold));
+            g.drawFittedText(juce::String(slot+1)+"  "+(loaded?host.getEffectNameForTrackSlot(selectedTrack,slot):"Emplacement libre"),
+                             badge.reduced(12,3),juce::Justification::centredLeft,1);
+        }
+    }
+    else if (!dockMixerMode && isAudioDockTrack)
     {
         // First audio-dock surface: a non-destructive, scalable waveform view.
         // It reuses the waveform cache already drawn by the arranger.
@@ -984,6 +1009,8 @@ void MainComponent::paint(juce::Graphics& g)
             g.drawText(label, rect, juce::Justification::centred);
         };
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 12, 148, 28), "MIXER", dockMixerMode);
+        if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
+            drawTab(juce::Rectangle<int>(8, mixer.getY() + 76, 148, 28), "FX", dockFxMode);
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28),
                 isAudioDockTrack ? "AUDIO" : "PIANO ROLL",
                 !dockMixerMode && !dockStepSequencerMode);
@@ -4352,9 +4379,32 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
         return;
     }
+    if (selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && juce::Rectangle<int>(8,dockTop+76,148,28).contains(p))
+    {
+        dockFxMode=true;
+        dockMixerMode=false;
+        dockStepSequencerMode=false;
+        repaint();
+        return;
+    }
+    if (dockFxMode && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
+        && p.x >= 254 && p.y >= dockTop+84)
+    {
+        const int slot=(p.y-(dockTop+84))/38;
+        if(slot>=0 && slot<LibertyPluginHost::effectSlotsPerTrack
+            && p.y < dockTop+84+slot*38+32
+            && LibertyPluginHost::instance().hasEffectForTrackSlot(selectedTrack,slot))
+        {
+            LibertyPluginHost::instance().toggleEditorForTrackSlot(selectedTrack,slot);
+            repaint();
+            return;
+        }
+    }
     if (juce::Rectangle<int>(8, dockTop + 12, 148, 28).contains(p))
     {
         dockMixerMode = true;
+        dockFxMode = false;
         dockStepSequencerMode = false;
         drumSamplerDockSelected = false;
         repaint();
