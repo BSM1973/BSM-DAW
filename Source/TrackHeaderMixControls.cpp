@@ -52,6 +52,11 @@ public:
      if (p.x<0 || p.x>=owner.trackHeaderWidth || p.y<owner.getArrangeTop() || p.y>=owner.getMixerTop()) return;
      const int logical=owner.getArrangeTrackAtY(p.y);
      const int firstInstrument=owner.getAudioTrackCount()+owner.getMidiTrackCount();
+     if (p.x < 14 && logical >= 0)
+     {
+         owner.mouseDown(e.getEventRelativeTo(&owner));
+         return;
+     }
      if (logical<firstInstrument || logical>=firstInstrument+owner.getInstrumentTrackCount()) return;
      // The right-hand blank area must select the instrument even when an
      // unrelated overlay swallows the ordinary MainComponent mouseDown.
@@ -70,6 +75,16 @@ public:
      }
      owner.selectedTrack=logical;
      owner.repaint();
+ }
+ void mouseDrag(const juce::MouseEvent& e) override
+ {
+     if (stopped || owner.draggingArrangeTrack < 0) return;
+     owner.mouseDrag(e.getEventRelativeTo(&owner));
+ }
+ void mouseUp(const juce::MouseEvent& e) override
+ {
+     if (stopped || owner.draggingArrangeTrack < 0) return;
+     owner.mouseUp(e.getEventRelativeTo(&owner));
  }
  void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
  {
