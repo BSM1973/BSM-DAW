@@ -358,6 +358,8 @@ public:
         return true;
     }
     std::vector<int> arrangeTrackOrder;
+    int draggingArrangeTrack = -1;
+    int arrangeDropDisplayRow = -1;
 
     static constexpr int transportHeight = 76;
     static constexpr int trackRulerHeight = 32;
