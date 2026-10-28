@@ -1033,7 +1033,7 @@ void MainComponent::paint(juce::Graphics& g)
         if (audioSelected)
             drawTab(juce::Rectangle<int>(8, mixer.getY() + 76, 148, 28), "FX", dockFxMode);
         drawTab(juce::Rectangle<int>(8, mixer.getY() + 44, 148, 28),
-                isAudioDockTrack ? "AUDIO" : "PIANO ROLL",
+                audioSelected ? "AUDIO" : "PIANO ROLL",
                 !dockMixerMode && !dockStepSequencerMode && !dockFxMode);
         // Detach icons aligned with their editors (not the Mixer).
         const auto detachIcon = [&](int top)
