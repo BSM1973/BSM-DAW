@@ -90,6 +90,8 @@ public:
     void showEditorForTrackSlot(int trackIndex, int slotIndex);
     void showInstrumentEditor();
     void showInstrumentEditorForTrack(int instrumentTrack);
+    void toggleInstrumentEditorForTrack(int instrumentTrack);
+    bool isInstrumentEditorVisibleForTrack(int instrumentTrack) const;
 
 private:
     LibertyPluginHost();
