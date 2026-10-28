@@ -357,6 +357,24 @@ public:
         arrangeTrackOrder.insert(arrangeTrackOrder.begin() + destinationRow, logicalTrack);
         return true;
     }
+    // Mixer omits MIDI-only lanes but preserves the relative ARRANGE order.
+    int getArrangeMixerLogicalTrack(int mixerSlot) const noexcept
+    {
+        int slot = 0;
+        for (int row = 0; row < getTotalArrangeTrackCount(); ++row)
+        {
+            const int logical = getLogicalTrackAtDisplayRow(row);
+            const bool isAudio = logical >= 0 && logical < getAudioTrackCount();
+            const bool isInstrument = logical >= getAudioTrackCount() + getMidiTrackCount()
+                && logical < getTotalArrangeTrackCount();
+            if (isAudio || isInstrument)
+            {
+                if (slot == mixerSlot) return logical;
+                ++slot;
+            }
+        }
+        return -1;
+    }
     std::vector<int> arrangeTrackOrder;
     int draggingArrangeTrack = -1;
     int arrangeDropDisplayRow = -1;
