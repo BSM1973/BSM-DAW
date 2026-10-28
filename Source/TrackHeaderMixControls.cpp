@@ -150,7 +150,7 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          const int logical=logicalTrack(i);
          const int y=owner.getArrangeTrackTop(logical);
          const int rh=owner.getArrangeTrackHeight(logical);
-         const bool middleVisible=logical>=owner.getTrackScrollRows() && y>=owner.getArrangeTop() && y+94<=owner.getMixerTop() && rh>=94;
+         const bool middleVisible=owner.getDisplayRowForLogicalTrack(logical)>=owner.getTrackScrollRows() && y>=owner.getArrangeTop() && y+94<=owner.getMixerTop() && rh>=94;
          const bool volumeVisible=middleVisible && y+132<=owner.getMixerTop() && rh>=132;
          c.vol->setVisible(volumeVisible);c.pan->setVisible(middleVisible);
          c.mute->setVisible(middleVisible);c.solo->setVisible(middleVisible);
@@ -180,7 +180,7 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
              // Determine visibility from this row's actual bounds instead.
              const int firstInstrument=owner.getAudioTrackCount()+owner.getMidiTrackCount();
              const bool visible=logical>=firstInstrument
-                 && logical>=owner.getTrackScrollRows()
+                 && owner.getDisplayRowForLogicalTrack(logical)>=owner.getTrackScrollRows()
                  && rh>=31 && y>=owner.getArrangeTop()
                  && selectorY+24<=owner.getMixerTop()
                  && owner.getArrangeTrackAtY(selectorY+12)==logical;
