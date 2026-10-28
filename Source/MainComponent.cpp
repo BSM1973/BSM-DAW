@@ -1852,6 +1852,13 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     for (int displayRow = scrollRows; displayRow < totalRows; ++displayRow)
     {
         const int logicalRow = getLogicalTrackAtDisplayRow(displayRow);
+        if (draggingArrangeTrack >= 0 && arrangeDropDisplayRow == displayRow)
+        {
+            const int lineY = getArrangeTrackTop(logicalRow);
+            g.setColour(juce::Colour(0xff5ee0e7));
+            g.fillRoundedRectangle(3.0f, (float)lineY - 2.0f,
+                                   (float)juce::jmax(1, headerW - 6), 4.0f, 2.0f);
+        }
         const int laneTop = getArrangeTrackTop(logicalRow);
         const int laneHeight = getArrangeTrackHeight(logicalRow);
         auto row = juce::Rectangle<int>(rows.getX(), laneTop, rows.getWidth(), laneHeight);
@@ -4309,6 +4316,22 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         }
     }
 
+    // Dedicated 14 px reorder grip: never steals REC, MON, pan or volume.
+    if (!event.mods.isPopupMenu() && event.mods.isLeftButtonDown()
+        && p.x >= 0 && p.x < 14 && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        const int logical = getArrangeTrackAtY(p.y);
+        if (logical >= 0)
+        {
+            reconcileArrangeTrackOrder();
+            draggingArrangeTrack = logical;
+            arrangeDropDisplayRow = getDisplayRowForLogicalTrack(logical);
+            selectedTrack = logical;
+            repaint();
+            return;
+        }
+    }
+
     // Handle the popup at the owning component, before clip/transport routing.
     // Child overlays may swallow the event, so TrackHeaderMixControls also
     // forwards right-clicks to this same menu entry point.
@@ -4749,6 +4772,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (draggingArrangeTrack >= 0)
+    {
+        const auto p = event.getEventRelativeTo(this).getPosition();
+        const int hovered = getArrangeTrackAtY(juce::jlimit(getArrangeTop(), getMixerTop()-1, p.y));
+        if (hovered >= 0)
+            arrangeDropDisplayRow = getDisplayRowForLogicalTrack(hovered);
+        repaint();
+        return;
+    }
+
     if (draggingAudioDockNavigator)
     {
         const auto wave = getAudioDockWaveBounds();
@@ -4914,6 +4947,21 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (draggingArrangeTrack >= 0)
+    {
+        const int movedTrack = draggingArrangeTrack;
+        const int target = arrangeDropDisplayRow;
+        draggingArrangeTrack = -1;
+        arrangeDropDisplayRow = -1;
+        if (event.getDistanceFromDragStart() >= 5 && moveArrangeTrackToDisplayRow(movedTrack,target))
+        {
+            refreshLibertyRecordingTrackLayout(this);
+            refreshLibertyTrackHeaderMixLayout(this);
+        }
+        repaint();
+        return;
+    }
+
     if (draggingAudioDockNavigator)
     {
         draggingAudioDockNavigator = false;
