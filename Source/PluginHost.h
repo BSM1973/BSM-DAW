@@ -88,6 +88,7 @@ public:
 
     void showEditorForTrack(int trackIndex);
     void showEditorForTrackSlot(int trackIndex, int slotIndex);
+    void toggleEditorForTrackSlot(int trackIndex, int slotIndex);
     void showInstrumentEditor();
     void showInstrumentEditorForTrack(int instrumentTrack);
     void toggleInstrumentEditorForTrack(int instrumentTrack);
