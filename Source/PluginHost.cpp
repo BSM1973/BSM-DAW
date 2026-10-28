@@ -776,6 +776,18 @@ void LibertyPluginHost::toggleInstrumentEditorForTrack(int t)
     else
         showEditor(slot, "Liberty - " + slot.description.name);
 }
+void LibertyPluginHost::toggleEditorForTrackSlot(int t, int si)
+{
+    if (!validTrack(t) || si < 0 || si >= effectSlotsPerTrack) return;
+    const juce::ScopedLock scoped(lock);
+    if (t >= (int) trackEffects.size() || !trackEffects[(size_t)t][(size_t)si]) return;
+    auto& slot = *trackEffects[(size_t)t][(size_t)si];
+    if (!slot.processor) return;
+    if (slot.editorWindow && slot.editorWindow->isVisible())
+        slot.editorWindow->setVisible(false);
+    else
+        showEditor(slot, "Liberty - " + slot.description.name);
+}
 void LibertyPluginHost::showInstrumentEditor(){showInstrumentEditorForTrack(0);}
 void LibertyPluginHost::showInstrumentEditorForTrack(int t)
 {
