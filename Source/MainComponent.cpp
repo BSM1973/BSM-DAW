@@ -288,20 +288,40 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff54d6dc));
         g.setFont(juce::Font(16.0f, juce::Font::bold));
         g.drawText("EFFETS AUDIO", rack.getX()+18, rack.getY()+10, 260, 30, juce::Justification::centredLeft);
-        for (int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
+        const int cardWidth = 168;
+        const int gap = 12;
+        const int cardY = rack.getY() + 52;
+        const int cardHeight = juce::jmin(94, juce::jmax(0, rack.getBottom() - cardY - 12));
+        for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
         {
-            const int y=rack.getY()+52+slot*38;
-            if(y+32>rack.getBottom())break;
-            const auto badge=juce::Rectangle<int>(rack.getX()+16,y,juce::jmin(360,rack.getWidth()-32),32);
-            const bool loaded=host.hasEffectForTrackSlot(selectedTrack,slot);
-            g.setColour(loaded?juce::Colour(0xff214456):juce::Colour(0xff1b2834));
-            g.fillRoundedRectangle(badge.toFloat(),6.0f);
-            g.setColour(loaded?juce::Colour(0xff57c8d2):juce::Colour(0xff405766));
-            g.drawRoundedRectangle(badge.toFloat().reduced(.5f),6.0f,1.0f);
-            g.setColour(loaded?juce::Colour(0xfff0fbff):juce::Colour(0xff8ba1ae));
-            g.setFont(juce::Font(12.0f,juce::Font::bold));
-            g.drawFittedText(juce::String(slot+1)+"  "+(loaded?host.getEffectNameForTrackSlot(selectedTrack,slot):"Emplacement libre"),
-                             badge.reduced(12,3),juce::Justification::centredLeft,1);
+            const int x = rack.getX() + 16 + slot * (cardWidth + gap);
+            if (x + cardWidth > rack.getRight() - 8 || cardHeight < 48) break;
+            const auto card = juce::Rectangle<int>(x, cardY, cardWidth, cardHeight);
+            const bool loaded = host.hasEffectForTrackSlot(selectedTrack, slot);
+            g.setColour(juce::Colour(0xff0c1826));
+            g.fillRoundedRectangle(card.toFloat(), 10.0f);
+            g.setColour(loaded ? juce::Colour(0xff4ac5d3) : juce::Colour(0xff364e60));
+            g.drawRoundedRectangle(card.toFloat().reduced(0.7f), 10.0f, loaded ? 1.6f : 1.0f);
+            const auto icon = juce::Rectangle<float>((float)x + 13, (float)cardY + 13, 34.0f, 34.0f);
+            g.setColour(loaded ? juce::Colour(0xff205d6e) : juce::Colour(0xff263a49));
+            g.fillRoundedRectangle(icon, 8.0f);
+            // Vector waveform icon, crisp at all display scales.
+            g.setColour(loaded ? juce::Colour(0xff9cecf0) : juce::Colour(0xff68808c));
+            juce::Path waveIcon;
+            waveIcon.startNewSubPath(icon.getX()+5,icon.getCentreY());
+            waveIcon.lineTo(icon.getX()+10,icon.getCentreY()-6);
+            waveIcon.lineTo(icon.getX()+15,icon.getCentreY()+6);
+            waveIcon.lineTo(icon.getX()+20,icon.getCentreY()-9);
+            waveIcon.lineTo(icon.getX()+25,icon.getCentreY()+4);
+            waveIcon.lineTo(icon.getRight()-4,icon.getCentreY());
+            g.strokePath(waveIcon, juce::PathStrokeType(1.8f));
+            g.setColour(juce::Colour(0xff92aeba));
+            g.setFont(juce::Font(10.0f));
+            g.drawText("EFFET " + juce::String(slot+1), x+55, cardY+14, cardWidth-65, 15, juce::Justification::centredLeft);
+            g.setColour(loaded ? juce::Colour(0xffedfaff) : juce::Colour(0xff718a9b));
+            g.setFont(juce::Font(12.0f, juce::Font::bold));
+            g.drawFittedText(loaded ? host.getEffectNameForTrackSlot(selectedTrack,slot) : "Ajouter un effet",
+                             x+12,cardY+54,cardWidth-24,25,juce::Justification::centredLeft,1);
         }
     }
     else if (!dockMixerMode && isAudioDockTrack)
@@ -1029,30 +1049,6 @@ void MainComponent::paint(juce::Graphics& g)
         if (!isAudioDockTrack)
         {
             detachIcon(44);
-        }
-        // Audio FX rack: one clickable nameplate per occupied effect slot.
-        if (isAudioDockTrack && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
-        {
-            auto& host = LibertyPluginHost::instance();
-            const int rackTop = mixer.getY() + 88;
-            const int rackBottom = juce::jmin(mixer.getBottom() - 8, getHeight() - 8);
-            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
-            {
-                if (!host.hasEffectForTrackSlot(selectedTrack, slot)) continue;
-                const int y = rackTop + slot * 31;
-                if (y + 27 > rackBottom) break;
-                const auto badge = juce::Rectangle<int>(8, y, 194, 27);
-                const bool editorAvailable = true;
-                juce::ignoreUnused(editorAvailable);
-                g.setColour(juce::Colour(0xff1b3443));
-                g.fillRoundedRectangle(badge.toFloat(), 6.0f);
-                g.setColour(juce::Colour(0xff5bbbc8));
-                g.drawRoundedRectangle(badge.toFloat().reduced(0.5f), 6.0f, 1.2f);
-                g.setColour(juce::Colour(0xffe5f5fa));
-                g.setFont(juce::Font(11.0f, juce::Font::bold));
-                g.drawFittedText(juce::String(slot + 1) + "  " + host.getEffectNameForTrackSlot(selectedTrack, slot),
-                                 badge.reduced(9, 2), juce::Justification::centredLeft, 1);
-            }
         }
         if (!isAudioDockTrack)
         {
@@ -4401,12 +4397,16 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
         repaint();
         return;
     }
-    if (dockFxMode && selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
-        && p.x >= 254 && p.y >= dockTop+84)
+    if (dockFxMode && selectedTrack >= 0 && selectedTrack < getAudioTrackCount())
     {
-        const int slot=(p.y-(dockTop+84))/38;
-        if(slot>=0 && slot<LibertyPluginHost::effectSlotsPerTrack
-            && p.y < dockTop+84+slot*38+32
+        const int cardWidth = 168, gap = 12;
+        const int cardStartX = 254;
+        const int cardY = dockTop + 68;
+        const int dx = p.x - cardStartX;
+        const int slot = dx >= 0 ? dx / (cardWidth + gap) : -1;
+        if (slot >= 0 && slot < LibertyPluginHost::effectSlotsPerTrack
+            && dx % (cardWidth + gap) < cardWidth
+            && p.y >= cardY && p.y < cardY + 94
             && LibertyPluginHost::instance().hasEffectForTrackSlot(selectedTrack,slot))
         {
             LibertyPluginHost::instance().toggleEditorForTrackSlot(selectedTrack,slot);
