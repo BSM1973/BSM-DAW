@@ -319,6 +319,46 @@ public:
         repaint();
     }
     int getTotalArrangeTrackCount() const noexcept { return getAudioTrackCount() + dynamicMidiTrackCount + dynamicInstrumentTrackCount; }
+    // Display order is independent of stable audio/MIDI/instrument track identities.
+    // Existing routing and clips continue to use logical track IDs.
+    void reconcileArrangeTrackOrder()
+    {
+        const int count = getTotalArrangeTrackCount();
+        std::vector<int> next;
+        next.reserve((size_t) count);
+        for (const int id : arrangeTrackOrder)
+            if (id >= 0 && id < count && std::find(next.begin(), next.end(), id) == next.end())
+                next.push_back(id);
+        for (int id = 0; id < count; ++id)
+            if (std::find(next.begin(), next.end(), id) == next.end())
+                next.push_back(id);
+        arrangeTrackOrder.swap(next);
+    }
+    int getLogicalTrackAtDisplayRow(int displayRow) const noexcept
+    {
+        if (displayRow < 0 || displayRow >= getTotalArrangeTrackCount()) return -1;
+        if ((int) arrangeTrackOrder.size() != getTotalArrangeTrackCount()) return displayRow;
+        return arrangeTrackOrder[(size_t) displayRow];
+    }
+    int getDisplayRowForLogicalTrack(int logicalTrack) const noexcept
+    {
+        if (logicalTrack < 0 || logicalTrack >= getTotalArrangeTrackCount()) return -1;
+        if ((int) arrangeTrackOrder.size() != getTotalArrangeTrackCount()) return logicalTrack;
+        const auto it = std::find(arrangeTrackOrder.begin(), arrangeTrackOrder.end(), logicalTrack);
+        return it == arrangeTrackOrder.end() ? logicalTrack : (int) std::distance(arrangeTrackOrder.begin(), it);
+    }
+    bool moveArrangeTrackToDisplayRow(int logicalTrack, int destinationRow)
+    {
+        reconcileArrangeTrackOrder();
+        const int from = getDisplayRowForLogicalTrack(logicalTrack);
+        if (from < 0 || destinationRow < 0 || destinationRow >= (int) arrangeTrackOrder.size()
+            || from == destinationRow) return false;
+        arrangeTrackOrder.erase(arrangeTrackOrder.begin() + from);
+        arrangeTrackOrder.insert(arrangeTrackOrder.begin() + destinationRow, logicalTrack);
+        return true;
+    }
+    std::vector<int> arrangeTrackOrder;
+
     static constexpr int transportHeight = 76;
     static constexpr int trackRulerHeight = 32;
     struct DockResizeHandle final : juce::Component
