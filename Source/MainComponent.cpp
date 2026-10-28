@@ -1852,13 +1852,6 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     for (int displayRow = scrollRows; displayRow < totalRows; ++displayRow)
     {
         const int logicalRow = getLogicalTrackAtDisplayRow(displayRow);
-        if (draggingArrangeTrack >= 0 && arrangeDropDisplayRow == displayRow)
-        {
-            const int lineY = getArrangeTrackTop(logicalRow);
-            g.setColour(juce::Colour(0xff5ee0e7));
-            g.fillRoundedRectangle(3.0f, (float)lineY - 2.0f,
-                                   (float)juce::jmax(1, headerW - 6), 4.0f, 2.0f);
-        }
         const int laneTop = getArrangeTrackTop(logicalRow);
         const int laneHeight = getArrangeTrackHeight(logicalRow);
         auto row = juce::Rectangle<int>(rows.getX(), laneTop, rows.getWidth(), laneHeight);
@@ -1880,6 +1873,11 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                      : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
                                             : juce::Colour(0xff111b24)));
         g.fillRect(row);
+        if (draggingArrangeTrack >= 0 && arrangeDropDisplayRow == displayRow)
+        {
+            g.setColour(juce::Colour(0xff5ee0e7));
+            g.fillRoundedRectangle(3.0f, (float)row.getY(), (float)juce::jmax(1, headerW - 6), 3.0f, 1.5f);
+        }
         auto header = row.withWidth(headerW);
         bool selected = false;
         juce::String title;
