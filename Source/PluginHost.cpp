@@ -758,6 +758,24 @@ void LibertyPluginHost::showEditorForTrack(int trackIndex)
 }
 void LibertyPluginHost::showEditorForTrackSlot(int t,int si){if(!validTrack(t)||si<0||si>=effectSlotsPerTrack)return;const juce::ScopedLock scoped(lock);if(t>=(int)trackEffects.size()||!trackEffects[(size_t)t][(size_t)si])return;auto&x=*trackEffects[(size_t)t][(size_t)si];if(x.processor)showEditor(x,"Liberty - "+x.description.name);}
 
+bool LibertyPluginHost::isInstrumentEditorVisibleForTrack(int t) const
+{
+    const juce::ScopedLock scoped(lock);
+    return t >= 0 && t < (int) instruments.size() && instruments[(size_t)t]
+        && instruments[(size_t)t]->editorWindow
+        && instruments[(size_t)t]->editorWindow->isVisible();
+}
+void LibertyPluginHost::toggleInstrumentEditorForTrack(int t)
+{
+    const juce::ScopedLock scoped(lock);
+    if (t < 0 || t >= (int) instruments.size() || !instruments[(size_t)t]) return;
+    auto& slot = *instruments[(size_t)t];
+    if (!slot.processor) return;
+    if (slot.editorWindow && slot.editorWindow->isVisible())
+        slot.editorWindow->setVisible(false);
+    else
+        showEditor(slot, "Liberty - " + slot.description.name);
+}
 void LibertyPluginHost::showInstrumentEditor(){showInstrumentEditorForTrack(0);}
 void LibertyPluginHost::showInstrumentEditorForTrack(int t)
 {
