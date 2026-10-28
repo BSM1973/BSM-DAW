@@ -1873,12 +1873,17 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                      : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
                                             : juce::Colour(0xff111b24)));
         g.fillRect(row);
+        auto header = row.withWidth(headerW);
+        // Dedicated reorder grip stays visible on every track type.
+        g.setColour(juce::Colour(0xff6d9aa8));
+        for (int grip = 0; grip < 3; ++grip)
+            g.fillRoundedRectangle(4.0f, (float)row.getY() + 12.0f + grip * 6.0f,
+                                   6.0f, 2.0f, 1.0f);
         if (draggingArrangeTrack >= 0 && arrangeDropDisplayRow == displayRow)
         {
             g.setColour(juce::Colour(0xff5ee0e7));
-            g.fillRoundedRectangle(3.0f, (float)row.getY(), (float)juce::jmax(1, headerW - 6), 3.0f, 1.5f);
+            g.fillRoundedRectangle(1.0f, (float)row.getY(), (float)juce::jmax(1,headerW - 2), 3.0f, 1.5f);
         }
-        auto header = row.withWidth(headerW);
         bool selected = false;
         juce::String title;
         if (logicalRow < audioCount)
