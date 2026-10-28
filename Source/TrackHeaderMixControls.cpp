@@ -79,7 +79,10 @@ public:
  {
      if (x < 0 || x >= getWidth()) return false;
      const int absoluteY = y + getY();
-     const int logical = owner.getArrangeTrackAtY(absoluteY);
+     // At the boundary, hit-testing the pointer itself can resolve the NEXT
+     // display row. Probe above the border so the grip belongs to the row
+     // being resized, regardless of its logical ID or reordered position.
+     const int logical = owner.getArrangeTrackAtY(absoluteY - 4);
      if (logical < 0) return false;
      const int bottom = owner.getArrangeTrackTop(logical) + owner.getArrangeTrackHeight(logical);
      return std::abs(absoluteY - bottom) <= 7;
@@ -88,8 +91,11 @@ public:
  {
      if (!e.mods.isLeftButtonDown()) return;
      const int absoluteY = e.getEventRelativeTo(&owner).getPosition().y;
-     resizingTrack = owner.getArrangeTrackAtY(absoluteY);
+     resizingTrack = owner.getArrangeTrackAtY(absoluteY - 4);
      if (resizingTrack < 0) return;
+     const int bottom = owner.getArrangeTrackTop(resizingTrack)
+         + owner.getArrangeTrackHeight(resizingTrack);
+     if (std::abs(absoluteY - bottom) > 7) { resizingTrack = -1; return; }
      startingHeight = owner.getArrangeTrackHeight(resizingTrack);
      startY = absoluteY;
      setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
