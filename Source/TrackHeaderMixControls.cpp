@@ -1,5 +1,6 @@
 #define private public
 #include "MainComponent.h"
+#include "PluginHost.h"
 #include "TrackInputPaletteLookAndFeel.h"
 #undef private
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -37,7 +38,7 @@ public:
      g.fillEllipse(thumb-7.0f,cy-7.0f,14.0f,14.0f);
  }
 };
-struct Controls{std::unique_ptr<juce::Slider>vol,pan;std::unique_ptr<juce::TextButton>mute,solo;std::unique_ptr<juce::Component>mask;std::unique_ptr<juce::ComboBox>midiInput;};
+struct Controls{std::unique_ptr<juce::Slider>vol,pan;std::unique_ptr<juce::TextButton>mute,solo;std::unique_ptr<juce::Component>mask;std::unique_ptr<juce::ComboBox>midiInput;std::unique_ptr<juce::TextButton>instrumentGui;};
 class TrackHeaderMixControls final:public juce::Component,private juce::Timer{
 public:
  explicit TrackHeaderMixControls(MainComponent&o):owner(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
@@ -111,6 +112,11 @@ private:
  void ensure(){int wanted=owner.getAudioTrackCount()+owner.getInstrumentTrackCount();while((int)controls.size()>wanted)controls.pop_back();while((int)controls.size()<wanted){int i=(int)controls.size();Controls c;c.vol=std::make_unique<juce::Slider>();c.pan=std::make_unique<juce::Slider>();c.mute=std::make_unique<juce::TextButton>("M");c.solo=std::make_unique<juce::TextButton>("S");c.mask=std::make_unique<juce::Component>();
 if(!isAudio(i))
 {
+ c.instrumentGui=std::make_unique<juce::TextButton>("GUI");
+ c.instrumentGui->setTooltip("Afficher ou masquer l’interface de l’instrument virtuel");
+ c.instrumentGui->onClick=[this,i]{LibertyPluginHost::instance().toggleInstrumentEditorForTrack(i-owner.getAudioTrackCount());owner.repaint();};
+ c.instrumentGui->setMouseClickGrabsKeyboardFocus(false);
+ addAndMakeVisible(*c.instrumentGui);
  c.midiInput=std::make_unique<juce::ComboBox>();
  c.midiInput->setLookAndFeel(&libertyTrackInputPaletteStyle());
  auto* box=c.midiInput.get();
@@ -141,6 +147,13 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          c.vol->setVisible(volumeVisible);c.pan->setVisible(middleVisible);
          c.mute->setVisible(middleVisible);c.solo->setVisible(middleVisible);
          c.mask->setVisible(false);
+         if(c.instrumentGui)
+         {
+             const bool guiVisible=middleVisible && y+88<=owner.getMixerTop();
+             c.instrumentGui->setBounds(238,y+57,58,28);
+             c.instrumentGui->setVisible(guiVisible);
+             if(guiVisible)c.instrumentGui->toFront(false);
+         }
          if(c.midiInput)
          {
              // Match AudioRecordingController::resized(): the ComboBox is
@@ -195,7 +208,7 @@ for(int i=0;i<(int)controls.size();++i)
  for(int j=0;j<devices.size();++j)if(devices[j].identifier==chosen){selected=j+2;break;}
  box->setSelectedId(selected,juce::dontSendNotification);
 }
-for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner.getAudioTrackCount();float gain=isAudio(i)?owner.audioEngine.getTrackGain(i):owner.audioEngine.getInstrumentTrackGain(t);float pan=isAudio(i)?owner.audioEngine.getTrackPan(i):owner.audioEngine.getInstrumentTrackPan(t);c.vol->setValue(gain,juce::dontSendNotification);c.pan->setValue(pan,juce::dontSendNotification);bool m=isAudio(i)?owner.audioEngine.isTrackMuted(i):owner.audioEngine.isInstrumentTrackMuted(t),s=isAudio(i)?owner.audioEngine.isTrackSolo(i):owner.audioEngine.isInstrumentTrackSolo(t);c.mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xff9b4545):juce::Colour(0xff31363e));c.solo->setColour(juce::TextButton::buttonColourId,s?juce::Colour(0xff8b7a32):juce::Colour(0xff31363e));}syncing=false;}
+for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner.getAudioTrackCount();float gain=isAudio(i)?owner.audioEngine.getTrackGain(i):owner.audioEngine.getInstrumentTrackGain(t);float pan=isAudio(i)?owner.audioEngine.getTrackPan(i):owner.audioEngine.getInstrumentTrackPan(t);c.vol->setValue(gain,juce::dontSendNotification);c.pan->setValue(pan,juce::dontSendNotification);bool m=isAudio(i)?owner.audioEngine.isTrackMuted(i):owner.audioEngine.isInstrumentTrackMuted(t),s=isAudio(i)?owner.audioEngine.isTrackSolo(i):owner.audioEngine.isInstrumentTrackSolo(t);c.mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xff9b4545):juce::Colour(0xff31363e));c.solo->setColour(juce::TextButton::buttonColourId,s?juce::Colour(0xff8b7a32):juce::Colour(0xff31363e));if(c.instrumentGui)c.instrumentGui->setColour(juce::TextButton::buttonColourId,LibertyPluginHost::instance().isInstrumentEditorVisibleForTrack(t)?juce::Colour(0xff24535d):juce::Colour(0xff263644));}syncing=false;}
  void clear(){for(auto&c:controls){if(c.pan)c.pan->setLookAndFeel(nullptr);if(c.vol)c.vol->setLookAndFeel(nullptr);}controls.clear();}
  void timerCallback()override{if(stopped)return;if(isLibertyMixConsoleVisible(&owner)||isLibertyPerformVisible(&owner)){setVisible(false);return;}setVisible(true);const auto headerBounds = juce::Rectangle<int>(0, 0, owner.trackHeaderWidth, juce::jmax(0, owner.getMixerTop()));if(getBounds()!=headerBounds)setBounds(headerBounds);ensure();layout();sync();toFront(false);repaint();}
  MainComponent&owner;PanLF lf;VolumeLF volumeLf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
