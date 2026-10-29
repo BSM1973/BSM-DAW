@@ -29,7 +29,7 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.mods.isLeftButtonDown()) { cycleLibertyTrackHeightPreset(); owner.applyArrangeTrackHeightPreset(); owner.resized(); repaint(); }
+        if (e.mods.isLeftButtonDown()) { cycleLibertyTrackHeightPreset(); repaint(); owner.applyArrangeTrackHeightPreset(); owner.resized(); }
     }
 private:
     MainComponent& owner;
