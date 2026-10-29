@@ -571,7 +571,68 @@ bool runArrangementTests(){
         undoArrangement(true);
         require(midiClips[(size_t)inlineIndex].notes[0].startTick==updatedNote.startTick,
                 "inline MIDI redo");
-        inlineMidiMode=false;
+        // Direct resize uses a separate right-edge gesture; dragging the note body
+        // above already verified moving the note without changing its duration.
+        const auto resizeBefore=midiClips[(size_t)inlineIndex].notes[0];
+        const auto resizedClip=midiClips[(size_t)inlineIndex];
+        const auto resizeRect=inlineMidiNoteBounds(resizedClip,false,resizeBefore)
+            .getIntersection(inlineMidiArea(resizedClip,false));
+        require(resizeRect.getWidth()>=3,"inline MIDI resize visible bounds");
+        const juce::Point<int> resizePoint{resizeRect.getRight()-1,resizeRect.getCentreY()};
+        require(inlineMidiResizeGripAt(resizedClip,false,resizeBefore,resizePoint),
+                "inline MIDI right-edge grip hit");
+        beginArrangementEdit();
+        require(inlineMidiDown(resizePoint,false) && inlineMidiDragging && inlineMidiResizing,
+                "inline MIDI starts note resize rather than move");
+        const int growPixels=juce::jmax(8,(int)std::lround(.5*getLibertyTimelinePixelsPerSecond()));
+        inlineMidiDrag(resizePoint.translated(growPixels,0));
+        inlineMidiDragging=false;inlineMidiResizing=false;
+        inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;finishArrangementEdit();
+        const auto grownNote=midiClips[(size_t)inlineIndex].notes[0];
+        require(grownNote.lengthTicks>resizeBefore.lengthTicks,
+                "inline MIDI resize extends duration");
+        require(grownNote.startTick==resizeBefore.startTick
+                && grownNote.pitch==resizeBefore.pitch
+                && grownNote.velocity==resizeBefore.velocity
+                && grownNote.channel==resizeBefore.channel
+                && grownNote.muted==resizeBefore.muted
+                && grownNote.probability==resizeBefore.probability,
+                "inline MIDI resize preserves note properties");
+        undoArrangement(false);
+        require(midiClips[(size_t)inlineIndex].notes[0].lengthTicks==resizeBefore.lengthTicks,
+                "inline MIDI resize undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)inlineIndex].notes[0].lengthTicks==grownNote.lengthTicks,
+                "inline MIDI resize redo");
+        // Large negative/positive drags remain inside the clip, with a positive
+        // note duration, and can be undone like other Arrangement changes.
+        const auto shortenedClip=midiClips[(size_t)inlineIndex];
+        const auto longBounds=inlineMidiNoteBounds(shortenedClip,false,grownNote)
+            .getIntersection(inlineMidiArea(shortenedClip,false));
+        const juce::Point<int> longGrip{longBounds.getRight()-1,longBounds.getCentreY()};
+        beginArrangementEdit();
+        require(inlineMidiDown(longGrip,false)&&inlineMidiResizing,"inline MIDI shrink grip");
+        inlineMidiDrag(longGrip.translated(-100000,0));
+        inlineMidiDragging=false;inlineMidiResizing=false;
+        inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;finishArrangementEdit();
+        const auto shortNote=midiClips[(size_t)inlineIndex].notes[0];
+        require(shortNote.lengthTicks>0 && shortNote.startTick==grownNote.startTick,
+                "inline MIDI minimum duration");
+        undoArrangement(false);
+        require(midiClips[(size_t)inlineIndex].notes[0].lengthTicks==grownNote.lengthTicks,
+                "inline MIDI shrink undo");
+        // Ensure the 8 legacy tools retain their same positions and override
+        // direct note editing when another tool is active.
+        for(int tool=0;tool<8;++tool){
+            require(toolAt(toolBounds(tool).getCentre())==tool,"eight arrangement tools unchanged");
+            activeArrangeTool=tool;
+            if(tool!=0){
+                bool otherIns=false;int otherClip=-1,otherNote=-1;
+                require(!inlineMidiAt(resizePoint,otherIns,otherClip,otherNote),
+                    "inline MIDI only responds to selection tool");
+            }
+        }
+        activeArrangeTool=0;inlineMidiMode=false;
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});

@@ -1,6 +1,7 @@
 // Liberty — optional direct MIDI editing inside Arrangement clips.
 // This is a view/controller over the existing notes, not a second MIDI engine.
 bool inlineMidiMode=false,inlineMidiDragging=false,inlineMidiInstrument=false;
+bool inlineMidiResizing=false;
 int inlineMidiClipId=0,inlineMidiNoteIndex=-1,inlineMidiStartX=0,inlineMidiStartY=0;
 int inlineMidiLow=48,inlineMidiCount=24;
 std::vector<MidiEngine::NoteEvent> inlineMidiOriginalNotes;
@@ -43,6 +44,16 @@ juce::Rectangle<int> inlineMidiNoteBounds(const Clip& c,bool instrument,
     return {(int)std::lround(left),top,juce::jmax(3,(int)std::lround(width)),
             juce::jmax(2,(int)std::ceil(step)-1)};
 }
+// Keep the grip within the visible note rectangle and inside the clip.
+bool inlineMidiResizeGripAt(const Clip& c,bool instrument,
+    const MidiEngine::NoteEvent& note,juce::Point<int> p)const {
+    const auto visible=inlineMidiNoteBounds(c,instrument,note)
+        .getIntersection(inlineMidiArea(c,instrument));
+    if(visible.isEmpty()||!visible.contains(p))return false;
+    // Short notes retain a small body for moving; do not steal the whole note.
+    const int grip=juce::jlimit(1,7,visible.getWidth()/3);
+    return p.x>=visible.getRight()-grip;
+}
 void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
     if(!inlineMidiMode)return;
     const auto area=inlineMidiArea(c,instrument);
@@ -67,6 +78,14 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
         g.setColour(juce::Colour(0xffd4efff).withAlpha(
             c.muted||note.muted?.32f:juce::jlimit(.60f,1.0f,.60f+note.velocity/320.0f)));
         g.fillRoundedRectangle(bounds.toFloat(),2);
+        // Narrow right-edge handle: a separate drag gesture adjusts duration.
+        const int grip=juce::jlimit(1,7,bounds.getWidth()/3);
+        if(bounds.getWidth()>=6){
+            g.setColour(inlineMidiResizing&&inlineMidiClipId==c.id
+                ?juce::Colour(0xfff0c66d):juce::Colour(0xff477d9c));
+            g.fillRoundedRectangle((float)(bounds.getRight()-grip),
+                (float)bounds.getY(),(float)grip,(float)bounds.getHeight(),1.0f);
+        }
     }
 }
 bool inlineMidiAt(juce::Point<int> p,bool& instrument,int& clip,int& note)const {
@@ -120,6 +139,10 @@ bool inlineMidiDown(juce::Point<int> p,bool option){
     }
     inlineMidiDragging=true;inlineMidiInstrument=instrument;inlineMidiClipId=c.id;
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
+    inlineMidiResizing=inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    operationMessage=inlineMidiResizing
+        ?juce::String::fromUTF8("ÉDITION DIRECTE : glisser le bord droit pour changer la durée")
+        :juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer la note");
     inlineMidiOriginalNotes=c.notes;
     const auto range=inlineMidiRange(c);
     inlineMidiLow=range.first;inlineMidiCount=range.second;
@@ -138,7 +161,34 @@ void inlineMidiDrag(juce::Point<int> p){
     if(area.isEmpty()||px<=0)return;
     const auto original=inlineMidiOriginalNotes[(size_t)inlineMidiNoteIndex];
     const auto end=MidiEngine::secondsToTick(c.lengthSeconds,owner.tempoBpm);
-    if(original.lengthTicks>end)return;
+    if(original.startTick<0||original.startTick>=end
+       ||original.lengthTicks<=0||original.lengthTicks>end-original.startTick)return;
+    if(inlineMidiResizing){
+        // Quantize the note END, not the clip or the note's start.
+        // Resizing is relative to the original mouse-down to avoid drift.
+        const double endpointSeconds=MidiEngine::tickToSeconds(
+            original.startTick+original.lengthTicks,owner.tempoBpm)
+            +(p.x-inlineMidiStartX)/px;
+        auto newEnd=MidiEngine::secondsToTick(juce::jmax(0.0,endpointSeconds),owner.tempoBpm);
+        const double snap=getLibertySnapSeconds(owner.tempoBpm);
+        const auto grid=snap>0?juce::jmax<std::int64_t>(1,
+            MidiEngine::secondsToTick(snap,owner.tempoBpm)):std::int64_t{1};
+        if(snap>0)newEnd=MidiEngine::quantizeTick(newEnd,grid);
+        // Always leave a positive duration and never cross the MIDI clip end.
+        const auto minLength=juce::jmin(grid,end-original.startTick);
+        newEnd=juce::jlimit(original.startTick+minLength,end,newEnd);
+        auto notes=inlineMidiOriginalNotes;
+        notes[(size_t)inlineMidiNoteIndex].lengthTicks=newEnd-original.startTick;
+        if(owner.midiEngine.replaceNotes(notes)){
+            c.notes=owner.midiEngine.getNotesCopy();
+            operationMessage=juce::String::fromUTF8("Durée MIDI : ")
+                +juce::String((double)(newEnd-original.startTick)
+                    /MidiEngine::ticksPerQuarterNote,2)
+                +juce::String::fromUTF8(" temps");
+            syncPlayback();repaint();owner.repaint();
+        }
+        return;
+    }
     const double desired=juce::jmax(0.0,
         MidiEngine::tickToSeconds(original.startTick,owner.tempoBpm)
         +(p.x-inlineMidiStartX)/px);
@@ -162,9 +212,10 @@ void inlineMidiDrag(juce::Point<int> p){
 }
 void toggleInlineMidiMode(){
     inlineMidiMode=!inlineMidiMode;
-    inlineMidiDragging=false;inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;
+    inlineMidiDragging=false;inlineMidiResizing=false;
+    inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;
     operationMessage=juce::String::fromUTF8(inlineMidiMode
-        ?"ÉDITION DIRECTE : déplacer les notes, Option-clic pour ajouter ou supprimer"
+        ?"ÉDITION DIRECTE : déplacer ou étirer les notes, Option-clic pour ajouter ou supprimer"
         :"ÉDITION DIRECTE désactivée — double-clic pour le Piano Roll du dock");
     repaint();owner.repaint();
 }
