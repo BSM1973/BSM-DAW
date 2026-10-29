@@ -3641,6 +3641,15 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // A listener attached recursively receives the original child event.
     // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
+    // Route a second left mouse press on the instrument arrangement grid
+    // directly to the clip manager, even when the event originates in a child.
+    if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
+        && !event.mods.isPopupMenu() && p.x >= trackHeaderWidth
+        && p.y >= getArrangeTop() && p.y < getMixerTop())
+    {
+        if (handleLibertyInstrumentGridDoubleClick(*this, p))
+            return;
+    }
     // Select metadata clips independently without invoking the legacy audio
     // move/split tools, which currently operate on the primary track buffer.
     if (event.mods.isLeftButtonDown() && !event.mods.isPopupMenu()
