@@ -720,6 +720,9 @@ bool runArrangementTests(){
         owner.setArrangeTrackHeight(midiRow,180);setBounds(owner.getLocalBounds());
         inlineMidiMode=true;activeArrangeTool=0;
         const int multiClip=(int)midiClips.size()-1;
+        // Select the fixture first: selectClip syncs the previously active
+        // Piano Roll state into its clip and must not overwrite our test notes.
+        selectClip(false,multiClip);
         auto& phrase=midiClips[(size_t)multiClip];
         phrase.lengthSeconds=juce::jmax(4.0,phrase.lengthSeconds);
         MidiEngine::NoteEvent first=phrase.notes.front();
@@ -729,7 +732,8 @@ bool runArrangementTests(){
         MidiEngine::NoteEvent third=first;
         third.startTick=1920;third.pitch=67;third.velocity=46;
         phrase.notes={first,second,third};
-        selectClip(false,multiClip);syncPlayback();
+        require(owner.midiEngine.replaceNotes(phrase.notes),"MIDI multi-select fixture notes");
+        syncPlayback();
         inlineMidiClearSelection();clearArrangementHistory();
         const auto& multiInitial=midiClips[(size_t)multiClip];
         const auto n1=inlineMidiNoteBounds(multiInitial,false,multiInitial.notes[0]).getCentre();
