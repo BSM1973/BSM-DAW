@@ -148,7 +148,16 @@ bool AudioEngine::stretchArrangementAudioClip(int track,const juce::String& id,d
     for(auto& c:clips){
         if(c.id!=id)continue;
         if(!c.sourceBuffer){c.lengthSeconds=seconds;return replaceArrangementAudioClips(track,clips);}
-        auto source=renderArrangementAudioClip(c);if(!source||seconds*c.sourceSampleRate>32000000)return false;
+        // Stretch the neutral signal so gain, pitch, reverse and fades remain
+        // editable clip properties instead of being baked into the samples.
+        auto neutral=c;
+        neutral.clipGain=1.0f;
+        neutral.pitchSemitones=0.0;
+        neutral.reverse=false;
+        neutral.fadeInSeconds=0.0;
+        neutral.fadeOutSeconds=0.0;
+        auto source=renderArrangementAudioClip(neutral);
+        if(!source||seconds*c.sourceSampleRate>32000000)return false;
         try {
             auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(seconds*c.sourceSampleRate));
             if(output->getNumSamples()<1)return false;
@@ -156,7 +165,8 @@ bool AudioEngine::stretchArrangementAudioClip(int track,const juce::String& id,d
             stretch.setTransposeFactor(1.0);
             stretch.process(source->getArrayOfReadPointers(),source->getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
             c.sourceBuffer=output;c.sourcePath.clear();c.lengthSeconds=seconds;c.offsetSeconds=0;
-            c.clipGain=1;c.pitchSemitones=0;c.reverse=false;c.fadeInSeconds=c.fadeOutSeconds=0;
+            // The source region and Warp mapping are baked into the new buffer.
+            // Keep independent, user-editable clip controls unchanged.
             c.envelopeLengthSeconds=0;c.trimStartFraction=0;c.trimEndFraction=1;c.warp={};c.spectralCache.reset();
             return replaceArrangementAudioClips(track,clips);
         }catch(...){return false;}
