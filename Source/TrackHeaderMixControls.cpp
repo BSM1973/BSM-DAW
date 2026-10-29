@@ -68,63 +68,39 @@ private:
  MainComponent& owner;
 };
 // Independent resize strip uses the actual (possibly reordered) track bounds.
+// Each track owns a real resize handle positioned from its DISPLAY geometry.
+// The logical ID is captured on mouse-down, so reordering cannot change which
+// track the ongoing gesture resizes.
 class ArrangeTrackResizeGrip final : public juce::Component
 {
 public:
  explicit ArrangeTrackResizeGrip(MainComponent& main) : owner(main)
  {
      setInterceptsMouseClicks(true, false);
+     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
  }
- int findBorderTrack(int absoluteY) const
- {
-     // Never infer a border owner from the row under the cursor: that row
-     // changes at the boundary and after drag-reordering.
-     for (int display = owner.getTrackScrollRows();
-          display < owner.getTotalArrangeTrackCount(); ++display)
-     {
-         const int logical = owner.getLogicalTrackAtDisplayRow(display);
-         if (logical < 0) continue;
-         const int bottom = owner.getArrangeTrackTop(logical)
-             + owner.getArrangeTrackHeight(logical);
-         if (bottom > owner.getArrangeTop() && bottom < owner.getMixerTop()
-             && std::abs(absoluteY - bottom) <= 8)
-             return logical;
-     }
-     return -1;
- }
- bool hitTest(int x, int y) override
- {
-     return x >= 0 && x < getWidth()
-         && findBorderTrack(y + getY()) >= 0;
- }
+ void setLogicalTrack(int id) { logicalTrack = id; }
  void mouseDown(const juce::MouseEvent& e) override
  {
-     if (!e.mods.isLeftButtonDown()) return;
-     const int absoluteY = e.getEventRelativeTo(&owner).getPosition().y;
-     resizingTrack = findBorderTrack(absoluteY);
-     if (resizingTrack < 0) return;
+     if (!e.mods.isLeftButtonDown() || logicalTrack < 0) return;
+     resizingTrack = logicalTrack;
      startingHeight = owner.getArrangeTrackHeight(resizingTrack);
-     startY = absoluteY;
-     setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+     startY = e.getEventRelativeTo(&owner).getPosition().y;
  }
  void mouseDrag(const juce::MouseEvent& e) override
  {
      if (resizingTrack < 0) return;
-     const int absoluteY = e.getEventRelativeTo(&owner).getPosition().y;
-     owner.setArrangeTrackHeight(resizingTrack, startingHeight + absoluteY - startY);
+     const int y = e.getEventRelativeTo(&owner).getPosition().y;
+     owner.setArrangeTrackHeight(resizingTrack, startingHeight + y - startY);
  }
- void mouseUp(const juce::MouseEvent&) override
- {
-     resizingTrack = -1;
-     setMouseCursor(juce::MouseCursor::NormalCursor);
- }
+ void mouseUp(const juce::MouseEvent&) override { resizingTrack = -1; }
 private:
  MainComponent& owner;
- int resizingTrack = -1, startingHeight = 0, startY = 0;
+ int logicalTrack = -1, resizingTrack = -1, startingHeight = 0, startY = 0;
 };
 class TrackHeaderMixControls final:public juce::Component,private juce::Timer{
 public:
- explicit TrackHeaderMixControls(MainComponent&o):owner(o),reorderGrip(o),resizeGrip(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);addAndMakeVisible(reorderGrip);addAndMakeVisible(resizeGrip);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
+ explicit TrackHeaderMixControls(MainComponent&o):owner(o),reorderGrip(o){setInterceptsMouseClicks(false,true);owner.addAndMakeVisible(this);addAndMakeVisible(reorderGrip);owner.addMouseListener(this,true);setAlwaysOnTop(true);startTimerHz(12);}
  ~TrackHeaderMixControls()override{shutdown();clear();}
  void shutdown(){if(stopped.exchange(true))return;stopTimer();owner.removeMouseListener(this);setVisible(false);}
  void mouseDown(const juce::MouseEvent& e) override
@@ -244,8 +220,23 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
      reorderGrip.setBounds(0, owner.getArrangeTop(), 14,
                            juce::jmax(0, owner.getMixerTop() - owner.getArrangeTop()));
      reorderGrip.toFront(false);
-     resizeGrip.setBounds(14, owner.getArrangeTop(), 16,
-                          juce::jmax(0, owner.getMixerTop() - owner.getArrangeTop()));
+     while ((int) resizeGrips.size() < owner.getTotalArrangeTrackCount())
+     {
+         auto grip = std::make_unique<ArrangeTrackResizeGrip>(owner);
+         addAndMakeVisible(*grip);
+         resizeGrips.push_back(std::move(grip));
+     }
+     for (int id = 0; id < (int) resizeGrips.size(); ++id)
+     {
+         auto& grip = *resizeGrips[(size_t) id];
+         grip.setLogicalTrack(id);
+         const int bottom = owner.getArrangeTrackTop(id) + owner.getArrangeTrackHeight(id);
+         const bool visible = id < owner.getTotalArrangeTrackCount()
+             && bottom > owner.getArrangeTop() + 8
+             && bottom < owner.getMixerTop() - 8;
+         grip.setBounds(16, bottom - 7, 54, 14);
+         grip.setVisible(visible);
+     }
      constexpr int rightMargin=18;
      for (int i=0;i<(int)controls.size();++i)
      {
@@ -302,7 +293,7 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
      }
      // Child controls are moved to front during layout; the resize hit target
      // must be raised LAST or its narrow border becomes intermittently blocked.
-     resizeGrip.toFront(false);
+     for (auto& grip : resizeGrips) grip->toFront(false);
      reorderGrip.toFront(false);
  }
  public: void refreshTrackLayout(){layout();repaint();}
@@ -326,7 +317,7 @@ for(int i=0;i<(int)controls.size();++i)
 for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner.getAudioTrackCount();float gain=isAudio(i)?owner.audioEngine.getTrackGain(i):owner.audioEngine.getInstrumentTrackGain(t);float pan=isAudio(i)?owner.audioEngine.getTrackPan(i):owner.audioEngine.getInstrumentTrackPan(t);c.vol->setValue(gain,juce::dontSendNotification);c.pan->setValue(pan,juce::dontSendNotification);bool m=isAudio(i)?owner.audioEngine.isTrackMuted(i):owner.audioEngine.isInstrumentTrackMuted(t),s=isAudio(i)?owner.audioEngine.isTrackSolo(i):owner.audioEngine.isInstrumentTrackSolo(t);c.mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xff9b4545):juce::Colour(0xff31363e));c.solo->setColour(juce::TextButton::buttonColourId,s?juce::Colour(0xff8b7a32):juce::Colour(0xff31363e));if(c.instrumentGui)c.instrumentGui->setColour(juce::TextButton::buttonColourId,LibertyPluginHost::instance().isInstrumentEditorVisibleForTrack(t)?juce::Colour(0xff24535d):juce::Colour(0xff263644));}syncing=false;}
  void clear(){for(auto&c:controls){if(c.pan)c.pan->setLookAndFeel(nullptr);if(c.vol)c.vol->setLookAndFeel(nullptr);}controls.clear();}
  void timerCallback()override{if(stopped)return;if(isLibertyMixConsoleVisible(&owner)||isLibertyPerformVisible(&owner)){setVisible(false);return;}setVisible(true);const auto headerBounds = juce::Rectangle<int>(0, 0, owner.trackHeaderWidth, juce::jmax(0, owner.getMixerTop()));if(getBounds()!=headerBounds)setBounds(headerBounds);ensure();layout();sync();toFront(false);repaint();}
- MainComponent&owner;ArrangeReorderGrip reorderGrip;ArrangeTrackResizeGrip resizeGrip;PanLF lf;VolumeLF volumeLf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
+ MainComponent&owner;ArrangeReorderGrip reorderGrip;std::vector<std::unique_ptr<ArrangeTrackResizeGrip>> resizeGrips;PanLF lf;VolumeLF volumeLf;std::vector<Controls>controls;std::atomic<bool>stopped{false};bool syncing=false;
 };
 std::map<MainComponent*,std::unique_ptr<TrackHeaderMixControls>>controllers;
 void ensureTrackControls(MainComponent* owner){if(owner!=nullptr&&!controllers.count(owner))controllers.emplace(owner,std::make_unique<TrackHeaderMixControls>(*owner));}
