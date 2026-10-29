@@ -113,6 +113,48 @@ int audioFadeHandleAt(juce::Point<int> p) const {
     }
     return 0;
 }
+AudioKey crossfadeAt(juce::Point<int> p)const {
+    const int track=audioLaneAt(p);
+    const double px=getLibertyTimelinePixelsPerSecond();
+    if(track<0 || !std::isfinite(px) || px<=0.0)return {-1,{}};
+    const double time=((double)p.x-owner.trackHeaderWidth)/px;
+    for(const auto& c:owner.audioEngine.getArrangementAudioClips(track)){
+        if(c.autoCrossfadeInEnd>c.autoCrossfadeInStart && c.autoCrossfadeInStart>=0.0
+           && time>=c.autoCrossfadeInStart && time<c.autoCrossfadeInEnd
+           && audioBounds(track,c).contains(p))return {track,c.id};
+    }
+    return {-1,{}};
+}
+bool showAudioCrossfadeMenu(juce::Point<int> p){
+    const auto hit=crossfadeAt(p);
+    if(hit.first<0)return false;
+    const auto clips=owner.audioEngine.getArrangementAudioClips(hit.first);
+    const auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==hit.second;});
+    if(it==clips.end())return false;
+    juce::PopupMenu menu;
+    menu.addSectionHeader(juce::String::fromUTF8("COURBE DE FONDU CROISÉ"));
+    menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,it->crossfadeCurve==0);
+    menu.addItem(2,juce::String::fromUTF8("Puissance égale"),true,it->crossfadeCurve==1);
+    menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,it->crossfadeCurve==2);
+    const auto screen=localPointToGlobal(p);
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
+                       [safe,track=hit.first,id=hit.second](int choice){
+        if(!safe || choice<1 || choice>3)return;
+        auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
+        auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
+        if(entry==current.end() || entry->autoCrossfadeInEnd<=entry->autoCrossfadeInStart)return;
+        if(entry->crossfadeCurve==choice-1)return;
+        safe->beginArrangementEdit();
+        entry->crossfadeCurve=choice-1;
+        if(safe->owner.audioEngine.replaceArrangementAudioClips(track,current)){
+            safe->operationMessage=juce::String::fromUTF8("Courbe de fondu croisé modifiée");
+            safe->owner.repaint();safe->repaint();
+        }
+        safe->finishArrangementEdit();
+    });
+    return true;
+}
 void refreshAudio(int track){
     if(!owner.audioEngine.hasAudioFile(track)){
         owner.trackSourceFiles[(size_t)track]=juce::File{};owner.pendingAudioFileNames[(size_t)track].clear();
@@ -154,7 +196,15 @@ void paintAudioFades(juce::Graphics& g){
             g.setColour(juce::Colour(0x1fffcb80));
             g.fillRect(juce::Rectangle<float>(x1,y1,x2-x1,juce::jmax(0.0f,y2-y1)));
             g.setColour(juce::Colour(0xffffcb80));
-            g.drawLine(x1,increasing?y2:y1,x2,increasing?y1:y2,1.6f);
+            juce::Path curve;
+            for(int step=0;step<=24;++step){
+                const double progress=(double)step/24.0;
+                const float x=x1+(float)progress*(x2-x1);
+                const float level=(float)LibertyAudioCrossfade::level(c.autoCrossfadeCurve,progress,increasing);
+                const float y=y2-level*(y2-y1);
+                if(step==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);
+            }
+            g.strokePath(curve,juce::PathStrokeType(1.6f));
         };
         drawCrossfade(c.autoCrossfadeInStart,c.autoCrossfadeInEnd,true);
         drawCrossfade(c.autoCrossfadeOutStart,c.autoCrossfadeOutEnd,false);
