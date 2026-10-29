@@ -140,6 +140,24 @@ void paintAudioFades(juce::Graphics& g){
         if(!c.sourceBuffer || c.lengthSeconds<=0.0)continue;
         const auto box=audioBounds(t,c).toFloat();
         if(box.getWidth()<=36.0f || box.getHeight()<=32.0f)continue;
+        // Derived crossfades are displayed without changing the manual gold grips.
+        // Both ramps form an X inside the shared region of two adjacent clips.
+        const double pixelsPerSecond=getLibertyTimelinePixelsPerSecond();
+        auto drawCrossfade=[&](double from,double until,bool increasing){
+            if(from<0.0 || until<=from || pixelsPerSecond<=0.0)return;
+            const float x1=juce::jlimit(box.getX(),box.getRight(),
+                box.getX()+(float)((from-c.startSeconds)*pixelsPerSecond));
+            const float x2=juce::jlimit(box.getX(),box.getRight(),
+                box.getX()+(float)((until-c.startSeconds)*pixelsPerSecond));
+            if(x2-x1<2.0f)return;
+            const float y1=box.getY()+30.0f,y2=box.getBottom()-7.0f;
+            g.setColour(juce::Colour(0x1fffcb80));
+            g.fillRect(juce::Rectangle<float>(x1,y1,x2-x1,juce::jmax(0.0f,y2-y1)));
+            g.setColour(juce::Colour(0xffffcb80));
+            g.drawLine(x1,increasing?y2:y1,x2,increasing?y1:y2,1.6f);
+        };
+        drawCrossfade(c.autoCrossfadeInStart,c.autoCrossfadeInEnd,true);
+        drawCrossfade(c.autoCrossfadeOutStart,c.autoCrossfadeOutEnd,false);
         const float fi=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
