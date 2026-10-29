@@ -75,27 +75,34 @@ public:
  {
      setInterceptsMouseClicks(true, false);
  }
+ int findBorderTrack(int absoluteY) const
+ {
+     // Never infer a border owner from the row under the cursor: that row
+     // changes at the boundary and after drag-reordering.
+     for (int display = owner.getTrackScrollRows();
+          display < owner.getTotalArrangeTrackCount(); ++display)
+     {
+         const int logical = owner.getLogicalTrackAtDisplayRow(display);
+         if (logical < 0) continue;
+         const int bottom = owner.getArrangeTrackTop(logical)
+             + owner.getArrangeTrackHeight(logical);
+         if (bottom > owner.getArrangeTop() && bottom < owner.getMixerTop()
+             && std::abs(absoluteY - bottom) <= 8)
+             return logical;
+     }
+     return -1;
+ }
  bool hitTest(int x, int y) override
  {
-     if (x < 0 || x >= getWidth()) return false;
-     const int absoluteY = y + getY();
-     // At the boundary, hit-testing the pointer itself can resolve the NEXT
-     // display row. Probe above the border so the grip belongs to the row
-     // being resized, regardless of its logical ID or reordered position.
-     const int logical = owner.getArrangeTrackAtY(absoluteY - 4);
-     if (logical < 0) return false;
-     const int bottom = owner.getArrangeTrackTop(logical) + owner.getArrangeTrackHeight(logical);
-     return std::abs(absoluteY - bottom) <= 7;
+     return x >= 0 && x < getWidth()
+         && findBorderTrack(y + getY()) >= 0;
  }
  void mouseDown(const juce::MouseEvent& e) override
  {
      if (!e.mods.isLeftButtonDown()) return;
      const int absoluteY = e.getEventRelativeTo(&owner).getPosition().y;
-     resizingTrack = owner.getArrangeTrackAtY(absoluteY - 4);
+     resizingTrack = findBorderTrack(absoluteY);
      if (resizingTrack < 0) return;
-     const int bottom = owner.getArrangeTrackTop(resizingTrack)
-         + owner.getArrangeTrackHeight(resizingTrack);
-     if (std::abs(absoluteY - bottom) > 7) { resizingTrack = -1; return; }
      startingHeight = owner.getArrangeTrackHeight(resizingTrack);
      startY = absoluteY;
      setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
@@ -239,7 +246,6 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
      reorderGrip.toFront(false);
      resizeGrip.setBounds(14, owner.getArrangeTop(), 16,
                           juce::jmax(0, owner.getMixerTop() - owner.getArrangeTop()));
-     resizeGrip.toFront(false);
      constexpr int rightMargin=18;
      for (int i=0;i<(int)controls.size();++i)
      {
@@ -294,6 +300,10 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          // Enforce the header boundary even if a future width changes.
          jassert(c.vol->getRight()<=owner.trackHeaderWidth);
      }
+     // Child controls are moved to front during layout; the resize hit target
+     // must be raised LAST or its narrow border becomes intermittently blocked.
+     resizeGrip.toFront(false);
+     reorderGrip.toFront(false);
  }
  public: void refreshTrackLayout(){layout();repaint();}
  private: void sync(){syncing=true;
