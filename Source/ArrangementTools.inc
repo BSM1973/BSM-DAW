@@ -584,7 +584,9 @@ bool runArrangementTests(){
         beginArrangementEdit();
         require(inlineMidiDown(resizePoint,false) && inlineMidiDragging && inlineMidiResizing,
                 "inline MIDI starts note resize rather than move");
-        const int growPixels=juce::jmax(8,(int)std::lround(.5*getLibertyTimelinePixelsPerSecond()));
+        // Extend by two beats so the later shrink is a real edit, not a
+        // no-op at the default quarter-note SNAP minimum.
+        const int growPixels=juce::jmax(8,(int)std::lround(1.0*getLibertyTimelinePixelsPerSecond()));
         inlineMidiDrag(resizePoint.translated(growPixels,0));
         inlineMidiDragging=false;inlineMidiResizing=false;
         inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;finishArrangementEdit();
@@ -618,6 +620,8 @@ bool runArrangementTests(){
         const auto shortNote=midiClips[(size_t)inlineIndex].notes[0];
         require(shortNote.lengthTicks>0 && shortNote.startTick==grownNote.startTick,
                 "inline MIDI minimum duration");
+        require(shortNote.lengthTicks<grownNote.lengthTicks,
+                "inline MIDI shrink changes note duration");
         undoArrangement(false);
         require(midiClips[(size_t)inlineIndex].notes[0].lengthTicks==grownNote.lengthTicks,
                 "inline MIDI shrink undo");
