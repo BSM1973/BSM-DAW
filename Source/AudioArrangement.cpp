@@ -18,6 +18,8 @@ bool AudioEngine::validAudioClip(const AudioClipMetadata& c)
        || !std::isfinite(c.fadeInSeconds) || c.fadeInSeconds<0
        || !std::isfinite(c.fadeOutSeconds) || c.fadeOutSeconds<0
        || c.crossfadeCurve<0 || c.crossfadeCurve>2
+       || !std::isfinite(c.crossfadeDurationSeconds) || c.crossfadeDurationSeconds<0
+       || c.crossfadeDurationSeconds>86400.0
        || !std::isfinite(c.offsetSeconds) || c.offsetSeconds<0
        || !std::isfinite(c.envelopeLengthSeconds) || c.envelopeLengthSeconds<0
        || !std::isfinite(c.formant) || c.warp.count<0 || c.warp.count>maxWarpMarkers
@@ -45,6 +47,9 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->autoCrossfadeOutEnd.store(c.autoCrossfadeOutEnd);
     v->autoCrossfadeCurve.store(c.autoCrossfadeCurve);
     v->crossfadeCurve.store(c.crossfadeCurve);
+    v->crossfadeDurationSeconds.store(c.crossfadeDurationSeconds);
+    v->autoCrossfadeOverlapStart.store(c.autoCrossfadeOverlapStart);
+    v->autoCrossfadeOverlapEnd.store(c.autoCrossfadeOverlapEnd);
     v->clipEnvelopeLength.store(c.envelopeLengthSeconds);v->warpFormant.store(c.formant);
     auto warp=std::make_shared<WarpMarkerSnapshot>();
     warp->enabled=c.warp.enabled;warp->mode=c.warp.mode;warp->count=c.warp.count;
@@ -72,6 +77,9 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getArrangementAudioClip
         c.autoCrossfadeInEnd=t.autoCrossfadeInEnd.load();
         c.autoCrossfadeOutStart=t.autoCrossfadeOutStart.load();
         c.autoCrossfadeOutEnd=t.autoCrossfadeOutEnd.load();
+        c.autoCrossfadeOverlapStart=t.autoCrossfadeOverlapStart.load();
+        c.autoCrossfadeOverlapEnd=t.autoCrossfadeOverlapEnd.load();
+        c.crossfadeDurationSeconds=t.crossfadeDurationSeconds.load();
         c.crossfadeCurve=t.crossfadeCurve.load();
         c.autoCrossfadeCurve=t.autoCrossfadeCurve.load();
         c.warp=getTrackWarpSnapshot(index);c.formant=t.warpFormant.load();c.spectralCache=std::atomic_load(&t.spectralCache);
@@ -94,6 +102,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         for(auto& c:extras){
             c.autoCrossfadeInStart=c.autoCrossfadeInEnd=-1.0;
             c.autoCrossfadeOutStart=c.autoCrossfadeOutEnd=-1.0;
+            c.autoCrossfadeOverlapStart=c.autoCrossfadeOverlapEnd=-1.0;
             c.autoCrossfadeCurve=0;
         }
         std::vector<size_t> chronological(extras.size());
@@ -120,8 +129,17 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
                    && other.startSeconds+other.lengthSeconds>start){tripleOverlap=true;break;}
             }
             if(tripleOverlap)continue;
-            earlier.autoCrossfadeOutStart=start;earlier.autoCrossfadeOutEnd=end;
-            later.autoCrossfadeInStart=start;later.autoCrossfadeInEnd=end;
+            const double overlap=end-start;
+            const double wanted=later.crossfadeDurationSeconds>0.0
+                ? juce::jlimit(juce::jmin(0.01,overlap),overlap,later.crossfadeDurationSeconds)
+                : overlap;
+            // Keep the overlap centre fixed while changing only the fade length.
+            const double fadeStart=start+0.5*(overlap-wanted);
+            const double fadeEnd=fadeStart+wanted;
+            earlier.autoCrossfadeOverlapStart=later.autoCrossfadeOverlapStart=start;
+            earlier.autoCrossfadeOverlapEnd=later.autoCrossfadeOverlapEnd=end;
+            earlier.autoCrossfadeOutStart=fadeStart;earlier.autoCrossfadeOutEnd=fadeEnd;
+            later.autoCrossfadeInStart=fadeStart;later.autoCrossfadeInEnd=fadeEnd;
             earlier.autoCrossfadeCurve=later.crossfadeCurve;
             later.autoCrossfadeCurve=later.crossfadeCurve;
         }
@@ -146,6 +164,9 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         t.autoCrossfadeInEnd.store(primary->autoCrossfadeInEnd.load());
         t.autoCrossfadeOutStart.store(primary->autoCrossfadeOutStart.load());
         t.autoCrossfadeOutEnd.store(primary->autoCrossfadeOutEnd.load());
+        t.autoCrossfadeOverlapStart.store(primary->autoCrossfadeOverlapStart.load());
+        t.autoCrossfadeOverlapEnd.store(primary->autoCrossfadeOverlapEnd.load());
+        t.crossfadeDurationSeconds.store(primary->crossfadeDurationSeconds.load());
         t.crossfadeCurve.store(primary->crossfadeCurve.load());
         t.autoCrossfadeCurve.store(primary->autoCrossfadeCurve.load());
         t.warpEnabled.store(primary->warpEnabled.load());t.warpMode.store(primary->warpMode.load());
@@ -191,6 +212,10 @@ std::shared_ptr<juce::AudioBuffer<float>> AudioEngine::renderArrangementAudioCli
        || clip.lengthSeconds*rate>32000000)return {};
     try{
         auto c=clip;c.startSeconds=0;c.muted=false;
+        // Render the clip without mixing in a neighbouring region's envelope.
+        c.autoCrossfadeInStart=c.autoCrossfadeInEnd=-1;
+        c.autoCrossfadeOutStart=c.autoCrossfadeOutEnd=-1;
+        c.autoCrossfadeOverlapStart=c.autoCrossfadeOverlapEnd=-1;
         auto voice=prepareAudioVoice(c);
         auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(c.lengthSeconds*rate));output->clear();
         for(int offset=0;offset<output->getNumSamples();offset+=256){

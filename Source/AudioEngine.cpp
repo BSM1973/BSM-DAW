@@ -1110,6 +1110,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.autoCrossfadeInStart.store(-1);track.autoCrossfadeInEnd.store(-1);
     track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
     track.crossfadeCurve.store(0);track.autoCrossfadeCurve.store(0);
+    track.crossfadeDurationSeconds.store(0);
+    track.autoCrossfadeOverlapStart.store(-1);track.autoCrossfadeOverlapEnd.store(-1);
     track.clipTrimStart.store(0);track.clipTrimEnd.store(1);track.warpFormant.store(0);
     track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     std::atomic_store(&track.playbackClips,
@@ -1362,6 +1364,7 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("fadeInSeconds",clip.fadeInSeconds);
     element.setAttribute("fadeOutSeconds",clip.fadeOutSeconds);
     element.setAttribute("crossfadeCurve",clip.crossfadeCurve);
+    element.setAttribute("crossfadeDurationSeconds",clip.crossfadeDurationSeconds);
     element.setAttribute("offsetSeconds",clip.offsetSeconds);
     element.setAttribute("envelopeLengthSeconds",clip.envelopeLengthSeconds);
     element.setAttribute("formant",clip.formant);
@@ -1387,6 +1390,7 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.fadeInSeconds=element.getDoubleAttribute("fadeInSeconds",0.0);
     clip.fadeOutSeconds=element.getDoubleAttribute("fadeOutSeconds",0.0);
     clip.crossfadeCurve=element.getIntAttribute("crossfadeCurve",0);
+    clip.crossfadeDurationSeconds=element.getDoubleAttribute("crossfadeDurationSeconds",0.0);
     clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
     clip.envelopeLengthSeconds=element.getDoubleAttribute("envelopeLengthSeconds",0);
     clip.formant=element.getDoubleAttribute("formant",0);

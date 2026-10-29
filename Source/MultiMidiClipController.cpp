@@ -220,7 +220,8 @@ bool hitTest(int x,int y)override{
     return laneAtPoint(p,false) >= 0;
 }void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);paintSelection(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}
     if(audioLaneAt(e.getPosition())>=0){
-        const auto cursor=audioFadeHandleAt(e.getPosition())!=0?juce::MouseCursor::LeftRightResizeCursor:
+        const auto cursor=(audioFadeHandleAt(e.getPosition())!=0 || crossfadeGripAt(e.getPosition()).mode!=0)
+            ?juce::MouseCursor::LeftRightResizeCursor:
             (audioAt(e.getPosition()).isNotEmpty()?juce::MouseCursor::DraggingHandCursor:juce::MouseCursor::CrosshairCursor);
         setMouseCursor(cursor);return;
     }
@@ -314,7 +315,8 @@ void mouseDown(const juce::MouseEvent&e)override{
         if(tool>=0){activeArrangeTool=tool;operationMessage=tool==5?juce::String::fromUTF8("Cliquez sur un clip pour copier, puis dans le vide pour coller"):juce::String{};repaint();return;}
     }
     if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()
-       && !(e.eventComponent==this && audioFadeHandleAt(ownerPoint)!=0)){
+       && !(e.eventComponent==this &&
+            (audioFadeHandleAt(ownerPoint)!=0 || crossfadeGripAt(ownerPoint).mode!=0))){
         if(e.getNumberOfClicks()>=2)renameClipAt(ownerPoint);
         else if(e.eventComponent==this){
             arrangementFocus=true;grabKeyboardFocus();owner.selectedTrack=owner.getArrangeTrackAtY(ownerPoint.y);

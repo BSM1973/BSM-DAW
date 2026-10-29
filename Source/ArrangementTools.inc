@@ -113,14 +113,40 @@ int audioFadeHandleAt(juce::Point<int> p) const {
     }
     return 0;
 }
+struct CrossfadeGrip { int track=-1; juce::String id; int mode=0; };
+CrossfadeGrip crossfadeGripAt(juce::Point<int> p)const {
+    if(activeArrangeTool!=0)return {};
+    const int track=audioLaneAt(p);
+    const double pixels=getLibertyTimelinePixelsPerSecond();
+    if(track<0 || !std::isfinite(pixels) || pixels<=0)return {};
+    const auto clips=owner.audioEngine.getArrangementAudioClips(track);
+    for(auto it=clips.rbegin();it!=clips.rend();++it){
+        const auto& c=*it;
+        if(!c.sourceBuffer || c.autoCrossfadeInEnd<=c.autoCrossfadeInStart)continue;
+        const auto bounds=audioBounds(track,c);
+        if(bounds.getHeight()<43 || bounds.getWidth()<=36)continue;
+        const int y=bounds.getBottom()-11;
+        if(std::abs(p.y-y)>5)continue;
+        const double left=owner.trackHeaderWidth+c.autoCrossfadeInStart*pixels;
+        const double right=owner.trackHeaderWidth+c.autoCrossfadeInEnd*pixels;
+        if(right-left<15.0){
+            if(std::abs(p.x-0.5*(left+right))<=6)return {track,c.id,11};
+            continue;
+        }
+        const double dl=std::abs(p.x-left),dr=std::abs(p.x-right);
+        if(dl<=7.0 && dl<=dr)return {track,c.id,10};
+        if(dr<=7.0)return {track,c.id,11};
+    }
+    return {};
+}
 AudioKey crossfadeAt(juce::Point<int> p)const {
     const int track=audioLaneAt(p);
     const double px=getLibertyTimelinePixelsPerSecond();
     if(track<0 || !std::isfinite(px) || px<=0.0)return {-1,{}};
     const double time=((double)p.x-owner.trackHeaderWidth)/px;
     for(const auto& c:owner.audioEngine.getArrangementAudioClips(track)){
-        if(c.autoCrossfadeInEnd>c.autoCrossfadeInStart && c.autoCrossfadeInStart>=0.0
-           && time>=c.autoCrossfadeInStart && time<c.autoCrossfadeInEnd
+        if(c.autoCrossfadeOverlapEnd>c.autoCrossfadeOverlapStart && c.autoCrossfadeOverlapStart>=0.0
+           && time>=c.autoCrossfadeOverlapStart && time<c.autoCrossfadeOverlapEnd
            && audioBounds(track,c).contains(p))return {track,c.id};
     }
     return {-1,{}};
@@ -208,6 +234,19 @@ void paintAudioFades(juce::Graphics& g){
         };
         drawCrossfade(c.autoCrossfadeInStart,c.autoCrossfadeInEnd,true);
         drawCrossfade(c.autoCrossfadeOutStart,c.autoCrossfadeOutEnd,false);
+        if(c.autoCrossfadeInEnd>c.autoCrossfadeInStart && box.getHeight()>=43){
+            const float left=owner.trackHeaderWidth+(float)(c.autoCrossfadeInStart*pixelsPerSecond);
+            const float right=owner.trackHeaderWidth+(float)(c.autoCrossfadeInEnd*pixelsPerSecond);
+            const float y=box.getBottom()-11.0f;
+            g.setColour(juce::Colour(0xfff0c66d));
+            if(right-left<15.0f){
+                const float centre=(left+right)*0.5f;
+                g.fillRoundedRectangle(centre-4.0f,y-4.0f,8.0f,8.0f,2.0f);
+            }else{
+                g.fillRoundedRectangle(left-4.0f,y-4.0f,8.0f,8.0f,2.0f);
+                g.fillRoundedRectangle(right-4.0f,y-4.0f,8.0f,8.0f,2.0f);
+            }
+        }
         const float fi=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
@@ -240,12 +279,14 @@ void startGroup(double anchor,float x){
 bool handleAudioDown(juce::Point<int> p){
     const int t=audioLaneAt(p);if(t<0)return false;
     owner.selectedTrack=t;
-    auto clips=owner.audioEngine.getArrangementAudioClips(t);const auto id=audioAt(p);
+    auto clips=owner.audioEngine.getArrangementAudioClips(t);
+    const auto crossGrip=crossfadeGripAt(p);
+    const auto id=crossGrip.mode!=0?crossGrip.id:audioAt(p);
     auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==id;});
     const bool hit=it!=clips.end();const double px=getLibertyTimelinePixelsPerSecond();if(px<=0)return true;
     const double seconds=snapPosition((p.x-owner.trackHeaderWidth)/px);
     if(activeArrangeTool==0||activeArrangeTool==1){
-        if(hit&&selectedAudio.count({t,id})&&audioFadeHandleAt(p)==0
+        if(hit&&selectedAudio.count({t,id})&&audioFadeHandleAt(p)==0&&crossGrip.mode==0
            &&(activeArrangeTool==1||selectedAudio.size()+selectedClipIds.size()>1)){
             startGroup(it->startSeconds,(float)p.x);return true;
         }
@@ -267,7 +308,8 @@ bool handleAudioDown(juce::Point<int> p){
             // Only the actual golden grips change a fade; the borders still resize.
             const int fadeGrip=audioFadeHandleAt(p);
             audioDragMode=activeArrangeTool==7?4:
-                (fadeGrip!=0?fadeGrip:
+                (crossGrip.mode!=0?crossGrip.mode:
+                 fadeGrip!=0?fadeGrip:
                  p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1));
         }
     }else if(activeArrangeTool==2 || activeArrangeTool==5){
@@ -298,6 +340,15 @@ void dragAudio(juce::Point<int> p){
             c.fadeOutSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeOutSeconds-delta);
             operationMessage=juce::String::fromUTF8("Fondu de sortie : ")+juce::String(c.fadeOutSeconds,2)+" s";
         }
+        else if(audioDragMode==10||audioDragMode==11){
+            const double limit=audioDragOriginal.autoCrossfadeOverlapEnd-audioDragOriginal.autoCrossfadeOverlapStart;
+            if(limit<=0.0)break;
+            const double original=audioDragOriginal.autoCrossfadeInEnd-audioDragOriginal.autoCrossfadeInStart;
+            const double requested=original+(audioDragMode==10?-2.0:2.0)*delta;
+            const double adjusted=juce::jlimit(juce::jmin(.01,limit),limit,requested);
+            c.crossfadeDurationSeconds=adjusted;
+            operationMessage=juce::String::fromUTF8("Durée du fondu croisé : ")+juce::String(adjusted,3)+" s";
+        }
         else if(audioDragMode==1)c.startSeconds=snapPosition(c.startSeconds+delta);
         else if(audioDragMode==2){const double end=c.startSeconds+c.lengthSeconds;
             const double start=juce::jlimit(juce::jmax(0.0,c.startSeconds-c.offsetSeconds),juce::jmax(c.startSeconds,end-minimum),snapPosition(c.startSeconds+delta));
@@ -310,7 +361,7 @@ void dragAudio(juce::Point<int> p){
     }
     if(owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips)){
         // A fade edits envelope metadata only; no waveform peak cache needs rebuilding.
-        if(audioDragMode==8||audioDragMode==9){owner.repaint();repaint();}
+        if(audioDragMode==8||audioDragMode==9||audioDragMode==10||audioDragMode==11){owner.repaint();repaint();}
         else refreshAudio(audioDragTrack);
     }
 }
@@ -379,6 +430,37 @@ bool runArrangementTests(){
                     "undo fade out");
         }
 
+        // The real arrangement drag must update only the crossfade duration.
+        if(px>40 && audioBounds(0,c).getHeight()>=43){
+            AudioClip neighbour=c;neighbour.id="fade-neighbour";neighbour.startSeconds=.5;
+            require(owner.audioEngine.replaceArrangementAudioClips(0,{c,neighbour}),"crossfade fixture");
+            const auto original=owner.audioEngine.getArrangementAudioClips(0);
+            const auto& secondClip=original[1];
+            const int gripX=owner.trackHeaderWidth+(int)std::lround(secondClip.autoCrossfadeInEnd*px);
+            const int gripY=audioBounds(0,secondClip).getBottom()-11;
+            const juce::Point<int> grip{gripX,gripY};
+            activeArrangeTool=0;
+            require(crossfadeGripAt(grip).mode==11,"crossfade grip hit");
+            beginArrangementEdit();
+            require(handleAudioDown(grip)&&audioDragMode==11,"crossfade grip routing");
+            const int dragPixels=juce::jmax(2,(int)std::round(.05*px));
+            dragAudio(grip.translated(-dragPixels,0));
+            audioDragTrack=-1;audioDragMode=0;finishArrangementEdit();
+            const auto adjusted=owner.audioEngine.getArrangementAudioClips(0);
+            const double wanted=.5-2.0*dragPixels/px;
+            require(adjusted[1].startSeconds==.5 && adjusted[0].startSeconds==0,
+                    "crossfade grip must not move clips");
+            require(std::abs(adjusted[1].crossfadeDurationSeconds-wanted)<1.e-8,
+                    "crossfade grip saved duration");
+            require(undoArrangement(false),"crossfade undo command");
+            require(owner.audioEngine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds==0,
+                    "crossfade undo restored automatic length");
+            require(undoArrangement(true),"crossfade redo command");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds-wanted)<1.e-8,
+                    "crossfade redo restored duration");
+            require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"crossfade fixture cleanup");
+            clearArrangementHistory();
+        }
         activeArrangeTool=4;beginArrangementEdit();handleAudioDown(point(0,.5));finishArrangementEdit();
         require(owner.audioEngine.getArrangementAudioClips(0).size()==2,"scissors route");
         undoArrangement(false);require(owner.audioEngine.getArrangementAudioClips(0).size()==1,"undo scissors");

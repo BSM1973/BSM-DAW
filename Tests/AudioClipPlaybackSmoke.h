@@ -157,6 +157,29 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(loadedClip.crossfadeCurve!=curve)
                 throw std::runtime_error("crossfade curve XML persistence");
         }
+        // A shortened fade uses the entire overlap for routing, but not for its ramp.
+        second.crossfadeCurve=0;second.crossfadeDurationSeconds=.2;
+        if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("short crossfade setup");
+        const auto narrowed=engine.getArrangementAudioClips(0);
+        if(narrowed.size()!=2 || std::abs(narrowed[1].autoCrossfadeInStart-.65)>1.e-9
+           || std::abs(narrowed[1].autoCrossfadeInEnd-.85)>1.e-9
+           || narrowed[1].startSeconds!=.5 || narrowed[0].startSeconds!=0
+           || narrowed[1].autoCrossfadeOverlapStart!=.5 || narrowed[1].autoCrossfadeOverlapEnd!=1)
+            throw std::runtime_error("short crossfade window");
+        if(!engine.renderOfflineForTesting(crossRender,48000,257))throw std::runtime_error("short crossfade render");
+        near(crossRender.getSample(0,26400),.25f);
+        near(crossRender.getSample(0,36000),.1875f);
+        near(crossRender.getSample(0,45600),.125f);
+        juce::XmlElement durationXml("Clip");
+        AudioEngine::writeAudioClipProperties(durationXml,narrowed[1]);
+        if(std::abs(AudioEngine::readAudioClipProperties(durationXml).crossfadeDurationSeconds-.2)>1.e-9)
+            throw std::runtime_error("crossfade duration persistence");
+        auto badDuration=second;badDuration.crossfadeDurationSeconds=-1;
+        if(engine.replaceArrangementAudioClips(0,{first,badDuration}))throw std::runtime_error("negative duration accepted");
+        badDuration.crossfadeDurationSeconds=std::numeric_limits<double>::quiet_NaN();
+        if(engine.replaceArrangementAudioClips(0,{first,badDuration}))throw std::runtime_error("NaN duration accepted");
+        if(std::abs(engine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds-.2)>1.e-9)
+            throw std::runtime_error("invalid crossfade modified state");
         auto badCurve=second;badCurve.crossfadeCurve=4;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
