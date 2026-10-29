@@ -12,7 +12,7 @@
 #include <set>
 #include <vector>
 int getLibertyTrackColourId(int);juce::String getLibertyTrackName(int);bool isLibertySnapEnabled()noexcept;double getLibertySnapSeconds(double)noexcept;double getLibertyTimelinePixelsPerSecond()noexcept;int getLibertyTrackRowHeight()noexcept;
-namespace{constexpr int rulerHeight=32;constexpr float resizeZone=12;struct Clip{int id=0;int trackLane=0;double startSeconds=0,lengthSeconds=2;bool userLength=false;std::vector<MidiEngine::NoteEvent>notes;};juce::Colour trackColour(int id){static constexpr std::array<juce::uint32,9>p{0xff31506a,0xff3b82f6,0xff22c55e,0xffeab308,0xfff97316,0xffef4444,0xffa855f7,0xffec4899,0xff14b8a6};return juce::Colour(p[(size_t)juce::jlimit(0,8,id)]);}class MultiMidiClipController;MultiMidiClipController*activeController=nullptr;
+namespace{constexpr int rulerHeight=32;constexpr float resizeZone=12;struct Clip{int id=0;int trackLane=0;double startSeconds=0,lengthSeconds=2;bool userLength=false,muted=false;std::vector<MidiEngine::NoteEvent>notes;};juce::Colour trackColour(int id){static constexpr std::array<juce::uint32,9>p{0xff31506a,0xff3b82f6,0xff22c55e,0xffeab308,0xfff97316,0xffef4444,0xffa855f7,0xffec4899,0xff14b8a6};return juce::Colour(p[(size_t)juce::jlimit(0,8,id)]);}class MultiMidiClipController;MultiMidiClipController*activeController=nullptr;
 class MultiMidiClipController final:public juce::Component,private juce::Timer{public:explicit MultiMidiClipController(MainComponent&o):owner(o){setInterceptsMouseClicks(true,false);owner.addAndMakeVisible(this);setBounds(owner.getLocalBounds());owner.midiClipOverlay.setVisible(false);juce::Desktop::getInstance().addGlobalMouseListener(this);toFront(false);migrateLegacyClip();activeController=this;startTimerHz(30);}~MultiMidiClipController()override{shutdown();}void shutdown(){if(stopped.exchange(true))return;juce::Desktop::getInstance().removeGlobalMouseListener(this);stopTimer();if(activeController==this)activeController=nullptr;setVisible(false);}bool owns(MainComponent&c)const noexcept{return &owner==&c;}void prepareExternalGeneration(){syncActiveClip();}
 void saveProjectClips(juce::XmlElement&root){syncActiveClip();auto*all=root.createNewChildElement("DynamicMidiClips");auto save=[&](const auto&v,const char*kind){for(const auto&c:v){auto*e=all->createNewChildElement("Clip");e->setAttribute("kind",kind);e->setAttribute("id",c.id);e->setAttribute("lane",c.trackLane);e->setAttribute("start",c.startSeconds);e->setAttribute("length",c.lengthSeconds);e->setAttribute("userLength",c.userLength);for(const auto&n:c.notes){auto*x=e->createNewChildElement("Note");x->setAttribute("startTick",(double)n.startTick);x->setAttribute("lengthTicks",(double)n.lengthTicks);x->setAttribute("pitch",(int)n.pitch);x->setAttribute("velocity",(int)n.velocity);x->setAttribute("channel",(int)n.channel);}}};save(midiClips,"midi");save(instrumentClips,"instrument");}
 void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName("DynamicMidiClips");if(!all)return;midiClips.clear();instrumentClips.clear();activeIndex=-1;nextClipId=1;std::set<int>usedClipIds;constexpr size_t maxRestoredClips=16384,maxRestoredNotesPerClip=16384,maxVisitedClipElements=32768,maxVisitedNoteElementsPerClip=32768;size_t restoredClips=0,visitedClipElements=0;for(auto*e=all->getFirstChildElement();e;e=e->getNextElement()){if(++visitedClipElements>maxVisitedClipElements)break;if(e->getTagName()!="Clip")continue;if(restoredClips>=maxRestoredClips)break;Clip c;int savedId=e->getIntAttribute("id",0);if(savedId>0&&savedId<std::numeric_limits<int>::max()&&!usedClipIds.count(savedId)){c.id=savedId;usedClipIds.insert(c.id);nextClipId=juce::jmax(nextClipId,c.id+1);}else{while(nextClipId<std::numeric_limits<int>::max()&&usedClipIds.count(nextClipId))++nextClipId;if(nextClipId>=std::numeric_limits<int>::max())continue;c.id=nextClipId++;usedClipIds.insert(c.id);}c.trackLane=e->getIntAttribute("lane",-1);const bool instrument=e->getStringAttribute("kind")=="instrument";const int laneCount=instrument?owner.getInstrumentTrackCount():owner.getMidiTrackCount();if(c.trackLane<0||c.trackLane>=laneCount)continue;const double savedStart=e->getDoubleAttribute("start",0),savedLength=e->getDoubleAttribute("length",2);if(!std::isfinite(savedStart)||!std::isfinite(savedLength)||savedStart<0.0||savedLength<=0.0)continue;c.startSeconds=savedStart;c.lengthSeconds=savedLength;c.userLength=e->getBoolAttribute("userLength",false);size_t visitedNoteElements=0;for(auto*x=e->getFirstChildElement();x;x=x->getNextElement()){if(++visitedNoteElements>maxVisitedNoteElementsPerClip)break;if(x->getTagName()!="Note")continue;if(c.notes.size()>=maxRestoredNotesPerClip)break;const double savedStartTick=x->getDoubleAttribute("startTick",0),savedLengthTicks=x->getDoubleAttribute("lengthTicks",MidiEngine::ticksPerQuarterNote);const double maxTick=(double)std::numeric_limits<std::int64_t>::max();if(!std::isfinite(savedStartTick)||!std::isfinite(savedLengthTicks)||savedStartTick<0.0||savedLengthTicks<=0.0||savedStartTick>maxTick||savedLengthTicks>maxTick)continue;MidiEngine::NoteEvent n;n.startTick=(std::int64_t)std::llround(savedStartTick);n.lengthTicks=(std::int64_t)std::llround(savedLengthTicks);std::int64_t restoredEnd=0;if(!addTicks(n.startTick,n.lengthTicks,restoredEnd))continue;n.pitch=(std::uint8_t)juce::jlimit(0,127,x->getIntAttribute("pitch",60));n.velocity=(std::uint8_t)juce::jlimit(1,127,x->getIntAttribute("velocity",100));n.channel=(std::uint8_t)juce::jlimit(1,16,x->getIntAttribute("channel",1));c.notes.push_back(n);}if(instrument)instrumentClips.push_back(std::move(c));else midiClips.push_back(std::move(c));++restoredClips;}syncPlayback();repaint();owner.repaint();}bool commitGeneratedClip(bool ins){auto n=owner.midiEngine.getNotesCopy();return!n.empty()&&commitGeneratedNotes(n,ins,owner.midiClipStartSeconds,owner.midiClipLengthSeconds);}bool commitRecordedInstrumentNotes(const std::vector<MidiEngine::NoteEvent>&n,int lane,double start,double length){if(lane<0||lane>=owner.getInstrumentTrackCount())return false;activeInstrumentLane=lane;return commitGeneratedNotes(n,true,start,length);}bool commitGeneratedMidiNotesToLane(const std::vector<MidiEngine::NoteEvent>&n,int lane,double start,double length){if(lane<0||lane>=owner.getMidiTrackCount())return false;activeMidiLane=lane;return commitGeneratedNotes(n,false,start,length);}bool commitGeneratedNotes(const std::vector<MidiEngine::NoteEvent>&n,bool ins,double start,double length){if(n.empty()||!std::isfinite(start)||!std::isfinite(length)||start<0.0||length<=0.0)return false;Clip c;c.id=allocateClipId();if(c.id==0)return false;c.trackLane=ins?activeInstrumentLane:activeMidiLane;c.startSeconds=juce::jmax(0.0,start);c.lengthSeconds=juce::jmax(secondsPerMeasure(),length);c.userLength=true;c.notes=n;auto&v=ins?instrumentClips:midiClips;v.push_back(std::move(c));activeInstrument=ins;activeIndex=(int)v.size()-1;auto&a=v[(size_t)activeIndex];owner.midiEngine.clear();for(auto&x:a.notes)owner.midiEngine.addNote(x.startTick,x.lengthTicks,x.pitch,x.velocity,x.channel);owner.midiEngine.clearNoteSelection();owner.midiClipStartSeconds=a.startSeconds;owner.midiClipLengthSeconds=a.lengthSeconds;owner.midiClipLengthUserDefined=true;owner.selectedTrack=ins?(owner.getAudioTrackCount()+owner.getMidiTrackCount()+activeInstrumentLane):(owner.getAudioTrackCount()+activeMidiLane);syncPlayback();setBounds(owner.getLocalBounds());toFront(false);repaint();owner.repaint();return true;}void setInstrumentGain(float v)noexcept{instrumentGain.store(juce::jlimit(0.f,2.f,v));}float getInstrumentGain()const noexcept{return instrumentGain.load();}void setInstrumentPan(float v)noexcept{instrumentPan.store(juce::jlimit(-1.f,1.f,v));}float getInstrumentPan()const noexcept{return instrumentPan.load();}void resetProjectClips(){midiClips.clear();instrumentClips.clear();activeIndex=-1;activeMidiLane=0;activeInstrumentLane=0;activeInstrument=false;dragIndex=-1;dragMode=0;nextClipId=1;owner.midiEngine.clear();owner.audioEngine.setProjectExtraLengthSeconds(0.0);repaint();}void synchronizePianoRollPlayback()
@@ -78,7 +78,7 @@ void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName(
 }
 bool activeClipIsInstrument() const noexcept{return activeIndex>=0&&activeInstrument;}int activeInstrumentClipLane() const noexcept{return activeIndex>=0&&activeInstrument&&activeIndex<(int)instrumentClips.size()?instrumentClips[(size_t)activeIndex].trackLane:-1;}void scaleClipsForTempoChange(double ratio){if(!std::isfinite(ratio)||ratio<=0.0)return;if(activeIndex>=0){auto&v=activeInstrument?instrumentClips:midiClips;if(activeIndex<(int)v.size()){auto&c=v[(size_t)activeIndex];c.notes=owner.midiEngine.getNotesCopy();owner.midiClipStartSeconds=c.startSeconds;owner.midiClipLengthSeconds=c.lengthSeconds;owner.midiClipLengthUserDefined=c.userLength;}}auto scale=[ratio](auto& clips){for(auto& c:clips){const double start=c.startSeconds*ratio,length=c.lengthSeconds*ratio;if(std::isfinite(start)&&std::isfinite(length)&&start>=0.0&&length>0.0){c.startSeconds=start;c.lengthSeconds=length;}}};scale(midiClips);scale(instrumentClips);if(activeIndex>=0){auto&v=activeInstrument?instrumentClips:midiClips;if(activeIndex<(int)v.size()){owner.midiClipStartSeconds=v[(size_t)activeIndex].startSeconds;owner.midiClipLengthSeconds=v[(size_t)activeIndex].lengthSeconds;}}syncPlayback();repaint();owner.repaint();}void resyncPlayback(){syncPlayback();}
 static constexpr int toolBarX=1250,toolBarY=37,toolWidth=38,toolGap=3;
-int activeArrangeTool=0;
+int activeArrangeTool=0;Clip clipboard;bool clipboardValid=false;
 int toolAt(juce::Point<int> p)const{
     if(p.y<toolBarY||p.y>=toolBarY+30||p.x<toolBarX)return -1;
     const int index=(p.x-toolBarX)/(toolWidth+toolGap);
@@ -124,7 +124,62 @@ bool hitTest(int x,int y)override{
         return true;
     }
     return laneAtPoint(p,false) >= 0;
-}void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}void mouseDown(const juce::MouseEvent&e)override{
+}void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}bool clipOverlaps(const std::vector<Clip>& clips,const Clip& candidate,int except=-1)const{
+    for(int j=0;j<(int)clips.size();++j){
+        if(j==except)continue;
+        const auto& other=clips[(size_t)j];
+        if(other.trackLane==candidate.trackLane
+           && candidate.startSeconds<other.startSeconds+other.lengthSeconds
+           && other.startSeconds<candidate.startSeconds+candidate.lengthSeconds)return true;
+    }
+    return false;
+}
+bool applyClipTool(juce::Point<int> p){
+    if(p.x<owner.trackHeaderWidth || p.y<owner.getArrangeTop() || p.y>=owner.getMixerTop())return false;
+    const bool ins=laneAtPoint(p,true)>=0;
+    if(!ins && laneAtPoint(p,false)<0)return false;
+    bool hitInstrument=false;
+    const int index=findClipAt(p,hitInstrument);
+    auto& clips=ins?instrumentClips:midiClips;
+    const double px=getLibertyTimelinePixelsPerSecond();
+    if(!std::isfinite(px)||px<=0.0)return true;
+    const double seconds=snapPosition(juce::jmax(0.0,((double)p.x-owner.trackHeaderWidth)/px));
+    if(activeArrangeTool==2 && index<0){
+        Clip clip;clip.id=allocateClipId();if(clip.id==0)return true;
+        clip.trackLane=laneAtPoint(p,ins);clip.startSeconds=seconds;
+        clip.lengthSeconds=4.0*secondsPerMeasure();clip.userLength=true;
+        if(!clipOverlaps(clips,clip)){clips.push_back(std::move(clip));selectClip(ins,(int)clips.size()-1);syncPlayback();}
+    }else if(activeArrangeTool==5 && clipboardValid && index<0){
+        Clip clip=clipboard;clip.id=allocateClipId();if(clip.id==0)return true;
+        clip.trackLane=laneAtPoint(p,ins);clip.startSeconds=seconds;
+        if(!clipOverlaps(clips,clip)){clips.push_back(std::move(clip));selectClip(ins,(int)clips.size()-1);syncPlayback();}
+    }else if(index>=0 && hitInstrument==ins){
+        selectClip(ins,index);
+        if(activeArrangeTool==3){
+            clips.erase(clips.begin()+index);activeIndex=-1;
+            owner.midiEngine.clear();syncPlayback();
+        }else if(activeArrangeTool==4){
+            syncActiveClip();
+            const Clip original=clips[(size_t)index];
+            const double split=seconds;
+            if(split>original.startSeconds+0.001 && split<original.startSeconds+original.lengthSeconds-0.001){
+                Clip right=original;right.id=allocateClipId();if(right.id==0)return true;
+                right.startSeconds=split;right.lengthSeconds=original.startSeconds+original.lengthSeconds-split;
+                clips[(size_t)index].lengthSeconds=split-original.startSeconds;
+                clips[(size_t)index].userLength=true;right.userLength=true;
+                clips.push_back(std::move(right));selectClip(ins,(int)clips.size()-1);syncPlayback();
+            }
+        }else if(activeArrangeTool==6){
+            // Clip mute is a separate playback feature; preserve clip contents.
+            clips[(size_t)index].muted=!clips[(size_t)index].muted;
+            syncPlayback();
+        }else if(activeArrangeTool==5){
+            clipboard=clips[(size_t)index];clipboardValid=true;
+        }
+    }
+    repaint();owner.repaint();return true;
+}
+void mouseDown(const juce::MouseEvent&e)override{
     const auto ownerPoint = e.getEventRelativeTo(&owner).getPosition();
     if(e.mods.isLeftButtonDown()){
         const int tool=toolAt(ownerPoint);
@@ -145,6 +200,8 @@ bool hitTest(int x,int y)override{
         }
         return;
     }
+    if(e.mods.isLeftButtonDown() && activeArrangeTool>=2 && activeArrangeTool<=6
+       && applyClipTool(ownerPoint))return;
     // Listener events from other children must not be interpreted as local overlay coordinates.
     if (e.eventComponent != this) return;
     if(handleMixerMouse(e.getPosition()))return;bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){const int midiLane=laneAtPoint(e.getPosition(),false),instrumentLane=laneAtPoint(e.getPosition(),true);if(midiLane>=0||instrumentLane>=0){syncActiveClip();activeIndex=-1;owner.midiEngine.clear();owner.midiEngine.clearUndoHistory();owner.midiEngine.clearNoteSelection();}if(midiLane>=0){activeMidiLane=midiLane;activeInstrument=false;owner.selectedTrack=owner.getAudioTrackCount()+midiLane;}else if(instrumentLane>=0){activeInstrumentLane=instrumentLane;activeInstrument=true;owner.selectedTrack=owner.getAudioTrackCount()+owner.getMidiTrackCount()+instrumentLane;}owner.repaint();return;}selectClip(ins,i);auto&c=(ins?instrumentClips:midiClips)[(size_t)i];dragInstrument=ins;dragIndex=i;dragStartX=(float)e.x;dragStartSeconds=c.startSeconds;dragStartLength=c.lengthSeconds;int l=0,w=0;if(!clipPixelBounds(c,l,w)){dragIndex=-1;dragMode=0;return;}const int r=l+w;dragMode=(float)e.x<=(float)l+resizeZone?2:((float)e.x>=(float)r-resizeZone?3:1);}void mouseDoubleClick(const juce::MouseEvent&e)override{
