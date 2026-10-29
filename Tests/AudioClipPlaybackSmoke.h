@@ -132,6 +132,34 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("crossfade mute");
         if(!engine.renderOfflineForTesting(crossRender,48000,128))throw std::runtime_error("crossfade mute render");
         near(crossRender.getSample(0,36000),.25f);
+        // Confirm all three curves affect the rendered overlap and the
+        // curve preference survives the existing project XML serialization.
+        auto quieter=std::make_shared<juce::AudioBuffer<float>>(1,48000);
+        for(int i=0;i<48000;++i)quieter->setSample(0,i,.125f);
+        second.muted=false;second.sourceBuffer=quieter;
+        for(int curve=0;curve<3;++curve){
+            second.crossfadeCurve=curve;
+            if(!engine.replaceArrangementAudioClips(0,{first,second}))
+                throw std::runtime_error("crossfade curve setup");
+            const auto regions=engine.getArrangementAudioClips(0);
+            if(regions.size()!=2 || regions[0].autoCrossfadeCurve!=curve
+               || regions[1].autoCrossfadeCurve!=curve || regions[1].crossfadeCurve!=curve)
+                throw std::runtime_error("crossfade curve publication");
+            if(!engine.renderOfflineForTesting(crossRender,48000,257))
+                throw std::runtime_error("crossfade curve render");
+            const double p=.25;
+            const double shaped=curve==1?std::sqrt(p):curve==2?p*p*(3-2*p):p;
+            const double shapedOut=curve==1?std::sqrt(1-p):1-shaped;
+            near(crossRender.getSample(0,30000),(float)(.25*shapedOut+.125*shaped));
+            juce::XmlElement projectClip("Clip");
+            AudioEngine::writeAudioClipProperties(projectClip,regions[1]);
+            const auto loadedClip=AudioEngine::readAudioClipProperties(projectClip);
+            if(loadedClip.crossfadeCurve!=curve)
+                throw std::runtime_error("crossfade curve XML persistence");
+        }
+        auto badCurve=second;badCurve.crossfadeCurve=4;
+        if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
+            throw std::runtime_error("invalid crossfade curve accepted");
         // The primary and additional paths must use the same Warp renderer.
         for(int mode=0;mode<=5;++mode){
             auto warped=stretched;warped.warp.enabled=true;warped.warp.mode=mode;warped.warp.count=2;
