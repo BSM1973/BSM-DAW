@@ -22,6 +22,7 @@ int getLibertyTrackRowHeight() noexcept;
 bool isLibertySnapEnabled() noexcept;
 double getLibertySnapSeconds(double tempoBpm) noexcept;
 int getLibertyActiveTool();
+bool hasLibertyArrangementTools(const MainComponent&);
 
 namespace
 {
@@ -47,6 +48,7 @@ public:
 
         bool hitTest(int x, int y) override
         {
+            if(hasLibertyArrangementTools(controller.owner))return false;
             // Never intercept track-header clicks, even if a stale clip handle
             // is temporarily positioned over a different track.
             const auto ownerPoint = localPointToGlobal(juce::Point<int>(x, y));

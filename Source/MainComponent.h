@@ -1205,6 +1205,7 @@ private:
             double lengthSeconds = 0.0;
             juce::String name = "Pattern";
             std::vector<MidiEngine::NoteEvent> notes;
+            juce::String namingId=juce::Uuid().toString();
         };
         std::vector<TimelinePatternClip> timelineClips;
     };

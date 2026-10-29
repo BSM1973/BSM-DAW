@@ -17,6 +17,8 @@ int getLibertyActiveTool();
 void setLibertyActiveTool(int);
 void synchronizeLibertyPianoRollPlayback(MainComponent&);
 
+bool handleLibertyClipNameDoubleClick(MainComponent&,juce::Point<int>);
+
 namespace
 {
 constexpr int lowestKey = 21;
@@ -5556,6 +5558,7 @@ public:
         const auto p = e.getEventRelativeTo(main).getPosition();
         // Child components can receive the arranger's double-click instead
         // of MainComponent. Route audio clips through the same shared action.
+        if (handleLibertyClipNameDoubleClick(*main,p)) return;
         if (main->openAudioClipInDockAt(p)) return;
         // A global mouse listener must never use a legacy fixed MIDI-lane Y.
         // Only an actual MIDI track inside the visible arranger may open this editor.
@@ -5564,7 +5567,7 @@ public:
         const int track = main->getArrangeTrackAtY(p.y);
         const int midiFirst = main->getAudioTrackCount();
         if (track >= midiFirst && track < midiFirst + main->getMidiTrackCount())
-            openLibertyMidiEditor(*main);
+            openLibertyMidiEditorInDock(*main);
     }
 private: bool registered = true;
 };
@@ -5573,6 +5576,15 @@ MidiEditorMouseListener globalMidiEditorMouseListener;
 std::vector<std::unique_ptr<MidiEditorWindow>> midiEditorWindows;
 std::unique_ptr<PianoRoll> dockPianoRoll;
 MainComponent* dockPianoRollOwner = nullptr;
+}
+
+void openLibertyMidiEditorInDock(MainComponent& owner)
+{
+    // Only the explicit detach button may create a floating editor.
+    midiEditorWindows.clear();
+    owner.activateDockTab(1);
+    owner.resized();
+    owner.repaint();
 }
 
 void openLibertyMidiEditor(MainComponent& owner)

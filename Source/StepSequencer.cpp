@@ -191,6 +191,7 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
         {
             auto* ce = track->createNewChildElement("TimelineClip");
             ce->setAttribute("name", clip.name);
+            ce->setAttribute("namingId",clip.namingId);
             // Store musical coordinates alongside legacy seconds. Ticks preserve
             // the exact Pattern placement when a project is reopened at its BPM.
             ce->setAttribute("startSeconds", clip.startSeconds);
@@ -389,6 +390,7 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
             if (ce->getTagName() != "TimelineClip") continue;
             if (restored.timelineClips.size() >= 2048) break;
             InstrumentStepSequencerBank::TimelinePatternClip clip;
+            clip.namingId=ce->getStringAttribute("namingId",juce::Uuid().toString());
             clip.name = ce->getStringAttribute("name", "Pattern").trim().substring(0, 64);
             if (clip.name.isEmpty()) clip.name = "Pattern";
             clip.startSeconds = ce->getDoubleAttribute("startSeconds", 0.0);

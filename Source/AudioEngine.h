@@ -248,14 +248,30 @@ public:
         float clipGain = 1.0f;
         double pitchSemitones = 0.0;
         bool reverse = false;
+        bool muted = false;
+        double offsetSeconds = 0.0;
+        double envelopeLengthSeconds = 0.0;
+        WarpSnapshot warp;
+        double formant = 0.0;
+        std::shared_ptr<juce::AudioBuffer<float>> spectralCache;
         double fadeInSeconds = 0.0;
         double fadeOutSeconds = 0.0;
         // Decoded source prepared outside the real-time audio callback.
         std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
         double sourceSampleRate = 0.0;
     };
+    static bool validAudioClip(const AudioClipMetadata&);
+    static void writeAudioClipProperties(juce::XmlElement&, const AudioClipMetadata&);
+    static AudioClipMetadata readAudioClipProperties(const juce::XmlElement&);
     std::vector<AudioClipMetadata> getAudioClips(int trackIndex) const;
     bool addAudioClipMetadata(int trackIndex, const AudioClipMetadata& clip);
+    bool replaceAudioClips(int trackIndex, const std::vector<AudioClipMetadata>& clips);
+    std::vector<AudioClipMetadata> getArrangementAudioClips(int trackIndex) const;
+    bool replaceArrangementAudioClips(int trackIndex,const std::vector<AudioClipMetadata>& clips);
+    bool splitArrangementAudioClip(int trackIndex,const juce::String& id,double seconds);
+    bool promoteAudioClip(int trackIndex,const juce::String& id);
+    bool stretchArrangementAudioClip(int trackIndex,const juce::String& id,double seconds);
+    std::shared_ptr<juce::AudioBuffer<float>> renderArrangementAudioClip(const AudioClipMetadata& clip);
     bool loadAudioClipSource(int trackIndex, const juce::String& clipId,
                              const juce::File& sourceFile, juce::String& error);
     void clearAudioClipMetadata(int trackIndex);
@@ -314,6 +330,11 @@ private:
 
     struct AudioTrackState
     {
+        std::atomic<bool> clipMuted { false };
+        std::atomic<double> clipOffset { 0.0 }, clipEnvelopeLength { 0.0 };
+        std::atomic<double> clipFadeIn { 0.0 }, clipFadeOut { 0.0 };
+        std::atomic<double> clipTrimStart { 0.0 }, clipTrimEnd { 1.0 };
+        std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>> regionVoices;
         std::atomic<float> gain { 1.0f };
         std::atomic<float> clipGain { 1.0f };
         std::atomic<double> clipPitch { 0.0 };
@@ -349,6 +370,9 @@ private:
         std::vector<AudioClipMetadata> clipMetadata;
         std::shared_ptr<const std::vector<AudioClipMetadata>> playbackClips;
     };
+
+    static std::shared_ptr<AudioTrackState> prepareAudioVoice(const AudioClipMetadata&);
+    void mixAudioVoice(AudioTrackState&,float,float,double,std::int64_t,float* const*,int,int);
 
     static constexpr std::size_t maxMidiPlaybackNotes = 256;
     struct MidiPlaybackNote

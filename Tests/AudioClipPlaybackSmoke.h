@@ -1,0 +1,101 @@
+#pragma once
+#include "AudioEngine.h"
+#include <cmath>
+#include <stdexcept>
+inline bool runLibertyAudioClipPlaybackSmoke()
+{
+    try {
+        AudioEngine engine;
+        constexpr int count=4800;
+        auto source=std::make_shared<juce::AudioBuffer<float>>(1,count);
+        for(int i=0;i<count;++i)source->setSample(0,i,(float)i/count);
+        AudioEngine::AudioClipMetadata clip;
+        clip.id="test";clip.lengthSeconds=.1;clip.sourceSampleRate=48000;clip.sourceBuffer=source;
+        auto render=[&](const AudioEngine::AudioClipMetadata& c,int block=128){
+            if(!engine.replaceAudioClips(0,{c}))throw std::runtime_error("publication");
+            juce::AudioBuffer<float> output(2,count);
+            if(!engine.renderOfflineForTesting(output,48000,block))throw std::runtime_error("render");
+            return output;
+        };
+        auto near=[](float actual,float expected){if(std::abs(actual-expected)>.0002f)throw std::runtime_error("sample");};
+        auto normal=render(clip);near(normal.getSample(0,1200),.25f);
+        clip.clipGain=.5f;auto quiet=render(clip);near(quiet.getSample(0,1200),.125f);
+        clip.clipGain=1;clip.reverse=true;auto reversed=render(clip);near(reversed.getSample(0,1200),3599.f/count);
+        clip.reverse=false;clip.fadeInSeconds=.05;auto fade=render(clip);near(fade.getSample(0,1200),.125f);
+        clip.fadeInSeconds=0;clip.fadeOutSeconds=.05;fade=render(clip);near(fade.getSample(0,3600),.375f);
+        clip.fadeOutSeconds=0;clip.pitchSemitones=12;auto pitched=render(clip);near(pitched.getSample(0,1200),.5f);
+        clip.pitchSemitones=0;clip.muted=true;auto muted=render(clip);near(muted.getMagnitude(0,count),0);
+        clip.muted=false;clip.trimStartFraction=.25;clip.trimEndFraction=.75;
+        auto trim=render(clip);near(trim.getSample(0,0),.25f);near(trim.getSample(0,2400),0);
+        auto otherBlock=render(clip,511);
+        for(int i=0;i<count;++i)near(trim.getSample(0,i),otherBlock.getSample(0,i));
+        auto invalid=clip;invalid.lengthSeconds=-1;
+        if(engine.replaceAudioClips(0,{invalid})||engine.getAudioClips(0).size()!=1)throw std::runtime_error("transaction");
+        clip.clipGain=.37f;clip.pitchSemitones=-7;clip.reverse=true;clip.muted=true;
+        clip.fadeInSeconds=.013;clip.fadeOutSeconds=.021;clip.sourceName="Échantillon";
+        juce::XmlElement xml("Clip");AudioEngine::writeAudioClipProperties(xml,clip);
+        auto parsed=juce::parseXML(xml.toString());if(!parsed)throw std::runtime_error("xml");
+        auto restored=AudioEngine::readAudioClipProperties(*parsed);
+        juce::XmlElement again("Clip");AudioEngine::writeAudioClipProperties(again,restored);
+        if(xml.toString()!=again.toString())throw std::runtime_error("properties roundtrip");
+        restored.sourceBuffer=source;restored.sourceSampleRate=48000;
+        if(!engine.replaceAudioClips(0,{restored}))throw std::runtime_error("restore");
+        // Replacing an invalid selection must leave the published state intact.
+        auto duplicate=restored;
+        if(engine.replaceAudioClips(0,{restored,duplicate}))throw std::runtime_error("duplicate IDs");
+        if(engine.getAudioClips(0).front().clipGain!=.37f)throw std::runtime_error("rollback");
+        AudioEngine::AudioClipMetadata whole;whole.id="whole";whole.sourceName="Original";
+        whole.lengthSeconds=.1;whole.sourceSampleRate=48000;whole.sourceBuffer=source;
+        whole.reverse=true;whole.fadeInSeconds=.02;whole.fadeOutSeconds=.03;whole.clipGain=.8f;
+        if(!engine.replaceArrangementAudioClips(0,{whole}))throw std::runtime_error("primary");
+        juce::AudioBuffer<float> before(2,count),after(2,count);
+        engine.renderOfflineForTesting(before,48000,128);
+        if(!engine.splitArrangementAudioClip(0,"whole",.0375))throw std::runtime_error("split");
+        auto split=engine.getArrangementAudioClips(0);
+        if(split.size()!=2 || split[0].sourceBuffer!=source || split[1].sourceBuffer!=source)throw std::runtime_error("source preservation");
+        engine.renderOfflineForTesting(after,48000,511);
+        for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        if(!engine.promoteAudioClip(0,split[1].id))throw std::runtime_error("dock promotion");
+        engine.renderOfflineForTesting(after,48000,256);
+        for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        auto roundtrip=engine.getArrangementAudioClips(0);
+        for(auto& c:roundtrip){juce::XmlElement e("Clip");AudioEngine::writeAudioClipProperties(e,c);
+            auto restoredClip=AudioEngine::readAudioClipProperties(e);restoredClip.sourceBuffer=c.sourceBuffer;restoredClip.sourceSampleRate=c.sourceSampleRate;c=restoredClip;}
+        if(!engine.replaceArrangementAudioClips(0,roundtrip))throw std::runtime_error("region restore");
+        engine.renderOfflineForTesting(after,48000,128);
+        for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        auto invalidPrimary=whole;invalidPrimary.offsetSeconds=std::numeric_limits<double>::quiet_NaN();
+        if(engine.replaceArrangementAudioClips(0,{invalidPrimary}))throw std::runtime_error("invalid primary accepted");
+        // Restoring snapshots must restore both the sound and all region properties.
+        if(!engine.replaceArrangementAudioClips(0,{whole}))throw std::runtime_error("undo snapshot");
+        engine.renderOfflineForTesting(after,48000,128);
+        for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        if(!engine.replaceArrangementAudioClips(0,split))throw std::runtime_error("redo snapshot");
+        engine.renderOfflineForTesting(after,48000,128);
+        for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        // Signalsmith must change duration while preserving the frequency.
+        auto tone=std::make_shared<juce::AudioBuffer<float>>(1,48000);
+        for(int i=0;i<48000;++i)tone->setSample(0,i,.25f*std::sin(2*juce::MathConstants<double>::pi*440*i/48000));
+        auto stretched=whole;stretched.id="tone";stretched.sourceBuffer=tone;stretched.lengthSeconds=1;
+        stretched.reverse=false;stretched.clipGain=1;stretched.fadeInSeconds=stretched.fadeOutSeconds=0;
+        if(!engine.replaceArrangementAudioClips(0,{stretched}) || !engine.stretchArrangementAudioClip(0,"tone",1.5))throw std::runtime_error("stretch");
+        const auto result=engine.getArrangementAudioClips(0).front();
+        if(result.sourceBuffer->getNumSamples()!=72000 || tone->getNumSamples()!=48000)throw std::runtime_error("stretch length");
+        int crossings=0;const auto* samples=result.sourceBuffer->getReadPointer(0);
+        for(int i=24001;i<48000;++i)if(samples[i-1]<=0 && samples[i]>0)++crossings;
+        if(std::abs(crossings*2-440)>4)throw std::runtime_error("stretch pitch");
+        // The primary and additional paths must use the same Warp renderer.
+        for(int mode=0;mode<=5;++mode){
+            auto warped=stretched;warped.warp.enabled=true;warped.warp.mode=mode;warped.warp.count=2;
+            warped.warp.source[1]=1;warped.warp.target[1]=1.25;warped.lengthSeconds=1.25;
+            warped.clipGain=.6f;warped.fadeInSeconds=.02;warped.pitchSemitones=3;
+            if(!engine.replaceArrangementAudioClips(0,{warped}))throw std::runtime_error("primary warp");
+            juce::AudioBuffer<float> primary(2,60000),extra(2,60000);
+            engine.renderOfflineForTesting(primary,48000,128);
+            if(!engine.replaceArrangementAudioClips(0,{})||!engine.replaceAudioClips(0,{warped}))throw std::runtime_error("extra warp");
+            engine.renderOfflineForTesting(extra,48000,128);
+            for(int i=0;i<60000;++i)near(primary.getSample(0,i),extra.getSample(0,i));
+        }
+        return true;
+    }catch(const std::exception& e){std::fprintf(stderr,"AudioClipPlaybackSmoke: %s\n",e.what());return false;}
+}

@@ -4,6 +4,7 @@
 class MainComponent;
 
 void openLibertyMidiEditor(MainComponent& owner);
+void openLibertyMidiEditorInDock(MainComponent& owner);
 void shutdownLibertyMidiEditor();
 void shutdownLibertyMidiNoteSelectionInteraction();
 

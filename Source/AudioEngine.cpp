@@ -1,3 +1,4 @@
+#include <set>
 #include "AudioEngine.h"
 
 // PERFORM contributes audio to this engine-owned hardware callback. It never
@@ -200,6 +201,9 @@ std::int64_t AudioEngine::getProjectLengthSamples() const noexcept
     for (const auto& trackPtr : tracks)
     {
         const auto& track = *trackPtr;
+        if(const auto clips=std::atomic_load(&track.playbackClips))
+            for(const auto& clip:*clips)
+                length=juce::jmax(length,(std::int64_t)std::llround((clip.startSeconds+clip.lengthSeconds)*rate));
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
         if (audioBuffer == nullptr) continue;
@@ -1025,8 +1029,11 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     juce::AudioFormatManager formatManager; formatManager.registerBasicFormats();
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
     if (reader == nullptr) { error = "BSM DAW could not read this audio format. Use WAV, AIFF or AIF."; return false; }
-    const auto outputRate = sampleRate.load();
-    if (outputRate <= 0.0) { error = "No audio device is available."; return false; }
+    // Preserve the established device-rate import path. Offline project loading
+    // retains the native rate rather than failing without an audio device.
+    const auto deviceRate=sampleRate.load();
+    const auto outputRate = deviceRate>0?deviceRate:reader->sampleRate;
+    if (!std::isfinite(outputRate) || outputRate <= 0.0) { error = juce::String::fromUTF8("Fréquence du média audio invalide."); return false; }
     if (reader->lengthInSamples <= 0 || reader->lengthInSamples > std::numeric_limits<int>::max()) { error = "The selected audio file is too large to load into memory."; return false; }
     const auto inputSamples = static_cast<int>(reader->lengthInSamples);
     const auto inputChannels = juce::jmax(1, juce::jmin(2, static_cast<int>(reader->numChannels)));
@@ -1097,7 +1104,10 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     std::atomic_store(&track.buffer, std::move(newBuffer));
     track.contentRevision.fetch_add(1, std::memory_order_relaxed);
     track.clipId = juce::Uuid().toString();
-    track.clipMetadata.clear();
+    track.clipGain.store(1);track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
+    track.clipOffset.store(0);track.clipEnvelopeLength.store(0);track.clipFadeIn.store(0);track.clipFadeOut.store(0);
+    track.clipTrimStart.store(0);track.clipTrimEnd.store(1);track.warpFormant.store(0);
+    track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     std::atomic_store(&track.playbackClips,
         std::shared_ptr<const std::vector<AudioClipMetadata>>{});
     track.fileName = std::move(newFileName); track.lengthSeconds.store(newLengthSeconds); track.bufferSampleRate.store(outputRate); track.startSeconds.store(0.0);
@@ -1127,7 +1137,7 @@ void AudioEngine::clearAudioTrack(int trackIndex)
     if (wasInitialised) deviceManager.removeAudioCallback(this);
     auto& track = *tracks[(size_t)trackIndex];
     track.loaded.store(false, std::memory_order_release);
-    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear(); track.clipId.clear(); track.clipMetadata.clear();
+    std::atomic_store(&track.buffer, std::shared_ptr<juce::AudioBuffer<float>>{}); track.contentRevision.fetch_add(1, std::memory_order_relaxed); track.lengthSeconds.store(0.0); track.bufferSampleRate.store(0.0); track.startSeconds.store(0.0); track.fileName.clear(); track.clipId.clear(); track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     track.warpEnabled.store(false, std::memory_order_relaxed);
     track.warpMode.store(0, std::memory_order_relaxed);
     track.warpMarkerCount.store(0, std::memory_order_release);
@@ -1327,38 +1337,81 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getAudioClips(int track
     return tracks[(size_t)trackIndex]->clipMetadata;
 }
 
-bool AudioEngine::addAudioClipMetadata(int trackIndex, const AudioClipMetadata& clip)
+bool AudioEngine::addAudioClipMetadata(int trackIndex,const AudioClipMetadata& clip)
 {
-    if (!isValidTrackIndex(trackIndex) || clip.id.isEmpty()
-        || !std::isfinite(clip.startSeconds) || clip.startSeconds < 0.0
-        || !std::isfinite(clip.lengthSeconds) || clip.lengthSeconds <= 0.0
-        || !std::isfinite(clip.trimStartFraction) || !std::isfinite(clip.trimEndFraction)
-        || clip.trimStartFraction < 0.0 || clip.trimEndFraction > 1.0
-        || clip.trimStartFraction >= clip.trimEndFraction
-        || !std::isfinite(clip.clipGain) || clip.clipGain < 0.0f || clip.clipGain > 4.0f
-        || !std::isfinite(clip.pitchSemitones) || std::abs(clip.pitchSemitones) > 48.0
-        || !std::isfinite(clip.fadeInSeconds) || clip.fadeInSeconds < 0.0
-        || !std::isfinite(clip.fadeOutSeconds) || clip.fadeOutSeconds < 0.0)
-        return false;
-    const juce::ScopedLock lock(stateLock);
-    auto& clips = tracks[(size_t)trackIndex]->clipMetadata;
-    for (const auto& existing : clips)
-        if (existing.id == clip.id)
-            return false;
-    try
-    {
-        clips.push_back(clip);
-        std::shared_ptr<const std::vector<AudioClipMetadata>> snapshot =
-            std::make_shared<const std::vector<AudioClipMetadata>>(clips);
-        std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips, std::move(snapshot));
+    auto clips=getAudioClips(trackIndex);clips.push_back(clip);return replaceAudioClips(trackIndex,clips);
+}
+
+void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const AudioClipMetadata& clip)
+{
+    element.setAttribute("id",clip.id);
+    element.setAttribute("sourceName",clip.sourceName);
+    element.setAttribute("sourcePath",clip.sourcePath);
+    element.setAttribute("startSeconds",clip.startSeconds);
+    element.setAttribute("lengthSeconds",clip.lengthSeconds);
+    element.setAttribute("trimStart",clip.trimStartFraction);
+    element.setAttribute("trimEnd",clip.trimEndFraction);
+    element.setAttribute("clipGain",(double)clip.clipGain);
+    element.setAttribute("pitchSemitones",clip.pitchSemitones);
+    element.setAttribute("reverse",clip.reverse);
+    element.setAttribute("muted",clip.muted);
+    element.setAttribute("fadeInSeconds",clip.fadeInSeconds);
+    element.setAttribute("fadeOutSeconds",clip.fadeOutSeconds);
+    element.setAttribute("offsetSeconds",clip.offsetSeconds);
+    element.setAttribute("envelopeLengthSeconds",clip.envelopeLengthSeconds);
+    element.setAttribute("formant",clip.formant);
+    auto* warp=element.createNewChildElement("Warp");
+    warp->setAttribute("enabled",clip.warp.enabled);warp->setAttribute("mode",clip.warp.mode);
+    for(int i=0;i<clip.warp.count;++i){auto* m=warp->createNewChildElement("Marker");m->setAttribute("source",clip.warp.source[(size_t)i]);m->setAttribute("target",clip.warp.target[(size_t)i]);}
+
+}
+AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::XmlElement& element)
+{
+    AudioClipMetadata clip;
+    clip.id=element.getStringAttribute("id");
+    clip.sourceName=element.getStringAttribute("sourceName");
+    clip.sourcePath=element.getStringAttribute("sourcePath");
+    clip.startSeconds=element.getDoubleAttribute("startSeconds",0.0);
+    clip.lengthSeconds=element.getDoubleAttribute("lengthSeconds",0.0);
+    clip.trimStartFraction=element.getDoubleAttribute("trimStart",0.0);
+    clip.trimEndFraction=element.getDoubleAttribute("trimEnd",1.0);
+    clip.clipGain=(float)element.getDoubleAttribute("clipGain",1.0);
+    clip.pitchSemitones=element.getDoubleAttribute("pitchSemitones",0.0);
+    clip.reverse=element.getBoolAttribute("reverse",false);
+    clip.muted=element.getBoolAttribute("muted",false);
+    clip.fadeInSeconds=element.getDoubleAttribute("fadeInSeconds",0.0);
+    clip.fadeOutSeconds=element.getDoubleAttribute("fadeOutSeconds",0.0);
+    clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
+    clip.envelopeLengthSeconds=element.getDoubleAttribute("envelopeLengthSeconds",0);
+    clip.formant=element.getDoubleAttribute("formant",0);
+    if(auto* warp=element.getChildByName("Warp")){
+        clip.warp.enabled=warp->getBoolAttribute("enabled",false);clip.warp.mode=warp->getIntAttribute("mode",0);
+        for(auto* m:warp->getChildIterator()){if(clip.warp.count>=maxWarpMarkers)break;
+            const auto i=(size_t)clip.warp.count++;clip.warp.source[i]=m->getDoubleAttribute("source");clip.warp.target[i]=m->getDoubleAttribute("target");}
     }
-    catch (...)
-    {
-        clips.erase(std::remove_if(clips.begin(), clips.end(),
-            [&](const AudioClipMetadata& entry) { return entry.id == clip.id; }), clips.end());
-        return false;
-    }
-    return true;
+
+    return clip;
+}
+
+bool AudioEngine::replaceAudioClips(int trackIndex, const std::vector<AudioClipMetadata>& clips)
+{
+    if(!isValidTrackIndex(trackIndex))return false;
+    try {
+        std::set<juce::String> ids;
+        for(const auto& c:clips)
+            if(!validAudioClip(c) || !ids.insert(c.id).second)return false;
+        auto prepared=clips;
+        auto voices=std::make_shared<std::vector<std::shared_ptr<AudioTrackState>>>();
+        for(const auto& clip:clips)voices->push_back(prepareAudioVoice(clip));
+        std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>> voiceSnapshot=voices;
+        std::shared_ptr<const std::vector<AudioClipMetadata>> snapshot=
+            std::make_shared<const std::vector<AudioClipMetadata>>(prepared);
+        const juce::ScopedLock lock(stateLock);
+        tracks[(size_t)trackIndex]->clipMetadata.swap(prepared);
+        std::atomic_store(&tracks[(size_t)trackIndex]->regionVoices,std::move(voiceSnapshot));
+        std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips,std::move(snapshot));
+        return true;
+    }catch(...){return false;}
 }
 
 bool AudioEngine::loadAudioClipSource(int trackIndex, const juce::String& clipId,
@@ -1402,20 +1455,13 @@ bool AudioEngine::loadAudioClipSource(int trackIndex, const juce::String& clipId
         error = "Unable to decode audio clip source.";
         return false;
     }
-    const juce::ScopedLock lock(stateLock);
-    for (auto& clip : tracks[(size_t)trackIndex]->clipMetadata)
-    {
-        if (clip.id != clipId)
-            continue;
-        clip.sourceBuffer = decoded;
-        clip.sourceSampleRate = reader->sampleRate;
-        clip.sourceName = sourceFile.getFileName();
-        clip.sourcePath = sourceFile.getFullPathName();
-        std::shared_ptr<const std::vector<AudioClipMetadata>> snapshot =
-            std::make_shared<const std::vector<AudioClipMetadata>>(
-                tracks[(size_t)trackIndex]->clipMetadata);
-        std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips, std::move(snapshot));
-        return true;
+    auto clips=getAudioClips(trackIndex);
+    for(auto& clip:clips){
+        if(clip.id!=clipId)continue;
+        clip.sourceBuffer=decoded;clip.sourceSampleRate=reader->sampleRate;
+        if(clip.sourceName.isEmpty())clip.sourceName=sourceFile.getFileName();
+        clip.sourcePath=sourceFile.getFullPathName();
+        return replaceAudioClips(trackIndex,clips);
     }
     error = "Audio clip no longer exists.";
     return false;
@@ -1426,7 +1472,7 @@ void AudioEngine::clearAudioClipMetadata(int trackIndex)
     if (!isValidTrackIndex(trackIndex))
         return;
     const juce::ScopedLock lock(stateLock);
-    tracks[(size_t)trackIndex]->clipMetadata.clear();
+    tracks[(size_t)trackIndex]->clipMetadata.clear();std::atomic_store(&tracks[(size_t)trackIndex]->regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     std::atomic_store(&tracks[(size_t)trackIndex]->playbackClips,
         std::shared_ptr<const std::vector<AudioClipMetadata>>{});
 }
@@ -1508,188 +1554,14 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     LibertyOneKnobManager::instance().prepare(device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
 }
 
-void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
+void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lanePan,double rate,
+    std::int64_t position,float* const* outputChannelData,int numOutputChannels,int numSamples)
 {
-    processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
-    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
-    renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
-    // Drum Sampler audition bus. Runs on the audio callback, even while
-    // arrangement transport is stopped. This is not yet track routing.
-    if (auto sampler = std::atomic_load(&drumSampler))
-    {
-        if (!playing.load(std::memory_order_relaxed) || drumSamplerTrack.load(std::memory_order_acquire) < 0)
-        {
-        sampler->processAuditions();
-        if (numOutputChannels > 0 && numSamples > 0)
-        {
-            juce::AudioBuffer<float> drumBus(juce::jmin(2, numOutputChannels), numSamples);
-            drumBus.clear();
-            sampler->render(drumBus, 0, numSamples);
-            for (int ch = 0; ch < drumBus.getNumChannels(); ++ch)
-                if (outputChannelData[ch] != nullptr)
-                    juce::FloatVectorOperations::add(outputChannelData[ch],
-                        drumBus.getReadPointer(ch), numSamples);
-        }
-        }
-    }
-
-    if (inputMonitoringEnabled.load(std::memory_order_acquire) && inputChannelData != nullptr && numInputChannels > 0)
-    {
-        const int left = juce::jlimit(0, numInputChannels - 1, monitorInputLeft.load(std::memory_order_relaxed));
-        const int right = juce::jlimit(0, numInputChannels - 1, monitorInputRight.load(std::memory_order_relaxed));
-        const float* leftIn = inputChannelData[left];
-        const float* rightIn = inputChannelData[right];
-        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && leftIn != nullptr)
-            juce::FloatVectorOperations::add(outputChannelData[0], leftIn, numSamples);
-        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-        {
-            const float* source = rightIn != nullptr ? rightIn : leftIn;
-            if (source != nullptr) juce::FloatVectorOperations::add(outputChannelData[1], source, numSamples);
-        }
-    }
-
-    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0
-        && monitoredInstrumentTrack.load(std::memory_order_acquire) < 0)
-    {
-        // Audition only the selected instrument, leaving arrangement time untouched.
-        const auto previewTrack = stepPreviewTrack.load(std::memory_order_acquire);
-        const auto rate = sampleRate.load(std::memory_order_relaxed);
-        auto& host = LibertyPluginHost::instance();
-        const bool panic = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
-        if (rate > 0.0 && previewTrack >= 0 && previewTrack < (int) instrumentPlayback.size())
-        {
-            auto& state = *instrumentPlayback[(size_t) previewTrack];
-            const auto snapshot = std::atomic_load(&state.noteSnapshot);
-            const double cycle = state.clipLengthSeconds.load(std::memory_order_relaxed);
-            const auto position = stepPreviewSamples.load(std::memory_order_relaxed);
-            juce::MidiBuffer midi;
-            if (panic)
-                for (int channel = 1; channel <= 16; ++channel)
-                {
-                    midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
-                    midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
-                }
-            if (snapshot != nullptr && cycle > 0.0 && host.hasInstrumentForTrack(previewTrack))
-            {
-                const double blockStart = (double) position / rate;
-                const double blockEnd = (double) (position + numSamples) / rate;
-                for (const auto& note : snapshot->notes)
-                {
-                    const int channel = juce::jlimit(1, 16, note.channel);
-                    const int pitch = juce::jlimit(0, 127, (int) std::llround(69.0 + 12.0 * std::log2(juce::jmax(0.0001, note.frequency / 440.0))));
-                    const float velocity = juce::jlimit(0.0f, 1.0f, note.amplitude / 0.045f);
-                    const auto firstCycle = (std::int64_t) std::floor(blockStart / cycle);
-                    const auto lastCycle = (std::int64_t) std::floor(blockEnd / cycle);
-                    for (auto iteration = firstCycle; iteration <= lastCycle; ++iteration)
-                    {
-                        const double offset = (double) iteration * cycle;
-                        const double start = offset + note.startSeconds;
-                        const double end = offset + note.endSeconds;
-                        // Each loop iteration receives a new stable draw. Both note
-                        // events use the same decision, including across audio blocks.
-                        std::uint64_t draw = static_cast<std::uint64_t>(iteration)
-                            ^ (static_cast<std::uint64_t>(std::llround(note.startSeconds * 1000000.0)) << 1)
-                            ^ (static_cast<std::uint64_t>(pitch) << 24)
-                            ^ (static_cast<std::uint64_t>(channel) << 40);
-                        draw ^= draw >> 30;
-                        draw *= UINT64_C(0xbf58476d1ce4e5b9);
-                        draw ^= draw >> 27;
-                        draw *= UINT64_C(0x94d049bb133111eb);
-                        draw ^= draw >> 31;
-                        if (note.probability <= 0 || (note.probability < 100
-                            && draw % 100 >= static_cast<std::uint64_t>(note.probability))) continue;
-                        if (start >= blockStart && start < blockEnd)
-                            midi.addEvent(juce::MidiMessage::noteOn(channel, pitch, velocity),
-                                          juce::jlimit(0, numSamples - 1, (int) std::llround((start - blockStart) * rate)));
-                        if (end >= blockStart && end < blockEnd)
-                            midi.addEvent(juce::MidiMessage::noteOff(channel, pitch),
-                                          juce::jlimit(0, numSamples - 1, (int) std::llround((end - blockStart) * rate)));
-                    }
-                }
-                juce::AudioBuffer<float> bus;
-                if (host.renderInstrumentForTrack(previewTrack, bus, numSamples, midi,
-                                                  state.gain.load(std::memory_order_relaxed),
-                                                  state.pan.load(std::memory_order_relaxed)))
-                {
-                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                        if (outputChannelData[ch] != nullptr)
-                            juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
-                }
-            }
-            stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
-        }
-        return;
-    }
-
-    juce::MidiBuffer liveMidi;
-    liveMidiCollector.removeNextBlockOfMessages(liveMidi, numSamples);
-    juce::MidiBuffer pianoPreviewMidi;
-    pianoPreviewCollector.removeNextBlockOfMessages(pianoPreviewMidi, numSamples);
-    const int pianoPreviewLane = pianoPreviewTrack.load(std::memory_order_acquire);
-    const int liveTrack = monitoredInstrumentTrack.load(std::memory_order_acquire);
-    if (!playing.load())
-    {
-        instrumentResumePending.store(false, std::memory_order_release);
-        if (instrumentPanicPending.exchange(false, std::memory_order_acq_rel))
-        {
-            auto& pluginHost = LibertyPluginHost::instance();
-            for (int instrumentTrack = 0; instrumentTrack < (int) instrumentPlayback.size(); ++instrumentTrack)
-            {
-                if (!pluginHost.hasInstrumentForTrack(instrumentTrack)) continue;
-                juce::MidiBuffer panicMidi;
-                for (int channel = 1; channel <= 16; ++channel)
-                {
-                    panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
-                    panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
-                }
-                juce::AudioBuffer<float> panicBuffer;
-                pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
-            }
-        }
-        // Always process loaded instrument plugins, including when transport is
-        // stopped. A plugin's own GUI keyboard generates notes internally and
-        // cannot be heard unless its processBlock keeps running.
-        auto& host = LibertyPluginHost::instance();
-        for (int instrumentTrack = 0; instrumentTrack < (int)instrumentPlayback.size(); ++instrumentTrack)
-        {
-            auto& state = *instrumentPlayback[(size_t)instrumentTrack];
-            if (state.muted.load(std::memory_order_relaxed)
-                || !host.hasInstrumentForTrack(instrumentTrack))
-                continue;
-            juce::MidiBuffer midi;
-            if (instrumentTrack == liveTrack)
-                midi.addEvents(liveMidi, 0, numSamples, 0);
-            if (instrumentTrack == pianoPreviewLane)
-                midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
-            juce::AudioBuffer<float> bus;
-            if (host.renderInstrumentForTrack(instrumentTrack, bus, numSamples, midi,
-                                              state.gain.load(std::memory_order_relaxed),
-                                              state.pan.load(std::memory_order_relaxed)))
-            {
-                for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                    if (outputChannelData[ch] != nullptr)
-                        juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
-            }
-        }
-        return;
-    }
-
-    const auto position = transportSamples.load();
-    const auto projectLength = getProjectLengthSamples();
-    const bool hasBoundedAudioProject = projectLength > 0;
-    const bool anyPlaybackSolo = isAnyTrackSolo();
-    const auto rate = sampleRate.load();
-    auto& pluginHost = LibertyPluginHost::instance();
-    auto& oneKnob = LibertyOneKnobManager::instance();
-    const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
-    const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
-
-    for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
-    {
-        auto& track = *tracks[(size_t)trackIndex];
+    if(rate<=0)return;
+    do {
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
-        if (audioBuffer == nullptr || track.muted.load() || (anyPlaybackSolo && !track.solo.load())) continue;
+        if (audioBuffer == nullptr || track.clipMuted.load() || audioBuffer->getNumSamples()==0) continue;
         const auto startSample = static_cast<std::int64_t>(std::llround(track.startSeconds.load() * rate));
         const auto warpSnapshot = std::atomic_load(&track.warpMarkerSnapshot);
         const bool warpActive = warpSnapshot != nullptr && warpSnapshot->enabled;
@@ -1702,37 +1574,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         const auto samplesToMix = static_cast<int>(juce::jmax<std::int64_t>(0, mixEnd - mixStart));
         if (samplesToMix <= 0) continue;
         const auto outputOffset = static_cast<int>(mixStart - position);
-        const auto sourceOffset = static_cast<int>(mixStart - startSample);
-        const auto gain = track.gain.load() * track.clipGain.load(); const auto pan = track.pan.load();
+        const auto sourceOffset = mixStart - startSample;
+        const double offsetSeconds=track.clipOffset.load();
+        auto envelopeAt=[&](double t){
+            double e=1;const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
+            const double duration=track.clipEnvelopeLength.load()>0?track.clipEnvelopeLength.load():track.lengthSeconds.load();
+            if(fi>0)e=juce::jmin(e,t/fi);if(fo>0)e=juce::jmin(e,(duration-t)/fo);
+            return (float)juce::jlimit(0.0,1.0,e);
+        };
+        const auto gain = laneGain * track.clipGain.load(); const auto pan = lanePan;
         const double clipPitchRatio = std::pow(2.0, track.clipPitch.load() / 12.0);
         const bool clipReversed = track.clipReverse.load();
         const auto leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f); const auto rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
         const auto sourceChannels = audioBuffer->getNumChannels();
-
-        const int insertChannels = juce::jlimit(1, 2, numOutputChannels);
-        juce::AudioBuffer<float> preInsertBaseline(insertChannels, numSamples);
-        for (int ch = 0; ch < insertChannels; ++ch)
-            if (outputChannelData[ch] != nullptr) preInsertBaseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-            else preInsertBaseline.clear(ch, 0, numSamples);
-        auto processTrackInsertChain = [&]()
-        {
-            juce::AudioBuffer<float> trackBus(insertChannels, numSamples);
-            for (int ch = 0; ch < insertChannels; ++ch)
-            {
-                if (outputChannelData[ch] == nullptr) { trackBus.clear(ch, 0, numSamples); continue; }
-                trackBus.copyFrom(ch, 0, outputChannelData[ch], numSamples);
-                trackBus.addFrom(ch, 0, preInsertBaseline, ch, 0, numSamples, -1.0f);
-                juce::FloatVectorOperations::copy(outputChannelData[ch], preInsertBaseline.getReadPointer(ch), numSamples);
-            }
-            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
-            {
-                pluginHost.processAudioEffectSlot(trackIndex, slot, trackBus);
-                oneKnob.processInsertSlot(trackIndex, slot, trackBus);
-            }
-            for (int ch = 0; ch < insertChannels; ++ch)
-                if (outputChannelData[ch] != nullptr)
-                    juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
-        };
 
         if (!warpActive || rawMarkerCount < 2)
         {
@@ -1742,9 +1596,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const double sourceStep = sourceRate / rate * clipPitchRatio;
             for (int s = 0; s < samplesToMix; ++s)
             {
-                const double forwardPosition = (static_cast<double>(sourceOffset) + s) * sourceStep;
+                const double localSeconds=(double)(sourceOffset+s)/rate+offsetSeconds;
+                const double forwardPosition = localSeconds*rate*sourceStep;
+                const double trimStart=track.clipTrimStart.load()*audioBuffer->getNumSamples();
+                const double trimEnd=track.clipTrimEnd.load()*audioBuffer->getNumSamples();
+                if(forwardPosition>=trimEnd-trimStart)continue;
                 const double sourcePosition = juce::jlimit(0.0, static_cast<double>(lastSample),
-                    clipReversed ? (double)lastSample - forwardPosition : forwardPosition);
+                    clipReversed ? trimEnd-1.0-forwardPosition : trimStart+forwardPosition);
                 const int i1 = static_cast<int>(std::floor(sourcePosition));
                 const int i2 = juce::jmin(lastSample, i1 + 1);
                 const float frac = static_cast<float>(sourcePosition - static_cast<double>(i1));
@@ -1754,11 +1612,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     return data[i1] + (data[i2] - data[i1]) * frac;
                 };
                 if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                    outputChannelData[0][outputOffset + s] += readLinear(0) * leftGain;
+                    outputChannelData[0][outputOffset + s] += readLinear(0) * leftGain * envelopeAt(localSeconds);
                 if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                    outputChannelData[1][outputOffset + s] += readLinear(sourceChannels == 1 ? 0 : 1) * rightGain;
+                    outputChannelData[1][outputOffset + s] += readLinear(sourceChannels == 1 ? 0 : 1) * rightGain * envelopeAt(localSeconds);
             }
-            processTrackInsertChain();
+
             continue;
         }
 
@@ -1827,7 +1685,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         int currentSegment = 0;
         for (int s = 0; s < samplesToMix; ++s)
         {
-            const double targetSeconds = (double)(mixStart - startSample + s) / rate;
+            const double targetSeconds = (double)(mixStart - startSample + s) / rate + offsetSeconds;
             track.spectralBlend = juce::jlimit(0.0f, 1.0f,
                 track.spectralBlend + (spectralReady ? spectralStep : -spectralStep));
 
@@ -2026,7 +1884,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 const float fallback = readGrain(channel);
                 if (!spectralReady || track.spectralBlend <= 0.0f)
                     return fallback;
-                const double cachePosition = targetSeconds * rate;
+                const double cachePosition = targetSeconds * sourceRate;
                 const int index = juce::jlimit(0, spectral->getNumSamples() - 2,
                     (int)std::floor(cachePosition));
                 const float fraction = (float)juce::jlimit(0.0, 1.0, cachePosition - index);
@@ -2037,73 +1895,226 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     + processed * track.spectralBlend;
             };
             if (numOutputChannels > 0 && outputChannelData[0] != nullptr && sourceChannels > 0)
-                outputChannelData[0][outputOffset + s] += readMixed(0) * leftGain;
+                outputChannelData[0][outputOffset + s] += readMixed(0) * leftGain * envelopeAt(targetSeconds);
             if (numOutputChannels > 1 && outputChannelData[1] != nullptr && sourceChannels > 0)
-                outputChannelData[1][outputOffset + s] += readMixed(sourceChannels == 1 ? 0 : 1) * rightGain;
+                outputChannelData[1][outputOffset + s] += readMixed(sourceChannels == 1 ? 0 : 1) * rightGain * envelopeAt(targetSeconds);
         }
         track.richeNextSample = mixEnd;
 
-        processTrackInsertChain();
+
+    }while(false);
+}
+
+void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
+{
+    processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
+    for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+    renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
+    // Drum Sampler audition bus. Runs on the audio callback, even while
+    // arrangement transport is stopped. This is not yet track routing.
+    if (auto sampler = std::atomic_load(&drumSampler))
+    {
+        if (!playing.load(std::memory_order_relaxed) || drumSamplerTrack.load(std::memory_order_acquire) < 0)
+        {
+        sampler->processAuditions();
+        if (numOutputChannels > 0 && numSamples > 0)
+        {
+            juce::AudioBuffer<float> drumBus(juce::jmin(2, numOutputChannels), numSamples);
+            drumBus.clear();
+            sampler->render(drumBus, 0, numSamples);
+            for (int ch = 0; ch < drumBus.getNumChannels(); ++ch)
+                if (outputChannelData[ch] != nullptr)
+                    juce::FloatVectorOperations::add(outputChannelData[ch],
+                        drumBus.getReadPointer(ch), numSamples);
+        }
+        }
     }
 
-    // Independent clips: immutable snapshots avoid locking or decoding on the
-    // audio thread. Mix only clips with an already decoded source buffer.
-    if (rate > 0.0 && numOutputChannels > 0)
+    if (inputMonitoringEnabled.load(std::memory_order_acquire) && inputChannelData != nullptr && numInputChannels > 0)
     {
-        const auto blockEnd = position + numSamples;
-        for (int trackIndex = 0; trackIndex < (int) tracks.size(); ++trackIndex)
+        const int left = juce::jlimit(0, numInputChannels - 1, monitorInputLeft.load(std::memory_order_relaxed));
+        const int right = juce::jlimit(0, numInputChannels - 1, monitorInputRight.load(std::memory_order_relaxed));
+        const float* leftIn = inputChannelData[left];
+        const float* rightIn = inputChannelData[right];
+        if (numOutputChannels > 0 && outputChannelData[0] != nullptr && leftIn != nullptr)
+            juce::FloatVectorOperations::add(outputChannelData[0], leftIn, numSamples);
+        if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
         {
-            const auto& track = *tracks[(size_t) trackIndex];
-            if (track.muted.load(std::memory_order_relaxed)
-                || (anyPlaybackSolo && !track.solo.load(std::memory_order_relaxed)))
-                continue;
-            const auto snapshot = std::atomic_load(&track.playbackClips);
-            if (!snapshot)
-                continue;
-            const float gain = track.gain.load(std::memory_order_relaxed);
-            const float pan = track.pan.load(std::memory_order_relaxed);
-            const float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
-            const float rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
-            for (const auto& clip : *snapshot)
-            {
-                const auto& source = clip.sourceBuffer;
-                if (!source || source->getNumSamples() == 0 || clip.sourceSampleRate <= 0.0)
-                    continue;
-                const auto start = (std::int64_t) std::llround(clip.startSeconds * rate);
-                const auto end = start + (std::int64_t) std::llround(clip.lengthSeconds * rate);
-                if (blockEnd <= start || position >= end)
-                    continue;
-                const auto from = juce::jmax(position, start);
-                const auto to = juce::jmin(blockEnd, end);
-                const int last = source->getNumSamples() - 1;
-                const double sourceStart = clip.trimStartFraction * last;
-                const double sourceEnd = clip.trimEndFraction * last;
-                const double step = clip.sourceSampleRate / rate;
-                for (auto sample = from; sample < to; ++sample)
+            const float* source = rightIn != nullptr ? rightIn : leftIn;
+            if (source != nullptr) juce::FloatVectorOperations::add(outputChannelData[1], source, numSamples);
+        }
+    }
+
+    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0
+        && monitoredInstrumentTrack.load(std::memory_order_acquire) < 0)
+    {
+        // Audition only the selected instrument, leaving arrangement time untouched.
+        const auto previewTrack = stepPreviewTrack.load(std::memory_order_acquire);
+        const auto rate = sampleRate.load(std::memory_order_relaxed);
+        auto& host = LibertyPluginHost::instance();
+        const bool panic = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
+        if (rate > 0.0 && previewTrack >= 0 && previewTrack < (int) instrumentPlayback.size())
+        {
+            auto& state = *instrumentPlayback[(size_t) previewTrack];
+            const auto snapshot = std::atomic_load(&state.noteSnapshot);
+            const double cycle = state.clipLengthSeconds.load(std::memory_order_relaxed);
+            const auto position = stepPreviewSamples.load(std::memory_order_relaxed);
+            juce::MidiBuffer midi;
+            if (panic)
+                for (int channel = 1; channel <= 16; ++channel)
                 {
-                    const double sourcePosition = sourceStart + (double) (sample - start) * step;
-                    if (sourcePosition >= sourceEnd || sourcePosition > last)
-                        break;
-                    const int index = (int) sourcePosition;
-                    const int next = juce::jmin(last, index + 1);
-                    const float fraction = (float) (sourcePosition - index);
-                    const int outputIndex = (int) (sample - position);
-                    if (outputChannelData[0] != nullptr)
+                    midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+            if (snapshot != nullptr && cycle > 0.0 && host.hasInstrumentForTrack(previewTrack))
+            {
+                const double blockStart = (double) position / rate;
+                const double blockEnd = (double) (position + numSamples) / rate;
+                for (const auto& note : snapshot->notes)
+                {
+                    const int channel = juce::jlimit(1, 16, note.channel);
+                    const int pitch = juce::jlimit(0, 127, (int) std::llround(69.0 + 12.0 * std::log2(juce::jmax(0.0001, note.frequency / 440.0))));
+                    const float velocity = juce::jlimit(0.0f, 1.0f, note.amplitude / 0.045f);
+                    const auto firstCycle = (std::int64_t) std::floor(blockStart / cycle);
+                    const auto lastCycle = (std::int64_t) std::floor(blockEnd / cycle);
+                    for (auto iteration = firstCycle; iteration <= lastCycle; ++iteration)
                     {
-                        const float* data = source->getReadPointer(0);
-                        outputChannelData[0][outputIndex] +=
-                            (data[index] + (data[next] - data[index]) * fraction) * leftGain;
-                    }
-                    if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-                    {
-                        const float* data = source->getReadPointer(
-                            juce::jmin(1, source->getNumChannels() - 1));
-                        outputChannelData[1][outputIndex] +=
-                            (data[index] + (data[next] - data[index]) * fraction) * rightGain;
+                        const double offset = (double) iteration * cycle;
+                        const double start = offset + note.startSeconds;
+                        const double end = offset + note.endSeconds;
+                        // Each loop iteration receives a new stable draw. Both note
+                        // events use the same decision, including across audio blocks.
+                        std::uint64_t draw = static_cast<std::uint64_t>(iteration)
+                            ^ (static_cast<std::uint64_t>(std::llround(note.startSeconds * 1000000.0)) << 1)
+                            ^ (static_cast<std::uint64_t>(pitch) << 24)
+                            ^ (static_cast<std::uint64_t>(channel) << 40);
+                        draw ^= draw >> 30;
+                        draw *= UINT64_C(0xbf58476d1ce4e5b9);
+                        draw ^= draw >> 27;
+                        draw *= UINT64_C(0x94d049bb133111eb);
+                        draw ^= draw >> 31;
+                        if (note.probability <= 0 || (note.probability < 100
+                            && draw % 100 >= static_cast<std::uint64_t>(note.probability))) continue;
+                        if (start >= blockStart && start < blockEnd)
+                            midi.addEvent(juce::MidiMessage::noteOn(channel, pitch, velocity),
+                                          juce::jlimit(0, numSamples - 1, (int) std::llround((start - blockStart) * rate)));
+                        if (end >= blockStart && end < blockEnd)
+                            midi.addEvent(juce::MidiMessage::noteOff(channel, pitch),
+                                          juce::jlimit(0, numSamples - 1, (int) std::llround((end - blockStart) * rate)));
                     }
                 }
+                juce::AudioBuffer<float> bus;
+                if (host.renderInstrumentForTrack(previewTrack, bus, numSamples, midi,
+                                                  state.gain.load(std::memory_order_relaxed),
+                                                  state.pan.load(std::memory_order_relaxed)))
+                {
+                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                        if (outputChannelData[ch] != nullptr)
+                            juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
+                }
+            }
+            stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
+        }
+        return;
+    }
+
+    juce::MidiBuffer liveMidi;
+    liveMidiCollector.removeNextBlockOfMessages(liveMidi, numSamples);
+    juce::MidiBuffer pianoPreviewMidi;
+    pianoPreviewCollector.removeNextBlockOfMessages(pianoPreviewMidi, numSamples);
+    const int pianoPreviewLane = pianoPreviewTrack.load(std::memory_order_acquire);
+    const int liveTrack = monitoredInstrumentTrack.load(std::memory_order_acquire);
+    if (!playing.load())
+    {
+        instrumentResumePending.store(false, std::memory_order_release);
+        if (instrumentPanicPending.exchange(false, std::memory_order_acq_rel))
+        {
+            auto& pluginHost = LibertyPluginHost::instance();
+            for (int instrumentTrack = 0; instrumentTrack < (int) instrumentPlayback.size(); ++instrumentTrack)
+            {
+                if (!pluginHost.hasInstrumentForTrack(instrumentTrack)) continue;
+                juce::MidiBuffer panicMidi;
+                for (int channel = 1; channel <= 16; ++channel)
+                {
+                    panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
+                    panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
+                }
+                juce::AudioBuffer<float> panicBuffer;
+                pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
         }
+        // Always process loaded instrument plugins, including when transport is
+        // stopped. A plugin's own GUI keyboard generates notes internally and
+        // cannot be heard unless its processBlock keeps running.
+        auto& host = LibertyPluginHost::instance();
+        for (int instrumentTrack = 0; instrumentTrack < (int)instrumentPlayback.size(); ++instrumentTrack)
+        {
+            auto& state = *instrumentPlayback[(size_t)instrumentTrack];
+            if (state.muted.load(std::memory_order_relaxed)
+                || !host.hasInstrumentForTrack(instrumentTrack))
+                continue;
+            juce::MidiBuffer midi;
+            if (instrumentTrack == liveTrack)
+                midi.addEvents(liveMidi, 0, numSamples, 0);
+            if (instrumentTrack == pianoPreviewLane)
+                midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
+            juce::AudioBuffer<float> bus;
+            if (host.renderInstrumentForTrack(instrumentTrack, bus, numSamples, midi,
+                                              state.gain.load(std::memory_order_relaxed),
+                                              state.pan.load(std::memory_order_relaxed)))
+            {
+                for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                    if (outputChannelData[ch] != nullptr)
+                        juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
+            }
+        }
+        return;
+    }
+
+    const auto position = transportSamples.load();
+    const auto projectLength = getProjectLengthSamples();
+    const bool hasBoundedAudioProject = projectLength > 0;
+    const bool anyPlaybackSolo = isAnyTrackSolo();
+    const auto rate = sampleRate.load();
+    auto& pluginHost = LibertyPluginHost::instance();
+    auto& oneKnob = LibertyOneKnobManager::instance();
+    const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
+    const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
+
+    for(int trackIndex=0;trackIndex<(int)tracks.size();++trackIndex){
+        auto& track=*tracks[(size_t)trackIndex];
+        if(track.muted.load() || (anyPlaybackSolo&&!track.solo.load()))continue;
+        const int insertChannels = juce::jlimit(1, 2, numOutputChannels);
+        juce::AudioBuffer<float> preInsertBaseline(insertChannels, numSamples);
+        for (int ch = 0; ch < insertChannels; ++ch)
+            if (outputChannelData[ch] != nullptr) preInsertBaseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+            else preInsertBaseline.clear(ch, 0, numSamples);
+        auto processTrackInsertChain = [&]()
+        {
+            juce::AudioBuffer<float> trackBus(insertChannels, numSamples);
+            for (int ch = 0; ch < insertChannels; ++ch)
+            {
+                if (outputChannelData[ch] == nullptr) { trackBus.clear(ch, 0, numSamples); continue; }
+                trackBus.copyFrom(ch, 0, outputChannelData[ch], numSamples);
+                trackBus.addFrom(ch, 0, preInsertBaseline, ch, 0, numSamples, -1.0f);
+                juce::FloatVectorOperations::copy(outputChannelData[ch], preInsertBaseline.getReadPointer(ch), numSamples);
+            }
+            for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
+            {
+                pluginHost.processAudioEffectSlot(trackIndex, slot, trackBus);
+                oneKnob.processInsertSlot(trackIndex, slot, trackBus);
+            }
+            for (int ch = 0; ch < insertChannels; ++ch)
+                if (outputChannelData[ch] != nullptr)
+                    juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
+        };
+
+
+        mixAudioVoice(track,track.gain.load(),track.pan.load(),rate,position,outputChannelData,numOutputChannels,numSamples);
+        if(const auto voices=std::atomic_load(&track.regionVoices))
+            for(const auto& voice:*voices)
+                mixAudioVoice(*voice,track.gain.load(),track.pan.load(),rate,position,outputChannelData,numOutputChannels,numSamples);
+        processTrackInsertChain();
     }
 
     const bool midiLaneMuted = midiTrackMuted.load(std::memory_order_relaxed);

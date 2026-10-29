@@ -9,6 +9,7 @@ juce::String getLibertyTrackName(int track);
 void setLibertyTrackName(int track, const juce::String& name);
 void resetLibertyTrackNames();
 void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
+juce::String getLibertyMultiMidiStateSignature(const MainComponent&);
 void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
 void resetLibertyMultiMidiProject(MainComponent&);
 void refreshLibertyMixConsole(MainComponent*);
@@ -61,7 +62,8 @@ bool prepareTrackProjectMedia(const juce::File& projectFile,
                               const juce::AudioBuffer<float>* buffer,
                               double sampleRate,
                               juce::File& exportedFile,
-                              juce::File& tempFile)
+                              juce::File& tempFile,
+                              const juce::String& mediaStem = {})
 {
     if (buffer == nullptr || buffer->getNumSamples() <= 0 || buffer->getNumChannels() <= 0 || sampleRate <= 0.0)
         return false;
@@ -70,7 +72,7 @@ bool prepareTrackProjectMedia(const juce::File& projectFile,
     if (!mediaFolder.createDirectory().wasOk() && !mediaFolder.isDirectory())
         return false;
 
-    exportedFile = mediaFolder.getChildFile("Audio_" + juce::String(trackIndex + 1) + ".wav");
+    exportedFile = mediaFolder.getChildFile((mediaStem.isNotEmpty() ? mediaStem : "Audio_" + juce::String(trackIndex + 1) + "_" + juce::Uuid().toString()) + ".wav");
     tempFile = exportedFile.getSiblingFile(
         exportedFile.getFileName() + ".saving-" + juce::Uuid().toString());
 
@@ -238,6 +240,14 @@ juce::String MainComponent::getProjectStateSignature() const
         }
     }
 
+    for(int track=0;track<getAudioTrackCount();++track){
+        signature << "|clipPrimary=" << audioEngine.getTrackClipGain(track) << ","
+                  << audioEngine.getTrackClipPitch(track) << "," << (int)audioEngine.isTrackClipReversed(track);
+        for(const auto& clip:audioEngine.getArrangementAudioClips(track)){
+            juce::XmlElement state("Clip");AudioEngine::writeAudioClipProperties(state,clip);
+            signature << state.toString();
+        }
+    }
     signature << "|midi=";
     for (const auto& note : midiEngine.getNotesCopy())
         signature << note.startTick << ',' << note.lengthTicks << ',' << (int)note.pitch << ',' << (int)note.velocity << ',' << (int)note.channel << ',' << (int)note.probability << ';';
@@ -250,6 +260,7 @@ juce::String MainComponent::getProjectStateSignature() const
     signature << "|stepSequencersHash="
               << juce::String::toHexString((juce::int64) stepSequencerState.toString().hashCode64());
 
+    signature << "|arrangement=" << getLibertyMultiMidiStateSignature(*this);
     return signature;
 }
 
@@ -691,23 +702,34 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             }
             track->setAttribute("clipId", clipId);
         }
-        // Additional clip entries are metadata until multi-source playback is enabled.
+        if(audioEngine.hasAudioFile(i)){
+            const auto regions=audioEngine.getArrangementAudioClips(i);
+            if(!regions.empty())AudioEngine::writeAudioClipProperties(*track->createNewChildElement("PrimaryClipProperties"),regions.front());
+        }
+        // Each independent region has portable media and complete properties.
         auto* clipsElement = track->createNewChildElement("AudioClips");
         for (const auto& clip : audioEngine.getAudioClips(i))
         {
             auto* element = clipsElement->createNewChildElement("Clip");
-            element->setAttribute("id", clip.id);
-            element->setAttribute("sourceName", clip.sourceName);
-            element->setAttribute("sourcePath", clip.sourcePath);
-            element->setAttribute("startSeconds", clip.startSeconds);
-            element->setAttribute("lengthSeconds", clip.lengthSeconds);
-            element->setAttribute("trimStart", clip.trimStartFraction);
-            element->setAttribute("trimEnd", clip.trimEndFraction);
-            element->setAttribute("clipGain", (double) clip.clipGain);
-            element->setAttribute("pitchSemitones", clip.pitchSemitones);
-            element->setAttribute("reverse", clip.reverse);
-            element->setAttribute("fadeInSeconds", clip.fadeInSeconds);
-            element->setAttribute("fadeOutSeconds", clip.fadeOutSeconds);
+            AudioEngine::writeAudioClipProperties(*element,clip);
+            juce::File clipMedia, clipTemp;
+            if(clip.sourceBuffer != nullptr){
+                if(!prepareTrackProjectMedia(file,i,clip.sourceBuffer.get(),clip.sourceSampleRate,
+                    clipMedia,clipTemp,"Clip_"+juce::Uuid().toString())){
+                    for(auto& media:preparedMedia)media.tempFile.deleteFile();
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                        "Liberty",juce::String::fromUTF8("Impossible de sauvegarder le média du clip audio. Le projet précédent est conservé."));
+                    return false;
+                }
+                preparedMedia.push_back({-1,clipMedia,clipTemp,{},false,false});
+            }else if(clip.sourcePath.isNotEmpty()){
+                for(auto& media:preparedMedia)media.tempFile.deleteFile();
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Liberty",juce::String::fromUTF8("Un média de clip audio est indisponible. Rechargez-le avant de sauvegarder."));
+                return false;
+            }
+            element->setAttribute("sourcePath",clipMedia==juce::File{}?juce::String{}:clipMedia.getRelativePathFrom(file.getParentDirectory()));
+
         }
         const auto audioSnapshot = audioEngine.getAudioTrackSnapshot(i);
         juce::File sourceFile = trackSourceFiles[(size_t)i];
@@ -745,7 +767,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
             sourceFile = exportedFile;
         }
 
-        track->setAttribute("sourceFile", sourceFile.getFullPathName());
+        track->setAttribute("sourceFile", sourceFile==juce::File{}?juce::String{}:sourceFile.getRelativePathFrom(file.getParentDirectory()));
         const auto savedFileName = audioSnapshot.loaded ? audioEngine.getAudioFileName(i) : pendingAudioFileNames[(size_t)i];
         const auto savedLengthSeconds = audioSnapshot.loaded ? audioSnapshot.lengthSeconds : pendingAudioLengths[(size_t)i];
         const auto savedStartSeconds = audioSnapshot.loaded ? audioEngine.getTrackStartSeconds(i) : pendingAudioStartSeconds[(size_t)i];
@@ -756,6 +778,9 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
         track->setAttribute("solo", audioEngine.isTrackSolo(i));
+        track->setAttribute("clipGain",audioEngine.getTrackClipGain(i));
+        track->setAttribute("clipPitch",audioEngine.getTrackClipPitch(i));
+        track->setAttribute("clipReverse",audioEngine.isTrackClipReversed(i));
         const auto& pendingWarp = pendingAudioWarpStates[(size_t)i];
         const auto warpSnapshot = audioSnapshot.loaded ? audioEngine.getTrackWarpSnapshot(i) : AudioEngine::WarpSnapshot {};
         track->setAttribute("warpEnabled", audioSnapshot.loaded ? warpSnapshot.enabled : pendingWarp.enabled);
@@ -1228,7 +1253,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         const auto sourcePath = track->getStringAttribute("sourceFile");
-        juce::File sourceFile(sourcePath);
+        juce::File sourceFile=sourcePath.isEmpty()?juce::File{}:(juce::File::isAbsolutePath(sourcePath)?juce::File(sourcePath):file.getParentDirectory().getChildFile(sourcePath));
         if (sourcePath.isNotEmpty() && !juce::File::isAbsolutePath(sourcePath))
             sourceFile = file.getParentDirectory().getChildFile(sourcePath);
         if (sourcePath.isNotEmpty())
@@ -1262,6 +1287,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
 
         trackSourceFiles[(size_t)index] = sourceFile;
+        audioEngine.setTrackClipGain(index,(float)track->getDoubleAttribute("clipGain",1));
+        audioEngine.setTrackClipPitch(index,track->getDoubleAttribute("clipPitch",0));
+        audioEngine.setTrackClipReverse(index,track->getBoolAttribute("clipReverse",false));
         const double savedTimelineStart = pendingAudioStartSeconds[(size_t)index];
         audioEngine.setTrackStartSeconds(index, savedTimelineStart);
         const double savedTimelineLength = pendingAudioLengths[(size_t)index];
@@ -1270,7 +1298,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         const auto savedDisplayName = pendingAudioFileNames[(size_t)index];
         if (savedDisplayName.isNotEmpty())
             audioEngine.setAudioFileName(index, savedDisplayName);
-        if (projectVersion >= 16)
+        if (projectVersion >= 16 && track->getChildByName("PrimaryClipProperties")==nullptr)
         {
             const auto pendingWarp = pendingAudioWarpStates[(size_t)index];
             if (!audioEngine.restoreTrackWarpState(index, pendingWarp.enabled, pendingWarp.mode, pendingWarp.markers))
@@ -1369,7 +1397,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (!trackElement->hasTagName("Track"))
             continue;
         const int index = trackElement->getIntAttribute("index", -1);
-        if (index < 0 || index >= getAudioTrackCount() || !audioEngine.hasAudioFile(index))
+        if (index < 0 || index >= getAudioTrackCount())
             continue;
         auto clipId = trackElement->getStringAttribute("clipId");
         if (clipId.isEmpty())
@@ -1383,29 +1411,33 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             {
                 if (!element->hasTagName("Clip") || ++imported > 1024)
                     continue;
-                AudioEngine::AudioClipMetadata clip;
-                clip.id = element->getStringAttribute("id");
-                clip.sourceName = element->getStringAttribute("sourceName");
-                clip.sourcePath = element->getStringAttribute("sourcePath");
-                clip.startSeconds = element->getDoubleAttribute("startSeconds", 0.0);
-                clip.lengthSeconds = element->getDoubleAttribute("lengthSeconds", 0.0);
-                clip.trimStartFraction = element->getDoubleAttribute("trimStart", 0.0);
-                clip.trimEndFraction = element->getDoubleAttribute("trimEnd", 1.0);
-                clip.clipGain = (float) element->getDoubleAttribute("clipGain", 1.0);
-                clip.pitchSemitones = element->getDoubleAttribute("pitchSemitones", 0.0);
-                clip.reverse = element->getBoolAttribute("reverse", false);
-                clip.fadeInSeconds = element->getDoubleAttribute("fadeInSeconds", 0.0);
-                clip.fadeOutSeconds = element->getDoubleAttribute("fadeOutSeconds", 0.0);
+                auto clip=AudioEngine::readAudioClipProperties(*element);
                 if (audioEngine.addAudioClipMetadata(index, clip) && clip.sourcePath.isNotEmpty())
                 {
                     juce::String clipLoadError;
-                    audioEngine.loadAudioClipSource(index, clip.id,
-                        juce::File(clip.sourcePath), clipLoadError);
+                    const auto media=juce::File::isAbsolutePath(clip.sourcePath)?juce::File(clip.sourcePath)
+                        :file.getParentDirectory().getChildFile(clip.sourcePath);
+                    if(!audioEngine.loadAudioClipSource(index,clip.id,media,clipLoadError))
+                        missingFiles << clip.sourceName << ": " << clipLoadError << "\n";
                 }
             }
         }
     }
 
+    for(const auto* track:project->getChildIterator()){
+        if(!track->hasTagName("Track"))continue;
+        const int index=track->getIntAttribute("index",-1);
+        if(index<0||index>=getAudioTrackCount()||!audioEngine.hasAudioFile(index))continue;
+        if(auto* saved=track->getChildByName("PrimaryClipProperties")){
+            auto clips=audioEngine.getArrangementAudioClips(index);
+            if(!clips.empty()){
+                auto primary=AudioEngine::readAudioClipProperties(*saved);
+                primary.sourceBuffer=clips.front().sourceBuffer;primary.sourceSampleRate=clips.front().sourceSampleRate;
+                clips.front()=std::move(primary);
+                if(!audioEngine.replaceArrangementAudioClips(index,clips))missingFiles<<"Audio "<<index+1<<": propriétés invalides\n";
+            }
+        }
+    }
     // Resolve saved markers against the freshly loaded audio revision.
     // Older projects without this optional element retain default boundaries.
     juce::ValueTree restoredMarkers("AudioDockClipBounds");

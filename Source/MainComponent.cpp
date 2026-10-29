@@ -97,6 +97,10 @@ void MainComponent::updateLoopPunchButtons()
     repaint();
 }
 
+bool handleLibertyClipNameDoubleClick(MainComponent&,juce::Point<int>);
+bool isLibertyClipNameAt(MainComponent&,juce::Point<int>);
+void setLibertyClipManualName(MainComponent&,const juce::String&,const juce::String&);
+
 MainComponent::MainComponent()
 {
     addAndMakeVisible(dockMixerInputLayer);
@@ -666,10 +670,17 @@ void MainComponent::paint(juce::Graphics& g)
                 ? (double)sampleCount / sourceRate : targetDuration;
             const int warpCount = audioEngine.getTrackWarpMarkerCount(selectedTrack);
             const bool showWarpShape = audioEngine.isTrackWarpEnabled(selectedTrack) && warpCount >= 2;
+            const auto regions=audioEngine.getArrangementAudioClips(selectedTrack);
+            const auto region=regions.empty()?AudioEngine::AudioClipMetadata{}:regions.front();
+            const bool canonicalSource=region.offsetSeconds==0&&!region.reverse&&region.pitchSemitones==0
+                &&region.trimStartFraction==0&&region.trimEndFraction==1&&std::abs(targetDuration-sourceDuration)<.000001;
             const auto sourceFractionForTarget = [&](double targetFraction)
             {
-                if (!showWarpShape) return targetFraction;
-                const double target = juce::jlimit(0.0, targetDuration, targetFraction * targetDuration);
+                if (!showWarpShape){
+                    const double position=(region.offsetSeconds+targetFraction*targetDuration)*std::pow(2.0,region.pitchSemitones/12.0)/sourceDuration;
+                    return juce::jlimit(0.0,1.0,region.reverse?region.trimEndFraction-position:region.trimStartFraction+position);
+                }
+                const double target = region.offsetSeconds+juce::jlimit(0.0, targetDuration, targetFraction * targetDuration);
                 for (int i = 0; i < warpCount - 1; ++i)
                 {
                     const double ta = audioEngine.getTrackWarpMarkerTargetSeconds(selectedTrack, i);
@@ -685,7 +696,7 @@ void MainComponent::paint(juce::Graphics& g)
             const double samplesPerPixel = columns > 0
                 ? (double) sampleCount * visibleFraction / (double) columns : 0.0;
             if (pcm != nullptr && pcm->getNumChannels() > 0 && sampleCount > 1
-                && samplesPerPixel <= 2.0 && columns > 1 && !showWarpShape)
+                && samplesPerPixel <= 2.0 && columns > 1 && !showWarpShape && canonicalSource)
             {
                 const int channels = juce::jmin(2, pcm->getNumChannels());
                 for (int channel = 0; channel < channels; ++channel)
@@ -746,8 +757,9 @@ void MainComponent::paint(juce::Graphics& g)
                     const float* samples = usePCM ? pcm->getReadPointer(channel) : nullptr;
                     for (int x = 0; x < columns; ++x)
                     {
-                        const double t0 = sourceFractionForTarget(scroll + visibleFraction * (double)x / (double)columns);
-                        const double t1 = sourceFractionForTarget(scroll + visibleFraction * (double)(x + 1) / (double)columns);
+                        const double mapped0 = sourceFractionForTarget(scroll + visibleFraction * (double)x / (double)columns);
+                        const double mapped1 = sourceFractionForTarget(scroll + visibleFraction * (double)(x + 1) / (double)columns);
+                        const double t0=juce::jmin(mapped0,mapped1),t1=juce::jmax(mapped0,mapped1);
                         float low = 1.0f, high = -1.0f;
                         if (usePCM)
                         {
@@ -1927,8 +1939,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                               : juce::Colour(0xff8bb2d5));
                     g.drawRoundedRectangle(extraBounds.toFloat().reduced(0.5f), 5.0f, 1.0f);
                     g.setFont(11.0f);
-                    g.drawFittedText(extra.sourceName.isNotEmpty() ? extra.sourceName : "Clip audio",
-                                     extraBounds.reduced(6, 3), juce::Justification::centredLeft, 1);
+                    // The common overlay draws the persistent clip title.
                 }
                 if ((size_t)i < waveformMin.size() && !waveformMin[(size_t)i].empty())
                 {
@@ -1949,7 +1960,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                      : juce::Colour(0xffd1e2ec));
                 g.setFont(juce::Font(selected ? 11.5f : 11.0f,
                                      selected ? juce::Font::bold : juce::Font::plain));
-                g.drawText(audioEngine.getAudioFileName(i), clip.reduced(10), juce::Justification::centredLeft, true);
+                // Source media names remain in the model; the overlay draws clip names.
             }
         }
         else if (logicalRow < audioCount + midiCount)
@@ -2106,7 +2117,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         g.setColour(selected ? juce::Colour(0xfff8f2e8)
                                              : juce::Colour(0xffe2d4bf));
                         g.setFont(juce::Font(selected ? 11.5f : 11.0f, juce::Font::bold));
-                        g.drawText(patternClip.name, clip.reduced(7, 2), juce::Justification::centredLeft, true);
+                        // Shared MIDI naming is drawn by the arrangement overlay.
                     }
                 }
             }
@@ -3452,11 +3463,18 @@ void MainComponent::restoreAudioDockClipBounds(int track)
 
 bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 {
+    if(isLibertyClipNameAt(*this,p))return false;
     if (p.x < trackHeaderWidth || p.y < getArrangeTop() || p.y >= getMixerTop())
         return false;
     const int track = getAudioTrackAtPosition(p);
-    if (track < 0 || !isPointInsideAudioClip(track, p))
-        return false;
+    if(track<0)return false;
+    const double px=getLibertyTimelinePixelsPerSecond();
+    const double time=(p.x-trackHeaderWidth)/px;
+    const auto clips=audioEngine.getArrangementAudioClips(track);
+    const auto found=std::find_if(clips.rbegin(),clips.rend(),[&](const auto& c){return time>=c.startSeconds && time<c.startSeconds+c.lengthSeconds;});
+    if(found==clips.rend() || !audioEngine.promoteAudioClip(track,found->id))return false;
+    rebuildWaveformCache(track);
+    selectedExtraAudioClipTrack=-1;selectedExtraAudioClipId.clear();
     selectedTrack = track;
     restoreAudioDockClipBounds(track);
     dockMixerMode = false;
@@ -3471,6 +3489,7 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto click = event.getPosition();
+    if(handleLibertyClipNameDoubleClick(*this,click))return;
     // The real audio dock is painted by MainComponent, not AudioClipWarpView.
     // Insert markers here so double-clicks reach the waveform users actually see.
     if (click.y >= getMixerTop())
@@ -3576,6 +3595,7 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
                 if (name.isNotEmpty())
                 {
                     savedClips[(size_t) i].name = name.substring(0, 64);
+                    setLibertyClipManualName(*safeThis,"pattern:"+savedClips[(size_t)i].namingId,name);
                     safeThis->repaint();
                 }
             }), true);
@@ -3603,6 +3623,9 @@ void MainComponent::activateDockTab(int index)
             // Audio tracks have their own waveform editor in this same dock tab.
             if (!editorTrack && !(selectedTrack >= 0 && selectedTrack < getAudioTrackCount()
                                   && audioEngine.hasAudioFile(selectedTrack))) return;
+            dockCollapsed = false;
+            dockVisibilityButton.setButtonText(juce::String::fromUTF8("▾"));
+            dockVisibilityButton.setTooltip(juce::String::fromUTF8("Masquer le dock"));
             dockMixerMode = false;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = false;
@@ -4657,33 +4680,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
             if (tool == 2) // SPLIT / COUPER
             {
-                int newTrack = -1;
-                for (int i = 0; i < getAudioTrackCount(); ++i)
-                    if (i != track
-                        && !audioEngine.hasAudioFile(i)
-                        && trackSourceFiles[(size_t)i].getFullPathName().isEmpty())
-                    {
-                        newTrack = i;
-                        break;
-                    }
-                if (newTrack < 0)
-                    newTrack = addAudioTrack();
-
-                juce::String error;
-                if (audioEngine.splitAudioTrack(track, clickTime, newTrack, error))
-                {
-                    trackSourceFiles[(size_t)newTrack] = trackSourceFiles[(size_t)track];
-                    pendingAudioFileNames[(size_t)newTrack].clear();
-                    pendingAudioLengths[(size_t)newTrack] = 0.0;
-                    pendingAudioStartSeconds[(size_t)newTrack] = 0.0;
-                    pendingAudioWarpStates[(size_t)newTrack] = {};
-                    rebuildWaveformCache(track);
-                    rebuildWaveformCache(newTrack);
-                    selectedTrack = newTrack;
-                }
-                else
-                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                           "Liberty - Split", error, "OK");
+                const auto id=audioEngine.getAudioClipId(track);
+                if(audioEngine.splitArrangementAudioClip(track,id,clickTime))rebuildWaveformCache(track);
                 repaint();
                 return;
             }
