@@ -84,6 +84,24 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         int crossings=0;const auto* samples=result.sourceBuffer->getReadPointer(0);
         for(int i=24001;i<48000;++i)if(samples[i-1]<=0 && samples[i]>0)++crossings;
         if(std::abs(crossings*2-440)>4)throw std::runtime_error("stretch pitch");
+        // Stretch must not silently discard the clip's editable controls.
+        auto configured=stretched;
+        configured.id="stretch-properties";
+        configured.clipGain=.42f;
+        configured.pitchSemitones=3;
+        configured.reverse=true;
+        configured.fadeInSeconds=.04;
+        configured.fadeOutSeconds=.06;
+        if(!engine.replaceArrangementAudioClips(0,{configured})
+           || !engine.stretchArrangementAudioClip(0,configured.id,1.5))
+            throw std::runtime_error("stretch properties operation");
+        const auto preserved=engine.getArrangementAudioClips(0).front();
+        if(std::abs(preserved.clipGain-configured.clipGain)>1.e-6f
+           || preserved.pitchSemitones!=configured.pitchSemitones
+           || preserved.reverse!=configured.reverse
+           || preserved.fadeInSeconds!=configured.fadeInSeconds
+           || preserved.fadeOutSeconds!=configured.fadeOutSeconds)
+            throw std::runtime_error("stretch properties lost");
         // The primary and additional paths must use the same Warp renderer.
         for(int mode=0;mode<=5;++mode){
             auto warped=stretched;warped.warp.enabled=true;warped.warp.mode=mode;warped.warp.count=2;
