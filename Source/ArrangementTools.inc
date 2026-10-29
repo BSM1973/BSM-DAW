@@ -967,7 +967,14 @@ bool runArrangementTests(){
         activeArrangeTool=0;
         // Keyboard nudge stays local to the selected MIDI notes and is
         // independently undoable, with the SNAP and all MIDI values intact.
+        // Restore a three-note fixture: the duplication test above intentionally
+        // creates coincident notes, which would make index-based assertions
+        // ambiguous after the MIDI engine re-sorts equal-start copies.
         inlineMidiClearSelection();
+        midiClips[(size_t)multiClip].notes={first,second,third};
+        require(owner.midiEngine.replaceNotes(
+            midiClips[(size_t)multiClip].notes),"keyboard nudge fixture notes");
+        syncPlayback();clearArrangementHistory();
         const auto keyboardBefore=midiClips[(size_t)multiClip].notes;
         require(keyboardBefore.size()>=3,"nudge fixture has three notes");
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
