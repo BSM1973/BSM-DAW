@@ -266,6 +266,46 @@ bool runArrangementTests(){
         require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"seed audio");
         const double px=getLibertyTimelinePixelsPerSecond();
         auto point=[&](int track,double seconds){return juce::Point<int>(owner.trackHeaderWidth+(int)std::lround(seconds*px),owner.getArrangeTrackTop(track)+34);};
+        // Exercise the same fade grips used by the arrangement mouse path.
+        // This also verifies a complete Undo/Redo roundtrip of fade metadata.
+        const auto fadeBox=audioBounds(0,c);
+        if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
+            const int dx=juce::jmax(2,(int)std::lround(.12*px));
+            const juce::Point<int> fadeInPoint{
+                fadeBox.getX()+(int)std::lround(fadeBox.getWidth()*c.fadeInSeconds/c.lengthSeconds),fadeBox.getY()+24};
+            activeArrangeTool=0;
+            require(audioFadeHandleAt(fadeInPoint)==8,"fade in grip hit");
+            beginArrangementEdit();
+            require(handleAudioDown(fadeInPoint)&&audioDragMode==8,"fade in mouse routing");
+            dragAudio(fadeInPoint.translated(dx,0));
+            audioDragTrack=-1;audioDragMode=0;finishArrangementEdit();
+            const auto changed=owner.audioEngine.getArrangementAudioClips(0).front();
+            require(std::abs(changed.fadeInSeconds-(c.fadeInSeconds+(double)dx/px))<.00001,
+                    "fade in drag duration");
+            require(changed.sourceBuffer==source&&changed.fadeOutSeconds==c.fadeOutSeconds
+                    && changed.clipGain==c.clipGain&&changed.reverse==c.reverse,
+                    "fade drag must retain audio properties");
+            undoArrangement(false);
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-c.fadeInSeconds)<.00001,
+                    "undo fade");
+            undoArrangement(true);
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-changed.fadeInSeconds)<.00001,
+                    "redo fade");
+            undoArrangement(false); // Restore the starting clip for the remaining tests.
+            const juce::Point<int> fadeOutPoint{
+                fadeBox.getRight()-(int)std::lround(fadeBox.getWidth()*c.fadeOutSeconds/c.lengthSeconds),fadeBox.getY()+24};
+            require(audioFadeHandleAt(fadeOutPoint)==9,"fade out grip hit");
+            beginArrangementEdit();
+            require(handleAudioDown(fadeOutPoint)&&audioDragMode==9,"fade out mouse routing");
+            dragAudio(fadeOutPoint.translated(-dx,0));
+            audioDragTrack=-1;audioDragMode=0;finishArrangementEdit();
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeOutSeconds
+                             -(c.fadeOutSeconds+(double)dx/px))<.00001,"fade out drag duration");
+            undoArrangement(false);
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeOutSeconds-c.fadeOutSeconds)<.00001,
+                    "undo fade out");
+        }
+
         activeArrangeTool=4;beginArrangementEdit();handleAudioDown(point(0,.5));finishArrangementEdit();
         require(owner.audioEngine.getArrangementAudioClips(0).size()==2,"scissors route");
         undoArrangement(false);require(owner.audioEngine.getArrangementAudioClips(0).size()==1,"undo scissors");
