@@ -18,12 +18,53 @@ namespace
 class PageModeCoordinator;
 std::map<MainComponent*, std::unique_ptr<PageModeCoordinator>> coordinators;
 
+class ArrangementLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+ void drawButtonBackground(juce::Graphics& g, juce::Button& b,
+                           const juce::Colour&, bool hover, bool pressed) override
+ {
+     auto box = b.getLocalBounds().toFloat().reduced(0.7f);
+     const bool selected = b.getToggleState();
+     const auto cyan = juce::Colour(0xff58d1ed);
+     juce::ColourGradient fill(selected ? juce::Colour(0xff305b78) : juce::Colour(0xff243a52),
+                               box.getX(), box.getY(),
+                               selected ? juce::Colour(0xff142b43) : juce::Colour(0xff111f32),
+                               box.getRight(), box.getBottom(), false);
+     g.setGradientFill(fill);
+     g.fillRoundedRectangle(box, 6.5f);
+     g.setColour((selected ? cyan : juce::Colour(0xff65869f)).withAlpha(hover ? 0.95f : 0.65f));
+     g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, 1.0f);
+     if (hover || pressed)
+     {
+         g.setColour(cyan.withAlpha(pressed ? 0.18f : 0.08f));
+         g.fillRoundedRectangle(box.reduced(1.0f), 6.0f);
+     }
+     if (selected)
+     {
+         g.setColour(cyan);
+         g.fillRoundedRectangle(box.getX() + 12.0f, box.getBottom() - 3.0f,
+                                box.getWidth() - 24.0f, 2.0f, 1.0f);
+     }
+ }
+ void drawButtonText(juce::Graphics& g, juce::TextButton& b,
+                     bool, bool) override
+ {
+     g.setColour(b.getToggleState() ? juce::Colours::white : juce::Colour(0xffd0e0ee));
+     g.setFont(juce::Font(11.0f, juce::Font::bold));
+     g.drawFittedText(b.getButtonText(), b.getLocalBounds().reduced(6, 2),
+                      juce::Justification::centred, 1, 0.9f);
+ }
+};
+
 class PageModeCoordinator final : private juce::Timer
 {
 public:
     explicit PageModeCoordinator(MainComponent& ownerIn) : owner(ownerIn)
     {
         configureButton(arrangeButton, "ARRANGEMENT");
+        arrangeButton.setLookAndFeel(&arrangementLook);
+        arrangeButton.setTooltip("Afficher la page Arrangement");
         configureButton(mixButton, "MIXCONSOLE");
         configureButton(performButton, "PERFORMANCE");
 
@@ -61,6 +102,7 @@ public:
     void shutdown()
     {
         stopTimer();
+        arrangeButton.setLookAndFeel(nullptr);
         arrangeButton.setVisible(false);
         mixButton.setVisible(false);
         performButton.setVisible(false);
@@ -118,6 +160,7 @@ private:
 
         const auto active = juce::Colour(0xff315f7a);
         const auto inactive = juce::Colour(0xff252a31);
+        arrangeButton.setToggleState(arrange, juce::dontSendNotification);
         arrangeButton.setColour(juce::TextButton::buttonColourId, arrange ? active : inactive);
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
@@ -125,9 +168,9 @@ private:
         // Navigation starts at the beginning of the transport section, above PLAY.
         // Reserve the next slot for the NAVIGATEUR toggle.
         const int navX = 205;
-        arrangeButton.setBounds(navX, 4, 88, 25);
-        mixButton.setBounds(navX + 92, 4, 112, 25);
-        performButton.setBounds(navX + 208, 4, 110, 25);
+        arrangeButton.setBounds(navX, 4, 120, 25);
+        mixButton.setBounds(navX + 124, 4, 98, 25);
+        performButton.setBounds(navX + 226, 4, 92, 25);
 
         hideEveryLegacyPageButton();
         arrangeButton.setVisible(true);
@@ -154,6 +197,7 @@ private:
     void timerCallback() override { refresh(); }
 
     MainComponent& owner;
+    ArrangementLookAndFeel arrangementLook;
     juce::TextButton arrangeButton, mixButton, performButton;
     juce::TextButton* legacyArrange = nullptr;
     juce::TextButton* legacyMix = nullptr;
