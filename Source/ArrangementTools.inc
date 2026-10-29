@@ -598,25 +598,25 @@ bool runArrangementTests(){
         undoArrangement(true);
         require(midiClips[(size_t)inlineIndex].notes[0].startTick==updatedNote.startTick,
                 "inline MIDI redo");
-        // MIDI time grid stays visible over a coloured clip and aligns with
-        // the global musical ruler, not the beginning of the MIDI region.
+        // The grid must remain visible above the colour-filled MIDI region.
+        // Draw at actual Arrangement coordinates: no synthetic Graphics
+        // transform, which would otherwise alter the clip-region intersection.
         {
-            juce::Image gridCheck(juce::Image::ARGB,600,120,true);
-            juce::Graphics gridGraphics(gridCheck);
-            gridGraphics.setColour(juce::Colour(0xff244d72));
-            gridGraphics.fillAll();
             const double pxNow=getLibertyTimelinePixelsPerSecond();
             const double barSeconds=secondsPerMeasure();
-            const int globalBar=(int)std::lround(owner.trackHeaderWidth+barSeconds*pxNow);
-            const int regionX=juce::jmax(0,globalBar-45);
-            // Render into an image with independent local coordinates while
-            // keeping absolute-timeline mapping via a translated Graphics context.
-            gridGraphics.addTransform(juce::AffineTransform::translation((float)-regionX,0.0f));
-            drawMidiClipTimeGrid(gridGraphics,{regionX,10,90,80},true);
-            const int x=globalBar-regionX;
-            if(x>=1&&x<599){
-                const auto on=gridCheck.getPixelAt(x,47);
-                const auto off=gridCheck.getPixelAt(x-1,47);
+            if(std::isfinite(pxNow)&&pxNow>0 && std::isfinite(barSeconds)&&barSeconds>0){
+                const double barCoordinate=owner.trackHeaderWidth+barSeconds*pxNow;
+                // Work near the first bar if the current zoom is extremely wide.
+                const int barX=(barCoordinate>0.0&&barCoordinate<5000.0)
+                    ?(int)std::lround(barCoordinate):owner.trackHeaderWidth;
+                const int pictureWidth=juce::jmax(800,barX+70);
+                juce::Image gridCheck(juce::Image::ARGB,pictureWidth,120,true);
+                juce::Graphics gridGraphics(gridCheck);
+                gridGraphics.fillAll(juce::Colour(0xff244d72));
+                const int x=juce::jmax(owner.trackHeaderWidth,barX-40);
+                drawMidiClipTimeGrid(gridGraphics,{x,10,80,80},true);
+                const auto on=gridCheck.getPixelAt(barX,47);
+                const auto off=gridCheck.getPixelAt(barX+4,47);
                 require(on!=off,"MIDI clip grid visible over clip fill");
             }
         }
