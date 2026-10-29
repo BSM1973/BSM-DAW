@@ -56,6 +56,12 @@ jobs:
           cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
           ccache --show-stats
 
+      - name: Test audio clip playback and fade preservation
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --audio-clip-playback-test
+
+      - name: Test arrangement clip edits and fade Undo/Redo
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
+
       - name: Run Drum Sampler regression tests
         run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
 
