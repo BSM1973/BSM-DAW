@@ -5,6 +5,8 @@
 #include <memory>
 
 int getLibertyTrackHeightPreset() noexcept;
+void refreshLibertyRecordingTrackLayout(MainComponent*);
+void refreshLibertyTrackHeaderMixLayout(MainComponent*);
 void cycleLibertyTrackHeightPreset();
 
 namespace
@@ -12,7 +14,7 @@ namespace
 class TrackHeightIcon final : public juce::Component
 {
 public:
-    TrackHeightIcon() { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
+    explicit TrackHeightIcon(MainComponent& main) : owner(main) { setMouseCursor(juce::MouseCursor::PointingHandCursor); }
     void paint(juce::Graphics& g) override
     {
         const int preset = getLibertyTrackHeightPreset();
@@ -27,14 +29,16 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.mods.isLeftButtonDown()) { cycleLibertyTrackHeightPreset(); repaint(); }
+        if (e.mods.isLeftButtonDown()) { cycleLibertyTrackHeightPreset(); owner.applyArrangeTrackHeightPreset(); owner.resized(); repaint(); }
     }
+private:
+    MainComponent& owner;
 };
 
 class DynamicTrackController final : public juce::Component, private juce::Timer
 {
 public:
-    explicit DynamicTrackController(MainComponent& o) : owner(o)
+    explicit DynamicTrackController(MainComponent& o) : owner(o), heightIcon(o)
     {
         addAudio.setButtonText("+ AUDIO");
         addAudio.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff245b70));
