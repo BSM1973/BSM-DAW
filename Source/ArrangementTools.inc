@@ -110,6 +110,17 @@ void paintAudioSelection(juce::Graphics& g){
             g.setColour(juce::Colour(0xffbdefff));g.setFont(11);g.drawText(juce::String::fromUTF8("Région audio vide"),box.toNearestInt().reduced(8),juce::Justification::centredLeft);}
         if(c.muted){g.setColour(juce::Colour(0xff101b2a).withAlpha(.70f));g.fillRoundedRectangle(box,5);
             if(box.getHeight()>44){g.setColour(juce::Colour(0xffbdefff));g.drawText("MUET",box.toNearestInt().reduced(8).withTrimmedTop(18),juce::Justification::centredLeft);}}
+        // Fade envelopes are drawn over the audio region, without altering its waveform.
+        if(c.sourceBuffer && box.getWidth()>22.0f && box.getHeight()>18.0f){
+            const float fadeIn=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/juce::jmax(.001,c.lengthSeconds)));
+            const float fadeOut=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/juce::jmax(.001,c.lengthSeconds)));
+            const float top=box.getY()+5.0f,bottom=box.getBottom()-5.0f;
+            g.setColour(juce::Colour(0xfff0c66d));
+            if(fadeIn>0.0f)g.drawLine(box.getX(),bottom,box.getX()+fadeIn,top,1.5f);
+            if(fadeOut>0.0f)g.drawLine(box.getRight()-fadeOut,top,box.getRight(),bottom,1.5f);
+            g.fillEllipse(box.getX()+fadeIn-3.0f,top-3.0f,6.0f,6.0f);
+            g.fillEllipse(box.getRight()-fadeOut-3.0f,top-3.0f,6.0f,6.0f);
+        }
         if(selectedAudio.count({t,c.id})){g.setColour(juce::Colour(0xff63c7e8));g.drawRoundedRectangle(box.reduced(1),5,2);}
     }
 }
@@ -158,7 +169,13 @@ bool handleAudioDown(juce::Point<int> p){
         else if(activeArrangeTool==0||activeArrangeTool==7){
             audioDragOriginal=*it;audioDragTrack=t;audioDragX=p.x;audioDragLength=it->lengthSeconds;
             const auto box=audioBounds(t,*it);
-            audioDragMode=activeArrangeTool==7?4:(p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1));
+            // Drag the small upper-corner fade handles with the selection tool.
+            // Keep the existing lower edge resize handles and clip movement intact.
+            const bool fadeCorner=p.y<=box.getY()+14 && box.getWidth()>28;
+            audioDragMode=activeArrangeTool==7?4:
+                (activeArrangeTool==0 && fadeCorner && p.x<=box.getX()+14?8:
+                 activeArrangeTool==0 && fadeCorner && p.x>=box.getRight()-14?9:
+                 p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1));
         }
     }else if(activeArrangeTool==2 || activeArrangeTool==5){
         AudioClip c;
@@ -181,7 +198,9 @@ void dragAudio(juce::Point<int> p){
     auto clips=owner.audioEngine.getArrangementAudioClips(audioDragTrack);
     for(auto& c:clips)if(c.id==audioDragOriginal.id){
         c=audioDragOriginal;
-        if(audioDragMode==1)c.startSeconds=snapPosition(c.startSeconds+delta);
+        if(audioDragMode==8)c.fadeInSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeInSeconds+delta);
+        else if(audioDragMode==9)c.fadeOutSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeOutSeconds-delta);
+        else if(audioDragMode==1)c.startSeconds=snapPosition(c.startSeconds+delta);
         else if(audioDragMode==2){const double end=c.startSeconds+c.lengthSeconds;
             const double start=juce::jlimit(juce::jmax(0.0,c.startSeconds-c.offsetSeconds),juce::jmax(c.startSeconds,end-minimum),snapPosition(c.startSeconds+delta));
             c.offsetSeconds+=start-c.startSeconds;c.startSeconds=start;c.lengthSeconds=end-start;
