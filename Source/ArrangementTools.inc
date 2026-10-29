@@ -94,6 +94,25 @@ juce::String audioAt(juce::Point<int> p)const {
     for(auto it=clips.rbegin();it!=clips.rend();++it)if(audioBounds(t,*it).contains(p))return it->id;
     return {};
 }
+// The fade grip follows the current endpoint, not the clip corner.
+int audioFadeHandleAt(juce::Point<int> p) const {
+    if(activeArrangeTool!=0)return 0;
+    const int t=audioLaneAt(p);if(t<0)return 0;
+    const auto id=audioAt(p);if(id.isEmpty())return 0;
+    for(const auto& c:owner.audioEngine.getArrangementAudioClips(t)){
+        if(c.id!=id || !c.sourceBuffer || c.lengthSeconds<=0.0)continue;
+        const auto box=audioBounds(t,c);
+        if(box.getWidth()<=36 || box.getHeight()<=32 || std::abs(p.y-(box.getY()+24))>6)return 0;
+        const float fi=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
+        const float fo=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
+        const float left=std::abs((float)p.x-(box.getX()+fi));
+        const float right=std::abs((float)p.x-(box.getRight()-fo));
+        if(left<=7.0f && left<=right)return 8;
+        if(right<=7.0f)return 9;
+        return 0;
+    }
+    return 0;
+}
 void refreshAudio(int track){
     if(!owner.audioEngine.hasAudioFile(track)){
         owner.trackSourceFiles[(size_t)track]=juce::File{};owner.pendingAudioFileNames[(size_t)track].clear();
@@ -110,18 +129,25 @@ void paintAudioSelection(juce::Graphics& g){
             g.setColour(juce::Colour(0xffbdefff));g.setFont(11);g.drawText(juce::String::fromUTF8("Région audio vide"),box.toNearestInt().reduced(8),juce::Justification::centredLeft);}
         if(c.muted){g.setColour(juce::Colour(0xff101b2a).withAlpha(.70f));g.fillRoundedRectangle(box,5);
             if(box.getHeight()>44){g.setColour(juce::Colour(0xffbdefff));g.drawText("MUET",box.toNearestInt().reduced(8).withTrimmedTop(18),juce::Justification::centredLeft);}}
-        // Fade envelopes are drawn over the audio region, without altering its waveform.
-        if(c.sourceBuffer && box.getWidth()>22.0f && box.getHeight()>18.0f){
-            const float fadeIn=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/juce::jmax(.001,c.lengthSeconds)));
-            const float fadeOut=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/juce::jmax(.001,c.lengthSeconds)));
-            const float top=box.getY()+5.0f,bottom=box.getBottom()-5.0f;
-            g.setColour(juce::Colour(0xfff0c66d));
-            if(fadeIn>0.0f)g.drawLine(box.getX(),bottom,box.getX()+fadeIn,top,1.5f);
-            if(fadeOut>0.0f)g.drawLine(box.getRight()-fadeOut,top,box.getRight(),bottom,1.5f);
-            g.fillEllipse(box.getX()+fadeIn-3.0f,top-3.0f,6.0f,6.0f);
-            g.fillEllipse(box.getRight()-fadeOut-3.0f,top-3.0f,6.0f,6.0f);
-        }
         if(selectedAudio.count({t,c.id})){g.setColour(juce::Colour(0xff63c7e8));g.drawRoundedRectangle(box.reduced(1),5,2);}
+    }
+}
+// Draw after names so the editable grips stay visible; keep them below the title strip.
+void paintAudioFades(juce::Graphics& g){
+    juce::Graphics::ScopedSaveState save(g);
+    g.reduceClipRegion(owner.trackHeaderWidth,owner.getArrangeTop(),owner.getWidth()-owner.trackHeaderWidth,owner.getMixerTop()-owner.getArrangeTop());
+    for(int t=0;t<owner.getAudioTrackCount();++t)for(const auto& c:owner.audioEngine.getArrangementAudioClips(t)){
+        if(!c.sourceBuffer || c.lengthSeconds<=0.0)continue;
+        const auto box=audioBounds(t,c).toFloat();
+        if(box.getWidth()<=36.0f || box.getHeight()<=32.0f)continue;
+        const float fi=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
+        const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
+        const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
+        g.setColour(juce::Colour(0xfff0c66d));
+        if(fi>0.0f)g.drawLine(box.getX(),bottom,box.getX()+fi,top,1.5f);
+        if(fo>0.0f)g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,1.5f);
+        g.fillEllipse(box.getX()+fi-3.0f,top-3.0f,6.0f,6.0f);
+        g.fillEllipse(box.getRight()-fo-3.0f,top-3.0f,6.0f,6.0f);
     }
 }
 void eraseArrangementSelection(){
@@ -169,12 +195,10 @@ bool handleAudioDown(juce::Point<int> p){
         else if(activeArrangeTool==0||activeArrangeTool==7){
             audioDragOriginal=*it;audioDragTrack=t;audioDragX=p.x;audioDragLength=it->lengthSeconds;
             const auto box=audioBounds(t,*it);
-            // Drag the small upper-corner fade handles with the selection tool.
-            // Keep the existing lower edge resize handles and clip movement intact.
-            const bool fadeCorner=p.y<=box.getY()+14 && box.getWidth()>28;
+            // Only the actual golden grips change a fade; the borders still resize.
+            const int fadeGrip=audioFadeHandleAt(p);
             audioDragMode=activeArrangeTool==7?4:
-                (activeArrangeTool==0 && fadeCorner && p.x<=box.getX()+14?8:
-                 activeArrangeTool==0 && fadeCorner && p.x>=box.getRight()-14?9:
+                (fadeGrip!=0?fadeGrip:
                  p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1));
         }
     }else if(activeArrangeTool==2 || activeArrangeTool==5){
@@ -198,8 +222,13 @@ void dragAudio(juce::Point<int> p){
     auto clips=owner.audioEngine.getArrangementAudioClips(audioDragTrack);
     for(auto& c:clips)if(c.id==audioDragOriginal.id){
         c=audioDragOriginal;
-        if(audioDragMode==8)c.fadeInSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeInSeconds+delta);
-        else if(audioDragMode==9)c.fadeOutSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeOutSeconds-delta);
+        if(audioDragMode==8){
+            c.fadeInSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeInSeconds+delta);
+            operationMessage=juce::String::fromUTF8("Fondu d’entrée : ")+juce::String(c.fadeInSeconds,2)+" s";
+        }else if(audioDragMode==9){
+            c.fadeOutSeconds=juce::jlimit(0.0,c.lengthSeconds,c.fadeOutSeconds-delta);
+            operationMessage=juce::String::fromUTF8("Fondu de sortie : ")+juce::String(c.fadeOutSeconds,2)+" s";
+        }
         else if(audioDragMode==1)c.startSeconds=snapPosition(c.startSeconds+delta);
         else if(audioDragMode==2){const double end=c.startSeconds+c.lengthSeconds;
             const double start=juce::jlimit(juce::jmax(0.0,c.startSeconds-c.offsetSeconds),juce::jmax(c.startSeconds,end-minimum),snapPosition(c.startSeconds+delta));
