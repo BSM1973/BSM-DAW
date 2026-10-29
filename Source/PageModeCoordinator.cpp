@@ -23,7 +23,7 @@ class PageModeCoordinator final : private juce::Timer
 public:
     explicit PageModeCoordinator(MainComponent& ownerIn) : owner(ownerIn)
     {
-        configureButton(arrangeButton, "ARRANGE");
+        configureButton(arrangeButton, "ARRANGEMENT");
         configureButton(mixButton, "MIXCONSOLE");
         configureButton(performButton, "PERFORMANCE");
 
@@ -91,7 +91,7 @@ private:
             if (button == &arrangeButton || button == &mixButton || button == &performButton) continue;
 
             const auto text = button->getButtonText();
-            if (text == "ARRANGE" && legacyArrange == nullptr) legacyArrange = button;
+            if (text == "ARRANGEMENT" && legacyArrange == nullptr) legacyArrange = button;
             else if (text == "MIXCONSOLE" && legacyMix == nullptr) legacyMix = button;
             else if (text == "PERFORM" && legacyPerform == nullptr) legacyPerform = button;
         }
@@ -105,7 +105,7 @@ private:
             if (button == nullptr) continue;
             if (button == &arrangeButton || button == &mixButton || button == &performButton) continue;
             const auto text = button->getButtonText();
-            if (text == "ARRANGE" || text == "MIXCONSOLE" || text == "PERFORM")
+            if (text == "ARRANGEMENT" || text == "MIXCONSOLE" || text == "PERFORM")
                 button->setVisible(false);
         }
     }
