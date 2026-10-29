@@ -355,15 +355,18 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
         return true;
     }
     inlineMidiResizing=inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
-    // Clicking a selected note keeps the group; a resize grip edits just
-    // the clicked note so existing single-note resizing remains unchanged.
-    if(inlineMidiResizing||inlineMidiSelectedNotes.count(note)==0)
+    // Both the body and the right-edge handle preserve an existing
+    // selection. Clicking an unselected note starts a new single-note edit.
+    // A one-note selection follows the existing resize path unchanged.
+    if(inlineMidiSelectedNotes.count(note)==0)
         inlineMidiSelectedNotes={note};
     inlineMidiDragging=true;inlineMidiInstrument=instrument;inlineMidiClipId=c.id;
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
     inlineMidiDragSelection=inlineMidiSelectedNotes;
     operationMessage=inlineMidiResizing
-        ?juce::String::fromUTF8("ÉDITION DIRECTE : glisser le bord droit pour changer la durée")
+        ?(inlineMidiDragSelection.size()>1
+            ?juce::String::fromUTF8("ÉDITION DIRECTE : étirer les notes sélectionnées")
+            :juce::String::fromUTF8("ÉDITION DIRECTE : glisser le bord droit pour changer la durée"))
         :inlineMidiDragSelection.size()>1
           ?juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer les notes sélectionnées")
           :juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer la note");
@@ -388,26 +391,44 @@ void inlineMidiDrag(juce::Point<int> p){
     if(original.startTick<0||original.startTick>=end
        ||original.lengthTicks<=0||original.lengthTicks>end-original.startTick)return;
     if(inlineMidiResizing){
-        // Quantize the note END, not the clip or the note's start.
-        // Resizing is relative to the original mouse-down to avoid drift.
+        // All selected notes receive the same duration delta. Quantize the
+        // dragged note's END once, then share the musical tick delta so
+        // unequal note lengths retain their differences.
+        auto selection=inlineMidiDragSelection;
+        if(selection.empty())selection.insert(inlineMidiNoteIndex);
         const double endpointSeconds=MidiEngine::tickToSeconds(
             original.startTick+original.lengthTicks,owner.tempoBpm)
             +(p.x-inlineMidiStartX)/px;
-        auto newEnd=MidiEngine::secondsToTick(juce::jmax(0.0,endpointSeconds),owner.tempoBpm);
+        auto newEnd=MidiEngine::secondsToTick(
+            juce::jmax(0.0,endpointSeconds),owner.tempoBpm);
         const double snap=getLibertySnapSeconds(owner.tempoBpm);
-        const auto grid=snap>0?juce::jmax<std::int64_t>(1,
-            MidiEngine::secondsToTick(snap,owner.tempoBpm)):std::int64_t{1};
+        const auto grid=snap>0?juce::jmax<std::int64_t>(
+            1,MidiEngine::secondsToTick(snap,owner.tempoBpm)):std::int64_t{1};
         if(snap>0)newEnd=MidiEngine::quantizeTick(newEnd,grid);
-        // Always leave a positive duration and never cross the MIDI clip end.
-        const auto minLength=juce::jmin(grid,end-original.startTick);
-        newEnd=juce::jlimit(original.startTick+minLength,end,newEnd);
+        // One shared feasible range avoids clipping individual members and
+        // guarantees every selected note stays positive and within the clip.
+        std::int64_t minDelta=std::numeric_limits<std::int64_t>::min();
+        std::int64_t maxDelta=std::numeric_limits<std::int64_t>::max();
+        for(const int index:selection){
+            if(index<0||index>=(int)inlineMidiOriginalNotes.size())return;
+            const auto& n=inlineMidiOriginalNotes[(size_t)index];
+            if(n.startTick<0||n.startTick>=end||n.lengthTicks<=0
+               ||n.lengthTicks>end-n.startTick)return;
+            const auto shortest=juce::jmin(grid,end-n.startTick);
+            minDelta=juce::jmax(minDelta,shortest-n.lengthTicks);
+            maxDelta=juce::jmin(maxDelta,end-n.startTick-n.lengthTicks);
+        }
+        if(minDelta>maxDelta)return;
+        const auto desiredDelta=newEnd-(original.startTick+original.lengthTicks);
+        const auto delta=juce::jlimit(minDelta,maxDelta,desiredDelta);
         auto notes=inlineMidiOriginalNotes;
-        notes[(size_t)inlineMidiNoteIndex].lengthTicks=newEnd-original.startTick;
+        for(const int index:selection)
+            notes[(size_t)index].lengthTicks+=delta;
         if(owner.midiEngine.replaceNotes(notes)){
             c.notes=owner.midiEngine.getNotesCopy();
-            operationMessage=juce::String::fromUTF8("Durée MIDI : ")
-                +juce::String((double)(newEnd-original.startTick)
-                    /MidiEngine::ticksPerQuarterNote,2)
+            operationMessage=juce::String(selection.size())
+                +juce::String::fromUTF8(" note(s) étirée(s) — variation : ")
+                +juce::String((double)delta/MidiEngine::ticksPerQuarterNote,2)
                 +juce::String::fromUTF8(" temps");
             syncPlayback();repaint();owner.repaint();
         }

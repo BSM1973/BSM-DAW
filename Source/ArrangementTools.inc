@@ -780,6 +780,96 @@ bool runArrangementTests(){
         require(midiClips[(size_t)multiClip].notes[0].startTick==movedGroup[0].startTick
                 && midiClips[(size_t)multiClip].notes[1].startTick==movedGroup[1].startTick,
                 "MIDI group redo");
+        // Group resize: drag the right edge of a selected note, preserving
+        // the relative lengths, starts, pitch, velocity and channel.
+        inlineMidiClearSelection();
+        const auto beforeResizeGroup=midiClips[(size_t)multiClip].notes;
+        const auto g1=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            beforeResizeGroup[0]).getCentre();
+        const auto g2=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            beforeResizeGroup[1]).getCentre();
+        require(inlineMidiDown(g1,false,true),"group resize select first");
+        require(inlineMidiDown(g2,false,true),"group resize select second");
+        require(inlineMidiSelectedNotes.size()==2,"group resize selection retained");
+        const auto gripRect=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+                beforeResizeGroup[0])
+            .getIntersection(inlineMidiArea(midiClips[(size_t)multiClip],false));
+        const auto resizeGrip=juce::Point<int>(gripRect.getRight()-1,
+                                                gripRect.getCentreY());
+        require(inlineMidiResizeGripAt(midiClips[(size_t)multiClip],false,
+                beforeResizeGroup[0],resizeGrip),"group resize grip geometry");
+        beginArrangementEdit();
+        require(inlineMidiDown(resizeGrip,false) && inlineMidiResizing
+                && inlineMidiDragSelection.size()==2,
+                "group resize retains both notes");
+        const int extendPx=juce::jmax(8,(int)std::lround(
+            0.5*getLibertyTimelinePixelsPerSecond()));
+        inlineMidiDrag(resizeGrip.translated(extendPx,0));
+        inlineMidiFinishGesture();finishArrangementEdit();
+        const auto resizedGroup=midiClips[(size_t)multiClip].notes;
+        require(resizedGroup.size()==beforeResizeGroup.size()
+                && resizedGroup[0].lengthTicks>beforeResizeGroup[0].lengthTicks,
+                "group resize extends note lengths");
+        const auto groupLengthDelta=resizedGroup[0].lengthTicks
+                                    -beforeResizeGroup[0].lengthTicks;
+        require(resizedGroup[1].lengthTicks-beforeResizeGroup[1].lengthTicks
+                ==groupLengthDelta,"group resize keeps relative lengths");
+        require(resizedGroup[2].lengthTicks==beforeResizeGroup[2].lengthTicks
+                && resizedGroup[2].startTick==beforeResizeGroup[2].startTick,
+                "group resize never changes unselected notes");
+        for(int k=0;k<2;++k){
+            const auto& after=resizedGroup[(size_t)k];
+            const auto& before=beforeResizeGroup[(size_t)k];
+            require(after.startTick==before.startTick
+                    && after.pitch==before.pitch
+                    && after.velocity==before.velocity
+                    && after.channel==before.channel
+                    && after.muted==before.muted
+                    && after.probability==before.probability,
+                    "group resize keeps MIDI attributes");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].lengthTicks
+                    ==beforeResizeGroup[0].lengthTicks
+                && midiClips[(size_t)multiClip].notes[1].lengthTicks
+                    ==beforeResizeGroup[1].lengthTicks,
+                "group resize undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].lengthTicks
+                    ==resizedGroup[0].lengthTicks
+                && midiClips[(size_t)multiClip].notes[1].lengthTicks
+                    ==resizedGroup[1].lengthTicks,
+                "group resize redo");
+        inlineMidiClearSelection();
+        // Shrinking a group cannot pass the shortest minimum or clip end.
+        const auto beforeShrink=midiClips[(size_t)multiClip].notes;
+        const auto sh1=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            beforeShrink[0]).getCentre();
+        const auto sh2=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            beforeShrink[1]).getCentre();
+        require(inlineMidiDown(sh1,false,true)&&inlineMidiDown(sh2,false,true),
+                "group shrink selection");
+        const auto shrinkRect=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+                beforeShrink[0])
+            .getIntersection(inlineMidiArea(midiClips[(size_t)multiClip],false));
+        const auto shrinkGrip=juce::Point<int>(shrinkRect.getRight()-1,
+                                                shrinkRect.getCentreY());
+        beginArrangementEdit();
+        require(inlineMidiDown(shrinkGrip,false)&&inlineMidiResizing
+                && inlineMidiDragSelection.size()==2,"group shrink starts");
+        inlineMidiDrag(shrinkGrip.translated(-100000,0));
+        inlineMidiFinishGesture();finishArrangementEdit();
+        const auto shortened=midiClips[(size_t)multiClip].notes;
+        require(shortened[0].lengthTicks>0&&shortened[1].lengthTicks>0
+                &&shortened[0].lengthTicks<beforeShrink[0].lengthTicks
+                &&shortened[1].lengthTicks<beforeShrink[1].lengthTicks,
+                "group shrink clamps to positive durations");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].lengthTicks
+                    ==beforeShrink[0].lengthTicks
+                && midiClips[(size_t)multiClip].notes[1].lengthTicks
+                    ==beforeShrink[1].lengthTicks,
+                "group shrink undo");
         inlineMidiClearSelection();
         // Marquee in the note area uses Shift + drag from empty space.
         const auto activeArea=inlineMidiArea(midiClips[(size_t)multiClip],false);
