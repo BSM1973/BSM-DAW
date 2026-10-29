@@ -686,6 +686,33 @@ bool runArrangementTests(){
             }
         }
         activeArrangeTool=0;inlineMidiMode=false;
+        // Preview MIDI phrases without activating editing in compact lanes.
+        owner.setArrangeTrackHeight(midiRow,54);setBounds(owner.getLocalBounds());
+        const auto previewClip=midiClips[(size_t)inlineIndex];
+        require(inlineMidiArea(previewClip,false).isEmpty(),
+                "compact lane must not enable full note editor");
+        const auto mini=inlineMidiPreviewArea(previewClip,false);
+        require(!mini.isEmpty() && mini.getHeight()>=5,
+                "compact MIDI preview has a visible region");
+        const auto miniNote=inlineMidiPreviewNoteBounds(previewClip,false,
+            previewClip.notes.front()).getIntersection(mini);
+        require(!miniNote.isEmpty(),"compact MIDI note preview is visible");
+        bool previewIns=false;int previewIndex=-1,previewNote=-1;
+        require(!inlineMidiAt(miniNote.getCentre(),previewIns,previewIndex,previewNote),
+                "read-only MIDI preview does not enable edit hit testing");
+        const auto beforePreview=stateSignature();
+        {
+            juce::Image image(juce::Image::ARGB,juce::jmax(1,mini.getRight()+2),
+                juce::jmax(1,mini.getBottom()+2),true);
+            juce::Graphics graphics(image);
+            graphics.fillAll(juce::Colour(0xff091b30));
+            drawInlineMidiNotes(graphics,false,previewClip);
+            require(image.getPixelAt(miniNote.getCentreX(),miniNote.getCentreY())
+                    !=juce::Colour(0xff091b30),
+                    "MIDI preview paints notes in normal mode");
+        }
+        require(stateSignature()==beforePreview,
+                "rendering a MIDI preview must not change clip data");
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});

@@ -84,8 +84,69 @@ void drawMidiClipTimeGrid(juce::Graphics& g,juce::Rectangle<int> region,bool edi
     paintLines(beat,juce::Colour(0xffc2e5ff).withAlpha(editing?.49f:.39f),1.1f,10.0);
     paintLines(measure,juce::Colour(0xffffe0a0).withAlpha(editing?.83f:.70f),1.8f,6.0);
 }
+// Show note thumbnails in normal mode without activating MIDI editing.
+// The clip naming bar has priority; thumbnails occupy only the lower body.
+juce::Rectangle<int> inlineMidiPreviewArea(const Clip& c,bool instrument)const {
+    int x=0,width=0;
+    if(!clipPixelBounds(c,x,width))return {};
+    const int lane=owner.getAudioTrackCount()
+        +(instrument?owner.getMidiTrackCount():0)+c.trackLane;
+    const int height=owner.getArrangeTrackHeight(lane)-8;
+    if(width<28||height<27)return {};
+    const int title=juce::jmin(21,height-6);
+    return {x+4,owner.getArrangeTrackTop(lane)+4+title+1,width-8,height-title-4};
+}
+juce::Rectangle<int> inlineMidiPreviewNoteBounds(const Clip& c,bool instrument,
+    const MidiEngine::NoteEvent& note)const {
+    const auto area=inlineMidiPreviewArea(c,instrument);
+    if(area.isEmpty()||note.startTick<0||note.lengthTicks<=0)return {};
+    const auto range=inlineMidiRange(c);
+    if((int)note.pitch<range.first||(int)note.pitch>=range.first+range.second)return {};
+    const double px=getLibertyTimelinePixelsPerSecond();
+    if(!std::isfinite(px)||px<=0)return {};
+    const double x=owner.trackHeaderWidth+
+        (c.startSeconds+MidiEngine::tickToSeconds(note.startTick,owner.tempoBpm))*px;
+    const double w=MidiEngine::tickToSeconds(note.lengthTicks,owner.tempoBpm)*px;
+    if(!std::isfinite(x)||!std::isfinite(w)||w<=0
+       ||x<std::numeric_limits<int>::min()||x>std::numeric_limits<int>::max()
+       ||w>std::numeric_limits<int>::max())return {};
+    const float pitchHeight=(float)area.getHeight()/range.second;
+    const int row=range.first+range.second-1-(int)note.pitch;
+    const int top=area.getY()+(int)std::floor(row*pitchHeight);
+    const int bottom=area.getY()+(int)std::ceil((row+1)*pitchHeight);
+    return {(int)std::lround(x),top,juce::jmax(2,(int)std::lround(w)),
+            juce::jmax(1,bottom-top)};
+}
+void drawInlineMidiPreview(juce::Graphics& g,bool instrument,const Clip& c)const {
+    if(c.notes.empty())return;
+    const auto area=inlineMidiPreviewArea(c,instrument);
+    if(area.isEmpty())return;
+    juce::Graphics::ScopedSaveState save(g);
+    g.reduceClipRegion(area);
+    g.setColour(juce::Colour(0xff091b30).withAlpha(.31f));
+    g.fillRoundedRectangle(area.toFloat(),2.0f);
+    // The dark backing must not conceal measure, beat or SNAP lines.
+    drawMidiClipTimeGrid(g,area,false);
+    const auto range=inlineMidiRange(c);
+    for(int pitch=range.first;pitch<range.first+range.second;++pitch){
+        if(pitch%12!=0)continue;
+        const int row=range.first+range.second-1-pitch;
+        const float y=area.getY()+row*(float)area.getHeight()/range.second;
+        g.setColour(juce::Colour(0xfff4e3b4).withAlpha(.39f));
+        g.drawHorizontalLine((int)y,(float)area.getX(),(float)area.getRight());
+    }
+    for(const auto& note:c.notes){
+        const auto bounds=inlineMidiPreviewNoteBounds(c,instrument,note)
+            .getIntersection(area);
+        if(bounds.isEmpty())continue;
+        const float alpha=c.muted||note.muted?.27f:
+            juce::jlimit(.60f,1.0f,.58f+note.velocity/250.0f);
+        g.setColour(juce::Colour(0xffe0f5ff).withAlpha(alpha));
+        g.fillRoundedRectangle(bounds.toFloat(),1.2f);
+    }
+}
 void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
-    if(!inlineMidiMode)return;
+    if(!inlineMidiMode){drawInlineMidiPreview(g,instrument,c);return;}
     const auto area=inlineMidiArea(c,instrument);
     if(area.isEmpty())return;
     juce::Graphics::ScopedSaveState scope(g);
