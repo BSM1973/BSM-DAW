@@ -411,15 +411,15 @@ bool runArrangementTests(){
         require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"seed audio");
         const double px=getLibertyTimelinePixelsPerSecond();
         auto point=[&](int track,double seconds){return juce::Point<int>(owner.trackHeaderWidth+(int)std::lround(seconds*px),owner.getArrangeTrackTop(track)+34);};
+        // Exercise the same fade grips used by the arrangement mouse path.
+        // This also verifies a complete Undo/Redo roundtrip of fade metadata.
+        const auto fadeBox=audioBounds(0,c);
         // Larger on-screen targets must be usable near the golden centre.
         if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
             const int handleX=fadeBox.getX()+(int)std::lround(fadeBox.getWidth()*c.fadeInSeconds/c.lengthSeconds);
             require(audioFadeHandleAt({handleX+8,fadeBox.getY()+24})==8,
                 "larger manual fade grab region");
         }
-        // Exercise the same fade grips used by the arrangement mouse path.
-        // This also verifies a complete Undo/Redo roundtrip of fade metadata.
-        const auto fadeBox=audioBounds(0,c);
         if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
             const int dx=juce::jmax(2,(int)std::lround(.12*px));
             const juce::Point<int> fadeInPoint{
