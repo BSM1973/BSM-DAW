@@ -870,6 +870,83 @@ bool runArrangementTests(){
                 && midiClips[(size_t)multiClip].notes[1].lengthTicks
                     ==beforeShrink[1].lengthTicks,
                 "group shrink undo");
+        // Option-drag copies multiple selected notes without moving sources.
+        // The gesture spans a single Arrangement Undo transaction.
+        inlineMidiClearSelection();
+        const auto sourceNotes=midiClips[(size_t)multiClip].notes;
+        const auto copyFirst=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            sourceNotes[0]).getCentre();
+        const auto copySecond=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            sourceNotes[1]).getCentre();
+        require(inlineMidiDown(copyFirst,false,true)
+                &&inlineMidiDown(copySecond,false,true)
+                &&inlineMidiSelectedNotes.size()==2,"duplicate selected MIDI notes");
+        beginArrangementEdit();
+        require(inlineMidiDown(copyFirst,true) && inlineMidiDragging
+                && inlineMidiDuplicating && inlineMidiDragSelection.size()==2,
+                "Option drag starts group duplication");
+        require(midiClips[(size_t)multiClip].notes.size()==sourceNotes.size(),
+                "Option down does not delete source notes");
+        const int copyPixels=juce::jmax(8,(int)std::lround(
+            0.5*getLibertyTimelinePixelsPerSecond()));
+        inlineMidiDrag(copyFirst.translated(copyPixels,0));
+        inlineMidiCompleteGesture();finishArrangementEdit();
+        const auto copiedNotes=midiClips[(size_t)multiClip].notes;
+        require(copiedNotes.size()==sourceNotes.size()+2,
+                "Option drag creates exactly two new MIDI notes");
+        const auto notesEqual=[](const MidiEngine::NoteEvent& a,
+                                 const MidiEngine::NoteEvent& b){
+            return a.startTick==b.startTick && a.lengthTicks==b.lengthTicks
+                && a.pitch==b.pitch && a.velocity==b.velocity
+                && a.channel==b.channel && a.muted==b.muted
+                && a.probability==b.probability;
+        };
+        for(const auto& source:sourceNotes)
+            require(std::any_of(copiedNotes.begin(),copiedNotes.end(),
+                [&](const auto& note){return notesEqual(note,source);}),
+                "Option drag keeps every original note unchanged");
+        require(inlineMidiSelectedNotes.size()==2,
+                "duplicated MIDI notes become the selected group");
+        const auto copiedA=copiedNotes[(size_t)*inlineMidiSelectedNotes.begin()];
+        const auto copiedB=copiedNotes[(size_t)*std::next(inlineMidiSelectedNotes.begin())];
+        require(copiedA.startTick!=sourceNotes[0].startTick
+                && copiedB.startTick!=sourceNotes[1].startTick,
+                "copied MIDI group moves by a musical delta");
+        require(copiedA.startTick-copiedB.startTick
+                ==sourceNotes[0].startTick-sourceNotes[1].startTick,
+                "copied MIDI group preserves source timing intervals");
+        require(copiedA.lengthTicks==sourceNotes[0].lengthTicks
+                &&copiedB.lengthTicks==sourceNotes[1].lengthTicks
+                &&copiedA.velocity==sourceNotes[0].velocity
+                &&copiedB.velocity==sourceNotes[1].velocity,
+                "duplicate MIDI group preserves duration and velocity");
+        undoArrangement(false);
+        const auto restoredNotes=midiClips[(size_t)multiClip].notes;
+        require(restoredNotes.size()==sourceNotes.size(),
+                "Option drag Undo removes only the copies");
+        for(size_t n=0;n<sourceNotes.size();++n)
+            require(notesEqual(restoredNotes[n],sourceNotes[n]),
+                "Option drag Undo restores exact original MIDI notes");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes.size()==copiedNotes.size(),
+                "Option drag Redo restores MIDI copies");
+        // Previous Option-click removal remains available, with no accidental
+        // deletion on mouse-down: deletion occurs only on mouse-up.
+        inlineMidiClearSelection();
+        const auto beforeOptionClick=midiClips[(size_t)multiClip].notes;
+        const auto clickPoint=inlineMidiNoteBounds(midiClips[(size_t)multiClip],false,
+            beforeOptionClick[0]).getCentre();
+        beginArrangementEdit();
+        require(inlineMidiDown(clickPoint,true) &&inlineMidiDuplicating,
+                "Option click begins a pending gesture");
+        require(midiClips[(size_t)multiClip].notes.size()==beforeOptionClick.size(),
+                "Option click must not delete on mouse-down");
+        inlineMidiCompleteGesture();finishArrangementEdit();
+        require(midiClips[(size_t)multiClip].notes.size()+1==beforeOptionClick.size(),
+                "Option click still deletes exactly one MIDI note");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==beforeOptionClick.size(),
+                "Option click delete can be undone");
         inlineMidiClearSelection();
         // Marquee in the note area uses Shift + drag from empty space.
         const auto activeArea=inlineMidiArea(midiClips[(size_t)multiClip],false);

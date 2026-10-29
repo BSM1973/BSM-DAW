@@ -241,8 +241,9 @@ bool hitTest(int x,int y)override{
             const auto& noteClip=(ins?instrumentClips:midiClips)[(size_t)ci];
             const bool atRightEdge=inlineMidiResizeGripAt(noteClip,ins,
                 noteClip.notes[(size_t)ni],e.getPosition());
-            setMouseCursor(atRightEdge?juce::MouseCursor::LeftRightResizeCursor
-                                      :juce::MouseCursor::DraggingHandCursor);
+            setMouseCursor(e.mods.isAltDown()?juce::MouseCursor::CopyingCursor
+                :(atRightEdge?juce::MouseCursor::LeftRightResizeCursor
+                             :juce::MouseCursor::DraggingHandCursor));
             return;
         }
     }
@@ -444,7 +445,7 @@ if(mixerDragMode){dragMixer(e.getPosition());return;}if(dragIndex<0||!dragMode)r
             ?juce::String::fromUTF8("Étirement audio terminé — hauteur conservée"):juce::String::fromUTF8("Étirement impossible — clip conservé");refreshAudio(audioDragTrack);}
         audioDragTrack=-1;audioDragMode=0;
     }
-    if(inlineMidiDragging||inlineMidiMarquee)inlineMidiFinishGesture();
+    if(inlineMidiDragging||inlineMidiMarquee)inlineMidiCompleteGesture();
     finishArrangementEdit();
     if(selectingClips){
         selectingClips=false;

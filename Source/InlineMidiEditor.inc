@@ -2,6 +2,8 @@
 // This is a view/controller over the existing notes, not a second MIDI engine.
 bool inlineMidiMode=false,inlineMidiDragging=false,inlineMidiInstrument=false;
 bool inlineMidiResizing=false;
+// Option-click keeps note deletion; dragging instead previews a duplicate.
+bool inlineMidiDuplicating=false,inlineMidiDuplicateMoved=false,inlineMidiDuplicateApplied=false;
 int inlineMidiClipId=0,inlineMidiNoteIndex=-1,inlineMidiStartX=0,inlineMidiStartY=0;
 int inlineMidiLow=48,inlineMidiCount=24;
 std::vector<MidiEngine::NoteEvent> inlineMidiOriginalNotes;
@@ -16,8 +18,34 @@ void inlineMidiClearSelection(){
 }
 void inlineMidiFinishGesture(){
     inlineMidiDragging=false;inlineMidiResizing=false;inlineMidiMarquee=false;
+    inlineMidiDuplicating=false;inlineMidiDuplicateMoved=false;inlineMidiDuplicateApplied=false;
     inlineMidiNoteIndex=-1;inlineMidiOriginalNotes.clear();
     inlineMidiDragSelection.clear();inlineMidiMarqueeBaseline.clear();
+}
+// Finalize the Option gesture before the Arrangement Undo snapshot closes.
+// Short Option-click deletes the clicked note (existing behaviour); an actual
+// drag duplicates the selection, with the originals untouched.
+void inlineMidiCompleteGesture(){
+    if(inlineMidiDragging&&inlineMidiDuplicating&&!inlineMidiDuplicateMoved
+       &&inlineMidiNoteIndex>=0
+       &&inlineMidiNoteIndex<(int)inlineMidiOriginalNotes.size()){
+        auto& bank=inlineMidiInstrument?instrumentClips:midiClips;
+        const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+            return c.id==inlineMidiClipId;
+        });
+        if(it!=bank.end()){
+            auto remaining=inlineMidiOriginalNotes;
+            remaining.erase(remaining.begin()+inlineMidiNoteIndex);
+            if(owner.midiEngine.replaceNotes(remaining)){
+                it->notes=owner.midiEngine.getNotesCopy();
+                syncPlayback();
+                operationMessage=juce::String::fromUTF8("Note MIDI supprimée");
+                inlineMidiClearSelection();
+                repaint();owner.repaint();
+            }
+        }
+    }
+    inlineMidiFinishGesture();
 }
 bool inlineMidiSelectAll(){
     if(!inlineMidiMode||activeIndex<0)return false;
@@ -322,13 +350,8 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
         }
         repaint();return true;
     }
-    if(option&&note>=0){
-        inlineMidiClearSelection();
-        c.notes.erase(c.notes.begin()+note);
-        if(owner.midiEngine.replaceNotes(c.notes)){syncPlayback();repaint();owner.repaint();}
-        operationMessage=juce::String::fromUTF8("Note MIDI supprimée");
-        return true;
-    }
+    // Defer Option-click deletion until mouse-up so an Option-drag can
+    // duplicate the selected notes without first destroying the originals.
     if(option&&note<0){
         inlineMidiClearSelection();
         const auto area=inlineMidiArea(c,instrument);
@@ -354,7 +377,10 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
         operationMessage=juce::String::fromUTF8("Note MIDI ajoutée");
         return true;
     }
-    inlineMidiResizing=inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    inlineMidiResizing=!option&&inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    inlineMidiDuplicating=option;
+    inlineMidiDuplicateMoved=false;
+    inlineMidiDuplicateApplied=false;
     // Both the body and the right-edge handle preserve an existing
     // selection. Clicking an unselected note starts a new single-note edit.
     // A one-note selection follows the existing resize path unchanged.
@@ -363,7 +389,9 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
     inlineMidiDragging=true;inlineMidiInstrument=instrument;inlineMidiClipId=c.id;
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
     inlineMidiDragSelection=inlineMidiSelectedNotes;
-    operationMessage=inlineMidiResizing
+    operationMessage=inlineMidiDuplicating
+        ?juce::String::fromUTF8("Option + glisser : dupliquer les notes MIDI sélectionnées")
+        :inlineMidiResizing
         ?(inlineMidiDragSelection.size()>1
             ?juce::String::fromUTF8("ÉDITION DIRECTE : étirer les notes sélectionnées")
             :juce::String::fromUTF8("ÉDITION DIRECTE : glisser le bord droit pour changer la durée"))
@@ -390,6 +418,92 @@ void inlineMidiDrag(juce::Point<int> p){
     const auto end=MidiEngine::secondsToTick(c.lengthSeconds,owner.tempoBpm);
     if(original.startTick<0||original.startTick>=end
        ||original.lengthTicks<=0||original.lengthTicks>end-original.startTick)return;
+    if(inlineMidiDuplicating){
+        // Wait for an actual drag: Option-click must still delete the note.
+        if(std::abs(p.x-inlineMidiStartX)+std::abs(p.y-inlineMidiStartY)<4
+           && !inlineMidiDuplicateMoved)return;
+        inlineMidiDuplicateMoved=true;
+        auto selected=inlineMidiDragSelection;
+        if(selected.empty())selected.insert(inlineMidiNoteIndex);
+        if(inlineMidiOriginalNotes.size()+selected.size()>16384){
+            operationMessage=juce::String::fromUTF8("Limite de notes MIDI atteinte");
+            return;
+        }
+        std::int64_t minStart=end,maxEnd=0;
+        int minPitch=127,maxPitch=0;
+        for(const int index:selected){
+            if(index<0||index>=(int)inlineMidiOriginalNotes.size())return;
+            const auto& n=inlineMidiOriginalNotes[(size_t)index];
+            if(n.startTick<0||n.startTick>=end||n.lengthTicks<=0
+               ||n.lengthTicks>end-n.startTick)return;
+            minStart=juce::jmin(minStart,n.startTick);
+            maxEnd=juce::jmax(maxEnd,n.startTick+n.lengthTicks);
+            minPitch=juce::jmin(minPitch,(int)n.pitch);
+            maxPitch=juce::jmax(maxPitch,(int)n.pitch);
+        }
+        const double desired=juce::jmax(0.0,
+            MidiEngine::tickToSeconds(original.startTick,owner.tempoBpm)
+            +(p.x-inlineMidiStartX)/px);
+        auto target=MidiEngine::secondsToTick(desired,owner.tempoBpm);
+        const double snap=getLibertySnapSeconds(owner.tempoBpm);
+        if(snap>0){
+            const auto grid=juce::jmax<std::int64_t>(1,
+                MidiEngine::secondsToTick(snap,owner.tempoBpm));
+            target=MidiEngine::quantizeTick(target,grid);
+        }
+        const auto delta=juce::jlimit(-minStart,end-maxEnd,
+            target-original.startTick);
+        const float rowHeight=(float)area.getHeight()/inlineMidiCount;
+        const int requestedPitch=-(int)std::lround(
+            (p.y-inlineMidiStartY)/rowHeight);
+        const int pitchDelta=juce::jlimit(
+            juce::jmax(-minPitch,inlineMidiLow-minPitch),
+            juce::jmin(127-maxPitch,inlineMidiLow+inlineMidiCount-1-maxPitch),
+            requestedPitch);
+        if(delta==0&&pitchDelta==0){
+            if(inlineMidiDuplicateApplied
+               &&owner.midiEngine.replaceNotes(inlineMidiOriginalNotes)){
+                c.notes=owner.midiEngine.getNotesCopy();
+                inlineMidiSelectedNotes=inlineMidiDragSelection;
+                inlineMidiDuplicateApplied=false;
+                syncPlayback();repaint();owner.repaint();
+            }
+            return;
+        }
+        // Sorting with source labels keeps the highlight on the new notes
+        // after MIDI-engine ordering changes; no source note is modified.
+        std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+        tagged.reserve(inlineMidiOriginalNotes.size()+selected.size());
+        for(const auto& n:inlineMidiOriginalNotes)tagged.push_back({n,-1});
+        for(const int index:selected){
+            auto copy=inlineMidiOriginalNotes[(size_t)index];
+            copy.startTick+=delta;
+            copy.pitch=(std::uint8_t)((int)copy.pitch+pitchDelta);
+            tagged.push_back({copy,index});
+        }
+        std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+            if(a.first.startTick!=b.first.startTick)
+                return a.first.startTick<b.first.startTick;
+            if(a.first.channel!=b.first.channel)
+                return a.first.channel<b.first.channel;
+            return a.first.pitch<b.first.pitch;
+        });
+        std::vector<MidiEngine::NoteEvent> notes;
+        notes.reserve(tagged.size());
+        for(const auto& item:tagged)notes.push_back(item.first);
+        if(owner.midiEngine.replaceNotes(notes)){
+            c.notes=owner.midiEngine.getNotesCopy();
+            inlineMidiSelectedNotes.clear();
+            for(int i=0;i<(int)tagged.size();++i)
+                if(tagged[(size_t)i].second>=0)
+                    inlineMidiSelectedNotes.insert(i);
+            inlineMidiDuplicateApplied=true;
+            operationMessage=juce::String(selected.size())
+                +juce::String::fromUTF8(" note(s) MIDI dupliquée(s)");
+            syncPlayback();repaint();owner.repaint();
+        }
+        return;
+    }
     if(inlineMidiResizing){
         // All selected notes receive the same duration delta. Quantize the
         // dragged note's END once, then share the musical tick delta so
