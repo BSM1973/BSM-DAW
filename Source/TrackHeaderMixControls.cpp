@@ -234,7 +234,9 @@ auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScro
          const bool visible = id < owner.getTotalArrangeTrackCount()
              && bottom > owner.getArrangeTop() + 8
              && bottom < owner.getMixerTop() - 8;
-         grip.setBounds(16, bottom - 7, 54, 14);
+         // Resize from the entire header width, not only its left edge.
+         // The handle is raised above header controls at the row boundary.
+         grip.setBounds(14, bottom - 7, juce::jmax(1, owner.trackHeaderWidth - 14), 14);
          grip.setVisible(visible);
      }
      constexpr int rightMargin=18;
