@@ -97,10 +97,9 @@ juce::Rectangle<int> inlineMidiPreviewArea(const Clip& c,bool instrument)const {
     return {x+4,owner.getArrangeTrackTop(lane)+4+title+1,width-8,height-title-4};
 }
 juce::Rectangle<int> inlineMidiPreviewNoteBounds(const Clip& c,bool instrument,
-    const MidiEngine::NoteEvent& note)const {
+    const MidiEngine::NoteEvent& note,const std::pair<int,int>& range)const {
     const auto area=inlineMidiPreviewArea(c,instrument);
     if(area.isEmpty()||note.startTick<0||note.lengthTicks<=0)return {};
-    const auto range=inlineMidiRange(c);
     if((int)note.pitch<range.first||(int)note.pitch>=range.first+range.second)return {};
     const double px=getLibertyTimelinePixelsPerSecond();
     if(!std::isfinite(px)||px<=0)return {};
@@ -116,6 +115,10 @@ juce::Rectangle<int> inlineMidiPreviewNoteBounds(const Clip& c,bool instrument,
     const int bottom=area.getY()+(int)std::ceil((row+1)*pitchHeight);
     return {(int)std::lround(x),top,juce::jmax(2,(int)std::lround(w)),
             juce::jmax(1,bottom-top)};
+}
+juce::Rectangle<int> inlineMidiPreviewNoteBounds(const Clip& c,bool instrument,
+    const MidiEngine::NoteEvent& note)const {
+    return inlineMidiPreviewNoteBounds(c,instrument,note,inlineMidiRange(c));
 }
 void drawInlineMidiPreview(juce::Graphics& g,bool instrument,const Clip& c)const {
     if(c.notes.empty())return;
@@ -136,7 +139,8 @@ void drawInlineMidiPreview(juce::Graphics& g,bool instrument,const Clip& c)const
         g.drawHorizontalLine((int)y,(float)area.getX(),(float)area.getRight());
     }
     for(const auto& note:c.notes){
-        const auto bounds=inlineMidiPreviewNoteBounds(c,instrument,note)
+        // Use one pitch range per clip (linear complexity even for dense MIDI).
+        const auto bounds=inlineMidiPreviewNoteBounds(c,instrument,note,range)
             .getIntersection(area);
         if(bounds.isEmpty())continue;
         const float alpha=c.muted||note.muted?.27f:
