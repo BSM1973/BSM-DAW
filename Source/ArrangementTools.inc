@@ -177,7 +177,8 @@ bool handleAudioDown(juce::Point<int> p){
     const bool hit=it!=clips.end();const double px=getLibertyTimelinePixelsPerSecond();if(px<=0)return true;
     const double seconds=snapPosition((p.x-owner.trackHeaderWidth)/px);
     if(activeArrangeTool==0||activeArrangeTool==1){
-        if(hit&&selectedAudio.count({t,id})&&(activeArrangeTool==1||selectedAudio.size()+selectedClipIds.size()>1)){
+        if(hit&&selectedAudio.count({t,id})&&audioFadeHandleAt(p)==0
+           &&(activeArrangeTool==1||selectedAudio.size()+selectedClipIds.size()>1)){
             startGroup(it->startSeconds,(float)p.x);return true;
         }
         selectedClipIds.clear();selectedAudio.clear();
@@ -239,7 +240,11 @@ void dragAudio(juce::Point<int> p){
             if(c.envelopeLengthSeconds<=0)c.envelopeLengthSeconds=c.offsetSeconds+c.lengthSeconds;c.lengthSeconds=audioDragLength;
         }
     }
-    if(owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips))refreshAudio(audioDragTrack);
+    if(owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips)){
+        // A fade edits envelope metadata only; no waveform peak cache needs rebuilding.
+        if(audioDragMode==8||audioDragMode==9){owner.repaint();repaint();}
+        else refreshAudio(audioDragTrack);
+    }
 }
 
 bool runArrangementTests(){
