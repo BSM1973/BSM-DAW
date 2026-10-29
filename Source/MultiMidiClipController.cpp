@@ -126,7 +126,7 @@ void updateRectangleSelection() {
         if(area.intersects(audioBounds(t,c)))selectedAudio.insert({t,c.id});
 }
 void paintSelection(juce::Graphics& g) {
-    paintAudioSelection(g);paintClipNames(g);
+    paintAudioSelection(g);paintClipNames(g);paintAudioFades(g);
     if(selectingClips){
         g.setColour(juce::Colour(0xff4f82ff).withAlpha(.20f));g.fillRect(selectionRectangle());
         g.setColour(juce::Colour(0xff63c7e8));g.drawRect(selectionRectangle(),1);
@@ -217,7 +217,13 @@ bool hitTest(int x,int y)override{
         return true;
     }
     return laneAtPoint(p,false) >= 0;
-}void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);paintSelection(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}bool clipOverlaps(const std::vector<Clip>& clips,const Clip& candidate,int except=-1)const{
+}void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);paintSelection(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}
+    if(audioLaneAt(e.getPosition())>=0){
+        const auto cursor=audioFadeHandleAt(e.getPosition())!=0?juce::MouseCursor::LeftRightResizeCursor:
+            (audioAt(e.getPosition()).isNotEmpty()?juce::MouseCursor::DraggingHandCursor:juce::MouseCursor::CrosshairCursor);
+        setMouseCursor(cursor);return;
+    }
+    bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}bool clipOverlaps(const std::vector<Clip>& clips,const Clip& candidate,int except=-1)const{
     for(int j=0;j<(int)clips.size();++j){
         if(j==except)continue;
         const auto& other=clips[(size_t)j];
@@ -303,7 +309,8 @@ void mouseDown(const juce::MouseEvent&e)override{
         const int tool=toolAt(ownerPoint);
         if(tool>=0){activeArrangeTool=tool;operationMessage=tool==5?juce::String::fromUTF8("Cliquez sur un clip pour copier, puis dans le vide pour coller"):juce::String{};repaint();return;}
     }
-    if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()){
+    if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()
+       && !(e.eventComponent==this && audioFadeHandleAt(ownerPoint)!=0)){
         if(e.getNumberOfClicks()>=2)renameClipAt(ownerPoint);
         else if(e.eventComponent==this){
             arrangementFocus=true;grabKeyboardFocus();owner.selectedTrack=owner.getArrangeTrackAtY(ownerPoint.y);
