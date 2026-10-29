@@ -102,6 +102,36 @@ inline bool runLibertyAudioClipPlaybackSmoke()
            || preserved.fadeInSeconds!=configured.fadeInSeconds
            || preserved.fadeOutSeconds!=configured.fadeOutSeconds)
             throw std::runtime_error("stretch properties lost");
+        // Two adjacent overlapping clips must crossfade without summing to +6 dB.
+        // Moving the right clip must remove the derived transition automatically.
+        auto constant=std::make_shared<juce::AudioBuffer<float>>(1,48000);
+        constant->clear();
+        for(int i=0;i<constant->getNumSamples();++i)constant->setSample(0,i,.25f);
+        AudioEngine::AudioClipMetadata first,second;
+        first.id="crossfade-left";first.sourceBuffer=constant;first.sourceSampleRate=48000;
+        first.startSeconds=0;first.lengthSeconds=1;
+        second=first;second.id="crossfade-right";second.startSeconds=.5;
+        if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("crossfade setup");
+        auto xfade=engine.getArrangementAudioClips(0);
+        if(xfade.size()!=2 || xfade[0].fadeOutSeconds!=0 || xfade[1].fadeInSeconds!=0
+            || xfade[0].autoCrossfadeOutStart!=.5 || xfade[0].autoCrossfadeOutEnd!=1
+            || xfade[1].autoCrossfadeInStart!=.5 || xfade[1].autoCrossfadeInEnd!=1)
+            throw std::runtime_error("crossfade metadata");
+        juce::AudioBuffer<float> crossRender(2,72000);
+        if(!engine.renderOfflineForTesting(crossRender,48000,511))throw std::runtime_error("crossfade render");
+        near(crossRender.getSample(0,12000),.25f); // left region alone
+        near(crossRender.getSample(0,36000),.25f); // overlap midpoint
+        near(crossRender.getSample(0,60000),.25f); // right region alone
+        second.startSeconds=1;
+        if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("crossfade moved");
+        xfade=engine.getArrangementAudioClips(0);
+        if(xfade[0].autoCrossfadeOutStart>=0 || xfade[1].autoCrossfadeInStart>=0)
+            throw std::runtime_error("stale automatic fade after move");
+        // Muting one region must not duck the remaining audible region.
+        second.startSeconds=.5;second.muted=true;
+        if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("crossfade mute");
+        if(!engine.renderOfflineForTesting(crossRender,48000,128))throw std::runtime_error("crossfade mute render");
+        near(crossRender.getSample(0,36000),.25f);
         // The primary and additional paths must use the same Warp renderer.
         for(int mode=0;mode<=5;++mode){
             auto warped=stretched;warped.warp.enabled=true;warped.warp.mode=mode;warped.warp.count=2;
