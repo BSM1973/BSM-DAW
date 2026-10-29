@@ -77,7 +77,29 @@ void loadProjectClips(const juce::XmlElement&root){auto*all=root.getChildByName(
                          juce::jmax(secondsPerMeasure(), owner.midiClipLengthSeconds));
 }
 bool activeClipIsInstrument() const noexcept{return activeIndex>=0&&activeInstrument;}int activeInstrumentClipLane() const noexcept{return activeIndex>=0&&activeInstrument&&activeIndex<(int)instrumentClips.size()?instrumentClips[(size_t)activeIndex].trackLane:-1;}void scaleClipsForTempoChange(double ratio){if(!std::isfinite(ratio)||ratio<=0.0)return;if(activeIndex>=0){auto&v=activeInstrument?instrumentClips:midiClips;if(activeIndex<(int)v.size()){auto&c=v[(size_t)activeIndex];c.notes=owner.midiEngine.getNotesCopy();owner.midiClipStartSeconds=c.startSeconds;owner.midiClipLengthSeconds=c.lengthSeconds;owner.midiClipLengthUserDefined=c.userLength;}}auto scale=[ratio](auto& clips){for(auto& c:clips){const double start=c.startSeconds*ratio,length=c.lengthSeconds*ratio;if(std::isfinite(start)&&std::isfinite(length)&&start>=0.0&&length>0.0){c.startSeconds=start;c.lengthSeconds=length;}}};scale(midiClips);scale(instrumentClips);if(activeIndex>=0){auto&v=activeInstrument?instrumentClips:midiClips;if(activeIndex<(int)v.size()){owner.midiClipStartSeconds=v[(size_t)activeIndex].startSeconds;owner.midiClipLengthSeconds=v[(size_t)activeIndex].lengthSeconds;}}syncPlayback();repaint();owner.repaint();}void resyncPlayback(){syncPlayback();}
+static constexpr int toolBarX=1250,toolBarY=37,toolWidth=38,toolGap=3;
+int activeArrangeTool=0;
+int toolAt(juce::Point<int> p)const{
+    if(p.y<toolBarY||p.y>=toolBarY+30||p.x<toolBarX)return -1;
+    const int index=(p.x-toolBarX)/(toolWidth+toolGap);
+    if(index<0||index>=8||p.x>=toolBarX+index*(toolWidth+toolGap)+toolWidth)return -1;
+    return index;
+}
+void drawArrangeTools(juce::Graphics& g){
+    static const char* names[]={"SEL","RECT","CRAY","GOM","CIS","COL","MUET","ETIR"};
+    for(int i=0;i<8;++i){
+        const auto box=juce::Rectangle<float>((float)(toolBarX+i*(toolWidth+toolGap)),(float)toolBarY,(float)toolWidth,30.0f);
+        g.setColour(i==activeArrangeTool?juce::Colour(0xff225a70):juce::Colour(0xff192b3b));
+        g.fillRoundedRectangle(box,5.0f);
+        g.setColour(i==activeArrangeTool?juce::Colour(0xff56dce4):juce::Colour(0xff435b70));
+        g.drawRoundedRectangle(box.reduced(0.5f),5.0f,1.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(9.0f,juce::Font::bold));
+        g.drawFittedText(names[i],box.toNearestInt(),juce::Justification::centred,1);
+    }
+}
 bool hitTest(int x,int y)override{
+    if(toolAt({x,y})>=0)return true;
     if (x < owner.trackHeaderWidth) return false;
     const juce::Point<int> p{x,y};
     if (isMixerPoint(p)) return true;
@@ -102,8 +124,12 @@ bool hitTest(int x,int y)override{
         return true;
     }
     return laneAtPoint(p,false) >= 0;
-}void paint(juce::Graphics&g)override{drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}void mouseDown(const juce::MouseEvent&e)override{
+}void paint(juce::Graphics&g)override{drawArrangeTools(g);drawClips(g,false,midiClips,owner.getAudioTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount());drawClips(g,true,instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount()-owner.getTrackScrollRows(),owner.getAudioTrackCount()+owner.getMidiTrackCount());drawInstrumentMixer(g);}void mouseMove(const juce::MouseEvent&e)override{if(isMixerPoint(e.getPosition())){setMouseCursor(juce::MouseCursor::PointingHandCursor);return;}bool ins=false;int i=findClipAt(e.getPosition(),ins);if(i<0){setMouseCursor(juce::MouseCursor::CrosshairCursor);return;}auto&c=(ins?instrumentClips:midiClips)[(size_t)i];int l=0,w=0;if(!clipPixelBounds(c,l,w)){setMouseCursor(juce::MouseCursor::NormalCursor);return;}const int r=l+w;setMouseCursor(((float)e.x<=(float)l+resizeZone||(float)e.x>=(float)r-resizeZone)?juce::MouseCursor::LeftRightResizeCursor:juce::MouseCursor::DraggingHandCursor);}void mouseExit(const juce::MouseEvent&)override{setMouseCursor(juce::MouseCursor::NormalCursor);}void mouseDown(const juce::MouseEvent&e)override{
     const auto ownerPoint = e.getEventRelativeTo(&owner).getPosition();
+    if(e.mods.isLeftButtonDown()){
+        const int tool=toolAt(ownerPoint);
+        if(tool>=0){activeArrangeTool=tool;repaint();return;}
+    }
     if (e.getNumberOfClicks() >= 2 && e.mods.isLeftButtonDown()
         && laneAtPoint(ownerPoint, true) >= 0
         && ownerPoint.x >= owner.trackHeaderWidth)
