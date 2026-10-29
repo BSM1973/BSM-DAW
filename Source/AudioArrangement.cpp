@@ -1,4 +1,6 @@
 #include <set>
+#include <algorithm>
+#include <numeric>
 #include "AudioEngine.h"
 #include <signalsmith-stretch/signalsmith-stretch.h>
 #include <cmath>
@@ -36,6 +38,10 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->clipReverse.store(c.reverse);v->clipMuted.store(c.muted);v->clipOffset.store(c.offsetSeconds);
     v->clipTrimStart.store(c.trimStartFraction);v->clipTrimEnd.store(c.trimEndFraction);
     v->clipFadeIn.store(c.fadeInSeconds);v->clipFadeOut.store(c.fadeOutSeconds);
+    v->autoCrossfadeInStart.store(c.autoCrossfadeInStart);
+    v->autoCrossfadeInEnd.store(c.autoCrossfadeInEnd);
+    v->autoCrossfadeOutStart.store(c.autoCrossfadeOutStart);
+    v->autoCrossfadeOutEnd.store(c.autoCrossfadeOutEnd);
     v->clipEnvelopeLength.store(c.envelopeLengthSeconds);v->warpFormant.store(c.formant);
     auto warp=std::make_shared<WarpMarkerSnapshot>();
     warp->enabled=c.warp.enabled;warp->mode=c.warp.mode;warp->count=c.warp.count;
@@ -59,6 +65,10 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getArrangementAudioClip
         c.muted=t.clipMuted.load();c.offsetSeconds=t.clipOffset.load();c.envelopeLengthSeconds=t.clipEnvelopeLength.load();
         c.trimStartFraction=t.clipTrimStart.load();c.trimEndFraction=t.clipTrimEnd.load();
         c.fadeInSeconds=t.clipFadeIn.load();c.fadeOutSeconds=t.clipFadeOut.load();
+        c.autoCrossfadeInStart=t.autoCrossfadeInStart.load();
+        c.autoCrossfadeInEnd=t.autoCrossfadeInEnd.load();
+        c.autoCrossfadeOutStart=t.autoCrossfadeOutStart.load();
+        c.autoCrossfadeOutEnd=t.autoCrossfadeOutEnd.load();
         c.warp=getTrackWarpSnapshot(index);c.formant=t.warpFormant.load();c.spectralCache=std::atomic_load(&t.spectralCache);
         clips.insert(clips.begin(),std::move(c));
     }
@@ -69,6 +79,39 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
     if(!isValidTrackIndex(index))return false;
     try {
         auto extras=clips;
+        // Calculate only simple adjacent two-clip overlaps. More complex
+        // layering remains untouched rather than altering audio unexpectedly.
+        for(auto& c:extras){
+            c.autoCrossfadeInStart=c.autoCrossfadeInEnd=-1.0;
+            c.autoCrossfadeOutStart=c.autoCrossfadeOutEnd=-1.0;
+        }
+        std::vector<size_t> chronological(extras.size());
+        std::iota(chronological.begin(),chronological.end(),size_t{0});
+        std::stable_sort(chronological.begin(),chronological.end(),[&](size_t a,size_t b){
+            return extras[a].startSeconds<extras[b].startSeconds;
+        });
+        for(size_t i=1;i<chronological.size();++i){
+            auto& earlier=extras[chronological[i-1]];
+            auto& later=extras[chronological[i]];
+            if(!earlier.sourceBuffer || !later.sourceBuffer || earlier.muted || later.muted)
+                continue;
+            const double earlierEnd=earlier.startSeconds+earlier.lengthSeconds;
+            const double laterEnd=later.startSeconds+later.lengthSeconds;
+            // Ignore equal-start layers, containment and non-overlapping clips.
+            if(!(earlier.startSeconds<later.startSeconds && later.startSeconds<earlierEnd
+                 && earlierEnd<=laterEnd))continue;
+            const double start=later.startSeconds,end=earlierEnd;
+            bool tripleOverlap=false;
+            for(size_t third=0;third<extras.size();++third){
+                if(third==chronological[i-1]||third==chronological[i])continue;
+                const auto& other=extras[third];
+                if(other.sourceBuffer && !other.muted && other.startSeconds<end
+                   && other.startSeconds+other.lengthSeconds>start){tripleOverlap=true;break;}
+            }
+            if(tripleOverlap)continue;
+            earlier.autoCrossfadeOutStart=start;earlier.autoCrossfadeOutEnd=end;
+            later.autoCrossfadeInStart=start;later.autoCrossfadeInEnd=end;
+        }
         std::shared_ptr<AudioTrackState> primary;
         for(auto it=extras.begin();it!=extras.end();++it)
             if(it->sourceBuffer && it->sourceBuffer->getNumSamples()>0){primary=prepareAudioVoice(*it);extras.erase(it);break;}
@@ -89,6 +132,10 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         t.clipOffset.store(primary->clipOffset.load());t.clipEnvelopeLength.store(primary->clipEnvelopeLength.load());
         t.clipTrimStart.store(primary->clipTrimStart.load());t.clipTrimEnd.store(primary->clipTrimEnd.load());
         t.clipFadeIn.store(primary->clipFadeIn.load());t.clipFadeOut.store(primary->clipFadeOut.load());
+        t.autoCrossfadeInStart.store(primary->autoCrossfadeInStart.load());
+        t.autoCrossfadeInEnd.store(primary->autoCrossfadeInEnd.load());
+        t.autoCrossfadeOutStart.store(primary->autoCrossfadeOutStart.load());
+        t.autoCrossfadeOutEnd.store(primary->autoCrossfadeOutEnd.load());
         t.warpEnabled.store(primary->warpEnabled.load());t.warpMode.store(primary->warpMode.load());
         t.warpFormant.store(primary->warpFormant.load());t.warpMarkerCount.store(primary->warpMarkerCount.load());
         for(int i=0;i<maxWarpMarkers;++i){t.warpSourceSeconds[(size_t)i].store(primary->warpSourceSeconds[(size_t)i].load());t.warpTargetSeconds[(size_t)i].store(primary->warpTargetSeconds[(size_t)i].load());}
@@ -156,6 +203,8 @@ bool AudioEngine::stretchArrangementAudioClip(int track,const juce::String& id,d
         neutral.reverse=false;
         neutral.fadeInSeconds=0.0;
         neutral.fadeOutSeconds=0.0;
+        neutral.autoCrossfadeInStart=neutral.autoCrossfadeInEnd=-1.0;
+        neutral.autoCrossfadeOutStart=neutral.autoCrossfadeOutEnd=-1.0;
         auto source=renderArrangementAudioClip(neutral);
         if(!source||seconds*c.sourceSampleRate>32000000)return false;
         try {
