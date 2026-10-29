@@ -44,6 +44,7 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->autoCrossfadeOutStart.store(c.autoCrossfadeOutStart);
     v->autoCrossfadeOutEnd.store(c.autoCrossfadeOutEnd);
     v->autoCrossfadeCurve.store(c.autoCrossfadeCurve);
+    v->crossfadeCurve.store(c.crossfadeCurve);
     v->clipEnvelopeLength.store(c.envelopeLengthSeconds);v->warpFormant.store(c.formant);
     auto warp=std::make_shared<WarpMarkerSnapshot>();
     warp->enabled=c.warp.enabled;warp->mode=c.warp.mode;warp->count=c.warp.count;
