@@ -1106,6 +1106,8 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.clipId = juce::Uuid().toString();
     track.clipGain.store(1);track.clipPitch.store(0);track.clipReverse.store(false);track.clipMuted.store(false);
     track.clipOffset.store(0);track.clipEnvelopeLength.store(0);track.clipFadeIn.store(0);track.clipFadeOut.store(0);
+    track.autoCrossfadeInStart.store(-1);track.autoCrossfadeInEnd.store(-1);
+    track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
     track.clipTrimStart.store(0);track.clipTrimEnd.store(1);track.warpFormant.store(0);
     track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     std::atomic_store(&track.playbackClips,
@@ -1576,10 +1578,25 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const auto outputOffset = static_cast<int>(mixStart - position);
         const auto sourceOffset = mixStart - startSample;
         const double offsetSeconds=track.clipOffset.load();
+        const double timelineStart=track.startSeconds.load();
+        const double crossInStart=track.autoCrossfadeInStart.load();
+        const double crossInEnd=track.autoCrossfadeInEnd.load();
+        const double crossOutStart=track.autoCrossfadeOutStart.load();
+        const double crossOutEnd=track.autoCrossfadeOutEnd.load();
+        const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
+        const double envelopeLength=track.clipEnvelopeLength.load();
+        const double duration=envelopeLength>0?envelopeLength:track.lengthSeconds.load();
         auto envelopeAt=[&](double t){
-            double e=1;const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
-            const double duration=track.clipEnvelopeLength.load()>0?track.clipEnvelopeLength.load():track.lengthSeconds.load();
-            if(fi>0)e=juce::jmin(e,t/fi);if(fo>0)e=juce::jmin(e,(duration-t)/fo);
+            double e=1.0;
+            if(fi>0)e=juce::jmin(e,t/fi);
+            if(fo>0)e=juce::jmin(e,(duration-t)/fo);
+            // Apply a second, transient envelope only where two regions overlap.
+            // The explicit per-clip fade controls remain independently editable.
+            const double timelineSeconds=timelineStart+t-offsetSeconds;
+            if(crossInEnd>crossInStart)
+                e*=juce::jlimit(0.0,1.0,(timelineSeconds-crossInStart)/(crossInEnd-crossInStart));
+            if(crossOutEnd>crossOutStart)
+                e*=juce::jlimit(0.0,1.0,(crossOutEnd-timelineSeconds)/(crossOutEnd-crossOutStart));
             return (float)juce::jlimit(0.0,1.0,e);
         };
         const auto gain = laneGain * track.clipGain.load(); const auto pan = lanePan;
