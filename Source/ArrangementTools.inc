@@ -65,6 +65,7 @@ bool restoreArrangement(const ArrangementState& state){
         refreshAudio(t);
     }
     for(auto& e:clipNames.entries){const auto it=state.manualNames.find(e.first);e.second.manual=it==state.manualNames.end()?juce::String{}:it->second;}
+    inlineMidiFinishGesture();inlineMidiClearSelection();
     activeIndex=-1;midiClips=state.midi;instrumentClips=state.instruments;
     owner.midiEngine.clear();
     if(state.selected>=0)selectClip(state.instrument,state.selected);
@@ -713,6 +714,86 @@ bool runArrangementTests(){
         }
         require(stateSignature()==beforePreview,
                 "rendering a MIDI preview must not change clip data");
+        // Multi-select in the Arrangement: Shift-click toggles individual notes,
+        // a Shift rectangle selects a group, and moving one selected note
+        // preserves all offsets and attributes in the shared edit transaction.
+        owner.setArrangeTrackHeight(midiRow,180);setBounds(owner.getLocalBounds());
+        inlineMidiMode=true;activeArrangeTool=0;
+        const int multiClip=(int)midiClips.size()-1;
+        auto& phrase=midiClips[(size_t)multiClip];
+        phrase.lengthSeconds=juce::jmax(4.0,phrase.lengthSeconds);
+        MidiEngine::NoteEvent first=phrase.notes.front();
+        first.startTick=240;first.lengthTicks=720;first.pitch=60;first.velocity=93;
+        MidiEngine::NoteEvent second=first;
+        second.pitch=64;second.velocity=71;second.channel=2;
+        MidiEngine::NoteEvent third=first;
+        third.startTick=1920;third.pitch=67;third.velocity=46;
+        phrase.notes={first,second,third};
+        selectClip(false,multiClip);syncPlayback();
+        inlineMidiClearSelection();clearArrangementHistory();
+        const auto& multiInitial=midiClips[(size_t)multiClip];
+        const auto n1=inlineMidiNoteBounds(multiInitial,false,multiInitial.notes[0]).getCentre();
+        const auto n2=inlineMidiNoteBounds(multiInitial,false,multiInitial.notes[1]).getCentre();
+        require(inlineMidiDown(n1,false,true),"shift-select first MIDI note");
+        require(inlineMidiDown(n2,false,true),"shift-select second MIDI note");
+        require(inlineMidiSelectedNotes.size()==2 && inlineMidiSelectedNotes.count(0)
+                && inlineMidiSelectedNotes.count(1),"additive MIDI selection");
+        require(inlineMidiDown(n2,false,true) && inlineMidiSelectedNotes.size()==1,
+                "shift-click deselects MIDI note");
+        require(inlineMidiDown(n2,false,true) && inlineMidiSelectedNotes.size()==2,
+                "shift-click reselects MIDI note");
+        const auto beforeGroup=midiClips[(size_t)multiClip].notes;
+        beginArrangementEdit();
+        require(inlineMidiDown(n1,false) && inlineMidiDragging && !inlineMidiResizing,
+                "drag selected note starts MIDI group move");
+        require(inlineMidiDragSelection.size()==2,"two notes in drag snapshot");
+        inlineMidiDrag(n1.translated(juce::jmax(8,(int)std::lround(
+                           .5*getLibertyTimelinePixelsPerSecond())),-8));
+        inlineMidiFinishGesture();finishArrangementEdit();
+        const auto movedGroup=midiClips[(size_t)multiClip].notes;
+        require(movedGroup.size()==3,"MIDI group keeps all notes");
+        require(movedGroup[0].startTick!=beforeGroup[0].startTick
+                && movedGroup[0].startTick-beforeGroup[0].startTick
+                    ==movedGroup[1].startTick-beforeGroup[1].startTick,
+                "MIDI group preserves note time offsets");
+        require((int)movedGroup[0].pitch-(int)beforeGroup[0].pitch
+                 ==(int)movedGroup[1].pitch-(int)beforeGroup[1].pitch,
+                "MIDI group pitch intervals preserved");
+        require(movedGroup[2].startTick==beforeGroup[2].startTick
+                && movedGroup[2].pitch==beforeGroup[2].pitch,
+                "unselected MIDI notes stay fixed");
+        require(movedGroup[0].lengthTicks==beforeGroup[0].lengthTicks
+                && movedGroup[1].lengthTicks==beforeGroup[1].lengthTicks
+                && movedGroup[0].velocity==beforeGroup[0].velocity
+                && movedGroup[1].velocity==beforeGroup[1].velocity
+                && movedGroup[1].channel==beforeGroup[1].channel,
+                "MIDI group preserves duration velocity and channel");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].startTick==beforeGroup[0].startTick
+                && midiClips[(size_t)multiClip].notes[1].startTick==beforeGroup[1].startTick,
+                "MIDI group undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].startTick==movedGroup[0].startTick
+                && midiClips[(size_t)multiClip].notes[1].startTick==movedGroup[1].startTick,
+                "MIDI group redo");
+        inlineMidiClearSelection();
+        // Marquee in the note area uses Shift + drag from empty space.
+        const auto activeArea=inlineMidiArea(midiClips[(size_t)multiClip],false);
+        const auto emptyPoint=juce::Point<int>(activeArea.getX()+2,activeArea.getBottom()-2);
+        require(inlineMidiDown(emptyPoint,false,true) && inlineMidiMarquee,
+                "shift-drag starts MIDI note rectangle");
+        inlineMidiMarqueeDrag(activeArea.getTopRight().translated(-1,1));
+        inlineMidiFinishGesture();
+        require(inlineMidiSelectedNotes.size()>=2,
+                "MIDI marquee selects intersecting notes");
+        // A change to another Arrangement tool must disable note hit testing.
+        for(int tool=1;tool<8;++tool){
+            activeArrangeTool=tool;
+            bool ins=false;int ci=-1,ni=-1;
+            require(!inlineMidiAt(n1,ins,ci,ni),
+                    "eight existing Arrangement tools take precedence");
+        }
+        activeArrangeTool=0;inlineMidiMode=false;inlineMidiClearSelection();
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});

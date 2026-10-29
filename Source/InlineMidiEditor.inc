@@ -5,6 +5,77 @@ bool inlineMidiResizing=false;
 int inlineMidiClipId=0,inlineMidiNoteIndex=-1,inlineMidiStartX=0,inlineMidiStartY=0;
 int inlineMidiLow=48,inlineMidiCount=24;
 std::vector<MidiEngine::NoteEvent> inlineMidiOriginalNotes;
+std::set<int> inlineMidiSelectedNotes,inlineMidiDragSelection,inlineMidiMarqueeBaseline;
+int inlineMidiSelectedClipId=0;
+bool inlineMidiSelectedInstrument=false,inlineMidiMarquee=false;
+juce::Point<int> inlineMidiMarqueeStart,inlineMidiMarqueeEnd;
+void inlineMidiClearSelection(){
+    inlineMidiSelectedNotes.clear();inlineMidiDragSelection.clear();
+    inlineMidiMarqueeBaseline.clear();inlineMidiSelectedClipId=0;
+    inlineMidiMarquee=false;
+}
+void inlineMidiFinishGesture(){
+    inlineMidiDragging=false;inlineMidiResizing=false;inlineMidiMarquee=false;
+    inlineMidiNoteIndex=-1;inlineMidiOriginalNotes.clear();
+    inlineMidiDragSelection.clear();inlineMidiMarqueeBaseline.clear();
+}
+bool inlineMidiSelectAll(){
+    if(!inlineMidiMode||activeIndex<0)return false;
+    const auto& clips=activeInstrument?instrumentClips:midiClips;
+    if(activeIndex>=(int)clips.size())return false;
+    const auto& clip=clips[(size_t)activeIndex];
+    inlineMidiSelectedClipId=clip.id;inlineMidiSelectedInstrument=activeInstrument;
+    inlineMidiSelectedNotes.clear();
+    for(int i=0;i<(int)clip.notes.size();++i)inlineMidiSelectedNotes.insert(i);
+    operationMessage=juce::String(inlineMidiSelectedNotes.size())
+        +juce::String::fromUTF8(" notes MIDI sélectionnées");
+    repaint();return true;
+}
+bool inlineMidiDeleteSelected(){
+    if(!inlineMidiMode||inlineMidiSelectedNotes.empty())return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& clip){
+        return clip.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int index=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,index))
+        selectClip(inlineMidiSelectedInstrument,index);
+    beginArrangementEdit();
+    auto notes=it->notes;
+    for(auto pos=inlineMidiSelectedNotes.rbegin();pos!=inlineMidiSelectedNotes.rend();++pos){
+        if(*pos>=0&&*pos<(int)notes.size())notes.erase(notes.begin()+*pos);
+    }
+    if(owner.midiEngine.replaceNotes(notes)){
+        it->notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        operationMessage=juce::String::fromUTF8("Notes MIDI sélectionnées supprimées");
+    }
+    finishArrangementEdit();
+    inlineMidiClearSelection();repaint();owner.repaint();
+    return true;
+}
+void inlineMidiMarqueeDrag(juce::Point<int> p){
+    if(!inlineMidiMarquee)return;
+    const auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiMarquee=false;return;}
+    const auto area=inlineMidiArea(*it,inlineMidiSelectedInstrument);
+    inlineMidiMarqueeEnd=p;
+    const auto rectangle=juce::Rectangle<int>(inlineMidiMarqueeStart,
+        inlineMidiMarqueeEnd).getIntersection(area);
+    inlineMidiSelectedNotes=inlineMidiMarqueeBaseline;
+    if(rectangle.getWidth()>1 && rectangle.getHeight()>1){
+        for(int i=0;i<(int)it->notes.size();++i)
+            if(rectangle.intersects(inlineMidiNoteBounds(*it,inlineMidiSelectedInstrument,
+                                                        it->notes[(size_t)i])))
+                inlineMidiSelectedNotes.insert(i);
+    }
+    repaint();
+}
+
 
 std::pair<int,int> inlineMidiRange(const Clip& c)const {
     if(c.notes.empty())return {48,24};
@@ -171,12 +242,21 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
             .withAlpha(isOctave?.61f:.27f));
         g.drawHorizontalLine((int)y,(float)area.getX(),(float)area.getRight());
     }
-    for(const auto& note:c.notes){
+    for(int index=0;index<(int)c.notes.size();++index){
+        const auto& note=c.notes[(size_t)index];
         const auto bounds=inlineMidiNoteBounds(c,instrument,note).getIntersection(area);
         if(bounds.isEmpty())continue;
-        g.setColour(juce::Colour(0xffd4efff).withAlpha(
+        const bool selected=inlineMidiSelectedClipId==c.id
+            && inlineMidiSelectedInstrument==instrument
+            && inlineMidiSelectedNotes.count(index)!=0;
+        g.setColour(selected?juce::Colour(0xfff7df90):
+            juce::Colour(0xffd4efff).withAlpha(
             c.muted||note.muted?.32f:juce::jlimit(.60f,1.0f,.60f+note.velocity/320.0f)));
         g.fillRoundedRectangle(bounds.toFloat(),2);
+        if(selected){
+            g.setColour(juce::Colour(0xff091b30));
+            g.drawRoundedRectangle(bounds.toFloat().reduced(.5f),2,1.2f);
+        }
         // Narrow right-edge handle: a separate drag gesture adjusts duration.
         const int grip=juce::jlimit(1,7,bounds.getWidth()/3);
         if(bounds.getWidth()>=6){
@@ -185,6 +265,15 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
             g.fillRoundedRectangle((float)(bounds.getRight()-grip),
                 (float)bounds.getY(),(float)grip,(float)bounds.getHeight(),1.0f);
         }
+    }
+    if(inlineMidiMarquee&&inlineMidiSelectedClipId==c.id
+       && inlineMidiSelectedInstrument==instrument){
+        const auto marquee=juce::Rectangle<int>(inlineMidiMarqueeStart,
+            inlineMidiMarqueeEnd).getIntersection(area);
+        g.setColour(juce::Colour(0xff8fd9ff).withAlpha(.18f));
+        g.fillRect(marquee);
+        g.setColour(juce::Colour(0xffbde9ff));
+        g.drawRect(marquee,1);
     }
 }
 bool inlineMidiAt(juce::Point<int> p,bool& instrument,int& clip,int& note)const {
@@ -200,19 +289,39 @@ bool inlineMidiAt(juce::Point<int> p,bool& instrument,int& clip,int& note)const 
         }
     return true;
 }
-bool inlineMidiDown(juce::Point<int> p,bool option){
+bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
     bool instrument=false;int index=-1,note=-1;
-    if(!inlineMidiAt(p,instrument,index,note)||(note<0&&!option))return false;
-    selectClip(instrument,index);
+    if(!inlineMidiAt(p,instrument,index,note)||(note<0&&!option&&!shift))
+        return false;
     auto& c=(instrument?instrumentClips:midiClips)[(size_t)index];
+    if(inlineMidiSelectedClipId!=c.id
+       ||inlineMidiSelectedInstrument!=instrument){
+        inlineMidiClearSelection();
+        inlineMidiSelectedClipId=c.id;inlineMidiSelectedInstrument=instrument;
+    }
+    selectClip(instrument,index);
     selectedAudio.clear();selectedClipIds.clear();selectedClipIds.insert(c.id);
+    if(shift&&!option){
+        if(note>=0){
+            if(!inlineMidiSelectedNotes.erase(note))inlineMidiSelectedNotes.insert(note);
+            operationMessage=juce::String(inlineMidiSelectedNotes.size())
+                +juce::String::fromUTF8(" notes MIDI sélectionnées");
+        }else{
+            inlineMidiMarquee=true;inlineMidiMarqueeStart=inlineMidiMarqueeEnd=p;
+            inlineMidiMarqueeBaseline=inlineMidiSelectedNotes;
+            operationMessage=juce::String::fromUTF8("Sélection MIDI : Maj + glissement");
+        }
+        repaint();return true;
+    }
     if(option&&note>=0){
+        inlineMidiClearSelection();
         c.notes.erase(c.notes.begin()+note);
         if(owner.midiEngine.replaceNotes(c.notes)){syncPlayback();repaint();owner.repaint();}
         operationMessage=juce::String::fromUTF8("Note MIDI supprimée");
         return true;
     }
     if(option&&note<0){
+        inlineMidiClearSelection();
         const auto area=inlineMidiArea(c,instrument);
         const auto range=inlineMidiRange(c);
         const int row=juce::jlimit(0,range.second-1,
@@ -236,12 +345,19 @@ bool inlineMidiDown(juce::Point<int> p,bool option){
         operationMessage=juce::String::fromUTF8("Note MIDI ajoutée");
         return true;
     }
+    inlineMidiResizing=inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    // Clicking a selected note keeps the group; a resize grip edits just
+    // the clicked note so existing single-note resizing remains unchanged.
+    if(inlineMidiResizing||inlineMidiSelectedNotes.count(note)==0)
+        inlineMidiSelectedNotes={note};
     inlineMidiDragging=true;inlineMidiInstrument=instrument;inlineMidiClipId=c.id;
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
-    inlineMidiResizing=inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    inlineMidiDragSelection=inlineMidiSelectedNotes;
     operationMessage=inlineMidiResizing
         ?juce::String::fromUTF8("ÉDITION DIRECTE : glisser le bord droit pour changer la durée")
-        :juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer la note");
+        :inlineMidiDragSelection.size()>1
+          ?juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer les notes sélectionnées")
+          :juce::String::fromUTF8("ÉDITION DIRECTE : déplacer ou transposer la note");
     inlineMidiOriginalNotes=c.notes;
     const auto range=inlineMidiRange(c);
     inlineMidiLow=range.first;inlineMidiCount=range.second;
@@ -288,31 +404,70 @@ void inlineMidiDrag(juce::Point<int> p){
         }
         return;
     }
+    // One musical delta for the entire group, preserving each note's
+    // relative timing, duration, velocity, channel and articulation.
     const double desired=juce::jmax(0.0,
         MidiEngine::tickToSeconds(original.startTick,owner.tempoBpm)
         +(p.x-inlineMidiStartX)/px);
     auto tick=MidiEngine::secondsToTick(desired,owner.tempoBpm);
     const double snap=getLibertySnapSeconds(owner.tempoBpm);
     if(snap>0){
-        const auto grid=juce::jmax<std::int64_t>(1,MidiEngine::secondsToTick(snap,owner.tempoBpm));
+        const auto grid=juce::jmax<std::int64_t>(1,
+            MidiEngine::secondsToTick(snap,owner.tempoBpm));
         tick=MidiEngine::quantizeTick(tick,grid);
     }
-    tick=juce::jlimit<std::int64_t>(0,end-original.lengthTicks,tick);
+    auto selection=inlineMidiDragSelection;
+    if(selection.empty())selection.insert(inlineMidiNoteIndex);
+    std::int64_t minStart=end,maxEnd=0;
+    int minPitch=127,maxPitch=0;
+    for(const int index:selection){
+        if(index<0||index>=(int)inlineMidiOriginalNotes.size())return;
+        const auto& n=inlineMidiOriginalNotes[(size_t)index];
+        if(n.startTick<0||n.lengthTicks<=0||n.startTick>end
+           ||n.lengthTicks>end-n.startTick)return;
+        minStart=juce::jmin(minStart,n.startTick);
+        maxEnd=juce::jmax(maxEnd,n.startTick+n.lengthTicks);
+        minPitch=juce::jmin(minPitch,(int)n.pitch);
+        maxPitch=juce::jmax(maxPitch,(int)n.pitch);
+    }
+    const std::int64_t requestedDelta=tick-original.startTick;
+    const std::int64_t delta=juce::jlimit(-minStart,end-maxEnd,requestedDelta);
     const float rowHeight=(float)area.getHeight()/inlineMidiCount;
-    const int pitch=juce::jlimit(inlineMidiLow,inlineMidiLow+inlineMidiCount-1,
-        (int)original.pitch-(int)std::lround((p.y-inlineMidiStartY)/rowHeight));
+    const int requestedPitch=-(int)std::lround((p.y-inlineMidiStartY)/rowHeight);
+    const int pitchDelta=juce::jlimit(
+        juce::jmax(-minPitch,inlineMidiLow-minPitch),
+        juce::jmin(127-maxPitch,inlineMidiLow+inlineMidiCount-1-maxPitch),
+        requestedPitch);
     auto notes=inlineMidiOriginalNotes;
-    notes[(size_t)inlineMidiNoteIndex].startTick=tick;
-    notes[(size_t)inlineMidiNoteIndex].pitch=(std::uint8_t)pitch;
+    for(const int index:selection){
+        notes[(size_t)index].startTick+=delta;
+        notes[(size_t)index].pitch=(std::uint8_t)
+            ((int)notes[(size_t)index].pitch+pitchDelta);
+    }
     if(owner.midiEngine.replaceNotes(notes)){
+        // The MIDI engine sorts by start, channel and pitch. Reproduce
+        // that order with source tags so selected outlines follow the notes.
+        std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+        tagged.reserve(notes.size());
+        for(int i=0;i<(int)notes.size();++i)tagged.push_back({notes[(size_t)i],i});
+        std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+            if(a.first.startTick!=b.first.startTick)
+                return a.first.startTick<b.first.startTick;
+            if(a.first.channel!=b.first.channel)
+                return a.first.channel<b.first.channel;
+            return a.first.pitch<b.first.pitch;
+        });
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(selection.count(tagged[(size_t)i].second))
+                inlineMidiSelectedNotes.insert(i);
         c.notes=owner.midiEngine.getNotesCopy();
         syncPlayback();repaint();owner.repaint();
     }
 }
 void toggleInlineMidiMode(){
     inlineMidiMode=!inlineMidiMode;
-    inlineMidiDragging=false;inlineMidiResizing=false;
-    inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;
+    inlineMidiFinishGesture();inlineMidiClearSelection();
     operationMessage=juce::String::fromUTF8(inlineMidiMode
         ?"ÉDITION DIRECTE : déplacer ou étirer les notes, Option-clic pour ajouter ou supprimer"
         :"ÉDITION DIRECTE désactivée — double-clic pour le Piano Roll du dock");
