@@ -59,6 +59,101 @@ bool inlineMidiSelectAll(){
         +juce::String::fromUTF8(" notes MIDI sélectionnées");
     repaint();return true;
 }
+// Move selected Arrangement notes precisely from the keyboard.
+// Independent from the Piano Roll and the eight existing mouse tools.
+bool inlineMidiNudgeSelected(int keyCode,bool coarse){
+    if(!inlineMidiMode||activeArrangeTool!=0||inlineMidiSelectedNotes.empty())
+        return false;
+    const bool horizontal=keyCode==juce::KeyPress::leftKey
+                       ||keyCode==juce::KeyPress::rightKey;
+    const bool vertical=keyCode==juce::KeyPress::upKey
+                     ||keyCode==juce::KeyPress::downKey;
+    if(!horizontal&&!vertical)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return true;}
+    const int clipIndex=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,clipIndex))
+        selectClip(inlineMidiSelectedInstrument,clipIndex);
+    auto& clip=bank[(size_t)clipIndex];
+    auto notes=clip.notes;
+    const auto clipEnd=MidiEngine::secondsToTick(clip.lengthSeconds,owner.tempoBpm);
+    if(clipEnd<=0)return true;
+    std::int64_t earliest=clipEnd,latest=0;
+    int lowest=127,highest=0;
+    for(const int index:inlineMidiSelectedNotes){
+        if(index<0||index>=(int)notes.size()){
+            inlineMidiClearSelection();return true;
+        }
+        const auto& n=notes[(size_t)index];
+        if(n.startTick<0||n.lengthTicks<=0||n.startTick>=clipEnd
+           ||n.lengthTicks>clipEnd-n.startTick)return true;
+        earliest=juce::jmin(earliest,n.startTick);
+        latest=juce::jmax(latest,n.startTick+n.lengthTicks);
+        lowest=juce::jmin(lowest,(int)n.pitch);
+        highest=juce::jmax(highest,(int)n.pitch);
+    }
+    std::int64_t deltaTicks=0;
+    int deltaPitch=0;
+    if(horizontal){
+        const double seconds=getLibertySnapSeconds(owner.tempoBpm);
+        const auto snap=seconds>0?juce::jmax<std::int64_t>(
+            1,MidiEngine::secondsToTick(seconds,owner.tempoBpm))
+            :MidiEngine::ticksPerQuarterNote/4;
+        const auto measure=MidiEngine::ticksPerMeasure(
+            owner.timeSignatureNumerator,owner.timeSignatureDenominator);
+        const auto step=coarse?juce::jmax<std::int64_t>(1,measure):snap;
+        deltaTicks=keyCode==juce::KeyPress::leftKey?-step:step;
+        // Do not weaken quantization or change spacing at clip boundaries.
+        if(deltaTicks<0 && earliest< -deltaTicks)return true;
+        if(deltaTicks>0 && latest>clipEnd-deltaTicks)return true;
+    }else{
+        const int step=coarse?12:1;
+        deltaPitch=keyCode==juce::KeyPress::downKey?-step:step;
+        if(lowest+deltaPitch<0||highest+deltaPitch>127)return true;
+    }
+    // One snapshot per keystroke, preserving the user's separate Undo steps.
+    beginArrangementEdit();
+    for(const int index:inlineMidiSelectedNotes){
+        auto& n=notes[(size_t)index];
+        n.startTick+=deltaTicks;
+        n.pitch=(std::uint8_t)((int)n.pitch+deltaPitch);
+    }
+    // Reproduce the engine's musical order while retaining which notes
+    // were selected, even when a group crosses unselected notes.
+    std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+    tagged.reserve(notes.size());
+    for(int i=0;i<(int)notes.size();++i)
+        tagged.push_back({notes[(size_t)i],i});
+    std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+        if(a.first.startTick!=b.first.startTick)
+            return a.first.startTick<b.first.startTick;
+        if(a.first.channel!=b.first.channel)
+            return a.first.channel<b.first.channel;
+        return a.first.pitch<b.first.pitch;
+    });
+    if(owner.midiEngine.replaceNotes(notes)){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        const auto previousSelection=inlineMidiSelectedNotes;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(previousSelection.count(tagged[(size_t)i].second))
+                inlineMidiSelectedNotes.insert(i);
+        syncPlayback();
+        operationMessage=juce::String(previousSelection.size())
+            +juce::String::fromUTF8(" notes MIDI : ")
+            +(horizontal
+                ?(deltaTicks<0?juce::String::fromUTF8("déplacement à gauche")
+                              :juce::String::fromUTF8("déplacement à droite"))
+                :(deltaPitch<0?juce::String::fromUTF8("transposition vers le bas")
+                              :juce::String::fromUTF8("transposition vers le haut")));
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return true;
+}
 bool inlineMidiDeleteSelected(){
     if(!inlineMidiMode||inlineMidiSelectedNotes.empty())return false;
     auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;

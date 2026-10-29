@@ -148,6 +148,12 @@ bool handleArrangementKey(const juce::KeyPress& key) {
     if(inlineMidiMode && key.getModifiers().isCommandDown()
        && (key.getKeyCode()=='a'||key.getKeyCode()=='A'))
         return inlineMidiSelectAll();
+    // Arrow nudge is consumed only for selected notes in direct edit mode;
+    // transport and timeline shortcuts remain untouched otherwise.
+    if(inlineMidiMode && !key.getModifiers().isCommandDown()
+       && !key.getModifiers().isAltDown() && !key.getModifiers().isCtrlDown()
+       && inlineMidiNudgeSelected(key.getKeyCode(),key.getModifiers().isShiftDown()))
+        return true;
     if(inlineMidiMode&&key.getKeyCode()==juce::KeyPress::escapeKey
        && !inlineMidiSelectedNotes.empty()){
         inlineMidiClearSelection();repaint();return true;

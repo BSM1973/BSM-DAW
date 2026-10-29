@@ -964,7 +964,67 @@ bool runArrangementTests(){
             require(!inlineMidiAt(n1,ins,ci,ni),
                     "eight existing Arrangement tools take precedence");
         }
-        activeArrangeTool=0;inlineMidiMode=false;inlineMidiClearSelection();
+        activeArrangeTool=0;
+        // Keyboard nudge stays local to the selected MIDI notes and is
+        // independently undoable, with the SNAP and all MIDI values intact.
+        inlineMidiClearSelection();
+        const auto keyboardBefore=midiClips[(size_t)multiClip].notes;
+        require(keyboardBefore.size()>=3,"nudge fixture has three notes");
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        require(inlineMidiNudgeSelected(juce::KeyPress::rightKey,false),
+            "MIDI keyboard right nudge dispatched");
+        const auto keyboardMoved=midiClips[(size_t)multiClip].notes;
+        const auto snapSeconds=getLibertySnapSeconds(owner.tempoBpm);
+        const auto stepTicks=snapSeconds>0?juce::jmax<std::int64_t>(1,
+            MidiEngine::secondsToTick(snapSeconds,owner.tempoBpm))
+            :MidiEngine::ticksPerQuarterNote/4;
+        require(keyboardMoved[0].startTick-keyboardBefore[0].startTick==stepTicks
+            && keyboardMoved[1].startTick-keyboardBefore[1].startTick==stepTicks,
+            "MIDI keyboard respects horizontal snap");
+        require(keyboardMoved[2].startTick==keyboardBefore[2].startTick
+            && keyboardMoved[0].lengthTicks==keyboardBefore[0].lengthTicks
+            && keyboardMoved[1].lengthTicks==keyboardBefore[1].lengthTicks
+            && keyboardMoved[0].velocity==keyboardBefore[0].velocity
+            && keyboardMoved[1].channel==keyboardBefore[1].channel,
+            "MIDI nudge preserves other notes and properties");
+        require(inlineMidiSelectedNotes.size()==2,
+            "MIDI note selection follows the moved notes");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].startTick==keyboardBefore[0].startTick
+            && midiClips[(size_t)multiClip].notes[1].startTick==keyboardBefore[1].startTick,
+            "MIDI keyboard undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].startTick==keyboardMoved[0].startTick
+            && midiClips[(size_t)multiClip].notes[1].startTick==keyboardMoved[1].startTick,
+            "MIDI keyboard redo");
+        // Undo/Redo clears the transient selection by design.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        require(inlineMidiNudgeSelected(juce::KeyPress::upKey,false),
+            "MIDI up arrow dispatched");
+        const auto keyboardPitched=midiClips[(size_t)multiClip].notes;
+        require(keyboardPitched[0].pitch==keyboardMoved[0].pitch+1
+            && keyboardPitched[1].pitch==keyboardMoved[1].pitch+1
+            && keyboardPitched[2].pitch==keyboardMoved[2].pitch,
+            "MIDI keyboard transposes selected notes by semitone");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==keyboardMoved[0].pitch,
+            "MIDI pitch nudge undo");
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        const auto beforeOctave=midiClips[(size_t)multiClip].notes;
+        require(inlineMidiNudgeSelected(juce::KeyPress::upKey,true),
+            "Shift up arrow dispatched");
+        const auto octave=midiClips[(size_t)multiClip].notes;
+        require(octave[0].pitch==beforeOctave[0].pitch+12
+            && octave[1].pitch==beforeOctave[1].pitch+12,
+            "Shift up arrow transposes notes by octave");
+        undoArrangement(false);
+        inlineMidiMode=false;inlineMidiClearSelection();
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});
