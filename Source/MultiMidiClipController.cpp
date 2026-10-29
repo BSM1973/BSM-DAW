@@ -127,7 +127,15 @@ bool hitTest(int x,int y)override{
     const auto point=e.getEventRelativeTo(&owner).getPosition();
     if(point.y<owner.getArrangeTop()||point.y>=owner.getMixerTop())return;
     if(laneAtPoint(point,true)<0)return;
-    // Creation is handled on the second mouseDown; avoid processing twice.
+    if (!e.mods.isLeftButtonDown() || point.x < owner.trackHeaderWidth) return;
+    // Some JUCE child components dispatch mouseDoubleClick without a second
+    // mouseDown reaching the arrangement overlay. Handle both paths safely.
+    const auto now = juce::Time::getMillisecondCounter();
+    if (now - lastInstrumentDoubleClickMs <= 350
+        && (point - lastInstrumentDoubleClickPoint).getDistanceFromOrigin() <= 5) return;
+    lastInstrumentDoubleClickMs = now;
+    lastInstrumentDoubleClickPoint = point;
+    handleGridDoubleClick(point);
 }
 void handleGridDoubleClick(juce::Point<int> point){if(point.x<owner.trackHeaderWidth)return;bool ins=isPointInTrackRow(point,true);if(!ins&&!isPointInTrackRow(point,false))return;bool hi=false;int i=findClipAt(point,hi);if(i<0){auto&v=ins?instrumentClips:midiClips;Clip c;c.id=allocateClipId();if(c.id==0)return;c.trackLane=laneAtPoint(point,ins);double m=secondsPerMeasure(),raw=juce::jmax(0.0,((double)point.x-owner.trackHeaderWidth)/getLibertyTimelinePixelsPerSecond());c.startSeconds=snapPosition(raw);c.lengthSeconds=ins?4.0*m:m;c.userLength=true;
         // Never create a second clip on top of an existing clip in the same lane.
