@@ -78,6 +78,11 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
 {
     if(!isValidTrackIndex(index))return false;
     try {
+        // Reject malformed positions before sorting: NaN would violate the
+        // strict ordering requirements of std::stable_sort.
+        std::set<juce::String> ids;
+        for(const auto& c:clips)
+            if(!validAudioClip(c)||!ids.insert(c.id).second)return false;
         auto extras=clips;
         // Calculate only simple adjacent two-clip overlaps. More complex
         // layering remains untouched rather than altering audio unexpectedly.
@@ -116,10 +121,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         for(auto it=extras.begin();it!=extras.end();++it)
             if(it->sourceBuffer && it->sourceBuffer->getNumSamples()>0){primary=prepareAudioVoice(*it);extras.erase(it);break;}
         if(!primary)primary=std::make_shared<AudioTrackState>();
-        // Validate and prepare every allocation before stopping the callback.
-        auto validation=clips;std::set<juce::String> ids;
-        for(const auto& c:validation)
-            if(!validAudioClip(c)||!ids.insert(c.id).second)return false;
+        // All regions were validated before computing the crossfades.
         const bool running=initialised.load();
         if(running)deviceManager.removeAudioCallback(this);
         if(!replaceAudioClips(index,extras)){if(running)deviceManager.addAudioCallback(this);return false;}
