@@ -54,7 +54,7 @@ private:
         if (button == nullptr) return;
 
         const auto text = button->getButtonText();
-        if (text != "ARRANGE" && text != "MIXCONSOLE") return;
+        if (text != "ARRANGEMENT" && text != "MIXCONSOLE") return;
 
         if (auto* main = findMainComponent(button))
             if (isLibertyPerformVisible(main))
@@ -88,7 +88,7 @@ NavigationBridge bridge;
 void setLibertyMixConsoleVisible(MainComponent* owner, bool shouldShow)
 {
     if (owner == nullptr) return;
-    if (auto* button = findPageButton(owner, shouldShow ? "MIXCONSOLE" : "ARRANGE"))
+    if (auto* button = findPageButton(owner, shouldShow ? "MIXCONSOLE" : "ARRANGEMENT"))
         button->triggerClick();
 }
 
