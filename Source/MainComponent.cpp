@@ -29,6 +29,7 @@ void clearLibertyAudioClipResizeSource(AudioEngine&, int);
 void resizeLibertyMixConsole(MainComponent*);
 void resizeLibertyBrowserResizeController(MainComponent*);
 void resizeLibertyMultiMidiClipController(MainComponent*);
+bool handleLibertyInstrumentGridDoubleClick(MainComponent&, juce::Point<int>);
 void ensureLibertyAudioRecordingController(MainComponent*);
 void ensureLibertyBrowserController(MainComponent*);
 bool isLibertyMixConsoleVisible(MainComponent*);
@@ -3540,6 +3541,8 @@ void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
         }
     }
     const auto p = event.getPosition();
+    // Handle instrument MIDI creation even when other arrangement overlays intercept clicks.
+    if (handleLibertyInstrumentGridDoubleClick(*this, p)) return;
     // Restore the original audio-clip gesture: double-click the actual clip
     // body to open its waveform in the lower dock.
     if (openAudioClipInDockAt(p)) return;
