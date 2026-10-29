@@ -256,6 +256,10 @@ public:
         std::shared_ptr<juce::AudioBuffer<float>> spectralCache;
         double fadeInSeconds = 0.0;
         double fadeOutSeconds = 0.0;
+        // Derived from neighbouring clips; never stored in project XML.
+        // Use absolute timeline seconds so split clips retain their own offsets.
+        double autoCrossfadeInStart = -1.0, autoCrossfadeInEnd = -1.0;
+        double autoCrossfadeOutStart = -1.0, autoCrossfadeOutEnd = -1.0;
         // Decoded source prepared outside the real-time audio callback.
         std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
         double sourceSampleRate = 0.0;
@@ -333,6 +337,8 @@ private:
         std::atomic<bool> clipMuted { false };
         std::atomic<double> clipOffset { 0.0 }, clipEnvelopeLength { 0.0 };
         std::atomic<double> clipFadeIn { 0.0 }, clipFadeOut { 0.0 };
+        std::atomic<double> autoCrossfadeInStart { -1.0 }, autoCrossfadeInEnd { -1.0 };
+        std::atomic<double> autoCrossfadeOutStart { -1.0 }, autoCrossfadeOutEnd { -1.0 };
         std::atomic<double> clipTrimStart { 0.0 }, clipTrimEnd { 1.0 };
         std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>> regionVoices;
         std::atomic<float> gain { 1.0f };
