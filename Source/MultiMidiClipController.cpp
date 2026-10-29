@@ -3,6 +3,7 @@
 #undef private
 #include "MidiEditor.h"
 #include "MidiClipEditing.h"
+#include "AudioCrossfadeCurve.h"
 #include "ClipNames.h"
 #include "LibertyDesignSystem.h"
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -305,6 +306,9 @@ void mouseDown(const juce::MouseEvent&e)override{
     }
 
     const auto ownerPoint = e.getEventRelativeTo(&owner).getPosition();
+    // The overlap menu is available on right-click (or Ctrl-click on macOS).
+    if(e.eventComponent==this && e.mods.isPopupMenu()
+       && showAudioCrossfadeMenu(ownerPoint))return;
     if(e.mods.isLeftButtonDown()){
         const int tool=toolAt(ownerPoint);
         if(tool>=0){activeArrangeTool=tool;operationMessage=tool==5?juce::String::fromUTF8("Cliquez sur un clip pour copier, puis dans le vide pour coller"):juce::String{};repaint();return;}
