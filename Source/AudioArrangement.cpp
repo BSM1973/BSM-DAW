@@ -94,6 +94,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         for(auto& c:extras){
             c.autoCrossfadeInStart=c.autoCrossfadeInEnd=-1.0;
             c.autoCrossfadeOutStart=c.autoCrossfadeOutEnd=-1.0;
+            c.autoCrossfadeCurve=0;
         }
         std::vector<size_t> chronological(extras.size());
         std::iota(chronological.begin(),chronological.end(),size_t{0});
