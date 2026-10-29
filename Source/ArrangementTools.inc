@@ -102,13 +102,13 @@ int audioFadeHandleAt(juce::Point<int> p) const {
     for(const auto& c:owner.audioEngine.getArrangementAudioClips(t)){
         if(c.id!=id || !c.sourceBuffer || c.lengthSeconds<=0.0)continue;
         const auto box=audioBounds(t,c);
-        if(box.getWidth()<=36 || box.getHeight()<=32 || std::abs(p.y-(box.getY()+24))>6)return 0;
+        if(box.getWidth()<=36 || box.getHeight()<=32 || std::abs(p.y-(box.getY()+24))>10)return 0;
         const float fi=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float left=std::abs((float)p.x-(box.getX()+fi));
         const float right=std::abs((float)p.x-(box.getRight()-fo));
-        if(left<=7.0f && left<=right)return 8;
-        if(right<=7.0f)return 9;
+        if(left<=10.0f && left<=right)return 8;
+        if(right<=10.0f)return 9;
         return 0;
     }
     return 0;
@@ -126,16 +126,16 @@ CrossfadeGrip crossfadeGripAt(juce::Point<int> p)const {
         const auto bounds=audioBounds(track,c);
         if(bounds.getHeight()<43 || bounds.getWidth()<=36)continue;
         const int y=bounds.getBottom()-11;
-        if(std::abs(p.y-y)>5)continue;
+        if(std::abs(p.y-y)>9)continue;
         const double left=owner.trackHeaderWidth+c.autoCrossfadeInStart*pixels;
         const double right=owner.trackHeaderWidth+c.autoCrossfadeInEnd*pixels;
         if(right-left<15.0){
-            if(std::abs(p.x-0.5*(left+right))<=6)return {track,c.id,11};
+            if(std::abs(p.x-0.5*(left+right))<=9)return {track,c.id,11};
             continue;
         }
         const double dl=std::abs(p.x-left),dr=std::abs(p.x-right);
-        if(dl<=7.0 && dl<=dr)return {track,c.id,10};
-        if(dr<=7.0)return {track,c.id,11};
+        if(dl<=9.0 && dl<=dr)return {track,c.id,10};
+        if(dr<=9.0)return {track,c.id,11};
     }
     return {};
 }
@@ -201,6 +201,17 @@ void paintAudioSelection(juce::Graphics& g){
     }
 }
 // Draw after names so the editable grips stay visible; keep them below the title strip.
+void paintAudioFadeGrip(juce::Graphics& g,float x,float y)const {
+    // Opaque dark halo plus pale ring: visible on every one of Liberty's 32 colours.
+    g.setColour(juce::Colour(0xff07121f).withAlpha(.93f));
+    g.fillEllipse(x-9.0f,y-9.0f,18.0f,18.0f);
+    g.setColour(juce::Colour(0xfff4f9ff));
+    g.fillEllipse(x-7.4f,y-7.4f,14.8f,14.8f);
+    g.setColour(juce::Colour(0xffffc95e));
+    g.fillEllipse(x-5.7f,y-5.7f,11.4f,11.4f);
+    g.setColour(juce::Colour(0xff713e0b));
+    g.drawEllipse(x-5.7f,y-5.7f,11.4f,11.4f,1.0f);
+}
 void paintAudioFades(juce::Graphics& g){
     juce::Graphics::ScopedSaveState save(g);
     g.reduceClipRegion(owner.trackHeaderWidth,owner.getArrangeTop(),owner.getWidth()-owner.trackHeaderWidth,owner.getMixerTop()-owner.getArrangeTop());
@@ -221,7 +232,7 @@ void paintAudioFades(juce::Graphics& g){
             const float y1=box.getY()+30.0f,y2=box.getBottom()-7.0f;
             g.setColour(juce::Colour(0x1fffcb80));
             g.fillRect(juce::Rectangle<float>(x1,y1,x2-x1,juce::jmax(0.0f,y2-y1)));
-            g.setColour(juce::Colour(0xffffcb80));
+            g.setColour(juce::Colour(0xffffd88c));
             juce::Path curve;
             for(int step=0;step<=24;++step){
                 const double progress=(double)step/24.0;
@@ -230,7 +241,10 @@ void paintAudioFades(juce::Graphics& g){
                 const float y=y2-level*(y2-y1);
                 if(step==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);
             }
-            g.strokePath(curve,juce::PathStrokeType(1.6f));
+            g.setColour(juce::Colour(0xff0b1b29).withAlpha(.83f));
+            g.strokePath(curve,juce::PathStrokeType(3.8f));
+            g.setColour(juce::Colour(0xffffd88c));
+            g.strokePath(curve,juce::PathStrokeType(2.2f));
         };
         drawCrossfade(c.autoCrossfadeInStart,c.autoCrossfadeInEnd,true);
         drawCrossfade(c.autoCrossfadeOutStart,c.autoCrossfadeOutEnd,false);
@@ -238,23 +252,30 @@ void paintAudioFades(juce::Graphics& g){
             const float left=owner.trackHeaderWidth+(float)(c.autoCrossfadeInStart*pixelsPerSecond);
             const float right=owner.trackHeaderWidth+(float)(c.autoCrossfadeInEnd*pixelsPerSecond);
             const float y=box.getBottom()-11.0f;
-            g.setColour(juce::Colour(0xfff0c66d));
             if(right-left<15.0f){
-                const float centre=(left+right)*0.5f;
-                g.fillRoundedRectangle(centre-4.0f,y-4.0f,8.0f,8.0f,2.0f);
+                paintAudioFadeGrip(g,(left+right)*0.5f,y);
             }else{
-                g.fillRoundedRectangle(left-4.0f,y-4.0f,8.0f,8.0f,2.0f);
-                g.fillRoundedRectangle(right-4.0f,y-4.0f,8.0f,8.0f,2.0f);
+                paintAudioFadeGrip(g,left,y);
+                paintAudioFadeGrip(g,right,y);
             }
         }
         const float fi=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
-        g.setColour(juce::Colour(0xfff0c66d));
-        if(fi>0.0f)g.drawLine(box.getX(),bottom,box.getX()+fi,top,1.5f);
-        if(fo>0.0f)g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,1.5f);
-        g.fillEllipse(box.getX()+fi-3.0f,top-3.0f,6.0f,6.0f);
-        g.fillEllipse(box.getRight()-fo-3.0f,top-3.0f,6.0f,6.0f);
+        if(fi>0.0f){
+            g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
+            g.drawLine(box.getX(),bottom,box.getX()+fi,top,4.0f);
+            g.setColour(juce::Colour(0xffffd88c));
+            g.drawLine(box.getX(),bottom,box.getX()+fi,top,2.4f);
+        }
+        if(fo>0.0f){
+            g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
+            g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,4.0f);
+            g.setColour(juce::Colour(0xffffd88c));
+            g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,2.4f);
+        }
+        paintAudioFadeGrip(g,box.getX()+fi,top);
+        paintAudioFadeGrip(g,box.getRight()-fo,top);
     }
 }
 void eraseArrangementSelection(){
@@ -390,6 +411,12 @@ bool runArrangementTests(){
         require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"seed audio");
         const double px=getLibertyTimelinePixelsPerSecond();
         auto point=[&](int track,double seconds){return juce::Point<int>(owner.trackHeaderWidth+(int)std::lround(seconds*px),owner.getArrangeTrackTop(track)+34);};
+        // Larger on-screen targets must be usable near the golden centre.
+        if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
+            const int handleX=fadeBox.getX()+(int)std::lround(fadeBox.getWidth()*c.fadeInSeconds/c.lengthSeconds);
+            require(audioFadeHandleAt({handleX+8,fadeBox.getY()+24})==8,
+                "larger manual fade grab region");
+        }
         // Exercise the same fade grips used by the arrangement mouse path.
         // This also verifies a complete Undo/Redo roundtrip of fade metadata.
         const auto fadeBox=audioBounds(0,c);
@@ -571,6 +598,28 @@ bool runArrangementTests(){
         undoArrangement(true);
         require(midiClips[(size_t)inlineIndex].notes[0].startTick==updatedNote.startTick,
                 "inline MIDI redo");
+        // MIDI time grid stays visible over a coloured clip and aligns with
+        // the global musical ruler, not the beginning of the MIDI region.
+        {
+            juce::Image gridCheck(juce::Image::ARGB,600,120,true);
+            juce::Graphics gridGraphics(gridCheck);
+            gridGraphics.setColour(juce::Colour(0xff244d72));
+            gridGraphics.fillAll();
+            const double pxNow=getLibertyTimelinePixelsPerSecond();
+            const double barSeconds=secondsPerMeasure();
+            const int globalBar=(int)std::lround(owner.trackHeaderWidth+barSeconds*pxNow);
+            const int regionX=juce::jmax(0,globalBar-45);
+            // Render into an image with independent local coordinates while
+            // keeping absolute-timeline mapping via a translated Graphics context.
+            gridGraphics.addTransform(juce::AffineTransform::translation((float)-regionX,0.0f));
+            drawMidiClipTimeGrid(gridGraphics,{regionX,10,90,80},true);
+            const int x=globalBar-regionX;
+            if(x>=1&&x<599){
+                const auto on=gridCheck.getPixelAt(x,47);
+                const auto off=gridCheck.getPixelAt(x-1,47);
+                require(on!=off,"MIDI clip grid visible over clip fill");
+            }
+        }
         // Direct resize uses a separate right-edge gesture; dragging the note body
         // above already verified moving the note without changing its duration.
         const auto resizeBefore=midiClips[(size_t)inlineIndex].notes[0];

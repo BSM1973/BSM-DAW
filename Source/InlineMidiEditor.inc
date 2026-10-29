@@ -54,24 +54,58 @@ bool inlineMidiResizeGripAt(const Clip& c,bool instrument,
     const int grip=juce::jlimit(1,7,visible.getWidth()/3);
     return p.x>=visible.getRight()-grip;
 }
+void drawMidiClipTimeGrid(juce::Graphics& g,juce::Rectangle<int> region,bool editing)const {
+    if(region.getWidth()<18||region.getHeight()<12)return;
+    const double pixels=getLibertyTimelinePixelsPerSecond();
+    const double beat=60.0/juce::jmax(1.0,owner.tempoBpm);
+    const double measure=secondsPerMeasure();
+    if(!std::isfinite(pixels)||pixels<=0 || !std::isfinite(measure)||measure<=0)return;
+    juce::Graphics::ScopedSaveState save(g);
+    g.reduceClipRegion(region);
+    const double start=juce::jmax(0.0,((double)region.getX()-owner.trackHeaderWidth)/pixels);
+    const double end=((double)region.getRight()-owner.trackHeaderWidth)/pixels;
+    const auto paintLines=[&](double interval,juce::Colour colour,float thickness,double minPixelSpacing){
+        if(!std::isfinite(interval)||interval<=0 || interval*pixels<minPixelSpacing)return;
+        const double first=std::ceil(start/interval-1.0e-9);
+        if(!std::isfinite(first)||first<0 || first>1.0e10)return;
+        g.setColour(colour);
+        for(int line=0;line<600;++line){
+            const double at=(first+line)*interval;
+            if(at>end+interval*1.0e-8)break;
+            const double x=owner.trackHeaderWidth+at*pixels;
+            if(!std::isfinite(x) || x>region.getRight()+1)break;
+            if(x<region.getX()-1)continue;
+            g.drawLine((float)x,(float)region.getY(),(float)x,(float)region.getBottom(),thickness);
+        }
+    };
+    const double snap=getLibertySnapSeconds(owner.tempoBpm);
+    // Fine SNAP marks are omitted when zoomed out; beats and bars remain visible.
+    if(snap>0 && snap<beat)paintLines(snap,juce::Colour(0xffd5ecff).withAlpha(editing?.29f:.22f),1.0f,11.0);
+    paintLines(beat,juce::Colour(0xffc2e5ff).withAlpha(editing?.49f:.39f),1.1f,10.0);
+    paintLines(measure,juce::Colour(0xffffe0a0).withAlpha(editing?.83f:.70f),1.8f,6.0);
+}
 void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
     if(!inlineMidiMode)return;
     const auto area=inlineMidiArea(c,instrument);
     if(area.isEmpty())return;
     juce::Graphics::ScopedSaveState scope(g);
     g.reduceClipRegion(area);
-    g.setColour(juce::Colour(0xff10263c).withAlpha(.76f));
+    g.setColour(juce::Colour(0xff10263c).withAlpha(.82f));
     g.fillRoundedRectangle(area.toFloat(),3);
+    // Grid must be ABOVE the opaque clip/piano background but BELOW notes.
+    drawMidiClipTimeGrid(g,area,true);
     auto range=inlineMidiRange(c);
     if(inlineMidiDragging&&inlineMidiClipId==c.id&&inlineMidiInstrument==instrument)
         range={inlineMidiLow,inlineMidiCount};
-    for(int pitch=range.first;pitch<range.first+range.second;++pitch)
-        if(pitch%12==0){
-            const float y=area.getY()+
-                (range.first+range.second-1-pitch)*(float)area.getHeight()/range.second;
-            g.setColour(juce::Colour(0xff9dd4ee).withAlpha(.25f));
-            g.drawHorizontalLine((int)y,(float)area.getX(),(float)area.getRight());
-        }
+    // Semitone rows stay legible; C octave lines are brighter for orientation.
+    for(int pitch=range.first;pitch<range.first+range.second;++pitch){
+        const float y=area.getY()+
+            (range.first+range.second-1-pitch)*(float)area.getHeight()/range.second;
+        const bool isOctave=pitch%12==0;
+        g.setColour(juce::Colour(isOctave?0xfff3dfa8:0xffbed8ed)
+            .withAlpha(isOctave?.61f:.27f));
+        g.drawHorizontalLine((int)y,(float)area.getX(),(float)area.getRight());
+    }
     for(const auto& note:c.notes){
         const auto bounds=inlineMidiNoteBounds(c,instrument,note).getIntersection(area);
         if(bounds.isEmpty())continue;
