@@ -1,5 +1,6 @@
 #include <set>
 #include "AudioEngine.h"
+#include "AudioCrossfadeCurve.h"
 
 // PERFORM contributes audio to this engine-owned hardware callback. It never
 // registers its own AudioIODeviceCallback.
@@ -1108,6 +1109,7 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.clipOffset.store(0);track.clipEnvelopeLength.store(0);track.clipFadeIn.store(0);track.clipFadeOut.store(0);
     track.autoCrossfadeInStart.store(-1);track.autoCrossfadeInEnd.store(-1);
     track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
+    track.crossfadeCurve.store(0);track.autoCrossfadeCurve.store(0);
     track.clipTrimStart.store(0);track.clipTrimEnd.store(1);track.warpFormant.store(0);
     track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
     std::atomic_store(&track.playbackClips,
@@ -1359,6 +1361,7 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("muted",clip.muted);
     element.setAttribute("fadeInSeconds",clip.fadeInSeconds);
     element.setAttribute("fadeOutSeconds",clip.fadeOutSeconds);
+    element.setAttribute("crossfadeCurve",clip.crossfadeCurve);
     element.setAttribute("offsetSeconds",clip.offsetSeconds);
     element.setAttribute("envelopeLengthSeconds",clip.envelopeLengthSeconds);
     element.setAttribute("formant",clip.formant);
@@ -1383,6 +1386,7 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.muted=element.getBoolAttribute("muted",false);
     clip.fadeInSeconds=element.getDoubleAttribute("fadeInSeconds",0.0);
     clip.fadeOutSeconds=element.getDoubleAttribute("fadeOutSeconds",0.0);
+    clip.crossfadeCurve=element.getIntAttribute("crossfadeCurve",0);
     clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
     clip.envelopeLengthSeconds=element.getDoubleAttribute("envelopeLengthSeconds",0);
     clip.formant=element.getDoubleAttribute("formant",0);
@@ -1583,6 +1587,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const double crossInEnd=track.autoCrossfadeInEnd.load();
         const double crossOutStart=track.autoCrossfadeOutStart.load();
         const double crossOutEnd=track.autoCrossfadeOutEnd.load();
+        const int crossCurve=track.autoCrossfadeCurve.load();
         const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
         const double envelopeLength=track.clipEnvelopeLength.load();
         const double duration=envelopeLength>0?envelopeLength:track.lengthSeconds.load();
@@ -1594,9 +1599,11 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             // The explicit per-clip fade controls remain independently editable.
             const double timelineSeconds=timelineStart+t-offsetSeconds;
             if(crossInEnd>crossInStart)
-                e*=juce::jlimit(0.0,1.0,(timelineSeconds-crossInStart)/(crossInEnd-crossInStart));
+                e*=LibertyAudioCrossfade::level(crossCurve,
+                    (timelineSeconds-crossInStart)/(crossInEnd-crossInStart),true);
             if(crossOutEnd>crossOutStart)
-                e*=juce::jlimit(0.0,1.0,(crossOutEnd-timelineSeconds)/(crossOutEnd-crossOutStart));
+                e*=LibertyAudioCrossfade::level(crossCurve,
+                    (timelineSeconds-crossOutStart)/(crossOutEnd-crossOutStart),false);
             return (float)juce::jlimit(0.0,1.0,e);
         };
         const auto gain = laneGain * track.clipGain.load(); const auto pan = lanePan;
