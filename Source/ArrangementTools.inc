@@ -542,6 +542,36 @@ bool runArrangementTests(){
         const auto pastedMidiKey="midi:"+juce::String(midiClips.back().id);
         require(clipNames.entries.at(pastedMidiKey).manual.isEmpty()&&clipNames.entries.at(pastedMidiKey).number>clipNames.entries.at(midiKey).number,"MIDI copy receives automatic unique name");
         require(midiClips.back().notes[0].startTick==120&&midiClips.back().notes[0].lengthTicks==240,"naming preserves MIDI content");
+        // Test direct in-place MIDI editing through the actual controller.
+        owner.setArrangeTrackHeight(midiRow,120);setBounds(owner.getLocalBounds());
+        midiClips.back().lengthSeconds=juce::jmax(3.0,midiClips.back().lengthSeconds);
+        inlineMidiMode=true;activeArrangeTool=0;
+        const int inlineIndex=(int)midiClips.size()-1;
+        const auto originalNote=midiClips[(size_t)inlineIndex].notes[0];
+        const auto hitRect=inlineMidiNoteBounds(midiClips[(size_t)inlineIndex],false,originalNote);
+        require(!hitRect.isEmpty(),"inline MIDI note bounds");
+        const auto hitPoint=hitRect.getCentre();
+        bool inlineInstrumentHit=false;int inlineHitClip=-1,inlineHitNote=-1;
+        require(inlineMidiAt(hitPoint,inlineInstrumentHit,inlineHitClip,inlineHitNote)
+            && !inlineInstrumentHit && inlineHitClip==inlineIndex && inlineHitNote==0,
+            "inline MIDI note hit testing");
+        beginArrangementEdit();
+        require(inlineMidiDown(hitPoint,false)&&inlineMidiDragging,"inline MIDI note drag begins");
+        const int noteDelta=juce::jmax(8,(int)std::lround(.30*getLibertyTimelinePixelsPerSecond()));
+        inlineMidiDrag(hitPoint.translated(noteDelta,0));
+        inlineMidiDragging=false;inlineMidiOriginalNotes.clear();inlineMidiNoteIndex=-1;
+        finishArrangementEdit();
+        const auto updatedNote=midiClips[(size_t)inlineIndex].notes[0];
+        require(updatedNote.startTick!=originalNote.startTick,"inline MIDI note time edit");
+        require(updatedNote.pitch==originalNote.pitch && updatedNote.lengthTicks==originalNote.lengthTicks
+                && updatedNote.velocity==originalNote.velocity,"inline MIDI preserves note attributes");
+        undoArrangement(false);
+        require(midiClips[(size_t)inlineIndex].notes[0].startTick==originalNote.startTick,
+                "inline MIDI undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)inlineIndex].notes[0].startTick==updatedNote.startTick,
+                "inline MIDI redo");
+        inlineMidiMode=false;
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});
