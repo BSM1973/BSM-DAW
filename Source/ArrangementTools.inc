@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==750
+        require(dialog.getWidth()==530 && dialog.getHeight()==798
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1529,6 +1529,39 @@ bool runArrangementTests(){
             rhythm,rhythmBase,20,4,4,960,0,AP::strongBeats,0)
                 ==accentFour,
             "zero ghost level restores exact original accent behavior");
+        // A human-performed phrase is not quantized: accent recognition
+        // is measured against absolute musical ticks, wrapping across bars.
+        const std::vector<LibertyInlineVelocity::PreviewNote> looseTiming={
+            {3780,60},{60,60},{1830,70},{240,80}};
+        const std::vector<int> looseVelocity={60,60,70,80};
+        require(LibertyInlineVelocity::accentVelocities(
+            looseTiming,looseVelocity,20,4,4,960,0,AP::strongBeats,12,10)
+                ==std::vector<int>({80,80,80,68}),
+            "10 percent tolerance recognizes early/late downbeats, and secondary accents");
+        require(LibertyInlineVelocity::accentVelocities(
+            looseTiming,looseVelocity,20,4,4,960,0,AP::strongBeats,12,0)
+                ==std::vector<int>({48,48,58,68}),
+            "zero tolerance retains the old strict note-to-grid behavior");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{900,75},{1040,75},{1400,75}}, {75,75,75},
+            16,4,4,960,0,AP::everyBeat,5,10)
+                ==std::vector<int>({91,91,70}),
+            "each-beat tolerance recognizes anticipation and delay");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{420,60},{540,60},{690,60}}, {60,60,60},
+            16,4,4,960,0,AP::offbeat,5,10)
+                ==std::vector<int>({76,76,55}),
+            "offbeat tolerance recognizes both sides of subdivision");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{900,60},{1020,60},{3780,60}}, {60,60,60},
+            16,4,4,960,0,AP::backbeat,5,10)
+                ==std::vector<int>({76,76,55}),
+            "backbeat tolerance never confuses next downbeat with last backbeat");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{2740,60},{1320,60},{420,60}}, {60,60,60},
+            20,6,8,960,0,AP::strongBeats,10,10)
+                ==std::vector<int>({80,70,50}),
+            "6/8 timing tolerance respects bar wrap and dotted-quarter pulse");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1544,7 +1577,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1579,6 +1612,29 @@ bool runArrangementTests(){
         beatPreview.restoreInitialSettings();
         require(beatPreview.getGhostNotes()==0,
             "reset clears ghost strength");
+        LibertyInlineVelocity::DialogContent freeTimingPreview(60,100,
+            LibertyInlineVelocity::Curve::linear,
+            [&](int,int,LibertyInlineVelocity::Curve,
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
+                LibertyInlineVelocity::AccentPattern,int,int){
+                dialogApplied=true;
+            },{{50,70},{1500,80}},4,4,960,0);
+        freeTimingPreview.bindInputs();
+        freeTimingPreview.setIntensity(0);
+        freeTimingPreview.setAccents(20);
+        freeTimingPreview.setGhostNotes(8);
+        require(freeTimingPreview.getCurrentPreviewVelocity(0)==62,
+            "without tolerance early downbeats remain ghosted");
+        freeTimingPreview.setTolerance(10);
+        require(freeTimingPreview.getTolerance()==10
+            &&freeTimingPreview.getCurrentPreviewVelocity(0)==90
+            &&freeTimingPreview.getCurrentPreviewVelocity(1)==72
+            &&!dialogApplied,
+            "tolerance preview recognizes early downbeats without MIDI commit");
+        freeTimingPreview.restoreInitialSettings();
+        require(freeTimingPreview.getTolerance()==0
+            &&freeTimingPreview.getGhostNotes()==0,
+            "reset restores strict musical grid");
 
 
 
@@ -1804,6 +1860,45 @@ bool runArrangementTests(){
             require(ghostAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "ghost edit Redo");
+        // Preview and Arrangement share the tolerance-aware calculation.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto toleranceBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> toleranceNotes={
+            {toleranceBefore[0].startTick,(int)toleranceBefore[0].velocity},
+            {toleranceBefore[1].startTick,(int)toleranceBefore[1].velocity},
+            {toleranceBefore[2].startTick,(int)toleranceBefore[2].velocity}};
+        const auto toleranceCurve=LibertyInlineVelocity::transformVelocities(
+            toleranceNotes,45,95,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0);
+        const auto toleranceExpected=LibertyInlineVelocity::accentVelocities(
+            toleranceNotes,toleranceCurve,12,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::strongBeats,8,15);
+        require(inlineMidiRampVelocitySelected(45,95,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,12,
+            AP::strongBeats,8,15),"tolerance accents apply to the Arrangement");
+        const auto toleranceAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<toleranceNotes.size();++i)
+            require((int)toleranceAfter[i].velocity==toleranceExpected[i]
+                &&toleranceAfter[i].startTick==toleranceBefore[i].startTick
+                &&toleranceAfter[i].lengthTicks==toleranceBefore[i].lengthTicks
+                &&toleranceAfter[i].pitch==toleranceBefore[i].pitch
+                &&toleranceAfter[i].channel==toleranceBefore[i].channel,
+                "tolerance changes velocities only, exactly as in preview");
+        undoArrangement(false);
+        for(size_t i=0;i<toleranceNotes.size();++i)
+            require(toleranceBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "tolerance edit Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<toleranceNotes.size();++i)
+            require(toleranceAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "tolerance edit Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
