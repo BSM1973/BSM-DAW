@@ -1232,6 +1232,29 @@ bool runArrangementTests(){
         dialog.bindInputs();
         require(dialog.getWidth()==530 && dialog.getHeight()==420
             && !dialogApplied,"blue velocity window geometry and no side effects");
+        require(dialog.hasVisibleNumberFields()
+            && dialog.getNumChildComponents()>=5,
+            "velocity window shows both editable numeric fields");
+        LibertyInlineVelocity::DialogContent populated(40,120,
+            LibertyInlineVelocity::Curve::exponential,
+            [&](int,int,LibertyInlineVelocity::Curve){dialogApplied=true;},
+            {{1920,77},{240,55},{1080,91}});
+        populated.bindInputs();
+        require(populated.getPreviewNoteCount()==3
+            && populated.getPreviewOriginalVelocity(0)==55
+            && populated.getPreviewOriginalVelocity(1)==91
+            && populated.getPreviewOriginalVelocity(2)==77,
+            "real velocity preview sorts notes by musical time");
+        require(populated.getPreviewResultVelocity(0,40,120,
+                LibertyInlineVelocity::Curve::exponential)==40
+            &&populated.getPreviewResultVelocity(1,40,120,
+                LibertyInlineVelocity::Curve::exponential)==60
+            &&populated.getPreviewResultVelocity(2,40,120,
+                LibertyInlineVelocity::Curve::exponential)==120
+            && !dialogApplied,
+            "real velocity preview computes correct note values without applying");
+        require(populated.hasVisibleNumberFields(),
+            "velocity preview retains numeric controls");
         // Restore the three-note fixture for subsequent same-chord checks.
         midiClips[(size_t)multiClip].notes=baseline;
         require(owner.midiEngine.replaceNotes(midiClips[(size_t)multiClip].notes),

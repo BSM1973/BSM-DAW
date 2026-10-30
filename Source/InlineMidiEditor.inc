@@ -904,6 +904,13 @@ void showInlineMidiVelocityCurveDialog(){
     const bool instrument=inlineMidiSelectedInstrument;
     const auto selected=inlineMidiSelectedNotes;
     const auto notesAtOpen=it->notes;
+    std::vector<LibertyInlineVelocity::PreviewNote> previewNotes;
+    previewNotes.reserve(selected.size());
+    for(const int noteIndex:selected){
+        if(noteIndex<0||noteIndex>=(int)notesAtOpen.size())return;
+        const auto& note=notesAtOpen[(size_t)noteIndex];
+        previewNotes.push_back({note.startTick,(int)note.velocity});
+    }
     auto* panel=new LibertyInlineVelocity::DialogContent(
         64,100,LibertyInlineVelocity::Curve::linear,
         [safe=juce::Component::SafePointer<MultiMidiClipController>(this),
@@ -929,7 +936,7 @@ void showInlineMidiVelocityCurveDialog(){
                    ||a.probability!=b.probability)return;
             }
             safe->inlineMidiRampVelocitySelected(first,last,curve);
-        });
+        },std::move(previewNotes));
     panel->bindInputs();
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle=juce::String::fromUTF8("LIBERTY  ·  COURBE DE VÉLOCITÉ MIDI");

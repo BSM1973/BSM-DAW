@@ -3,10 +3,29 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace LibertyInlineVelocity
 {
 enum class Curve : int { linear = 0, exponential = 1, sCurve = 2 };
+
+struct PreviewNote
+{
+    std::int64_t startTick = 0;
+    int velocity = 100;
+};
+
+// Real preview positions use the same musical-time interpolation as Apply.
+inline double musicalPosition(std::int64_t tick,
+                              std::int64_t first,
+                              std::int64_t last) noexcept
+{
+    if(last<=first)return 0.0;
+    return juce::jlimit(0.0,1.0,
+        ((double)tick-(double)first)/((double)last-(double)first));
+}
 
 inline double progress(double position, Curve curve) noexcept
 {
@@ -31,14 +50,23 @@ class DialogContent final : public juce::Component
 {
 public:
     explicit DialogContent(int first, int last, Curve shape,
-                           std::function<void(int, int, Curve)> apply)
-        : onApply(std::move(apply))
+                           std::function<void(int, int, Curve)> apply,
+                           std::vector<PreviewNote> selectedNotes = {})
+        : onApply(std::move(apply)), samples(std::move(selectedNotes))
     {
         setOpaque(true);
         setSize(530, 420);
+        std::stable_sort(samples.begin(),samples.end(),
+            [](const PreviewNote& a,const PreviewNote& b){
+                return a.startTick<b.startTick;
+            });
 
         configureNumber(start, first, juce::String::fromUTF8("Vélocité de départ (1 à 127)"));
         configureNumber(end, last, juce::String::fromUTF8("Vélocité d'arrivée (1 à 127)"));
+        // Both controls must belong to the JUCE component tree: assigning
+        // bounds alone does not display a TextEditor in a dialog.
+        addAndMakeVisible(start);
+        addAndMakeVisible(end);
 
         curve.addItem(juce::String::fromUTF8("Linéaire"), 1);
         curve.addItem(juce::String::fromUTF8("Exponentielle"), 2);
@@ -104,7 +132,18 @@ public:
 
         g.setColour(juce::Colour(0xffc1d7e9));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(juce::String::fromUTF8("APERÇU"), 26, 220, 200, 20,
+        g.drawText(juce::String::fromUTF8("APERÇU  ·  ")
+                       +juce::String((int)samples.size())
+                       +juce::String::fromUTF8(" NOTE(S)"),
+                   26, 220, 200, 20, juce::Justification::centredLeft);
+        g.setFont(juce::Font(10.0f));
+        g.setColour(juce::Colour(0xff8fb0c7));
+        g.fillEllipse(276.0f,226.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Avant"),286,219,56,21,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xffffd28a));
+        g.fillEllipse(359.0f,226.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Après"),369,219,58,21,
                    juce::Justification::centredLeft);
 
         const auto plot=juce::Rectangle<float>(58.0f, 246.0f, 440.0f, 100.0f);
@@ -152,6 +191,33 @@ public:
                 ((velocityAt(first,last,t,shape)-1)/126.0f)*plot.getHeight();
             g.setColour(juce::Colour(0xffffd28a));
             g.fillEllipse(x-4.5f,y-4.5f,9.0f,9.0f);
+        }
+
+        // Real note positions and their current / prospective velocities.
+        // Cap on-screen markers to 120 for very dense selections; the
+        // underlying note selection and Apply continue to use every note.
+        if(!samples.empty())
+        {
+            const auto firstTick=samples.front().startTick;
+            const auto lastTick=samples.back().startTick;
+            const size_t stride=juce::jmax<size_t>(1,(samples.size()+119)/120);
+            for(size_t i=0;i<samples.size();i+=stride)
+            {
+                const double t=musicalPosition(samples[i].startTick,
+                                               firstTick,lastTick);
+                const float x=plot.getX()+(float)t*plot.getWidth();
+                const float oldY=plot.getBottom()-
+                    ((juce::jlimit(1,127,samples[i].velocity)-1)/126.0f)*plot.getHeight();
+                const int target=velocityAt(first,last,t,shape);
+                const float newY=plot.getBottom()-
+                    ((target-1)/126.0f)*plot.getHeight();
+                g.setColour(juce::Colour(0xff8fb0c7).withAlpha(.72f));
+                g.drawLine(x-2.0f,plot.getBottom(),x-2.0f,oldY,1.2f);
+                g.fillEllipse(x-5.0f,oldY-3.0f,6.0f,6.0f);
+                g.setColour(juce::Colour(0xffffd28a).withAlpha(.91f));
+                g.drawLine(x+2.0f,plot.getBottom(),x+2.0f,newY,1.5f);
+                g.fillEllipse(x-1.0f,newY-3.0f,6.0f,6.0f);
+            }
         }
 
         if (!error.isEmpty())
@@ -227,10 +293,29 @@ private:
 
     juce::TextEditor start,end;
     juce::ComboBox curve;
+    std::vector<PreviewNote> samples;
     juce::TextButton applyButton,cancelButton;
     juce::String error;
     std::function<void(int,int,Curve)> onApply;
 public:
+    // Read-only access for automated validation; never edits any MIDI note.
+    size_t getPreviewNoteCount() const noexcept { return samples.size(); }
+    int getPreviewOriginalVelocity(size_t index) const
+    {
+        return index<samples.size()?samples[index].velocity:0;
+    }
+    int getPreviewResultVelocity(size_t index,int first,int last,Curve shape) const
+    {
+        if(index>=samples.size()||samples.empty())return 0;
+        const auto t=musicalPosition(samples[index].startTick,
+            samples.front().startTick,samples.back().startTick);
+        return velocityAt(first,last,t,shape);
+    }
+    bool hasVisibleNumberFields() const noexcept
+    {
+        return start.isVisible()&&end.isVisible()
+            &&start.getWidth()>0&&end.getWidth()>0;
+    }
     // Attach callbacks only once all child components have been created.
     void bindInputs()
     {
