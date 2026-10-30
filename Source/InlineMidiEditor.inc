@@ -440,7 +440,7 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
             const float barWidth=(float)bounds.getWidth()*level;
             const float barHeight=juce::jmin(4.0f,juce::jmax(1.0f,(float)bounds.getHeight()/3.0f));
             g.setColour(juce::Colour(0xff12455b));
-            g.fillRect(bounds.getX(),(float)bounds.getBottom()-barHeight,
+            g.fillRect((float)bounds.getX(),(float)bounds.getBottom()-barHeight,
                        (float)bounds.getWidth(),barHeight);
             g.setColour(selected?juce::Colour(0xffffd16f):juce::Colour(0xff61d3f1));
             g.fillRect((float)bounds.getX(),(float)bounds.getBottom()-barHeight,
