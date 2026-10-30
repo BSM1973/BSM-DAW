@@ -206,7 +206,8 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    std::uint32_t variationSeed=0x61b3e729U,
                                    int accentAmount=0,
                                    LibertyInlineVelocity::AccentPattern accentPattern=
-                                       LibertyInlineVelocity::AccentPattern::strongBeats){
+                                       LibertyInlineVelocity::AccentPattern::strongBeats,
+                                   int ghostAmount=0){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -251,7 +252,8 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         selectedNotes,humanized,accentAmount,
         owner.timeSignatureNumerator,owner.timeSignatureDenominator,
         MidiEngine::ticksPerQuarterNote,
-        MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm),accentPattern);
+        MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm),
+        accentPattern,ghostAmount);
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -293,7 +295,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                     ?juce::String::fromUTF8("Contretemps")
                     :accentPattern==LibertyInlineVelocity::AccentPattern::backbeat
                         ?juce::String::fromUTF8("Backbeat")
-                        :juce::String::fromUTF8("Temps forts"));
+                        :juce::String::fromUTF8("Temps forts"))
+            +juce::String::fromUTF8(" — Notes fantômes −")
+            +juce::String(juce::jlimit(0,20,ghostAmount));
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -966,7 +970,7 @@ void showInlineMidiVelocityCurveDialog(){
         (int first,int last,LibertyInlineVelocity::Curve curve,
          LibertyInlineVelocity::Mode mode,int intensityPercent,
          int humanizeAmount,std::uint32_t variationSeed,int accentAmount,
-         LibertyInlineVelocity::AccentPattern accentPattern)
+         LibertyInlineVelocity::AccentPattern accentPattern,int ghostAmount)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -994,7 +998,7 @@ void showInlineMidiVelocityCurveDialog(){
             }
             safe->inlineMidiRampVelocitySelected(
                 first,last,curve,mode,intensityPercent,
-                humanizeAmount,variationSeed,accentAmount,accentPattern);
+                humanizeAmount,variationSeed,accentAmount,accentPattern,ghostAmount);
         },std::move(previewNotes),meterNumerator,meterDenominator,
           MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();

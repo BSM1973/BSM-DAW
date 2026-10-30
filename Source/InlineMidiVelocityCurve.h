@@ -178,11 +178,13 @@ inline std::vector<int> accentVelocities(
     const std::vector<int>& transformed, int strength,
     int numerator, int denominator, std::int64_t ticksPerQuarter,
     std::int64_t clipStartTick,
-    AccentPattern pattern=AccentPattern::strongBeats)
+    AccentPattern pattern=AccentPattern::strongBeats,
+    int ghostAmount=0)
 {
     if(notes.size()!=transformed.size())return transformed;
     strength=juce::jlimit(0,20,strength);
-    if(strength==0||numerator<1||numerator>32
+    ghostAmount=juce::jlimit(0,20,ghostAmount);
+    if((strength==0&&ghostAmount==0)||numerator<1||numerator>32
        ||denominator<1||denominator>32
        ||ticksPerQuarter<1||ticksPerQuarter>1000000
        ||clipStartTick<0)return transformed;
@@ -210,31 +212,40 @@ inline std::vector<int> accentVelocities(
         }
         const auto inBar=(tick+clipStartTick)%barTicks;
         int requested=0;
+        bool emphasized=false;
         if(pattern==AccentPattern::everyBeat)
         {
-            if(inBar%pulseTicks==0)requested=strength;
+            emphasized=inBar%pulseTicks==0;
+            if(emphasized)requested=strength;
         }
         else if(pattern==AccentPattern::offbeat)
         {
             // Compound: second eighth of each dotted quarter.
             // Simple: halfway between consecutive beats.
             const auto displacement=compound?beatTicks:beatTicks/2;
-            if(displacement>0&&inBar%pulseTicks==displacement)
-                requested=strength;
+            emphasized=displacement>0&&inBar%pulseTicks==displacement;
+            if(emphasized)requested=strength;
         }
         else if(pattern==AccentPattern::backbeat)
         {
             // Beats 2 and 4; dotted-quarter pulses in compound meter.
-            if(inBar%pulseTicks==0&&(inBar/pulseTicks)%2==1)
-                requested=strength;
+            emphasized=inBar%pulseTicks==0&&(inBar/pulseTicks)%2==1;
+            if(emphasized)requested=strength;
         }
         else
         {
-            // Legacy profile stays unchanged.
-            if(inBar==0)requested=strength;
+            // Legacy strong-beat timing and amount remain unchanged.
+            if(inBar==0){emphasized=true;requested=strength;}
             else if(numerator>=4&&numerator%2==0
-                    &&inBar==barTicks/2)requested=(strength+1)/2;
+                    &&inBar==barTicks/2)
+            {
+                emphasized=true;
+                requested=(strength+1)/2;
+            }
         }
+        // Independent of accent strength: turning ACCENTS to zero still
+        // allows ghost notes on the complementary rhythmic positions.
+        if(!emphasized)requested=-ghostAmount;
         const auto& chord=chords.at(tick);
         const int delta=juce::jlimit(1-chord.low,127-chord.high,requested);
         result.push_back(juce::jlimit(1,127,oldValue+delta));
@@ -249,7 +260,7 @@ class DialogContent final : public juce::Component
 public:
     explicit DialogContent(int first, int last, Curve shape,
                            std::function<void(int, int, Curve, Mode, int, int,
-                                              std::uint32_t, int, AccentPattern)> apply,
+                                              std::uint32_t, int, AccentPattern, int)> apply,
                            std::vector<PreviewNote> selectedNotes = {},
                            int signatureNumerator = 4,
                            int signatureDenominator = 4,
@@ -261,7 +272,7 @@ public:
           ticksPerQuarter(quarterTicks),clipStartTick(clipOffsetTick)
     {
         setOpaque(true);
-        setSize(530, 702);
+        setSize(530, 750);
         std::stable_sort(samples.begin(),samples.end(),
             [](const PreviewNote& a,const PreviewNote& b){
                 return a.startTick<b.startTick;
@@ -312,7 +323,7 @@ public:
         intensity.setValue(100.0,juce::dontSendNotification);
         intensity.setTextValueSuffix(" %");
         intensity.setTooltip(juce::String::fromUTF8(
-            "0 % : notes originales ; 100 % : transformation complète"));
+            "0 % : courbe inactive, rythme et humanisation indépendants"));
         intensity.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff27445a));
         intensity.setColour(juce::Slider::trackColourId,juce::Colour(0xff65c4d6));
         intensity.setColour(juce::Slider::thumbColourId,juce::Colour(0xffffcc73));
@@ -371,6 +382,21 @@ public:
         accentPattern.onChange=[this]{repaint();};
         addAndMakeVisible(accentPattern);
 
+        ghostNotes.setSliderStyle(juce::Slider::LinearHorizontal);
+        ghostNotes.setTextBoxStyle(juce::Slider::TextBoxRight,false,48,27);
+        ghostNotes.setRange(0.0,20.0,1.0);
+        ghostNotes.setValue(0.0,juce::dontSendNotification);
+        ghostNotes.setTooltip(juce::String::fromUTF8(
+            "Réduire les notes hors accents de 0 à 20 points MIDI"));
+        ghostNotes.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff27445a));
+        ghostNotes.setColour(juce::Slider::trackColourId,juce::Colour(0xff65c4d6));
+        ghostNotes.setColour(juce::Slider::thumbColourId,juce::Colour(0xffffcc73));
+        ghostNotes.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff233747));
+        ghostNotes.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffffe6b5));
+        ghostNotes.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff426278));
+        ghostNotes.onValueChange=[this]{repaint();};
+        addAndMakeVisible(ghostNotes);
+
         resetButton.setButtonText(juce::String::fromUTF8("RÉINITIALISER"));
         resetButton.setTooltip(juce::String::fromUTF8(
             "Retrouver les vélocités d'origine et la courbe initiale"));
@@ -407,7 +433,7 @@ public:
     // invokes the MIDI callback until APPLIQUER is pressed.
     static juce::Rectangle<float> previewPlot() noexcept
     {
-        return {58.0f,489.0f,440.0f,100.0f};
+        return {58.0f,537.0f,440.0f,100.0f};
     }
     juce::Point<float> endpointPosition(int which) const
     {
@@ -493,6 +519,7 @@ public:
         humanize.setValue(0.0,juce::sendNotificationSync);
         accents.setValue(0.0,juce::sendNotificationSync);
         accentPattern.setSelectedId(1,juce::sendNotificationSync);
+        ghostNotes.setValue(0.0,juce::sendNotificationSync);
         variationSeed=initialVariationSeed;
         updateValidation();
     }
@@ -507,10 +534,11 @@ public:
         newVariation.setBounds(423, 307, 75, 30);
         accents.setBounds(278, 352, 220, 34);
         accentPattern.setBounds(284, 395, 214, 32);
-        resetButton.setBounds(26, 657, 117, 33);
-        invertButton.setBounds(151, 657, 117, 33);
-        cancelButton.setBounds(277, 657, 104, 33);
-        applyButton.setBounds(389, 657, 109, 33);
+        ghostNotes.setBounds(278, 439, 220, 34);
+        resetButton.setBounds(26, 705, 117, 33);
+        invertButton.setBounds(151, 705, 117, 33);
+        cancelButton.setBounds(277, 705, 104, 33);
+        applyButton.setBounds(389, 705, 109, 33);
     }
 
     void paint(juce::Graphics& g) override
@@ -547,21 +575,23 @@ public:
                    juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Profil d’accents"), 26, 395, 241, 32,
                    juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Notes fantômes (−)"), 26, 439, 241, 34,
+                   juce::Justification::centredLeft);
 
         g.setColour(juce::Colour(0xffc1d7e9));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(juce::String::fromUTF8("APERÇU  ·  ")
                        +juce::String((int)samples.size())
                        +juce::String::fromUTF8(" NOTE(S)"),
-                   26, 463, 200, 20, juce::Justification::centredLeft);
+                   26, 511, 200, 20, juce::Justification::centredLeft);
         g.setFont(juce::Font(10.0f));
         g.setColour(juce::Colour(0xff8fb0c7));
-        g.fillEllipse(276.0f,469.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Avant"),286,462,56,21,
+        g.fillEllipse(276.0f,517.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Avant"),286,510,56,21,
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffffd28a));
-        g.fillEllipse(359.0f,469.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Après"),369,462,58,21,
+        g.fillEllipse(359.0f,517.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Après"),369,510,58,21,
                    juce::Justification::centredLeft);
 
         const auto plot=previewPlot();
@@ -580,8 +610,8 @@ public:
         }
         g.setColour(juce::Colour(0xff9cb5c9));
         g.setFont(juce::Font(10.0f));
-        g.drawText("127", 22, 483, 32, 17, juce::Justification::centredRight);
-        g.drawText("1", 22, 574, 32, 17, juce::Justification::centredRight);
+        g.drawText("127", 22, 531, 32, 17, juce::Justification::centredRight);
+        g.drawText("1", 22, 622, 32, 17, juce::Justification::centredRight);
 
         int first=64,last=100;
         if (!parseValue(start,first)) first=64;
@@ -594,7 +624,8 @@ public:
             samples,curved,getHumanization(),variationSeed);
         const auto transformed=accentVelocities(samples,humanized,
             getAccents(),meterNumerator,meterDenominator,
-            ticksPerQuarter,clipStartTick,selectedAccentPattern());
+            ticksPerQuarter,clipStartTick,selectedAccentPattern(),
+            getGhostNotes());
         juce::Path line;
         for (int i=0;i<=160;++i)
         {
@@ -653,18 +684,18 @@ public:
         {
             g.setColour(juce::Colour(0xffffa9a1));
             g.setFont(juce::Font(11.0f));
-            g.drawFittedText(error,25,601,472,18,juce::Justification::centredLeft,1);
+            g.drawFittedText(error,25,649,472,18,juce::Justification::centredLeft,1);
         }
         else
         {
             g.setColour(juce::Colour(0xffa9bfd1));
             g.setFont(juce::Font(10.5f));
             g.drawText(getIntensity()==0
-                ?juce::String::fromUTF8("0 % : aucune vélocité modifiée.")
+                ?juce::String::fromUTF8("0 % : courbe inactive ; rythme indépendant.")
                 :mode==Mode::relative
                     ?juce::String::fromUTF8("Relatif : nuances et accents conservés.")
                     :juce::String::fromUTF8("Absolu : dosage progressif de la courbe."),
-                26,601,470,17,juce::Justification::centredLeft);
+                26,649,470,17,juce::Justification::centredLeft);
         }
     }
 
@@ -736,14 +767,14 @@ private:
         }
         if(onApply)onApply(first,last,selectedCurve(),selectedMode(),
                            getIntensity(),getHumanization(),variationSeed,
-                           getAccents(),selectedAccentPattern());
+                           getAccents(),selectedAccentPattern(),getGhostNotes());
         if(auto* window=findParentComponentOfClass<juce::DialogWindow>())
             window->exitModalState(1);
     }
 
     juce::TextEditor start,end;
     juce::ComboBox curve,applicationMode,accentPattern;
-    juce::Slider intensity,humanize,accents;
+    juce::Slider intensity,humanize,accents,ghostNotes;
     juce::TextButton newVariation;
     int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
@@ -755,7 +786,7 @@ private:
     int meterNumerator=4,meterDenominator=4;
     std::int64_t ticksPerQuarter=960,clipStartTick=0;
     juce::String error;
-    std::function<void(int,int,Curve,Mode,int,int,std::uint32_t,int,AccentPattern)> onApply;
+    std::function<void(int,int,Curve,Mode,int,int,std::uint32_t,int,AccentPattern,int)> onApply;
 public:
     // Read-only access for automated validation; never edits any MIDI note.
     size_t getPreviewNoteCount() const noexcept { return samples.size(); }
@@ -773,7 +804,7 @@ public:
     {
         return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
             selectedCurve(),selectedMode(),getIntensity(),getHumanization(),
-            variationSeed,getAccents(),selectedAccentPattern());
+            variationSeed,getAccents(),selectedAccentPattern(),getGhostNotes());
     }
     void setAccentPattern(AccentPattern pattern)
     {
@@ -781,6 +812,14 @@ public:
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}
+    void setGhostNotes(int amount)
+    {
+        ghostNotes.setValue(juce::jlimit(0,20,amount),juce::sendNotificationSync);
+    }
+    int getGhostNotes() const noexcept
+    {
+        return juce::jlimit(0,20,(int)std::lround(ghostNotes.getValue()));
+    }
     void setAccents(int strength)
     {
         accents.setValue(juce::jlimit(0,20,strength),juce::sendNotificationSync);
@@ -826,7 +865,8 @@ public:
             &&humanize.isVisible()&&humanize.getWidth()>0
             &&newVariation.isVisible()&&newVariation.getWidth()>0
             &&accents.isVisible()&&accents.getWidth()>0
-            &&accentPattern.isVisible()&&accentPattern.getWidth()>0;
+            &&accentPattern.isVisible()&&accentPattern.getWidth()>0
+            &&ghostNotes.isVisible()&&ghostNotes.getWidth()>0;
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
@@ -837,7 +877,8 @@ public:
                                  int humanizeAmount=0,
                                  std::uint32_t seed=0x61b3e729U,
                                  int accentStrength=0,
-                                 AccentPattern pattern=AccentPattern::strongBeats) const
+                                 AccentPattern pattern=AccentPattern::strongBeats,
+                                 int ghostAmount=0) const
     {
         if(index>=samples.size())return 0;
         const auto transformed=transformVelocities(
@@ -846,7 +887,7 @@ public:
             samples,transformed,humanizeAmount,seed);
         const auto accented=accentVelocities(samples,variations,
             accentStrength,meterNumerator,meterDenominator,
-            ticksPerQuarter,clipStartTick,pattern);
+            ticksPerQuarter,clipStartTick,pattern,ghostAmount);
         return accented[index];
     }
     bool hasVisibleNumberFields() const noexcept

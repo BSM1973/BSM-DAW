@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==702
+        require(dialog.getWidth()==530 && dialog.getHeight()==750
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1506,6 +1506,29 @@ bool runArrangementTests(){
             {70,70,70,70},10,12,8,960,0,AP::backbeat)
                 ==std::vector<int>({70,80,70,80}),
             "12/8 accents second and fourth dotted-quarter pulses");
+        // Velocity reduction never applies on a chosen accent location.
+        require(LibertyInlineVelocity::accentVelocities(
+            rhythm,rhythmBase,20,4,4,960,0,AP::strongBeats,10)
+                ==std::vector<int>({107,127,60,100,70,95}),
+            "ghost notes soften weak beats and preserve chord dynamics");
+        require(LibertyInlineVelocity::accentVelocities(
+            rhythm,rhythmBase,0,4,4,960,0,AP::strongBeats,10)
+                ==std::vector<int>({100,120,60,90,70,75}),
+            "ghost effect works independently of accent strength");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{1440,70},{2880,70}},
+            {70,70,70,70},16,6,8,960,0,AP::strongBeats,10)
+                ==std::vector<int>({86,60,78,86}),
+            "ghost timing respects the compound 6/8 meter");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,5},{960,15}},
+            {70,5,15},0,4,4,960,0,AP::strongBeats,20)
+                ==std::vector<int>({70,1,11}),
+            "ghost clamp preserves chord intervals at MIDI minimum");
+        require(LibertyInlineVelocity::accentVelocities(
+            rhythm,rhythmBase,20,4,4,960,0,AP::strongBeats,0)
+                ==accentFour,
+            "zero ghost level restores exact original accent behavior");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1521,7 +1544,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1545,6 +1568,17 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::strongBeats
             &&beatPreview.getAccents()==0,
             "reset restores strong-beat profile");
+        beatPreview.setIntensity(0);
+        beatPreview.setGhostNotes(12);
+        require(beatPreview.getGhostNotes()==12
+            &&beatPreview.getCurrentPreviewVelocity(0)==50
+            &&beatPreview.getCurrentPreviewVelocity(1)==53
+            &&beatPreview.getCurrentPreviewVelocity(2)==70
+            &&!dialogApplied,
+            "ghost preview updates weaker beats without applying MIDI");
+        beatPreview.restoreInitialSettings();
+        require(beatPreview.getGhostNotes()==0,
+            "reset clears ghost strength");
 
 
 
@@ -1728,6 +1762,48 @@ bool runArrangementTests(){
             require(profileAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "new accents Redo");
+        // Apply ghost-only adjustment with the real Arrangement transaction.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto ghostBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> ghostNotes={
+            {ghostBefore[0].startTick,(int)ghostBefore[0].velocity},
+            {ghostBefore[1].startTick,(int)ghostBefore[1].velocity},
+            {ghostBefore[2].startTick,(int)ghostBefore[2].velocity}};
+        const auto ghostBase=LibertyInlineVelocity::transformVelocities(
+            ghostNotes,40,100,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0);
+        const auto ghostExpected=LibertyInlineVelocity::accentVelocities(
+            ghostNotes,ghostBase,0,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::backbeat,13);
+        require(ghostExpected!=std::vector<int>(
+                {ghostBefore[0].velocity,ghostBefore[1].velocity,
+                 ghostBefore[2].velocity}),
+            "ghost edit fixture has non-accented notes to change");
+        require(inlineMidiRampVelocitySelected(40,100,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,0,
+            AP::backbeat,13),"ghost dynamics apply within Arrangement");
+        const auto ghostAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<ghostNotes.size();++i)
+            require((int)ghostAfter[i].velocity==ghostExpected[i]
+                &&ghostAfter[i].startTick==ghostBefore[i].startTick
+                &&ghostAfter[i].lengthTicks==ghostBefore[i].lengthTicks
+                &&ghostAfter[i].pitch==ghostBefore[i].pitch,
+                "ghost result matches preview and preserves MIDI fields");
+        undoArrangement(false);
+        for(size_t i=0;i<ghostNotes.size();++i)
+            require(ghostBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "ghost edit Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<ghostNotes.size();++i)
+            require(ghostAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "ghost edit Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
