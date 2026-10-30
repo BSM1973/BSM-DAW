@@ -6,6 +6,7 @@
 #include "AudioCrossfadeCurve.h"
 #include "ClipNames.h"
 #include "LibertyDesignSystem.h"
+#include "InlineMidiVelocityCurve.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <atomic>

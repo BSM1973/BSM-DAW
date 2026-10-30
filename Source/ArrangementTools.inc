@@ -1161,6 +1161,74 @@ bool runArrangementTests(){
         require(midiClips[(size_t)multiClip].notes[0].velocity==beforeDim[0].velocity
             && midiClips[(size_t)multiClip].notes[2].velocity==beforeDim[2].velocity,
             "diminuendo undo");
+        // Validate all three velocity curves independently of the dialog UI.
+        require(LibertyInlineVelocity::velocityAt(40,120,0.0,
+            LibertyInlineVelocity::Curve::linear)==40
+            &&LibertyInlineVelocity::velocityAt(40,120,1.0,
+            LibertyInlineVelocity::Curve::linear)==120,
+            "custom MIDI velocity curve endpoints");
+        require(LibertyInlineVelocity::velocityAt(40,120,0.25,
+            LibertyInlineVelocity::Curve::linear)==60
+            &&LibertyInlineVelocity::velocityAt(40,120,0.25,
+            LibertyInlineVelocity::Curve::exponential)==45
+            &&LibertyInlineVelocity::velocityAt(40,120,0.25,
+            LibertyInlineVelocity::Curve::sCurve)==53,
+            "linear exponential and S velocity interpolation");
+        // Create an intermediate note to exercise a genuine curved ramp.
+        auto& customClip=midiClips[(size_t)multiClip];
+        const auto baseline=customClip.notes;
+        require(baseline.size()==3,"curve fixture has three notes");
+        auto midpoint=baseline[2];
+        midpoint.startTick=(baseline[0].startTick+baseline[2].startTick)/2;
+        midpoint.pitch=72;
+        customClip.notes.push_back(midpoint);
+        require(owner.midiEngine.replaceNotes(customClip.notes),
+            "custom curve intermediate MIDI note");
+        syncPlayback();
+        clearArrangementHistory();
+        inlineMidiSelectedClipId=customClip.id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,2,3};
+        const auto originalCurveNotes=customClip.notes;
+        require(inlineMidiRampVelocitySelected(40,120,
+            LibertyInlineVelocity::Curve::exponential),
+            "apply custom exponential curve");
+        const auto curved=customClip.notes;
+        require(curved.size()==4 && curved[0].velocity==40
+            && curved[2].velocity==60
+            && curved[3].velocity==120
+            && curved[1].velocity==originalCurveNotes[1].velocity,
+            "exponential ramp preserves unselected chord note");
+        undoArrangement(false);
+        require(customClip.notes[2].velocity==originalCurveNotes[2].velocity,
+            "custom exponential curve undo");
+        undoArrangement(true);
+        require(customClip.notes[2].velocity==curved[2].velocity,
+            "custom exponential curve redo");
+        inlineMidiSelectedClipId=customClip.id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,2,3};
+        require(inlineMidiRampVelocitySelected(40,120,
+            LibertyInlineVelocity::Curve::sCurve),
+            "apply custom S curve");
+        const auto smooth=customClip.notes;
+        require(smooth[0].velocity==40 && smooth[2].velocity==80
+            && smooth[3].velocity==120,
+            "custom S curve musical midpoint");
+        undoArrangement(false);
+        require(customClip.notes[2].velocity==curved[2].velocity,
+            "custom S curve undo");
+        // The JUCE window is constructible without opening a modal dialog.
+        bool dialogApplied=false;
+        LibertyInlineVelocity::DialogContent dialog(32,112,
+            LibertyInlineVelocity::Curve::sCurve,
+            [&](int,int,LibertyInlineVelocity::Curve){dialogApplied=true;});
+        dialog.bindInputs();
+        require(dialog.getWidth()==530 && dialog.getHeight()==420
+            && !dialogApplied,"blue velocity window geometry and no side effects");
+        // Restore the three-note fixture for subsequent same-chord checks.
+        customClip.notes=baseline;
+        require(owner.midiEngine.replaceNotes(customClip.notes),
+            "restore chord fixture after custom curve");
+        syncPlayback();clearArrangementHistory();
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
