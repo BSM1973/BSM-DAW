@@ -1255,6 +1255,36 @@ bool runArrangementTests(){
             "real velocity preview computes correct note values without applying");
         require(populated.hasVisibleNumberFields(),
             "velocity preview retains numeric controls");
+        // Real mouse-hit geometry, pointer drag and numeric fields must
+        // produce an interactive PREVIEW without applying a MIDI edit.
+        require(populated.getStartValue()==40&&populated.getEndValue()==120,
+            "velocity endpoint initial numeric values");
+        const auto leftHandle=populated.endpointPosition(0);
+        const auto rightHandle=populated.endpointPosition(1);
+        require(populated.endpointAt(leftHandle)==0
+            &&populated.endpointAt(rightHandle)==1
+            &&populated.endpointAt({300.0f,180.0f})==-1,
+            "velocity graph endpoint hit testing");
+        require(populated.beginEndpointDragAt(leftHandle)
+            &&populated.dragEndpointTo(246.0f),
+            "dragging graph start endpoint updates velocity");
+        require(populated.getStartValue()==127 && populated.getEndValue()==120
+            && populated.getCurrentPreviewVelocity(0)==127
+            && populated.getCurrentPreviewVelocity(2)==120,
+            "start handle updates input and before-after curve preview");
+        populated.dragEndpointTo(1500.0f);
+        require(populated.getStartValue()==1,
+            "velocity drag clamps to MIDI minimum");
+        populated.endEndpointDrag();
+        require(populated.beginEndpointDragAt(rightHandle)
+            &&populated.dragEndpointTo(-500.0f)
+            &&populated.getEndValue()==127,
+            "end handle clamps to MIDI maximum");
+        populated.endEndpointDrag();
+        require(!populated.dragEndpointTo(340.0f)
+            && !dialogApplied,
+            "endpoint drag cannot apply MIDI after release");
+
         // Restore the three-note fixture for subsequent same-chord checks.
         midiClips[(size_t)multiClip].notes=baseline;
         require(owner.midiEngine.replaceNotes(midiClips[(size_t)multiClip].notes),

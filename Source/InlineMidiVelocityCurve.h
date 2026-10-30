@@ -96,6 +96,77 @@ public:
         updateValidation();
     }
 
+    // Endpoints are the only mouse-active part of the preview. Moving a
+    // handle updates the same numeric editors as manual typing and never
+    // invokes the MIDI callback until APPLIQUER is pressed.
+    static juce::Rectangle<float> previewPlot() noexcept
+    {
+        return {58.0f,246.0f,440.0f,100.0f};
+    }
+    juce::Point<float> endpointPosition(int which) const
+    {
+        int value=which==0?64:100;
+        parseValue(which==0?start:end,value);
+        const auto rect=previewPlot();
+        return {which==0?rect.getX():rect.getRight(),
+            rect.getBottom()-((float)(value-1)/126.0f)*rect.getHeight()};
+    }
+    int endpointAt(juce::Point<float> p) const
+    {
+        // A compact 15 px circular hit target does not block the plot.
+        if(!error.isEmpty())return -1;
+        for(int which=0;which<2;++which)
+            if(p.getDistanceFrom(endpointPosition(which))<=15.0f)return which;
+        return -1;
+    }
+    bool beginEndpointDragAt(juce::Point<float> p)
+    {
+        draggedEndpoint=endpointAt(p);
+        if(draggedEndpoint<0)return false;
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        return true;
+    }
+    bool dragEndpointTo(float y)
+    {
+        if(draggedEndpoint<0)return false;
+        const auto rect=previewPlot();
+        const int value=juce::jlimit(1,127,(int)std::lround(
+            1.0+(rect.getBottom()-y)*126.0/rect.getHeight()));
+        auto& editor=draggedEndpoint==0?start:end;
+        if(editor.getText()!=juce::String(value))
+            editor.setText(juce::String(value),juce::sendNotificationSync);
+        updateValidation();
+        return true;
+    }
+    void endEndpointDrag()
+    {
+        draggedEndpoint=-1;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        beginEndpointDragAt(e.position);
+    }
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if(draggedEndpoint>=0)dragEndpointTo(e.position.y);
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        if(draggedEndpoint>=0)endEndpointDrag();
+    }
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        setMouseCursor(endpointAt(e.position)>=0
+            ?juce::MouseCursor::UpDownResizeCursor
+            :juce::MouseCursor::NormalCursor);
+    }
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        if(draggedEndpoint<0)
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
     void resized() override
     {
         start.setBounds(284, 78, 214, 33);
@@ -146,7 +217,7 @@ public:
         g.drawText(juce::String::fromUTF8("Après"),369,219,58,21,
                    juce::Justification::centredLeft);
 
-        const auto plot=juce::Rectangle<float>(58.0f, 246.0f, 440.0f, 100.0f);
+        const auto plot=previewPlot();
         g.setColour(juce::Colour(0xff172b3e));
         g.fillRoundedRectangle(plot.expanded(3.0f), 5.0f);
         g.setColour(juce::Colour(0xff4c687d));
@@ -183,16 +254,6 @@ public:
         g.strokePath(line,juce::PathStrokeType(5.0f));
         g.setColour(juce::Colour(0xff7fe0eb));
         g.strokePath(line,juce::PathStrokeType(2.6f));
-        for (int i : {0,160})
-        {
-            const float t=i/160.0f;
-            const float x=plot.getX()+t*plot.getWidth();
-            const float y=plot.getBottom()-
-                ((velocityAt(first,last,t,shape)-1)/126.0f)*plot.getHeight();
-            g.setColour(juce::Colour(0xffffd28a));
-            g.fillEllipse(x-4.5f,y-4.5f,9.0f,9.0f);
-        }
-
         // Real note positions and their current / prospective velocities.
         // Cap on-screen markers to 120 for very dense selections; the
         // underlying note selection and Apply continue to use every note.
@@ -220,6 +281,19 @@ public:
             }
         }
 
+        // Large gold endpoint handles stay above the note markers so they
+        // remain draggable even when a note lies exactly at the boundary.
+        for(int which=0;which<2;++which)
+        {
+            const auto p=endpointPosition(which);
+            g.setColour(juce::Colour(0xff091827).withAlpha(.95f));
+            g.fillEllipse(p.x-9.0f,p.y-9.0f,18.0f,18.0f);
+            g.setColour(juce::Colour(0xfff4f9ff));
+            g.fillEllipse(p.x-7.0f,p.y-7.0f,14.0f,14.0f);
+            g.setColour(juce::Colour(0xffffc95e));
+            g.fillEllipse(p.x-5.2f,p.y-5.2f,10.4f,10.4f);
+        }
+
         if (!error.isEmpty())
         {
             g.setColour(juce::Colour(0xffffa9a1));
@@ -231,7 +305,7 @@ public:
             g.setColour(juce::Colour(0xffa9bfd1));
             g.setFont(juce::Font(10.5f));
             g.drawText(juce::String::fromUTF8(
-                "La progression suit la position musicale des notes."),
+                "Glisser les points dorés pour ajuster les vélocités."),
                 26,348,470,17,juce::Justification::centredLeft);
         }
     }
@@ -293,6 +367,7 @@ private:
 
     juce::TextEditor start,end;
     juce::ComboBox curve;
+    int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
     juce::TextButton applyButton,cancelButton;
     juce::String error;
@@ -300,6 +375,21 @@ private:
 public:
     // Read-only access for automated validation; never edits any MIDI note.
     size_t getPreviewNoteCount() const noexcept { return samples.size(); }
+    int getStartValue() const
+    {
+        int value=0;
+        return parseValue(start,value)?value:0;
+    }
+    int getEndValue() const
+    {
+        int value=0;
+        return parseValue(end,value)?value:0;
+    }
+    int getCurrentPreviewVelocity(size_t index) const
+    {
+        return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
+                                        selectedCurve());
+    }
     int getPreviewOriginalVelocity(size_t index) const
     {
         return index<samples.size()?samples[index].velocity:0;
