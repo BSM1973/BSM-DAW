@@ -1775,10 +1775,17 @@ bool runArrangementTests(){
             &&softPreview.getTolerance()==0
             &&!dialogApplied,
             "reset returns to the validated rhythm settings");
+        // Reset intentionally restores ALL defaults. Reconstruct the same
+        // 70-velocity fixture and rhythmic amounts before measuring curves.
+        softPreview.setIntensity(0);
+        softPreview.setAccentPattern(AP::everyBeat);
+        softPreview.setAccents(20);
+        softPreview.setGhostNotes(10);
         softPreview.setTolerance(25);
         softPreview.setProgressiveAccents(true);
         require(softPreview.isAccentFalloffEnabled()
-            &&softPreview.getAccentFalloff()==FC::linear,
+            &&softPreview.getAccentFalloff()==FC::linear
+            &&softPreview.getCurrentPreviewVelocity(1)==75,
             "validated linear falloff remains the initial setting");
         softPreview.setAccentFalloff(FC::exponential);
         require(softPreview.getCurrentPreviewVelocity(1)==67
