@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==538
+        require(dialog.getWidth()==530 && dialog.getHeight()==596
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1393,6 +1393,58 @@ bool runArrangementTests(){
             &&populated.getCurrentPreviewVelocity(1)==60
             &&!dialogApplied,
             "reset restores 100 percent and initial velocity curve");
+        // Humanisation uses the same deterministic seed in preview and
+        // Apply. A chord receives ONE offset, with saturation clamped for
+        // the whole chord rather than independently on each MIDI note.
+        const std::vector<LibertyInlineVelocity::PreviewNote> humanNotes={
+            {0,60},{0,88},{960,70},{1920,93},{2880,57},{3840,75}};
+        const auto unchanged=LibertyInlineVelocity::transformVelocities(
+            humanNotes,60,100,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,0);
+        const auto humanized=LibertyInlineVelocity::humanizeVelocities(
+            humanNotes,unchanged,15,0x2345abcdU);
+        require(humanized.size()==humanNotes.size()
+            &&humanized[1]-humanized[0]==28,
+            "humanisation preserves chord velocity differences");
+        for(size_t i=0;i<humanNotes.size();++i){
+            require(humanized[i]>=1&&humanized[i]<=127
+                &&std::abs(humanized[i]-unchanged[i])<=15,
+                "humanisation stays within specified range and MIDI limits");
+        }
+        require(LibertyInlineVelocity::humanizeVelocities(
+            humanNotes,unchanged,15,0x2345abcdU)==humanized,
+            "humanization with same seed is deterministic");
+        require(LibertyInlineVelocity::humanizeVelocities(
+            humanNotes,unchanged,0,0x2345abcdU)==unchanged,
+            "zero humanization is exactly a no-op");
+        const std::vector<LibertyInlineVelocity::PreviewNote> hotChord={
+            {100,115},{100,125},{200,3}};
+        const auto hotBase=std::vector<int>{115,125,3};
+        const auto safeResult=LibertyInlineVelocity::humanizeVelocities(
+            hotChord,hotBase,20,0x91b41d24U);
+        require(safeResult[1]-safeResult[0]==10
+            &&safeResult[0]>=1&&safeResult[1]<=127
+            &&safeResult[2]>=1&&safeResult[2]<=127,
+            "humanization avoids note-by-note chord saturation");
+        populated.setIntensity(0);
+        populated.setHumanization(12);
+        require(populated.getHumanization()==12
+            &&populated.getPreviewResultVelocity(1,40,120,
+                LibertyInlineVelocity::Curve::exponential,
+                LibertyInlineVelocity::Mode::absolute,0,12,
+                populated.getVariationSeed())==populated.getCurrentPreviewVelocity(1),
+            "live humanization preview uses exact shared computation");
+        const auto seedBefore=populated.getVariationSeed();
+        populated.rerollVariation();
+        require(populated.getVariationSeed()!=seedBefore
+            &&!dialogApplied,
+            "reroll makes a new deterministic preview without MIDI commit");
+        populated.restoreInitialSettings();
+        require(populated.getHumanization()==0
+            &&populated.getVariationSeed()==seedBefore
+            &&populated.getIntensity()==100
+            &&!dialogApplied,
+            "reset returns humanization and random seed to original values");
 
 
 
@@ -1461,6 +1513,42 @@ bool runArrangementTests(){
         for(size_t i=0;i<intensityExpected.size();++i)
             require(midiClips[(size_t)multiClip].notes[i].velocity
                 ==intensityExpected[i],"partial MIDI intensity Redo");
+        // Test actual MIDI clip humanisation, matching the preview, and
+        // verify undo/redo retains all non-velocity MIDI attributes.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto humanBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> sourceHuman={
+            {humanBefore[0].startTick,(int)humanBefore[0].velocity},
+            {humanBefore[1].startTick,(int)humanBefore[1].velocity},
+            {humanBefore[2].startTick,(int)humanBefore[2].velocity}};
+        const auto baseHuman=LibertyInlineVelocity::transformVelocities(
+            sourceHuman,50,105,LibertyInlineVelocity::Curve::sCurve,
+            LibertyInlineVelocity::Mode::relative,60);
+        const auto expectedHuman=LibertyInlineVelocity::humanizeVelocities(
+            sourceHuman,baseHuman,13,0x2345abcdU);
+        require(inlineMidiRampVelocitySelected(50,105,
+            LibertyInlineVelocity::Curve::sCurve,
+            LibertyInlineVelocity::Mode::relative,60,13,0x2345abcdU),
+            "humanized MIDI velocities apply to selected clip");
+        const auto humanAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<sourceHuman.size();++i){
+            require(humanAfter[i].velocity==expectedHuman[i]
+                &&humanAfter[i].startTick==humanBefore[i].startTick
+                &&humanAfter[i].lengthTicks==humanBefore[i].lengthTicks
+                &&humanAfter[i].pitch==humanBefore[i].pitch
+                &&humanAfter[i].channel==humanBefore[i].channel
+                &&humanAfter[i].muted==humanBefore[i].muted,
+                "humanized clip matches preview and retains MIDI structure");
+        }
+        undoArrangement(false);
+        for(size_t i=0;i<humanBefore.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==humanBefore[i].velocity,"humanized MIDI notes Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<humanAfter.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==humanAfter[i].velocity,"humanized MIDI notes Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;

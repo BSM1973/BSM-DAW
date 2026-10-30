@@ -130,18 +130,55 @@ inline std::vector<int> transformVelocities(
     return result;
 }
 
+// Deterministic humanisation is keyed by musical onset and an explicit seed.
+// Every note in a chord receives the same bounded velocity offset. The result
+// is independent of note order and remains identical in preview and Apply.
+inline std::vector<int> humanizeVelocities(
+    const std::vector<PreviewNote>& notes,
+    const std::vector<int>& transformed, int amount, std::uint32_t seed)
+{
+    if(notes.size()!=transformed.size())return transformed;
+    amount=juce::jlimit(0,20,amount);
+    if(amount==0)return transformed;
+    struct Extent {int low=127,high=1;};
+    std::map<std::int64_t,Extent> chords;
+    for(size_t i=0;i<notes.size();++i){
+        const int velocity=juce::jlimit(1,127,transformed[i]);
+        auto& chord=chords[notes[i].startTick];
+        chord.low=std::min(chord.low,velocity);
+        chord.high=std::max(chord.high,velocity);
+    }
+    std::vector<int> result;
+    result.reserve(notes.size());
+    for(size_t i=0;i<notes.size();++i){
+        // SplitMix64 finalizer: fixed 64-bit arithmetic, no random global
+        // state. Notes with the same startTick always share a variation.
+        std::uint64_t x=static_cast<std::uint64_t>(notes[i].startTick)
+            ^(static_cast<std::uint64_t>(seed)<<32)
+            ^0x9e3779b97f4a7c15ULL;
+        x=(x^(x>>30))*0xbf58476d1ce4e5b9ULL;
+        x=(x^(x>>27))*0x94d049bb133111ebULL;
+        x^=(x>>31);
+        const int proposed=(int)(x%(std::uint64_t)(2*amount+1))-amount;
+        const auto& chord=chords.at(notes[i].startTick);
+        const int offset=juce::jlimit(1-chord.low,127-chord.high,proposed);
+        result.push_back(juce::jlimit(1,127,transformed[i]+offset));
+    }
+    return result;
+}
+
 // Standalone JUCE window content. No Piano Roll or instrument engine state is
 // stored here. The callback is invoked only by explicit user confirmation.
 class DialogContent final : public juce::Component
 {
 public:
     explicit DialogContent(int first, int last, Curve shape,
-                           std::function<void(int, int, Curve, Mode, int)> apply,
+                           std::function<void(int, int, Curve, Mode, int, int, std::uint32_t)> apply,
                            std::vector<PreviewNote> selectedNotes = {})
         : onApply(std::move(apply)), samples(std::move(selectedNotes))
     {
         setOpaque(true);
-        setSize(530, 538);
+        setSize(530, 596);
         std::stable_sort(samples.begin(),samples.end(),
             [](const PreviewNote& a,const PreviewNote& b){
                 return a.startTick<b.startTick;
@@ -202,6 +239,28 @@ public:
         intensity.onValueChange=[this]{repaint();};
         addAndMakeVisible(intensity);
 
+        humanize.setSliderStyle(juce::Slider::LinearHorizontal);
+        humanize.setTextBoxStyle(juce::Slider::TextBoxRight,false,48,27);
+        humanize.setRange(0.0,20.0,1.0);
+        humanize.setValue(0.0,juce::dontSendNotification);
+        humanize.setTooltip(juce::String::fromUTF8(
+            "Variation déterministe de ±0 à ±20 points MIDI par accord"));
+        humanize.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff27445a));
+        humanize.setColour(juce::Slider::trackColourId,juce::Colour(0xff65c4d6));
+        humanize.setColour(juce::Slider::thumbColourId,juce::Colour(0xffffcc73));
+        humanize.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff233747));
+        humanize.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffffe6b5));
+        humanize.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff426278));
+        humanize.onValueChange=[this]{repaint();};
+        addAndMakeVisible(humanize);
+        newVariation.setButtonText(juce::String::fromUTF8("VARIER"));
+        newVariation.setTooltip(juce::String::fromUTF8(
+            "Créer une autre variation, sans modifier les notes du clip"));
+        newVariation.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff35516a));
+        newVariation.setColour(juce::TextButton::textColourOffId,juce::Colour(0xffffd68d));
+        newVariation.onClick=[this]{rerollVariation();};
+        addAndMakeVisible(newVariation);
+
         resetButton.setButtonText(juce::String::fromUTF8("RÉINITIALISER"));
         resetButton.setTooltip(juce::String::fromUTF8(
             "Retrouver les vélocités d'origine et la courbe initiale"));
@@ -238,7 +297,7 @@ public:
     // invokes the MIDI callback until APPLIQUER is pressed.
     static juce::Rectangle<float> previewPlot() noexcept
     {
-        return {58.0f,336.0f,440.0f,100.0f};
+        return {58.0f,386.0f,440.0f,100.0f};
     }
     juce::Point<float> endpointPosition(int which) const
     {
@@ -321,6 +380,8 @@ public:
         curve.setSelectedId((int)initialCurve+1,juce::sendNotificationSync);
         applicationMode.setSelectedId(1,juce::sendNotificationSync);
         intensity.setValue(100.0,juce::sendNotificationSync);
+        humanize.setValue(0.0,juce::sendNotificationSync);
+        variationSeed=initialVariationSeed;
         updateValidation();
     }
     void resized() override
@@ -330,10 +391,12 @@ public:
         curve.setBounds(284, 170, 214, 34);
         applicationMode.setBounds(284, 216, 214, 34);
         intensity.setBounds(278, 259, 220, 34);
-        resetButton.setBounds(26, 491, 117, 33);
-        invertButton.setBounds(151, 491, 117, 33);
-        cancelButton.setBounds(277, 491, 104, 33);
-        applyButton.setBounds(389, 491, 109, 33);
+        humanize.setBounds(276, 305, 141, 34);
+        newVariation.setBounds(423, 307, 75, 30);
+        resetButton.setBounds(26, 549, 117, 33);
+        invertButton.setBounds(151, 549, 117, 33);
+        cancelButton.setBounds(277, 549, 104, 33);
+        applyButton.setBounds(389, 549, 109, 33);
     }
 
     void paint(juce::Graphics& g) override
@@ -364,21 +427,23 @@ public:
                    juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Intensité"), 26, 259, 241, 34,
                    juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Humanisation (±)"), 26, 305, 241, 34,
+                   juce::Justification::centredLeft);
 
         g.setColour(juce::Colour(0xffc1d7e9));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(juce::String::fromUTF8("APERÇU  ·  ")
                        +juce::String((int)samples.size())
                        +juce::String::fromUTF8(" NOTE(S)"),
-                   26, 310, 200, 20, juce::Justification::centredLeft);
+                   26, 360, 200, 20, juce::Justification::centredLeft);
         g.setFont(juce::Font(10.0f));
         g.setColour(juce::Colour(0xff8fb0c7));
-        g.fillEllipse(276.0f,316.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Avant"),286,309,56,21,
+        g.fillEllipse(276.0f,366.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Avant"),286,359,56,21,
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffffd28a));
-        g.fillEllipse(359.0f,316.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Après"),369,309,58,21,
+        g.fillEllipse(359.0f,366.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Après"),369,359,58,21,
                    juce::Justification::centredLeft);
 
         const auto plot=previewPlot();
@@ -397,16 +462,18 @@ public:
         }
         g.setColour(juce::Colour(0xff9cb5c9));
         g.setFont(juce::Font(10.0f));
-        g.drawText("127", 22, 330, 32, 17, juce::Justification::centredRight);
-        g.drawText("1", 22, 421, 32, 17, juce::Justification::centredRight);
+        g.drawText("127", 22, 380, 32, 17, juce::Justification::centredRight);
+        g.drawText("1", 22, 471, 32, 17, juce::Justification::centredRight);
 
         int first=64,last=100;
         if (!parseValue(start,first)) first=64;
         if (!parseValue(end,last)) last=100;
         const auto shape=selectedCurve();
         const auto mode=selectedMode();
-        const auto transformed=transformVelocities(
+        const auto curved=transformVelocities(
             samples,first,last,shape,mode,getIntensity());
+        const auto transformed=humanizeVelocities(
+            samples,curved,getHumanization(),variationSeed);
         juce::Path line;
         for (int i=0;i<=160;++i)
         {
@@ -465,7 +532,7 @@ public:
         {
             g.setColour(juce::Colour(0xffffa9a1));
             g.setFont(juce::Font(11.0f));
-            g.drawFittedText(error,25,446,472,18,juce::Justification::centredLeft,1);
+            g.drawFittedText(error,25,497,472,18,juce::Justification::centredLeft,1);
         }
         else
         {
@@ -476,7 +543,7 @@ public:
                 :mode==Mode::relative
                     ?juce::String::fromUTF8("Relatif : nuances et accents conservés.")
                     :juce::String::fromUTF8("Absolu : dosage progressif de la courbe."),
-                26,446,470,17,juce::Justification::centredLeft);
+                26,497,470,17,juce::Justification::centredLeft);
         }
     }
 
@@ -537,21 +604,24 @@ private:
             return;
         }
         if(onApply)onApply(first,last,selectedCurve(),selectedMode(),
-                           getIntensity());
+                           getIntensity(),getHumanization(),variationSeed);
         if(auto* window=findParentComponentOfClass<juce::DialogWindow>())
             window->exitModalState(1);
     }
 
     juce::TextEditor start,end;
     juce::ComboBox curve,applicationMode;
-    juce::Slider intensity;
+    juce::Slider intensity,humanize;
+    juce::TextButton newVariation;
     int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
     juce::TextButton applyButton,cancelButton,resetButton,invertButton;
     int initialFirst=64,initialLast=100;
     Curve initialCurve=Curve::linear;
+    static constexpr std::uint32_t initialVariationSeed=0x61b3e729U;
+    std::uint32_t variationSeed=initialVariationSeed;
     juce::String error;
-    std::function<void(int,int,Curve,Mode,int)> onApply;
+    std::function<void(int,int,Curve,Mode,int,int,std::uint32_t)> onApply;
 public:
     // Read-only access for automated validation; never edits any MIDI note.
     size_t getPreviewNoteCount() const noexcept { return samples.size(); }
@@ -568,7 +638,22 @@ public:
     int getCurrentPreviewVelocity(size_t index) const
     {
         return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
-                                        selectedCurve(),selectedMode(),getIntensity());
+            selectedCurve(),selectedMode(),getIntensity(),getHumanization(),
+            variationSeed);
+    }
+    void setHumanization(int amount)
+    {
+        humanize.setValue(juce::jlimit(0,20,amount),juce::sendNotificationSync);
+    }
+    int getHumanization() const noexcept
+    {
+        return juce::jlimit(0,20,(int)std::lround(humanize.getValue()));
+    }
+    std::uint32_t getVariationSeed() const noexcept {return variationSeed;}
+    void rerollVariation()
+    {
+        variationSeed+=0x9e3779b9U;
+        repaint();
     }
     void setIntensity(int percent)
     {
@@ -589,19 +674,25 @@ public:
             &&applicationMode.isVisible()
             &&resetButton.getWidth()>0&&invertButton.getWidth()>0
             &&applicationMode.getWidth()>0
-            &&intensity.isVisible()&&intensity.getWidth()>0;
+            &&intensity.isVisible()&&intensity.getWidth()>0
+            &&humanize.isVisible()&&humanize.getWidth()>0
+            &&newVariation.isVisible()&&newVariation.getWidth()>0;
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
         return index<samples.size()?samples[index].velocity:0;
     }
     int getPreviewResultVelocity(size_t index,int first,int last,Curve shape,
-                                 Mode mode=Mode::absolute,int percent=100) const
+                                 Mode mode=Mode::absolute,int percent=100,
+                                 int humanizeAmount=0,
+                                 std::uint32_t seed=0x61b3e729U) const
     {
         if(index>=samples.size())return 0;
         const auto transformed=transformVelocities(
             samples,first,last,shape,mode,percent);
-        return transformed[index];
+        const auto variations=humanizeVelocities(
+            samples,transformed,humanizeAmount,seed);
+        return variations[index];
     }
     bool hasVisibleNumberFields() const noexcept
     {
