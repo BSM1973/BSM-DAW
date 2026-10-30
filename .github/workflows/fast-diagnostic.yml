@@ -11,7 +11,7 @@ on:
 jobs:
   fast-macos-arm64:
     name: Fast macOS arm64
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 35
 
     steps:
