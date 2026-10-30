@@ -1228,7 +1228,7 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             });
         dialog.bindInputs();
@@ -1239,7 +1239,7 @@ bool runArrangementTests(){
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1623,6 +1623,26 @@ bool runArrangementTests(){
             20,4,4,960,0,AP::everyBeat,10,0,50,true)
                 ==std::vector<int>({90,60}),
             "zero tolerance preserves original exact-grid behavior");
+        using FC=LibertyInlineVelocity::Curve;
+        const std::vector<LibertyInlineVelocity::PreviewNote> falloffNotes={
+            {60,80},{120,80},{180,80},{240,80}};
+        const std::vector<int> falloffBase={80,80,80,80};
+        require(LibertyInlineVelocity::accentVelocities(
+            falloffNotes,falloffBase,20,4,4,960,0,AP::everyBeat,10,
+            25,50,true,FC::linear)==std::vector<int>({93,85,77,70}),
+            "linear falloff exactly preserves previously validated behavior");
+        require(LibertyInlineVelocity::accentVelocities(
+            falloffNotes,falloffBase,20,4,4,960,0,AP::everyBeat,10,
+            25,50,true,FC::exponential)==std::vector<int>({87,77,72,70}),
+            "exponential falloff uses squared rhythmic proximity");
+        require(LibertyInlineVelocity::accentVelocities(
+            falloffNotes,falloffBase,20,4,4,960,0,AP::everyBeat,10,
+            25,50,true,FC::sCurve)==std::vector<int>({95,85,75,70}),
+            "S falloff smoothly preserves boundary velocities");
+        require(LibertyInlineVelocity::accentVelocities(
+            falloffNotes,falloffBase,20,4,4,960,0,AP::everyBeat,10,
+            25,50,false,FC::sCurve)==std::vector<int>({100,100,100,100}),
+            "curve setting never alters MIDI when progressive mode is off");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1638,7 +1658,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1677,7 +1697,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             },{{50,70},{1500,80}},4,4,960,0);
         freeTimingPreview.bindInputs();
@@ -1700,7 +1720,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             },{{480,60},{720,70}},4,4,960,0);
         swingPreview.bindInputs();
@@ -1728,7 +1748,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool,LibertyInlineVelocity::Curve){
                 dialogApplied=true;
             },{{0,70},{120,70},{240,70}},4,4,960,0);
         softPreview.bindInputs();
@@ -1755,6 +1775,23 @@ bool runArrangementTests(){
             &&softPreview.getTolerance()==0
             &&!dialogApplied,
             "reset returns to the validated rhythm settings");
+        softPreview.setTolerance(25);
+        softPreview.setProgressiveAccents(true);
+        require(softPreview.isAccentFalloffEnabled()
+            &&softPreview.getAccentFalloff()==FC::linear,
+            "validated linear falloff remains the initial setting");
+        softPreview.setAccentFalloff(FC::exponential);
+        require(softPreview.getCurrentPreviewVelocity(1)==67
+            &&!dialogApplied,
+            "exponential falloff updates preview without MIDI mutation");
+        softPreview.setAccentFalloff(FC::sCurve);
+        require(softPreview.getCurrentPreviewVelocity(1)==75
+            &&!dialogApplied,
+            "S falloff updates the non-destructive preview");
+        softPreview.restoreInitialSettings();
+        require(softPreview.getAccentFalloff()==FC::linear
+            &&!softPreview.isAccentFalloffEnabled(),
+            "reset restores linear curve and hides inactive accent control");
 
 
 
@@ -2098,6 +2135,44 @@ bool runArrangementTests(){
             require(softAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "progressive groove Redo");
+        // Real Arrangement transaction, with a non-default S-shaped accent.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto shapedBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> shapedNotes={
+            {shapedBefore[0].startTick,(int)shapedBefore[0].velocity},
+            {shapedBefore[1].startTick,(int)shapedBefore[1].velocity},
+            {shapedBefore[2].startTick,(int)shapedBefore[2].velocity}};
+        const auto shapedBase=LibertyInlineVelocity::transformVelocities(
+            shapedNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto shapedExpected=LibertyInlineVelocity::accentVelocities(
+            shapedNotes,shapedBase,17,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::everyBeat,9,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,17,
+            AP::everyBeat,9,25,50,true,FC::sCurve),
+            "S-shaped MIDI accent edits apply in Arrangement");
+        const auto shapedAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<shapedNotes.size();++i)
+            require((int)shapedAfter[i].velocity==shapedExpected[i]
+                &&shapedAfter[i].startTick==shapedBefore[i].startTick
+                &&shapedAfter[i].lengthTicks==shapedBefore[i].lengthTicks
+                &&shapedAfter[i].pitch==shapedBefore[i].pitch
+                &&shapedAfter[i].channel==shapedBefore[i].channel,
+                "S falloff preserves MIDI structure and preview parity");
+        undoArrangement(false);
+        for(size_t i=0;i<shapedNotes.size();++i)
+            require(shapedBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "S-shaped accent Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<shapedNotes.size();++i)
+            require(shapedAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "S-shaped accent Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;

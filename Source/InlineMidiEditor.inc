@@ -210,7 +210,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    int ghostAmount=0,
                                    int tolerancePercent=0,
                                    int swingPercent=50,
-                                   bool progressiveAccents=false){
+                                   bool progressiveAccents=false,
+                                   LibertyInlineVelocity::Curve falloffCurve=
+                                       LibertyInlineVelocity::Curve::linear){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -257,7 +259,7 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         MidiEngine::ticksPerQuarterNote,
         MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm),
         accentPattern,ghostAmount,tolerancePercent,swingPercent,
-        progressiveAccents);
+        progressiveAccents,falloffCurve);
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -307,7 +309,12 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
             +juce::String::fromUTF8(" — Swing ")
             +juce::String(juce::jlimit(50,75,swingPercent))+" %"
             +(progressiveAccents
-                ?juce::String::fromUTF8(" — Accents progressifs")
+                ?juce::String::fromUTF8(" — Accents progressifs : ")
+                    +(falloffCurve==LibertyInlineVelocity::Curve::sCurve
+                        ?juce::String::fromUTF8("courbe en S")
+                        :falloffCurve==LibertyInlineVelocity::Curve::exponential
+                            ?juce::String::fromUTF8("exponentielle")
+                            :juce::String::fromUTF8("linéaire"))
                 :juce::String());
         repaint();owner.repaint();
     }
@@ -982,7 +989,8 @@ void showInlineMidiVelocityCurveDialog(){
          LibertyInlineVelocity::Mode mode,int intensityPercent,
          int humanizeAmount,std::uint32_t variationSeed,int accentAmount,
          LibertyInlineVelocity::AccentPattern accentPattern,int ghostAmount,
-         int tolerancePercent,int swingPercent,bool progressiveAccents)
+         int tolerancePercent,int swingPercent,bool progressiveAccents,
+         LibertyInlineVelocity::Curve falloffCurve)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -1011,7 +1019,7 @@ void showInlineMidiVelocityCurveDialog(){
             safe->inlineMidiRampVelocitySelected(
                 first,last,curve,mode,intensityPercent,
                 humanizeAmount,variationSeed,accentAmount,accentPattern,ghostAmount,
-                tolerancePercent,swingPercent,progressiveAccents);
+                tolerancePercent,swingPercent,progressiveAccents,falloffCurve);
         },std::move(previewNotes),meterNumerator,meterDenominator,
           MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();
