@@ -1591,6 +1591,41 @@ bool runArrangementTests(){
             16,4,4,960,0,AP::phrase2,10,25,50,true)
                 ==std::vector<int>({86,73,60}),
             "phrase onset uses the same progressive tolerance and ghost logic");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{6720,70},{14400,70},{15360,70}},
+            {70,70,70,70},16,4,4,960,0,AP::pickup2,8)
+                ==std::vector<int>({62,86,86,62}),
+            "two-measure relance falls on final beat of each 4/4 phrase");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{6720,70},{14400,70},{29760,70}},
+            {70,70,70},16,4,4,960,0,AP::pickup4,8)
+                ==std::vector<int>({62,86,86}),
+            "four-measure relance respects whole musical phrase cycles");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{14400,70},{29760,70}},
+            {70,70},16,4,4,960,0,AP::pickup8,8)
+                ==std::vector<int>({62,86}),
+            "eight-measure relance waits for final pulse of bar eight");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{2880,70},{6720,70}}, {70,70},
+            16,4,4,960,3840,AP::pickup2,8)
+                ==std::vector<int>({86,62}),
+            "relances follow absolute project bar despite clip offset");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{4320,70},{2880,70}}, {70,70},
+            16,6,8,960,0,AP::pickup2,8)
+                ==std::vector<int>({86,62}),
+            "6/8 relance lands on the final dotted-quarter pulse");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{6660,70},{6720,70},{6780,70},{7000,70}},
+            {70,70,70,70},16,4,4,960,0,AP::pickup2,8,10)
+                ==std::vector<int>({86,86,86,62}),
+            "relance tolerance recognizes late and early human performance");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{6600,70},{6720,70},{6840,70}}, {70,70,70},
+            16,4,4,960,0,AP::pickup2,8,25,50,true,LibertyInlineVelocity::Curve::linear)
+                ==std::vector<int>({74,86,74}),
+            "relances share the existing smooth accent falloff");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -1749,6 +1784,41 @@ bool runArrangementTests(){
         for(const auto& mark:longPhraseGuide)
             require(mark.localTick%30720==0,
                 "long-selection sampling never skips the phrase phase");
+        const auto pickupGuide2=guides(0,15360,4,4,960,0,
+            AP::pickup2,50);
+        require(pickupGuide2.size()==2
+            &&pickupGuide2[0].localTick==6720
+            &&pickupGuide2[1].localTick==14400,
+            "two-bar relance guide marks only each final beat");
+        const auto pickupGuide4=guides(0,30720,4,4,960,0,
+            AP::pickup4,50);
+        require(pickupGuide4.size()==2
+            &&pickupGuide4[0].localTick==14400
+            &&pickupGuide4[1].localTick==29760,
+            "four-bar relance guide follows global measure positions");
+        const auto pickupGuide8=guides(0,61440,4,4,960,0,
+            AP::pickup8,50);
+        require(pickupGuide8.size()==2
+            &&pickupGuide8[0].localTick==29760
+            &&pickupGuide8[1].localTick==60480,
+            "eight-bar relance guide repeats in subsequent phrases");
+        const auto pickupGuide6=guides(0,8640,6,8,960,0,
+            AP::pickup2,50);
+        require(pickupGuide6.size()==1
+            &&pickupGuide6[0].localTick==4320,
+            "6/8 preview uses dotted-quarter relance pulse");
+        const auto pickupOffset=guides(0,7680,4,4,960,3840,
+            AP::pickup2,50);
+        require(pickupOffset.size()==1
+            &&pickupOffset[0].localTick==2880,
+            "clip-offset guide matches relance computation");
+        const auto pickupLong=guides(0,3840000,4,4,960,0,
+            AP::pickup8,50);
+        require(!pickupLong.empty()&&pickupLong.size()<=160,
+            "long phrases keep relance preview markers bounded");
+        for(const auto& mark:pickupLong)
+            require((mark.localTick-29760)%30720==0,
+                "sampled relance markers preserve their project phase");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -1785,6 +1855,16 @@ bool runArrangementTests(){
             &&beatPreview.getRhythmicGuide().size()==1
             &&!dialogApplied,
             "eight-bar profile selection does not edit MIDI");
+        beatPreview.setAccentPattern(AP::pickup2);
+        require(beatPreview.getAccentPattern()==AP::pickup2
+            &&beatPreview.getRhythmicGuide().empty()
+            &&!beatPreview.isSwingEnabled()
+            &&!dialogApplied,
+            "relance option selectable even before next phrase target");
+        beatPreview.setAccentPattern(AP::pickup8);
+        require(beatPreview.getAccentPattern()==AP::pickup8
+            &&!dialogApplied,
+            "eight-bar relance never edits notes during preview");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -2339,6 +2419,44 @@ bool runArrangementTests(){
             require(phraseAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "phrase accent Redo");
+        // Pickup profiles use the same undoable Arrangement MIDI operation.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto pickupBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> pickupNotes={
+            {pickupBefore[0].startTick,(int)pickupBefore[0].velocity},
+            {pickupBefore[1].startTick,(int)pickupBefore[1].velocity},
+            {pickupBefore[2].startTick,(int)pickupBefore[2].velocity}};
+        const auto pickupBase=LibertyInlineVelocity::transformVelocities(
+            pickupNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto pickupExpected=LibertyInlineVelocity::accentVelocities(
+            pickupNotes,pickupBase,16,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::pickup4,9,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,16,
+            AP::pickup4,9,25,50,true,FC::sCurve),
+            "relance accents apply directly to Arrangement notes");
+        const auto pickupAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<pickupNotes.size();++i)
+            require((int)pickupAfter[i].velocity==pickupExpected[i]
+                &&pickupAfter[i].startTick==pickupBefore[i].startTick
+                &&pickupAfter[i].lengthTicks==pickupBefore[i].lengthTicks
+                &&pickupAfter[i].pitch==pickupBefore[i].pitch
+                &&pickupAfter[i].channel==pickupBefore[i].channel,
+                "relance note edit matches preview without moving notes");
+        undoArrangement(false);
+        for(size_t i=0;i<pickupNotes.size();++i)
+            require(pickupBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "relance accent Undo restores original MIDI");
+        undoArrangement(true);
+        for(size_t i=0;i<pickupNotes.size();++i)
+            require(pickupAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "relance accent Redo restores edited MIDI");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
