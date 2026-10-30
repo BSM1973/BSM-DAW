@@ -1174,49 +1174,57 @@ bool runArrangementTests(){
             &&LibertyInlineVelocity::velocityAt(40,120,0.25,
             LibertyInlineVelocity::Curve::sCurve)==53,
             "linear exponential and S velocity interpolation");
-        // Create an intermediate note to exercise a genuine curved ramp.
-        auto& customClip=midiClips[(size_t)multiClip];
-        const auto baseline=customClip.notes;
+        // Create a four-note clip with a real midpoint, preserving the
+        // engine's chronological order and never holding references across
+        // Arrangement Undo/Redo (which restores clip vectors by value).
+        const auto baseline=midiClips[(size_t)multiClip].notes;
         require(baseline.size()==3,"curve fixture has three notes");
         auto midpoint=baseline[2];
         midpoint.startTick=(baseline[0].startTick+baseline[2].startTick)/2;
         midpoint.pitch=72;
-        customClip.notes.push_back(midpoint);
-        require(owner.midiEngine.replaceNotes(customClip.notes),
+        auto fourNotes=baseline;
+        fourNotes.push_back(midpoint);
+        require(owner.midiEngine.replaceNotes(fourNotes),
             "custom curve intermediate MIDI note");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();
         clearArrangementHistory();
-        inlineMidiSelectedClipId=customClip.id;
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,2,3};
-        const auto originalCurveNotes=customClip.notes;
+        const auto originalCurveNotes=midiClips[(size_t)multiClip].notes;
+        require(originalCurveNotes.size()==4
+            && originalCurveNotes[2].startTick>originalCurveNotes[0].startTick
+            && originalCurveNotes[3].startTick>originalCurveNotes[2].startTick,
+            "custom curve notes in musical time order");
         require(inlineMidiRampVelocitySelected(40,120,
             LibertyInlineVelocity::Curve::exponential),
             "apply custom exponential curve");
-        const auto curved=customClip.notes;
+        const auto curved=midiClips[(size_t)multiClip].notes;
         require(curved.size()==4 && curved[0].velocity==40
             && curved[2].velocity==60
             && curved[3].velocity==120
             && curved[1].velocity==originalCurveNotes[1].velocity,
             "exponential ramp preserves unselected chord note");
         undoArrangement(false);
-        require(customClip.notes[2].velocity==originalCurveNotes[2].velocity,
+        require(midiClips[(size_t)multiClip].notes[2].velocity
+            ==originalCurveNotes[2].velocity,
             "custom exponential curve undo");
         undoArrangement(true);
-        require(customClip.notes[2].velocity==curved[2].velocity,
+        require(midiClips[(size_t)multiClip].notes[2].velocity==curved[2].velocity,
             "custom exponential curve redo");
-        inlineMidiSelectedClipId=customClip.id;
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,2,3};
         require(inlineMidiRampVelocitySelected(40,120,
             LibertyInlineVelocity::Curve::sCurve),
             "apply custom S curve");
-        const auto smooth=customClip.notes;
+        const auto smooth=midiClips[(size_t)multiClip].notes;
         require(smooth[0].velocity==40 && smooth[2].velocity==80
             && smooth[3].velocity==120,
             "custom S curve musical midpoint");
         undoArrangement(false);
-        require(customClip.notes[2].velocity==curved[2].velocity,
+        require(midiClips[(size_t)multiClip].notes[2].velocity==curved[2].velocity,
             "custom S curve undo");
-        // The JUCE window is constructible without opening a modal dialog.
+        // Construct the JUCE dialog with no modal loop or active changes.
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
@@ -1225,9 +1233,10 @@ bool runArrangementTests(){
         require(dialog.getWidth()==530 && dialog.getHeight()==420
             && !dialogApplied,"blue velocity window geometry and no side effects");
         // Restore the three-note fixture for subsequent same-chord checks.
-        customClip.notes=baseline;
-        require(owner.midiEngine.replaceNotes(customClip.notes),
+        midiClips[(size_t)multiClip].notes=baseline;
+        require(owner.midiEngine.replaceNotes(midiClips[(size_t)multiClip].notes),
             "restore chord fixture after custom curve");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();clearArrangementHistory();
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
