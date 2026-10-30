@@ -204,7 +204,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    int intensityPercent=100,
                                    int humanizeAmount=0,
                                    std::uint32_t variationSeed=0x61b3e729U,
-                                   int accentAmount=0){
+                                   int accentAmount=0,
+                                   LibertyInlineVelocity::AccentPattern accentPattern=
+                                       LibertyInlineVelocity::AccentPattern::strongBeats){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -249,7 +251,7 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         selectedNotes,humanized,accentAmount,
         owner.timeSignatureNumerator,owner.timeSignatureDenominator,
         MidiEngine::ticksPerQuarterNote,
-        MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm));
+        MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm),accentPattern);
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -283,7 +285,15 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
             +juce::String::fromUTF8(" — Humanisation ±")
             +juce::String(juce::jlimit(0,20,humanizeAmount))
             +juce::String::fromUTF8(" — Accents +")
-            +juce::String(juce::jlimit(0,20,accentAmount));
+            +juce::String(juce::jlimit(0,20,accentAmount))
+            +juce::String::fromUTF8(" — ")
+            +(accentPattern==LibertyInlineVelocity::AccentPattern::everyBeat
+                ?juce::String::fromUTF8("Chaque pulsation")
+                :accentPattern==LibertyInlineVelocity::AccentPattern::offbeat
+                    ?juce::String::fromUTF8("Contretemps")
+                    :accentPattern==LibertyInlineVelocity::AccentPattern::backbeat
+                        ?juce::String::fromUTF8("Backbeat")
+                        :juce::String::fromUTF8("Temps forts"));
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -955,7 +965,8 @@ void showInlineMidiVelocityCurveDialog(){
          meterDenominator,tempoAtOpen,clipStartAtOpen]
         (int first,int last,LibertyInlineVelocity::Curve curve,
          LibertyInlineVelocity::Mode mode,int intensityPercent,
-         int humanizeAmount,std::uint32_t variationSeed,int accentAmount)
+         int humanizeAmount,std::uint32_t variationSeed,int accentAmount,
+         LibertyInlineVelocity::AccentPattern accentPattern)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -983,7 +994,7 @@ void showInlineMidiVelocityCurveDialog(){
             }
             safe->inlineMidiRampVelocitySelected(
                 first,last,curve,mode,intensityPercent,
-                humanizeAmount,variationSeed,accentAmount);
+                humanizeAmount,variationSeed,accentAmount,accentPattern);
         },std::move(previewNotes),meterNumerator,meterDenominator,
           MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();

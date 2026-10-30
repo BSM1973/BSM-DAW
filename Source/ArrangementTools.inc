@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==654
+        require(dialog.getWidth()==530 && dialog.getHeight()==702
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1477,6 +1477,35 @@ bool runArrangementTests(){
             20,4,4,960,0);
         require(clippedAccent==std::vector<int>({125,127,12}),
             "rhythmic accents preserve chord intervals at MIDI limit 127");
+        using AP=LibertyInlineVelocity::AccentPattern;
+        require(LibertyInlineVelocity::accentVelocities(
+            rhythm,rhythmBase,20,4,4,960,0,AP::everyBeat)
+                ==std::vector<int>({107,127,90,110,100,95}),
+            "each beat accents all four quarter-note pulses");
+        require(LibertyInlineVelocity::accentVelocities(
+            rhythm,rhythmBase,20,4,4,960,0,AP::backbeat)
+                ==std::vector<int>({100,120,90,90,100,75}),
+            "backbeat accents beats two and four");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,60},{480,60},{1440,60},{2400,60},{3360,60}},
+            {60,60,60,60,60},12,4,4,960,0,AP::offbeat)
+                ==std::vector<int>({60,72,72,72,72}),
+            "offbeat accents the middle of each quarter note");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{1440,70},{1920,70},{2880,70}},
+            {70,70,70,70,70},10,6,8,960,0,AP::everyBeat)
+                ==std::vector<int>({80,70,80,70,80}),
+            "6/8 uses compound dotted-quarter beat groups");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{960,70},{1440,70},{1920,70},{2400,70}},
+            {70,70,70,70,70,70},10,6,8,960,0,AP::offbeat)
+                ==std::vector<int>({70,80,70,70,80,70}),
+            "6/8 accents second eighth of each ternary group");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{1440,70},{2880,70},{4320,70}},
+            {70,70,70,70},10,12,8,960,0,AP::backbeat)
+                ==std::vector<int>({70,80,70,80}),
+            "12/8 accents second and fourth dotted-quarter pulses");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1492,7 +1521,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1505,6 +1534,17 @@ bool runArrangementTests(){
             &&beatPreview.getCurrentPreviewVelocity(3)==100
             &&!dialogApplied,
             "strong-beat preview exactly reflects accent computation");
+        beatPreview.setAccentPattern(AP::backbeat);
+        require(beatPreview.getAccentPattern()==AP::backbeat
+            &&beatPreview.getCurrentPreviewVelocity(0)==50
+            &&beatPreview.getCurrentPreviewVelocity(1)==85
+            &&beatPreview.getCurrentPreviewVelocity(2)==70
+            &&!dialogApplied,
+            "backbeat preview reflects chosen style without applying");
+        beatPreview.restoreInitialSettings();
+        require(beatPreview.getAccentPattern()==AP::strongBeats
+            &&beatPreview.getAccents()==0,
+            "reset restores strong-beat profile");
 
 
 
@@ -1650,6 +1690,44 @@ bool runArrangementTests(){
         for(size_t i=0;i<beatAfter.size();++i)
             require(midiClips[(size_t)multiClip].notes[i].velocity
                 ==beatAfter[i].velocity,"accent MIDI velocity Redo");
+        // New accent profiles share Arrangement Undo/Redo and note safety.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto profileBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> profileNotes={
+            {profileBefore[0].startTick,(int)profileBefore[0].velocity},
+            {profileBefore[1].startTick,(int)profileBefore[1].velocity},
+            {profileBefore[2].startTick,(int)profileBefore[2].velocity}};
+        const auto profileCurve=LibertyInlineVelocity::transformVelocities(
+            profileNotes,45,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,50);
+        const auto profileExpected=LibertyInlineVelocity::accentVelocities(
+            profileNotes,profileCurve,19,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::everyBeat);
+        require(inlineMidiRampVelocitySelected(45,110,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,50,0,0x61b3e729U,19,
+            AP::everyBeat),"new accent profile applies in Arrangement");
+        const auto profileAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<profileNotes.size();++i)
+            require((int)profileAfter[i].velocity==profileExpected[i]
+                &&profileAfter[i].startTick==profileBefore[i].startTick
+                &&profileAfter[i].lengthTicks==profileBefore[i].lengthTicks
+                &&profileAfter[i].pitch==profileBefore[i].pitch,
+                "new accents match preview and preserve MIDI properties");
+        undoArrangement(false);
+        for(size_t i=0;i<profileNotes.size();++i)
+            require(profileBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "new accents Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<profileNotes.size();++i)
+            require(profileAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "new accents Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
