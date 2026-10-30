@@ -911,8 +911,12 @@ void showInlineMidiVelocityCurveDialog(){
         const auto& note=notesAtOpen[(size_t)noteIndex];
         previewNotes.push_back({note.startTick,(int)note.velocity});
     }
+    // Start from the actual phrase dynamics; for chords, average the
+    // simultaneous notes so the default is independent of note ordering.
+    const auto initialValues=LibertyInlineVelocity::boundaryVelocities(previewNotes);
     auto* panel=new LibertyInlineVelocity::DialogContent(
-        64,100,LibertyInlineVelocity::Curve::linear,
+        initialValues.first,initialValues.second,
+        LibertyInlineVelocity::Curve::linear,
         [safe=juce::Component::SafePointer<MultiMidiClipController>(this),
          clipId,instrument,selected,notesAtOpen]
         (int first,int last,LibertyInlineVelocity::Curve curve)

@@ -1284,6 +1284,34 @@ bool runArrangementTests(){
         require(!populated.dragEndpointTo(340.0f)
             && !dialogApplied,
             "endpoint drag cannot apply MIDI after release");
+        // Starting values follow the original phrase, averaging simultaneous
+        // chord notes instead of relying on note insertion order.
+        const auto fromPhrase=LibertyInlineVelocity::boundaryVelocities(
+            {{1920,90},{240,55},{240,65},{1080,80},{1920,110}});
+        require(fromPhrase.first==60&&fromPhrase.second==100,
+            "curve dialog initialization averages starting and ending chords");
+        require(LibertyInlineVelocity::boundaryVelocities({}).first==64
+            &&LibertyInlineVelocity::boundaryVelocities({}).second==100,
+            "empty MIDI selection retains safe default curve values");
+        // Invert and reset update the graph/numeric controls, but never
+        // fire the MIDI apply callback or mutate the active clip.
+        require(populated.hasVisibleActionButtons()
+            &&populated.getNumChildComponents()>=7,
+            "velocity dialog has visible invert and reset actions");
+        populated.restoreInitialSettings();
+        require(populated.getStartValue()==40&&populated.getEndValue()==120
+            &&populated.getCurrentPreviewVelocity(1)==60,
+            "reset restores the initial exponential curve and endpoints");
+        populated.invertEndpoints();
+        require(populated.getStartValue()==120&&populated.getEndValue()==40
+            &&populated.getCurrentPreviewVelocity(1)==100,
+            "invert swaps velocities without changing the selected curve");
+        populated.restoreInitialSettings();
+        require(populated.getStartValue()==40&&populated.getEndValue()==120
+            &&populated.getCurrentPreviewVelocity(1)==60
+            && !dialogApplied,
+            "reset returns to initial values without applying MIDI edits");
+
 
         // Restore the three-note fixture for subsequent same-chord checks.
         midiClips[(size_t)multiClip].notes=baseline;

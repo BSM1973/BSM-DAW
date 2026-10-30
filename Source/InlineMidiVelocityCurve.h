@@ -17,6 +17,32 @@ struct PreviewNote
     int velocity = 100;
 };
 
+// Derive initial values from the actual selected notes. A chord is
+// represented by its average velocity, not an arbitrary pitch index.
+inline std::pair<int,int> boundaryVelocities(
+    const std::vector<PreviewNote>& selected)
+{
+    if(selected.empty())return {64,100};
+    std::int64_t firstTick=selected.front().startTick;
+    std::int64_t lastTick=firstTick;
+    for(const auto& note:selected){
+        firstTick=std::min(firstTick,note.startTick);
+        lastTick=std::max(lastTick,note.startTick);
+    }
+    std::int64_t firstSum=0,lastSum=0;
+    int firstCount=0,lastCount=0;
+    for(const auto& note:selected){
+        const int velocity=juce::jlimit(1,127,note.velocity);
+        if(note.startTick==firstTick){firstSum+=velocity;++firstCount;}
+        if(note.startTick==lastTick){lastSum+=velocity;++lastCount;}
+    }
+    const int first=juce::jlimit(1,127,(int)std::lround(
+        (double)firstSum/std::max(1,firstCount)));
+    const int last=juce::jlimit(1,127,(int)std::lround(
+        (double)lastSum/std::max(1,lastCount)));
+    return {first,last};
+}
+
 // Real preview positions use the same musical-time interpolation as Apply.
 inline double musicalPosition(std::int64_t tick,
                               std::int64_t first,
@@ -61,8 +87,11 @@ public:
                 return a.startTick<b.startTick;
             });
 
-        configureNumber(start, first, juce::String::fromUTF8("Vélocité de départ (1 à 127)"));
-        configureNumber(end, last, juce::String::fromUTF8("Vélocité d'arrivée (1 à 127)"));
+        initialFirst=juce::jlimit(1,127,first);
+        initialLast=juce::jlimit(1,127,last);
+        initialCurve=shape;
+        configureNumber(start, initialFirst, juce::String::fromUTF8("Vélocité de départ (1 à 127)"));
+        configureNumber(end, initialLast, juce::String::fromUTF8("Vélocité d'arrivée (1 à 127)"));
         // Both controls must belong to the JUCE component tree: assigning
         // bounds alone does not display a TextEditor in a dialog.
         addAndMakeVisible(start);
@@ -79,6 +108,20 @@ public:
         curve.onChange = [this] { repaint(); };
         addAndMakeVisible(curve);
 
+        resetButton.setButtonText(juce::String::fromUTF8("RÉINITIALISER"));
+        resetButton.setTooltip(juce::String::fromUTF8(
+            "Retrouver les vélocités d'origine et la courbe initiale"));
+        resetButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff253949));
+        resetButton.setColour(juce::TextButton::textColourOffId,juce::Colour(0xffbcd5e8));
+        resetButton.onClick=[this]{restoreInitialSettings();};
+        addAndMakeVisible(resetButton);
+        invertButton.setButtonText(juce::String::fromUTF8("INVERSER"));
+        invertButton.setTooltip(juce::String::fromUTF8(
+            "Échanger le départ et l'arrivée sans modifier les notes MIDI"));
+        invertButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff3f5470));
+        invertButton.setColour(juce::TextButton::textColourOffId,juce::Colour(0xffffe0a2));
+        invertButton.onClick=[this]{invertEndpoints();};
+        addAndMakeVisible(invertButton);
         applyButton.setButtonText(juce::String::fromUTF8("APPLIQUER"));
         applyButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff25697e));
         applyButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffffffff));
@@ -167,11 +210,30 @@ public:
         if(draggedEndpoint<0)
             setMouseCursor(juce::MouseCursor::NormalCursor);
     }
+    // These actions change only the UI preview. No engine callbacks occur
+    // until the user explicitly presses APPLIQUER.
+    void invertEndpoints()
+    {
+        int first=0,last=0;
+        if(!parseValue(start,first)||!parseValue(end,last))return;
+        start.setText(juce::String(last),juce::sendNotificationSync);
+        end.setText(juce::String(first),juce::sendNotificationSync);
+        updateValidation();
+    }
+    void restoreInitialSettings()
+    {
+        start.setText(juce::String(initialFirst),juce::sendNotificationSync);
+        end.setText(juce::String(initialLast),juce::sendNotificationSync);
+        curve.setSelectedId((int)initialCurve+1,juce::sendNotificationSync);
+        updateValidation();
+    }
     void resized() override
     {
         start.setBounds(284, 78, 214, 33);
         end.setBounds(284, 124, 214, 33);
         curve.setBounds(284, 170, 214, 34);
+        resetButton.setBounds(26, 370, 117, 33);
+        invertButton.setBounds(151, 370, 117, 33);
         cancelButton.setBounds(277, 370, 104, 33);
         applyButton.setBounds(389, 370, 109, 33);
     }
@@ -350,6 +412,7 @@ private:
             ? juce::String{}
             : juce::String::fromUTF8("Les deux valeurs doivent être comprises entre 1 et 127.");
         applyButton.setEnabled(error.isEmpty());
+        invertButton.setEnabled(error.isEmpty());
         repaint();
     }
     void confirm()
@@ -369,7 +432,9 @@ private:
     juce::ComboBox curve;
     int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
-    juce::TextButton applyButton,cancelButton;
+    juce::TextButton applyButton,cancelButton,resetButton,invertButton;
+    int initialFirst=64,initialLast=100;
+    Curve initialCurve=Curve::linear;
     juce::String error;
     std::function<void(int,int,Curve)> onApply;
 public:
@@ -389,6 +454,11 @@ public:
     {
         return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
                                         selectedCurve());
+    }
+    bool hasVisibleActionButtons() const noexcept
+    {
+        return resetButton.isVisible()&&invertButton.isVisible()
+            &&resetButton.getWidth()>0&&invertButton.getWidth()>0;
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
