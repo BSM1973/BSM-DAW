@@ -200,7 +200,8 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    LibertyInlineVelocity::Curve shape=
                                        LibertyInlineVelocity::Curve::linear,
                                    LibertyInlineVelocity::Mode mode=
-                                       LibertyInlineVelocity::Mode::absolute){
+                                       LibertyInlineVelocity::Mode::absolute,
+                                   int intensityPercent=100){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -238,7 +239,7 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         selectedNotes.push_back({note.startTick,(int)note.velocity});
     }
     const auto results=LibertyInlineVelocity::transformVelocities(
-        selectedNotes,startVelocity,endVelocity,shape,mode);
+        selectedNotes,startVelocity,endVelocity,shape,mode,intensityPercent);
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -266,7 +267,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                     :juce::String::fromUTF8("courbe linéaire"))
             +(mode==LibertyInlineVelocity::Mode::relative
                 ?juce::String::fromUTF8(" — Nuances conservées")
-                :juce::String::fromUTF8(" — Absolu"));
+                :juce::String::fromUTF8(" — Absolu"))
+            +juce::String::fromUTF8(" — Intensité ")
+            +juce::String(juce::jlimit(0,100,intensityPercent))+" %";
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -930,7 +933,7 @@ void showInlineMidiVelocityCurveDialog(){
         [safe=juce::Component::SafePointer<MultiMidiClipController>(this),
          clipId,instrument,selected,notesAtOpen]
         (int first,int last,LibertyInlineVelocity::Curve curve,
-         LibertyInlineVelocity::Mode mode)
+         LibertyInlineVelocity::Mode mode,int intensityPercent)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -950,7 +953,8 @@ void showInlineMidiVelocityCurveDialog(){
                    ||a.channel!=b.channel||a.muted!=b.muted
                    ||a.probability!=b.probability)return;
             }
-            safe->inlineMidiRampVelocitySelected(first,last,curve,mode);
+            safe->inlineMidiRampVelocitySelected(
+                first,last,curve,mode,intensityPercent);
         },std::move(previewNotes));
     panel->bindInputs();
     juce::DialogWindow::LaunchOptions options;

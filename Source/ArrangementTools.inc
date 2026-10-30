@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==478
+        require(dialog.getWidth()==530 && dialog.getHeight()==538
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1347,6 +1347,53 @@ bool runArrangementTests(){
         populated.restoreInitialSettings();
         require(populated.getMode()==LibertyInlineVelocity::Mode::absolute,
             "reset restores default absolute application mode");
+        // Intensity blends the exact computed MIDI result, never the note
+        // time/pitch. In relative mode a shared chord delta is scaled once.
+        const auto zeroAbs=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,0);
+        const auto zeroRel=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0);
+        require(zeroAbs==std::vector<int>({50,80,100,70})
+            &&zeroRel==zeroAbs,
+            "zero intensity never edits selected velocities in either mode");
+        const auto halfAbs=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,50);
+        const auto halfRel=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,50);
+        require(halfAbs==std::vector<int>({65,80,97,90}),
+            "half intensity blends absolute target with source velocity");
+        require(halfRel==std::vector<int>({58,88,114,90})
+            &&halfRel[1]-halfRel[0]==30,
+            "half intensity relative preserves initial chord dynamics");
+        require(LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,100)==absolute
+            &&LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,100)==relative,
+            "full intensity matches previous absolute and relative behavior");
+        populated.setIntensity(0);
+        require(populated.getIntensity()==0
+            &&populated.getCurrentPreviewVelocity(0)==55
+            &&populated.getCurrentPreviewVelocity(1)==91
+            &&populated.getCurrentPreviewVelocity(2)==77
+            &&!dialogApplied,
+            "zero intensity preview shows exactly original notes");
+        populated.setIntensity(50);
+        require(populated.getIntensity()==50
+            &&populated.getCurrentPreviewVelocity(1)==75
+            &&!dialogApplied,
+            "half intensity updates preview without applying changes");
+        populated.restoreInitialSettings();
+        require(populated.getIntensity()==100
+            &&populated.getCurrentPreviewVelocity(1)==60
+            &&!dialogApplied,
+            "reset restores 100 percent and initial velocity curve");
+
 
 
 
@@ -1387,6 +1434,33 @@ bool runArrangementTests(){
         for(size_t i=0;i<afterRelative.size();++i)
             require(midiClips[(size_t)multiClip].notes[i].velocity
                 ==afterRelative[i].velocity,"relative MIDI curve Redo");
+        // Apply partial intensity to the actual clip. The preview and edit
+        // share a pure transformation, with independent Undo and Redo.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto intensityBefore=midiClips[(size_t)multiClip].notes;
+        const auto intensityExpected=LibertyInlineVelocity::transformVelocities(
+            {{intensityBefore[0].startTick,(int)intensityBefore[0].velocity},
+             {intensityBefore[1].startTick,(int)intensityBefore[1].velocity},
+             {intensityBefore[2].startTick,(int)intensityBefore[2].velocity}},
+            40,120,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,50);
+        require(inlineMidiRampVelocitySelected(40,120,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute,50),
+            "partial MIDI velocity intensity edit");
+        for(size_t i=0;i<intensityExpected.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==intensityExpected[i],
+                "partial velocity MIDI result matches live preview");
+        undoArrangement(false);
+        for(size_t i=0;i<intensityBefore.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==intensityBefore[i].velocity,"partial MIDI intensity Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<intensityExpected.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==intensityExpected[i],"partial MIDI intensity Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
