@@ -1655,6 +1655,42 @@ bool runArrangementTests(){
             &&populated.getHumanization()==0
             &&!dialogApplied,
             "reset removes preview rhythm accents");
+        // Visual rhythm grid stays anchored to project meter and clip
+        // offset, including exact swung subdivisions.
+        const auto guides=LibertyInlineVelocity::rhythmicAccentGuide;
+        const auto straightGuide=guides(0,3840,4,4,960,0,
+            AP::everyBeat,50);
+        require(straightGuide.size()==5
+            &&straightGuide[0].localTick==0
+            &&straightGuide[1].localTick==960
+            &&straightGuide[4].localTick==3840,
+            "every-beat preview landmarks follow the project grid");
+        const auto swungGuide=guides(0,2880,4,4,960,0,
+            AP::offbeat,75);
+        require(swungGuide.size()==3
+            &&swungGuide[0].localTick==720
+            &&swungGuide[1].localTick==1680
+            &&swungGuide[2].localTick==2640,
+            "offbeat landmarks follow 75 percent swing");
+        const auto compoundGuide=guides(0,2880,6,8,960,0,
+            AP::offbeat,75);
+        require(compoundGuide.size()==2
+            &&compoundGuide[0].localTick==480
+            &&compoundGuide[1].localTick==1920,
+            "6/8 guide remains anchored to eighth-note groupings");
+        const auto strongOffsetGuide=guides(0,2880,4,4,960,960,
+            AP::strongBeats,50);
+        require(strongOffsetGuide.size()==2
+            &&strongOffsetGuide[0].localTick==960
+            &&!strongOffsetGuide[0].primary
+            &&strongOffsetGuide[1].localTick==2880
+            &&strongOffsetGuide[1].primary,
+            "preview respects Arrangement offset and secondary beats");
+        require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
+            "empty selection cannot introduce guide markers");
+        require(guides(0,std::numeric_limits<std::int64_t>::max(),
+            4,4,960,960,AP::everyBeat,50).empty(),
+            "invalid overflow never draws ghost rhythm landmarks");
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
@@ -1663,8 +1699,17 @@ bool runArrangementTests(){
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
         beatPreview.bindInputs();
+        require(beatPreview.getRhythmicGuide().empty(),
+            "disabled accents do not clutter velocity preview");
         beatPreview.setIntensity(0);
         beatPreview.setAccents(20);
+        const auto previewGuide=beatPreview.getRhythmicGuide();
+        require(previewGuide.size()==3
+            &&previewGuide[0].localTick==0
+            &&previewGuide[1].localTick==1920
+            &&previewGuide[2].localTick==3840
+            &&!dialogApplied,
+            "rhythmic targets appear in preview without changing notes");
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
             &&beatPreview.getCurrentPreviewVelocity(2)==80

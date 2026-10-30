@@ -296,6 +296,80 @@ inline std::vector<int> accentVelocities(
     return result;
 }
 
+// Rhythmic landmarks for the velocity preview. Project time signature and
+// the clip's Arrangement position anchor all positions. This helper is read
+// only: it never changes MIDI starts, lengths, velocities or playback.
+struct AccentGuideMark
+{
+    std::int64_t localTick=0;
+    bool primary=true;
+};
+inline std::vector<AccentGuideMark> rhythmicAccentGuide(
+    std::int64_t firstTick,std::int64_t lastTick,
+    int numerator,int denominator,std::int64_t ticksPerQuarter,
+    std::int64_t clipStartTick,AccentPattern pattern,int swingPercent)
+{
+    std::vector<AccentGuideMark> marks;
+    if(firstTick<0||lastTick<=firstTick||clipStartTick<0
+       ||numerator<1||numerator>32||denominator<1||denominator>32
+       ||ticksPerQuarter<1||ticksPerQuarter>1000000
+       ||lastTick>std::numeric_limits<std::int64_t>::max()-clipStartTick)
+        return marks;
+    const auto beatTicks=ticksPerQuarter*4/denominator;
+    const auto barTicks=beatTicks*numerator;
+    if(beatTicks<1||barTicks<1)return marks;
+    const bool compound=denominator==8&&numerator>=6&&numerator%3==0;
+    const auto pulseTicks=compound?beatTicks*3:beatTicks;
+    const auto pulseCount=barTicks/pulseTicks;
+    const auto firstAbsolute=firstTick+clipStartTick;
+    const auto lastAbsolute=lastTick+clipStartTick;
+    const auto firstBar=firstAbsolute/barTicks;
+    const auto lastBar=lastAbsolute/barTicks;
+    // Keep rendering bounded even if thousands of measures are selected.
+    // A sampled bar remains tied to the original project grid.
+    const auto barStep=juce::jmax<std::int64_t>(
+        1,(lastBar-firstBar)/40+1);
+    swingPercent=juce::jlimit(50,75,swingPercent);
+    auto append=[&](std::int64_t absoluteTick,bool primary)
+    {
+        if(absoluteTick>=firstAbsolute&&absoluteTick<=lastAbsolute
+           &&marks.size()<160)
+            marks.push_back({absoluteTick-clipStartTick,primary});
+    };
+    for(auto bar=firstBar;bar<=lastBar&&marks.size()<160;)
+    {
+        const auto barStart=bar*barTicks;
+        if(pattern==AccentPattern::strongBeats)
+        {
+            append(barStart,true);
+            if(numerator>=4&&numerator%2==0)
+                append(barStart+barTicks/2,false);
+        }
+        else
+        {
+            for(std::int64_t pulse=0;pulse<pulseCount&&marks.size()<160;++pulse)
+            {
+                if(pattern==AccentPattern::backbeat)
+                {
+                    if(pulse%2==1)append(barStart+pulse*pulseTicks,true);
+                }
+                else if(pattern==AccentPattern::everyBeat)
+                    append(barStart+pulse*pulseTicks,true);
+                else
+                {
+                    const auto displacement=compound?beatTicks
+                        :(pulseTicks*swingPercent+50)/100;
+                    if(displacement>0)
+                        append(barStart+pulse*pulseTicks+displacement,true);
+                }
+            }
+        }
+        if(bar>lastBar-barStep)break;
+        bar+=barStep;
+    }
+    return marks;
+}
+
 // Standalone JUCE window content. No Piano Roll or instrument engine state is
 // stored here. The callback is invoked only by explicit user confirmation.
 class DialogContent final : public juce::Component
@@ -724,6 +798,10 @@ public:
         g.fillEllipse(359.0f,613.0f,7.0f,7.0f);
         g.drawText(juce::String::fromUTF8("Après"),369,606,58,21,
                    juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff7fe0eb));
+        g.drawLine(438.0f,616.0f,450.0f,616.0f,1.5f);
+        g.drawText(juce::String::fromUTF8("Temps"),454,606,43,21,
+                   juce::Justification::centredLeft);
 
         const auto plot=previewPlot();
         g.setColour(juce::Colour(0xff172b3e));
@@ -738,6 +816,42 @@ public:
         {
             const float x=plot.getX()+plot.getWidth()*i/4.0f;
             g.drawVerticalLine((int)std::lround(x),plot.getY(),plot.getBottom());
+        }
+        // Overlay real rhythmic target positions. Pale windows display the
+        // recognition tolerance and fine cyan lines indicate exact accents.
+        // Markers live under the velocity curve and note handles.
+        if(samples.size()>1&&(getAccents()>0||getGhostNotes()>0))
+        {
+            const auto guide=getRhythmicGuide();
+            const auto firstTick=samples.front().startTick;
+            const auto lastTick=samples.back().startTick;
+            const auto beatTicks=ticksPerQuarter*4/meterDenominator;
+            const auto pulseTicks=(meterDenominator==8&&meterNumerator>=6
+                                   &&meterNumerator%3==0)
+                ?beatTicks*3:beatTicks;
+            const float halfWidth=lastTick>firstTick
+                ?(float)((double)(pulseTicks*getTolerance()/100)
+                          /(double)(lastTick-firstTick)*plot.getWidth())
+                :0.0f;
+            for(const auto& mark:guide)
+            {
+                const double position=musicalPosition(
+                    mark.localTick,firstTick,lastTick);
+                const float x=plot.getX()+(float)position*plot.getWidth();
+                if(halfWidth>0.0f)
+                {
+                    const auto window=juce::Rectangle<float>(
+                        x-halfWidth,plot.getY(),2.0f*halfWidth,plot.getHeight())
+                        .getIntersection(plot);
+                    g.setColour(juce::Colour(0xff7fe0eb).withAlpha(
+                        mark.primary?0.085f:0.055f));
+                    g.fillRect(window);
+                }
+                g.setColour(juce::Colour(0xff7fe0eb).withAlpha(
+                    mark.primary?0.52f:0.30f));
+                g.drawLine(x,plot.getY(),x,plot.getBottom(),
+                           mark.primary?1.2f:1.0f);
+            }
         }
         g.setColour(juce::Colour(0xff9cb5c9));
         g.setFont(juce::Font(10.0f));
@@ -1058,6 +1172,16 @@ public:
             &&swing.isVisible()&&swing.getWidth()>0
             &&progressive.isVisible()&&progressive.getWidth()>0
             &&accentFalloff.isVisible()&&accentFalloff.getWidth()>0;
+    }
+    std::vector<AccentGuideMark> getRhythmicGuide() const
+    {
+        if(samples.size()<2||meterDenominator<1
+           ||(getAccents()==0&&getGhostNotes()==0))
+            return {};
+        return rhythmicAccentGuide(
+            samples.front().startTick,samples.back().startTick,
+            meterNumerator,meterDenominator,ticksPerQuarter,clipStartTick,
+            selectedAccentPattern(),getSwing());
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
