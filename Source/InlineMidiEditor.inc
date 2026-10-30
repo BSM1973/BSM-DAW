@@ -208,7 +208,8 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    LibertyInlineVelocity::AccentPattern accentPattern=
                                        LibertyInlineVelocity::AccentPattern::strongBeats,
                                    int ghostAmount=0,
-                                   int tolerancePercent=0){
+                                   int tolerancePercent=0,
+                                   int swingPercent=50){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -254,7 +255,7 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         owner.timeSignatureNumerator,owner.timeSignatureDenominator,
         MidiEngine::ticksPerQuarterNote,
         MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm),
-        accentPattern,ghostAmount,tolerancePercent);
+        accentPattern,ghostAmount,tolerancePercent,swingPercent);
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -300,7 +301,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
             +juce::String::fromUTF8(" — Notes fantômes −")
             +juce::String(juce::jlimit(0,20,ghostAmount))
             +juce::String::fromUTF8(" — Tolérance ")
-            +juce::String(juce::jlimit(0,25,tolerancePercent))+" %";
+            +juce::String(juce::jlimit(0,25,tolerancePercent))+" %"
+            +juce::String::fromUTF8(" — Swing ")
+            +juce::String(juce::jlimit(50,75,swingPercent))+" %";
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -974,7 +977,7 @@ void showInlineMidiVelocityCurveDialog(){
          LibertyInlineVelocity::Mode mode,int intensityPercent,
          int humanizeAmount,std::uint32_t variationSeed,int accentAmount,
          LibertyInlineVelocity::AccentPattern accentPattern,int ghostAmount,
-         int tolerancePercent)
+         int tolerancePercent,int swingPercent)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -1003,7 +1006,7 @@ void showInlineMidiVelocityCurveDialog(){
             safe->inlineMidiRampVelocitySelected(
                 first,last,curve,mode,intensityPercent,
                 humanizeAmount,variationSeed,accentAmount,accentPattern,ghostAmount,
-                tolerancePercent);
+                tolerancePercent,swingPercent);
         },std::move(previewNotes),meterNumerator,meterDenominator,
           MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();

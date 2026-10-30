@@ -1228,18 +1228,18 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
                 dialogApplied=true;
             });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==798
+        require(dialog.getWidth()==530 && dialog.getHeight()==846
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1562,6 +1562,39 @@ bool runArrangementTests(){
             20,6,8,960,0,AP::strongBeats,10,10)
                 ==std::vector<int>({80,70,50}),
             "6/8 timing tolerance respects bar wrap and dotted-quarter pulse");
+        // Musical swing changes the target grid for simple-meter offbeats only.
+        require(LibertyInlineVelocity::accentVelocities(
+            {{480,60},{720,70},{1680,80},{1680,100}},
+            {60,70,80,100},12,4,4,960,0,AP::offbeat,8,0,75)
+                ==std::vector<int>({52,82,92,112}),
+            "75 percent swing accents late offbeats and leaves chord nuances");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{480,60},{720,70},{1680,80},{1680,100}},
+            {60,70,80,100},12,4,4,960,0,AP::offbeat,8,0,50)
+                ==std::vector<int>({72,62,72,92}),
+            "50 percent straight groove keeps existing offbeat behavior");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{650,70},{800,70},{480,70}}, {70,70,70},
+            12,4,4,960,0,AP::offbeat,8,10,75)
+                ==std::vector<int>({82,82,62}),
+            "swing and tolerance recognize humanized late offbeats");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{720,70}}, {70,70,70},
+            16,6,8,960,0,AP::offbeat,10,0,75)
+                ==std::vector<int>({60,86,60}),
+            "compound 6/8 offbeats remain unchanged by swing");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{720,70}}, {70,70},
+            10,4,4,960,720,AP::offbeat,0,0,75)
+                ==std::vector<int>({80,70}),
+            "swing recognition uses absolute Arrangement clip offset");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{480,70},{720,70}}, {70,70},
+            12,4,4,960,0,AP::strongBeats,8,0,75)
+                ==LibertyInlineVelocity::accentVelocities(
+            {{480,70},{720,70}}, {70,70},
+            12,4,4,960,0,AP::strongBeats,8,0,50),
+            "strong-beat profile is independent of swing control");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1577,7 +1610,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1616,7 +1649,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int){
+                LibertyInlineVelocity::AccentPattern,int,int,int){
                 dialogApplied=true;
             },{{50,70},{1500,80}},4,4,960,0);
         freeTimingPreview.bindInputs();
@@ -1635,6 +1668,34 @@ bool runArrangementTests(){
         require(freeTimingPreview.getTolerance()==0
             &&freeTimingPreview.getGhostNotes()==0,
             "reset restores strict musical grid");
+        LibertyInlineVelocity::DialogContent swingPreview(60,100,
+            LibertyInlineVelocity::Curve::linear,
+            [&](int,int,LibertyInlineVelocity::Curve,
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
+                LibertyInlineVelocity::AccentPattern,int,int,int){
+                dialogApplied=true;
+            },{{480,60},{720,70}},4,4,960,0);
+        swingPreview.bindInputs();
+        swingPreview.setIntensity(0);
+        swingPreview.setAccents(14);
+        swingPreview.setGhostNotes(8);
+        require(!swingPreview.isSwingEnabled(),"swing disabled for strong beats");
+        swingPreview.setAccentPattern(AP::offbeat);
+        require(swingPreview.isSwingEnabled()
+            &&swingPreview.getCurrentPreviewVelocity(0)==74
+            &&swingPreview.getCurrentPreviewVelocity(1)==62,
+            "straight offbeats drive default preview");
+        swingPreview.setSwing(75);
+        require(swingPreview.getSwing()==75
+            &&swingPreview.getCurrentPreviewVelocity(0)==52
+            &&swingPreview.getCurrentPreviewVelocity(1)==84
+            &&!dialogApplied,
+            "swung accents update preview but do not edit MIDI");
+        swingPreview.restoreInitialSettings();
+        require(swingPreview.getSwing()==50
+            &&swingPreview.getAccentPattern()==AP::strongBeats
+            &&!swingPreview.isSwingEnabled(),
+            "reset restores straight rhythm and disables inactive swing");
 
 
 
@@ -1899,6 +1960,45 @@ bool runArrangementTests(){
             require(toleranceAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "tolerance edit Redo");
+        // End-to-end swing preview/Apply parity with complete MIDI Undo/Redo.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto swingBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> swingNotes={
+            {swingBefore[0].startTick,(int)swingBefore[0].velocity},
+            {swingBefore[1].startTick,(int)swingBefore[1].velocity},
+            {swingBefore[2].startTick,(int)swingBefore[2].velocity}};
+        const auto swingBase=LibertyInlineVelocity::transformVelocities(
+            swingNotes,40,100,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0);
+        const auto swingExpected=LibertyInlineVelocity::accentVelocities(
+            swingNotes,swingBase,12,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::offbeat,9,15,75);
+        require(inlineMidiRampVelocitySelected(40,100,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,12,
+            AP::offbeat,9,15,75),"swung MIDI accents apply in Arrangement");
+        const auto swingAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<swingNotes.size();++i)
+            require((int)swingAfter[i].velocity==swingExpected[i]
+                &&swingAfter[i].startTick==swingBefore[i].startTick
+                &&swingAfter[i].lengthTicks==swingBefore[i].lengthTicks
+                &&swingAfter[i].pitch==swingBefore[i].pitch
+                &&swingAfter[i].channel==swingBefore[i].channel,
+                "swing edits velocity only and matches full preview");
+        undoArrangement(false);
+        for(size_t i=0;i<swingNotes.size();++i)
+            require(swingBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "swing edit Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<swingNotes.size();++i)
+            require(swingAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "swing edit Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
