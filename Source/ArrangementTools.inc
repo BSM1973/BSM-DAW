@@ -1562,6 +1562,35 @@ bool runArrangementTests(){
             20,6,8,960,0,AP::strongBeats,10,10)
                 ==std::vector<int>({80,70,50}),
             "6/8 timing tolerance respects bar wrap and dotted-quarter pulse");
+        const std::vector<LibertyInlineVelocity::PreviewNote> phrased={
+            {0,60},{3840,70},{7680,80},{15360,90}};
+        const std::vector<int> phrasedBase={60,70,80,90};
+        require(LibertyInlineVelocity::accentVelocities(
+            phrased,phrasedBase,16,4,4,960,0,AP::phrase2,8)
+                ==std::vector<int>({76,62,96,106}),
+            "two-bar phrases emphasize global first and third measures");
+        require(LibertyInlineVelocity::accentVelocities(
+            phrased,phrasedBase,16,4,4,960,0,AP::phrase4,8)
+                ==std::vector<int>({76,62,72,106}),
+            "four-bar phrases accent only first bar of each group");
+        require(LibertyInlineVelocity::accentVelocities(
+            phrased,phrasedBase,16,4,4,960,0,AP::phrase8,8)
+                ==std::vector<int>({76,62,72,82}),
+            "eight-bar phrases preserve the longer musical cycle");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,60},{3840,60}}, {60,60},16,4,4,960,3840,AP::phrase2,8)
+                ==std::vector<int>({52,76}),
+            "phrase accent starts on global bar 3 for shifted clips");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,64},{2880,64},{5760,64}}, {64,64,64},
+            16,6,8,960,0,AP::phrase2,10)
+                ==std::vector<int>({80,54,80}),
+            "phrases honor compound 6/8 measure lengths");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{120,70},{241,70}}, {70,70,70},
+            16,4,4,960,0,AP::phrase2,10,25,50,true)
+                ==std::vector<int>({86,73,60}),
+            "phrase onset uses the same progressive tolerance and ghost logic");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -1686,6 +1715,40 @@ bool runArrangementTests(){
             &&strongOffsetGuide[1].localTick==2880
             &&strongOffsetGuide[1].primary,
             "preview respects Arrangement offset and secondary beats");
+        const auto twoBarGuide=guides(0,15360,4,4,960,0,
+            AP::phrase2,50);
+        require(twoBarGuide.size()==3
+            &&twoBarGuide[0].localTick==0
+            &&twoBarGuide[1].localTick==7680
+            &&twoBarGuide[2].localTick==15360,
+            "two-bar guide displays only global phrase onsets");
+        const auto fourBarGuide=guides(0,30720,4,4,960,0,
+            AP::phrase4,50);
+        require(fourBarGuide.size()==3
+            &&fourBarGuide[0].localTick==0
+            &&fourBarGuide[1].localTick==15360
+            &&fourBarGuide[2].localTick==30720,
+            "four-bar guide follows whole phrases without shifting notes");
+        const auto eightBarGuide=guides(0,61440,4,4,960,0,
+            AP::phrase8,50);
+        require(eightBarGuide.size()==3
+            &&eightBarGuide[1].localTick==30720
+            &&eightBarGuide[2].localTick==61440,
+            "eight-bar accents are correctly repeated in preview");
+        const auto phraseOffsetGuide=guides(0,7680,4,4,960,3840,
+            AP::phrase2,50);
+        require(phraseOffsetGuide.size()==1
+            &&phraseOffsetGuide[0].localTick==3840,
+            "phrase guide aligns with a shifted clip in Arrangement");
+        const auto longPhraseGuide=guides(0,3840000,4,4,960,0,
+            AP::phrase8,50);
+        require(!longPhraseGuide.empty()
+            &&longPhraseGuide.size()<=160
+            &&longPhraseGuide[0].localTick==0,
+            "long selections keep bounded guides at phrase starts");
+        for(const auto& mark:longPhraseGuide)
+            require(mark.localTick%30720==0,
+                "long-selection sampling never skips the phrase phase");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -1710,6 +1773,19 @@ bool runArrangementTests(){
             &&previewGuide[2].localTick==3840
             &&!dialogApplied,
             "rhythmic targets appear in preview without changing notes");
+        beatPreview.setAccentPattern(AP::phrase2);
+        require(beatPreview.getAccentPattern()==AP::phrase2
+            &&beatPreview.getRhythmicGuide().size()==1
+            &&beatPreview.getRhythmicGuide()[0].localTick==0
+            &&!beatPreview.isSwingEnabled()
+            &&!dialogApplied,
+            "phrase profile is selectable and previews only the phrase start");
+        beatPreview.setAccentPattern(AP::phrase8);
+        require(beatPreview.getAccentPattern()==AP::phrase8
+            &&beatPreview.getRhythmicGuide().size()==1
+            &&!dialogApplied,
+            "eight-bar profile selection does not edit MIDI");
+        beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
             &&beatPreview.getCurrentPreviewVelocity(2)==80
@@ -2225,6 +2301,44 @@ bool runArrangementTests(){
             require(shapedAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "S-shaped accent Redo");
+        // Phrase mode follows the same Arrangement transaction and Undo path.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto phraseBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> phraseNotes={
+            {phraseBefore[0].startTick,(int)phraseBefore[0].velocity},
+            {phraseBefore[1].startTick,(int)phraseBefore[1].velocity},
+            {phraseBefore[2].startTick,(int)phraseBefore[2].velocity}};
+        const auto phraseBase=LibertyInlineVelocity::transformVelocities(
+            phraseNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto phraseExpected=LibertyInlineVelocity::accentVelocities(
+            phraseNotes,phraseBase,16,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::phrase4,9,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,16,
+            AP::phrase4,9,25,50,true,FC::sCurve),
+            "phrase-level MIDI accents apply directly in Arrangement");
+        const auto phraseAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<phraseNotes.size();++i)
+            require((int)phraseAfter[i].velocity==phraseExpected[i]
+                &&phraseAfter[i].startTick==phraseBefore[i].startTick
+                &&phraseAfter[i].lengthTicks==phraseBefore[i].lengthTicks
+                &&phraseAfter[i].pitch==phraseBefore[i].pitch
+                &&phraseAfter[i].channel==phraseBefore[i].channel,
+                "phrase edit preserves all non-velocity note fields");
+        undoArrangement(false);
+        for(size_t i=0;i<phraseNotes.size();++i)
+            require(phraseBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "phrase accent Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<phraseNotes.size();++i)
+            require(phraseAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "phrase accent Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;

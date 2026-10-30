@@ -13,7 +13,22 @@ namespace LibertyInlineVelocity
 {
 enum class Curve : int { linear = 0, exponential = 1, sCurve = 2 };
 enum class Mode : int { absolute = 0, relative = 1 };
-enum class AccentPattern : int { strongBeats=0, everyBeat=1, offbeat=2, backbeat=3 };
+enum class AccentPattern : int {
+    strongBeats=0, everyBeat=1, offbeat=2, backbeat=3,
+    phrase2=4, phrase4=5, phrase8=6
+};
+// A phrase accent falls only on measure 1 of each 2, 4 or 8-bar cycle.
+// All cycles begin at the project's musical zero, never at clip selection.
+inline int accentPhraseBars(AccentPattern pattern) noexcept
+{
+    switch(pattern)
+    {
+        case AccentPattern::phrase2:return 2;
+        case AccentPattern::phrase4:return 4;
+        case AccentPattern::phrase8:return 8;
+        default:return 0;
+    }
+}
 
 struct PreviewNote
 {
@@ -248,6 +263,13 @@ inline std::vector<int> accentVelocities(
                        &&nearGrid(inBar%pulseTicks,displacement,pulseTicks,deviation);
             if(emphasized)requested=strength;
         }
+        else if(accentPhraseBars(pattern)>0)
+        {
+            const auto cycleTicks=barTicks*accentPhraseBars(pattern);
+            emphasized=nearGrid((tick+clipStartTick)%cycleTicks,
+                                0,cycleTicks,deviation);
+            if(emphasized)requested=strength;
+        }
         else if(pattern==AccentPattern::backbeat)
         {
             // Check only odd-indexed pulses, keeping the final downbeat
@@ -336,6 +358,24 @@ inline std::vector<AccentGuideMark> rhythmicAccentGuide(
            &&marks.size()<160)
             marks.push_back({absoluteTick-clipStartTick,primary});
     };
+    const auto phraseBars=accentPhraseBars(pattern);
+    if(phraseBars>0)
+    {
+        // First eligible bar is aligned to global project zero. When a
+        // selection spans many bars, sample in multiples of phrase length
+        // to prevent long selections skipping all accented measures.
+        const auto firstAligned=firstBar+
+            (phraseBars-firstBar%phraseBars)%phraseBars;
+        const auto step=juce::jmax<std::int64_t>(
+            phraseBars,((barStep+phraseBars-1)/phraseBars)*phraseBars);
+        for(auto bar=firstAligned;bar<=lastBar&&marks.size()<160;)
+        {
+            append(bar*barTicks,true);
+            if(bar>lastBar-step)break;
+            bar+=step;
+        }
+        return marks;
+    }
     for(auto bar=firstBar;bar<=lastBar&&marks.size()<160;)
     {
         const auto barStart=bar*barTicks;
@@ -490,6 +530,10 @@ public:
         accentPattern.addItem(juce::String::fromUTF8("Chaque pulsation"),2);
         accentPattern.addItem(juce::String::fromUTF8("Contretemps"),3);
         accentPattern.addItem(juce::String::fromUTF8("Backbeat (2 et 4)"),4);
+        accentPattern.addSeparator();
+        accentPattern.addItem(juce::String::fromUTF8("Phrasé — 2 mesures"),5);
+        accentPattern.addItem(juce::String::fromUTF8("Phrasé — 4 mesures"),6);
+        accentPattern.addItem(juce::String::fromUTF8("Phrasé — 8 mesures"),7);
         accentPattern.setSelectedId(1,juce::dontSendNotification);
         accentPattern.setTooltip(juce::String::fromUTF8("Choisir la grille d'accentuation"));
         accentPattern.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff233747));
@@ -990,6 +1034,9 @@ private:
             case 2:return AccentPattern::everyBeat;
             case 3:return AccentPattern::offbeat;
             case 4:return AccentPattern::backbeat;
+            case 5:return AccentPattern::phrase2;
+            case 6:return AccentPattern::phrase4;
+            case 7:return AccentPattern::phrase8;
             default:return AccentPattern::strongBeats;
         }
     }
@@ -1060,7 +1107,7 @@ public:
     }
     void setAccentPattern(AccentPattern pattern)
     {
-        accentPattern.setSelectedId(juce::jlimit(1,4,(int)pattern+1),
+        accentPattern.setSelectedId(juce::jlimit(1,7,(int)pattern+1),
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}
