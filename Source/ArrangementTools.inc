@@ -1228,7 +1228,7 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
                 dialogApplied=true;
             });
         dialog.bindInputs();
@@ -1239,7 +1239,7 @@ bool runArrangementTests(){
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
                 dialogApplied=true;
             },
             {{1920,77},{240,55},{1080,91}});
@@ -1595,6 +1595,34 @@ bool runArrangementTests(){
             {{480,70},{720,70}}, {70,70},
             12,4,4,960,0,AP::strongBeats,8,0,50),
             "strong-beat profile is independent of swing control");
+        // Progressive accent falloff is a strictly opt-in interpolation
+        // between an exact accent and the adjacent ghost-note level.
+        const auto smoothNotes=std::vector<LibertyInlineVelocity::PreviewNote>{
+            {0,80},{120,80},{240,80},{241,80},{960,80}};
+        const auto smoothValues=std::vector<int>{80,80,80,80,80};
+        require(LibertyInlineVelocity::accentVelocities(
+            smoothNotes,smoothValues,20,4,4,960,0,AP::everyBeat,
+            10,25,50,true)==std::vector<int>({100,85,70,70,100}),
+            "progressive accents fade naturally into ghost dynamics");
+        require(LibertyInlineVelocity::accentVelocities(
+            smoothNotes,smoothValues,20,4,4,960,0,AP::everyBeat,
+            10,25,50,false)==std::vector<int>({100,100,100,70,100}),
+            "disabled progressive mode preserves strict accent levels");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{120,60},{120,80},{240,126}},
+            {60,80,126},20,4,4,960,0,AP::everyBeat,10,25,50,true)
+                ==std::vector<int>({65,85,116}),
+            "progressive mode preserves chord dynamics and MIDI bounds");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{720,70},{768,70},{816,70}}, {70,70,70},
+            20,4,4,960,0,AP::offbeat,10,10,75,true)
+                ==std::vector<int>({90,75,60}),
+            "swing and progressive accents share accurate proximity");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{120,70}}, {70,70},
+            20,4,4,960,0,AP::everyBeat,10,0,50,true)
+                ==std::vector<int>({90,60}),
+            "zero tolerance preserves original exact-grid behavior");
         populated.setIntensity(0);
         populated.setHumanization(0);
         populated.setAccents(14);
@@ -1610,7 +1638,7 @@ bool runArrangementTests(){
         LibertyInlineVelocity::DialogContent beatPreview(60,90,
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
-                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int){
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,LibertyInlineVelocity::AccentPattern,int,int,int,bool){
                 dialogApplied=true;
             },
             {{0,50},{960,65},{1920,70},{3840,80}},4,4,960,0);
@@ -1649,7 +1677,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int,int){
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
                 dialogApplied=true;
             },{{50,70},{1500,80}},4,4,960,0);
         freeTimingPreview.bindInputs();
@@ -1672,7 +1700,7 @@ bool runArrangementTests(){
             LibertyInlineVelocity::Curve::linear,
             [&](int,int,LibertyInlineVelocity::Curve,
                 LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
-                LibertyInlineVelocity::AccentPattern,int,int,int){
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
                 dialogApplied=true;
             },{{480,60},{720,70}},4,4,960,0);
         swingPreview.bindInputs();
@@ -1696,6 +1724,37 @@ bool runArrangementTests(){
             &&swingPreview.getAccentPattern()==AP::strongBeats
             &&!swingPreview.isSwingEnabled(),
             "reset restores straight rhythm and disables inactive swing");
+        LibertyInlineVelocity::DialogContent softPreview(40,110,
+            LibertyInlineVelocity::Curve::linear,
+            [&](int,int,LibertyInlineVelocity::Curve,
+                LibertyInlineVelocity::Mode,int,int,std::uint32_t,int,
+                LibertyInlineVelocity::AccentPattern,int,int,int,bool){
+                dialogApplied=true;
+            },{{0,70},{120,70},{240,70}},4,4,960,0);
+        softPreview.bindInputs();
+        softPreview.setIntensity(0);
+        softPreview.setAccentPattern(AP::everyBeat);
+        softPreview.setAccents(20);
+        softPreview.setGhostNotes(10);
+        require(!softPreview.areProgressiveAccentsAvailable(),
+            "progressive mode remains disabled when no tolerance is set");
+        softPreview.setTolerance(25);
+        require(softPreview.areProgressiveAccentsAvailable()
+            &&softPreview.getCurrentPreviewVelocity(1)==90,
+            "default discrete accents preserved in the live preview");
+        softPreview.setProgressiveAccents(true);
+        require(softPreview.getProgressiveAccents()
+            &&softPreview.getCurrentPreviewVelocity(0)==90
+            &&softPreview.getCurrentPreviewVelocity(1)==75
+            &&softPreview.getCurrentPreviewVelocity(2)==60
+            &&!dialogApplied,
+            "live preview shows graduated accents without editing MIDI");
+        softPreview.restoreInitialSettings();
+        require(!softPreview.getProgressiveAccents()
+            &&!softPreview.areProgressiveAccentsAvailable()
+            &&softPreview.getTolerance()==0
+            &&!dialogApplied,
+            "reset returns to the validated rhythm settings");
 
 
 
@@ -1999,6 +2058,46 @@ bool runArrangementTests(){
             require(swingAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "swing edit Redo");
+        // Real MIDI edit with progressive accents and complete Undo/Redo.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto softBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> softNotes={
+            {softBefore[0].startTick,(int)softBefore[0].velocity},
+            {softBefore[1].startTick,(int)softBefore[1].velocity},
+            {softBefore[2].startTick,(int)softBefore[2].velocity}};
+        const auto softBase=LibertyInlineVelocity::transformVelocities(
+            softNotes,40,100,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0);
+        const auto softExpected=LibertyInlineVelocity::accentVelocities(
+            softNotes,softBase,17,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::everyBeat,9,25,50,true);
+        require(inlineMidiRampVelocitySelected(40,100,
+            LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,17,
+            AP::everyBeat,9,25,50,true),
+            "progressive rhythmic accents apply inside Arrangement");
+        const auto softAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<softNotes.size();++i)
+            require((int)softAfter[i].velocity==softExpected[i]
+                &&softAfter[i].startTick==softBefore[i].startTick
+                &&softAfter[i].lengthTicks==softBefore[i].lengthTicks
+                &&softAfter[i].pitch==softBefore[i].pitch
+                &&softAfter[i].channel==softBefore[i].channel,
+                "progressive edit matches preview and preserves MIDI fields");
+        undoArrangement(false);
+        for(size_t i=0;i<softNotes.size();++i)
+            require(softBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "progressive groove Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<softNotes.size();++i)
+            require(softAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "progressive groove Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;

@@ -181,7 +181,8 @@ inline std::vector<int> accentVelocities(
     AccentPattern pattern=AccentPattern::strongBeats,
     int ghostAmount=0,
     int tolerancePercent=0,
-    int swingPercent=50)
+    int swingPercent=50,
+    bool progressiveAccents=false)
 {
     if(notes.size()!=transformed.size())return transformed;
     strength=juce::jlimit(0,20,strength);
@@ -202,10 +203,12 @@ inline std::vector<int> accentVelocities(
     const auto toleranceTicks=pulseTicks*tolerancePercent/100;
     const auto nearGrid=[toleranceTicks](std::int64_t position,
                                           std::int64_t target,
-                                          std::int64_t period) noexcept
+                                          std::int64_t period,
+                                          std::int64_t& deviation) noexcept
     {
         const auto d=position>=target?position-target:target-position;
-        return std::min(d,period-d)<=toleranceTicks;
+        deviation=std::min(d,period-d);
+        return deviation<=toleranceTicks;
     };
     struct Extent {int low=127,high=1;};
     std::map<std::int64_t,Extent> chords;
@@ -227,9 +230,10 @@ inline std::vector<int> accentVelocities(
         const auto inBar=(tick+clipStartTick)%barTicks;
         int requested=0;
         bool emphasized=false;
+        std::int64_t deviation=0;
         if(pattern==AccentPattern::everyBeat)
         {
-            emphasized=nearGrid(inBar%pulseTicks,0,pulseTicks);
+            emphasized=nearGrid(inBar%pulseTicks,0,pulseTicks,deviation);
             if(emphasized)requested=strength;
         }
         else if(pattern==AccentPattern::offbeat)
@@ -240,7 +244,7 @@ inline std::vector<int> accentVelocities(
             const auto displacement=compound?beatTicks
                 :(pulseTicks*swingPercent+50)/100;
             emphasized=displacement>0
-                       &&nearGrid(inBar%pulseTicks,displacement,pulseTicks);
+                       &&nearGrid(inBar%pulseTicks,displacement,pulseTicks,deviation);
             if(emphasized)requested=strength;
         }
         else if(pattern==AccentPattern::backbeat)
@@ -249,7 +253,7 @@ inline std::vector<int> accentVelocities(
             // of the next bar separate from the final backbeat.
             const auto pulseCount=barTicks/pulseTicks;
             for(std::int64_t pulse=1;pulse<pulseCount;pulse+=2)
-                if(nearGrid(inBar,pulse*pulseTicks,barTicks))
+                if(nearGrid(inBar,pulse*pulseTicks,barTicks,deviation))
                 {
                     emphasized=true;
                     break;
@@ -259,13 +263,13 @@ inline std::vector<int> accentVelocities(
         else
         {
             // Exact 0% setting reproduces the original beat classifier.
-            if(nearGrid(inBar,0,barTicks))
+            if(nearGrid(inBar,0,barTicks,deviation))
             {
                 emphasized=true;
                 requested=strength;
             }
             else if(numerator>=4&&numerator%2==0
-                    &&nearGrid(inBar,barTicks/2,barTicks))
+                    &&nearGrid(inBar,barTicks/2,barTicks,deviation))
             {
                 emphasized=true;
                 requested=(strength+1)/2;
@@ -274,6 +278,16 @@ inline std::vector<int> accentVelocities(
         // Independent of accent strength: turning ACCENTS to zero still
         // allows ghost notes on the complementary rhythmic positions.
         if(!emphasized)requested=-ghostAmount;
+        else if(progressiveAccents&&toleranceTicks>0&&deviation>0)
+        {
+            // Smoothly fade each recognized accent toward the adjacent
+            // ghost-note level. At the tolerance boundary there is no
+            // velocity discontinuity when the next note is off-grid.
+            const double proximity=1.0
+                -(double)deviation/(double)toleranceTicks;
+            requested=(int)std::lround(-ghostAmount
+                +(requested+ghostAmount)*proximity);
+        }
         const auto& chord=chords.at(tick);
         const int delta=juce::jlimit(1-chord.low,127-chord.high,requested);
         result.push_back(juce::jlimit(1,127,oldValue+delta));
@@ -288,7 +302,7 @@ class DialogContent final : public juce::Component
 public:
     explicit DialogContent(int first, int last, Curve shape,
                            std::function<void(int, int, Curve, Mode, int, int,
-                                              std::uint32_t, int, AccentPattern, int, int, int)> apply,
+                                              std::uint32_t, int, AccentPattern, int, int, int, bool)> apply,
                            std::vector<PreviewNote> selectedNotes = {},
                            int signatureNumerator = 4,
                            int signatureDenominator = 4,
@@ -443,7 +457,10 @@ public:
         tolerance.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff233747));
         tolerance.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffffe6b5));
         tolerance.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff426278));
-        tolerance.onValueChange=[this]{repaint();};
+        tolerance.onValueChange=[this]{
+            progressive.setEnabled(getTolerance()>0);
+            repaint();
+        };
         addAndMakeVisible(tolerance);
 
         swing.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -463,6 +480,19 @@ public:
         swing.onValueChange=[this]{repaint();};
         addAndMakeVisible(swing);
         swing.setEnabled(false);
+
+        progressive.setButtonText(juce::String::fromUTF8("ACTIVER"));
+        progressive.setTooltip(juce::String::fromUTF8(
+            "Fondre progressivement les accents vers les notes fantômes "
+            "en fonction de leur écart à la grille, sans déplacer les notes"));
+        progressive.setColour(juce::ToggleButton::textColourId,
+                              juce::Colour(0xffffdf9b));
+        progressive.setColour(juce::ToggleButton::tickColourId,
+                              juce::Colour(0xff7fe0eb));
+        progressive.setToggleState(false,juce::dontSendNotification);
+        progressive.onClick=[this]{repaint();};
+        progressive.setEnabled(false);
+        addAndMakeVisible(progressive);
 
         resetButton.setButtonText(juce::String::fromUTF8("RÉINITIALISER"));
         resetButton.setTooltip(juce::String::fromUTF8(
@@ -589,6 +619,7 @@ public:
         ghostNotes.setValue(0.0,juce::sendNotificationSync);
         tolerance.setValue(0.0,juce::sendNotificationSync);
         swing.setValue(50.0,juce::sendNotificationSync);
+        progressive.setToggleState(false,juce::sendNotificationSync);
         variationSeed=initialVariationSeed;
         updateValidation();
     }
@@ -606,6 +637,7 @@ public:
         ghostNotes.setBounds(278, 439, 220, 34);
         tolerance.setBounds(278, 483, 220, 34);
         swing.setBounds(278, 527, 220, 34);
+        progressive.setBounds(284, 568, 214, 31);
         resetButton.setBounds(26, 801, 117, 33);
         invertButton.setBounds(151, 801, 117, 33);
         cancelButton.setBounds(277, 801, 104, 33);
@@ -651,6 +683,8 @@ public:
         g.drawText(juce::String::fromUTF8("Tolérance rythmique"), 26, 483, 241, 34,
                    juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Swing des contretemps"), 26, 527, 241, 34,
+                   juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Accents progressifs"), 26, 568, 241, 31,
                    juce::Justification::centredLeft);
 
         g.setColour(juce::Colour(0xffc1d7e9));
@@ -700,7 +734,7 @@ public:
         const auto transformed=accentVelocities(samples,humanized,
             getAccents(),meterNumerator,meterDenominator,
             ticksPerQuarter,clipStartTick,selectedAccentPattern(),
-            getGhostNotes(),getTolerance(),getSwing());
+            getGhostNotes(),getTolerance(),getSwing(),getProgressiveAccents());
         juce::Path line;
         for (int i=0;i<=160;++i)
         {
@@ -843,7 +877,7 @@ private:
         if(onApply)onApply(first,last,selectedCurve(),selectedMode(),
                            getIntensity(),getHumanization(),variationSeed,
                            getAccents(),selectedAccentPattern(),getGhostNotes(),
-                           getTolerance(),getSwing());
+                           getTolerance(),getSwing(),getProgressiveAccents());
         if(auto* window=findParentComponentOfClass<juce::DialogWindow>())
             window->exitModalState(1);
     }
@@ -851,6 +885,7 @@ private:
     juce::TextEditor start,end;
     juce::ComboBox curve,applicationMode,accentPattern;
     juce::Slider intensity,humanize,accents,ghostNotes,tolerance,swing;
+    juce::ToggleButton progressive;
     juce::TextButton newVariation;
     int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
@@ -862,7 +897,7 @@ private:
     int meterNumerator=4,meterDenominator=4;
     std::int64_t ticksPerQuarter=960,clipStartTick=0;
     juce::String error;
-    std::function<void(int,int,Curve,Mode,int,int,std::uint32_t,int,AccentPattern,int,int,int)> onApply;
+    std::function<void(int,int,Curve,Mode,int,int,std::uint32_t,int,AccentPattern,int,int,int,bool)> onApply;
 public:
     // Read-only access for automated validation; never edits any MIDI note.
     size_t getPreviewNoteCount() const noexcept { return samples.size(); }
@@ -881,7 +916,7 @@ public:
         return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
             selectedCurve(),selectedMode(),getIntensity(),getHumanization(),
             variationSeed,getAccents(),selectedAccentPattern(),getGhostNotes(),
-            getTolerance(),getSwing());
+            getTolerance(),getSwing(),getProgressiveAccents());
     }
     void setAccentPattern(AccentPattern pattern)
     {
@@ -889,6 +924,18 @@ public:
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}
+    void setProgressiveAccents(bool enabled)
+    {
+        progressive.setToggleState(enabled,juce::sendNotificationSync);
+    }
+    bool getProgressiveAccents() const noexcept
+    {
+        return progressive.getToggleState();
+    }
+    bool areProgressiveAccentsAvailable() const noexcept
+    {
+        return progressive.isEnabled();
+    }
     void setSwing(int percent)
     {
         swing.setValue(juce::jlimit(50,75,percent),juce::sendNotificationSync);
@@ -962,7 +1009,8 @@ public:
             &&accentPattern.isVisible()&&accentPattern.getWidth()>0
             &&ghostNotes.isVisible()&&ghostNotes.getWidth()>0
             &&tolerance.isVisible()&&tolerance.getWidth()>0
-            &&swing.isVisible()&&swing.getWidth()>0;
+            &&swing.isVisible()&&swing.getWidth()>0
+            &&progressive.isVisible()&&progressive.getWidth()>0;
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
@@ -976,7 +1024,8 @@ public:
                                  AccentPattern pattern=AccentPattern::strongBeats,
                                  int ghostAmount=0,
                                  int tolerancePercent=0,
-                                 int swingPercent=50) const
+                                 int swingPercent=50,
+                                 bool progressiveAccents=false) const
     {
         if(index>=samples.size())return 0;
         const auto transformed=transformVelocities(
@@ -986,7 +1035,7 @@ public:
         const auto accented=accentVelocities(samples,variations,
             accentStrength,meterNumerator,meterDenominator,
             ticksPerQuarter,clipStartTick,pattern,ghostAmount,tolerancePercent,
-            swingPercent);
+            swingPercent,progressiveAccents);
         return accented[index];
     }
     bool hasVisibleNumberFields() const noexcept
