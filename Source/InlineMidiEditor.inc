@@ -193,6 +193,67 @@ bool inlineMidiSetVelocitySelected(int value){
     finishArrangementEdit();
     return true;
 }
+// Apply a linear velocity crescendo/diminuendo in MUSICAL TIME.
+// Chord notes sharing a start tick receive the same velocity. No position,
+// length, channel or articulation information is altered.
+bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity){
+    if(!inlineMidiMode||activeArrangeTool!=0
+       ||inlineMidiSelectedNotes.size()<2
+       ||startVelocity<1||startVelocity>127
+       ||endVelocity<1||endVelocity>127)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int clipIndex=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,clipIndex))
+        selectClip(inlineMidiSelectedInstrument,clipIndex);
+    auto notes=it->notes;
+    std::int64_t earliest=std::numeric_limits<std::int64_t>::max();
+    std::int64_t latest=std::numeric_limits<std::int64_t>::min();
+    for(const int index:inlineMidiSelectedNotes){
+        if(index<0||index>=(int)notes.size()){
+            inlineMidiClearSelection();return false;
+        }
+        const auto& note=notes[(size_t)index];
+        earliest=juce::jmin(earliest,note.startTick);
+        latest=juce::jmax(latest,note.startTick);
+    }
+    if(earliest==latest){
+        operationMessage=juce::String::fromUTF8(
+            "Progression impossible : choisissez des notes sur plusieurs temps");
+        repaint();
+        return false;
+    }
+    const auto selectedCount=inlineMidiSelectedNotes.size();
+    bool changed=false;
+    const double span=(double)latest-(double)earliest;
+    for(const int index:inlineMidiSelectedNotes){
+        auto& note=notes[(size_t)index];
+        const double t=juce::jlimit(0.0,1.0,
+            ((double)note.startTick-(double)earliest)/span);
+        const auto value=juce::jlimit(1,127,(int)std::lround(
+            startVelocity+(endVelocity-startVelocity)*t));
+        if((int)note.velocity!=value){
+            note.velocity=(std::uint8_t)value;
+            changed=true;
+        }
+    }
+    if(!changed)return true;
+    beginArrangementEdit();
+    if(owner.midiEngine.replaceNotes(notes)){
+        it->notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        operationMessage=juce::String(selectedCount)
+            +juce::String::fromUTF8(" notes — progression de vélocité ")
+            +juce::String(startVelocity)+juce::String::fromUTF8(" → ")
+            +juce::String(endVelocity);
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return true;
+}
 void toggleInlineMidiVelocityMode(){
     if(!inlineMidiMode)return;
     inlineMidiFinishGesture();
@@ -826,14 +887,18 @@ void toggleInlineMidiMode(){
 }
 bool inlineMidiContextMenu(juce::Point<int> p){
     bool ins=false;
-    if(findClipAt(p,ins)<0)return false;
+    const int hit=findClipAt(p,ins);
+    if(hit<0)return false;
+    const auto& clicked=(ins?instrumentClips:midiClips)[(size_t)hit];
+    // Never apply actions for a selected clip when right-clicking another.
+    const bool selectionHere=inlineMidiMode && inlineMidiSelectedClipId==clicked.id
+        && inlineMidiSelectedInstrument==ins && !inlineMidiSelectedNotes.empty();
     juce::PopupMenu menu;
     menu.addSectionHeader(juce::String::fromUTF8("ÉDITION MIDI"));
     menu.addItem(1,juce::String::fromUTF8("ÉDITION DIRECTE DES NOTES  [E]"),true,inlineMidiMode);
     menu.addItem(2,juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
                  inlineMidiMode,inlineMidiVelocityMode);
-    if(inlineMidiMode && inlineMidiSelectedClipId!=0
-       && !inlineMidiSelectedNotes.empty()){
+    if(selectionHere){
         juce::PopupMenu fixed;
         fixed.addItem(1032,juce::String::fromUTF8("32 — Très doux"));
         fixed.addItem(1064,juce::String::fromUTF8("64 — Doux"));
@@ -841,6 +906,13 @@ bool inlineMidiContextMenu(juce::Point<int> p){
         fixed.addItem(1100,juce::String::fromUTF8("100 — Fort"));
         fixed.addItem(1127,juce::String::fromUTF8("127 — Maximum"));
         menu.addSubMenu(juce::String::fromUTF8("DÉFINIR VÉLOCITÉ"),fixed,true);
+        juce::PopupMenu ramp;
+        const bool multiple=inlineMidiSelectedNotes.size()>=2;
+        ramp.addItem(2001,juce::String::fromUTF8("Crescendo doux 64 → 100"),multiple);
+        ramp.addItem(2002,juce::String::fromUTF8("Crescendo marqué 40 → 120"),multiple);
+        ramp.addItem(2003,juce::String::fromUTF8("Diminuendo doux 100 → 64"),multiple);
+        ramp.addItem(2004,juce::String::fromUTF8("Diminuendo marqué 120 → 40"),multiple);
+        menu.addSubMenu(juce::String::fromUTF8("PROGRESSION DE VÉLOCITÉ"),ramp,multiple);
     }
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     const auto screen=localPointToGlobal(p);
@@ -851,6 +923,10 @@ bool inlineMidiContextMenu(juce::Point<int> p){
             else if(choice==2)safe->toggleInlineMidiVelocityMode();
             else if(choice>=1001&&choice<=1127)
                 safe->inlineMidiSetVelocitySelected(choice-1000);
+            else if(choice==2001)safe->inlineMidiRampVelocitySelected(64,100);
+            else if(choice==2002)safe->inlineMidiRampVelocitySelected(40,120);
+            else if(choice==2003)safe->inlineMidiRampVelocitySelected(100,64);
+            else if(choice==2004)safe->inlineMidiRampVelocitySelected(120,40);
         });
     return true;
 }

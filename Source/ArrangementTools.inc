@@ -1108,6 +1108,70 @@ bool runArrangementTests(){
             && midiClips[(size_t)multiClip].notes[1].velocity
                     ==beforeFixed[1].velocity,
             "fixed velocity undo");
+        // Linear velocity ramps use note start times, not selection order.
+        // Simultaneous chord notes share the beginning value.
+        inlineMidiClearSelection();
+        const auto rampBefore=midiClips[(size_t)multiClip].notes;
+        require(rampBefore.size()==3
+            && rampBefore[0].startTick==rampBefore[1].startTick
+            && rampBefore[2].startTick>rampBefore[1].startTick,
+            "velocity ramp chord/time fixture");
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2};
+        require(inlineMidiRampVelocitySelected(40,120),
+            "crescendo menu action");
+        const auto crescendo=midiClips[(size_t)multiClip].notes;
+        require(crescendo[0].velocity==40 && crescendo[1].velocity==40
+            && crescendo[2].velocity==120,
+            "crescendo follows timeline and treats chord notes equally");
+        for(size_t k=0;k<rampBefore.size();++k){
+            const auto& oldNote=rampBefore[k];
+            const auto& newNote=crescendo[k];
+            require(oldNote.startTick==newNote.startTick
+                && oldNote.lengthTicks==newNote.lengthTicks
+                && oldNote.pitch==newNote.pitch
+                && oldNote.channel==newNote.channel
+                && oldNote.muted==newNote.muted
+                && oldNote.probability==newNote.probability,
+                "velocity ramp preserves all non-velocity MIDI properties");
+        }
+        undoArrangement(false);
+        for(size_t k=0;k<rampBefore.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].velocity
+                ==rampBefore[k].velocity,
+                "crescendo undo restores each velocity");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].velocity==40
+            && midiClips[(size_t)multiClip].notes[2].velocity==120,
+            "crescendo redo");
+        // A two-note selection may leave the third note untouched.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,2};
+        const auto beforeDim=midiClips[(size_t)multiClip].notes;
+        require(inlineMidiRampVelocitySelected(110,30),
+            "diminuendo menu action");
+        const auto diminuendo=midiClips[(size_t)multiClip].notes;
+        require(diminuendo[0].velocity==110
+            && diminuendo[2].velocity==30
+            && diminuendo[1].velocity==beforeDim[1].velocity,
+            "diminuendo changes only selected notes");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].velocity==beforeDim[0].velocity
+            && midiClips[(size_t)multiClip].notes[2].velocity==beforeDim[2].velocity,
+            "diminuendo undo");
+        // A selection confined to one chord cannot define a time ramp.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        const auto sameTickBefore=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiRampVelocitySelected(40,120),
+            "same-time chord rejects undefined velocity ramp");
+        const auto sameTickAfter=midiClips[(size_t)multiClip].notes;
+        require(sameTickBefore[0].velocity==sameTickAfter[0].velocity
+            && sameTickBefore[1].velocity==sameTickAfter[1].velocity,
+            "rejected chord ramp does not change MIDI notes");
         inlineMidiVelocityMode=false;inlineMidiMode=false;inlineMidiClearSelection();
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
