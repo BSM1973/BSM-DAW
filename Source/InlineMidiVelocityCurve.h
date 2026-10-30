@@ -6,10 +6,12 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
+#include <map>
 
 namespace LibertyInlineVelocity
 {
 enum class Curve : int { linear = 0, exponential = 1, sCurve = 2 };
+enum class Mode : int { absolute = 0, relative = 1 };
 
 struct PreviewNote
 {
@@ -70,18 +72,65 @@ inline int velocityAt(int first, int last, double position, Curve curve) noexcep
     return juce::jlimit(1, 127, (int)std::lround(first + (last - first) * curved));
 }
 
+// Shared by the non-destructive preview and the actual MIDI operation.
+// Absolute replaces velocities with the envelope. Relative offsets the old
+// velocities around their original (linear) phrase envelope, retaining local
+// accents and chord dynamics. A common clamp per onset keeps chord intervals.
+inline std::vector<int> transformVelocities(
+    const std::vector<PreviewNote>& selected, int first, int last,
+    Curve curve, Mode mode)
+{
+    std::vector<int> result;
+    result.reserve(selected.size());
+    if(selected.empty())return result;
+    first=juce::jlimit(1,127,first);
+    last=juce::jlimit(1,127,last);
+    auto minTick=selected.front().startTick;
+    auto maxTick=minTick;
+    struct Range { int lowest=127, highest=1; };
+    std::map<std::int64_t,Range> chordRanges;
+    for(const auto& note:selected)
+    {
+        minTick=std::min(minTick,note.startTick);
+        maxTick=std::max(maxTick,note.startTick);
+        const int vel=juce::jlimit(1,127,note.velocity);
+        auto& range=chordRanges[note.startTick];
+        range.lowest=std::min(range.lowest,vel);
+        range.highest=std::max(range.highest,vel);
+    }
+    const auto originalEndpoints=boundaryVelocities(selected);
+    for(const auto& note:selected)
+    {
+        const double t=musicalPosition(note.startTick,minTick,maxTick);
+        const int target=velocityAt(first,last,t,curve);
+        if(mode==Mode::absolute)
+        {
+            result.push_back(target);
+            continue;
+        }
+        const int originalEnvelope=velocityAt(originalEndpoints.first,
+            originalEndpoints.second,t,Curve::linear);
+        const int requested=target-originalEnvelope;
+        const auto& range=chordRanges.at(note.startTick);
+        const int delta=juce::jlimit(1-range.lowest,127-range.highest,
+                                   requested);
+        result.push_back(juce::jlimit(1,127,note.velocity+delta));
+    }
+    return result;
+}
+
 // Standalone JUCE window content. No Piano Roll or instrument engine state is
 // stored here. The callback is invoked only by explicit user confirmation.
 class DialogContent final : public juce::Component
 {
 public:
     explicit DialogContent(int first, int last, Curve shape,
-                           std::function<void(int, int, Curve)> apply,
+                           std::function<void(int, int, Curve, Mode)> apply,
                            std::vector<PreviewNote> selectedNotes = {})
         : onApply(std::move(apply)), samples(std::move(selectedNotes))
     {
         setOpaque(true);
-        setSize(530, 420);
+        setSize(530, 478);
         std::stable_sort(samples.begin(),samples.end(),
             [](const PreviewNote& a,const PreviewNote& b){
                 return a.startTick<b.startTick;
@@ -107,6 +156,24 @@ public:
         curve.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffffd28a));
         curve.onChange = [this] { repaint(); };
         addAndMakeVisible(curve);
+
+        applicationMode.addItem(juce::String::fromUTF8(
+            "Absolu — nouvelles vélocités"),1);
+        applicationMode.addItem(juce::String::fromUTF8(
+            "Relatif — préserver les nuances"),2);
+        applicationMode.setSelectedId(1,juce::dontSendNotification);
+        applicationMode.setTooltip(juce::String::fromUTF8(
+            "Absolu remplace les vélocités. Relatif conserve les accents et écarts des accords."));
+        applicationMode.setColour(juce::ComboBox::backgroundColourId,
+                                  juce::Colour(0xff233747));
+        applicationMode.setColour(juce::ComboBox::textColourId,
+                                  juce::Colour(0xfff2f7fc));
+        applicationMode.setColour(juce::ComboBox::outlineColourId,
+                                  juce::Colour(0xff426278));
+        applicationMode.setColour(juce::ComboBox::arrowColourId,
+                                  juce::Colour(0xffffd28a));
+        applicationMode.onChange=[this]{repaint();};
+        addAndMakeVisible(applicationMode);
 
         resetButton.setButtonText(juce::String::fromUTF8("RÉINITIALISER"));
         resetButton.setTooltip(juce::String::fromUTF8(
@@ -144,7 +211,7 @@ public:
     // invokes the MIDI callback until APPLIQUER is pressed.
     static juce::Rectangle<float> previewPlot() noexcept
     {
-        return {58.0f,246.0f,440.0f,100.0f};
+        return {58.0f,291.0f,440.0f,100.0f};
     }
     juce::Point<float> endpointPosition(int which) const
     {
@@ -225,6 +292,7 @@ public:
         start.setText(juce::String(initialFirst),juce::sendNotificationSync);
         end.setText(juce::String(initialLast),juce::sendNotificationSync);
         curve.setSelectedId((int)initialCurve+1,juce::sendNotificationSync);
+        applicationMode.setSelectedId(1,juce::sendNotificationSync);
         updateValidation();
     }
     void resized() override
@@ -232,10 +300,11 @@ public:
         start.setBounds(284, 78, 214, 33);
         end.setBounds(284, 124, 214, 33);
         curve.setBounds(284, 170, 214, 34);
-        resetButton.setBounds(26, 370, 117, 33);
-        invertButton.setBounds(151, 370, 117, 33);
-        cancelButton.setBounds(277, 370, 104, 33);
-        applyButton.setBounds(389, 370, 109, 33);
+        applicationMode.setBounds(284, 216, 214, 34);
+        resetButton.setBounds(26, 433, 117, 33);
+        invertButton.setBounds(151, 433, 117, 33);
+        cancelButton.setBounds(277, 433, 104, 33);
+        applyButton.setBounds(389, 433, 109, 33);
     }
 
     void paint(juce::Graphics& g) override
@@ -262,21 +331,23 @@ public:
                    juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Courbe"), 26, 170, 241, 33,
                    juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Application"), 26, 216, 241, 33,
+                   juce::Justification::centredLeft);
 
         g.setColour(juce::Colour(0xffc1d7e9));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
         g.drawText(juce::String::fromUTF8("APERÇU  ·  ")
                        +juce::String((int)samples.size())
                        +juce::String::fromUTF8(" NOTE(S)"),
-                   26, 220, 200, 20, juce::Justification::centredLeft);
+                   26, 262, 200, 20, juce::Justification::centredLeft);
         g.setFont(juce::Font(10.0f));
         g.setColour(juce::Colour(0xff8fb0c7));
-        g.fillEllipse(276.0f,226.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Avant"),286,219,56,21,
+        g.fillEllipse(276.0f,268.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Avant"),286,261,56,21,
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffffd28a));
-        g.fillEllipse(359.0f,226.0f,7.0f,7.0f);
-        g.drawText(juce::String::fromUTF8("Après"),369,219,58,21,
+        g.fillEllipse(359.0f,268.0f,7.0f,7.0f);
+        g.drawText(juce::String::fromUTF8("Après"),369,261,58,21,
                    juce::Justification::centredLeft);
 
         const auto plot=previewPlot();
@@ -295,13 +366,15 @@ public:
         }
         g.setColour(juce::Colour(0xff9cb5c9));
         g.setFont(juce::Font(10.0f));
-        g.drawText("127", 22, 240, 32, 17, juce::Justification::centredRight);
-        g.drawText("1", 22, 331, 32, 17, juce::Justification::centredRight);
+        g.drawText("127", 22, 285, 32, 17, juce::Justification::centredRight);
+        g.drawText("1", 22, 376, 32, 17, juce::Justification::centredRight);
 
         int first=64,last=100;
         if (!parseValue(start,first)) first=64;
         if (!parseValue(end,last)) last=100;
         const auto shape=selectedCurve();
+        const auto mode=selectedMode();
+        const auto transformed=transformVelocities(samples,first,last,shape,mode);
         juce::Path line;
         for (int i=0;i<=160;++i)
         {
@@ -331,7 +404,7 @@ public:
                 const float x=plot.getX()+(float)t*plot.getWidth();
                 const float oldY=plot.getBottom()-
                     ((juce::jlimit(1,127,samples[i].velocity)-1)/126.0f)*plot.getHeight();
-                const int target=velocityAt(first,last,t,shape);
+                const int target=transformed[i];
                 const float newY=plot.getBottom()-
                     ((target-1)/126.0f)*plot.getHeight();
                 g.setColour(juce::Colour(0xff8fb0c7).withAlpha(.72f));
@@ -360,15 +433,16 @@ public:
         {
             g.setColour(juce::Colour(0xffffa9a1));
             g.setFont(juce::Font(11.0f));
-            g.drawFittedText(error,25,348,472,18,juce::Justification::centredLeft,1);
+            g.drawFittedText(error,25,399,472,18,juce::Justification::centredLeft,1);
         }
         else
         {
             g.setColour(juce::Colour(0xffa9bfd1));
             g.setFont(juce::Font(10.5f));
-            g.drawText(juce::String::fromUTF8(
-                "Glisser les points dorés pour ajuster les vélocités."),
-                26,348,470,17,juce::Justification::centredLeft);
+            g.drawText(mode==Mode::relative
+                ?juce::String::fromUTF8("Relatif : les nuances et accents sont conservés.")
+                :juce::String::fromUTF8("Absolu : les notes suivent directement la courbe."),
+                26,399,470,17,juce::Justification::centredLeft);
         }
     }
 
@@ -405,6 +479,11 @@ private:
             default:return Curve::linear;
         }
     }
+    Mode selectedMode() const noexcept
+    {
+        return applicationMode.getSelectedId()==2
+            ?Mode::relative:Mode::absolute;
+    }
     void updateValidation()
     {
         int a=0,b=0;
@@ -423,20 +502,20 @@ private:
             updateValidation();
             return;
         }
-        if(onApply)onApply(first,last,selectedCurve());
+        if(onApply)onApply(first,last,selectedCurve(),selectedMode());
         if(auto* window=findParentComponentOfClass<juce::DialogWindow>())
             window->exitModalState(1);
     }
 
     juce::TextEditor start,end;
-    juce::ComboBox curve;
+    juce::ComboBox curve,applicationMode;
     int draggedEndpoint=-1;
     std::vector<PreviewNote> samples;
     juce::TextButton applyButton,cancelButton,resetButton,invertButton;
     int initialFirst=64,initialLast=100;
     Curve initialCurve=Curve::linear;
     juce::String error;
-    std::function<void(int,int,Curve)> onApply;
+    std::function<void(int,int,Curve,Mode)> onApply;
 public:
     // Read-only access for automated validation; never edits any MIDI note.
     size_t getPreviewNoteCount() const noexcept { return samples.size(); }
@@ -453,23 +532,30 @@ public:
     int getCurrentPreviewVelocity(size_t index) const
     {
         return getPreviewResultVelocity(index,getStartValue(),getEndValue(),
-                                        selectedCurve());
+                                        selectedCurve(),selectedMode());
     }
+    void setMode(Mode mode)
+    {
+        applicationMode.setSelectedId((int)mode+1,juce::sendNotificationSync);
+    }
+    Mode getMode() const noexcept { return selectedMode(); }
     bool hasVisibleActionButtons() const noexcept
     {
         return resetButton.isVisible()&&invertButton.isVisible()
-            &&resetButton.getWidth()>0&&invertButton.getWidth()>0;
+            &&applicationMode.isVisible()
+            &&resetButton.getWidth()>0&&invertButton.getWidth()>0
+            &&applicationMode.getWidth()>0;
     }
     int getPreviewOriginalVelocity(size_t index) const
     {
         return index<samples.size()?samples[index].velocity:0;
     }
-    int getPreviewResultVelocity(size_t index,int first,int last,Curve shape) const
+    int getPreviewResultVelocity(size_t index,int first,int last,Curve shape,
+                                 Mode mode=Mode::absolute) const
     {
-        if(index>=samples.size()||samples.empty())return 0;
-        const auto t=musicalPosition(samples[index].startTick,
-            samples.front().startTick,samples.back().startTick);
-        return velocityAt(first,last,t,shape);
+        if(index>=samples.size())return 0;
+        const auto transformed=transformVelocities(samples,first,last,shape,mode);
+        return transformed[index];
     }
     bool hasVisibleNumberFields() const noexcept
     {

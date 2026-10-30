@@ -198,7 +198,9 @@ bool inlineMidiSetVelocitySelected(int value){
 // length, channel or articulation information is altered.
 bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                    LibertyInlineVelocity::Curve shape=
-                                       LibertyInlineVelocity::Curve::linear){
+                                       LibertyInlineVelocity::Curve::linear,
+                                   LibertyInlineVelocity::Mode mode=
+                                       LibertyInlineVelocity::Mode::absolute){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -229,14 +231,19 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         return false;
     }
     const auto selectedCount=inlineMidiSelectedNotes.size();
+    std::vector<LibertyInlineVelocity::PreviewNote> selectedNotes;
+    selectedNotes.reserve(selectedCount);
+    for(const int index:inlineMidiSelectedNotes){
+        const auto& note=notes[(size_t)index];
+        selectedNotes.push_back({note.startTick,(int)note.velocity});
+    }
+    const auto results=LibertyInlineVelocity::transformVelocities(
+        selectedNotes,startVelocity,endVelocity,shape,mode);
     bool changed=false;
-    const double span=(double)latest-(double)earliest;
+    size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
         auto& note=notes[(size_t)index];
-        const double t=juce::jlimit(0.0,1.0,
-            ((double)note.startTick-(double)earliest)/span);
-        const auto value=LibertyInlineVelocity::velocityAt(
-            startVelocity,endVelocity,t,shape);
+        const auto value=results[resultIndex++];
         if((int)note.velocity!=value){
             note.velocity=(std::uint8_t)value;
             changed=true;
@@ -256,7 +263,10 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                 ?juce::String::fromUTF8("courbe en S")
                 :shape==LibertyInlineVelocity::Curve::exponential
                     ?juce::String::fromUTF8("courbe exponentielle")
-                    :juce::String::fromUTF8("courbe linéaire"));
+                    :juce::String::fromUTF8("courbe linéaire"))
+            +(mode==LibertyInlineVelocity::Mode::relative
+                ?juce::String::fromUTF8(" — Nuances conservées")
+                :juce::String::fromUTF8(" — Absolu"));
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -919,7 +929,8 @@ void showInlineMidiVelocityCurveDialog(){
         LibertyInlineVelocity::Curve::linear,
         [safe=juce::Component::SafePointer<MultiMidiClipController>(this),
          clipId,instrument,selected,notesAtOpen]
-        (int first,int last,LibertyInlineVelocity::Curve curve)
+        (int first,int last,LibertyInlineVelocity::Curve curve,
+         LibertyInlineVelocity::Mode mode)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -939,7 +950,7 @@ void showInlineMidiVelocityCurveDialog(){
                    ||a.channel!=b.channel||a.muted!=b.muted
                    ||a.probability!=b.probability)return;
             }
-            safe->inlineMidiRampVelocitySelected(first,last,curve);
+            safe->inlineMidiRampVelocitySelected(first,last,curve,mode);
         },std::move(previewNotes));
     panel->bindInputs();
     juce::DialogWindow::LaunchOptions options;

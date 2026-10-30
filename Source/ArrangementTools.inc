@@ -1228,16 +1228,20 @@ bool runArrangementTests(){
         bool dialogApplied=false;
         LibertyInlineVelocity::DialogContent dialog(32,112,
             LibertyInlineVelocity::Curve::sCurve,
-            [&](int,int,LibertyInlineVelocity::Curve){dialogApplied=true;});
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode){
+                dialogApplied=true;
+            });
         dialog.bindInputs();
-        require(dialog.getWidth()==530 && dialog.getHeight()==420
+        require(dialog.getWidth()==530 && dialog.getHeight()==478
             && !dialogApplied,"blue velocity window geometry and no side effects");
         require(dialog.hasVisibleNumberFields()
             && dialog.getNumChildComponents()>=5,
             "velocity window shows both editable numeric fields");
         LibertyInlineVelocity::DialogContent populated(40,120,
             LibertyInlineVelocity::Curve::exponential,
-            [&](int,int,LibertyInlineVelocity::Curve){dialogApplied=true;},
+            [&](int,int,LibertyInlineVelocity::Curve,LibertyInlineVelocity::Mode){
+                dialogApplied=true;
+            },
             {{1920,77},{240,55},{1080,91}});
         populated.bindInputs();
         require(populated.getPreviewNoteCount()==3
@@ -1266,7 +1270,7 @@ bool runArrangementTests(){
             &&populated.endpointAt({300.0f,180.0f})==-1,
             "velocity graph endpoint hit testing");
         require(populated.beginEndpointDragAt(leftHandle)
-            &&populated.dragEndpointTo(246.0f),
+            &&populated.dragEndpointTo(LibertyInlineVelocity::DialogContent::previewPlot().getY()),
             "dragging graph start endpoint updates velocity");
         require(populated.getStartValue()==127 && populated.getEndValue()==120
             && populated.getCurrentPreviewVelocity(0)==127
@@ -1311,6 +1315,39 @@ bool runArrangementTests(){
             &&populated.getCurrentPreviewVelocity(1)==60
             && !dialogApplied,
             "reset returns to initial values without applying MIDI edits");
+        // Relative curve mode preserves accents around a phrase envelope,
+        // unlike absolute mode which overwrites each selected velocity.
+        const std::vector<LibertyInlineVelocity::PreviewNote> expressive={
+            {0,50},{0,80},{960,100},{1920,70}};
+        const auto absolute=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::absolute);
+        const auto relative=LibertyInlineVelocity::transformVelocities(
+            expressive,80,110,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative);
+        require(absolute.size()==4 && absolute[0]==80 && absolute[1]==80
+            && absolute[2]==95 && absolute[3]==110,
+            "absolute velocity curve replaces expressive accents");
+        require(relative.size()==4 && relative[0]==65 && relative[1]==95
+            && relative[2]==127 && relative[3]==110,
+            "relative velocity curve retains local offsets from phrase envelope");
+        const auto chordClamp=LibertyInlineVelocity::transformVelocities(
+            {{0,70},{0,120},{960,90}},
+            127,90,LibertyInlineVelocity::Curve::linear,
+            LibertyInlineVelocity::Mode::relative);
+        require(chordClamp.size()==3 && chordClamp[0]==77
+            && chordClamp[1]==127 && chordClamp[2]==90,
+            "relative saturation preserves intervals between chord notes");
+        populated.setMode(LibertyInlineVelocity::Mode::relative);
+        require(populated.getMode()==LibertyInlineVelocity::Mode::relative
+            &&populated.getCurrentPreviewVelocity(0)==40
+            &&populated.getCurrentPreviewVelocity(2)==120
+            &&!dialogApplied,
+            "relative mode refreshes preview without applying MIDI notes");
+        populated.restoreInitialSettings();
+        require(populated.getMode()==LibertyInlineVelocity::Mode::absolute,
+            "reset restores default absolute application mode");
+
 
 
         // Restore the three-note fixture for subsequent same-chord checks.
@@ -1319,6 +1356,37 @@ bool runArrangementTests(){
             "restore chord fixture after custom curve");
         midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();clearArrangementHistory();
+        // Relative mode applied to actual notes, preserving the difference
+        // between simultaneous notes and leaving unselected MIDI untouched.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto beforeRelative=midiClips[(size_t)multiClip].notes;
+        const int oldChordDifference=(int)beforeRelative[0].velocity
+                                    -(int)beforeRelative[1].velocity;
+        require(inlineMidiRampVelocitySelected(80,105,
+            LibertyInlineVelocity::Curve::sCurve,
+            LibertyInlineVelocity::Mode::relative),
+            "relative MIDI velocity command applied");
+        const auto afterRelative=midiClips[(size_t)multiClip].notes;
+        require((int)afterRelative[0].velocity-(int)afterRelative[1].velocity
+                    ==oldChordDifference,
+            "relative MIDI mode preserves chord velocity differences");
+        for(size_t i=0;i<beforeRelative.size();++i){
+            const auto& a=beforeRelative[i];
+            const auto& b=afterRelative[i];
+            require(a.startTick==b.startTick && a.lengthTicks==b.lengthTicks
+                &&a.pitch==b.pitch && a.channel==b.channel
+                &&a.muted==b.muted && a.probability==b.probability,
+                "relative curve preserves all other MIDI properties");
+        }
+        undoArrangement(false);
+        for(size_t i=0;i<beforeRelative.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==beforeRelative[i].velocity,"relative MIDI curve Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<afterRelative.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                ==afterRelative[i].velocity,"relative MIDI curve Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
