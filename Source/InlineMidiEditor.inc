@@ -203,7 +203,8 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                        LibertyInlineVelocity::Mode::absolute,
                                    int intensityPercent=100,
                                    int humanizeAmount=0,
-                                   std::uint32_t variationSeed=0x61b3e729U){
+                                   std::uint32_t variationSeed=0x61b3e729U,
+                                   int accentAmount=0){
     if(!inlineMidiMode||activeArrangeTool!=0
        ||inlineMidiSelectedNotes.size()<2
        ||startVelocity<1||startVelocity>127
@@ -242,8 +243,13 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
     }
     const auto curved=LibertyInlineVelocity::transformVelocities(
         selectedNotes,startVelocity,endVelocity,shape,mode,intensityPercent);
-    const auto results=LibertyInlineVelocity::humanizeVelocities(
+    const auto humanized=LibertyInlineVelocity::humanizeVelocities(
         selectedNotes,curved,humanizeAmount,variationSeed);
+    const auto results=LibertyInlineVelocity::accentVelocities(
+        selectedNotes,humanized,accentAmount,
+        owner.timeSignatureNumerator,owner.timeSignatureDenominator,
+        MidiEngine::ticksPerQuarterNote,
+        MidiEngine::secondsToTick(it->startSeconds,owner.tempoBpm));
     bool changed=false;
     size_t resultIndex=0;
     for(const int index:inlineMidiSelectedNotes){
@@ -275,7 +281,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
             +juce::String::fromUTF8(" — Intensité ")
             +juce::String(juce::jlimit(0,100,intensityPercent))+" %"
             +juce::String::fromUTF8(" — Humanisation ±")
-            +juce::String(juce::jlimit(0,20,humanizeAmount));
+            +juce::String(juce::jlimit(0,20,humanizeAmount))
+            +juce::String::fromUTF8(" — Accents +")
+            +juce::String(juce::jlimit(0,20,accentAmount));
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -923,6 +931,12 @@ void showInlineMidiVelocityCurveDialog(){
     const bool instrument=inlineMidiSelectedInstrument;
     const auto selected=inlineMidiSelectedNotes;
     const auto notesAtOpen=it->notes;
+    const int meterNumerator=owner.timeSignatureNumerator;
+    const int meterDenominator=owner.timeSignatureDenominator;
+    const double tempoAtOpen=owner.tempoBpm;
+    const double clipStartAtOpen=it->startSeconds;
+    const auto clipStartTick=MidiEngine::secondsToTick(
+        clipStartAtOpen,tempoAtOpen);
     std::vector<LibertyInlineVelocity::PreviewNote> previewNotes;
     previewNotes.reserve(selected.size());
     for(const int noteIndex:selected){
@@ -937,10 +951,11 @@ void showInlineMidiVelocityCurveDialog(){
         initialValues.first,initialValues.second,
         LibertyInlineVelocity::Curve::linear,
         [safe=juce::Component::SafePointer<MultiMidiClipController>(this),
-         clipId,instrument,selected,notesAtOpen]
+         clipId,instrument,selected,notesAtOpen,meterNumerator,
+         meterDenominator,tempoAtOpen,clipStartAtOpen]
         (int first,int last,LibertyInlineVelocity::Curve curve,
          LibertyInlineVelocity::Mode mode,int intensityPercent,
-         int humanizeAmount,std::uint32_t variationSeed)
+         int humanizeAmount,std::uint32_t variationSeed,int accentAmount)
         {
             if(safe==nullptr)return;
             if(!safe->inlineMidiMode
@@ -951,6 +966,12 @@ void showInlineMidiVelocityCurveDialog(){
             const auto active=std::find_if(current.begin(),current.end(),
                 [clipId](const Clip& c){return c.id==clipId;});
             if(active==current.end()||active->notes.size()!=notesAtOpen.size())return;
+            // The musical grid seen in the preview must still match the
+            // Arrangement's meter, tempo and clip position when applying.
+            if(safe->owner.timeSignatureNumerator!=meterNumerator
+               ||safe->owner.timeSignatureDenominator!=meterDenominator
+               ||std::abs(safe->owner.tempoBpm-tempoAtOpen)>1.0e-9
+               ||std::abs(active->startSeconds-clipStartAtOpen)>1.0e-9)return;
             // Prevent applying a stale preview after any notes have changed.
             for(size_t i=0;i<notesAtOpen.size();++i){
                 const auto& a=active->notes[i];
@@ -962,8 +983,9 @@ void showInlineMidiVelocityCurveDialog(){
             }
             safe->inlineMidiRampVelocitySelected(
                 first,last,curve,mode,intensityPercent,
-                humanizeAmount,variationSeed);
-        },std::move(previewNotes));
+                humanizeAmount,variationSeed,accentAmount);
+        },std::move(previewNotes),meterNumerator,meterDenominator,
+          MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle=juce::String::fromUTF8("LIBERTY  ·  COURBE DE VÉLOCITÉ MIDI");
