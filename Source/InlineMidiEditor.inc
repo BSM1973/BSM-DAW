@@ -2,6 +2,8 @@
 // This is a view/controller over the existing notes, not a second MIDI engine.
 bool inlineMidiMode=false,inlineMidiDragging=false,inlineMidiInstrument=false;
 bool inlineMidiResizing=false;
+// V toggles velocity drawing/editing; the eight Arrangement tools stay as-is.
+bool inlineMidiVelocityMode=false,inlineMidiVelocityDragging=false;
 // Option-click keeps note deletion; dragging instead previews a duplicate.
 bool inlineMidiDuplicating=false,inlineMidiDuplicateMoved=false,inlineMidiDuplicateApplied=false;
 int inlineMidiClipId=0,inlineMidiNoteIndex=-1,inlineMidiStartX=0,inlineMidiStartY=0;
@@ -18,6 +20,7 @@ void inlineMidiClearSelection(){
 }
 void inlineMidiFinishGesture(){
     inlineMidiDragging=false;inlineMidiResizing=false;inlineMidiMarquee=false;
+    inlineMidiVelocityDragging=false;
     inlineMidiDuplicating=false;inlineMidiDuplicateMoved=false;inlineMidiDuplicateApplied=false;
     inlineMidiNoteIndex=-1;inlineMidiOriginalNotes.clear();
     inlineMidiDragSelection.clear();inlineMidiMarqueeBaseline.clear();
@@ -153,6 +156,51 @@ bool inlineMidiNudgeSelected(int keyCode,bool coarse){
     }
     finishArrangementEdit();
     return true;
+}
+// Set one absolute velocity for every selected note, from the clip's context
+// menu. This is intentionally separate from the dock MIDI selection.
+bool inlineMidiSetVelocitySelected(int value){
+    if(!inlineMidiMode||inlineMidiSelectedNotes.empty()
+       ||value<1||value>127)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int index=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,index))
+        selectClip(inlineMidiSelectedInstrument,index);
+    auto notes=it->notes;
+    for(const int note:inlineMidiSelectedNotes)
+        if(note<0||note>=(int)notes.size()){
+            inlineMidiClearSelection();return false;
+        }
+    bool changed=false;
+    for(const int note:inlineMidiSelectedNotes){
+        auto& n=notes[(size_t)note];
+        if((int)n.velocity!=value){n.velocity=(std::uint8_t)value;changed=true;}
+    }
+    if(!changed)return true;
+    beginArrangementEdit();
+    if(owner.midiEngine.replaceNotes(notes)){
+        it->notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        operationMessage=juce::String(inlineMidiSelectedNotes.size())
+            +juce::String::fromUTF8(" notes — vélocité : ")
+            +juce::String(value);
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return true;
+}
+void toggleInlineMidiVelocityMode(){
+    if(!inlineMidiMode)return;
+    inlineMidiFinishGesture();
+    inlineMidiVelocityMode=!inlineMidiVelocityMode;
+    operationMessage=juce::String::fromUTF8(inlineMidiVelocityMode
+        ?"VÉLOCITÉ : glisser une note verticalement pour régler la sélection"
+        :"VÉLOCITÉ désactivée : déplacement et durée MIDI rétablis");
+    repaint();owner.repaint();
 }
 bool inlineMidiDeleteSelected(){
     if(!inlineMidiMode||inlineMidiSelectedNotes.empty())return false;
@@ -385,14 +433,43 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
             g.setColour(juce::Colour(0xff091b30));
             g.drawRoundedRectangle(bounds.toFloat().reduced(.5f),2,1.2f);
         }
+        // In V mode, colour and a short bar indicate velocity (1..127).
+        // The bar is painted inside each note so the grid remains legible.
+        if(inlineMidiVelocityMode){
+            const float level=juce::jlimit(1.0f,127.0f,(float)note.velocity)/127.0f;
+            const float barWidth=(float)bounds.getWidth()*level;
+            const float barHeight=juce::jmin(4.0f,juce::jmax(1.0f,(float)bounds.getHeight()/3.0f));
+            g.setColour(juce::Colour(0xff12455b));
+            g.fillRect(bounds.getX(),(float)bounds.getBottom()-barHeight,
+                       (float)bounds.getWidth(),barHeight);
+            g.setColour(selected?juce::Colour(0xffffd16f):juce::Colour(0xff61d3f1));
+            g.fillRect((float)bounds.getX(),(float)bounds.getBottom()-barHeight,
+                       barWidth,barHeight);
+            if(selected && bounds.getWidth()>=27 && bounds.getHeight()>=11){
+                g.setFont(juce::Font(9.0f,juce::Font::bold));
+                g.setColour(juce::Colour(0xff112234));
+                g.drawFittedText(juce::String((int)note.velocity),
+                    bounds.reduced(3,1).withTrimmedBottom((int)barHeight),
+                    juce::Justification::centred,1);
+            }
+        }
         // Narrow right-edge handle: a separate drag gesture adjusts duration.
         const int grip=juce::jlimit(1,7,bounds.getWidth()/3);
-        if(bounds.getWidth()>=6){
+        if(bounds.getWidth()>=6&&!inlineMidiVelocityMode){
             g.setColour(inlineMidiResizing&&inlineMidiClipId==c.id
                 ?juce::Colour(0xfff0c66d):juce::Colour(0xff477d9c));
             g.fillRoundedRectangle((float)(bounds.getRight()-grip),
                 (float)bounds.getY(),(float)grip,(float)bounds.getHeight(),1.0f);
         }
+    }
+    if(inlineMidiVelocityMode && area.getWidth()>=138 && area.getHeight()>=27){
+        const juce::Rectangle<int> hint(area.getX()+4,area.getBottom()-14,124,12);
+        g.setColour(juce::Colour(0xff091b30).withAlpha(.89f));
+        g.fillRoundedRectangle(hint.toFloat(),3.0f);
+        g.setFont(juce::Font(9.0f,juce::Font::bold));
+        g.setColour(juce::Colour(0xffffd16f));
+        g.drawFittedText(juce::String::fromUTF8("VÉLOCITÉ  •  glisser ↑↓"),
+                         hint,juce::Justification::centred,1);
     }
     if(inlineMidiMarquee&&inlineMidiSelectedClipId==c.id
        && inlineMidiSelectedInstrument==instrument){
@@ -472,7 +549,9 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
         operationMessage=juce::String::fromUTF8("Note MIDI ajoutée");
         return true;
     }
-    inlineMidiResizing=!option&&inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
+    inlineMidiVelocityDragging=inlineMidiVelocityMode&&!option;
+    inlineMidiResizing=!option&&!inlineMidiVelocityDragging
+        &&inlineMidiResizeGripAt(c,instrument,c.notes[(size_t)note],p);
     inlineMidiDuplicating=option;
     inlineMidiDuplicateMoved=false;
     inlineMidiDuplicateApplied=false;
@@ -484,7 +563,9 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
     inlineMidiDragging=true;inlineMidiInstrument=instrument;inlineMidiClipId=c.id;
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
     inlineMidiDragSelection=inlineMidiSelectedNotes;
-    operationMessage=inlineMidiDuplicating
+    operationMessage=inlineMidiVelocityDragging
+        ?juce::String::fromUTF8("VÉLOCITÉ : glisser ↑ pour augmenter, ↓ pour diminuer")
+        :inlineMidiDuplicating
         ?juce::String::fromUTF8("Option + glisser : dupliquer les notes MIDI sélectionnées")
         :inlineMidiResizing
         ?(inlineMidiDragSelection.size()>1
@@ -513,6 +594,36 @@ void inlineMidiDrag(juce::Point<int> p){
     const auto end=MidiEngine::secondsToTick(c.lengthSeconds,owner.tempoBpm);
     if(original.startTick<0||original.startTick>=end
        ||original.lengthTicks<=0||original.lengthTicks>end-original.startTick)return;
+    if(inlineMidiVelocityDragging){
+        auto selected=inlineMidiDragSelection;
+        if(selected.empty())selected.insert(inlineMidiNoteIndex);
+        int minVelocity=127,maxVelocity=1;
+        for(const int index:selected){
+            if(index<0||index>=(int)inlineMidiOriginalNotes.size())return;
+            const int velocity=(int)inlineMidiOriginalNotes[(size_t)index].velocity;
+            if(velocity<1||velocity>127)return;
+            minVelocity=juce::jmin(minVelocity,velocity);
+            maxVelocity=juce::jmax(maxVelocity,velocity);
+        }
+        // Every 2 pixels equals 1 velocity unit. One shared clamp prevents
+        // any note from exceeding MIDI 1..127 and retains dynamics.
+        const int requested=(int)std::lround(
+            ((double)inlineMidiStartY-p.y)/2.0);
+        const int delta=juce::jlimit(1-minVelocity,127-maxVelocity,requested);
+        auto notes=inlineMidiOriginalNotes;
+        for(const int index:selected)
+            notes[(size_t)index].velocity=(std::uint8_t)(
+                (int)notes[(size_t)index].velocity+delta);
+        if(owner.midiEngine.replaceNotes(notes)){
+            c.notes=owner.midiEngine.getNotesCopy();
+            operationMessage=juce::String(selected.size())
+                +juce::String::fromUTF8(" notes — vélocité : ")
+                +(delta>=0?juce::String("+"):juce::String{})
+                +juce::String(delta);
+            syncPlayback();repaint();owner.repaint();
+        }
+        return;
+    }
     if(inlineMidiDuplicating){
         // Wait for an actual drag: Option-click must still delete the note.
         if(std::abs(p.x-inlineMidiStartX)+std::abs(p.y-inlineMidiStartY)<4
@@ -706,6 +817,7 @@ void inlineMidiDrag(juce::Point<int> p){
 }
 void toggleInlineMidiMode(){
     inlineMidiMode=!inlineMidiMode;
+    if(!inlineMidiMode)inlineMidiVelocityMode=false;
     inlineMidiFinishGesture();inlineMidiClearSelection();
     operationMessage=juce::String::fromUTF8(inlineMidiMode
         ?"ÉDITION DIRECTE : déplacer ou étirer les notes, Option-clic pour ajouter ou supprimer"
@@ -718,9 +830,27 @@ bool inlineMidiContextMenu(juce::Point<int> p){
     juce::PopupMenu menu;
     menu.addSectionHeader(juce::String::fromUTF8("ÉDITION MIDI"));
     menu.addItem(1,juce::String::fromUTF8("ÉDITION DIRECTE DES NOTES  [E]"),true,inlineMidiMode);
+    menu.addItem(2,juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
+                 inlineMidiMode,inlineMidiVelocityMode);
+    if(inlineMidiMode && inlineMidiSelectedClipId!=0
+       && !inlineMidiSelectedNotes.empty()){
+        juce::PopupMenu fixed;
+        fixed.addItem(1032,juce::String::fromUTF8("32 — Très doux"));
+        fixed.addItem(1064,juce::String::fromUTF8("64 — Doux"));
+        fixed.addItem(1080,juce::String::fromUTF8("80 — Modéré"));
+        fixed.addItem(1100,juce::String::fromUTF8("100 — Fort"));
+        fixed.addItem(1127,juce::String::fromUTF8("127 — Maximum"));
+        menu.addSubMenu(juce::String::fromUTF8("DÉFINIR VÉLOCITÉ"),fixed,true);
+    }
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     const auto screen=localPointToGlobal(p);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
-        [safe](int choice){if(safe&&choice==1)safe->toggleInlineMidiMode();});
+        [safe](int choice){
+            if(!safe)return;
+            if(choice==1)safe->toggleInlineMidiMode();
+            else if(choice==2)safe->toggleInlineMidiVelocityMode();
+            else if(choice>=1001&&choice<=1127)
+                safe->inlineMidiSetVelocitySelected(choice-1000);
+        });
     return true;
 }

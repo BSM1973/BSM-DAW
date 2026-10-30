@@ -1031,7 +1031,84 @@ bool runArrangementTests(){
             && octave[1].pitch==beforeOctave[1].pitch+12,
             "Shift up arrow transposes notes by octave");
         undoArrangement(false);
-        inlineMidiMode=false;inlineMidiClearSelection();
+        // Velocity editing works on multi-selection without shifting note
+        // start, pitch, duration or any other MIDI expression data.
+        inlineMidiMode=true;inlineMidiVelocityMode=true;
+        inlineMidiClearSelection();
+        const auto beforeVelocity=midiClips[(size_t)multiClip].notes;
+        require(beforeVelocity.size()==3,"velocity test fixture");
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        const auto velocityNoteBounds=inlineMidiNoteBounds(
+            midiClips[(size_t)multiClip],false,beforeVelocity[0])
+            .getIntersection(inlineMidiArea(midiClips[(size_t)multiClip],false));
+        require(!velocityNoteBounds.isEmpty(),"velocity editing note visible");
+        const auto velocityPoint=velocityNoteBounds.getCentre();
+        beginArrangementEdit();
+        require(inlineMidiDown(velocityPoint,false) && inlineMidiVelocityDragging
+            && inlineMidiDragSelection.size()==2 && !inlineMidiResizing,
+            "velocity drag captures selected notes");
+        inlineMidiDrag(velocityPoint.translated(0,-20));
+        inlineMidiCompleteGesture();finishArrangementEdit();
+        const auto afterVelocity=midiClips[(size_t)multiClip].notes;
+        require(afterVelocity.size()==beforeVelocity.size()
+            && afterVelocity[0].velocity==beforeVelocity[0].velocity+10
+            && afterVelocity[1].velocity==beforeVelocity[1].velocity+10
+            && afterVelocity[2].velocity==beforeVelocity[2].velocity,
+            "velocity drag applies shared offset only to selected notes");
+        for(size_t k=0;k<beforeVelocity.size();++k){
+            const auto& a=beforeVelocity[k];const auto& b=afterVelocity[k];
+            require(a.startTick==b.startTick && a.lengthTicks==b.lengthTicks
+                && a.pitch==b.pitch && a.channel==b.channel
+                && a.muted==b.muted && a.probability==b.probability,
+                "velocity changes preserve timing pitch channel and probability");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].velocity
+                   ==beforeVelocity[0].velocity
+            && midiClips[(size_t)multiClip].notes[1].velocity
+                   ==beforeVelocity[1].velocity,
+            "group velocity undo");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].velocity
+                   ==afterVelocity[0].velocity,
+            "group velocity redo");
+        // Mouse drag clamp preserves the original relative difference even
+        // when one note reaches MIDI velocity 127.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1};
+        const auto beforeMax=midiClips[(size_t)multiClip].notes;
+        const auto maxPoint=inlineMidiNoteBounds(
+            midiClips[(size_t)multiClip],false,beforeMax[0]).getCentre();
+        beginArrangementEdit();
+        require(inlineMidiDown(maxPoint,false)&&inlineMidiVelocityDragging,
+            "velocity saturation drag starts");
+        inlineMidiDrag(maxPoint.translated(0,-500));
+        inlineMidiCompleteGesture();finishArrangementEdit();
+        const auto saturated=midiClips[(size_t)multiClip].notes;
+        require(saturated[0].velocity<=127 && saturated[1].velocity<=127
+            && (int)saturated[0].velocity-(int)saturated[1].velocity
+              ==(int)beforeMax[0].velocity-(int)beforeMax[1].velocity,
+            "velocity saturation maintains dynamic differences");
+        undoArrangement(false);
+        // Fixed velocity command is a single undoable edit; unselected
+        // notes and the dock's independent controls are unchanged.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1};
+        const auto beforeFixed=midiClips[(size_t)multiClip].notes;
+        require(inlineMidiSetVelocitySelected(64),"set fixed velocity");
+        const auto fixed=midiClips[(size_t)multiClip].notes;
+        require(fixed[0].velocity==64 && fixed[1].velocity==64
+            && fixed[2].velocity==beforeFixed[2].velocity,
+            "fixed velocity changes selection only");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].velocity
+                    ==beforeFixed[0].velocity
+            && midiClips[(size_t)multiClip].notes[1].velocity
+                    ==beforeFixed[1].velocity,
+            "fixed velocity undo");
+        inlineMidiVelocityMode=false;inlineMidiMode=false;inlineMidiClearSelection();
         // Capture the real JUCE painting for visual inspection, without opening a window.
         owner.setSize(1600,1500);setBounds(owner.getLocalBounds());toFront(false);
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});
