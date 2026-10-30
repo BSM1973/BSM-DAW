@@ -16,7 +16,8 @@ enum class Mode : int { absolute = 0, relative = 1 };
 enum class AccentPattern : int {
     strongBeats=0, everyBeat=1, offbeat=2, backbeat=3,
     phrase2=4, phrase4=5, phrase8=6,
-    pickup2=7, pickup4=8, pickup8=9
+    pickup2=7, pickup4=8, pickup8=9,
+    earlyPickup2=10, earlyPickup4=11, earlyPickup8=12
 };
 // A phrase accent falls only on measure 1 of each 2, 4 or 8-bar cycle.
 // All cycles begin at the project's musical zero, never at clip selection.
@@ -38,9 +39,25 @@ inline int accentPickupBars(AccentPattern pattern) noexcept
     {
         case AccentPattern::pickup2:return 2;
         case AccentPattern::pickup4:return 4;
-        case AccentPattern::pickup8:return 8;
+        case AccentPattern::pickup8:
+        case AccentPattern::earlyPickup8:return 8;
+        case AccentPattern::earlyPickup2:return 2;
+        case AccentPattern::earlyPickup4:return 4;
         default:return 0;
     }
+}
+inline bool isEarlyPickup(AccentPattern pattern) noexcept
+{
+    return pattern==AccentPattern::earlyPickup2
+        ||pattern==AccentPattern::earlyPickup4
+        ||pattern==AccentPattern::earlyPickup8;
+}
+// One eighth note before the next phrase: half a quarter-note beat in
+// simple meters, but one actual eighth in compound 6/8, 9/8 or 12/8.
+inline std::int64_t earlyPickupOffset(std::int64_t beatTicks,
+                                     bool compound) noexcept
+{
+    return compound?beatTicks:juce::jmax<std::int64_t>(1,beatTicks/2);
 }
 
 struct PreviewNote
@@ -286,7 +303,8 @@ inline std::vector<int> accentVelocities(
         else if(accentPickupBars(pattern)>0)
         {
             const auto cycleTicks=barTicks*accentPickupBars(pattern);
-            const auto target=cycleTicks-pulseTicks;
+            const auto target=cycleTicks-(isEarlyPickup(pattern)
+                ?earlyPickupOffset(beatTicks,compound):pulseTicks);
             emphasized=nearGrid((tick+clipStartTick)%cycleTicks,
                                 target,cycleTicks,deviation);
             if(emphasized)requested=strength;
@@ -400,15 +418,17 @@ inline std::vector<AccentGuideMark> rhythmicAccentGuide(
     const auto pickupBars=accentPickupBars(pattern);
     if(pickupBars>0)
     {
-        // Last pulse of each group's final bar, not the final tick of
-        // the bar. Align sampling to the same project-wide cycle as Apply.
+        // Normal relance: last pulse in the group. Anticipated relance:
+        // one eighth before the next phrase. Both use project-wide timing.
         const auto firstAligned=firstBar+
             (pickupBars-1+pickupBars-firstBar%pickupBars)%pickupBars;
         const auto step=juce::jmax<std::int64_t>(
             pickupBars,((barStep+pickupBars-1)/pickupBars)*pickupBars);
         for(auto bar=firstAligned;bar<=lastBar&&marks.size()<160;)
         {
-            append(bar*barTicks+(barTicks-pulseTicks),true);
+            const auto offset=isEarlyPickup(pattern)
+                ?earlyPickupOffset(beatTicks,compound):pulseTicks;
+            append(bar*barTicks+(barTicks-offset),true);
             if(bar>lastBar-step)break;
             bar+=step;
         }
@@ -576,6 +596,10 @@ public:
         accentPattern.addItem(juce::String::fromUTF8("Relance — 2 mesures"),8);
         accentPattern.addItem(juce::String::fromUTF8("Relance — 4 mesures"),9);
         accentPattern.addItem(juce::String::fromUTF8("Relance — 8 mesures"),10);
+        accentPattern.addSeparator();
+        accentPattern.addItem(juce::String::fromUTF8("Relance croche — 2 mesures"),11);
+        accentPattern.addItem(juce::String::fromUTF8("Relance croche — 4 mesures"),12);
+        accentPattern.addItem(juce::String::fromUTF8("Relance croche — 8 mesures"),13);
         accentPattern.setSelectedId(1,juce::dontSendNotification);
         accentPattern.setTooltip(juce::String::fromUTF8("Choisir la grille d'accentuation"));
         accentPattern.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff233747));
@@ -1082,6 +1106,9 @@ private:
             case 8:return AccentPattern::pickup2;
             case 9:return AccentPattern::pickup4;
             case 10:return AccentPattern::pickup8;
+            case 11:return AccentPattern::earlyPickup2;
+            case 12:return AccentPattern::earlyPickup4;
+            case 13:return AccentPattern::earlyPickup8;
             default:return AccentPattern::strongBeats;
         }
     }
@@ -1152,7 +1179,7 @@ public:
     }
     void setAccentPattern(AccentPattern pattern)
     {
-        accentPattern.setSelectedId(juce::jlimit(1,10,(int)pattern+1),
+        accentPattern.setSelectedId(juce::jlimit(1,13,(int)pattern+1),
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}

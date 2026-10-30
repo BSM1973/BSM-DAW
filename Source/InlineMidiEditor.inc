@@ -313,7 +313,13 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                             ?juce::String::fromUTF8("Relance 4 mesures")
                                             :accentPattern==LibertyInlineVelocity::AccentPattern::pickup8
                                                 ?juce::String::fromUTF8("Relance 8 mesures")
-                                                :juce::String::fromUTF8("Temps forts"))
+                                                :accentPattern==LibertyInlineVelocity::AccentPattern::earlyPickup2
+                                                    ?juce::String::fromUTF8("Relance croche 2 mesures")
+                                                    :accentPattern==LibertyInlineVelocity::AccentPattern::earlyPickup4
+                                                        ?juce::String::fromUTF8("Relance croche 4 mesures")
+                                                        :accentPattern==LibertyInlineVelocity::AccentPattern::earlyPickup8
+                                                            ?juce::String::fromUTF8("Relance croche 8 mesures")
+                                                            :juce::String::fromUTF8("Temps forts"))
             +juce::String::fromUTF8(" — Notes fantômes −")
             +juce::String(juce::jlimit(0,20,ghostAmount))
             +juce::String::fromUTF8(" — Tolérance ")
