@@ -1922,13 +1922,13 @@ bool runArrangementTests(){
         undoArrangement(false);
         // Failure in chord 2 must not partially apply a successful chord 1.
         auto rejectSecondChord=alternateBefore;
-        const auto shortNote=std::find_if(rejectSecondChord.begin(),
+        const auto shortChordVoice=std::find_if(rejectSecondChord.begin(),
             rejectSecondChord.end(),[](const MidiEngine::NoteEvent& n){
                 return n.startTick==1080&&n.pitch==64;
             });
-        require(shortNote!=rejectSecondChord.end(),
+        require(shortChordVoice!=rejectSecondChord.end(),
             "second chord contains the intended short-note test voice");
-        shortNote->lengthTicks=60;
+        shortChordVoice->lengthTicks=60;
         require(owner.midiEngine.replaceNotes(rejectSecondChord),
             "load short second chord for atomic alternation validation");
         midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
