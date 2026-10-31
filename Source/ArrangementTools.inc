@@ -1192,7 +1192,7 @@ bool runArrangementTests(){
             &&scrollingDialog.getWidth()==608
             &&scrollingDialog.getViewedComponent()==scrollingEditor,
             "MIDI editor viewport owns its original panel at a compact height");
-        require(scrollingEditor->getHeight()==975
+        require(scrollingEditor->getHeight()==1095
             &&scrollingDialog.getViewPositionY()==0,
             "MIDI viewport initially shows the top of the unmodified editor");
         require(scrollingDialog.hasAccessibleBottomControlsForTest()
@@ -1998,6 +1998,140 @@ bool runArrangementTests(){
             "restore initial chord fixture after alternate-direction tests");
         midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();clearArrangementHistory();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+
+        // Swing never changes the straight strum at 50%. Test the real JUCE
+        // slider plus the existing up/down buttons, and all time-domain data.
+        require(wiredPanel.strumSwingForTest()==50,
+            "strum swing defaults to the previous straight 50 percent");
+        wiredPanel.setStrumSwingForTest(75);
+        require(wiredPanel.strumSwingForTest()==75,
+            "real JUCE swing slider reaches a pronounced 75 percent");
+        wiredPanel.setStrumGapForTest(120);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "real JUCE up button applies swing from the slider");
+        const auto swungUp=midiClips[(size_t)multiClip].notes;
+        require(swungUp.size()==5
+            &&hasStrumNote(swungUp,240,60)
+            &&hasStrumNote(swungUp,420,64)
+            &&hasStrumNote(swungUp,480,67)
+            &&hasStrumNote(swungUp,660,71)
+            &&hasStrumNote(swungUp,1920,74),
+            "75 percent swing makes alternating long-short gaps at 120 ticks");
+        for(const auto& moved:swungUp)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& old){
+                    return old.pitch==moved.pitch
+                        &&old.channel==moved.channel
+                        &&old.velocity==moved.velocity
+                        &&old.muted==moved.muted
+                        &&old.probability==moved.probability
+                        &&old.startTick+old.lengthTicks
+                            ==moved.startTick+moved.lengthTicks;
+                }),"swing preserves velocity and release in default mode");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,240,64)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,240,71),
+            "swung MIDI strum Undo restores simultaneous notes");
+        undoArrangement(true);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,420,64)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,660,71),
+            "swung MIDI strum Redo restores exact long-short timing");
+        undoArrangement(false);
+        // Use both checkbox controls at once. The second button must preserve
+        // note lengths and start from the treble voice.
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        wiredPanel.setStrumSwingForTest(66);
+        wiredPanel.setStrumGapForTest(60);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(22),
+            "real JUCE down button applies 66 percent swing with duration");
+        const auto swungDown=midiClips[(size_t)multiClip].notes;
+        require(swungDown.size()==5
+            &&hasStrumNote(swungDown,240,71)
+            &&hasStrumNote(swungDown,319,67)
+            &&hasStrumNote(swungDown,360,64)
+            &&hasStrumNote(swungDown,439,60)
+            &&hasStrumNote(swungDown,1920,74),
+            "66 percent swing follows rounded MIDI ticks from treble to bass");
+        for(const auto& moved:swungDown)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& old){
+                    return old.pitch==moved.pitch
+                        &&old.channel==moved.channel
+                        &&old.velocity==moved.velocity
+                        &&old.lengthTicks==moved.lengthTicks;
+                }),"swung descending chord keeps note lengths when requested");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,240,60)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,240,71),
+            "descending swung MIDI chord Undo");
+        // A sung melody between three chords may not consume a swing pair
+        // or change alternating direction.
+        require(owner.midiEngine.replaceNotes(alternatingFixture),
+            "load three chords for alternating swung strum");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(75);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(true);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)midiClips[(size_t)multiClip].notes.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(21),
+            "swung alternation dispatches from real JUCE controls");
+        const auto swungAlternate=midiClips[(size_t)multiClip].notes;
+        require(swungAlternate.size()==13
+            &&hasStrumNote(swungAlternate,240,60)
+            &&hasStrumNote(swungAlternate,330,64)
+            &&hasStrumNote(swungAlternate,360,67)
+            &&hasStrumNote(swungAlternate,450,71)
+            &&hasStrumNote(swungAlternate,1080,71)
+            &&hasStrumNote(swungAlternate,1170,67)
+            &&hasStrumNote(swungAlternate,1200,64)
+            &&hasStrumNote(swungAlternate,1290,60)
+            &&hasStrumNote(swungAlternate,2880,60)
+            &&hasStrumNote(swungAlternate,2970,64)
+            &&hasStrumNote(swungAlternate,3000,67)
+            &&hasStrumNote(swungAlternate,3090,71)
+            &&hasStrumNote(swungAlternate,1920,74),
+            "swing and chord alternation combine without affecting solo melody");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,1080,60)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,2880,71),
+            "swung alternating chords Undo atomically");
+        // Invalid packet or out-of-range swing must never create an Undo step.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)midiClips[(size_t)multiClip].notes.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        const int invalidSwingPacket=500000+(0*26+25)*256+241;
+        require(!inlineMidiExecuteAction(invalidSwingPacket,panelClipId,false)
+            &&!inlineMidiExecuteAction(500000+8*26*256,panelClipId,false)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,49)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,76),
+            "MIDI dispatcher and engine reject invalid swing and gap values");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore chord fixture after swung strum tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
         inlineMidiSelectedClipId=panelClipId;
         inlineMidiSelectedInstrument=false;
         inlineMidiSelectedNotes={0,1,2,3,4};
