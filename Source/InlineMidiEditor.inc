@@ -2189,6 +2189,36 @@ private:
     int selected=0,total=0;
 };
 
+
+/* The editing surface is intentionally taller than a laptop screen.
+   Keep exactly one functional JUCE editor component; its viewport owns
+   that component and scrolls the original controls, rather than cloning
+   any buttons or duplicating dispatch logic. */
+class InlineMidiActionsViewport final : public juce::Viewport
+{
+public:
+    InlineMidiActionsViewport(InlineMidiActionsPanel* editor,int height)
+    {
+        setScrollBarsShown(true,false);
+        setScrollBarThickness(12);
+        getVerticalScrollBar().setColour(juce::ScrollBar::thumbColourId,
+                                       juce::Colour(0xff668ea6));
+        getVerticalScrollBar().setColour(juce::ScrollBar::trackColourId,
+                                       juce::Colour(0xff172c3e));
+        setViewedComponent(editor,true);
+        setSize(editor->getWidth(),juce::jlimit(360,760,height));
+        setViewPosition(0,0);
+    }
+    bool hasAccessibleBottomControlsForTest() {
+        if(auto* editor=getViewedComponent()){
+            setViewPosition(0,editor->getHeight());
+            return getViewPositionY()>0
+                &&getViewPositionY()+getHeight()>=editor->getHeight();
+        }
+        return false;
+    }
+};
+
 bool inlineMidiContextMenu(juce::Point<int> p){
     bool ins=false;
     const int hit=findClipAt(p,ins);
@@ -2244,7 +2274,13 @@ bool inlineMidiContextMenu(juce::Point<int> p){
     options.escapeKeyTriggersCloseButton=true;
     options.resizable=false;
     options.componentToCentreAround=&owner;
-    options.content.setOwned(panel);
+    // Use usable desktop height rather than a fixed 975px dialog: the
+    // complete editor remains reachable even on smaller Mac displays.
+    const auto* display=juce::Desktop::getInstance()
+        .getDisplays().getPrimaryDisplay();
+    const int usableHeight=display?display->userArea.getHeight():owner.getHeight();
+    auto* scrollable=new InlineMidiActionsViewport(panel,usableHeight-150);
+    options.content.setOwned(scrollable);
     options.launchAsync();
     return true;
 }
