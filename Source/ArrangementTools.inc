@@ -1176,6 +1176,43 @@ bool runArrangementTests(){
             &&emptyPanel.isActionEnabled(3)
             &&emptyPanel.isActionEnabled(8),
             "JUCE window commands stay available without a previous note selection");
+
+        // A compact real viewport must reveal the whole existing editor
+        // through vertical scrolling, without duplicating or disabling JUCE
+        // buttons at the bottom of the panel.
+        int scrollActionCalls=0;
+        auto* scrollingEditor=new InlineMidiActionsPanel(
+            [&scrollActionCalls](int choice){
+                ++scrollActionCalls;
+                return choice==2502;
+            },
+            []()->InlineMidiActionsPanel::State{return {1,0,4,4};});
+        InlineMidiActionsViewport scrollingDialog(scrollingEditor,560);
+        require(scrollingDialog.getHeight()==560
+            &&scrollingDialog.getWidth()==608
+            &&scrollingDialog.getViewedComponent()==scrollingEditor,
+            "MIDI editor viewport owns its original panel at a compact height");
+        require(scrollingEditor->getHeight()==975
+            &&scrollingDialog.getViewPositionY()==0,
+            "MIDI viewport initially shows the top of the unmodified editor");
+        require(scrollingDialog.hasAccessibleBottomControlsForTest()
+            &&scrollingDialog.getViewPositionY()>0,
+            "MIDI viewport scroll reaches chord-strum and close controls");
+        require(scrollingEditor->isActionEnabled(22)
+            &&scrollingEditor->clickActionForTest(22)
+            &&scrollActionCalls==1,
+            "bottom MIDI strum button stays wired when the editor is scrolled");
+        scrollingDialog.setViewPosition(0,0);
+        require(scrollingDialog.getViewPositionY()==0
+            &&scrollingEditor->isActionEnabled(3),
+            "scrolling back restores access to upper velocity actions");
+        auto* shortScreenEditor=new InlineMidiActionsPanel(
+            [](int){return true;},
+            []()->InlineMidiActionsPanel::State{return {0,0,0,4};});
+        InlineMidiActionsViewport minimumDialog(shortScreenEditor,180);
+        require(minimumDialog.getHeight()==360
+            &&minimumDialog.hasAccessibleBottomControlsForTest(),
+            "small-screen MIDI editor clamps height and keeps footer reachable");
         // Check real button callbacks, not only direct helper calls. Both
         // fixed velocity and crescendo must work from a fresh right-click
         // even when the previous clip tool was Mute or Glue.
