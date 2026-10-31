@@ -912,6 +912,23 @@ bool runArrangementTests(){
             require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-changed.fadeInSeconds)<.00001,
                     "redo fade");
             undoArrangement(false); // Restore the starting clip for the remaining tests.
+            // Shift must scale only the fade movement, preserving Undo/Redo.
+            beginArrangementEdit();
+            require(handleAudioDown(fadeInPoint)&&audioDragMode==8,
+                    "fine fade mouse routing");
+            dragAudio(fadeInPoint.translated(dx,0),true);
+            audioDragTrack=-1;audioDragMode=0;finishArrangementEdit();
+            const auto fineFade=owner.audioEngine.getArrangementAudioClips(0).front();
+            require(std::abs(fineFade.fadeInSeconds-
+                    (c.fadeInSeconds+0.2*(double)dx/px))<.00001,
+                    "Shift fade fine adjustment");
+            undoArrangement(false);
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-
+                    c.fadeInSeconds)<.00001,"undo fine fade");
+            undoArrangement(true);
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-
+                    fineFade.fadeInSeconds)<.00001,"redo fine fade");
+            undoArrangement(false);
             const juce::Point<int> fadeOutPoint{
                 fadeBox.getRight()-(int)std::lround(fadeBox.getWidth()*c.fadeOutSeconds/c.lengthSeconds),fadeBox.getY()+24};
             require(audioFadeHandleAt(fadeOutPoint)==9,"fade out grip hit");
