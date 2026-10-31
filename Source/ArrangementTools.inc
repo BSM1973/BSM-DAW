@@ -1192,7 +1192,7 @@ bool runArrangementTests(){
             &&scrollingDialog.getWidth()==608
             &&scrollingDialog.getViewedComponent()==scrollingEditor,
             "MIDI editor viewport owns its original panel at a compact height");
-        require(scrollingEditor->getHeight()==1175
+        require(scrollingEditor->getHeight()==1260
             &&scrollingDialog.getViewPositionY()==0,
             "MIDI viewport initially shows the top of the unmodified editor");
         require(scrollingDialog.hasAccessibleBottomControlsForTest()
@@ -2274,6 +2274,180 @@ bool runArrangementTests(){
         wiredPanel.setStrumHumanizeForTest(0);
         wiredPanel.setStrumSwingForTest(50);
         wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+
+        // Dynamics accent the VOICE PLAYING ORDER, not pitch order. The
+        // original first attack is unchanged; the last is fully emphasized.
+        require(wiredPanel.strumDynamicsForTest()==0,
+            "strum dynamics default to zero, preserving original MIDI velocity");
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumHumanizeForTest(0);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        wiredPanel.setStrumDynamicsForTest(24);
+        require(wiredPanel.strumDynamicsForTest()==24,
+            "real JUCE dynamics slider accepts 24 velocity units");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "actual JUCE strum-up callback applies progressive MIDI velocity");
+        const auto accentedUp=midiClips[(size_t)multiClip].notes;
+        require(accentedUp.size()==5&&inlineMidiSelectedNotes.size()==5,
+            "accented strum keeps the MIDI note selection");
+        for(size_t i=0;i<5;++i){
+            const auto& before=strumBefore[i];
+            const auto& after=accentedUp[i];
+            require(before.pitch==after.pitch
+                &&before.channel==after.channel
+                &&before.muted==after.muted
+                &&before.probability==after.probability
+                &&before.startTick+before.lengthTicks
+                    ==after.startTick+after.lengthTicks,
+                "accented strum keeps pitches, articulation and releases");
+            const int added=i<4?(int)i*8:0;
+            require((int)after.velocity==juce::jlimit(
+                    1,127,(int)before.velocity+added),
+                "positive dynamics accent progresses 0 8 16 24 per chord");
+        }
+        undoArrangement(false);
+        for(size_t i=0;i<5;++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                    ==strumBefore[i].velocity
+                &&midiClips[(size_t)multiClip].notes[i].startTick
+                    ==strumBefore[i].startTick,
+                "progressive dynamics Undo restores every note and attack");
+        undoArrangement(true);
+        for(size_t i=0;i<5;++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                    ==accentedUp[i].velocity,
+                "progressive dynamics Redo restores all MIDI velocities");
+        undoArrangement(false);
+        wiredPanel.setStrumDynamicsForTest(-24);
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(22),
+            "real JUCE descending strum applies negative dynamics slope");
+        const auto accentedDown=midiClips[(size_t)multiClip].notes;
+        require(accentedDown.size()==5
+            &&accentedDown[0].pitch==71
+            &&accentedDown[1].pitch==67
+            &&accentedDown[2].pitch==64
+            &&accentedDown[3].pitch==60,
+            "descending dynamic strum respects playing order");
+        const int playingPitch[4]={71,67,64,60};
+        for(int i=0;i<4;++i){
+            const auto* after=findPitch(accentedDown,playingPitch[i]);
+            const auto* before=findPitch(strumBefore,playingPitch[i]);
+            require(after&&before
+                &&(int)after->velocity==juce::jlimit(
+                    1,127,(int)before->velocity-i*8)
+                &&after->lengthTicks==before->lengthTicks,
+                "descending dynamics fade 0 8 16 24 and preserve duration");
+        }
+        require(accentedDown[4].pitch==74
+            &&accentedDown[4].velocity==strumBefore[4].velocity,
+            "dynamic strum does not change the isolated melody");
+        undoArrangement(false);
+        // Saturation stays within playable MIDI velocity 1...127.
+        auto dynamicExtreme=strumBefore;
+        dynamicExtreme[0].velocity=1;
+        dynamicExtreme[1].velocity=126;
+        dynamicExtreme[2].velocity=127;
+        dynamicExtreme[3].velocity=126;
+        require(owner.midiEngine.replaceNotes(dynamicExtreme),
+            "load extreme dynamics fixture");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumDynamicsForTest(24);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "dynamics applied with near-saturated note velocities");
+        const auto dynamicClamped=midiClips[(size_t)multiClip].notes;
+        require(dynamicClamped[0].velocity==1
+            &&dynamicClamped[1].velocity==127
+            &&dynamicClamped[2].velocity==127
+            &&dynamicClamped[3].velocity==127
+            &&dynamicClamped[4].velocity==strumBefore[4].velocity,
+            "dynamics never exceeds MIDI range or alters untouched melody");
+        undoArrangement(false);
+        // Combine dynamic and swing with timing humanisation and direction
+        // alternation. The first voice of each chord keeps its velocity.
+        require(owner.midiEngine.replaceNotes(alternatingFixture),
+            "restore three chords before combined dynamic MIDI test");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        const auto dynamicBefore=midiClips[(size_t)multiClip].notes;
+        wiredPanel.setStrumGapForTest(120);
+        wiredPanel.setStrumSwingForTest(66);
+        wiredPanel.setStrumHumanizeForTest(10);
+        wiredPanel.setStrumDynamicsForTest(-18);
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        wiredPanel.setAlternateStrumDirectionForTest(true);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)dynamicBefore.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(22),
+            "all strum sliders and two checkboxes dispatch together");
+        const auto dynamicsCombined=midiClips[(size_t)multiClip].notes;
+        require(dynamicsCombined.size()==13
+            &&inlineMidiSelectedNotes.size()==13
+            &&hasStrumNote(dynamicsCombined,240,71)
+            &&hasStrumNote(dynamicsCombined,1080,60)
+            &&hasStrumNote(dynamicsCombined,2880,71)
+            &&hasStrumNote(dynamicsCombined,1920,74),
+            "dynamic alternation keeps first note and isolated melody timings");
+        for(const auto& n:dynamicsCombined){
+            const bool melody=n.pitch==74;
+            const auto original=std::find_if(dynamicBefore.begin(),
+                dynamicBefore.end(),[&](const MidiEngine::NoteEvent& old){
+                    return old.pitch==n.pitch&&old.channel==n.channel
+                        &&(melody||old.startTick/960==n.startTick/960);
+                });
+            require(original!=dynamicBefore.end()
+                &&original->lengthTicks==n.lengthTicks
+                &&original->muted==n.muted
+                &&original->probability==n.probability
+                &&n.velocity>=1&&n.velocity<=127,
+                "combined dynamics preserve note durations and MIDI range");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==dynamicBefore.size()
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,1080,71)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,2880,60),
+            "dynamics with alternation Undo is a single edit");
+        // Invalid packed values and out-of-range slope cannot mutate notes.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)dynamicBefore.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        const int badDynamicPacket=2000000+24*256+241;
+        require(!inlineMidiExecuteAction(badDynamicPacket,panelClipId,false)
+            &&!inlineMidiExecuteAction(2000000+8*26*21*49*256,panelClipId,false)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,50,0,25)
+            &&!inlineMidiStrumChordsSelected(false,60,true,true,50,0,-25),
+            "invalid dynamic strum action and slope are rejected atomically");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore original strum fixture after dynamics tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumHumanizeForTest(0);
+        wiredPanel.setStrumDynamicsForTest(0);
         wiredPanel.setPreserveStrumLengthForTest(false);
         wiredPanel.setAlternateStrumDirectionForTest(false);
         inlineMidiSelectedClipId=panelClipId;
