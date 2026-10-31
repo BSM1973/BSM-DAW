@@ -837,7 +837,8 @@ bool runArrangementTests(){
             require(undoArrangement(true)
                 &&owner.audioEngine.getArrangementAudioClips(0).size()==2,
                 "redo Option-drag restores the same duplicate and audio buffer");
-            const auto redoneCopy=locate(owner.audioEngine.getArrangementAudioClips(0),copyId);
+            const auto redoneClips=owner.audioEngine.getArrangementAudioClips(0);
+            const auto* redoneCopy=locate(redoneClips,copyId);
             require(redoneCopy&&redoneCopy->sourceBuffer==source
                 &&redoneCopy->fadeInSeconds==c.fadeInSeconds
                 &&redoneCopy->reverse==c.reverse,
