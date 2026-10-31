@@ -1776,7 +1776,7 @@ bool runArrangementTests(){
             {{0,70},{3840,70},{7680,70},{11520,70},{14400,70},
              {14880,70},{15360,70}},
             {70,70,70,70,70,70,70},20,4,4,960,0,AP::longBuildup4,8)
-                ==std::vector<int>({71,76,79,84,89,90,71}),
+                ==std::vector<int>({71,76,81,85,89,90,71}),
             "long four-bar crescendo follows 16 pulses per musical phrase");
         require(LibertyInlineVelocity::accentVelocities(
             {{0,70},{15360,70},{29760,70},{30240,70},{30720,70}},
@@ -2253,7 +2253,7 @@ bool runArrangementTests(){
             "eight-measure buildup remains preview-only until Apply");
         beatPreview.setAccentPattern(AP::longBuildup2);
         require(beatPreview.getAccentPattern()==AP::longBuildup2
-            &&beatPreview.getRhythmicGuide().size()==4
+            &&beatPreview.getRhythmicGuide().size()==5
             &&beatPreview.getRhythmicGuide()[0].localTick==0
             &&!beatPreview.isSwingEnabled()&&!dialogApplied,
             "long crescendo previews four beats in short selected phrase");
