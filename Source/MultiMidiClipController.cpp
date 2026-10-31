@@ -101,6 +101,9 @@ bool activeClipIsInstrument() const noexcept{return activeIndex>=0&&activeInstru
 #include "ClipNamingController.inc"
 #include "ArrangementTools.inc"
 #include "InlineMidiEditor.inc"
+// Ephemeral UI preferences: never serialized into project clips, and never
+// part of the note-edit Undo history. Shared across all MIDI editor dialogs.
+InlineMidiStrumSettings savedStrumSettings;
 std::set<int> selectedClipIds;
 std::map<int,double> groupOrigins;
 bool selectingClips=false, movingGroup=false, arrangementFocus=false;
