@@ -1669,6 +1669,52 @@ bool runArrangementTests(){
             20,4,4,960,0,AP::earlyPickup2,8)
                 ==std::vector<int>({97,127}),
             "early relance preserves chord dynamics while clamping");
+        // Complete musical phrase unites the opening accent and eighth
+        // pickup, retaining all earlier individual profiles unchanged.
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{6720,70},{7200,70},{7680,70},{14880,70},{15360,70}},
+            {70,70,70,70,70,70},
+            20,4,4,960,0,AP::fullPhrase2,8)
+                ==std::vector<int>({90,62,80,90,80,90}),
+            "two-bar complete phrase combines downbeat and half pickup");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{7200,70},{14880,70},{15360,70},{30240,70}},
+            {70,70,70,70,70},
+            20,4,4,960,0,AP::fullPhrase4,8)
+                ==std::vector<int>({90,62,80,90,80}),
+            "four-bar complete phrase keeps its own two accents");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{14880,70},{30240,70},{30720,70}},
+            {70,70,70,70},
+            20,4,4,960,0,AP::fullPhrase8,8)
+                ==std::vector<int>({90,62,80,90}),
+            "eight-bar complete phrase respects the project cycle");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3360,70},{3840,70}}, {70,70},
+            20,4,4,960,3840,AP::fullPhrase2,8)
+                ==std::vector<int>({80,90}),
+            "full phrase matches the Arrangement offset exactly");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{5280,70},{5760,70}}, {70,70,70},
+            20,6,8,960,0,AP::fullPhrase2,8)
+                ==std::vector<int>({90,80,90}),
+            "full phrase combines downbeat and final eighth in 6/8");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{7200,70},{7680,70}}, {70,70,70},
+            0,4,4,960,0,AP::fullPhrase2,8)
+                ==std::vector<int>({70,70,70}),
+            "zero accent strength preserves ghost dynamics");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{7080,70},{7200,70},{7320,70}}, {70,70,70},
+            20,4,4,960,0,AP::fullPhrase2,8,25,50,true,
+            LibertyInlineVelocity::Curve::linear)
+                ==std::vector<int>({71,80,71}),
+            "combined pickup smoothly fades into note ghosts");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{7200,90},{7200,120}}, {90,120},
+            20,4,4,960,0,AP::fullPhrase2,8)
+                ==std::vector<int>({97,127}),
+            "combined pickup preserves relative chord dynamics");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -1897,6 +1943,41 @@ bool runArrangementTests(){
         for(const auto& mark:longEarly)
             require((mark.localTick-30240)%30720==0,
                 "sampling preserves last-eighth phase");
+        const auto complete2=guides(0,15360,4,4,960,0,
+            AP::fullPhrase2,50);
+        require(complete2.size()==5
+            &&complete2[0].localTick==0&&complete2[0].primary
+            &&complete2[1].localTick==7200&&!complete2[1].primary
+            &&complete2[2].localTick==7680&&complete2[2].primary
+            &&complete2[3].localTick==14880&&!complete2[3].primary
+            &&complete2[4].localTick==15360&&complete2[4].primary,
+            "complete phrase guide distinguishes main and pickup accents");
+        const auto complete4=guides(0,30720,4,4,960,0,
+            AP::fullPhrase4,50);
+        require(complete4.size()==5
+            &&complete4[1].localTick==14880&&!complete4[1].primary
+            &&complete4[2].localTick==15360&&complete4[2].primary
+            &&complete4[3].localTick==30240&&!complete4[3].primary,
+            "four-bar complete phrase uses correct accent locations");
+        const auto complete6=guides(0,5760,6,8,960,0,
+            AP::fullPhrase2,50);
+        require(complete6.size()==3
+            &&complete6[1].localTick==5280&&!complete6[1].primary,
+            "compound meter displays both types of complete-phrase accent");
+        const auto completeOffset=guides(0,7680,4,4,960,3840,
+            AP::fullPhrase2,50);
+        require(completeOffset.size()==2
+            &&completeOffset[0].localTick==3360&&!completeOffset[0].primary
+            &&completeOffset[1].localTick==3840&&completeOffset[1].primary,
+            "combined phrase preview honors the clip offset");
+        const auto completeLong=guides(0,3840000,4,4,960,0,
+            AP::fullPhrase8,50);
+        require(!completeLong.empty()&&completeLong.size()<=160,
+            "complete phrase preview stays bounded on long selections");
+        for(const auto& mark:completeLong)
+            require((mark.primary&&mark.localTick%30720==0)
+                ||(!mark.primary&&(mark.localTick-30240)%30720==0),
+                "combined guide never drifts off project measures");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -1952,6 +2033,17 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::earlyPickup8
             &&!dialogApplied,
             "eight-bar early pickup stays non-destructive in preview");
+        beatPreview.setAccentPattern(AP::fullPhrase2);
+        require(beatPreview.getAccentPattern()==AP::fullPhrase2
+            &&beatPreview.getRhythmicGuide().size()==1
+            &&beatPreview.getRhythmicGuide()[0].localTick==0
+            &&beatPreview.getRhythmicGuide()[0].primary
+            &&!beatPreview.isSwingEnabled()&&!dialogApplied,
+            "complete phrase is available in existing navy-blue window");
+        beatPreview.setAccentPattern(AP::fullPhrase8);
+        require(beatPreview.getAccentPattern()==AP::fullPhrase8
+            &&!dialogApplied,
+            "eight-bar complete phrase remains non-destructive");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -2582,6 +2674,44 @@ bool runArrangementTests(){
             require(earlyAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "anticipated relance Redo");
+        // Real complete-phrase MIDI edit uses existing Undo/Redo history.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto fullBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> fullNotes={
+            {fullBefore[0].startTick,(int)fullBefore[0].velocity},
+            {fullBefore[1].startTick,(int)fullBefore[1].velocity},
+            {fullBefore[2].startTick,(int)fullBefore[2].velocity}};
+        const auto fullBase=LibertyInlineVelocity::transformVelocities(
+            fullNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto fullExpected=LibertyInlineVelocity::accentVelocities(
+            fullNotes,fullBase,20,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::fullPhrase4,8,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,20,
+            AP::fullPhrase4,8,25,50,true,FC::sCurve),
+            "combined complete phrase applies in Arrangement");
+        const auto fullAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<fullNotes.size();++i)
+            require((int)fullAfter[i].velocity==fullExpected[i]
+                &&fullAfter[i].startTick==fullBefore[i].startTick
+                &&fullAfter[i].lengthTicks==fullBefore[i].lengthTicks
+                &&fullAfter[i].pitch==fullBefore[i].pitch
+                &&fullAfter[i].channel==fullBefore[i].channel,
+                "combined phrase only updates velocity fields");
+        undoArrangement(false);
+        for(size_t i=0;i<fullNotes.size();++i)
+            require(fullBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "combined phrase Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<fullNotes.size();++i)
+            require(fullAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "combined phrase Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
