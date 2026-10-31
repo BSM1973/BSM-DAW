@@ -2044,7 +2044,7 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,1332);
+        setSize(608,1420);
         strumGap.setSliderStyle(juce::Slider::LinearHorizontal);
         strumGap.setRange(15,240,15);
         strumGap.setValue(60,juce::dontSendNotification);
@@ -2164,6 +2164,36 @@ public:
             "Le premier accord suit le bouton choisi. Les accords suivants "
             "alternent grave vers aigu et aigu vers grave."));
         addAndMakeVisible(alternateStrumDirection);
+        const juce::String presetNames[]={
+            juce::String::fromUTF8("GUITARE DOUCE"),
+            juce::String::fromUTF8("GUITARE RYTHMIQUE"),
+            juce::String::fromUTF8("PIANO ARPÉGÉ"),
+            juce::String::fromUTF8("RÉINITIALISER")};
+        const juce::String presetTips[]={
+            juce::String::fromUTF8(
+                "Égrenage léger et naturel, 45 ticks, swing 58 %, "
+                "humanisation 6, dynamique +8, nuances 4."),
+            juce::String::fromUTF8(
+                "Jeu rythmique marqué, 90 ticks, swing 66 %, "
+                "humanisation 10, dynamique +18, nuances 8, sens alterné."),
+            juce::String::fromUTF8(
+                "Arpège plus étalé, 120 ticks, swing 50 %, "
+                "humanisation 3, dynamique +12, nuances 3, durée conservée."),
+            juce::String::fromUTF8(
+                "Restaure tous les réglages neutres, sans modifier les notes.")};
+        for(int i=0;i<(int)strumPresets.size();++i){
+            auto& b=strumPresets[(size_t)i];
+            b.setButtonText(presetNames[i]);
+            b.setTooltip(presetTips[i]);
+            b.setColour(juce::TextButton::buttonColourId,
+                juce::Colour(i==3?0xff23384a:0xff295065));
+            b.setColour(juce::TextButton::buttonOnColourId,
+                juce::Colour(0xff3b6e84));
+            b.setColour(juce::TextButton::textColourOffId,
+                juce::Colour(i==3?0xffbed1de:0xfff4f8fb));
+            b.onClick=[this,i]{applyStrumPreset(i);};
+            addAndMakeVisible(b);
+        }
         static const int actions[]={
             1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,2501,2502,0};
         const juce::String labels[]={
@@ -2272,6 +2302,30 @@ public:
         refresh();
     }
 
+    // Presets only set controls; they never dispatch MIDI edits.
+    // A musician can customise any slider before pressing ÉGRENER.
+    void applyStrumPreset(int preset){
+        if(preset<0||preset>=4)return;
+        const int gaps[]={45,90,120,60};
+        const int swings[]={58,66,50,50};
+        const int timing[]={6,10,3,0};
+        const int dynamics[]={8,18,12,0};
+        const int nuances[]={4,8,3,0};
+        const bool preserve[]={false,false,true,false};
+        const bool alternate[]={false,true,false,false};
+        strumGap.setValue(gaps[preset],juce::dontSendNotification);
+        strumSwing.setValue(swings[preset],juce::dontSendNotification);
+        strumHumanize.setValue(timing[preset],juce::dontSendNotification);
+        strumDynamics.setValue(dynamics[preset],juce::dontSendNotification);
+        strumVelocityNuance.setValue(nuances[preset],
+                                     juce::dontSendNotification);
+        preserveStrumLength.setToggleState(preserve[preset],
+                                            juce::dontSendNotification);
+        alternateStrumDirection.setToggleState(alternate[preset],
+                                                juce::dontSendNotification);
+        repaint();
+    }
+
     void refresh(){
         const auto state=readState?readState():State{0,0,0,0};
         buttons[0].setButtonText(juce::String::fromUTF8(state[0]
@@ -2304,6 +2358,12 @@ public:
     }
     // Exercise exactly the same onClick callback as a real JUCE button.
     // No fake dialog dispatcher or duplicate test-only action path.
+    bool clickStrumPresetForTest(int index){
+        if(index<0||index>=(int)strumPresets.size()
+            ||!strumPresets[(size_t)index].onClick)return false;
+        strumPresets[(size_t)index].onClick();
+        return true;
+    }
     bool clickActionForTest(int index) {
         if(!isActionEnabled(index)
            ||!buttons[(size_t)index].onClick)return false;
@@ -2371,10 +2431,15 @@ public:
         strumHumanize.setBounds(margin+137,920,w-137,43);
         strumDynamics.setBounds(margin+150,979,w-150,43);
         strumVelocityNuance.setBounds(margin+150,1038,w-150,43);
-        buttons[21].setBounds(margin,1100,w/2-5,42);
-        buttons[22].setBounds(margin+w/2+5,1100,w/2-5,42);
-        alternateStrumDirection.setBounds(margin,1153,w-20,26);
-        buttons[23].setBounds(getWidth()-142,1274,118,32);
+        const int presetWidth=(w-10)/2;
+        strumPresets[0].setBounds(margin,1126,presetWidth,38);
+        strumPresets[1].setBounds(margin+presetWidth+10,1126,presetWidth,38);
+        strumPresets[2].setBounds(margin,1172,presetWidth,38);
+        strumPresets[3].setBounds(margin+presetWidth+10,1172,presetWidth,38);
+        buttons[21].setBounds(margin,1233,w/2-5,42);
+        buttons[22].setBounds(margin+w/2+5,1233,w/2-5,42);
+        alternateStrumDirection.setBounds(margin,1287,w-20,26);
+        buttons[23].setBounds(getWidth()-142,1364,118,32);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -2406,7 +2471,7 @@ public:
         g.drawHorizontalLine(610,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(681,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(752,24.f,(float)getWidth()-24.f);
-        g.drawHorizontalLine(1241,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(1342,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
@@ -2429,15 +2494,18 @@ public:
                    25,985,140,25,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("NUANCES"),
                    25,1044,140,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("PRÉRÉGLAGES DE JEU"),
+                   25,1097,400,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,1278,390,26,juce::Justification::centredLeft);
+                   25,1368,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
     std::array<juce::TextButton,24> buttons;
+    std::array<juce::TextButton,4> strumPresets;
     juce::Slider strumGap;
     juce::Slider strumSwing;
     juce::Slider strumHumanize;
