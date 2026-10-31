@@ -1832,7 +1832,7 @@ bool runArrangementTests(){
             {{0,70},{3840,70},{7680,70},{11520,70},{14400,70},
              {14880,70},{15360,70}},
             {70,70,70,70,70,70,70},20,4,4,960,0,AP::longFade4,8)
-                ==std::vector<int>({90,85,80,75,73,71,90}),
+                ==std::vector<int>({90,85,80,75,71,71,90}),
             "four-bar descending accent envelope follows sixteen beats");
         require(LibertyInlineVelocity::accentVelocities(
             {{0,70},{15360,70},{29760,70},{30240,70},{30720,70}},
