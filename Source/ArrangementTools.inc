@@ -1537,6 +1537,124 @@ bool runArrangementTests(){
             "restore harmonic spacing fixture");
         midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();clearArrangementHistory();
+
+        // The same navy JUCE window can stagger every selected chord's
+        // note-ons in either pitch direction, preserving the absolute release.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        const auto strumBefore=midiClips[(size_t)multiClip].notes;
+        const auto strumStep=MidiEngine::ticksPerQuarterNote/16;
+        require(strumBefore.size()==5
+            &&strumBefore[0].startTick==240
+            &&strumBefore[1].startTick==240
+            &&strumBefore[2].startTick==240
+            &&strumBefore[3].startTick==240
+            &&strumBefore[4].startTick==1920,
+            "strum fixture has one simultaneous chord and isolated melody");
+        require(wiredPanel.isActionEnabled(21)
+            &&wiredPanel.clickActionForTest(21),
+            "real JUCE strum-up button dispatches");
+        const auto strumUp=midiClips[(size_t)multiClip].notes;
+        require(strumUp.size()==5
+            &&inlineMidiSelectedNotes.size()==5
+            &&strumUp[0].pitch==60&&strumUp[0].startTick==240
+            &&strumUp[1].pitch==64&&strumUp[1].startTick==240+strumStep
+            &&strumUp[2].pitch==67&&strumUp[2].startTick==240+2*strumStep
+            &&strumUp[3].pitch==71&&strumUp[3].startTick==240+3*strumStep
+            &&strumUp[4].pitch==74&&strumUp[4].startTick==1920,
+            "strum-up plays chord low to high without moving the melody");
+        for(size_t i=0;i<strumBefore.size();++i){
+            const auto& original=strumBefore[i];
+            const auto& edited=strumUp[i];
+            require(original.startTick+original.lengthTicks
+                ==edited.startTick+edited.lengthTicks
+                &&original.pitch==edited.pitch
+                &&original.velocity==edited.velocity
+                &&original.channel==edited.channel
+                &&original.muted==edited.muted
+                &&original.probability==edited.probability,
+                "strum-up preserves release, pitch, velocity and MIDI expression");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[1].startTick==240
+            &&midiClips[(size_t)multiClip].notes[3].startTick==240,
+            "strum-up Undo restores synchronous chord attacks");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[3].startTick
+                ==240+3*strumStep,
+            "strum-up Redo restores the individual attacks");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.isActionEnabled(22)
+            &&wiredPanel.clickActionForTest(22),
+            "real JUCE strum-down button dispatches");
+        const auto strumDown=midiClips[(size_t)multiClip].notes;
+        require(strumDown.size()==5
+            &&strumDown[0].pitch==71&&strumDown[0].startTick==240
+            &&strumDown[1].pitch==67&&strumDown[1].startTick==240+strumStep
+            &&strumDown[2].pitch==64&&strumDown[2].startTick==240+2*strumStep
+            &&strumDown[3].pitch==60&&strumDown[3].startTick==240+3*strumStep
+            &&strumDown[4].pitch==74&&strumDown[4].startTick==1920
+            &&inlineMidiSelectedNotes.size()==5,
+            "strum-down plays chord high to low, preserving note selection");
+        for(const auto& n:strumDown)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& source){
+                    return source.pitch==n.pitch&&source.channel==n.channel
+                        &&source.velocity==n.velocity
+                        &&source.muted==n.muted
+                        &&source.probability==n.probability
+                        &&source.startTick+source.lengthTicks
+                            ==n.startTick+n.lengthTicks;
+                }),"strum-down preserves every MIDI release and expression");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==60
+            &&midiClips[(size_t)multiClip].notes[3].pitch==71
+            &&midiClips[(size_t)multiClip].notes[3].startTick==240,
+            "strum-down Undo restores chord order and original timing");
+        // Short notes: reject the entire operation, no partial note movement.
+        auto tooShort=strumBefore;
+        tooShort[3].lengthTicks=2*strumStep;
+        require(owner.midiEngine.replaceNotes(tooShort),
+            "load short chord for atomic strum rejection");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3};
+        const auto beforeShort=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiStrumChordsSelected(true),
+            "strum refuses notes shorter than the required stagger");
+        const auto afterShort=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<beforeShort.size();++i)
+            require(beforeShort[i].startTick==afterShort[i].startTick
+                &&beforeShort[i].lengthTicks==afterShort[i].lengthTicks,
+                "rejected short strum does not partially modify the clip");
+        // A different note-on at the staggered instant must also prevent
+        // conflicting note-ons in one MIDI channel.
+        auto collision=strumBefore;
+        auto held=strumBefore[1];
+        held.startTick=240+strumStep;
+        held.lengthTicks=240;
+        collision.push_back(held);
+        require(owner.midiEngine.replaceNotes(collision),
+            "load unselected note-on collision fixture");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3};
+        require(!inlineMidiStrumChordsSelected(true),
+            "strum avoids creating duplicate MIDI note-ons");
+        require(midiClips[(size_t)multiClip].notes[1].startTick==240,
+            "collision rejection preserves synchronous original chord");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore the original chord after strum tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
         // Restore the identical original regression fixture, so all existing
         // velocity, accent and Arrangement tool tests remain meaningful.
         require(owner.midiEngine.replaceNotes(beforeDropFixture),
