@@ -1192,7 +1192,7 @@ bool runArrangementTests(){
             &&scrollingDialog.getWidth()==608
             &&scrollingDialog.getViewedComponent()==scrollingEditor,
             "MIDI editor viewport owns its original panel at a compact height");
-        require(scrollingEditor->getHeight()==1332
+        require(scrollingEditor->getHeight()==1420
             &&scrollingDialog.getViewPositionY()==0,
             "MIDI viewport initially shows the top of the unmodified editor");
         require(scrollingDialog.hasAccessibleBottomControlsForTest()
@@ -1589,6 +1589,102 @@ bool runArrangementTests(){
             &&strumBefore[3].startTick==240
             &&strumBefore[4].startTick==1920,
             "strum fixture has one simultaneous chord and isolated melody");
+
+        // Preset buttons only prepare the existing editor settings. They
+        // must never dispatch a note edit or add an Undo step on their own.
+        auto unchangedAfterPreset=[&]{
+            const auto& notes=midiClips[(size_t)multiClip].notes;
+            if(notes.size()!=strumBefore.size())return false;
+            for(size_t i=0;i<notes.size();++i)
+                if(notes[i].startTick!=strumBefore[i].startTick
+                    ||notes[i].lengthTicks!=strumBefore[i].lengthTicks
+                    ||notes[i].velocity!=strumBefore[i].velocity)return false;
+            return true;
+        };
+        require(wiredPanel.clickStrumPresetForTest(0)
+            &&wiredPanel.strumGapForTest()==45
+            &&wiredPanel.strumSwingForTest()==58
+            &&wiredPanel.strumHumanizeForTest()==6
+            &&wiredPanel.strumDynamicsForTest()==8
+            &&wiredPanel.strumVelocityNuanceForTest()==4
+            &&!wiredPanel.preserveStrumLengthForTest()
+            &&!wiredPanel.alternateStrumDirectionForTest()
+            &&unchangedAfterPreset(),
+            "real GUITARE DOUCE button prepares values without editing notes");
+        require(wiredPanel.clickStrumPresetForTest(1)
+            &&wiredPanel.strumGapForTest()==90
+            &&wiredPanel.strumSwingForTest()==66
+            &&wiredPanel.strumHumanizeForTest()==10
+            &&wiredPanel.strumDynamicsForTest()==18
+            &&wiredPanel.strumVelocityNuanceForTest()==8
+            &&!wiredPanel.preserveStrumLengthForTest()
+            &&wiredPanel.alternateStrumDirectionForTest()
+            &&unchangedAfterPreset(),
+            "real GUITARE RYTHMIQUE button prepares alternation without edits");
+        require(wiredPanel.clickStrumPresetForTest(2)
+            &&wiredPanel.strumGapForTest()==120
+            &&wiredPanel.strumSwingForTest()==50
+            &&wiredPanel.strumHumanizeForTest()==3
+            &&wiredPanel.strumDynamicsForTest()==12
+            &&wiredPanel.strumVelocityNuanceForTest()==3
+            &&wiredPanel.preserveStrumLengthForTest()
+            &&!wiredPanel.alternateStrumDirectionForTest()
+            &&unchangedAfterPreset(),
+            "real PIANO ARPÉGÉ button preserves note duration without edits");
+        // Presets are starting points: changing one slider afterwards must
+        // not overwrite the other preset controls or silently edit notes.
+        wiredPanel.setStrumSwingForTest(70);
+        require(wiredPanel.strumSwingForTest()==70
+            &&wiredPanel.strumGapForTest()==120
+            &&wiredPanel.strumDynamicsForTest()==12
+            &&unchangedAfterPreset(),
+            "expressive preset remains freely editable before application");
+        require(wiredPanel.clickStrumPresetForTest(3)
+            &&wiredPanel.strumGapForTest()==60
+            &&wiredPanel.strumSwingForTest()==50
+            &&wiredPanel.strumHumanizeForTest()==0
+            &&wiredPanel.strumDynamicsForTest()==0
+            &&wiredPanel.strumVelocityNuanceForTest()==0
+            &&!wiredPanel.preserveStrumLengthForTest()
+            &&!wiredPanel.alternateStrumDirectionForTest()
+            &&unchangedAfterPreset()
+            &&!wiredPanel.clickStrumPresetForTest(-1)
+            &&!wiredPanel.clickStrumPresetForTest(4),
+            "RÉINITIALISER restores every old default without changing MIDI");
+        // Prove that a prepared preset really reaches the musical engine
+        // only after pressing the existing ÉGRENER button.
+        require(wiredPanel.clickStrumPresetForTest(0)
+            &&unchangedAfterPreset(),
+            "soft-guitar preset does not implicitly apply an edit");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "guitar-soft preset applies only through real strum-up button");
+        const auto presetPlayed=midiClips[(size_t)multiClip].notes;
+        require(presetPlayed.size()==strumBefore.size()
+            &&presetPlayed[0].pitch==60
+            &&presetPlayed[0].startTick==240
+            &&presetPlayed[1].pitch==64
+            &&presetPlayed[1].startTick>240
+            &&presetPlayed[2].pitch==67
+            &&presetPlayed[2].startTick>presetPlayed[1].startTick
+            &&presetPlayed[3].pitch==71
+            &&presetPlayed[3].startTick>presetPlayed[2].startTick
+            &&presetPlayed[4].pitch==74
+            &&presetPlayed[4].startTick==1920,
+            "guitar-soft preset produces ordered notes without changing melody");
+        undoArrangement(false);
+        require(unchangedAfterPreset(),
+            "guitar-soft preset result restores in one Undo step");
+        require(wiredPanel.clickStrumPresetForTest(3)
+            &&wiredPanel.strumGapForTest()==60
+            &&wiredPanel.strumVelocityNuanceForTest()==0
+            &&unchangedAfterPreset(),
+            "reset returns to neutral settings for all previous MIDI tests");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
         require(wiredPanel.isActionEnabled(21)
             &&wiredPanel.clickActionForTest(21),
             "real JUCE strum-up button dispatches");
