@@ -759,6 +759,106 @@ bool runArrangementTests(){
 
         const double px=getLibertyTimelinePixelsPerSecond();
         auto point=[&](int track,double seconds){return juce::Point<int>(owner.trackHeaderWidth+(int)std::lround(seconds*px),owner.getArrangeTrackTop(track)+34);};
+        // Option-drag: mouseDown must be non-destructive. Create one duplicate
+        // on the first actual drag, then move that duplicate; Undo/Redo
+        // treats the whole gesture as one arrangement transaction.
+        const auto duplicateBounds=audioBounds(0,c);
+        if(px>40.0 && duplicateBounds.getWidth()>2*resizeZone+14){
+            const auto centre=duplicateBounds.getCentre();
+            activeArrangeTool=0;
+            beginArrangementEdit();
+            require(handleAudioDown(centre,true)&&audioDragMode==12
+                    &&audioDuplicateId.isEmpty(),
+                    "Option-click on clip body arms duplication without touching media");
+            require(owner.audioEngine.getArrangementAudioClips(0).size()==1,
+                    "Option-click alone never inserts a clip");
+            dragAudio(centre.translated(2,0));
+            require(owner.audioEngine.getArrangementAudioClips(0).size()==1
+                    &&audioDuplicateId.isEmpty(),
+                    "tiny Option movement stays below copy gesture threshold");
+            audioDragTrack=-1;audioDragMode=0;audioDuplicateId.clear();
+            finishArrangementEdit();
+            require(owner.audioEngine.getArrangementAudioClips(0).size()==1,
+                    "Option gesture without movement creates no duplicate");
+            // The original already belongs to the selection, so this also
+            // guards the group-move branch against stealing Option-drags.
+            selectedAudio.clear();selectedAudio.insert({0,c.id});
+            beginArrangementEdit();
+            require(handleAudioDown(centre,true)&&audioDragMode==12
+                    &&!movingGroup,
+                    "Option on selected audio clip does not start group move");
+            const int firstDrag=juce::jmax(10,(int)std::lround(px*.7));
+            dragAudio(centre.translated(firstDrag,0));
+            auto duplicateClips=owner.audioEngine.getArrangementAudioClips(0);
+            require(duplicateClips.size()==2&&!audioDuplicateId.isEmpty()
+                &&audioDuplicateId!=c.id,
+                "Option drag inserts exactly one independent region");
+            const auto copyId=audioDuplicateId;
+            auto locate=[&](const std::vector<AudioClip>& clips,
+                            const juce::String& id)->const AudioClip*{
+                const auto it=std::find_if(clips.begin(),clips.end(),
+                    [&id](const AudioClip& clip){return clip.id==id;});
+                return it==clips.end()?nullptr:&*it;
+            };
+            const auto* original=locate(duplicateClips,c.id);
+            const auto* duplicate=locate(duplicateClips,copyId);
+            require(original&&duplicate&&original->startSeconds==c.startSeconds
+                &&original->sourceBuffer==source
+                &&duplicate->sourceBuffer==source
+                &&duplicate->sourceSampleRate==c.sourceSampleRate
+                &&duplicate->reverse==c.reverse
+                &&duplicate->muted==c.muted
+                &&duplicate->clipGain==c.clipGain
+                &&duplicate->pitchSemitones==c.pitchSemitones
+                &&duplicate->offsetSeconds==c.offsetSeconds
+                &&duplicate->fadeInSeconds==c.fadeInSeconds
+                &&duplicate->fadeOutSeconds==c.fadeOutSeconds
+                &&duplicate->lengthSeconds==c.lengthSeconds,
+                "Option drag preserves original clip and all non-destructive metadata");
+            require(selectedAudio.size()==1
+                &&selectedAudio.count({0,copyId})==1,
+                "Option drag selects duplicate rather than the source");
+            const auto secondDrag=juce::jmax(firstDrag+10,
+                                        (int)std::lround(px*1.6));
+            dragAudio(centre.translated(secondDrag,0));
+            duplicateClips=owner.audioEngine.getArrangementAudioClips(0);
+            duplicate=locate(duplicateClips,copyId);
+            require(duplicateClips.size()==2
+                &&duplicate&&duplicate->startSeconds
+                    ==snapPosition(c.startSeconds+secondDrag/px)
+                &&duplicate->sourceBuffer==source
+                &&locate(duplicateClips,c.id)->startSeconds==c.startSeconds,
+                "moving Option drag updates one clone with musical SNAP");
+            audioDragTrack=-1;audioDragMode=0;audioDuplicateId.clear();
+            finishArrangementEdit();
+            require(undoArrangement(false)
+                &&owner.audioEngine.getArrangementAudioClips(0).size()==1,
+                "undo Option-drag removes only duplicate and restores original");
+            require(undoArrangement(true)
+                &&owner.audioEngine.getArrangementAudioClips(0).size()==2,
+                "redo Option-drag restores the same duplicate and audio buffer");
+            const auto redoneCopy=locate(owner.audioEngine.getArrangementAudioClips(0),copyId);
+            require(redoneCopy&&redoneCopy->sourceBuffer==source
+                &&redoneCopy->fadeInSeconds==c.fadeInSeconds
+                &&redoneCopy->reverse==c.reverse,
+                "redo restores duplication properties without rendering audio");
+            require(undoArrangement(false)
+                &&owner.audioEngine.getArrangementAudioClips(0).size()==1,
+                "restore original clip after duplicated-audio test");
+            selectedAudio.clear();clearArrangementHistory();
+            // Option at a trim edge or fade grip must keep the normal
+            // editing gestures rather than accidentally duplicating audio.
+            beginArrangementEdit();
+            const auto edge=juce::Point<int>{
+                duplicateBounds.getX()+1,duplicateBounds.getCentreY()};
+            require(handleAudioDown(edge,true)&&audioDragMode!=12,
+                "Option near audio trim edge keeps its existing tool");
+            audioDragTrack=-1;audioDragMode=0;audioDuplicateId.clear();
+            finishArrangementEdit();
+            require(owner.audioEngine.getArrangementAudioClips(0).size()==1,
+                "Option near trim edge does not create a duplicate");
+            selectedAudio.clear();clearArrangementHistory();
+        }
         // Exercise the same fade grips used by the arrangement mouse path.
         // This also verifies a complete Undo/Redo roundtrip of fade metadata.
         const auto fadeBox=audioBounds(0,c);
