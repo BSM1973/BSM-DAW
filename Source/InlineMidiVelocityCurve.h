@@ -20,7 +20,8 @@ enum class AccentPattern : int {
     earlyPickup2=10, earlyPickup4=11, earlyPickup8=12,
     fullPhrase2=13, fullPhrase4=14, fullPhrase8=15,
     buildup2=16, buildup4=17, buildup8=18,
-    longBuildup2=19, longBuildup4=20, longBuildup8=21
+    longBuildup2=19, longBuildup4=20, longBuildup8=21,
+    longFade2=22, longFade4=23, longFade8=24
 };
 // A phrase accent falls only on measure 1 of each 2, 4 or 8-bar cycle.
 // All cycles begin at the project's musical zero, never at clip selection.
@@ -81,6 +82,18 @@ inline int accentLongBuildupBars(AccentPattern pattern) noexcept
         case AccentPattern::longBuildup2:return 2;
         case AccentPattern::longBuildup4:return 4;
         case AccentPattern::longBuildup8:return 8;
+        default:return 0;
+    }
+}
+// Gradual musical fade over every pulse of 2, 4 or 8 measures.
+// Zero remains a pure no-op when both accent and ghost intensity are zero.
+inline int accentLongFadeBars(AccentPattern pattern) noexcept
+{
+    switch(pattern)
+    {
+        case AccentPattern::longFade2:return 2;
+        case AccentPattern::longFade4:return 4;
+        case AccentPattern::longFade8:return 8;
         default:return 0;
     }
 }
@@ -331,6 +344,37 @@ inline std::vector<int> accentVelocities(
                        &&nearGrid(inBar%pulseTicks,displacement,pulseTicks,deviation);
             if(emphasized)requested=strength;
         }
+        else if(accentLongFadeBars(pattern)>0)
+        {
+            const auto cycleTicks=barTicks*accentLongFadeBars(pattern);
+            const auto local=(tick+clipStartTick)%cycleTicks;
+            const auto totalPulses=cycleTicks/pulseTicks;
+            const auto lastEighth=cycleTicks-
+                earlyPickupOffset(beatTicks,compound);
+            // Strong opening downbeat, fading evenly toward a delicate
+            // eighth-note ending. MIDI note timing is left untouched.
+            emphasized=nearGrid(local,lastEighth,cycleTicks,deviation);
+            if(emphasized)
+                requested=(int)std::lround(
+                    (double)strength/(double)(totalPulses+1));
+            else
+            {
+                for(std::int64_t pulse=0;pulse<totalPulses;++pulse)
+                {
+                    std::int64_t pulseDeviation=0;
+                    if(nearGrid(local,pulse*pulseTicks,
+                                cycleTicks,pulseDeviation))
+                    {
+                        emphasized=true;
+                        deviation=pulseDeviation;
+                        requested=(int)std::lround(
+                            (double)strength*(double)(totalPulses-pulse)
+                            /(double)totalPulses);
+                        break;
+                    }
+                }
+            }
+        }
         else if(accentLongBuildupBars(pattern)>0)
         {
             const auto cycleTicks=barTicks*accentLongBuildupBars(pattern);
@@ -509,6 +553,21 @@ inline std::vector<AccentGuideMark> rhythmicAccentGuide(
            &&marks.size()<160)
             marks.push_back({absoluteTick-clipStartTick,primary});
     };
+    const auto fadeBars=accentLongFadeBars(pattern);
+    if(fadeBars>0)
+    {
+        // Reuse crescendo's exact grid, project offset and bounded
+        // sampling. Only accent hierarchy is reversed for the preview.
+        const auto correspondingRise=fadeBars==2?AccentPattern::longBuildup2
+            :fadeBars==4?AccentPattern::longBuildup4
+            :AccentPattern::longBuildup8;
+        marks=rhythmicAccentGuide(firstTick,lastTick,numerator,denominator,
+            ticksPerQuarter,clipStartTick,correspondingRise,swingPercent);
+        const auto cycleTicks=barTicks*fadeBars;
+        for(auto& mark:marks)
+            mark.primary=(mark.localTick+clipStartTick)%cycleTicks==0;
+        return marks;
+    }
     const auto longBars=accentLongBuildupBars(pattern);
     if(longBars>0)
     {
@@ -808,6 +867,10 @@ public:
         accentPattern.addItem(juce::String::fromUTF8("Montée longue — 2 mesures"),20);
         accentPattern.addItem(juce::String::fromUTF8("Montée longue — 4 mesures"),21);
         accentPattern.addItem(juce::String::fromUTF8("Montée longue — 8 mesures"),22);
+        accentPattern.addSeparator();
+        accentPattern.addItem(juce::String::fromUTF8("Descente longue — 2 mesures"),23);
+        accentPattern.addItem(juce::String::fromUTF8("Descente longue — 4 mesures"),24);
+        accentPattern.addItem(juce::String::fromUTF8("Descente longue — 8 mesures"),25);
         accentPattern.setSelectedId(1,juce::dontSendNotification);
         accentPattern.setTooltip(juce::String::fromUTF8("Choisir la grille d'accentuation"));
         accentPattern.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff233747));
@@ -1326,6 +1389,9 @@ private:
             case 20:return AccentPattern::longBuildup2;
             case 21:return AccentPattern::longBuildup4;
             case 22:return AccentPattern::longBuildup8;
+            case 23:return AccentPattern::longFade2;
+            case 24:return AccentPattern::longFade4;
+            case 25:return AccentPattern::longFade8;
             default:return AccentPattern::strongBeats;
         }
     }
@@ -1396,7 +1462,7 @@ public:
     }
     void setAccentPattern(AccentPattern pattern)
     {
-        accentPattern.setSelectedId(juce::jlimit(1,22,(int)pattern+1),
+        accentPattern.setSelectedId(juce::jlimit(1,25,(int)pattern+1),
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}

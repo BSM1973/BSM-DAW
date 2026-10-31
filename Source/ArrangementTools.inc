@@ -1819,6 +1819,56 @@ bool runArrangementTests(){
             0,4,4,960,0,AP::longBuildup2,8)
                 ==std::vector<int>({70,70,70}),
             "long crescendo at zero strength never shifts note dynamics");
+        // Full-phrase decrescendo keeps a strong opening and reduces each
+        // subsequent pulse, with a quiet last eighth before the next phrase.
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{1920,70},{2880,70},{3840,70},
+             {4800,70},{5760,70},{6720,70},{7200,70},{7680,70}},
+            {70,70,70,70,70,70,70,70,70,70},
+            20,4,4,960,0,AP::longFade2,8)
+                ==std::vector<int>({90,88,85,83,80,78,75,73,72,90}),
+            "two-bar descending accent envelope follows eight beats");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{3840,70},{7680,70},{11520,70},{14400,70},
+             {14880,70},{15360,70}},
+            {70,70,70,70,70,70,70},20,4,4,960,0,AP::longFade4,8)
+                ==std::vector<int>({90,85,80,75,73,71,90}),
+            "four-bar descending accent envelope follows sixteen beats");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{15360,70},{29760,70},{30240,70},{30720,70}},
+            {70,70,70,70,70},20,4,4,960,0,AP::longFade8,8)
+                ==std::vector<int>({90,80,71,71,90}),
+            "eight-bar descending envelope follows thirty-two beats");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{3360,70},{3840,70}},
+            {70,70,70,70},20,4,4,960,3840,AP::longFade2,8)
+                ==std::vector<int>({80,78,72,90}),
+            "descending envelope follows global phase of shifted clips");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{1440,70},{2880,70},{4320,70},{5280,70},{5760,70}},
+            {70,70,70,70,70,70},18,6,8,960,0,AP::longFade2,8)
+                ==std::vector<int>({88,84,79,75,74,88}),
+            "compound 6/8 decrescendo follows dotted-quarter pulses");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{960,70},{7200,70}},
+            {70,70,70,70},20,4,4,960,0,AP::longFade2,8)
+                ==std::vector<int>({90,62,88,72}),
+            "decrescendo still respects notes outside the rhythm grid");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{-1,70},{0,70}}, {70,70},
+            20,4,4,960,0,AP::longFade2,8)
+                ==std::vector<int>({70,90}),
+            "negative-time note remains untouched by long decrescendo");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{7200,90},{7200,120}}, {90,120},
+            20,4,4,960,0,AP::longFade2,8)
+                ==std::vector<int>({92,122}),
+            "decrescendo preserves simultaneous chord-note intervals");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{7200,70}}, {70,70,70},
+            0,4,4,960,0,AP::longFade2,8)
+                ==std::vector<int>({70,70,70}),
+            "decrescendo at zero strength cannot alter MIDI dynamics");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -2168,6 +2218,42 @@ bool runArrangementTests(){
             require((mark.localTick%960==0)
                 ||(mark.primary&&mark.localTick%30720==30240),
                 "sampled crescendo guide stays aligned to the project grid");
+        const auto fadeGuide2=guides(0,7680,4,4,960,0,
+            AP::longFade2,50);
+        require(fadeGuide2.size()==10
+            &&fadeGuide2[0].localTick==0&&fadeGuide2[0].primary
+            &&fadeGuide2[8].localTick==7200&&!fadeGuide2[8].primary
+            &&fadeGuide2[9].localTick==7680&&fadeGuide2[9].primary,
+            "descending preview highlights only first pulses of phrases");
+        const auto fadeGuide4=guides(0,15360,4,4,960,0,
+            AP::longFade4,50);
+        require(fadeGuide4.size()==18
+            &&fadeGuide4[0].primary
+            &&fadeGuide4[16].localTick==14880
+            &&!fadeGuide4[16].primary
+            &&fadeGuide4[17].primary,
+            "four-bar descending guide follows correct measure starts");
+        const auto fadeGuide8=guides(0,30720,4,4,960,0,
+            AP::longFade8,50);
+        require(fadeGuide8.size()==34
+            &&fadeGuide8[0].primary
+            &&fadeGuide8[32].localTick==30240
+            &&!fadeGuide8[32].primary
+            &&fadeGuide8[33].primary,
+            "eight-bar descending guide follows its exact cycle");
+        const auto fadeOffset=guides(0,3840,4,4,960,3840,
+            AP::longFade2,50);
+        require(fadeOffset.size()==6
+            &&fadeOffset[0].localTick==0&&!fadeOffset[0].primary
+            &&fadeOffset[5].localTick==3840&&fadeOffset[5].primary,
+            "clip offset preserves live decrescendo preview phase");
+        const auto fadeMany=guides(0,3840000,4,4,960,0,
+            AP::longFade8,50);
+        require(!fadeMany.empty()&&fadeMany.size()<=160,
+            "long descending phrases keep preview markers bounded");
+        for(const auto& mark:fadeMany)
+            if(mark.primary)require(mark.localTick%30720==0,
+                "decrescendo bright accent guides stay on global downbeats");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -2261,6 +2347,19 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::longBuildup8
             &&!dialogApplied,
             "long eight-bar crescendo preview cannot mutate MIDI");
+        beatPreview.setAccentPattern(AP::longFade2);
+        const auto shortFadeGuide=beatPreview.getRhythmicGuide();
+        require(beatPreview.getAccentPattern()==AP::longFade2
+            &&shortFadeGuide.size()==5
+            &&shortFadeGuide[0].localTick==0
+            &&shortFadeGuide[0].primary
+            &&!beatPreview.isSwingEnabled()
+            &&!dialogApplied,
+            "descending profile previews strong opening without editing MIDI");
+        beatPreview.setAccentPattern(AP::longFade8);
+        require(beatPreview.getAccentPattern()==AP::longFade8
+            &&!dialogApplied,
+            "eight-bar decrescendo can be previewed without applying MIDI");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -3006,6 +3105,45 @@ bool runArrangementTests(){
             require(longAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "long crescendo Redo reapplies chosen dynamics");
+        // Real long decrescendo in Arrangement must remain a velocity-only
+        // undoable edit, preserving pitch, channel and note timing.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto fadeBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> fadeNotes={
+            {fadeBefore[0].startTick,(int)fadeBefore[0].velocity},
+            {fadeBefore[1].startTick,(int)fadeBefore[1].velocity},
+            {fadeBefore[2].startTick,(int)fadeBefore[2].velocity}};
+        const auto fadeBase=LibertyInlineVelocity::transformVelocities(
+            fadeNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto fadeExpected=LibertyInlineVelocity::accentVelocities(
+            fadeNotes,fadeBase,20,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::longFade4,8,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,20,
+            AP::longFade4,8,25,50,true,FC::sCurve),
+            "long decrescendo applies to selected Arrangement notes");
+        const auto fadeAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<fadeNotes.size();++i)
+            require((int)fadeAfter[i].velocity==fadeExpected[i]
+                &&fadeAfter[i].startTick==fadeBefore[i].startTick
+                &&fadeAfter[i].lengthTicks==fadeBefore[i].lengthTicks
+                &&fadeAfter[i].pitch==fadeBefore[i].pitch
+                &&fadeAfter[i].channel==fadeBefore[i].channel,
+                "descending MIDI envelope preserves structure and timing");
+        undoArrangement(false);
+        for(size_t i=0;i<fadeNotes.size();++i)
+            require(fadeBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "long decrescendo Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<fadeNotes.size();++i)
+            require(fadeAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "long decrescendo Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
