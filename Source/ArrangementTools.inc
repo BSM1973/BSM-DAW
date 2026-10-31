@@ -1715,6 +1715,54 @@ bool runArrangementTests(){
             20,4,4,960,0,AP::fullPhrase2,8)
                 ==std::vector<int>({97,127}),
             "combined pickup preserves relative chord dynamics");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{3840,70},{4800,70},{5760,70},
+             {6720,70},{7200,70},{7680,70}},
+            {70,70,70,70,70,70,70},20,4,4,960,0,AP::buildup2,8)
+                ==std::vector<int>({62,74,78,82,86,90,62}),
+            "2-bar rise increases all final-bar pulses before last eighth");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3840,70},{11520,70},{12480,70},{13440,70},
+             {14400,70},{14880,70}},
+            {70,70,70,70,70,70},20,4,4,960,0,AP::buildup4,8)
+                ==std::vector<int>({62,74,78,82,86,90}),
+            "4-bar rise starts on final measure only");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{26880,70},{27840,70},{28800,70},{29760,70},{30240,70}},
+            {70,70,70,70,70},20,4,4,960,0,AP::buildup8,8)
+                ==std::vector<int>({74,78,82,86,90}),
+            "8-bar rise keeps gradual pulse accents at cycle end");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{3360,70},{3840,70}},
+            {70,70,70,70},20,4,4,960,3840,AP::buildup2,8)
+                ==std::vector<int>({74,78,90,62}),
+            "rising fill follows project bar despite shifted clip");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{2880,70},{4320,70},{5280,70},{5760,70}},
+            {70,70,70,70},18,6,8,960,0,AP::buildup2,8)
+                ==std::vector<int>({76,82,88,62}),
+            "6/8 rise uses dotted-quarter pulses and final eighth");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3780,70},{3840,70},{3900,70}},
+            {70,70,70},20,4,4,960,0,AP::buildup2,8,10)
+                ==std::vector<int>({74,74,74}),
+            "humanized fill pulses remain recognized within tolerance");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3720,70},{3840,70},{3960,70}},
+            {70,70,70},20,4,4,960,0,AP::buildup2,8,
+            25,50,true,LibertyInlineVelocity::Curve::linear)
+                ==std::vector<int>({68,74,68}),
+            "progressive fill pulses smoothly fade into ghost notes");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{7200,90},{7200,120}}, {90,120},
+            20,4,4,960,0,AP::buildup2,8)
+                ==std::vector<int>({97,127}),
+            "fill peak preserves chord intervals when velocity clamps");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3840,70},{4800,70},{5760,70},{6720,70},{7200,70}},
+            {70,70,70,70,70},0,4,4,960,0,AP::buildup2,8)
+                ==std::vector<int>({70,70,70,70,70}),
+            "zero amount leaves rising accent locations unchanged");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -1978,6 +2026,48 @@ bool runArrangementTests(){
             require((mark.primary&&mark.localTick%30720==0)
                 ||(!mark.primary&&(mark.localTick-30240)%30720==0),
                 "combined guide never drifts off project measures");
+        const auto riseGuide2=guides(0,7680,4,4,960,0,
+            AP::buildup2,50);
+        require(riseGuide2.size()==5
+            &&riseGuide2[0].localTick==3840&&!riseGuide2[0].primary
+            &&riseGuide2[1].localTick==4800&&!riseGuide2[1].primary
+            &&riseGuide2[2].localTick==5760&&!riseGuide2[2].primary
+            &&riseGuide2[3].localTick==6720&&!riseGuide2[3].primary
+            &&riseGuide2[4].localTick==7200&&riseGuide2[4].primary,
+            "buildup guide shows each beat and the final eighth");
+        const auto riseGuide4=guides(0,15360,4,4,960,0,
+            AP::buildup4,50);
+        require(riseGuide4.size()==5
+            &&riseGuide4[0].localTick==11520
+            &&riseGuide4[4].localTick==14880&&riseGuide4[4].primary,
+            "four-measure buildup uses only final bar markers");
+        const auto riseGuide8=guides(0,30720,4,4,960,0,
+            AP::buildup8,50);
+        require(riseGuide8.size()==5
+            &&riseGuide8[0].localTick==26880
+            &&riseGuide8[4].localTick==30240&&riseGuide8[4].primary,
+            "eight-measure buildup retains exact last-eighth target");
+        const auto riseGuideCompound=guides(0,5760,6,8,960,0,
+            AP::buildup2,50);
+        require(riseGuideCompound.size()==3
+            &&riseGuideCompound[0].localTick==2880
+            &&riseGuideCompound[1].localTick==4320
+            &&riseGuideCompound[2].localTick==5280,
+            "6/8 buildup draws two dotted-quarter beats and last eighth");
+        const auto riseGuideOffset=guides(0,3840,4,4,960,3840,
+            AP::buildup2,50);
+        require(riseGuideOffset.size()==5
+            &&riseGuideOffset[0].localTick==0
+            &&riseGuideOffset[4].localTick==3360,
+            "preview rise remains anchored to moved Arrangement clip");
+        const auto riseGuideLong=guides(0,3840000,4,4,960,0,
+            AP::buildup8,50);
+        require(!riseGuideLong.empty()&&riseGuideLong.size()<=160,
+            "long buildup previews cap rendered marker count");
+        for(const auto& marker:riseGuideLong)
+            require((marker.localTick%30720)>=26880
+                &&(marker.localTick%30720)<=30240,
+                "sampled buildup markers never leave final phrase bar");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -2044,6 +2134,16 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::fullPhrase8
             &&!dialogApplied,
             "eight-bar complete phrase remains non-destructive");
+        beatPreview.setAccentPattern(AP::buildup2);
+        require(beatPreview.getAccentPattern()==AP::buildup2
+            &&beatPreview.getRhythmicGuide().empty()
+            &&!beatPreview.isSwingEnabled()
+            &&!dialogApplied,
+            "buildup is selectable without editing short MIDI phrases");
+        beatPreview.setAccentPattern(AP::buildup8);
+        require(beatPreview.getAccentPattern()==AP::buildup8
+            &&!dialogApplied,
+            "eight-measure buildup remains preview-only until Apply");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -2712,6 +2812,44 @@ bool runArrangementTests(){
             require(fullAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "combined phrase Redo");
+        // Buildup is a normal undoable Arrangement velocity edit.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto riseBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> riseNotes={
+            {riseBefore[0].startTick,(int)riseBefore[0].velocity},
+            {riseBefore[1].startTick,(int)riseBefore[1].velocity},
+            {riseBefore[2].startTick,(int)riseBefore[2].velocity}};
+        const auto riseBase=LibertyInlineVelocity::transformVelocities(
+            riseNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto riseExpected=LibertyInlineVelocity::accentVelocities(
+            riseNotes,riseBase,20,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::buildup4,8,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,20,
+            AP::buildup4,8,25,50,true,FC::sCurve),
+            "rising MIDI fill applies in Arrangement");
+        const auto riseAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<riseNotes.size();++i)
+            require((int)riseAfter[i].velocity==riseExpected[i]
+                &&riseAfter[i].startTick==riseBefore[i].startTick
+                &&riseAfter[i].lengthTicks==riseBefore[i].lengthTicks
+                &&riseAfter[i].pitch==riseBefore[i].pitch
+                &&riseAfter[i].channel==riseBefore[i].channel,
+                "buildup preserves timing, duration, pitch and channel");
+        undoArrangement(false);
+        for(size_t i=0;i<riseNotes.size();++i)
+            require(riseBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "rising fill Undo");
+        undoArrangement(true);
+        for(size_t i=0;i<riseNotes.size();++i)
+            require(riseAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "rising fill Redo");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
