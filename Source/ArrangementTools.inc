@@ -1292,6 +1292,71 @@ bool runArrangementTests(){
         undoArrangement(false);
         require(midiClips[(size_t)multiClip].notes.size()==octaveBefore.size(),
             "octave-down Undo restores the original chord");
+
+        // Real navy-blue JUCE buttons: one inversion per chord onset.
+        // The separate melody note must not move; Undo and Redo are atomic.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2};
+        const auto inversionBefore=midiClips[(size_t)multiClip].notes;
+        require(inversionBefore.size()==3
+            && inversionBefore[0].startTick==inversionBefore[1].startTick
+            && inversionBefore[2].startTick>inversionBefore[1].startTick
+            && inversionBefore[0].pitch==60 && inversionBefore[1].pitch==64,
+            "inversion chord and separate melody fixture");
+        require(wiredPanel.isActionEnabled(15)
+            && wiredPanel.clickActionForTest(15),
+            "real JUCE inversion-up button is wired");
+        const auto inversionUp=midiClips[(size_t)multiClip].notes;
+        require(inversionUp.size()==inversionBefore.size()
+            && inversionUp[0].pitch==72
+            && inversionUp[1].pitch==64
+            && inversionUp[2].pitch==67
+            && inlineMidiSelectedNotes.size()==3,
+            "inversion-up raises only the lowest chord voice by an octave");
+        for(size_t i=0;i<inversionBefore.size();++i){
+            const auto& original=inversionBefore[i];
+            const auto& edited=inversionUp[i];
+            require(original.startTick==edited.startTick
+                && original.lengthTicks==edited.lengthTicks
+                && original.channel==edited.channel
+                && original.velocity==edited.velocity
+                && original.muted==edited.muted
+                && original.probability==edited.probability,
+                "inversion-up preserves note timing and MIDI expression");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==60
+            && midiClips[(size_t)multiClip].notes[1].pitch==64,
+            "inversion-up Undo restores the chord");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==72,
+            "inversion-up Redo restores the new voicing");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2};
+        require(wiredPanel.isActionEnabled(16)
+            && wiredPanel.clickActionForTest(16),
+            "real JUCE inversion-down button is wired");
+        const auto inversionDown=midiClips[(size_t)multiClip].notes;
+        require(inversionDown.size()==inversionBefore.size()
+            && inversionDown[0].pitch==60
+            && inversionDown[1].pitch==52
+            && inversionDown[2].pitch==67,
+            "inversion-down lowers only the highest chord voice");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==60
+            && midiClips[(size_t)multiClip].notes[1].pitch==64,
+            "inversion-down Undo restores the original voicing");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={2};
+        const auto isolatedBefore=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiInvertChordsSelected(1)
+            && midiClips[(size_t)multiClip].notes.size()==isolatedBefore.size()
+            && midiClips[(size_t)multiClip].notes[2].pitch==67,
+            "isolated melody note is never inverted as a chord");
         // Linear velocity ramps use note start times, not selection order.
         // Simultaneous chord notes share the beginning value.
         inlineMidiClearSelection();
