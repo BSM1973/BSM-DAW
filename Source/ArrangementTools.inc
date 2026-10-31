@@ -238,8 +238,9 @@ public:
         cancel.onClick();return true;
     }
     bool controlsWithinBoundsForTest()const{
-        for(const auto* item:{(const juce::Component*)&gain,&pitch,&fadeIn,
-                              &fadeOut,&reverse,&muted,&confirm,&cancel})
+        const juce::Component* controls[]={
+            &gain,&pitch,&fadeIn,&fadeOut,&reverse,&muted,&confirm,&cancel};
+        for(const auto* item:controls)
             if(!getLocalBounds().contains(item->getBounds()))return false;
         return true;
     }
