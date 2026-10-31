@@ -567,9 +567,11 @@ bool handleAudioDown(juce::Point<int> p,bool optionDuplicate=false){
     }
     refreshAudio(t);return true;
 }
-void dragAudio(juce::Point<int> p){
+void dragAudio(juce::Point<int> p, bool fineFadeAdjustment=false){
     const double px=getLibertyTimelinePixelsPerSecond();if(px<=0)return;
-    const double delta=(p.x-audioDragX)/px;const double minimum=juce::jmax(.01,getLibertySnapSeconds(owner.tempoBpm));
+    const double rawDelta=(p.x-audioDragX)/px;
+    const double delta=(fineFadeAdjustment && (audioDragMode==8 || audioDragMode==9))
+        ? rawDelta*0.2 : rawDelta;const double minimum=juce::jmax(.01,getLibertySnapSeconds(owner.tempoBpm));
     auto clips=owner.audioEngine.getArrangementAudioClips(audioDragTrack);
     if(audioDragMode==12){
         // Lazy duplication: Option-click without moving must not create a
