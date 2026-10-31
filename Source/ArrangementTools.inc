@@ -1448,6 +1448,95 @@ bool runArrangementTests(){
             &&midiClips[(size_t)multiClip].notes[1].pitch
                 ==rejectedDrop[1].pitch,
             "Drop 3 refuses a three-note selection without altering it");
+
+        // The new same-window spacing controls must exercise actual JUCE
+        // onClick routing and preserve all note properties except octave.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        const auto spacingBefore=midiClips[(size_t)multiClip].notes;
+        require(spacingBefore.size()==5
+            &&spacingBefore[0].pitch==60&&spacingBefore[1].pitch==64
+            &&spacingBefore[2].pitch==67&&spacingBefore[3].pitch==71,
+            "close voicing fixture restored before spacing");
+        require(wiredPanel.isActionEnabled(20)
+            &&wiredPanel.clickActionForTest(20),
+            "open voicing JUCE button dispatches");
+        const auto spacingOpen=midiClips[(size_t)multiClip].notes;
+        require(spacingOpen.size()==5
+            &&spacingOpen[0].pitch==60&&spacingOpen[1].pitch==76
+            &&spacingOpen[2].pitch==67&&spacingOpen[3].pitch==83
+            &&spacingOpen[4].pitch==74
+            &&inlineMidiSelectedNotes.size()==5,
+            "open voicing raises alternate chord voices and leaves melody alone");
+        for(size_t i=0;i<spacingBefore.size();++i){
+            const auto& a=spacingBefore[i];
+            const auto& b=spacingOpen[i];
+            require(a.startTick==b.startTick
+                &&a.lengthTicks==b.lengthTicks
+                &&a.channel==b.channel
+                &&a.velocity==b.velocity
+                &&a.muted==b.muted
+                &&a.probability==b.probability
+                &&((int)a.pitch%12)==((int)b.pitch%12),
+                "open voicing keeps note timing dynamics and pitch class");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[1].pitch==64
+            &&midiClips[(size_t)multiClip].notes[3].pitch==71,
+            "open voicing single Undo restores the chord");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[1].pitch==76
+            &&midiClips[(size_t)multiClip].notes[3].pitch==83,
+            "open voicing Redo restores both octave shifts");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.isActionEnabled(19)
+            &&wiredPanel.clickActionForTest(19),
+            "close voicing JUCE button dispatches");
+        const auto spacingClose=midiClips[(size_t)multiClip].notes;
+        require(spacingClose.size()==5
+            &&spacingClose[0].pitch==60&&spacingClose[1].pitch==64
+            &&spacingClose[2].pitch==67&&spacingClose[3].pitch==71
+            &&spacingClose[4].pitch==74,
+            "close voicing folds the expanded chord into one octave");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[1].pitch==76
+            &&midiClips[(size_t)multiClip].notes[3].pitch==83,
+            "close voicing Undo restores expanded voices");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[1].pitch==64
+            &&midiClips[(size_t)multiClip].notes[3].pitch==71,
+            "close voicing Redo restores compact voices");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(!inlineMidiSpaceChordsSelected(false)
+            &&midiClips[(size_t)multiClip].notes[1].pitch==64,
+            "already compact chord is a no-op");
+        // An upper MIDI bound must reject the entire batch atomically.
+        auto outOfRangeChord=spacingBefore;
+        outOfRangeChord[3].pitch=125;
+        require(owner.midiEngine.replaceNotes(outOfRangeChord),
+            "set out-of-range voicing fixture");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3};
+        const auto beforeRejectedOpen=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiSpaceChordsSelected(true),
+            "reject wide voicing above MIDI pitch 127");
+        const auto afterRejectedOpen=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<beforeRejectedOpen.size();++i)
+            require(beforeRejectedOpen[i].pitch==afterRejectedOpen[i].pitch
+                &&beforeRejectedOpen[i].velocity==afterRejectedOpen[i].velocity,
+                "rejected voicing never applies a partial edit");
+        require(owner.midiEngine.replaceNotes(spacingBefore),
+            "restore harmonic spacing fixture");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
         // Restore the identical original regression fixture, so all existing
         // velocity, accent and Arrangement tool tests remain meaningful.
         require(owner.midiEngine.replaceNotes(beforeDropFixture),
