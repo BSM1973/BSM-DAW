@@ -419,6 +419,9 @@ void paintAudioFadeGrip(juce::Graphics& g,float x,float y)const {
     g.fillEllipse(x-5.7f,y-5.7f,11.4f,11.4f);
     g.setColour(juce::Colour(0xff713e0b));
     g.drawEllipse(x-5.7f,y-5.7f,11.4f,11.4f,1.0f);
+    // A compact centre mark makes the drag point unambiguous on bright clips.
+    g.setColour(juce::Colour(0xff142c43));
+    g.fillEllipse(x-1.8f,y-1.8f,3.6f,3.6f);
 }
 void paintAudioFades(juce::Graphics& g){
     juce::Graphics::ScopedSaveState save(g);
