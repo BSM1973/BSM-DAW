@@ -198,7 +198,7 @@ bool inlineMidiDuplicateOctaveSelected(int semitones){
     if(!inlineMidiMode||(semitones!=12&&semitones!=-12)
        ||inlineMidiSelectedNotes.empty())return false;
     auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
-    const it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
         return c.id==inlineMidiSelectedClipId;
     });
     if(it==bank.end()){inlineMidiClearSelection();return false;}
