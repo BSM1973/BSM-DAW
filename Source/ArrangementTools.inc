@@ -107,10 +107,22 @@ int audioFadeHandleAt(juce::Point<int> p) const {
         if(box.getWidth()<=36 || box.getHeight()<=32 || std::abs(p.y-(box.getY()+24))>12)return 0;
         const float fi=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
-        const float left=std::abs((float)p.x-(box.getX()+fi));
-        const float right=std::abs((float)p.x-(box.getRight()-fo));
-        if(left<=12.0f && left<=right)return 8;
-        if(right<=12.0f)return 9;
+        const float inX=(float)box.getX()+fi;
+        const float outX=(float)box.getRight()-fo;
+        const bool close=std::abs(inX-outX)<18.0f;
+        // Match the staggered grip drawing so each handle stays selectable.
+        const float inY=(float)box.getY()+24.0f-(close?5.0f:0.0f);
+        const float outY=(float)box.getY()+24.0f+(close?5.0f:0.0f);
+        const float inDx=std::abs((float)p.x-inX);
+        const float outDx=std::abs((float)p.x-outX);
+        const float inDy=std::abs((float)p.y-inY);
+        const float outDy=std::abs((float)p.y-outY);
+        const float inDistance=inDx*inDx+inDy*inDy;
+        const float outDistance=outDx*outDx+outDy*outDy;
+        const bool inHit=inDx<=12.0f && inDy<=12.0f;
+        const bool outHit=outDx<=12.0f && outDy<=12.0f;
+        if(inHit && (!outHit || inDistance<=outDistance))return 8;
+        if(outHit)return 9;
         return 0;
     }
     return 0;
