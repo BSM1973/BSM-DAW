@@ -368,7 +368,21 @@ void mouseDown(const juce::MouseEvent&e)override{
     }
     if(e.mods.isLeftButtonDown()){
         const int tool=toolAt(ownerPoint);
-        if(tool>=0){activeArrangeTool=tool;operationMessage=tool==5?juce::String::fromUTF8("Cliquez sur un clip pour copier, puis dans le vide pour coller"):juce::String{};repaint();return;}
+        if(tool>=0){
+            activeArrangeTool=tool;
+            if(inlineMidiMode){
+                static const char* actions[]={
+                    "Sélection", "Rectangle", "Crayon", "Gomme",
+                    "Ciseaux", "Coller", "Muet", "Étirement"};
+                operationMessage=juce::String::fromUTF8("ÉDITION DES NOTES MIDI : ")
+                    +juce::String::fromUTF8(actions[tool]);
+            }else{
+                operationMessage=tool==5
+                    ?juce::String::fromUTF8("Cliquez sur un clip pour copier, puis dans le vide pour coller")
+                    :juce::String{};
+            }
+            repaint();return;
+        }
     }
     if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()
        && !(e.eventComponent==this &&
