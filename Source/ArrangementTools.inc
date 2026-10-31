@@ -908,6 +908,10 @@ bool runArrangementTests(){
             const int handleX=fadeBox.getX()+(int)std::lround(fadeBox.getWidth()*c.fadeInSeconds/c.lengthSeconds);
             require(audioFadeHandleAt({handleX+8,fadeBox.getY()+24})==8,
                 "larger manual fade grab region");
+            require(audioFadeHandleAt({handleX,fadeBox.getY()+24+12})==8,
+                "fade grip vertical hit boundary");
+            require(audioFadeHandleAt({handleX,fadeBox.getY()+24+13})==0,
+                "fade grip rejects clicks outside vertical boundary");
         }
         if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
             const int dx=juce::jmax(2,(int)std::lround(.12*px));
