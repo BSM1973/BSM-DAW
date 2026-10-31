@@ -1763,6 +1763,62 @@ bool runArrangementTests(){
             {70,70,70,70,70},0,4,4,960,0,AP::buildup2,8)
                 ==std::vector<int>({70,70,70,70,70}),
             "zero amount leaves rising accent locations unchanged");
+        // Complete phrase crescendo: increasing strength across ALL bars,
+        // not only the last bar; the final eighth carries the peak.
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{1920,70},{2880,70},{3840,70},
+             {4800,70},{5760,70},{6720,70},{7200,70},{7680,70}},
+            {70,70,70,70,70,70,70,70,70,70},
+            20,4,4,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({72,74,77,79,81,83,86,88,90,72}),
+            "long two-bar crescendo gradually increases all beat accents");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{3840,70},{7680,70},{11520,70},{14400,70},
+             {14880,70},{15360,70}},
+            {70,70,70,70,70,70,70},20,4,4,960,0,AP::longBuildup4,8)
+                ==std::vector<int>({71,76,79,84,89,90,71}),
+            "long four-bar crescendo follows 16 pulses per musical phrase");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{15360,70},{29760,70},{30240,70},{30720,70}},
+            {70,70,70,70,70},20,4,4,960,0,AP::longBuildup8,8)
+                ==std::vector<int>({71,80,89,90,71}),
+            "long eight-bar crescendo retains cycle-wide velocity dynamics");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{3360,70},{3840,70}},
+            {70,70,70,70},20,4,4,960,3840,AP::longBuildup2,8)
+                ==std::vector<int>({81,83,90,72}),
+            "long crescendo follows absolute Arrangement bar after clip move");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{1440,70},{2880,70},{4320,70},{5280,70},{5760,70}},
+            {70,70,70,70,70,70},18,6,8,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({74,77,81,84,88,74}),
+            "long crescendo follows dotted-quarter pulses in compound 6/8");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{960,70},{7200,70}},
+            {70,70,70,70},20,4,4,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({72,62,74,90}),
+            "long crescendo leaves offbeat ghost notes unaffected");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{-1,70},{0,70}}, {70,70},
+            20,4,4,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({70,72}),
+            "negative time note is unchanged while valid phrase is accented");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{-120,70},{0,70},{120,70}}, {70,70,70},
+            20,4,4,960,0,AP::longBuildup2,8,
+            8,25,50,true,LibertyInlineVelocity::Curve::linear)
+                ==std::vector<int>({70,72,67}),
+            "smooth long crescendo works with progressive recognition");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{7200,90},{7200,120}}, {90,120},
+            20,4,4,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({97,127}),
+            "long crescendo preserves chord offsets within MIDI limits");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{7200,70}}, {70,70,70},
+            0,4,4,960,0,AP::longBuildup2,8)
+                ==std::vector<int>({70,70,70}),
+            "long crescendo at zero strength never shifts note dynamics");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -2068,6 +2124,50 @@ bool runArrangementTests(){
             require((marker.localTick%30720)>=26880
                 &&(marker.localTick%30720)<=30240,
                 "sampled buildup markers never leave final phrase bar");
+        const auto longRise2=guides(0,7680,4,4,960,0,
+            AP::longBuildup2,50);
+        require(longRise2.size()==10
+            &&longRise2[0].localTick==0&&!longRise2[0].primary
+            &&longRise2[4].localTick==3840&&!longRise2[4].primary
+            &&longRise2[8].localTick==7200&&longRise2[8].primary
+            &&longRise2[9].localTick==7680&&!longRise2[9].primary,
+            "two-bar crescendo guide spans full cycle and final eighth");
+        const auto longRise4=guides(0,15360,4,4,960,0,
+            AP::longBuildup4,50);
+        require(longRise4.size()==18
+            &&longRise4[0].localTick==0
+            &&longRise4[16].localTick==14880&&longRise4[16].primary
+            &&longRise4[17].localTick==15360,
+            "four-bar crescendo preview renders complete 16-beat phrase");
+        const auto longRise8=guides(0,30720,4,4,960,0,
+            AP::longBuildup8,50);
+        require(longRise8.size()==34
+            &&longRise8[32].localTick==30240&&longRise8[32].primary
+            &&longRise8[33].localTick==30720,
+            "eight-bar crescendo guide handles 32 pulses plus last eighth");
+        const auto longRiseCompound=guides(0,5760,6,8,960,0,
+            AP::longBuildup2,50);
+        require(longRiseCompound.size()==6
+            &&longRiseCompound[0].localTick==0
+            &&longRiseCompound[3].localTick==4320
+            &&longRiseCompound[4].localTick==5280
+            &&longRiseCompound[5].localTick==5760,
+            "compound 6/8 long crescendo uses the right last-eighth marker");
+        const auto longRiseShifted=guides(0,3840,4,4,960,3840,
+            AP::longBuildup2,50);
+        require(longRiseShifted.size()==6
+            &&longRiseShifted[0].localTick==0
+            &&longRiseShifted[4].localTick==3360
+            &&longRiseShifted[5].localTick==3840,
+            "long crescendo guide tracks shifted Arrangement clips");
+        const auto longRiseMany=guides(0,3840000,4,4,960,0,
+            AP::longBuildup8,50);
+        require(!longRiseMany.empty()&&longRiseMany.size()<=160,
+            "very long crescendo selection limits visible markers");
+        for(const auto& mark:longRiseMany)
+            require((mark.localTick%960==0)
+                ||(mark.primary&&mark.localTick%30720==30240),
+                "sampled crescendo guide stays aligned to the project grid");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -2151,6 +2251,16 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::buildup8
             &&!dialogApplied,
             "eight-measure buildup remains preview-only until Apply");
+        beatPreview.setAccentPattern(AP::longBuildup2);
+        require(beatPreview.getAccentPattern()==AP::longBuildup2
+            &&beatPreview.getRhythmicGuide().size()==4
+            &&beatPreview.getRhythmicGuide()[0].localTick==0
+            &&!beatPreview.isSwingEnabled()&&!dialogApplied,
+            "long crescendo previews four beats in short selected phrase");
+        beatPreview.setAccentPattern(AP::longBuildup8);
+        require(beatPreview.getAccentPattern()==AP::longBuildup8
+            &&!dialogApplied,
+            "long eight-bar crescendo preview cannot mutate MIDI");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -2857,6 +2967,45 @@ bool runArrangementTests(){
             require(riseAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "rising fill Redo");
+        // Full-cycle MIDI crescendo participates in the same Arrangement
+        // edit history, preserving pitch/timing/duration on every note.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto longBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> longNotes={
+            {longBefore[0].startTick,(int)longBefore[0].velocity},
+            {longBefore[1].startTick,(int)longBefore[1].velocity},
+            {longBefore[2].startTick,(int)longBefore[2].velocity}};
+        const auto longBase=LibertyInlineVelocity::transformVelocities(
+            longNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto longExpected=LibertyInlineVelocity::accentVelocities(
+            longNotes,longBase,20,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::longBuildup4,8,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,20,
+            AP::longBuildup4,8,25,50,true,FC::sCurve),
+            "long crescendo applies within MIDI Arrangement");
+        const auto longAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<longNotes.size();++i)
+            require((int)longAfter[i].velocity==longExpected[i]
+                &&longAfter[i].startTick==longBefore[i].startTick
+                &&longAfter[i].lengthTicks==longBefore[i].lengthTicks
+                &&longAfter[i].pitch==longBefore[i].pitch
+                &&longAfter[i].channel==longBefore[i].channel,
+                "long crescendo edits only velocity, preserving all MIDI structure");
+        undoArrangement(false);
+        for(size_t i=0;i<longNotes.size();++i)
+            require(longBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "long crescendo Undo returns to original dynamics");
+        undoArrangement(true);
+        for(size_t i=0;i<longNotes.size();++i)
+            require(longAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "long crescendo Redo reapplies chosen dynamics");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;

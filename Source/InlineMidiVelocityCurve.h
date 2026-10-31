@@ -19,7 +19,8 @@ enum class AccentPattern : int {
     pickup2=7, pickup4=8, pickup8=9,
     earlyPickup2=10, earlyPickup4=11, earlyPickup8=12,
     fullPhrase2=13, fullPhrase4=14, fullPhrase8=15,
-    buildup2=16, buildup4=17, buildup8=18
+    buildup2=16, buildup4=17, buildup8=18,
+    longBuildup2=19, longBuildup4=20, longBuildup8=21
 };
 // A phrase accent falls only on measure 1 of each 2, 4 or 8-bar cycle.
 // All cycles begin at the project's musical zero, never at clip selection.
@@ -68,6 +69,18 @@ inline int accentBuildupBars(AccentPattern pattern) noexcept
         case AccentPattern::buildup2:return 2;
         case AccentPattern::buildup4:return 4;
         case AccentPattern::buildup8:return 8;
+        default:return 0;
+    }
+}
+// Long crescendo: all beats of an entire 2/4/8-bar phrase rise gradually,
+// with the highest accent on the last eighth before the next phrase.
+inline int accentLongBuildupBars(AccentPattern pattern) noexcept
+{
+    switch(pattern)
+    {
+        case AccentPattern::longBuildup2:return 2;
+        case AccentPattern::longBuildup4:return 4;
+        case AccentPattern::longBuildup8:return 8;
         default:return 0;
     }
 }
@@ -318,6 +331,35 @@ inline std::vector<int> accentVelocities(
                        &&nearGrid(inBar%pulseTicks,displacement,pulseTicks,deviation);
             if(emphasized)requested=strength;
         }
+        else if(accentLongBuildupBars(pattern)>0)
+        {
+            const auto cycleTicks=barTicks*accentLongBuildupBars(pattern);
+            const auto local=(tick+clipStartTick)%cycleTicks;
+            const auto totalPulses=cycleTicks/pulseTicks;
+            const auto pickup=cycleTicks-
+                earlyPickupOffset(beatTicks,compound);
+            // One crescendo across the complete phrase, with a final
+            // eighth-note culmination. Ignore non-pulse notes as ghosts.
+            emphasized=nearGrid(local,pickup,cycleTicks,deviation);
+            if(emphasized)requested=strength;
+            else
+            {
+                for(std::int64_t pulse=0;pulse<totalPulses;++pulse)
+                {
+                    std::int64_t pulseDeviation=0;
+                    if(nearGrid(local,pulse*pulseTicks,
+                                cycleTicks,pulseDeviation))
+                    {
+                        emphasized=true;
+                        deviation=pulseDeviation;
+                        requested=(int)std::lround(
+                            (double)strength*(double)(pulse+1)
+                            /(double)(totalPulses+1));
+                        break;
+                    }
+                }
+            }
+        }
         else if(accentBuildupBars(pattern)>0)
         {
             const auto cycleTicks=barTicks*accentBuildupBars(pattern);
@@ -467,6 +509,37 @@ inline std::vector<AccentGuideMark> rhythmicAccentGuide(
            &&marks.size()<160)
             marks.push_back({absoluteTick-clipStartTick,primary});
     };
+    const auto longBars=accentLongBuildupBars(pattern);
+    if(longBars>0)
+    {
+        // Sparse, deterministic sampling of complete cycles is cheaper
+        // than drawing every bar on a very long MIDI selection.
+        // Secondary beat guides remain dim; last-eighth peaks are bright.
+        const auto firstAligned=firstBar+
+            (longBars-firstBar%longBars)%longBars;
+        const auto pulsesPerCycle=(barTicks*longBars)/pulseTicks;
+        const auto cycleSampling=juce::jmax<std::int64_t>(
+            1,((lastBar-firstBar+1)*pulsesPerCycle)
+                /(120*longBars)+1);
+        const auto step=longBars*cycleSampling;
+        for(auto bar=firstAligned;bar<=lastBar&&marks.size()<160;)
+        {
+            const auto cycleStart=bar*barTicks;
+            for(std::int64_t pulse=0;pulse<pulsesPerCycle
+                &&marks.size()<160;++pulse)
+                append(cycleStart+pulse*pulseTicks,false);
+            append(cycleStart+barTicks*longBars-
+                   earlyPickupOffset(beatTicks,compound),true);
+            if(bar>lastBar-step)break;
+            bar+=step;
+        }
+        std::stable_sort(marks.begin(),marks.end(),
+            [](const AccentGuideMark& a,const AccentGuideMark& b)
+            {
+                return a.localTick<b.localTick;
+            });
+        return marks;
+    }
     const auto buildupBars=accentBuildupBars(pattern);
     if(buildupBars>0)
     {
@@ -729,6 +802,10 @@ public:
         accentPattern.addItem(juce::String::fromUTF8("Montée rythmique — 2 mesures"),17);
         accentPattern.addItem(juce::String::fromUTF8("Montée rythmique — 4 mesures"),18);
         accentPattern.addItem(juce::String::fromUTF8("Montée rythmique — 8 mesures"),19);
+        accentPattern.addSeparator();
+        accentPattern.addItem(juce::String::fromUTF8("Montée longue — 2 mesures"),20);
+        accentPattern.addItem(juce::String::fromUTF8("Montée longue — 4 mesures"),21);
+        accentPattern.addItem(juce::String::fromUTF8("Montée longue — 8 mesures"),22);
         accentPattern.setSelectedId(1,juce::dontSendNotification);
         accentPattern.setTooltip(juce::String::fromUTF8("Choisir la grille d'accentuation"));
         accentPattern.setColour(juce::ComboBox::backgroundColourId,juce::Colour(0xff233747));
@@ -1244,6 +1321,9 @@ private:
             case 17:return AccentPattern::buildup2;
             case 18:return AccentPattern::buildup4;
             case 19:return AccentPattern::buildup8;
+            case 20:return AccentPattern::longBuildup2;
+            case 21:return AccentPattern::longBuildup4;
+            case 22:return AccentPattern::longBuildup8;
             default:return AccentPattern::strongBeats;
         }
     }
@@ -1314,7 +1394,7 @@ public:
     }
     void setAccentPattern(AccentPattern pattern)
     {
-        accentPattern.setSelectedId(juce::jlimit(1,19,(int)pattern+1),
+        accentPattern.setSelectedId(juce::jlimit(1,22,(int)pattern+1),
                                     juce::sendNotificationSync);
     }
     AccentPattern getAccentPattern() const noexcept {return selectedAccentPattern();}

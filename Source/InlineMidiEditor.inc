@@ -331,7 +331,13 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                                                                 ?juce::String::fromUTF8("Montée rythmique 4 mesures")
                                                                                 :accentPattern==LibertyInlineVelocity::AccentPattern::buildup8
                                                                                     ?juce::String::fromUTF8("Montée rythmique 8 mesures")
-                                                                                    :juce::String::fromUTF8("Temps forts"))
+                                                                                    :accentPattern==LibertyInlineVelocity::AccentPattern::longBuildup2
+                                                                                        ?juce::String::fromUTF8("Montée longue 2 mesures")
+                                                                                        :accentPattern==LibertyInlineVelocity::AccentPattern::longBuildup4
+                                                                                            ?juce::String::fromUTF8("Montée longue 4 mesures")
+                                                                                            :accentPattern==LibertyInlineVelocity::AccentPattern::longBuildup8
+                                                                                                ?juce::String::fromUTF8("Montée longue 8 mesures")
+                                                                                                :juce::String::fromUTF8("Temps forts"))
             +juce::String::fromUTF8(" — Notes fantômes −")
             +juce::String(juce::jlimit(0,20,ghostAmount))
             +juce::String::fromUTF8(" — Tolérance ")
