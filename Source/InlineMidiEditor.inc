@@ -997,9 +997,26 @@ void inlineMidiDrag(juce::Point<int> p){
         syncPlayback();repaint();owner.repaint();
     }
 }
+// Collapsed 38-pixel track headers have no MIDI note body below the
+// name. Expand only the chosen track when direct note editing is requested;
+// preserve the other Arrangement track heights and all clip information.
+void ensureInlineMidiTrackVisible(bool instrument,int clipIndex){
+    const auto& bank=instrument?instrumentClips:midiClips;
+    if(clipIndex<0||clipIndex>=(int)bank.size())return;
+    const int logical=owner.getAudioTrackCount()
+        +(instrument?owner.getMidiTrackCount():0)
+        +bank[(size_t)clipIndex].trackLane;
+    if(owner.getArrangeTrackHeight(logical)<52){
+        owner.setArrangeTrackHeight(logical,144);
+        repaint();owner.repaint();
+    }
+}
 void toggleInlineMidiMode(){
     inlineMidiMode=!inlineMidiMode;
-    if(inlineMidiMode)activeArrangeTool=0;
+    if(inlineMidiMode){
+        activeArrangeTool=0;
+        ensureInlineMidiTrackVisible(activeInstrument,activeIndex);
+    }
     if(!inlineMidiMode)inlineMidiVelocityMode=false;
     inlineMidiFinishGesture();inlineMidiClearSelection();
     operationMessage=juce::String::fromUTF8(inlineMidiMode
@@ -1106,12 +1123,14 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
             return true;
         }
         selectClip(instrument,index);
+        ensureInlineMidiTrackVisible(instrument,index);
         return inlineMidiSelectAll();
     }
     if(choice==2 || choice==3){
         if(!inlineMidiMode)toggleInlineMidiMode();
         activeArrangeTool=0;
         selectClip(instrument,index);
+        ensureInlineMidiTrackVisible(instrument,index);
         if(inlineMidiSelectedClipId!=clipId
             ||inlineMidiSelectedInstrument!=instrument
             ||inlineMidiSelectedNotes.empty())
@@ -1128,6 +1147,7 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     // Synchronize the target clip only when the active engine represents a
     // different clip. Selecting it repeatedly would overwrite edited notes.
     if(!isActiveClip(instrument,index))selectClip(instrument,index);
+    ensureInlineMidiTrackVisible(instrument,index);
     const bool hasCompatibleSelection=
         inlineMidiSelectedClipId==clipId
         &&inlineMidiSelectedInstrument==instrument;
