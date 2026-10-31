@@ -1227,6 +1227,71 @@ bool runArrangementTests(){
             require(midiClips[(size_t)multiClip].notes[k].velocity
                 ==noSelectionBefore[k].velocity,
                 "JUCE crescendo button Undo restores every original velocity");
+
+        // Use the real JUCE buttons to double selected MIDI notes by an
+        // octave, preserving expression, original notes and Undo/Redo.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        const auto octaveBefore=midiClips[(size_t)multiClip].notes;
+        require(wiredPanel.isActionEnabled(13)
+            &&wiredPanel.clickActionForTest(13),
+            "real JUCE octave-up button dispatches");
+        const auto octaveUp=midiClips[(size_t)multiClip].notes;
+        require(octaveUp.size()==octaveBefore.size()+2
+            &&inlineMidiSelectedNotes.size()==2,
+            "octave-up adds two selected copies and preserves the originals");
+        for(int i=0;i<2;++i){
+            const auto& source=octaveBefore[(size_t)i];
+            bool originalFound=false,copyFound=false;
+            for(int k=0;k<(int)octaveUp.size();++k){
+                const auto& n=octaveUp[(size_t)k];
+                if(n.startTick!=source.startTick || n.channel!=source.channel)
+                    continue;
+                if(n.pitch==source.pitch)originalFound=true;
+                if((int)n.pitch==(int)source.pitch+12
+                   &&n.lengthTicks==source.lengthTicks
+                   &&n.velocity==source.velocity &&n.muted==source.muted
+                   &&n.probability==source.probability){
+                    copyFound=true;
+                    require(inlineMidiSelectedNotes.count(k)!=0,
+                        "octave-up selects the new notes after engine sorting");
+                }
+            }
+            require(originalFound&&copyFound,
+                "octave-up leaves the source and copies MIDI expression");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==octaveBefore.size(),
+            "octave-up Undo restores the original chord");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes.size()==octaveUp.size(),
+            "octave-up Redo restores both copies");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1};
+        require(wiredPanel.isActionEnabled(14)
+            &&wiredPanel.clickActionForTest(14),
+            "real JUCE octave-down button dispatches");
+        const auto octaveDown=midiClips[(size_t)multiClip].notes;
+        require(octaveDown.size()==octaveBefore.size()+2,
+            "octave-down adds two copies");
+        for(int i=0;i<2;++i){
+            const auto& source=octaveBefore[(size_t)i];
+            require(std::any_of(octaveDown.begin(),octaveDown.end(),
+                [&](const auto& n){
+                    return n.startTick==source.startTick
+                        &&n.channel==source.channel
+                        &&(int)n.pitch==(int)source.pitch-12
+                        &&n.velocity==source.velocity
+                        &&n.lengthTicks==source.lengthTicks
+                        &&n.muted==source.muted;
+                }),"octave-down preserves timing and dynamics");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==octaveBefore.size(),
+            "octave-down Undo restores the original chord");
         // Linear velocity ramps use note start times, not selection order.
         // Simultaneous chord notes share the beginning value.
         inlineMidiClearSelection();
