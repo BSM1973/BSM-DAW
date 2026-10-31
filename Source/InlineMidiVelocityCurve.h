@@ -515,8 +515,10 @@ inline std::vector<AccentGuideMark> rhythmicAccentGuide(
         // Sparse, deterministic sampling of complete cycles is cheaper
         // than drawing every bar on a very long MIDI selection.
         // Secondary beat guides remain dim; last-eighth peaks are bright.
-        const auto firstAligned=firstBar+
-            (longBars-firstBar%longBars)%longBars;
+        // The selection may start halfway through an existing phrase:
+        // draw visible beats from that phrase rather than skipping ahead
+        // to the following phrase boundary.
+        const auto firstAligned=firstBar-firstBar%longBars;
         const auto pulsesPerCycle=(barTicks*longBars)/pulseTicks;
         const auto cycleSampling=juce::jmax<std::int64_t>(
             1,((lastBar-firstBar+1)*pulsesPerCycle)
