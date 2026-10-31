@@ -1357,6 +1357,103 @@ bool runArrangementTests(){
             && midiClips[(size_t)multiClip].notes.size()==isolatedBefore.size()
             && midiClips[(size_t)multiClip].notes[2].pitch==67,
             "isolated melody note is never inverted as a chord");
+
+        // Drop 2 / Drop 3 are accessible via the real navy JUCE window:
+        // C4 E4 G4 B4 -> C4 E4 G3 B4 (Drop 2)
+        // C4 E4 G4 B4 -> C4 E3 G4 B4 (Drop 3).
+        // A later melody note must stay unchanged. All note expression survives.
+        const auto beforeDropFixture=midiClips[(size_t)multiClip].notes;
+        require(beforeDropFixture.size()==3,
+            "Drop voicings start with the restored three-note fixture");
+        std::vector<MidiEngine::NoteEvent> dropNotes;
+        for(int i=0;i<4;++i){
+            auto n=beforeDropFixture[0];
+            n.startTick=240;
+            n.lengthTicks=720;
+            n.pitch=(std::uint8_t)(i==0?60:i==1?64:i==2?67:71);
+            n.channel=(std::uint8_t)(i+1);
+            n.velocity=(std::uint8_t)(70+i*7);
+            dropNotes.push_back(n);
+        }
+        auto melody=beforeDropFixture[2];
+        melody.startTick=1920;
+        melody.pitch=74;
+        melody.channel=1;
+        dropNotes.push_back(melody);
+        require(owner.midiEngine.replaceNotes(dropNotes),
+            "Drop voicings create the four-voice chord fixture");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        clearArrangementHistory();
+        inlineMidiMode=true;
+        activeArrangeTool=0;
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        const auto dropBefore=midiClips[(size_t)multiClip].notes;
+        require(dropBefore.size()==5
+            &&dropBefore[0].pitch==60&&dropBefore[1].pitch==64
+            &&dropBefore[2].pitch==67&&dropBefore[3].pitch==71
+            &&dropBefore[4].pitch==74,
+            "four-voice voicing fixture order");
+        require(wiredPanel.isActionEnabled(17)
+            &&wiredPanel.clickActionForTest(17),
+            "Drop 2 JUCE button is connected to the MIDI operation");
+        const auto drop2=midiClips[(size_t)multiClip].notes;
+        require(drop2.size()==5
+            &&drop2[0].pitch==60&&drop2[1].pitch==64
+            &&drop2[2].pitch==55&&drop2[3].pitch==71
+            &&drop2[4].pitch==74
+            &&inlineMidiSelectedNotes.size()==5,
+            "Drop 2 lowers only the second-highest chord voice");
+        for(size_t i=0;i<dropBefore.size();++i){
+            const auto& before=dropBefore[i];
+            const auto& after=drop2[i];
+            require(before.startTick==after.startTick
+                &&before.lengthTicks==after.lengthTicks
+                &&before.channel==after.channel
+                &&before.velocity==after.velocity
+                &&before.muted==after.muted
+                &&before.probability==after.probability,
+                "Drop 2 preserves every non-pitch MIDI property");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[2].pitch==67,
+            "Drop 2 Undo restores the original chord");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[2].pitch==55,
+            "Drop 2 Redo restores the voicing");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.isActionEnabled(18)
+            &&wiredPanel.clickActionForTest(18),
+            "Drop 3 JUCE button is connected to the MIDI operation");
+        const auto drop3=midiClips[(size_t)multiClip].notes;
+        require(drop3.size()==5
+            &&drop3[0].pitch==60&&drop3[1].pitch==52
+            &&drop3[2].pitch==67&&drop3[3].pitch==71
+            &&drop3[4].pitch==74,
+            "Drop 3 lowers only the third-highest chord voice");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[1].pitch==64,
+            "Drop 3 Undo restores the original chord");
+        // An isolated melodic note and a three-note chord cannot be Drop 3.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2};
+        const auto rejectedDrop=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiDropVoicingSelected(3)
+            &&midiClips[(size_t)multiClip].notes[1].pitch
+                ==rejectedDrop[1].pitch,
+            "Drop 3 refuses a three-note selection without altering it");
+        // Restore the identical original regression fixture, so all existing
+        // velocity, accent and Arrangement tool tests remain meaningful.
+        require(owner.midiEngine.replaceNotes(beforeDropFixture),
+            "restore original MIDI fixture after voicing tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
         // Linear velocity ramps use note start times, not selection order.
         // Simultaneous chord notes share the beginning value.
         inlineMidiClearSelection();
