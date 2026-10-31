@@ -277,7 +277,7 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
         syncPlayback();
         operationMessage=juce::String(selectedCount)
             +juce::String::fromUTF8(" notes — progression de vélocité ")
-            +juce::String(startVelocity)+juce::String::fromUTF8(" → ")
+            +juce::String(startVelocity)+juce::String::fromUTF8(" vers ")
             +juce::String(endVelocity)
             +juce::String::fromUTF8(" — ")
             +(shape==LibertyInlineVelocity::Curve::sCurve
@@ -650,7 +650,7 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
         g.fillRoundedRectangle(hint.toFloat(),3.0f);
         g.setFont(juce::Font(9.0f,juce::Font::bold));
         g.setColour(juce::Colour(0xffffd16f));
-        g.drawFittedText(juce::String::fromUTF8("VÉLOCITÉ  •  glisser ↑↓"),
+        g.drawFittedText(juce::String::fromUTF8("VÉLOCITÉ : glisser"),
                          hint,juce::Justification::centred,1);
     }
     if(inlineMidiMarquee&&inlineMidiSelectedClipId==c.id
@@ -746,7 +746,7 @@ bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
     inlineMidiNoteIndex=note;inlineMidiStartX=p.x;inlineMidiStartY=p.y;
     inlineMidiDragSelection=inlineMidiSelectedNotes;
     operationMessage=inlineMidiVelocityDragging
-        ?juce::String::fromUTF8("VÉLOCITÉ : glisser ↑ pour augmenter, ↓ pour diminuer")
+        ?juce::String::fromUTF8("VÉLOCITÉ : glisser vers le haut ou vers le bas")
         :inlineMidiDuplicating
         ?juce::String::fromUTF8("Option + glisser : dupliquer les notes MIDI sélectionnées")
         :inlineMidiResizing
@@ -1079,7 +1079,7 @@ void showInlineMidiVelocityCurveDialog(){
           MidiEngine::ticksPerQuarterNote,clipStartTick);
     panel->bindInputs();
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle=juce::String::fromUTF8("LIBERTY  ·  COURBE DE VÉLOCITÉ MIDI");
+    options.dialogTitle=juce::String::fromUTF8("LIBERTY - COURBE DE VÉLOCITÉ MIDI");
     options.dialogBackgroundColour=juce::Colour(0xff101c2b);
     options.escapeKeyTriggersCloseButton=true;
     options.useNativeTitleBar=false;
@@ -1360,7 +1360,7 @@ bool inlineMidiContextMenu(juce::Point<int> p){
                     (int)it->notes.size()};
         });
     juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle=juce::String::fromUTF8("LIBERTY · ÉDITION MIDI");
+    options.dialogTitle=juce::String::fromUTF8("LIBERTY - ÉDITION MIDI");
     options.dialogBackgroundColour=juce::Colour(0xff101c2b);
     options.useNativeTitleBar=false;
     options.escapeKeyTriggersCloseButton=true;
