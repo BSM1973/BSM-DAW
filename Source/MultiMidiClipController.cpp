@@ -389,6 +389,8 @@ void mouseDown(const juce::MouseEvent&e)override{
         }
     }
     if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()
+       && !(e.eventComponent==this && e.mods.isAltDown()
+            &&activeArrangeTool==0&&audioAt(ownerPoint).isNotEmpty())
        && !(e.eventComponent==this &&
             (audioFadeHandleAt(ownerPoint)!=0 || crossfadeGripAt(ownerPoint).mode!=0))){
         if(e.getNumberOfClicks()>=2)renameClipAt(ownerPoint);
@@ -427,7 +429,7 @@ void mouseDown(const juce::MouseEvent&e)override{
         // beneath the mouse. Clip tools stay unchanged outside this mode.
         if(inlineMidiToolDown(ownerPoint,e.mods.isShiftDown()))return;
         if(inlineMidiDown(ownerPoint,e.mods.isAltDown(),e.mods.isShiftDown()))return;
-        if(handleAudioDown(ownerPoint))return;
+        if(handleAudioDown(ownerPoint,e.mods.isAltDown()))return;
         if(activeArrangeTool==0 || activeArrangeTool==1){
             bool instrument=false;const int hit=findClipAt(ownerPoint,instrument);
             const auto& clips=instrument?instrumentClips:midiClips;
@@ -491,7 +493,7 @@ if(mixerDragMode){dragMixer(e.getPosition());return;}if(dragIndex<0||!dragMode)r
     if(audioDragTrack>=0){
         if(audioDragMode==4){operationMessage=owner.audioEngine.stretchArrangementAudioClip(audioDragTrack,audioDragOriginal.id,audioDragLength)
             ?juce::String::fromUTF8("Étirement audio terminé — hauteur conservée"):juce::String::fromUTF8("Étirement impossible — clip conservé");refreshAudio(audioDragTrack);}
-        audioDragTrack=-1;audioDragMode=0;
+        audioDragTrack=-1;audioDragMode=0;audioDuplicateId.clear();
     }
     if(inlineMidiDragging||inlineMidiMarquee)inlineMidiCompleteGesture();
     finishArrangementEdit();
