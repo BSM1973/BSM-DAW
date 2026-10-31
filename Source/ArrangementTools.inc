@@ -152,6 +152,211 @@ AudioKey crossfadeAt(juce::Point<int> p)const {
     }
     return {-1,{}};
 }
+// Non-destructive audio clip editor. The original source buffer is never
+// copied, rewritten or modified by this panel. A single APPLY creates one
+// Arrangement Undo transaction, and CANCEL has no side effects.
+class AudioClipEditPanel final : public juce::Component {
+public:
+    AudioClipEditPanel(const AudioClip& initial,
+                       std::function<void(const AudioClip&)> onApply)
+       : original(initial),apply(std::move(onApply))
+    {
+        setSize(560,495);
+        auto slider=[this](juce::Slider& control,double low,double high,
+                           double value,double interval,const juce::String& suffix){
+            control.setSliderStyle(juce::Slider::LinearHorizontal);
+            control.setRange(low,high,interval);
+            control.setValue(juce::jlimit(low,high,value),juce::dontSendNotification);
+            control.setTextBoxStyle(juce::Slider::TextBoxRight,false,110,28);
+            control.setTextValueSuffix(suffix);
+            control.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff182f42));
+            control.setColour(juce::Slider::trackColourId,juce::Colour(0xff69abc9));
+            control.setColour(juce::Slider::thumbColourId,juce::Colour(0xffffd48f));
+            control.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xfff0f7ff));
+            control.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff142638));
+            control.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff507b98));
+            addAndMakeVisible(control);
+        };
+        slider(gain,0,400,initial.clipGain*100.0,0.01," %");
+        slider(pitch,-48,48,initial.pitchSemitones,0.01,
+               juce::String::fromUTF8(" demi-tons"));
+        slider(fadeIn,0,initial.lengthSeconds,initial.fadeInSeconds,0.001," s");
+        slider(fadeOut,0,initial.lengthSeconds,initial.fadeOutSeconds,0.001," s");
+        reverse.setButtonText(juce::String::fromUTF8("LECTURE INVERSÉE"));
+        muted.setButtonText(juce::String::fromUTF8("CLIP MUET"));
+        reverse.setToggleState(initial.reverse,juce::dontSendNotification);
+        muted.setToggleState(initial.muted,juce::dontSendNotification);
+        for(auto* toggle:{&reverse,&muted}){
+            toggle->setColour(juce::ToggleButton::textColourId,
+                              juce::Colour(0xffeef7fc));
+            toggle->setColour(juce::ToggleButton::tickColourId,
+                              juce::Colour(0xffffd48f));
+            addAndMakeVisible(*toggle);
+        }
+        confirm.setButtonText(juce::String::fromUTF8("APPLIQUER"));
+        cancel.setButtonText(juce::String::fromUTF8("ANNULER"));
+        confirm.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff286482));
+        cancel.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff23394c));
+        for(auto* button:{&confirm,&cancel}){
+            button->setColour(juce::TextButton::textColourOffId,
+                              juce::Colour(0xfff4f8fc));
+            addAndMakeVisible(*button);
+        }
+        confirm.onClick=[this]{
+            const auto current=values();
+            if(apply)apply(current);
+            closeDialog();
+        };
+        cancel.onClick=[this]{closeDialog();};
+    }
+
+    AudioClip values() const {
+        auto result=original;
+        result.clipGain=(float)(gain.getValue()/100.0);
+        result.pitchSemitones=pitch.getValue();
+        result.fadeInSeconds=fadeIn.getValue();
+        result.fadeOutSeconds=fadeOut.getValue();
+        result.reverse=reverse.getToggleState();
+        result.muted=muted.getToggleState();
+        return result;
+    }
+    void setValuesForTest(double gainPercent,double semitones,double in,double out,
+                          bool backwards,bool silent){
+        gain.setValue(gainPercent,juce::sendNotificationSync);
+        pitch.setValue(semitones,juce::sendNotificationSync);
+        fadeIn.setValue(in,juce::sendNotificationSync);
+        fadeOut.setValue(out,juce::sendNotificationSync);
+        reverse.setToggleState(backwards,juce::sendNotificationSync);
+        muted.setToggleState(silent,juce::sendNotificationSync);
+    }
+    bool clickApplyForTest(){
+        if(!confirm.onClick)return false;
+        confirm.onClick();return true;
+    }
+    bool clickCancelForTest(){
+        if(!cancel.onClick)return false;
+        cancel.onClick();return true;
+    }
+    bool controlsWithinBoundsForTest()const{
+        for(const auto* item:{(const juce::Component*)&gain,&pitch,&fadeIn,
+                              &fadeOut,&reverse,&muted,&confirm,&cancel})
+            if(!getLocalBounds().contains(item->getBounds()))return false;
+        return true;
+    }
+    void resized()override{
+        const int x=22,w=getWidth()-44;
+        gain.setBounds(x+160,92,w-160,42);
+        pitch.setBounds(x+160,161,w-160,42);
+        fadeIn.setBounds(x+160,230,w-160,42);
+        fadeOut.setBounds(x+160,299,w-160,42);
+        reverse.setBounds(x,368,w/2-10,30);
+        muted.setBounds(x+w/2,368,w/2-10,30);
+        cancel.setBounds(getWidth()-276,432,115,40);
+        confirm.setBounds(getWidth()-148,432,126,40);
+    }
+    void paint(juce::Graphics& g)override{
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(0xff203c50),0.f,0.f,
+            juce::Colour(0xff101d2e),0.f,(float)getHeight(),false));
+        g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(1.f),11.f);
+        g.setColour(juce::Colour(0xff597f99));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.f),11.f,1.5f);
+        g.setColour(juce::Colour(0xffffd48f));
+        g.fillRoundedRectangle(juce::Rectangle<float>(22,22,4,37),2.f);
+        g.setColour(juce::Colour(0xfff3f9ff));
+        g.setFont(juce::Font(24.f,juce::Font::bold));
+        g.drawText(juce::String::fromUTF8("ÉDITION DU CLIP AUDIO"),
+                   37,23,getWidth()-56,36,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff9db8c9));
+        g.setFont(juce::Font(12.f));
+        g.drawFittedText(original.sourceName,23,64,getWidth()-46,19,
+                         juce::Justification::centredLeft,1);
+        g.setColour(juce::Colour(0xffffd48f));
+        g.setFont(juce::Font(13.f,juce::Font::bold));
+        const juce::String labels[]={
+            juce::String::fromUTF8("GAIN DU CLIP"),
+            juce::String::fromUTF8("TRANSPOSITION"),
+            juce::String::fromUTF8("FONDU D’ENTRÉE"),
+            juce::String::fromUTF8("FONDU DE SORTIE")};
+        for(int i=0;i<4;++i)
+            g.drawText(labels[i],23,100+69*i,160,25,
+                       juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff8baabb));
+        g.setFont(juce::Font(11.f));
+        g.drawText(juce::String::fromUTF8("Édition non destructive — Undo/Redo"),
+                   23,446,248,24,juce::Justification::centredLeft);
+    }
+private:
+    void closeDialog(){
+        if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
+            w->exitModalState(0);
+    }
+    AudioClip original;
+    std::function<void(const AudioClip&)> apply;
+    juce::Slider gain,pitch,fadeIn,fadeOut;
+    juce::ToggleButton reverse,muted;
+    juce::TextButton confirm,cancel;
+};
+
+// All editor settings reach the existing audio engine. Never change media,
+// warp markers, clip placement, source offset, or crossfade preferences here.
+bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& proposed){
+    if(track<0||track>=owner.getAudioTrackCount())return false;
+    auto clips=owner.audioEngine.getArrangementAudioClips(track);
+    auto it=std::find_if(clips.begin(),clips.end(),
+                         [&](const AudioClip& c){return c.id==id;});
+    if(it==clips.end())return false;
+    if(it->clipGain==proposed.clipGain
+       &&it->pitchSemitones==proposed.pitchSemitones
+       &&it->fadeInSeconds==proposed.fadeInSeconds
+       &&it->fadeOutSeconds==proposed.fadeOutSeconds
+       &&it->reverse==proposed.reverse
+       &&it->muted==proposed.muted)return false;
+    auto edited=*it;
+    edited.clipGain=proposed.clipGain;
+    edited.pitchSemitones=proposed.pitchSemitones;
+    edited.fadeInSeconds=proposed.fadeInSeconds;
+    edited.fadeOutSeconds=proposed.fadeOutSeconds;
+    edited.reverse=proposed.reverse;
+    edited.muted=proposed.muted;
+    if(!AudioEngine::validAudioClip(edited)
+       ||edited.fadeInSeconds>edited.lengthSeconds
+       ||edited.fadeOutSeconds>edited.lengthSeconds)return false;
+    beginArrangementEdit();
+    *it=std::move(edited);
+    const bool applied=owner.audioEngine.replaceArrangementAudioClips(track,clips);
+    if(applied){
+        operationMessage=juce::String::fromUTF8("Réglages du clip audio appliqués");
+        selectedAudio.clear();selectedClipIds.clear();selectedAudio.insert({track,id});
+        refreshAudio(track);
+        owner.repaint();repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
+bool showAudioClipEditor(juce::Point<int> p){
+    const int track=audioLaneAt(p);
+    const auto id=audioAt(p);
+    if(track<0||id.isEmpty())return false;
+    const auto clips=owner.audioEngine.getArrangementAudioClips(track);
+    const auto it=std::find_if(clips.begin(),clips.end(),
+        [&](const AudioClip& c){return c.id==id;});
+    if(it==clips.end())return false;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    auto* panel=new AudioClipEditPanel(*it,[safe,track,id](const AudioClip& values){
+        if(safe)safe->applyAudioClipEdit(track,id,values);
+    });
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle=juce::String::fromUTF8("LIBERTY - ÉDITION AUDIO");
+    options.dialogBackgroundColour=juce::Colour(0xff101c2b);
+    options.useNativeTitleBar=false;
+    options.escapeKeyTriggersCloseButton=true;
+    options.resizable=false;
+    options.componentToCentreAround=&owner;
+    options.content.setOwned(panel);
+    options.launchAsync();
+    return true;
+}
 bool showAudioCrossfadeMenu(juce::Point<int> p){
     const auto hit=crossfadeAt(p);
     if(hit.first<0)return false;
