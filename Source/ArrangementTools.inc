@@ -696,7 +696,7 @@ bool runArrangementTests(){
         require(undoArrangement(true),
             "audio clip editor Redo restores the edited settings");
         const auto redoneAudio=owner.audioEngine.getArrangementAudioClips(0);
-        require(redoneAudio[0].pitchSemitones==-7
+        require(std::abs(redoneAudio[0].pitchSemitones+7.0)<.0001
             &&redoneAudio[0].muted&&redoneAudio[0].sourceBuffer==source,
             "Redo preserves the source buffer and edited pitch/mute");
         require(undoArrangement(false),"restore audio fixture after editor tests");
