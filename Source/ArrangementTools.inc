@@ -616,6 +616,91 @@ bool runArrangementTests(){
         AudioClip c;c.id="original";c.sourceName=juce::String::fromUTF8("Échantillon original");c.sourceBuffer=source;c.sourceSampleRate=48000;c.lengthSeconds=1;
         c.clipGain=.7f;c.reverse=true;c.fadeInSeconds=.02;c.fadeOutSeconds=.05;
         require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"seed audio");
+
+        // The clip editor is a real JUCE window with non-destructive controls.
+        // Reading controls and cancelling must not touch the audio engine.
+        int audioApplyCallbacks=0;
+        AudioClip proposedAudio=c;
+        AudioClipEditPanel cancelledAudio(c,[&](const AudioClip& v){
+            ++audioApplyCallbacks;proposedAudio=v;
+        });
+        require(cancelledAudio.getWidth()==560&&cancelledAudio.getHeight()==495
+            &&cancelledAudio.controlsWithinBoundsForTest()
+            &&std::abs(cancelledAudio.values().clipGain-c.clipGain)<.00001f
+            &&cancelledAudio.values().reverse
+            &&cancelledAudio.clickCancelForTest()
+            &&audioApplyCallbacks==0,
+            "audio editor blue JUCE window has accessible controls and cancel is inert");
+        AudioClipEditPanel audioEditor(c,[&](const AudioClip& v){
+            ++audioApplyCallbacks;proposedAudio=v;
+        });
+        audioEditor.setValuesForTest(45,-7,.125,.205,false,true);
+        const auto preparedAudio=audioEditor.values();
+        require(audioEditor.controlsWithinBoundsForTest()
+            &&std::abs(preparedAudio.clipGain-.45f)<.0001f
+            &&preparedAudio.pitchSemitones==-7
+            &&std::abs(preparedAudio.fadeInSeconds-.125)<.00001
+            &&std::abs(preparedAudio.fadeOutSeconds-.205)<.00001
+            &&!preparedAudio.reverse && preparedAudio.muted
+            &&owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==.7f
+            &&audioApplyCallbacks==0,
+            "editing audio controls only prepares gain, pitch, fades and flags");
+        require(audioEditor.clickApplyForTest()&&audioApplyCallbacks==1,
+            "real audio editor APPLY button dispatches precisely once");
+        require(applyAudioClipEdit(0,c.id,proposedAudio),
+            "non-destructive editor applies settings to selected audio clip");
+        const auto afterAudioEditor=owner.audioEngine.getArrangementAudioClips(0);
+        require(afterAudioEditor.size()==1
+            &&afterAudioEditor[0].sourceBuffer==source
+            &&afterAudioEditor[0].id==c.id
+            &&afterAudioEditor[0].startSeconds==c.startSeconds
+            &&afterAudioEditor[0].offsetSeconds==c.offsetSeconds
+            &&afterAudioEditor[0].sourceName==c.sourceName
+            &&afterAudioEditor[0].pitchSemitones==-7
+            &&std::abs(afterAudioEditor[0].clipGain-.45f)<.0001f
+            &&std::abs(afterAudioEditor[0].fadeInSeconds-.125)<.00001
+            &&std::abs(afterAudioEditor[0].fadeOutSeconds-.205)<.00001
+            &&!afterAudioEditor[0].reverse&&afterAudioEditor[0].muted,
+            "audio edit modifies only independent clip properties and keeps media");
+        require(!applyAudioClipEdit(0,c.id,proposedAudio)
+            &&!applyAudioClipEdit(-1,c.id,proposedAudio)
+            &&!applyAudioClipEdit(0,"missing-clip",proposedAudio),
+            "duplicate or invalid clip edit cannot create a new edit");
+        require(undoArrangement(false),
+            "audio clip edit shares the existing Arrangement Undo history");
+        const auto undoneAudio=owner.audioEngine.getArrangementAudioClips(0);
+        require(undoneAudio.size()==1
+            &&undoneAudio[0].sourceBuffer==source
+            &&undoneAudio[0].clipGain==c.clipGain
+            &&undoneAudio[0].pitchSemitones==c.pitchSemitones
+            &&undoneAudio[0].reverse==c.reverse
+            &&undoneAudio[0].muted==c.muted
+            &&undoneAudio[0].fadeInSeconds==c.fadeInSeconds
+            &&undoneAudio[0].fadeOutSeconds==c.fadeOutSeconds,
+            "Undo restores all original audio clip settings atomically");
+        require(undoArrangement(true),
+            "audio clip editor Redo restores the edited settings");
+        const auto redoneAudio=owner.audioEngine.getArrangementAudioClips(0);
+        require(redoneAudio[0].pitchSemitones==-7
+            &&redoneAudio[0].muted&&redoneAudio[0].sourceBuffer==source,
+            "Redo preserves the source buffer and edited pitch/mute");
+        require(undoArrangement(false),"restore audio fixture after editor tests");
+        // An impossible value or a fade outside the clip is rejected before
+        // any engine state or Undo history is changed.
+        auto invalidAudio=c;invalidAudio.pitchSemitones=49;
+        require(!applyAudioClipEdit(0,c.id,invalidAudio),
+            "clip editor rejects transpositions outside the audio engine range");
+        invalidAudio=c;invalidAudio.fadeOutSeconds=2;
+        require(!applyAudioClipEdit(0,c.id,invalidAudio),
+            "clip editor rejects a fade beyond the region duration");
+        invalidAudio=c;invalidAudio.clipGain=-1.0f;
+        require(!applyAudioClipEdit(0,c.id,invalidAudio),
+            "clip editor rejects a negative gain before touching media");
+        require(owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==c.clipGain
+            &&owner.audioEngine.getArrangementAudioClips(0)[0].sourceBuffer==source,
+            "invalid audio edits never damage the original buffer");
+        clearArrangementHistory();
+
         const double px=getLibertyTimelinePixelsPerSecond();
         auto point=[&](int track,double seconds){return juce::Point<int>(owner.trackHeaderWidth+(int)std::lround(seconds*px),owner.getArrangeTrackTop(track)+34);};
         // Exercise the same fade grips used by the arrangement mouse path.
