@@ -418,8 +418,8 @@ void inlineMidiMarqueeDrag(juce::Point<int> p){
     const auto rectangle=juce::Rectangle<int>(
         juce::jmin(inlineMidiMarqueeStart.x,inlineMidiMarqueeEnd.x),
         juce::jmin(inlineMidiMarqueeStart.y,inlineMidiMarqueeEnd.y),
-        std::abs(inlineMidiMarqueeStart.x-inlineMidiMarqueeEnd.x),
-        std::abs(inlineMidiMarqueeStart.y-inlineMidiMarqueeEnd.y))
+        juce::jmax(2,std::abs(inlineMidiMarqueeStart.x-inlineMidiMarqueeEnd.x)),
+        juce::jmax(2,std::abs(inlineMidiMarqueeStart.y-inlineMidiMarqueeEnd.y)))
         .getIntersection(area);
     inlineMidiSelectedNotes=inlineMidiMarqueeBaseline;
     if(rectangle.getWidth()>1 && rectangle.getHeight()>1){
@@ -658,8 +658,8 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
         const auto marquee=juce::Rectangle<int>(
             juce::jmin(inlineMidiMarqueeStart.x,inlineMidiMarqueeEnd.x),
             juce::jmin(inlineMidiMarqueeStart.y,inlineMidiMarqueeEnd.y),
-            std::abs(inlineMidiMarqueeStart.x-inlineMidiMarqueeEnd.x),
-            std::abs(inlineMidiMarqueeStart.y-inlineMidiMarqueeEnd.y))
+            juce::jmax(2,std::abs(inlineMidiMarqueeStart.x-inlineMidiMarqueeEnd.x)),
+            juce::jmax(2,std::abs(inlineMidiMarqueeStart.y-inlineMidiMarqueeEnd.y)))
             .getIntersection(area);
         g.setColour(juce::Colour(0xff8fd9ff).withAlpha(.18f));
         g.fillRect(marquee);
