@@ -610,6 +610,119 @@ bool inlineMidiSpaceChordsSelected(bool widen){
     return applied;
 }
 
+
+/* Strum selected simultaneous MIDI notes in pitch order.
+   Each successive voice begins one 1/64-note later. Keep each note's
+   absolute end tick fixed, so no note crosses its original chord release.
+   All groups are validated before the single Undo transaction. */
+bool inlineMidiStrumChordsSelected(bool bassFirst){
+    if(!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int clipIndex=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,clipIndex))
+        selectClip(inlineMidiSelectedInstrument,clipIndex);
+    auto& clip=bank[(size_t)clipIndex];
+    const auto originals=clip.notes;
+    const auto clipEnd=MidiEngine::secondsToTick(
+        clip.lengthSeconds,owner.tempoBpm);
+    std::map<std::int64_t,std::vector<int>> chords;
+    for(const int index:inlineMidiSelectedNotes){
+        if(index<0||index>=(int)originals.size()){
+            inlineMidiClearSelection();return false;
+        }
+        const auto& n=originals[(size_t)index];
+        if(n.startTick<0||n.startTick>=clipEnd||n.lengthTicks<=0
+           ||n.lengthTicks>clipEnd-n.startTick)return false;
+        chords[n.startTick].push_back(index);
+    }
+    auto notes=originals;
+    const std::int64_t step=juce::jmax<std::int64_t>(
+        1,MidiEngine::ticksPerQuarterNote/16);
+    int changedChords=0;
+    for(const auto& entry:chords){
+        auto voices=entry.second;
+        if(voices.size()<2)continue;
+        std::sort(voices.begin(),voices.end(),[&](int a,int b){
+            const int pa=(int)originals[(size_t)a].pitch;
+            const int pb=(int)originals[(size_t)b].pitch;
+            return pa!=pb?(bassFirst?pa<pb:pa>pb):a<b;
+        });
+        if(originals[(size_t)voices.front()].pitch
+           ==originals[(size_t)voices.back()].pitch)continue;
+        for(size_t i=1;i<voices.size();++i){
+            const int index=voices[i];
+            const auto& old=originals[(size_t)index];
+            const auto offset=(std::int64_t)i*step;
+            // Preserve the original absolute end and reject a clipped
+            // release rather than creating zero or negative-length notes.
+            if(offset>=old.lengthTicks){
+                operationMessage=juce::String::fromUTF8(
+                    "Égrenage impossible : durée des notes insuffisante");
+                return false;
+            }
+            notes[(size_t)index].startTick=old.startTick+offset;
+            notes[(size_t)index].lengthTicks=old.lengthTicks-offset;
+        }
+        ++changedChords;
+    }
+    if(changedChords==0){
+        operationMessage=juce::String::fromUTF8(
+            "Sélectionnez au moins deux notes simultanées de hauteurs différentes");
+        return false;
+    }
+    // Check actual post-edit note ons. An unchanged melody or another
+    // chord may exist at a staggered tick; never create duplicate MIDI
+    // note-ons on the same channel/pitch, even if they were not selected.
+    for(const int moved:inlineMidiSelectedNotes){
+        if(notes[(size_t)moved].startTick
+           ==originals[(size_t)moved].startTick)continue;
+        const auto& n=notes[(size_t)moved];
+        for(int i=0;i<(int)notes.size();++i){
+            if(i==moved)continue;
+            const auto& other=notes[(size_t)i];
+            if(other.startTick==n.startTick&&other.channel==n.channel
+               &&other.pitch==n.pitch){
+                operationMessage=juce::String::fromUTF8(
+                    "Égrenage impossible : note MIDI déjà présente à cet instant");
+                return false;
+            }
+        }
+    }
+    std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+    tagged.reserve(notes.size());
+    for(int i=0;i<(int)notes.size();++i)
+        tagged.push_back({notes[(size_t)i],i});
+    std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+        if(a.first.startTick!=b.first.startTick)
+            return a.first.startTick<b.first.startTick;
+        if(a.first.channel!=b.first.channel)
+            return a.first.channel<b.first.channel;
+        return a.first.pitch<b.first.pitch;
+    });
+    beginArrangementEdit();
+    const bool applied=owner.midiEngine.replaceNotes(notes);
+    if(applied){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        const auto previous=inlineMidiSelectedNotes;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(previous.count(tagged[(size_t)i].second))
+                inlineMidiSelectedNotes.insert(i);
+        syncPlayback();
+        operationMessage=juce::String(changedChords)
+            +juce::String::fromUTF8(bassFirst
+                ?" accords égrenés du grave vers l'aigu"
+                :" accords égrenés de l'aigu vers le grave");
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
+
 // Apply a linear velocity crescendo/diminuendo in MUSICAL TIME.
 // Chord notes sharing a start tick receive the same velocity. No position,
 // length, channel or articulation information is altered.
@@ -1708,7 +1821,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     }
     if(!((choice>=1001&&choice<=1127)||(choice>=2001&&choice<=2005)
          ||choice==2101||choice==2102||choice==2201||choice==2202
-         ||choice==2301||choice==2302||choice==2401||choice==2402))return false;
+         ||choice==2301||choice==2302||choice==2401||choice==2402
+         ||choice==2501||choice==2502))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1737,6 +1851,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiDropVoicingSelected(choice==2301?2:3);
     if(choice==2401||choice==2402)
         return inlineMidiSpaceChordsSelected(choice==2402);
+    if(choice==2501||choice==2502)
+        return inlineMidiStrumChordsSelected(choice==2501);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1756,9 +1872,9 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,814);
+        setSize(608,906);
         static const int actions[]={
-            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,0};
+            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,2501,2502,0};
         const juce::String labels[]={
             juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
             juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
@@ -1781,6 +1897,8 @@ public:
             juce::String::fromUTF8("DROP 3"),
             juce::String::fromUTF8("RESSERRER"),
             juce::String::fromUTF8("ÉLARGIR"),
+            juce::String::fromUTF8("ÉGRENER DU GRAVE VERS L'AIGU"),
+            juce::String::fromUTF8("ÉGRENER DE L'AIGU VERS LE GRAVE"),
             juce::String::fromUTF8("FERMER")};
         for(size_t i=0;i<buttons.size();++i){
             auto& b=buttons[i];
@@ -1790,7 +1908,7 @@ public:
             b.setColour(juce::TextButton::buttonOnColourId,
                         juce::Colour(0xff366074));
             b.setColour(juce::TextButton::textColourOffId,
-                        juce::Colour(i==21?0xffb9cbd9:0xfff1f7fd));
+                        juce::Colour(i==23?0xffb9cbd9:0xfff1f7fd));
             b.setColour(juce::TextButton::textColourOnId,
                         juce::Colour(0xffffd48a));
             b.setTooltip(i<2
@@ -1809,9 +1927,11 @@ public:
                                         ?juce::String::fromUTF8("Abaisser d'une octave la deuxième ou troisième voix la plus aiguë de chaque accord")
                                         :i<21
                                             ?juce::String::fromUTF8("Resserrer les notes dans une octave ou élargir les voix en conservant la tonalité")
-                                            :juce::String::fromUTF8("Fermer l'éditeur"));
+                                            :i<23
+                                                ?juce::String::fromUTF8("Décaler les attaques des notes simultanées d'un soixante-quatrième, sans déplacer leur fin")
+                                                :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
-                if(i==21){
+                if(i==23){
                     if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
                         w->exitModalState(0);
                     return;
@@ -1855,6 +1975,8 @@ public:
         buttons[18].setEnabled(state[3]>=4);
         buttons[19].setEnabled(state[3]>=3);
         buttons[20].setEnabled(state[3]>=3);
+        buttons[21].setEnabled(state[3]>=2);
+        buttons[22].setEnabled(state[3]>=2);
         selected=state[2];total=state[3];
         repaint();
     }
@@ -1892,7 +2014,9 @@ public:
         buttons[18].setBounds(margin+(quarter+gap),707,quarter,38);
         buttons[19].setBounds(margin+2*(quarter+gap),707,quarter,38);
         buttons[20].setBounds(margin+3*(quarter+gap),707,quarter,38);
-        buttons[21].setBounds(getWidth()-142,769,118,32);
+        buttons[21].setBounds(margin,792,w/2-5,42);
+        buttons[22].setBounds(margin+w/2+5,792,w/2-5,42);
+        buttons[23].setBounds(getWidth()-142,858,118,32);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -1924,6 +2048,7 @@ public:
         g.drawHorizontalLine(610,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(681,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(752,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(844,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
@@ -1936,15 +2061,17 @@ public:
                    25,613,450,23,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("VOICINGS ET ESPACEMENT"),
                    25,683,450,23,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("JEU D'ACCORDS"),
+                   25,763,450,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,774,390,26,juce::Justification::centredLeft);
+                   25,857,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
-    std::array<juce::TextButton,22> buttons;
+    std::array<juce::TextButton,24> buttons;
     int selected=0,total=0;
 };
 
