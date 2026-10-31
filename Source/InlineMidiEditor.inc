@@ -371,6 +371,9 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
 }
 void toggleInlineMidiVelocityMode(){
     if(!inlineMidiMode)return;
+    // Velocity editing uses the direct-note selection tool, not the
+    // clip eraser, cutter, glue or stretch operations.
+    activeArrangeTool=0;
     inlineMidiFinishGesture();
     inlineMidiVelocityMode=!inlineMidiVelocityMode;
     operationMessage=juce::String::fromUTF8(inlineMidiVelocityMode
@@ -993,6 +996,7 @@ void inlineMidiDrag(juce::Point<int> p){
 }
 void toggleInlineMidiMode(){
     inlineMidiMode=!inlineMidiMode;
+    if(inlineMidiMode)activeArrangeTool=0;
     if(!inlineMidiMode)inlineMidiVelocityMode=false;
     inlineMidiFinishGesture();inlineMidiClearSelection();
     operationMessage=juce::String::fromUTF8(inlineMidiMode
@@ -1081,51 +1085,241 @@ void showInlineMidiVelocityCurveDialog(){
     options.content.setOwned(panel);
     options.launchAsync();
 }
+// All MIDI commands are dispatched through the same validated clip context,
+// regardless of whether they originate from the navy-blue editor or a shortcut.
+bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
+    auto& bank=instrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),
+        [clipId](const Clip& c){return c.id==clipId;});
+    if(it==bank.end())return false;
+    const int index=(int)std::distance(bank.begin(),it);
+    if(choice==1){
+        toggleInlineMidiMode();
+        return true;
+    }
+    if(choice==2 || choice==3){
+        if(!inlineMidiMode)toggleInlineMidiMode();
+        activeArrangeTool=0;
+        if(choice==2){toggleInlineMidiVelocityMode();return true;}
+        selectClip(instrument,index);
+        return inlineMidiSelectAll();
+    }
+    if(!inlineMidiMode||activeArrangeTool!=0
+       ||inlineMidiSelectedClipId!=clipId
+       ||inlineMidiSelectedInstrument!=instrument
+       ||inlineMidiSelectedNotes.empty())return false;
+    if(choice>=1001&&choice<=1127)
+        return inlineMidiSetVelocitySelected(choice-1000);
+    if(inlineMidiSelectedNotes.size()<2)return false;
+    if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
+    if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
+    if(choice==2003)return inlineMidiRampVelocitySelected(100,64);
+    if(choice==2004)return inlineMidiRampVelocitySelected(120,40);
+    if(choice==2005){showInlineMidiVelocityCurveDialog();return true;}
+    return false;
+}
+
+// Actual JUCE controls, not a decorative picture or a custom PopupMenu.
+// Buttons keep the standard keyboard/mouse accessibility and existing engine.
+class InlineMidiActionsPanel final : public juce::Component
+{
+public:
+    using State=std::array<int,4>; // direct, velocity, selected, total
+    InlineMidiActionsPanel(std::function<bool(int)> action,
+                           std::function<State()> read)
+      : dispatch(std::move(action)),readState(std::move(read))
+    {
+        setSize(608,584);
+        static const int actions[]={
+            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,0};
+        const juce::String labels[]={
+            juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
+            juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
+            juce::String::fromUTF8("SÉLECTIONNER TOUTES LES NOTES"),
+            juce::String::fromUTF8("32 · TRÈS DOUX"),
+            juce::String::fromUTF8("64 · DOUX"),
+            juce::String::fromUTF8("80 · MODÉRÉ"),
+            juce::String::fromUTF8("100 · FORT"),
+            juce::String::fromUTF8("127 · MAXIMUM"),
+            juce::String::fromUTF8("CRESCENDO DOUX  64 → 100"),
+            juce::String::fromUTF8("CRESCENDO FORT  40 → 120"),
+            juce::String::fromUTF8("DIMINUENDO DOUX  100 → 64"),
+            juce::String::fromUTF8("DIMINUENDO FORT  120 → 40"),
+            juce::String::fromUTF8("PERSONNALISER LA COURBE…"),
+            juce::String::fromUTF8("FERMER")};
+        for(size_t i=0;i<buttons.size();++i){
+            auto& b=buttons[i];
+            b.setButtonText(labels[i]);
+            b.setColour(juce::TextButton::buttonColourId,
+                        juce::Colour(i==12?0xff264956:0xff21374a));
+            b.setColour(juce::TextButton::buttonOnColourId,
+                        juce::Colour(0xff366074));
+            b.setColour(juce::TextButton::textColourOffId,
+                        juce::Colour(i==13?0xffb9cbd9:0xfff1f7fd));
+            b.setColour(juce::TextButton::textColourOnId,
+                        juce::Colour(0xffffd48a));
+            b.setTooltip(i<2
+                ?juce::String::fromUTF8("Activer ou désactiver le mode MIDI dans l'Arrangement")
+                :i==2
+                    ?juce::String::fromUTF8("Sélectionner toutes les notes du clip affiché")
+                    :i<8
+                        ?juce::String::fromUTF8("Appliquer la vélocité aux notes sélectionnées")
+                        :i<13
+                            ?juce::String::fromUTF8("Appliquer une progression aux notes sélectionnées")
+                            :juce::String::fromUTF8("Fermer l'éditeur"));
+            b.onClick=[this,i,choice=actions[i]]{
+                if(i==13){
+                    if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
+                        w->exitModalState(0);
+                    return;
+                }
+                if(i==12){
+                    auto callback=dispatch;
+                    if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
+                        w->exitModalState(0);
+                    // Open the existing curve editor after this window closes.
+                    juce::MessageManager::callAsync([callback,choice]{
+                        if(callback)callback(choice);
+                    });
+                    return;
+                }
+                const bool applied=dispatch&&dispatch(choice);
+                refresh();
+                if(!applied)repaint();
+            };
+            addAndMakeVisible(b);
+        }
+        refresh();
+    }
+
+    void refresh(){
+        const auto state=readState?readState():State{0,0,0,0};
+        buttons[0].setButtonText(juce::String(state[0]?"✓  ":"○  ")
+            +juce::String::fromUTF8("ÉDITION DIRECTE  [E]"));
+        buttons[1].setButtonText(juce::String(state[1]?"✓  ":"○  ")
+            +juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"));
+        buttons[1].setEnabled(state[0]!=0);
+        buttons[2].setEnabled(state[2]>0||state[3]>0);
+        for(int i=3;i<=7;++i)buttons[(size_t)i].setEnabled(state[0]!=0&&state[2]>0);
+        for(int i=8;i<=12;++i)buttons[(size_t)i].setEnabled(state[0]!=0&&state[2]>=2);
+        selected=state[2];total=state[3];
+        repaint();
+    }
+
+    bool isActionEnabled(int index)const {
+        return index>=0&&index<(int)buttons.size()
+            &&buttons[(size_t)index].isEnabled();
+    }
+    void resized()override {
+        const int margin=24,w=getWidth()-2*margin;
+        buttons[0].setBounds(margin,101,(w-10)/2,43);
+        buttons[1].setBounds(margin+(w-10)/2+10,101,(w-10)/2,43);
+        buttons[2].setBounds(margin,176,w,39);
+        const int five=(w-4*7)/5;
+        for(int i=0;i<5;++i)
+            buttons[(size_t)(3+i)].setBounds(margin+i*(five+7),270,five,44);
+        for(int i=0;i<4;++i)
+            buttons[(size_t)(8+i)].setBounds(
+                margin+(i%2)*(w/2+5),366+(i/2)*49,w/2-5,42);
+        buttons[12].setBounds(margin,478,w,42);
+        buttons[13].setBounds(getWidth()-142,534,118,34);
+    }
+    void paint(juce::Graphics& g)override {
+        const auto bg=getLocalBounds().toFloat();
+        g.setGradientFill(juce::ColourGradient(
+            juce::Colour(0xff20394d),0.f,0.f,
+            juce::Colour(0xff0f1b2b),0.f,(float)getHeight(),false));
+        g.fillRoundedRectangle(bg.reduced(1.f),12.f);
+        g.setColour(juce::Colour(0xff5b839a));
+        g.drawRoundedRectangle(bg.reduced(1.f),12.f,1.5f);
+        g.setColour(juce::Colour(0xffffd08a));
+        g.fillRoundedRectangle(juce::Rectangle<float>(24,23,4,33),2.f);
+        g.setFont(juce::Font(25.f,juce::Font::bold));
+        g.setColour(juce::Colour(0xfff4f8fb));
+        g.drawText(juce::String::fromUTF8("ÉDITION MIDI"),40,22,520,35,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff92b8cd));
+        g.setFont(juce::Font(12.f));
+        g.drawText(juce::String::fromUTF8("Édition des notes directement dans l'Arrangement"),
+                   26,63,545,20,juce::Justification::centredLeft);
+        g.drawText(juce::String(selected)+" / "+juce::String(total)
+                   +juce::String::fromUTF8(" notes sélectionnées"),
+                   26,148,getWidth()-52,22,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff52768b));
+        g.drawHorizontalLine(228,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(325,24.f,(float)getWidth()-24.f);
+        g.setColour(juce::Colour(0xffffd08a));
+        g.setFont(juce::Font(13.5f,juce::Font::bold));
+        g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
+                   25,237,400,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("PROGRESSION DE VÉLOCITÉ"),
+                   25,335,450,25,juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff91aebd));
+        g.setFont(juce::Font(11.f));
+        g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
+                   25,541,390,26,juce::Justification::centredLeft);
+    }
+private:
+    std::function<bool(int)> dispatch;
+    std::function<State()> readState;
+    std::array<juce::TextButton,14> buttons;
+    int selected=0,total=0;
+};
+
 bool inlineMidiContextMenu(juce::Point<int> p){
     bool ins=false;
     const int hit=findClipAt(p,ins);
     if(hit<0)return false;
     const auto& clicked=(ins?instrumentClips:midiClips)[(size_t)hit];
-    // Never apply actions for a selected clip when right-clicking another.
-    const bool selectionHere=inlineMidiMode && inlineMidiSelectedClipId==clicked.id
-        && inlineMidiSelectedInstrument==ins && !inlineMidiSelectedNotes.empty();
-    juce::PopupMenu menu;
-    menu.addSectionHeader(juce::String::fromUTF8("ÉDITION MIDI"));
-    menu.addItem(1,juce::String::fromUTF8("ÉDITION DIRECTE DES NOTES  [E]"),true,inlineMidiMode);
-    menu.addItem(2,juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
-                 inlineMidiMode,inlineMidiVelocityMode);
-    if(selectionHere){
-        juce::PopupMenu fixed;
-        fixed.addItem(1032,juce::String::fromUTF8("32 — Très doux"));
-        fixed.addItem(1064,juce::String::fromUTF8("64 — Doux"));
-        fixed.addItem(1080,juce::String::fromUTF8("80 — Modéré"));
-        fixed.addItem(1100,juce::String::fromUTF8("100 — Fort"));
-        fixed.addItem(1127,juce::String::fromUTF8("127 — Maximum"));
-        menu.addSubMenu(juce::String::fromUTF8("DÉFINIR VÉLOCITÉ"),fixed,true);
-        juce::PopupMenu ramp;
-        const bool multiple=inlineMidiSelectedNotes.size()>=2;
-        ramp.addItem(2001,juce::String::fromUTF8("Crescendo doux 64 → 100"),multiple);
-        ramp.addItem(2002,juce::String::fromUTF8("Crescendo marqué 40 → 120"),multiple);
-        ramp.addItem(2003,juce::String::fromUTF8("Diminuendo doux 100 → 64"),multiple);
-        ramp.addItem(2004,juce::String::fromUTF8("Diminuendo marqué 120 → 40"),multiple);
-        ramp.addSeparator();
-        ramp.addItem(2005,juce::String::fromUTF8("Personnaliser la courbe..."),multiple);
-        menu.addSubMenu(juce::String::fromUTF8("PROGRESSION DE VÉLOCITÉ"),ramp,multiple);
+    const int targetId=clicked.id;
+    // Right-clicking a visible note selects that note when there is no
+    // compatible selection. Right-clicking within an existing multi-note
+    // selection preserves the full group.
+    if(inlineMidiMode && activeArrangeTool==0
+       &&inlineMidiArea(clicked,ins).contains(p)){
+        int note=-1;
+        for(int i=(int)clicked.notes.size()-1;i>=0;--i)
+            if(inlineMidiNoteBounds(clicked,ins,clicked.notes[(size_t)i]).contains(p)){
+                note=i;break;
+            }
+        if(note>=0){
+            const bool same=inlineMidiSelectedClipId==targetId
+                &&inlineMidiSelectedInstrument==ins;
+            if(!same||inlineMidiSelectedNotes.count(note)==0){
+                selectClip(ins,hit);
+                inlineMidiSelectedClipId=targetId;
+                inlineMidiSelectedInstrument=ins;
+                inlineMidiSelectedNotes={note};
+            }
+        }
     }
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
-    const auto screen=localPointToGlobal(p);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
-        [safe](int choice){
-            if(!safe)return;
-            if(choice==1)safe->toggleInlineMidiMode();
-            else if(choice==2)safe->toggleInlineMidiVelocityMode();
-            else if(choice>=1001&&choice<=1127)
-                safe->inlineMidiSetVelocitySelected(choice-1000);
-            else if(choice==2001)safe->inlineMidiRampVelocitySelected(64,100);
-            else if(choice==2002)safe->inlineMidiRampVelocitySelected(40,120);
-            else if(choice==2003)safe->inlineMidiRampVelocitySelected(100,64);
-            else if(choice==2004)safe->inlineMidiRampVelocitySelected(120,40);
-            else if(choice==2005)safe->showInlineMidiVelocityCurveDialog();
+    auto* panel=new InlineMidiActionsPanel(
+        [safe,targetId,ins](int choice)->bool {
+            return safe&&safe->inlineMidiExecuteAction(choice,targetId,ins);
+        },
+        [safe,targetId,ins]()->InlineMidiActionsPanel::State {
+            if(!safe)return {0,0,0,0};
+            const auto& bank=ins?safe->instrumentClips:safe->midiClips;
+            const auto it=std::find_if(bank.begin(),bank.end(),
+                [targetId](const Clip& c){return c.id==targetId;});
+            if(it==bank.end())return {0,0,0,0};
+            const bool selection=safe->inlineMidiMode
+                &&safe->inlineMidiSelectedClipId==targetId
+                &&safe->inlineMidiSelectedInstrument==ins;
+            return {safe->inlineMidiMode?1:0,
+                    safe->inlineMidiVelocityMode?1:0,
+                    selection?(int)safe->inlineMidiSelectedNotes.size():0,
+                    (int)it->notes.size()};
         });
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle=juce::String::fromUTF8("LIBERTY · ÉDITION MIDI");
+    options.dialogBackgroundColour=juce::Colour(0xff101c2b);
+    options.useNativeTitleBar=false;
+    options.escapeKeyTriggersCloseButton=true;
+    options.resizable=false;
+    options.componentToCentreAround=&owner;
+    options.content.setOwned(panel);
+    options.launchAsync();
     return true;
 }
