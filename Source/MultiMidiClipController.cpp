@@ -392,6 +392,9 @@ void mouseDown(const juce::MouseEvent&e)override{
     }
     if(e.eventComponent==this && e.mods.isLeftButtonDown() && toolAt(ownerPoint)<0){
         arrangementFocus=true;grabKeyboardFocus();
+        // In direct MIDI mode, all eight selected tools edit the notes
+        // beneath the mouse. Clip tools stay unchanged outside this mode.
+        if(inlineMidiToolDown(ownerPoint,e.mods.isShiftDown()))return;
         if(inlineMidiDown(ownerPoint,e.mods.isAltDown(),e.mods.isShiftDown()))return;
         if(handleAudioDown(ownerPoint))return;
         if(activeArrangeTool==0 || activeArrangeTool==1){
