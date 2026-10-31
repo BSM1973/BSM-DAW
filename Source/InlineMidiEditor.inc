@@ -2159,7 +2159,7 @@ public:
         g.drawHorizontalLine(610,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(681,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(752,24.f,(float)getWidth()-24.f);
-        g.drawHorizontalLine(910,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(917,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
