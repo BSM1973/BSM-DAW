@@ -1192,7 +1192,7 @@ bool runArrangementTests(){
             &&scrollingDialog.getWidth()==608
             &&scrollingDialog.getViewedComponent()==scrollingEditor,
             "MIDI editor viewport owns its original panel at a compact height");
-        require(scrollingEditor->getHeight()==1260
+        require(scrollingEditor->getHeight()==1332
             &&scrollingDialog.getViewPositionY()==0,
             "MIDI viewport initially shows the top of the unmodified editor");
         require(scrollingDialog.hasAccessibleBottomControlsForTest()
@@ -2448,6 +2448,151 @@ bool runArrangementTests(){
         wiredPanel.setStrumSwingForTest(50);
         wiredPanel.setStrumHumanizeForTest(0);
         wiredPanel.setStrumDynamicsForTest(0);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+
+        // Humanisation of velocities is separate from the earlier timing
+        // control, and must leave the first chord voice and isolated melody
+        // untouched. This is exercised through the actual JUCE button.
+        require(wiredPanel.strumVelocityNuanceForTest()==0,
+            "MIDI velocity nuance defaults to zero for legacy projects");
+        wiredPanel.setStrumVelocityNuanceForTest(12);
+        require(wiredPanel.strumVelocityNuanceForTest()==12,
+            "JUCE nuance slider sets the twelve-unit dynamic variation");
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumHumanizeForTest(0);
+        wiredPanel.setStrumDynamicsForTest(0);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "real JUCE strum-up button applies velocity humanisation");
+        const auto nuancedUp=midiClips[(size_t)multiClip].notes;
+        require(nuancedUp.size()==strumBefore.size()
+            &&inlineMidiSelectedNotes.size()==strumBefore.size(),
+            "velocity humanisation retains all MIDI notes and selection");
+        bool nuanceChanged=false;
+        for(size_t i=0;i<strumBefore.size();++i){
+            const auto& original=strumBefore[i];
+            const auto& edited=nuancedUp[i];
+            require(edited.pitch==original.pitch
+                &&edited.channel==original.channel
+                &&edited.muted==original.muted
+                &&edited.probability==original.probability
+                &&edited.startTick+edited.lengthTicks
+                    ==original.startTick+original.lengthTicks,
+                "velocity humanisation preserves every MIDI note release and channel");
+            const int delta=(int)edited.velocity-(int)original.velocity;
+            require(std::abs(delta)<=12
+                &&(i==0||i==4?delta==0:true)
+                &&edited.velocity>=1&&edited.velocity<=127,
+                "nuance cannot change first voice or melody, or exceed MIDI limits");
+            if(i>0&&i<4&&delta!=0)nuanceChanged=true;
+        }
+        require(nuanceChanged,
+            "nonzero dynamic humanisation produces a real velocity variation");
+        undoArrangement(false);
+        for(size_t i=0;i<strumBefore.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].velocity
+                    ==strumBefore[i].velocity
+                &&midiClips[(size_t)multiClip].notes[i].startTick
+                    ==strumBefore[i].startTick,
+                "velocity nuance Undo restores original timing and expression");
+        undoArrangement(true);
+        for(size_t i=0;i<nuancedUp.size();++i)
+            require(midiClips[(size_t)multiClip].notes[i].startTick
+                    ==nuancedUp[i].startTick
+                &&midiClips[(size_t)multiClip].notes[i].velocity
+                    ==nuancedUp[i].velocity,
+                "velocity nuance Redo restores the same velocity deviations");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "same JUCE humanisation settings can be reapplied from original notes");
+        const auto nuancedRepeated=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<nuancedUp.size();++i)
+            require(nuancedRepeated[i].velocity==nuancedUp[i].velocity
+                &&nuancedRepeated[i].startTick==nuancedUp[i].startTick,
+                "repeated humanisation uses reproducible non-random timing and dynamics");
+        undoArrangement(false);
+        // The new nuances combine with the existing velocity ramp, swung
+        // timing, alternating direction, and the preserve-duration option.
+        require(owner.midiEngine.replaceNotes(alternatingFixture),
+            "restore three independent chord groups before nuanced combined test");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        const auto nuanceOriginal=midiClips[(size_t)multiClip].notes;
+        wiredPanel.setStrumGapForTest(120);
+        wiredPanel.setStrumSwingForTest(66);
+        wiredPanel.setStrumHumanizeForTest(12);
+        wiredPanel.setStrumDynamicsForTest(-18);
+        wiredPanel.setStrumVelocityNuanceForTest(12);
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        wiredPanel.setAlternateStrumDirectionForTest(true);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)nuanceOriginal.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(22),
+            "all five JUCE strum controls dispatch the combined MIDI operation");
+        const auto nuanceCombined=midiClips[(size_t)multiClip].notes;
+        require(nuanceCombined.size()==nuanceOriginal.size()
+            &&hasStrumNote(nuanceCombined,240,71)
+            &&hasStrumNote(nuanceCombined,1080,60)
+            &&hasStrumNote(nuanceCombined,2880,71)
+            &&hasStrumNote(nuanceCombined,1920,74),
+            "combined velocity nuances preserve first chord voices and melody");
+        for(const auto& edited:nuanceCombined){
+            const auto original=std::find_if(nuanceOriginal.begin(),
+                nuanceOriginal.end(),[&](const MidiEngine::NoteEvent& old){
+                    return old.pitch==edited.pitch
+                        &&old.channel==edited.channel
+                        &&(old.pitch==74||old.startTick/960
+                                ==edited.startTick/960);
+                });
+            require(original!=nuanceOriginal.end()
+                &&edited.lengthTicks==original->lengthTicks
+                &&edited.muted==original->muted
+                &&edited.probability==original->probability
+                &&edited.velocity>=1&&edited.velocity<=127,
+                "combined strum preserves duration and bounds all velocity values");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==nuanceOriginal.size()
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,1080,71)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,2880,60),
+            "all combined nuances Undo together in a single arrangement edit");
+        // Reject unknown packets before mutating the MIDI engine.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)nuanceOriginal.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        const int badNuancePacket=100000000+12*256+241;
+        require(!inlineMidiExecuteAction(badNuancePacket,panelClipId,false)
+            &&!inlineMidiExecuteAction(
+                100000000+8*26*21*49*13*256,panelClipId,false)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,50,0,0,-1)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,50,0,0,13),
+            "engine refuses invalid velocity variations and packet offsets");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore original strum chord fixture after velocity nuance regression");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumHumanizeForTest(0);
+        wiredPanel.setStrumDynamicsForTest(0);
+        wiredPanel.setStrumVelocityNuanceForTest(0);
         wiredPanel.setPreserveStrumLengthForTest(false);
         wiredPanel.setAlternateStrumDirectionForTest(false);
         inlineMidiSelectedClipId=panelClipId;
