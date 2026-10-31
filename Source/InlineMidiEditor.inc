@@ -271,6 +271,109 @@ bool inlineMidiDuplicateOctaveSelected(int semitones){
     return applied;
 }
 
+
+/* An inversion changes the register of exactly one selected voice per chord.
+   Notes sharing their onset form a chord; isolated melody notes stay untouched.
+   The original selection, durations, dynamics and channels are preserved. */
+bool inlineMidiInvertChordsSelected(int direction){
+    if(!inlineMidiMode||(direction!=1&&direction!=-1)
+       ||inlineMidiSelectedNotes.size()<2)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int clipIndex=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,clipIndex))
+        selectClip(inlineMidiSelectedInstrument,clipIndex);
+    auto& clip=bank[(size_t)clipIndex];
+    const auto originals=clip.notes;
+    const auto clipEnd=MidiEngine::secondsToTick(
+        clip.lengthSeconds,owner.tempoBpm);
+    std::map<std::int64_t,std::vector<int>> chords;
+    for(const int selected:inlineMidiSelectedNotes){
+        if(selected<0||selected>=(int)originals.size()){
+            inlineMidiClearSelection();return false;
+        }
+        const auto& n=originals[(size_t)selected];
+        if(n.startTick<0||n.startTick>=clipEnd||n.lengthTicks<=0
+            ||n.lengthTicks>clipEnd-n.startTick)return false;
+        chords[n.startTick].push_back(selected);
+    }
+    auto notes=originals;
+    int inverted=0;
+    for(const auto& entry:chords){
+        const auto& voices=entry.second;
+        if(voices.size()<2)continue;
+        const auto compare=[&](int lhs,int rhs){
+            const int lp=(int)originals[(size_t)lhs].pitch;
+            const int rp=(int)originals[(size_t)rhs].pitch;
+            return lp<rp||(lp==rp&&lhs<rhs);
+        };
+        const auto ends=std::minmax_element(voices.begin(),voices.end(),compare);
+        const int lowest=*ends.first,highest=*ends.second;
+        if(originals[(size_t)lowest].pitch
+           ==originals[(size_t)highest].pitch)continue;
+        const int pivot=direction>0?lowest:highest;
+        const auto& source=originals[(size_t)pivot];
+        const int newPitch=(int)source.pitch+12*direction;
+        if(newPitch<0||newPitch>127){
+            operationMessage=juce::String::fromUTF8(
+                "Renversement impossible : hauteur MIDI hors limites");
+            return false;
+        }
+        // Do not create a duplicate note-on on the same channel and tick.
+        const bool occupied=std::any_of(originals.begin(),originals.end(),
+           [&](const MidiEngine::NoteEvent& n){
+               return n.startTick==source.startTick
+                   &&n.channel==source.channel&&n.pitch==newPitch;
+           });
+        if(occupied){
+            operationMessage=juce::String::fromUTF8(
+                "Renversement impossible : une note existe déjà à cette hauteur");
+            return false;
+        }
+        notes[(size_t)pivot].pitch=(std::uint8_t)newPitch;
+        ++inverted;
+    }
+    if(inverted==0){
+        operationMessage=juce::String::fromUTF8(
+            "Sélectionnez au moins deux notes simultanées de hauteurs différentes");
+        return false;
+    }
+    // Tag source indices before engine sorting so the complete group remains
+    // selected even when the inversion crosses other selected notes.
+    std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+    tagged.reserve(notes.size());
+    for(int i=0;i<(int)notes.size();++i)
+        tagged.push_back({notes[(size_t)i],i});
+    std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+        if(a.first.startTick!=b.first.startTick)
+            return a.first.startTick<b.first.startTick;
+        if(a.first.channel!=b.first.channel)
+            return a.first.channel<b.first.channel;
+        return a.first.pitch<b.first.pitch;
+    });
+    beginArrangementEdit();
+    const bool applied=owner.midiEngine.replaceNotes(notes);
+    if(applied){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        const auto previous=inlineMidiSelectedNotes;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(previous.count(tagged[(size_t)i].second))
+                inlineMidiSelectedNotes.insert(i);
+        syncPlayback();
+        operationMessage=juce::String(inverted)
+            +juce::String::fromUTF8(direction>0
+                ?" accords : renversement vers le haut"
+                :" accords : renversement vers le bas");
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
+
 // Apply a linear velocity crescendo/diminuendo in MUSICAL TIME.
 // Chord notes sharing a start tick receive the same velocity. No position,
 // length, channel or articulation information is altered.
@@ -1368,7 +1471,7 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return true;
     }
     if(!((choice>=1001&&choice<=1127)||(choice>=2001&&choice<=2005)
-         ||choice==2101||choice==2102))return false;
+         ||choice==2101||choice==2102||choice==2201||choice==2202))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1391,6 +1494,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiSetVelocitySelected(choice-1000);
     if(choice==2101||choice==2102)
         return inlineMidiDuplicateOctaveSelected(choice==2101?12:-12);
+    if(choice==2201||choice==2202)
+        return inlineMidiInvertChordsSelected(choice==2201?1:-1);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1410,9 +1515,9 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,684);
+        setSize(608,772);
         static const int actions[]={
-            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,0};
+            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,0};
         const juce::String labels[]={
             juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
             juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
@@ -1429,6 +1534,8 @@ public:
             juce::String::fromUTF8("PERSONNALISER LA COURBE"),
             juce::String::fromUTF8("DOUBLER À L’OCTAVE SUPÉRIEURE"),
             juce::String::fromUTF8("DOUBLER À L’OCTAVE INFÉRIEURE"),
+            juce::String::fromUTF8("RENVERSEMENT VERS LE HAUT"),
+            juce::String::fromUTF8("RENVERSEMENT VERS LE BAS"),
             juce::String::fromUTF8("FERMER")};
         for(size_t i=0;i<buttons.size();++i){
             auto& b=buttons[i];
@@ -1438,7 +1545,7 @@ public:
             b.setColour(juce::TextButton::buttonOnColourId,
                         juce::Colour(0xff366074));
             b.setColour(juce::TextButton::textColourOffId,
-                        juce::Colour(i==15?0xffb9cbd9:0xfff1f7fd));
+                        juce::Colour(i==17?0xffb9cbd9:0xfff1f7fd));
             b.setColour(juce::TextButton::textColourOnId,
                         juce::Colour(0xffffd48a));
             b.setTooltip(i<2
@@ -1451,9 +1558,11 @@ public:
                             ?juce::String::fromUTF8("Appliquer une progression aux notes sélectionnées")
                             :i<15
                                 ?juce::String::fromUTF8("Doubler la sélection en conservant les notes originales")
-                                :juce::String::fromUTF8("Fermer l'éditeur"));
+                                :i<17
+                                    ?juce::String::fromUTF8("Renverser chaque accord sélectionné sans changer le rythme ni la vélocité")
+                                    :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
-                if(i==15){
+                if(i==17){
                     if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
                         w->exitModalState(0);
                     return;
@@ -1492,6 +1601,7 @@ public:
         for(int i=3;i<=7;++i)buttons[(size_t)i].setEnabled(state[3]>0);
         for(int i=8;i<=12;++i)buttons[(size_t)i].setEnabled(state[3]>=2);
         for(int i=13;i<=14;++i)buttons[(size_t)i].setEnabled(state[3]>0);
+        for(int i=15;i<=16;++i)buttons[(size_t)i].setEnabled(state[3]>=2);
         selected=state[2];total=state[3];
         repaint();
     }
@@ -1522,7 +1632,9 @@ public:
         buttons[12].setBounds(margin,478,w,42);
         buttons[13].setBounds(margin,574,w/2-5,44);
         buttons[14].setBounds(margin+w/2+5,574,w/2-5,44);
-        buttons[15].setBounds(getWidth()-142,635,118,34);
+        buttons[15].setBounds(margin,657,w/2-5,43);
+        buttons[16].setBounds(margin+w/2+5,657,w/2-5,43);
+        buttons[17].setBounds(getWidth()-142,719,118,34);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -1551,6 +1663,7 @@ public:
         g.drawHorizontalLine(228,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(325,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(532,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(625,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
@@ -1559,15 +1672,17 @@ public:
                    25,335,450,25,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("DOUBLAGE HARMONIQUE"),
                    25,541,450,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("RENVERSEMENT DES ACCORDS"),
+                   25,628,450,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,641,390,26,juce::Justification::centredLeft);
+                   25,725,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
-    std::array<juce::TextButton,16> buttons;
+    std::array<juce::TextButton,18> buttons;
     int selected=0,total=0;
 };
 
