@@ -1805,7 +1805,7 @@ bool runArrangementTests(){
             "negative time note is unchanged while valid phrase is accented");
         require(LibertyInlineVelocity::accentVelocities(
             {{-120,70},{0,70},{120,70}}, {70,70,70},
-            20,4,4,960,0,AP::longBuildup2,8,
+            20,4,4,960,0,AP::longBuildup2,
             8,25,50,true,LibertyInlineVelocity::Curve::linear)
                 ==std::vector<int>({70,72,67}),
             "smooth long crescendo works with progressive recognition");
