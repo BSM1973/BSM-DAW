@@ -614,10 +614,12 @@ bool inlineMidiSpaceChordsSelected(bool widen){
 /* Strum selected simultaneous MIDI notes in pitch order.
    The default preserves each absolute end tick. Optional preserveDuration
    instead shifts the note-off together with the attack, within clip bounds.
-   Both modes validate all groups before the single Undo transaction. */
+   Optionally alternate the playing direction only between valid chords.
+   All modes validate every group before the single Undo transaction. */
 bool inlineMidiStrumChordsSelected(bool bassFirst,
                                   std::int64_t stepTicks=MidiEngine::ticksPerQuarterNote/16,
-                                  bool preserveDuration=false){
+                                  bool preserveDuration=false,
+                                  bool alternateDirection=false){
     // 15..240 ticks = 1/256..1/16 of a whole note at 960 PPQN.
     if(stepTicks<15||stepTicks>240||stepTicks%15!=0
        ||!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
@@ -648,13 +650,21 @@ bool inlineMidiStrumChordsSelected(bool bassFirst,
     for(const auto& entry:chords){
         auto voices=entry.second;
         if(voices.size()<2)continue;
+        // Check for genuine chords before counting one for alternation.
+        // A standalone melody note and duplicate-pitch unisons are skipped.
+        const auto pitchRange=std::minmax_element(voices.begin(),voices.end(),
+            [&](int a,int b){
+                return originals[(size_t)a].pitch<originals[(size_t)b].pitch;
+            });
+        if(originals[(size_t)*pitchRange.first].pitch
+           ==originals[(size_t)*pitchRange.second].pitch)continue;
+        const bool ascending=alternateDirection&&(changedChords%2!=0)
+            ?!bassFirst:bassFirst;
         std::sort(voices.begin(),voices.end(),[&](int a,int b){
             const int pa=(int)originals[(size_t)a].pitch;
             const int pb=(int)originals[(size_t)b].pitch;
-            return pa!=pb?(bassFirst?pa<pb:pa>pb):a<b;
+            return pa!=pb?(ascending?pa<pb:pa>pb):a<b;
         });
-        if(originals[(size_t)voices.front()].pitch
-           ==originals[(size_t)voices.back()].pitch)continue;
         for(size_t i=1;i<voices.size();++i){
             const int index=voices[i];
             const auto& old=originals[(size_t)index];
@@ -728,9 +738,11 @@ bool inlineMidiStrumChordsSelected(bool bassFirst,
                 inlineMidiSelectedNotes.insert(i);
         syncPlayback();
         operationMessage=juce::String(changedChords)
-            +juce::String::fromUTF8(bassFirst
-                ?" accords égrenés du grave vers l'aigu"
-                :" accords égrenés de l'aigu vers le grave");
+            +juce::String::fromUTF8(alternateDirection
+                ?" accords égrenés avec alternance du sens"
+                :(bassFirst
+                    ?" accords égrenés du grave vers l'aigu"
+                    :" accords égrenés de l'aigu vers le grave"));
         repaint();owner.repaint();
     }
     finishArrangementEdit();
@@ -1840,7 +1852,11 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
          ||(choice>=2615&&choice<=2840&&(choice-2600)%15==0)
          ||(choice>=2915&&choice<=3140&&(choice-2900)%15==0)
          ||(choice>=3215&&choice<=3440&&(choice-3200)%15==0)
-         ||(choice>=3515&&choice<=3740&&(choice-3500)%15==0)))return false;
+         ||(choice>=3515&&choice<=3740&&(choice-3500)%15==0)
+         ||(choice>=3815&&choice<=4040&&(choice-3800)%15==0)
+         ||(choice>=4115&&choice<=4340&&(choice-4100)%15==0)
+         ||(choice>=4415&&choice<=4640&&(choice-4400)%15==0)
+         ||(choice>=4715&&choice<=4940&&(choice-4700)%15==0)))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1879,6 +1895,14 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiStrumChordsSelected(true,choice-3200,true);
     if(choice>=3515&&choice<=3740)
         return inlineMidiStrumChordsSelected(false,choice-3500,true);
+    if(choice>=3815&&choice<=4040)
+        return inlineMidiStrumChordsSelected(true,choice-3800,false,true);
+    if(choice>=4115&&choice<=4340)
+        return inlineMidiStrumChordsSelected(false,choice-4100,false,true);
+    if(choice>=4415&&choice<=4640)
+        return inlineMidiStrumChordsSelected(true,choice-4400,true,true);
+    if(choice>=4715&&choice<=4940)
+        return inlineMidiStrumChordsSelected(false,choice-4700,true,true);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1921,6 +1945,17 @@ public:
             "Activé : la fin de chaque note se décale avec son attaque. "
             "Désactivé : toutes les notes conservent leur instant de fin."));
         addAndMakeVisible(preserveStrumLength);
+        alternateStrumDirection.setButtonText(juce::String::fromUTF8(
+            "ALTERNER LE SENS ENTRE LES ACCORDS"));
+        alternateStrumDirection.setToggleState(false,juce::dontSendNotification);
+        alternateStrumDirection.setColour(juce::ToggleButton::textColourId,
+            juce::Colour(0xfff1f7fd));
+        alternateStrumDirection.setColour(juce::ToggleButton::tickColourId,
+            juce::Colour(0xffffd08a));
+        alternateStrumDirection.setTooltip(juce::String::fromUTF8(
+            "Le premier accord suit le bouton choisi. Les accords suivants "
+            "alternent grave vers aigu et aigu vers grave."));
+        addAndMakeVisible(alternateStrumDirection);
         static const int actions[]={
             1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,2501,2502,0};
         const juce::String labels[]={
@@ -1995,11 +2030,14 @@ public:
                     return;
                 }
                 int mappedChoice=choice;
-                if(choice==2501||choice==2502)
-                    mappedChoice=(choice==2501
-                        ?(preserveStrumLength.getToggleState()?3200:2600)
-                        :(preserveStrumLength.getToggleState()?3500:2900))
-                        +(int)strumGap.getValue();
+                if(choice==2501||choice==2502){
+                    const bool preserve=preserveStrumLength.getToggleState();
+                    const bool alternate=alternateStrumDirection.getToggleState();
+                    const int base=choice==2501
+                        ?(alternate?(preserve?4400:3800):(preserve?3200:2600))
+                        :(alternate?(preserve?4700:4100):(preserve?3500:2900));
+                    mappedChoice=base+(int)strumGap.getValue();
+                }
                 const bool applied=dispatch&&dispatch(mappedChoice);
                 refresh();
                 if(!applied)repaint();
@@ -2057,6 +2095,12 @@ public:
     bool preserveStrumLengthForTest()const{
         return preserveStrumLength.getToggleState();
     }
+    void setAlternateStrumDirectionForTest(bool enabled){
+        alternateStrumDirection.setToggleState(enabled,juce::sendNotificationSync);
+    }
+    bool alternateStrumDirectionForTest()const{
+        return alternateStrumDirection.getToggleState();
+    }
     void resized()override {
         const int margin=24,w=getWidth()-2*margin;
         buttons[0].setBounds(margin,101,(w-10)/2,43);
@@ -2082,6 +2126,7 @@ public:
         preserveStrumLength.setBounds(margin+w-182,793,182,34);
         buttons[21].setBounds(margin,843,w/2-5,42);
         buttons[22].setBounds(margin+w/2+5,843,w/2-5,42);
+        alternateStrumDirection.setBounds(margin,886,w-20,26);
         buttons[23].setBounds(getWidth()-142,924,118,32);
     }
     void paint(juce::Graphics& g)override {
@@ -2140,6 +2185,7 @@ private:
     std::array<juce::TextButton,24> buttons;
     juce::Slider strumGap;
     juce::ToggleButton preserveStrumLength;
+    juce::ToggleButton alternateStrumDirection;
     int selected=0,total=0;
 };
 
