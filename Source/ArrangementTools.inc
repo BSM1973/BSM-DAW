@@ -1615,6 +1615,70 @@ bool runArrangementTests(){
             &&midiClips[(size_t)multiClip].notes[3].pitch==71
             &&midiClips[(size_t)multiClip].notes[3].startTick==240,
             "strum-down Undo restores chord order and original timing");
+
+        // Change the actual JUCE slider and click the actual buttons.
+        // The old 60-tick behaviour remains the default; customized values
+        // are routed through the same validated Arrangement MIDI dispatcher.
+        require(wiredPanel.strumGapForTest()==60,
+            "new strum slider defaults to the former 60-tick attack gap");
+        wiredPanel.setStrumGapForTest(120);
+        require(wiredPanel.strumGapForTest()==120,
+            "real JUCE slider accepts a strong 120-tick gap");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "custom strong strum-up button dispatches through slider");
+        const auto strumStrong=midiClips[(size_t)multiClip].notes;
+        require(strumStrong.size()==5
+            &&strumStrong[0].startTick==240
+            &&strumStrong[1].startTick==360
+            &&strumStrong[2].startTick==480
+            &&strumStrong[3].startTick==600
+            &&strumStrong[4].startTick==1920,
+            "strong 120-tick strum spreads chord while preserving solo melody");
+        for(const auto& n:strumStrong)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& original){
+                    return original.pitch==n.pitch
+                        &&original.channel==n.channel
+                        &&original.velocity==n.velocity
+                        &&original.startTick+original.lengthTicks
+                             ==n.startTick+n.lengthTicks;
+                }),"strong strum preserves MIDI pitch, dynamics and releases");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[3].startTick==240,
+            "custom strum Undo restores original attack times");
+        wiredPanel.setStrumGapForTest(15);
+        require(wiredPanel.strumGapForTest()==15,
+            "real JUCE slider accepts subtle 15-tick spacing");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(22),
+            "custom subtle strum-down button dispatches through slider");
+        const auto strumSubtle=midiClips[(size_t)multiClip].notes;
+        require(strumSubtle.size()==5
+            &&strumSubtle[0].pitch==71&&strumSubtle[0].startTick==240
+            &&strumSubtle[1].pitch==67&&strumSubtle[1].startTick==255
+            &&strumSubtle[2].pitch==64&&strumSubtle[2].startTick==270
+            &&strumSubtle[3].pitch==60&&strumSubtle[3].startTick==285
+            &&strumSubtle[4].pitch==74&&strumSubtle[4].startTick==1920,
+            "subtle 15-tick strum plays top-down with no melody changes");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].pitch==60
+            &&midiClips[(size_t)multiClip].notes[3].pitch==71
+            &&midiClips[(size_t)multiClip].notes[3].startTick==240,
+            "custom subtle strum Undo restores notes and timing");
+        wiredPanel.setStrumGapForTest(60);
+        require(!inlineMidiExecuteAction(2601,panelClipId,false)
+            &&!inlineMidiExecuteAction(2841,panelClipId,false)
+            &&!inlineMidiExecuteAction(3141,panelClipId,false),
+            "dispatcher rejects invalid custom strum sizes");
+        require(!inlineMidiStrumChordsSelected(true,0)
+            &&!inlineMidiStrumChordsSelected(false,255)
+            &&midiClips[(size_t)multiClip].notes[3].startTick==240,
+            "engine rejects invalid custom spacing before editing");
         // Short notes: reject the entire operation, no partial note movement.
         auto tooShort=strumBefore;
         tooShort[3].lengthTicks=2*strumStep;
