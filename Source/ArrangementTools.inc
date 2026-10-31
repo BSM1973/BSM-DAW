@@ -17,6 +17,7 @@ std::map<AudioKey,double> audioOrigins;
 AudioClip audioClipboard,audioDragOriginal;
 bool audioClipboardValid=false;
 int audioDragTrack=-1,audioDragMode=0;
+juce::String audioDuplicateId;
 double audioDragX=0,audioDragLength=0;
 std::vector<MidiEngine::NoteEvent> stretchOriginalNotes;
 
@@ -53,7 +54,7 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;}
+void clearArrangementHistory(){undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
     const auto previous=captureArrangement();
@@ -504,7 +505,7 @@ void startGroup(double anchor,float x){
         if(selectedAudio.count({t,c.id}))audioOrigins[{t,c.id}]=c.startSeconds;
     groupMouseX=x;groupAnchorSeconds=anchor;movingGroup=true;
 }
-bool handleAudioDown(juce::Point<int> p){
+bool handleAudioDown(juce::Point<int> p,bool optionDuplicate=false){
     const int t=audioLaneAt(p);if(t<0)return false;
     owner.selectedTrack=t;
     auto clips=owner.audioEngine.getArrangementAudioClips(t);
@@ -513,8 +514,16 @@ bool handleAudioDown(juce::Point<int> p){
     auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==id;});
     const bool hit=it!=clips.end();const double px=getLibertyTimelinePixelsPerSecond();if(px<=0)return true;
     const double seconds=snapPosition((p.x-owner.trackHeaderWidth)/px);
+    // Option is meaningful for the body of a clip only. Audio fade grips,
+    // crossfades, and the two trim edges keep their established gestures.
+    const auto box=hit?audioBounds(t,*it):juce::Rectangle<int>{};
+    const int fadeGrip=hit?audioFadeHandleAt(p):0;
+    const bool copyBody=optionDuplicate&&activeArrangeTool==0&&hit
+        &&fadeGrip==0&&crossGrip.mode==0
+        &&p.x>box.getX()+resizeZone
+        &&p.x<box.getRight()-resizeZone;
     if(activeArrangeTool==0||activeArrangeTool==1){
-        if(hit&&selectedAudio.count({t,id})&&audioFadeHandleAt(p)==0&&crossGrip.mode==0
+        if(hit&&!copyBody&&selectedAudio.count({t,id})&&fadeGrip==0&&crossGrip.mode==0
            &&(activeArrangeTool==1||selectedAudio.size()+selectedClipIds.size()>1)){
             startGroup(it->startSeconds,(float)p.x);return true;
         }
@@ -532,13 +541,13 @@ bool handleAudioDown(juce::Point<int> p){
         else if(activeArrangeTool==6){it->muted=!it->muted;owner.audioEngine.replaceArrangementAudioClips(t,clips);}
         else if(activeArrangeTool==0||activeArrangeTool==7){
             audioDragOriginal=*it;audioDragTrack=t;audioDragX=p.x;audioDragLength=it->lengthSeconds;
-            const auto box=audioBounds(t,*it);
+            audioDuplicateId.clear();
             // Only the actual golden grips change a fade; the borders still resize.
-            const int fadeGrip=audioFadeHandleAt(p);
-            audioDragMode=activeArrangeTool==7?4:
+            // 12 creates a COPY on first meaningful movement, not on mouseDown.
+            audioDragMode=copyBody?12:(activeArrangeTool==7?4:
                 (crossGrip.mode!=0?crossGrip.mode:
                  fadeGrip!=0?fadeGrip:
-                 p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1));
+                 p.x<=box.getX()+resizeZone?2:(p.x>=box.getRight()-resizeZone?3:1)));
         }
     }else if(activeArrangeTool==2 || activeArrangeTool==5){
         AudioClip c;
@@ -559,6 +568,38 @@ void dragAudio(juce::Point<int> p){
     const double px=getLibertyTimelinePixelsPerSecond();if(px<=0)return;
     const double delta=(p.x-audioDragX)/px;const double minimum=juce::jmax(.01,getLibertySnapSeconds(owner.tempoBpm));
     auto clips=owner.audioEngine.getArrangementAudioClips(audioDragTrack);
+    if(audioDragMode==12){
+        // Lazy duplication: Option-click without moving must not create a
+        // region, a new identity, or an Undo transaction.
+        if(std::abs(p.x-audioDragX)<3)return;
+        const double start=snapPosition(audioDragOriginal.startSeconds+delta);
+        if(!std::isfinite(start)||start<0.0
+           ||!std::isfinite(start+audioDragOriginal.lengthSeconds))return;
+        if(audioDuplicateId.isEmpty()){
+            AudioClip copy=audioDragOriginal;
+            copy.id=juce::Uuid().toString();
+            copy.startSeconds=start;
+            if(!AudioEngine::validAudioClip(copy))return;
+            clips.push_back(std::move(copy));
+            if(!owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips))
+                return;
+            audioDuplicateId=clips.back().id;
+        }else{
+            auto found=std::find_if(clips.begin(),clips.end(),
+                [this](const AudioClip& c){return c.id==audioDuplicateId;});
+            if(found==clips.end())return;
+            if(std::abs(found->startSeconds-start)<1.e-10)return;
+            found->startSeconds=start;
+            if(!owner.audioEngine.replaceArrangementAudioClips(audioDragTrack,clips))
+                return;
+        }
+        selectedAudio.clear();selectedClipIds.clear();
+        selectedAudio.insert({audioDragTrack,audioDuplicateId});
+        operationMessage=juce::String::fromUTF8(
+            "Clip audio dupliqué — déplacement avec SNAP");
+        refreshAudio(audioDragTrack);
+        return;
+    }
     for(auto& c:clips)if(c.id==audioDragOriginal.id){
         c=audioDragOriginal;
         if(audioDragMode==8){
