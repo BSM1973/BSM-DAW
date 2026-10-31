@@ -2135,11 +2135,18 @@ bool runArrangementTests(){
             &&!dialogApplied,
             "eight-bar complete phrase remains non-destructive");
         beatPreview.setAccentPattern(AP::buildup2);
+        // This preview ends at tick 3840: the first pulse of the final
+        // bar of a two-bar phrase lies exactly on the visible boundary.
+        // The marker must be present, but the MIDI remains untouched.
+        const auto shortRiseGuide=beatPreview.getRhythmicGuide();
         require(beatPreview.getAccentPattern()==AP::buildup2
-            &&beatPreview.getRhythmicGuide().empty()
+            &&shortRiseGuide.size()==1
+            &&shortRiseGuide[0].localTick==3840
+            &&!shortRiseGuide[0].primary
+            &&beatPreview.getCurrentPreviewVelocity(3)==84
             &&!beatPreview.isSwingEnabled()
             &&!dialogApplied,
-            "buildup is selectable without editing short MIDI phrases");
+            "short phrase shows its boundary buildup beat without editing MIDI");
         beatPreview.setAccentPattern(AP::buildup8);
         require(beatPreview.getAccentPattern()==AP::buildup8
             &&!dialogApplied,
