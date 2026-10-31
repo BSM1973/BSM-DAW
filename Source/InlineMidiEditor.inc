@@ -343,7 +343,13 @@ bool inlineMidiRampVelocitySelected(int startVelocity,int endVelocity,
                                                                                                         ?juce::String::fromUTF8("Descente longue 4 mesures")
                                                                                                         :accentPattern==LibertyInlineVelocity::AccentPattern::longFade8
                                                                                                             ?juce::String::fromUTF8("Descente longue 8 mesures")
-                                                                                                            :juce::String::fromUTF8("Temps forts"))
+                                                                                                            :accentPattern==LibertyInlineVelocity::AccentPattern::arc2
+                                                                                                                ?juce::String::fromUTF8("Arc dynamique 2 mesures")
+                                                                                                                :accentPattern==LibertyInlineVelocity::AccentPattern::arc4
+                                                                                                                    ?juce::String::fromUTF8("Arc dynamique 4 mesures")
+                                                                                                                    :accentPattern==LibertyInlineVelocity::AccentPattern::arc8
+                                                                                                                        ?juce::String::fromUTF8("Arc dynamique 8 mesures")
+                                                                                                                        :juce::String::fromUTF8("Temps forts"))
             +juce::String::fromUTF8(" — Notes fantômes −")
             +juce::String(juce::jlimit(0,20,ghostAmount))
             +juce::String::fromUTF8(" — Tolérance ")

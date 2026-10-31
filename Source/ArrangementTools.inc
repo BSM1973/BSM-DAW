@@ -1869,6 +1869,63 @@ bool runArrangementTests(){
             0,4,4,960,0,AP::longFade2,8)
                 ==std::vector<int>({70,70,70}),
             "decrescendo at zero strength cannot alter MIDI dynamics");
+        // Symmetrical expressive arcs: rise to middle, then soften
+        // continuously toward last eighth and next phrase onset.
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{1920,70},{2880,70},{3840,70},
+             {4800,70},{5760,70},{6720,70},{7200,70},{7680,70}},
+            {70,70,70,70,70,70,70,70,70,70},
+            20,4,4,960,0,AP::arc2,8)
+                ==std::vector<int>({70,75,80,85,90,85,80,75,70,70}),
+            "two-bar dynamic arc peaks exactly halfway through the phrase");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{3840,70},{7680,70},{11520,70},{14400,70},
+             {14880,70},{15360,70}},
+            {70,70,70,70,70,70,70},20,4,4,960,0,AP::arc4,8)
+                ==std::vector<int>({70,80,90,80,73,70,70}),
+            "four-bar dynamic arc emphasizes the middle of four measures");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{7680,70},{15360,70},{23040,70},{29760,70},
+             {30240,70},{30720,70}},
+            {70,70,70,70,70,70,70},20,4,4,960,0,AP::arc8,8)
+                ==std::vector<int>({70,80,90,80,71,70,70}),
+            "eight-bar dynamic arc rises and falls across the whole cycle");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{3360,70},{3840,70}},
+            {70,70,70,70},20,4,4,960,3840,AP::arc2,8)
+                ==std::vector<int>({90,85,70,70}),
+            "moved clips preserve the project-aligned middle accent");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{1440,70},{2880,70},{4320,70},{5280,70},{5760,70}},
+            {70,70,70,70,70,70},20,6,8,960,0,AP::arc2,8)
+                ==std::vector<int>({70,80,90,80,70,70}),
+            "6/8 dynamic arc peaks at its dotted-quarter middle");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{480,70},{960,70},{7200,70}},
+            {70,70,70,70},20,4,4,960,0,AP::arc2,8)
+                ==std::vector<int>({70,62,75,70}),
+            "arc retains ghost notes only outside recognized pulses");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3720,70},{3840,70},{3960,70}}, {70,70,70},
+            20,4,4,960,0,AP::arc2,8,25,50,true,
+            LibertyInlineVelocity::Curve::linear)
+                ==std::vector<int>({76,90,76}),
+            "arc accents share existing progressive tolerance falloff");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{3840,90},{3840,120}}, {90,120},
+            20,4,4,960,0,AP::arc2,8)
+                ==std::vector<int>({97,127}),
+            "arc preserves chord velocity intervals at MIDI limit");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{-1,70},{0,70}}, {70,70},
+            20,4,4,960,0,AP::arc2,8)
+                ==std::vector<int>({70,70}),
+            "arc does not modify notes with invalid negative positions");
+        require(LibertyInlineVelocity::accentVelocities(
+            {{0,70},{960,70},{3840,70}}, {70,70,70},
+            0,4,4,960,0,AP::arc2,8)
+                ==std::vector<int>({70,70,70}),
+            "arc at zero strength leaves existing velocities unchanged");
         // Musical swing changes the target grid for simple-meter offbeats only.
         require(LibertyInlineVelocity::accentVelocities(
             {{480,60},{720,70},{1680,80},{1680,100}},
@@ -2254,6 +2311,46 @@ bool runArrangementTests(){
         for(const auto& mark:fadeMany)
             if(mark.primary)require(mark.localTick%30720==0,
                 "decrescendo bright accent guides stay on global downbeats");
+        const auto arcGuide2=guides(0,7680,4,4,960,0,
+            AP::arc2,50);
+        require(arcGuide2.size()==10
+            &&arcGuide2[0].localTick==0&&!arcGuide2[0].primary
+            &&arcGuide2[4].localTick==3840&&arcGuide2[4].primary
+            &&arcGuide2[8].localTick==7200&&!arcGuide2[8].primary
+            &&arcGuide2[9].localTick==7680&&!arcGuide2[9].primary,
+            "two-bar arc preview marks only its central velocity peak");
+        const auto arcGuide4=guides(0,15360,4,4,960,0,
+            AP::arc4,50);
+        require(arcGuide4.size()==18
+            &&arcGuide4[8].localTick==7680&&arcGuide4[8].primary
+            &&!arcGuide4[0].primary&&!arcGuide4[17].primary,
+            "four-bar arc guide follows full musical arc");
+        const auto arcGuide8=guides(0,30720,4,4,960,0,
+            AP::arc8,50);
+        require(arcGuide8.size()==34
+            &&arcGuide8[16].localTick==15360&&arcGuide8[16].primary
+            &&!arcGuide8[0].primary&&!arcGuide8[33].primary,
+            "eight-bar arc guide highlights the correct central pulse");
+        const auto arcCompound=guides(0,5760,6,8,960,0,
+            AP::arc2,50);
+        require(arcCompound.size()==6
+            &&arcCompound[2].localTick==2880&&arcCompound[2].primary
+            &&arcCompound[4].localTick==5280&&!arcCompound[4].primary,
+            "compound 6/8 uses dotted-quarter arc and final eighth");
+        const auto arcShifted=guides(0,3840,4,4,960,3840,
+            AP::arc2,50);
+        require(arcShifted.size()==6
+            &&arcShifted[0].localTick==0&&arcShifted[0].primary
+            &&arcShifted[4].localTick==3360&&!arcShifted[4].primary,
+            "arc preview keeps global phase after clip reposition");
+        const auto arcMany=guides(0,3840000,4,4,960,0,
+            AP::arc8,50);
+        require(!arcMany.empty()&&arcMany.size()<=160,
+            "large arc previews remain capped at 160 note markers");
+        for(const auto& mark:arcMany)
+            if(mark.primary)
+                require(mark.localTick%30720==15360,
+                    "sampled arc highlights only project-aligned midpoint");
         require(guides(0,0,4,4,960,0,AP::everyBeat,50).empty(),
             "empty selection cannot introduce guide markers");
         require(guides(0,std::numeric_limits<std::int64_t>::max(),
@@ -2360,6 +2457,18 @@ bool runArrangementTests(){
         require(beatPreview.getAccentPattern()==AP::longFade8
             &&!dialogApplied,
             "eight-bar decrescendo can be previewed without applying MIDI");
+        beatPreview.setAccentPattern(AP::arc2);
+        const auto shortArcGuide=beatPreview.getRhythmicGuide();
+        require(beatPreview.getAccentPattern()==AP::arc2
+            &&shortArcGuide.size()==5
+            &&shortArcGuide[4].localTick==3840
+            &&shortArcGuide[4].primary
+            &&!beatPreview.isSwingEnabled()&&!dialogApplied,
+            "arc profile previews its peak without applying MIDI");
+        beatPreview.setAccentPattern(AP::arc8);
+        require(beatPreview.getAccentPattern()==AP::arc8
+            &&!dialogApplied,
+            "eight-bar dynamic arc remains preview-only until Apply");
         beatPreview.setAccentPattern(AP::strongBeats);
         require(beatPreview.getCurrentPreviewVelocity(0)==70
             &&beatPreview.getCurrentPreviewVelocity(1)==65
@@ -3144,6 +3253,44 @@ bool runArrangementTests(){
             require(fadeAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "long decrescendo Redo");
+        // An arc is an ordinary, undoable Arrangement velocity-only edit.
+        inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiSelectedInstrument=false;inlineMidiSelectedNotes={0,1,2};
+        const auto arcBefore=midiClips[(size_t)multiClip].notes;
+        const std::vector<LibertyInlineVelocity::PreviewNote> arcNotes={
+            {arcBefore[0].startTick,(int)arcBefore[0].velocity},
+            {arcBefore[1].startTick,(int)arcBefore[1].velocity},
+            {arcBefore[2].startTick,(int)arcBefore[2].velocity}};
+        const auto arcBase=LibertyInlineVelocity::transformVelocities(
+            arcNotes,40,100,FC::linear,LibertyInlineVelocity::Mode::relative,0);
+        const auto arcExpected=LibertyInlineVelocity::accentVelocities(
+            arcNotes,arcBase,20,owner.timeSignatureNumerator,
+            owner.timeSignatureDenominator,MidiEngine::ticksPerQuarterNote,
+            MidiEngine::secondsToTick(
+                midiClips[(size_t)multiClip].startSeconds,owner.tempoBpm),
+            AP::arc4,8,25,50,true,FC::sCurve);
+        require(inlineMidiRampVelocitySelected(40,100,FC::linear,
+            LibertyInlineVelocity::Mode::relative,0,0,0x61b3e729U,20,
+            AP::arc4,8,25,50,true,FC::sCurve),
+            "MIDI arc applies correctly to selected Arrangement notes");
+        const auto arcAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<arcNotes.size();++i)
+            require((int)arcAfter[i].velocity==arcExpected[i]
+                &&arcAfter[i].startTick==arcBefore[i].startTick
+                &&arcAfter[i].lengthTicks==arcBefore[i].lengthTicks
+                &&arcAfter[i].pitch==arcBefore[i].pitch
+                &&arcAfter[i].channel==arcBefore[i].channel,
+                "arc changes velocity only without disturbing note structure");
+        undoArrangement(false);
+        for(size_t i=0;i<arcNotes.size();++i)
+            require(arcBefore[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "dynamic arc Undo restores original velocities");
+        undoArrangement(true);
+        for(size_t i=0;i<arcNotes.size();++i)
+            require(arcAfter[i].velocity==
+                midiClips[(size_t)multiClip].notes[i].velocity,
+                "dynamic arc Redo restores the applied envelope");
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
