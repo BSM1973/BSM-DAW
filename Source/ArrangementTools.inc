@@ -656,18 +656,25 @@ bool runArrangementTests(){
         require(applyAudioClipEdit(0,c.id,proposedAudio),
             "non-destructive editor applies settings to selected audio clip");
         const auto afterAudioEditor=owner.audioEngine.getArrangementAudioClips(0);
-        require(afterAudioEditor.size()==1
-            &&afterAudioEditor[0].sourceBuffer==source
+        require(afterAudioEditor.size()==1,
+            "audio edit retains exactly one independent primary region");
+        require(afterAudioEditor[0].sourceBuffer==source
             &&afterAudioEditor[0].id==c.id
-            &&afterAudioEditor[0].startSeconds==c.startSeconds
-            &&afterAudioEditor[0].offsetSeconds==c.offsetSeconds
-            &&afterAudioEditor[0].sourceName==c.sourceName
-            &&afterAudioEditor[0].pitchSemitones==-7
-            &&std::abs(afterAudioEditor[0].clipGain-.45f)<.0001f
-            &&std::abs(afterAudioEditor[0].fadeInSeconds-.125)<.00001
-            &&std::abs(afterAudioEditor[0].fadeOutSeconds-.205)<.00001
-            &&!afterAudioEditor[0].reverse&&afterAudioEditor[0].muted,
-            "audio edit modifies only independent clip properties and keeps media");
+            &&afterAudioEditor[0].sourceName==c.sourceName,
+            "audio edit retains source media and original identity");
+        require(afterAudioEditor[0].startSeconds==c.startSeconds
+            &&afterAudioEditor[0].offsetSeconds==c.offsetSeconds,
+            "audio edit never changes clip placement or source offset");
+        require(afterAudioEditor[0].pitchSemitones==-7,
+            "audio edit transfers pitch to playback engine");
+        require(std::abs(afterAudioEditor[0].clipGain-.45f)<.0001f,
+            "audio edit transfers clip gain to playback engine");
+        require(std::abs(afterAudioEditor[0].fadeInSeconds-.125)<.00001,
+            "audio edit transfers fade-in to playback engine");
+        require(std::abs(afterAudioEditor[0].fadeOutSeconds-.205)<.00001,
+            "audio edit transfers fade-out to playback engine");
+        require(!afterAudioEditor[0].reverse&&afterAudioEditor[0].muted,
+            "audio edit transfers reverse and mute to playback engine");
         require(!applyAudioClipEdit(0,c.id,proposedAudio)
             &&!applyAudioClipEdit(-1,c.id,proposedAudio)
             &&!applyAudioClipEdit(0,"missing-clip",proposedAudio),
