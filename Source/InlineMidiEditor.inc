@@ -1104,7 +1104,10 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         selectClip(instrument,index);
         return inlineMidiSelectAll();
     }
-    if(!inlineMidiMode||activeArrangeTool!=0
+    // A MIDI velocity command explicitly targets note editing; restore
+    // Selection when the previous clip tool was Scissors/Glue/etc.
+    if(inlineMidiMode&&activeArrangeTool!=0)activeArrangeTool=0;
+    if(!inlineMidiMode
        ||inlineMidiSelectedClipId!=clipId
        ||inlineMidiSelectedInstrument!=instrument
        ||inlineMidiSelectedNotes.empty())return false;
