@@ -2034,15 +2034,26 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     return false;
 }
 
+// Values survive reopening the MIDI editor while this Arrangement controller
+// is alive. They are session preferences, never project data or MIDI edits.
+struct InlineMidiStrumSettings {
+    int gap=60,swing=50,timing=0,dynamics=0,nuance=0;
+    bool preserve=false,alternate=false;
+};
+
 // Actual JUCE controls, not a decorative picture or a custom PopupMenu.
 // Buttons keep the standard keyboard/mouse accessibility and existing engine.
 class InlineMidiActionsPanel final : public juce::Component
 {
 public:
     using State=std::array<int,4>; // direct, velocity, selected, total
-    InlineMidiActionsPanel(std::function<bool(int)> action,
-                           std::function<State()> read)
-      : dispatch(std::move(action)),readState(std::move(read))
+    InlineMidiActionsPanel(
+        std::function<bool(int)> action,
+        std::function<State()> read,
+        InlineMidiStrumSettings initial={},
+        std::function<void(const InlineMidiStrumSettings&)> onSettingsChanged={})
+      : dispatch(std::move(action)),readState(std::move(read)),
+        saveSettings(std::move(onSettingsChanged))
     {
         setSize(608,1420);
         strumGap.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -2299,7 +2310,46 @@ public:
             };
             addAndMakeVisible(b);
         }
+        // Apply previous session values after all controls exist. Do not
+        // dispatch any MIDI action or trigger save while reconstructing UI.
+        restoreSettings(initial);
+        const auto changed=[this]{notifySettingsChanged();};
+        strumGap.onValueChange=changed;
+        strumSwing.onValueChange=changed;
+        strumHumanize.onValueChange=changed;
+        strumDynamics.onValueChange=changed;
+        strumVelocityNuance.onValueChange=changed;
+        preserveStrumLength.onClick=changed;
+        alternateStrumDirection.onClick=changed;
         refresh();
+    }
+
+    InlineMidiStrumSettings currentSettings()const {
+        return {(int)strumGap.getValue(),
+                (int)strumSwing.getValue(),
+                (int)strumHumanize.getValue(),
+                (int)strumDynamics.getValue(),
+                (int)strumVelocityNuance.getValue(),
+                preserveStrumLength.getToggleState(),
+                alternateStrumDirection.getToggleState()};
+    }
+
+    void restoreSettings(const InlineMidiStrumSettings& values) {
+        strumGap.setValue(juce::jlimit(15,240,values.gap),
+                          juce::dontSendNotification);
+        strumSwing.setValue(juce::jlimit(50,75,values.swing),
+                            juce::dontSendNotification);
+        strumHumanize.setValue(juce::jlimit(0,20,values.timing),
+                               juce::dontSendNotification);
+        strumDynamics.setValue(juce::jlimit(-24,24,values.dynamics),
+                               juce::dontSendNotification);
+        strumVelocityNuance.setValue(juce::jlimit(0,12,values.nuance),
+                                     juce::dontSendNotification);
+        preserveStrumLength.setToggleState(values.preserve,
+                                            juce::dontSendNotification);
+        alternateStrumDirection.setToggleState(values.alternate,
+                                                juce::dontSendNotification);
+        repaint();
     }
 
     // Presets only set controls; they never dispatch MIDI edits.
@@ -2323,7 +2373,12 @@ public:
                                             juce::dontSendNotification);
         alternateStrumDirection.setToggleState(alternate[preset],
                                                 juce::dontSendNotification);
+        notifySettingsChanged();
         repaint();
+    }
+
+    void notifySettingsChanged(){
+        if(saveSettings)saveSettings(currentSettings());
     }
 
     void refresh(){
@@ -2504,6 +2559,7 @@ public:
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
+    std::function<void(const InlineMidiStrumSettings&)> saveSettings;
     std::array<juce::TextButton,24> buttons;
     std::array<juce::TextButton,4> strumPresets;
     juce::Slider strumGap;
@@ -2593,6 +2649,10 @@ bool inlineMidiContextMenu(juce::Point<int> p){
                     safe->inlineMidiVelocityMode?1:0,
                     selection?(int)safe->inlineMidiSelectedNotes.size():0,
                     (int)it->notes.size()};
+        },
+        savedStrumSettings,
+        [safe](const InlineMidiStrumSettings& values) {
+            if(safe)safe->savedStrumSettings=values;
         });
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle=juce::String::fromUTF8("LIBERTY - ÉDITION MIDI");
