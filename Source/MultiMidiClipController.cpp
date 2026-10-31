@@ -261,6 +261,19 @@ bool hitTest(int x,int y)override{
             return;
         }
     }
+    if(inlineMidiMode&&activeArrangeTool>0){
+        bool instrument=false;
+        const int index=findClipAt(e.getPosition(),instrument);
+        if(index>=0){
+            const auto& clip=(instrument?instrumentClips:midiClips)[(size_t)index];
+            if(inlineMidiArea(clip,instrument).contains(e.getPosition())){
+                setMouseCursor(activeArrangeTool==7
+                    ?juce::MouseCursor::LeftRightResizeCursor
+                    :juce::MouseCursor::CrosshairCursor);
+                return;
+            }
+        }
+    }
     if(audioLaneAt(e.getPosition())>=0){
         const auto cursor=(audioFadeHandleAt(e.getPosition())!=0 || crossfadeGripAt(e.getPosition()).mode!=0)
             ?juce::MouseCursor::LeftRightResizeCursor:
