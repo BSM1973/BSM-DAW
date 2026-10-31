@@ -1108,6 +1108,59 @@ bool runArrangementTests(){
             && midiClips[(size_t)multiClip].notes[1].velocity
                     ==beforeFixed[1].velocity,
             "fixed velocity undo");
+        // Real dialog dispatch: select all even after leaving the direct
+        // editor for Scissors, then apply a fixed preset and undo it.
+        const int panelClipId=midiClips[(size_t)multiClip].id;
+        inlineMidiMode=false;inlineMidiVelocityMode=false;
+        inlineMidiClearSelection();activeArrangeTool=4;
+        require(inlineMidiExecuteAction(3,panelClipId,false)
+            &&inlineMidiMode&&activeArrangeTool==0
+            &&inlineMidiSelectedClipId==panelClipId
+            &&inlineMidiSelectedNotes.size()==3,
+            "MIDI window Select all activates direct editing and correct clip");
+        require(inlineMidiExecuteAction(2,panelClipId,false)
+            &&inlineMidiVelocityMode,
+            "MIDI window velocity mode enables real Arrangement note editing");
+        require(inlineMidiExecuteAction(2,panelClipId,false)
+            &&!inlineMidiVelocityMode,
+            "MIDI window velocity mode can be switched off");
+        inlineMidiSelectedNotes={0,1};
+        activeArrangeTool=5;
+        const auto panelBefore=midiClips[(size_t)multiClip].notes;
+        require(inlineMidiExecuteAction(1080,panelClipId,false)
+            &&activeArrangeTool==0,
+            "MIDI window switches from Glue to Selection before applying");
+        const auto panelAfter=midiClips[(size_t)multiClip].notes;
+        require(panelAfter[0].velocity==80&&panelAfter[1].velocity==80
+            &&panelAfter[2].velocity==panelBefore[2].velocity,
+            "MIDI window fixed velocity only changes selected notes");
+        undoArrangement(false);
+        for(size_t k=0;k<panelBefore.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].velocity
+                ==panelBefore[k].velocity,
+                "MIDI window preset Undo restores all note values");
+        undoArrangement(true);
+        for(size_t k=0;k<panelAfter.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].velocity
+                ==panelAfter[k].velocity,
+                "MIDI window preset Redo restores selected notes");
+        undoArrangement(false);
+        require(!inlineMidiExecuteAction(1064,panelClipId+123456,false),
+            "MIDI window never applies a command to another clip");
+        InlineMidiActionsPanel editorPanel(
+            [](int){return true;},
+            []()->InlineMidiActionsPanel::State{return {1,1,2,3};});
+        require(editorPanel.isActionEnabled(3)
+            &&editorPanel.isActionEnabled(8)
+            &&editorPanel.isActionEnabled(12),
+            "JUCE MIDI window enables presets and curves for multiple notes");
+        InlineMidiActionsPanel emptyPanel(
+            [](int){return false;},
+            []()->InlineMidiActionsPanel::State{return {0,0,0,3};});
+        require(emptyPanel.isActionEnabled(2)
+            &&!emptyPanel.isActionEnabled(3)
+            &&!emptyPanel.isActionEnabled(8),
+            "JUCE window offers Select all before MIDI mode is enabled");
         // Linear velocity ramps use note start times, not selection order.
         // Simultaneous chord notes share the beginning value.
         inlineMidiClearSelection();
