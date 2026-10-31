@@ -104,7 +104,7 @@ int audioFadeHandleAt(juce::Point<int> p) const {
     for(const auto& c:owner.audioEngine.getArrangementAudioClips(t)){
         if(c.id!=id || !c.sourceBuffer || c.lengthSeconds<=0.0)continue;
         const auto box=audioBounds(t,c);
-        if(box.getWidth()<=36 || box.getHeight()<=32 || std::abs(p.y-(box.getY()+24))>12)return 0;
+        if(box.getWidth()<=36 || box.getHeight()<=32)return 0;
         const float fi=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,(float)box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float inX=(float)box.getX()+fi;
