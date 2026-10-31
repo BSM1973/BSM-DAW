@@ -474,12 +474,27 @@ void paintAudioFades(juce::Graphics& g){
         const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
         if(fi>0.0f){
+            // A translucent ramp identifies the affected audio without hiding peaks.
+            juce::Path fadeArea;
+            fadeArea.startNewSubPath(box.getX(),top);
+            fadeArea.lineTo(box.getX()+fi,top);
+            fadeArea.lineTo(box.getX(),bottom);
+            fadeArea.closeSubPath();
+            g.setColour(juce::Colour(0x2861c9f2));
+            g.fillPath(fadeArea);
             g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
             g.drawLine(box.getX(),bottom,box.getX()+fi,top,4.0f);
             g.setColour(juce::Colour(0xffffd88c));
             g.drawLine(box.getX(),bottom,box.getX()+fi,top,2.4f);
         }
         if(fo>0.0f){
+            juce::Path fadeArea;
+            fadeArea.startNewSubPath(box.getRight()-fo,top);
+            fadeArea.lineTo(box.getRight(),top);
+            fadeArea.lineTo(box.getRight(),bottom);
+            fadeArea.closeSubPath();
+            g.setColour(juce::Colour(0x2861c9f2));
+            g.fillPath(fadeArea);
             g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
             g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,4.0f);
             g.setColour(juce::Colour(0xffffd88c));
