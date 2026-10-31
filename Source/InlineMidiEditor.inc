@@ -488,6 +488,128 @@ bool inlineMidiDropVoicingSelected(int drop){
     return applied;
 }
 
+
+/* One-click close / open chord spacing. A group is a set of selected
+   pitches with the same onset. Open raises alternating upper voices by
+   an octave; close folds those upper voices into one octave above bass.
+   Both transformations preserve pitch class, MIDI expression and rhythm. */
+bool inlineMidiSpaceChordsSelected(bool widen){
+    if(!inlineMidiMode||inlineMidiSelectedNotes.size()<3)return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int clipIndex=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,clipIndex))
+        selectClip(inlineMidiSelectedInstrument,clipIndex);
+    auto& clip=bank[(size_t)clipIndex];
+    const auto originals=clip.notes;
+    const auto clipEnd=MidiEngine::secondsToTick(
+        clip.lengthSeconds,owner.tempoBpm);
+    std::map<std::int64_t,std::vector<int>> chords;
+    for(const int index:inlineMidiSelectedNotes){
+        if(index<0||index>=(int)originals.size()){
+            inlineMidiClearSelection();return false;
+        }
+        const auto& n=originals[(size_t)index];
+        if(n.startTick<0||n.startTick>=clipEnd||n.lengthTicks<=0
+           ||n.lengthTicks>clipEnd-n.startTick)return false;
+        chords[n.startTick].push_back(index);
+    }
+    auto notes=originals;
+    int changed=0;
+    for(const auto& entry:chords){
+        auto voices=entry.second;
+        if(voices.size()<3)continue;
+        std::sort(voices.begin(),voices.end(),[&](int a,int b){
+            const int pa=(int)originals[(size_t)a].pitch;
+            const int pb=(int)originals[(size_t)b].pitch;
+            return pa!=pb?pa<pb:a<b;
+        });
+        // All-duplicate unisons are not meaningful voicings.
+        if(originals[(size_t)voices.front()].pitch
+            ==originals[(size_t)voices.back()].pitch)continue;
+        bool changedThisChord=false;
+        const int bass=(int)originals[(size_t)voices.front()].pitch;
+        for(size_t k=1;k<voices.size();++k){
+            const int index=voices[k];
+            const int pitch=(int)originals[(size_t)index].pitch;
+            int transformed=pitch;
+            if(widen){
+                // Move alternating voices, counting from bass (2nd, 4th).
+                if(k%2==1)transformed+=12;
+            }else{
+                // Keep the bass fixed. Fold high notes down by octaves;
+                // close voicing never alters a pitch class or the onset.
+                while(transformed>=bass+12)transformed-=12;
+            }
+            if(transformed<0||transformed>127){
+                operationMessage=juce::String::fromUTF8(
+                    "Espacement impossible : hauteur hors limites MIDI");
+                return false;
+            }
+            if(transformed!=pitch){
+                notes[(size_t)index].pitch=(std::uint8_t)transformed;
+                changedThisChord=true;
+            }
+        }
+        if(changedThisChord)++changed;
+    }
+    if(changed==0){
+        operationMessage=juce::String::fromUTF8(
+            widen?"Sélectionnez un accord de trois voix pour l'élargir"
+                 :"Les accords sélectionnés sont déjà en position serrée");
+        return false;
+    }
+    // Collision validation happens before the Undo transaction: a change
+    // cannot create an additional note-on for the same channel/pitch/time.
+    for(const int index:inlineMidiSelectedNotes){
+        if(notes[(size_t)index].pitch==originals[(size_t)index].pitch)continue;
+        const auto& modified=notes[(size_t)index];
+        for(int i=0;i<(int)notes.size();++i){
+            if(i==index)continue;
+            const auto& other=notes[(size_t)i];
+            if(other.startTick==modified.startTick
+               &&other.channel==modified.channel
+               &&other.pitch==modified.pitch){
+                operationMessage=juce::String::fromUTF8(
+                    "Espacement impossible : note déjà présente à cette hauteur");
+                return false;
+            }
+        }
+    }
+    std::vector<std::pair<MidiEngine::NoteEvent,int>> tagged;
+    tagged.reserve(notes.size());
+    for(int i=0;i<(int)notes.size();++i)
+        tagged.push_back({notes[(size_t)i],i});
+    std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+        if(a.first.startTick!=b.first.startTick)
+            return a.first.startTick<b.first.startTick;
+        if(a.first.channel!=b.first.channel)
+            return a.first.channel<b.first.channel;
+        return a.first.pitch<b.first.pitch;
+    });
+    beginArrangementEdit();
+    const bool applied=owner.midiEngine.replaceNotes(notes);
+    if(applied){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        const auto originalSelection=inlineMidiSelectedNotes;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(originalSelection.count(tagged[(size_t)i].second))
+                inlineMidiSelectedNotes.insert(i);
+        syncPlayback();
+        operationMessage=juce::String(changed)
+            +juce::String::fromUTF8(widen
+                ?" accords MIDI élargis"
+                :" accords MIDI resserrés");
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
+
 // Apply a linear velocity crescendo/diminuendo in MUSICAL TIME.
 // Chord notes sharing a start tick receive the same velocity. No position,
 // length, channel or articulation information is altered.
@@ -1586,7 +1708,7 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     }
     if(!((choice>=1001&&choice<=1127)||(choice>=2001&&choice<=2005)
          ||choice==2101||choice==2102||choice==2201||choice==2202
-         ||choice==2301||choice==2302))return false;
+         ||choice==2301||choice==2302||choice==2401||choice==2402))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1613,6 +1735,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiInvertChordsSelected(choice==2201?1:-1);
     if(choice==2301||choice==2302)
         return inlineMidiDropVoicingSelected(choice==2301?2:3);
+    if(choice==2401||choice==2402)
+        return inlineMidiSpaceChordsSelected(choice==2402);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1634,7 +1758,7 @@ public:
     {
         setSize(608,814);
         static const int actions[]={
-            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,0};
+            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,0};
         const juce::String labels[]={
             juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
             juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
@@ -1655,6 +1779,8 @@ public:
             juce::String::fromUTF8("RENVERSEMENT VERS LE BAS"),
             juce::String::fromUTF8("DROP 2"),
             juce::String::fromUTF8("DROP 3"),
+            juce::String::fromUTF8("RESSERRER"),
+            juce::String::fromUTF8("ÉLARGIR"),
             juce::String::fromUTF8("FERMER")};
         for(size_t i=0;i<buttons.size();++i){
             auto& b=buttons[i];
@@ -1664,7 +1790,7 @@ public:
             b.setColour(juce::TextButton::buttonOnColourId,
                         juce::Colour(0xff366074));
             b.setColour(juce::TextButton::textColourOffId,
-                        juce::Colour(i==19?0xffb9cbd9:0xfff1f7fd));
+                        juce::Colour(i==21?0xffb9cbd9:0xfff1f7fd));
             b.setColour(juce::TextButton::textColourOnId,
                         juce::Colour(0xffffd48a));
             b.setTooltip(i<2
@@ -1681,9 +1807,11 @@ public:
                                     ?juce::String::fromUTF8("Renverser chaque accord sélectionné sans changer le rythme ni la vélocité")
                                     :i<19
                                         ?juce::String::fromUTF8("Abaisser d'une octave la deuxième ou troisième voix la plus aiguë de chaque accord")
-                                        :juce::String::fromUTF8("Fermer l'éditeur"));
+                                        :i<21
+                                            ?juce::String::fromUTF8("Resserrer les notes dans une octave ou élargir les voix en conservant la tonalité")
+                                            :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
-                if(i==19){
+                if(i==21){
                     if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
                         w->exitModalState(0);
                     return;
@@ -1725,6 +1853,8 @@ public:
         for(int i=15;i<=16;++i)buttons[(size_t)i].setEnabled(state[3]>=2);
         buttons[17].setEnabled(state[3]>=3);
         buttons[18].setEnabled(state[3]>=4);
+        buttons[19].setEnabled(state[3]>=3);
+        buttons[20].setEnabled(state[3]>=3);
         selected=state[2];total=state[3];
         repaint();
     }
@@ -1757,9 +1887,12 @@ public:
         buttons[14].setBounds(margin+w/2+5,568,w/2-5,38);
         buttons[15].setBounds(margin,638,w/2-5,38);
         buttons[16].setBounds(margin+w/2+5,638,w/2-5,38);
-        buttons[17].setBounds(margin,707,w/2-5,38);
-        buttons[18].setBounds(margin+w/2+5,707,w/2-5,38);
-        buttons[19].setBounds(getWidth()-142,769,118,32);
+        const int gap=7,quarter=(w-gap*3)/4;
+        buttons[17].setBounds(margin,707,quarter,38);
+        buttons[18].setBounds(margin+(quarter+gap),707,quarter,38);
+        buttons[19].setBounds(margin+2*(quarter+gap),707,quarter,38);
+        buttons[20].setBounds(margin+3*(quarter+gap),707,quarter,38);
+        buttons[21].setBounds(getWidth()-142,769,118,32);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -1801,7 +1934,7 @@ public:
                    25,537,450,25,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("RENVERSEMENT DES ACCORDS"),
                    25,613,450,23,juce::Justification::centredLeft);
-        g.drawText(juce::String::fromUTF8("VOICINGS DROP 2 / DROP 3"),
+        g.drawText(juce::String::fromUTF8("VOICINGS ET ESPACEMENT"),
                    25,683,450,23,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
@@ -1811,7 +1944,7 @@ public:
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
-    std::array<juce::TextButton,20> buttons;
+    std::array<juce::TextButton,22> buttons;
     int selected=0,total=0;
 };
 
