@@ -636,15 +636,21 @@ bool runArrangementTests(){
         });
         audioEditor.setValuesForTest(45,-7,.125,.205,false,true);
         const auto preparedAudio=audioEditor.values();
-        require(audioEditor.controlsWithinBoundsForTest()
-            &&std::abs(preparedAudio.clipGain-.45f)<.0001f
-            &&preparedAudio.pitchSemitones==-7
-            &&std::abs(preparedAudio.fadeInSeconds-.125)<.00001
-            &&std::abs(preparedAudio.fadeOutSeconds-.205)<.00001
-            &&!preparedAudio.reverse && preparedAudio.muted
-            &&owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==.7f
+        require(audioEditor.controlsWithinBoundsForTest(),
+            "audio editor all controls fit the panel after initialisation");
+        require(std::abs(preparedAudio.clipGain-.45f)<.0001f,
+            "audio editor gain slider updates prepared clip");
+        require(std::abs(preparedAudio.pitchSemitones+7.0)<.00001,
+            "audio editor pitch slider updates prepared clip");
+        require(std::abs(preparedAudio.fadeInSeconds-.125)<.00001,
+            "audio editor fade-in slider updates prepared clip");
+        require(std::abs(preparedAudio.fadeOutSeconds-.205)<.00001,
+            "audio editor fade-out slider updates prepared clip");
+        require(!preparedAudio.reverse && preparedAudio.muted,
+            "audio editor reverse and mute controls update prepared clip");
+        require(std::abs(owner.audioEngine.getArrangementAudioClips(0)[0].clipGain-.7f)<.00001f
             &&audioApplyCallbacks==0,
-            "editing audio controls only prepares gain, pitch, fades and flags");
+            "audio editor does not affect engine until Apply");
         require(audioEditor.clickApplyForTest()&&audioApplyCallbacks==1,
             "real audio editor APPLY button dispatches precisely once");
         require(applyAudioClipEdit(0,c.id,proposedAudio),
