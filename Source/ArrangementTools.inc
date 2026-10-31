@@ -3410,6 +3410,134 @@ bool runArrangementTests(){
             require(arcAfter[i].velocity==
                 midiClips[(size_t)multiClip].notes[i].velocity,
                 "dynamic arc Redo restores the applied envelope");
+        // Full mouse-tool coverage for EDITION DIRECTE in Arrangement.
+        // These are real controller operations, not dummy button callbacks:
+        // seven tools act on MIDI notes; outside this mode clips keep control.
+        const auto noteToolOriginal=midiClips[(size_t)multiClip].notes;
+        auto toolFirst=noteToolOriginal[0];
+        toolFirst.startTick=240;toolFirst.lengthTicks=720;
+        toolFirst.pitch=60;toolFirst.channel=1;toolFirst.muted=false;
+        auto toolSecond=toolFirst;toolSecond.startTick=960;
+        auto toolThird=toolFirst;
+        toolThird.startTick=1920;toolThird.pitch=67;
+        const std::vector<MidiEngine::NoteEvent> noteToolFixture={
+            toolFirst,toolSecond,toolThird};
+        auto resetMidiToolFixture=[&](){
+            if(!isActiveClip(false,multiClip))selectClip(false,multiClip);
+            midiClips[(size_t)multiClip].notes=noteToolFixture;
+            require(owner.midiEngine.replaceNotes(noteToolFixture),
+                "MIDI tool fixture loads its own three notes");
+            inlineMidiFinishGesture();
+            inlineMidiClearSelection();
+            inlineMidiMode=true;
+            inlineMidiVelocityMode=false;
+            syncPlayback();clearArrangementHistory();
+        };
+        resetMidiToolFixture();
+        auto toolPoint=[&](int index){
+            const auto& c=midiClips[(size_t)multiClip];
+            return inlineMidiNoteBounds(c,false,c.notes[(size_t)index])
+                .getIntersection(inlineMidiArea(c,false)).getCentre();
+        };
+        auto note0=toolPoint(0);
+        require(!note0.isOrigin(),"MIDI tool testing note is visible");
+        activeArrangeTool=1;
+        require(inlineMidiToolDown(note0,false)&&inlineMidiMarquee,
+            "Rectangle tool starts MIDI note selection");
+        inlineMidiMarqueeDrag(toolPoint(1));
+        inlineMidiCompleteGesture();
+        require(inlineMidiSelectedNotes.size()>=2,
+            "Rectangle tool selects notes instead of entire MIDI clips");
+        resetMidiToolFixture();
+        activeArrangeTool=2;
+        const auto noteArea=inlineMidiArea(midiClips[(size_t)multiClip],false);
+        const auto pencilPoint=juce::Point<int>(note0.x,noteArea.getY()+2);
+        beginArrangementEdit();
+        require(inlineMidiToolDown(pencilPoint,false),"Pencil MIDI click is handled");
+        finishArrangementEdit();
+        require(midiClips[(size_t)multiClip].notes.size()==4,
+            "Pencil creates a real note in Arrangement");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==3,
+            "Pencil MIDI Undo");
+        resetMidiToolFixture();
+        activeArrangeTool=3;
+        beginArrangementEdit();
+        require(inlineMidiToolDown(toolPoint(0),false),
+            "Eraser MIDI click is handled");
+        finishArrangementEdit();
+        require(midiClips[(size_t)multiClip].notes.size()==2,
+            "Eraser removes a note, not the whole clip");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==3,
+            "Eraser MIDI Undo");
+        resetMidiToolFixture();
+        activeArrangeTool=4;
+        beginArrangementEdit();
+        require(inlineMidiToolDown(toolPoint(0),false),
+            "Scissors MIDI click is handled");
+        finishArrangementEdit();
+        const auto splitNotes=midiClips[(size_t)multiClip].notes;
+        require(splitNotes.size()==4
+            &&splitNotes[0].lengthTicks+splitNotes[1].lengthTicks==720,
+            "Scissors divides duration without destroying other notes");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==3,
+            "Scissors MIDI Undo");
+        resetMidiToolFixture();
+        activeArrangeTool=5;
+        beginArrangementEdit();
+        require(inlineMidiToolDown(toolPoint(0),false),
+            "Glue MIDI click is handled");
+        finishArrangementEdit();
+        const auto gluedNotes=midiClips[(size_t)multiClip].notes;
+        require(gluedNotes.size()==2
+            &&gluedNotes[0].startTick==240
+            &&gluedNotes[0].lengthTicks==1440,
+            "Glue joins adjacent notes of same pitch and channel");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes.size()==3,
+            "Glue MIDI Undo");
+        resetMidiToolFixture();
+        activeArrangeTool=6;
+        beginArrangementEdit();
+        require(inlineMidiToolDown(toolPoint(0),false),
+            "Mute MIDI click is handled");
+        finishArrangementEdit();
+        require(midiClips[(size_t)multiClip].notes[0].muted
+            &&!midiClips[(size_t)multiClip].notes[1].muted,
+            "Mute only silences target MIDI note");
+        undoArrangement(false);
+        require(!midiClips[(size_t)multiClip].notes[0].muted,
+            "Mute MIDI Undo restores original note");
+        resetMidiToolFixture();
+        activeArrangeTool=7;
+        const auto stretchPoint=toolPoint(0);
+        beginArrangementEdit();
+        require(inlineMidiToolDown(stretchPoint,false)
+            &&inlineMidiDragging&&inlineMidiResizing,
+            "Stretch MIDI tool begins a real note-length gesture");
+        const auto stretchDelta=juce::jmax(
+            40,(int)std::ceil(2.0*MidiEngine::tickToSeconds(
+                MidiEngine::ticksPerQuarterNote,owner.tempoBpm)
+                *getLibertyTimelinePixelsPerSecond()));
+        inlineMidiDrag(stretchPoint.translated(stretchDelta,0));
+        inlineMidiCompleteGesture();
+        finishArrangementEdit();
+        require(midiClips[(size_t)multiClip].notes[0].lengthTicks>720,
+            "Stretch changes the target note duration");
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[0].lengthTicks==720,
+            "Stretch MIDI Undo restores original length");
+        resetMidiToolFixture();
+        activeArrangeTool=3;inlineMidiMode=false;
+        require(!inlineMidiToolDown(toolPoint(0),false),
+            "MIDI note tools never intercept ordinary clip Arrangement mode");
+        midiClips[(size_t)multiClip].notes=noteToolOriginal;
+        require(owner.midiEngine.replaceNotes(noteToolOriginal),
+            "restore original Arrangement test notes");
+        syncPlayback();clearArrangementHistory();
+        activeArrangeTool=0;inlineMidiMode=true;inlineMidiClearSelection();
         // A selection confined to one chord cannot define a time ramp.
         inlineMidiSelectedClipId=midiClips[(size_t)multiClip].id;
         inlineMidiSelectedInstrument=false;
