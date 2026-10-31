@@ -575,6 +575,10 @@ bool runArrangementTests(){
         midiClips.back().lengthSeconds=juce::jmax(3.0,midiClips.back().lengthSeconds);
         inlineMidiMode=true;activeArrangeTool=0;
         const int inlineIndex=(int)midiClips.size()-1;
+        owner.setArrangeTrackHeight(midiRow,64);setBounds(owner.getLocalBounds());
+        require(!inlineMidiArea(midiClips[(size_t)inlineIndex],false).isEmpty(),
+            "normal height track supports direct MIDI note editing");
+        owner.setArrangeTrackHeight(midiRow,120);setBounds(owner.getLocalBounds());
         const auto originalNote=midiClips[(size_t)inlineIndex].notes[0];
         const auto hitRect=inlineMidiNoteBounds(midiClips[(size_t)inlineIndex],false,originalNote);
         require(!hitRect.isEmpty(),"inline MIDI note bounds");
@@ -1158,9 +1162,60 @@ bool runArrangementTests(){
             [](int){return false;},
             []()->InlineMidiActionsPanel::State{return {0,0,0,3};});
         require(emptyPanel.isActionEnabled(2)
-            &&!emptyPanel.isActionEnabled(3)
-            &&!emptyPanel.isActionEnabled(8),
-            "JUCE window offers Select all before MIDI mode is enabled");
+            &&emptyPanel.isActionEnabled(3)
+            &&emptyPanel.isActionEnabled(8),
+            "JUCE window commands stay available without a previous note selection");
+        // Check real button callbacks, not only direct helper calls. Both
+        // fixed velocity and crescendo must work from a fresh right-click
+        // even when the previous clip tool was Mute or Glue.
+        inlineMidiMode=false;inlineMidiVelocityMode=false;
+        inlineMidiClearSelection();activeArrangeTool=6;
+        const auto noSelectionBefore=midiClips[(size_t)multiClip].notes;
+        InlineMidiActionsPanel wiredPanel(
+            [this,panelClipId](int action){
+                return inlineMidiExecuteAction(action,panelClipId,false);
+            },
+            [this,panelClipId]()->InlineMidiActionsPanel::State {
+                const auto it=std::find_if(midiClips.begin(),midiClips.end(),
+                    [panelClipId](const Clip& c){return c.id==panelClipId;});
+                if(it==midiClips.end())return {0,0,0,0};
+                const bool same=inlineMidiSelectedClipId==panelClipId
+                    &&!inlineMidiSelectedInstrument;
+                return {inlineMidiMode?1:0,
+                        inlineMidiVelocityMode?1:0,
+                        same?(int)inlineMidiSelectedNotes.size():0,
+                        (int)it->notes.size()};
+            });
+        require(wiredPanel.isActionEnabled(5)
+            &&wiredPanel.clickActionForTest(5),
+            "real JUCE preset button handles a clip without selected notes");
+        const auto noSelectionFixed=midiClips[(size_t)multiClip].notes;
+        require(inlineMidiMode&&activeArrangeTool==0
+            &&inlineMidiSelectedClipId==panelClipId
+            &&inlineMidiSelectedNotes.size()==noSelectionBefore.size(),
+            "preset button activates editing and selects the target clip");
+        for(const auto& n:noSelectionFixed)
+            require(n.velocity==80,
+                "real fixed preset applies to all notes when selection was empty");
+        undoArrangement(false);
+        for(size_t k=0;k<noSelectionBefore.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].velocity
+                ==noSelectionBefore[k].velocity,
+                "real preset button edits are undoable");
+        inlineMidiClearSelection();activeArrangeTool=5;
+        require(wiredPanel.clickActionForTest(8),
+            "real JUCE crescendo button dispatches without preselection");
+        const auto noSelectionRamp=midiClips[(size_t)multiClip].notes;
+        require(activeArrangeTool==0
+            &&noSelectionRamp[0].velocity==64
+            &&noSelectionRamp[1].velocity==64
+            &&noSelectionRamp[2].velocity==100,
+            "real crescendo applies to MIDI notes in musical time");
+        undoArrangement(false);
+        for(size_t k=0;k<noSelectionBefore.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].velocity
+                ==noSelectionBefore[k].velocity,
+                "JUCE crescendo button Undo restores every original velocity");
         // Linear velocity ramps use note start times, not selection order.
         // Simultaneous chord notes share the beginning value.
         inlineMidiClearSelection();
