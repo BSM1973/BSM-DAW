@@ -1089,28 +1089,53 @@ void showInlineMidiVelocityCurveDialog(){
 // regardless of whether they originate from the navy-blue editor or a shortcut.
 bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     auto& bank=instrument?instrumentClips:midiClips;
-    const auto it=std::find_if(bank.begin(),bank.end(),
+    auto it=std::find_if(bank.begin(),bank.end(),
         [clipId](const Clip& c){return c.id==clipId;});
     if(it==bank.end())return false;
     const int index=(int)std::distance(bank.begin(),it);
+    // A single click from the MIDI editor must be sufficient: no separate
+    // mouse selection or previous activation of the Selection tool required.
     if(choice==1){
-        toggleInlineMidiMode();
-        return true;
+        if(!inlineMidiMode)toggleInlineMidiMode();
+        else {
+            toggleInlineMidiMode();
+            repaint();owner.repaint();
+            return true;
+        }
+        selectClip(instrument,index);
+        return inlineMidiSelectAll();
     }
     if(choice==2 || choice==3){
         if(!inlineMidiMode)toggleInlineMidiMode();
         activeArrangeTool=0;
-        if(choice==2){toggleInlineMidiVelocityMode();return true;}
         selectClip(instrument,index);
-        return inlineMidiSelectAll();
+        if(inlineMidiSelectedClipId!=clipId
+            ||inlineMidiSelectedInstrument!=instrument
+            ||inlineMidiSelectedNotes.empty())
+            inlineMidiSelectAll();
+        if(choice==2)toggleInlineMidiVelocityMode();
+        repaint();owner.repaint();
+        return true;
     }
-    // A MIDI velocity command explicitly targets note editing; restore
-    // Selection when the previous clip tool was Scissors/Glue/etc.
-    if(inlineMidiMode&&activeArrangeTool!=0)activeArrangeTool=0;
-    if(!inlineMidiMode
-       ||inlineMidiSelectedClipId!=clipId
-       ||inlineMidiSelectedInstrument!=instrument
-       ||inlineMidiSelectedNotes.empty())return false;
+    if(choice<1001 || (choice>1127 && choice<2001) || choice>2005)
+        return false;
+    if(it->notes.empty())return false;
+    if(!inlineMidiMode)toggleInlineMidiMode();
+    activeArrangeTool=0;
+    // Synchronize the target clip only when the active engine represents a
+    // different clip. Selecting it repeatedly would overwrite edited notes.
+    if(!isActiveClip(instrument,index))selectClip(instrument,index);
+    const bool hasCompatibleSelection=
+        inlineMidiSelectedClipId==clipId
+        &&inlineMidiSelectedInstrument==instrument;
+    if(!hasCompatibleSelection||inlineMidiSelectedNotes.empty()
+       ||(choice>=2001&&inlineMidiSelectedNotes.size()<2)){
+        inlineMidiSelectedClipId=clipId;
+        inlineMidiSelectedInstrument=instrument;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)it->notes.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+    }
     if(choice>=1001&&choice<=1127)
         return inlineMidiSetVelocitySelected(choice-1000);
     if(inlineMidiSelectedNotes.size()<2)return false;
@@ -1139,16 +1164,16 @@ public:
             juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
             juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
             juce::String::fromUTF8("SÉLECTIONNER TOUTES LES NOTES"),
-            juce::String::fromUTF8("32 · TRÈS DOUX"),
-            juce::String::fromUTF8("64 · DOUX"),
-            juce::String::fromUTF8("80 · MODÉRÉ"),
-            juce::String::fromUTF8("100 · FORT"),
-            juce::String::fromUTF8("127 · MAXIMUM"),
-            juce::String::fromUTF8("CRESCENDO DOUX  64 → 100"),
-            juce::String::fromUTF8("CRESCENDO FORT  40 → 120"),
-            juce::String::fromUTF8("DIMINUENDO DOUX  100 → 64"),
-            juce::String::fromUTF8("DIMINUENDO FORT  120 → 40"),
-            juce::String::fromUTF8("PERSONNALISER LA COURBE…"),
+            juce::String::fromUTF8("32 - TRÈS DOUX"),
+            juce::String::fromUTF8("64 - DOUX"),
+            juce::String::fromUTF8("80 - MODÉRÉ"),
+            juce::String::fromUTF8("100 - FORT"),
+            juce::String::fromUTF8("127 - MAXIMUM"),
+            juce::String::fromUTF8("CRESCENDO DOUX  64 à 100"),
+            juce::String::fromUTF8("CRESCENDO FORT  40 à 120"),
+            juce::String::fromUTF8("DIMINUENDO DOUX  100 à 64"),
+            juce::String::fromUTF8("DIMINUENDO FORT  120 à 40"),
+            juce::String::fromUTF8("PERSONNALISER LA COURBE"),
             juce::String::fromUTF8("FERMER")};
         for(size_t i=0;i<buttons.size();++i){
             auto& b=buttons[i];
@@ -1197,14 +1222,18 @@ public:
 
     void refresh(){
         const auto state=readState?readState():State{0,0,0,0};
-        buttons[0].setButtonText(juce::String(state[0]?"✓  ":"○  ")
-            +juce::String::fromUTF8("ÉDITION DIRECTE  [E]"));
-        buttons[1].setButtonText(juce::String(state[1]?"✓  ":"○  ")
-            +juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"));
-        buttons[1].setEnabled(state[0]!=0);
-        buttons[2].setEnabled(state[2]>0||state[3]>0);
-        for(int i=3;i<=7;++i)buttons[(size_t)i].setEnabled(state[0]!=0&&state[2]>0);
-        for(int i=8;i<=12;++i)buttons[(size_t)i].setEnabled(state[0]!=0&&state[2]>=2);
+        buttons[0].setButtonText(juce::String::fromUTF8(state[0]
+            ?"ÉDITION DIRECTE ACTIVE  [E]"
+            :"ACTIVER ÉDITION DIRECTE  [E]"));
+        buttons[1].setButtonText(juce::String::fromUTF8(state[1]
+            ?"MODE VÉLOCITÉ ACTIF  [V]"
+            :"ACTIVER MODE VÉLOCITÉ  [V]"));
+        // Commands can activate direct editing and select the actual clip
+        // themselves. Disable only truly impossible operations.
+        buttons[1].setEnabled(state[3]>0);
+        buttons[2].setEnabled(state[3]>0);
+        for(int i=3;i<=7;++i)buttons[(size_t)i].setEnabled(state[3]>0);
+        for(int i=8;i<=12;++i)buttons[(size_t)i].setEnabled(state[3]>=2);
         selected=state[2];total=state[3];
         repaint();
     }
@@ -1246,7 +1275,9 @@ public:
         g.drawText(juce::String::fromUTF8("Édition des notes directement dans l'Arrangement"),
                    26,63,545,20,juce::Justification::centredLeft);
         g.drawText(juce::String(selected)+" / "+juce::String(total)
-                   +juce::String::fromUTF8(" notes sélectionnées"),
+                   +juce::String::fromUTF8(selected>0
+                       ?" notes sélectionnées"
+                       :" notes dans le clip - commande sur toutes les notes"),
                    26,148,getWidth()-52,22,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff52768b));
         g.drawHorizontalLine(228,24.f,(float)getWidth()-24.f);
@@ -1296,6 +1327,8 @@ bool inlineMidiContextMenu(juce::Point<int> p){
             }
         }
     }
+    // The context panel is bound to this clip; when no notes are
+    // currently selected, its commands transparently apply to all notes.
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     auto* panel=new InlineMidiActionsPanel(
         [safe,targetId,ins](int choice)->bool {
