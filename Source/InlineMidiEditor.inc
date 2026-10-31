@@ -621,11 +621,13 @@ bool inlineMidiStrumChordsSelected(bool bassFirst,
                                   bool preserveDuration=false,
                                   bool alternateDirection=false,
                                   int swingPercent=50,
-                                  int humanizeTicks=0){
+                                  int humanizeTicks=0,
+                                  int velocitySlope=0){
     // The legacy straight timing remains swing 50% by default.
     // 50..75% makes alternating gaps long-short within each 2-step pair.
     if(swingPercent<50||swingPercent>75
        ||humanizeTicks<0||humanizeTicks>20
+       ||velocitySlope< -24||velocitySlope>24
        ||stepTicks<15||stepTicks>240||stepTicks%15!=0
        ||!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
     auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
@@ -706,6 +708,16 @@ bool inlineMidiStrumChordsSelected(bool bassFirst,
                         -limit;
                     offset+=jitter;
                 }
+            }
+            if(velocitySlope!=0){
+                // Progressive per-voice accent in PLAYING order. The first
+                // note is untouched, the last receives the chosen delta.
+                // Intermediate steps use symmetric integer rounding.
+                const int magnitude=(std::abs(velocitySlope)*(int)i
+                    +(int)(voices.size()-1)/2)/(int)(voices.size()-1);
+                const int delta=velocitySlope<0?-magnitude:magnitude;
+                notes[(size_t)index].velocity=(std::uint8_t)juce::jlimit(
+                    1,127,(int)old.velocity+delta);
             }
             if(preserveDuration){
                 // Original bounds are checked above; subtract before adding
@@ -1896,7 +1908,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
          ||(choice>=4415&&choice<=4640&&(choice-4400)%15==0)
          ||(choice>=4715&&choice<=4940&&(choice-4700)%15==0)
          ||(choice>=500000&&choice<500000+8*26*256)
-         ||(choice>=600000&&choice<600000+8*26*21*256)))return false;
+         ||(choice>=600000&&choice<600000+8*26*21*256)
+         ||(choice>=2000000&&choice<2000000+8*26*21*49*256)))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1955,8 +1968,7 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
             mode%2==0,step,mode>=4,(mode%4)>=2,swing);
     }
     if(choice>=600000&&choice<600000+8*26*21*256){
-        // Dedicated packed range for humanisation. Zero still works here,
-        // but the JUCE UI uses the legacy range when set to zero.
+        // Previous packed humanisation range remains unchanged.
         const int packed=choice-600000;
         const int step=packed%256;
         const int group=packed/256;
@@ -1966,6 +1978,20 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         if(step<15||step>240||step%15!=0)return false;
         return inlineMidiStrumChordsSelected(
             mode%2==0,step,mode>=4,(mode%4)>=2,swing,humanise);
+    }
+    if(choice>=2000000&&choice<2000000+8*26*21*49*256){
+        // Packed dynamic accents combine every existing JUCE strum control.
+        // Use a disjoint range so all earlier commands remain compatible.
+        const int packed=choice-2000000;
+        const int step=packed%256;
+        const int group=packed/256;
+        const int mode=group/(26*21*49);
+        const int swing=50+(group/(21*49))%26;
+        const int humanise=(group/49)%21;
+        const int slope=group%49-24;
+        if(step<15||step>240||step%15!=0)return false;
+        return inlineMidiStrumChordsSelected(
+            mode%2==0,step,mode>=4,(mode%4)>=2,swing,humanise,slope);
     }
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
@@ -1986,7 +2012,7 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,1175);
+        setSize(608,1260);
         strumGap.setSliderStyle(juce::Slider::LinearHorizontal);
         strumGap.setRange(15,240,15);
         strumGap.setValue(60,juce::dontSendNotification);
@@ -2043,6 +2069,28 @@ public:
             "Humanisation reproductible : écarts subtils de 0 à 20 ticks. "
             "Les attaques restent dans l'ordre et dans les limites du clip."));
         addAndMakeVisible(strumHumanize);
+        strumDynamics.setSliderStyle(juce::Slider::LinearHorizontal);
+        strumDynamics.setRange(-24,24,1);
+        strumDynamics.setValue(0,juce::dontSendNotification);
+        strumDynamics.setTextBoxStyle(juce::Slider::TextBoxRight,false,104,28);
+        strumDynamics.setTextValueSuffix(juce::String::fromUTF8(" vél."));
+        strumDynamics.setColour(juce::Slider::backgroundColourId,
+                               juce::Colour(0xff172b3d));
+        strumDynamics.setColour(juce::Slider::trackColourId,
+                               juce::Colour(0xff66a6c4));
+        strumDynamics.setColour(juce::Slider::thumbColourId,
+                               juce::Colour(0xffffd08a));
+        strumDynamics.setColour(juce::Slider::textBoxTextColourId,
+                               juce::Colour(0xfff4f8fb));
+        strumDynamics.setColour(juce::Slider::textBoxBackgroundColourId,
+                               juce::Colour(0xff182b3c));
+        strumDynamics.setColour(juce::Slider::textBoxOutlineColourId,
+                               juce::Colour(0xff537e99));
+        strumDynamics.setTooltip(juce::String::fromUTF8(
+            "Dynamique progressive : de -24 à +24 en vélocité MIDI. "
+            "La première note reste inchangée ; les suivantes "
+            "s'adoucissent ou s'accentuent dans l'ordre du jeu."));
+        addAndMakeVisible(strumDynamics);
         preserveStrumLength.setButtonText(juce::String::fromUTF8("CONSERVER DURÉE"));
         preserveStrumLength.setToggleState(false,juce::dontSendNotification);
         preserveStrumLength.setColour(juce::ToggleButton::textColourId,juce::Colour(0xfff1f7fd));
@@ -2142,14 +2190,19 @@ public:
                     const int mode=(preserve?4:0)+(alternate?2:0)
                                    +(choice==2502?1:0);
                     const int humanize=(int)strumHumanize.getValue();
-                    mappedChoice=humanize==0
-                        ?500000
-                            +(mode*26+(int)strumSwing.getValue()-50)*256
-                            +(int)strumGap.getValue()
-                        :600000
-                            +((mode*26+(int)strumSwing.getValue()-50)*21
-                                +humanize)*256
-                            +(int)strumGap.getValue();
+                    const int swing=(int)strumSwing.getValue()-50;
+                    const int slope=(int)strumDynamics.getValue();
+                    const int gap=(int)strumGap.getValue();
+                    if(slope!=0)
+                        mappedChoice=2000000
+                            +(((mode*26+swing)*21+humanize)*49
+                                +slope+24)*256+gap;
+                    else if(humanize!=0)
+                        mappedChoice=600000
+                            +((mode*26+swing)*21+humanize)*256+gap;
+                    else
+                        mappedChoice=500000
+                            +(mode*26+swing)*256+gap;
                 }
                 const bool applied=dispatch&&dispatch(mappedChoice);
                 refresh();
@@ -2210,6 +2263,10 @@ public:
         strumHumanize.setValue(ticks,juce::sendNotificationSync);
     }
     int strumHumanizeForTest()const{return (int)strumHumanize.getValue();}
+    void setStrumDynamicsForTest(int amount){
+        strumDynamics.setValue(amount,juce::sendNotificationSync);
+    }
+    int strumDynamicsForTest()const{return (int)strumDynamics.getValue();}
     void setPreserveStrumLengthForTest(bool enabled){
         preserveStrumLength.setToggleState(enabled,juce::sendNotificationSync);
     }
@@ -2247,10 +2304,11 @@ public:
         preserveStrumLength.setBounds(margin+w-182,793,182,34);
         strumSwing.setBounds(margin+108,862,w-108,43);
         strumHumanize.setBounds(margin+137,920,w-137,43);
-        buttons[21].setBounds(margin,981,w/2-5,42);
-        buttons[22].setBounds(margin+w/2+5,981,w/2-5,42);
-        alternateStrumDirection.setBounds(margin,1037,w-20,26);
-        buttons[23].setBounds(getWidth()-142,1120,118,32);
+        strumDynamics.setBounds(margin+150,979,w-150,43);
+        buttons[21].setBounds(margin,1040,w/2-5,42);
+        buttons[22].setBounds(margin+w/2+5,1040,w/2-5,42);
+        alternateStrumDirection.setBounds(margin,1096,w-20,26);
+        buttons[23].setBounds(getWidth()-142,1206,118,32);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -2282,7 +2340,7 @@ public:
         g.drawHorizontalLine(610,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(681,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(752,24.f,(float)getWidth()-24.f);
-        g.drawHorizontalLine(1093,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(1187,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
@@ -2301,10 +2359,12 @@ public:
                    25,868,90,25,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("HUMANISATION"),
                    25,926,130,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("DYNAMIQUE"),
+                   25,985,140,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,1124,390,26,juce::Justification::centredLeft);
+                   25,1210,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
@@ -2313,6 +2373,7 @@ private:
     juce::Slider strumGap;
     juce::Slider strumSwing;
     juce::Slider strumHumanize;
+    juce::Slider strumDynamics;
     juce::ToggleButton preserveStrumLength;
     juce::ToggleButton alternateStrumDirection;
     int selected=0,total=0;
