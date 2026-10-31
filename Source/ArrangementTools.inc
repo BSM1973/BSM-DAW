@@ -1192,7 +1192,7 @@ bool runArrangementTests(){
             &&scrollingDialog.getWidth()==608
             &&scrollingDialog.getViewedComponent()==scrollingEditor,
             "MIDI editor viewport owns its original panel at a compact height");
-        require(scrollingEditor->getHeight()==1095
+        require(scrollingEditor->getHeight()==1175
             &&scrollingDialog.getViewPositionY()==0,
             "MIDI viewport initially shows the top of the unmodified editor");
         require(scrollingDialog.hasAccessibleBottomControlsForTest()
@@ -2128,6 +2128,150 @@ bool runArrangementTests(){
             "restore chord fixture after swung strum tests");
         midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
         syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumSwingForTest(50);
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+
+        // A seeded, bounded humanisation creates reproducible deviations
+        // while keeping the original melody, chord order, and note releases.
+        require(wiredPanel.strumHumanizeForTest()==0,
+            "strum humanisation defaults to zero without changing earlier projects");
+        wiredPanel.setStrumHumanizeForTest(20);
+        require(wiredPanel.strumHumanizeForTest()==20,
+            "real JUCE humanisation slider accepts the full twenty-tick range");
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setStrumSwingForTest(75);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "real strum-up JUCE callback applies seeded timing humanisation");
+        const auto humanised=midiClips[(size_t)multiClip].notes;
+        require(humanised.size()==5
+            &&inlineMidiSelectedNotes.size()==5,
+            "humanisation maintains every selected note");
+        auto findPitch=[](const std::vector<MidiEngine::NoteEvent>& notes,
+                          int pitch)->const MidiEngine::NoteEvent*{
+            const auto it=std::find_if(notes.begin(),notes.end(),
+                [pitch](const MidiEngine::NoteEvent& n){
+                    return (int)n.pitch==pitch;
+                });
+            return it==notes.end()?nullptr:&*it;
+        };
+        const auto* humBass=findPitch(humanised,60);
+        const auto* humMid1=findPitch(humanised,64);
+        const auto* humMid2=findPitch(humanised,67);
+        const auto* humTop=findPitch(humanised,71);
+        const auto* humMelody=findPitch(humanised,74);
+        require(humBass&&humMid1&&humMid2&&humTop&&humMelody,
+            "all humanised chord voices and the standalone melody are present");
+        require(humBass->startTick==240
+            &&humMid1->startTick>=320&&humMid1->startTick<=340
+            &&humMid2->startTick>=350&&humMid2->startTick<=370
+            &&humTop->startTick>=430&&humTop->startTick<=470
+            &&humBass->startTick<humMid1->startTick
+            &&humMid1->startTick<humMid2->startTick
+            &&humMid2->startTick<humTop->startTick
+            &&humMelody->startTick==1920,
+            "humanisation stays within the swing gaps without reordering voices");
+        for(const auto& moved:humanised)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& original){
+                    return original.pitch==moved.pitch
+                        &&original.channel==moved.channel
+                        &&original.velocity==moved.velocity
+                        &&original.muted==moved.muted
+                        &&original.probability==moved.probability
+                        &&original.startTick+original.lengthTicks
+                            ==moved.startTick+moved.lengthTicks;
+                }),"humanisation changes attack times but not releases or expression");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,240,64),
+            "humanised chord Undo restores its synchronous onset");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes.size()==humanised.size(),
+            "humanised chord Redo restores the complete note set");
+        for(size_t k=0;k<humanised.size();++k)
+            require(midiClips[(size_t)multiClip].notes[k].startTick
+                    ==humanised[k].startTick
+                &&midiClips[(size_t)multiClip].notes[k].lengthTicks
+                    ==humanised[k].lengthTicks,
+                "humanised chord Redo restores exact deterministic timing");
+        undoArrangement(false);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "repeat humanised chord click with unchanged JUCE controls");
+        const auto repeatHumanised=midiClips[(size_t)multiClip].notes;
+        require(repeatHumanised.size()==humanised.size(),
+            "repeated humanisation maintains the MIDI note count");
+        for(size_t k=0;k<humanised.size();++k)
+            require(repeatHumanised[k].startTick==humanised[k].startTick
+                &&repeatHumanised[k].lengthTicks==humanised[k].lengthTicks
+                &&repeatHumanised[k].velocity==humanised[k].velocity,
+                "humanisation is reproducible from the same original clip");
+        undoArrangement(false);
+        // All options can be combined on multiple chords; unrelated notes
+        // stay fixed, even when the humanised direction alternates.
+        require(owner.midiEngine.replaceNotes(alternatingFixture),
+            "restore three-chord sequence before combined humanisation test");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        const auto humanisedFixture=midiClips[(size_t)multiClip].notes;
+        wiredPanel.setStrumSwingForTest(66);
+        wiredPanel.setStrumGapForTest(120);
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        wiredPanel.setAlternateStrumDirectionForTest(true);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)humanisedFixture.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(22),
+            "humanisation integrates with preserve duration and alternate direction");
+        const auto combinedHumanised=midiClips[(size_t)multiClip].notes;
+        require(combinedHumanised.size()==13
+            &&hasStrumNote(combinedHumanised,1920,74)
+            &&hasStrumNote(combinedHumanised,240,71)
+            &&hasStrumNote(combinedHumanised,1080,60)
+            &&hasStrumNote(combinedHumanised,2880,71),
+            "the three chords alternate while standalone melody remains fixed");
+        for(const auto& n:combinedHumanised)
+            require(std::any_of(humanisedFixture.begin(),humanisedFixture.end(),
+                [&](const MidiEngine::NoteEvent& orig){
+                    return n.pitch==orig.pitch&&n.channel==orig.channel
+                        &&n.velocity==orig.velocity&&n.muted==orig.muted
+                        &&n.probability==orig.probability
+                        &&n.lengthTicks==orig.lengthTicks;
+                }),"combined humanisation preserves note lengths and expression");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,1080,71)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,2880,60),
+            "humanised alternating chords Undo preserves complete progression");
+        // Invalid packets or out-of-range amounts must never be applied.
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)midiClips[(size_t)multiClip].notes.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        const int invalidHumanPacket=600000+(0*26*21+20)*256+241;
+        require(!inlineMidiExecuteAction(invalidHumanPacket,panelClipId,false)
+            &&!inlineMidiExecuteAction(600000+8*26*21*256,panelClipId,false)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,50,-1)
+            &&!inlineMidiStrumChordsSelected(true,60,false,false,50,21),
+            "engine rejects invalid humanisation and action packets");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore initial MIDI fixture after humanisation regression tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        wiredPanel.setStrumHumanizeForTest(0);
         wiredPanel.setStrumSwingForTest(50);
         wiredPanel.setStrumGapForTest(60);
         wiredPanel.setPreserveStrumLengthForTest(false);
