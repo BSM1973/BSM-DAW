@@ -500,8 +500,16 @@ void paintAudioFades(juce::Graphics& g){
             g.setColour(juce::Colour(0xffffd88c));
             g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,2.4f);
         }
-        paintAudioFadeGrip(g,box.getX()+fi,top);
-        paintAudioFadeGrip(g,box.getRight()-fo,top);
+        // Keep both grips visible when short fades converge at the same pixel.
+        const float fadeInX=box.getX()+fi;
+        const float fadeOutX=box.getRight()-fo;
+        if(std::abs(fadeInX-fadeOutX)<18.0f){
+            paintAudioFadeGrip(g,fadeInX,top-5.0f);
+            paintAudioFadeGrip(g,fadeOutX,top+5.0f);
+        }else{
+            paintAudioFadeGrip(g,fadeInX,top);
+            paintAudioFadeGrip(g,fadeOutX,top);
+        }
     }
 }
 void eraseArrangementSelection(){
