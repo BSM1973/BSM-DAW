@@ -1679,6 +1679,111 @@ bool runArrangementTests(){
             &&!inlineMidiStrumChordsSelected(false,255)
             &&midiClips[(size_t)multiClip].notes[3].startTick==240,
             "engine rejects invalid custom spacing before editing");
+
+        // Preserve duration is off by default: legacy fixed note-off remains
+        // unchanged, while the new JUCE checkbox can opt into a moving release.
+        require(!wiredPanel.preserveStrumLengthForTest(),
+            "strum checkbox defaults to preserving the original note release");
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        require(wiredPanel.preserveStrumLengthForTest(),
+            "real JUCE checkbox toggles preserve note duration");
+        wiredPanel.setStrumGapForTest(120);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(21),
+            "preserve-duration strum-up dispatches through JUCE checkbox");
+        const auto strumFullLength=midiClips[(size_t)multiClip].notes;
+        require(strumFullLength.size()==5
+            &&strumFullLength[0].startTick==240
+            &&strumFullLength[1].startTick==360
+            &&strumFullLength[2].startTick==480
+            &&strumFullLength[3].startTick==600
+            &&strumFullLength[4].startTick==1920,
+            "preserve-duration strum obeys slider and leaves melody alone");
+        for(size_t i=0;i<strumBefore.size();++i){
+            const auto& old=strumBefore[i];
+            const auto& now=strumFullLength[i];
+            require(old.lengthTicks==now.lengthTicks
+                &&old.pitch==now.pitch&&old.velocity==now.velocity
+                &&old.channel==now.channel&&old.muted==now.muted
+                &&old.probability==now.probability,
+                "preserve-duration strum moves note-offs without changing length or expression");
+        }
+        undoArrangement(false);
+        require(midiClips[(size_t)multiClip].notes[1].startTick==240
+            &&midiClips[(size_t)multiClip].notes[1].lengthTicks
+                ==strumBefore[1].lengthTicks,
+            "preserve-duration strum Undo restores original start and length");
+        undoArrangement(true);
+        require(midiClips[(size_t)multiClip].notes[3].startTick==600
+            &&midiClips[(size_t)multiClip].notes[3].lengthTicks
+                ==strumBefore[3].lengthTicks,
+            "preserve-duration strum Redo restores shifted attack and original length");
+        undoArrangement(false);
+        wiredPanel.setStrumGapForTest(60);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(wiredPanel.clickActionForTest(22),
+            "preserve-duration strum-down JUCE button is wired");
+        const auto fullLengthDown=midiClips[(size_t)multiClip].notes;
+        require(fullLengthDown.size()==5
+            &&fullLengthDown[0].pitch==71&&fullLengthDown[0].startTick==240
+            &&fullLengthDown[1].pitch==67&&fullLengthDown[1].startTick==300
+            &&fullLengthDown[2].pitch==64&&fullLengthDown[2].startTick==360
+            &&fullLengthDown[3].pitch==60&&fullLengthDown[3].startTick==420
+            &&fullLengthDown[4].pitch==74&&fullLengthDown[4].startTick==1920,
+            "preserve-duration strum-down plays high to low");
+        for(const auto& edited:fullLengthDown)
+            require(std::any_of(strumBefore.begin(),strumBefore.end(),
+                [&](const MidiEngine::NoteEvent& old){
+                    return old.pitch==edited.pitch
+                        &&old.channel==edited.channel
+                        &&old.lengthTicks==edited.lengthTicks
+                        &&old.velocity==edited.velocity;
+                }),"preserve-duration strum-down keeps the note lengths");
+        undoArrangement(false);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        require(!wiredPanel.preserveStrumLengthForTest(),
+            "unchecking restore the existing fixed-release behaviour");
+        // The new note-off mode refuses a batch crossing the clip end
+        // before applying any edits to any selected notes.
+        const auto testClipEnd=MidiEngine::secondsToTick(
+            midiClips[(size_t)multiClip].lengthSeconds,owner.tempoBpm);
+        require(testClipEnd>960,"voicing test clip has space for the chord");
+        auto nearClipEnd=strumBefore;
+        for(int k=0;k<4;++k){
+            nearClipEnd[(size_t)k].startTick=testClipEnd-720-60;
+            nearClipEnd[(size_t)k].lengthTicks=720;
+        }
+        require(owner.midiEngine.replaceNotes(nearClipEnd),
+            "load chord close to end of MIDI clip");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={1,2,3,4};
+        const auto beforeClipRejection=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiStrumChordsSelected(true,60,true),
+            "preserve-duration rejects moving note-offs outside the clip");
+        const auto afterClipRejection=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<beforeClipRejection.size();++i)
+            require(beforeClipRejection[i].startTick==afterClipRejection[i].startTick
+                &&beforeClipRejection[i].lengthTicks==afterClipRejection[i].lengthTicks,
+                "rejected release extension is atomic and cannot truncate notes");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore original chord after preserve-duration clip-limit test");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
+        require(!inlineMidiExecuteAction(3201,panelClipId,false)
+            &&!inlineMidiExecuteAction(3441,panelClipId,false)
+            &&!inlineMidiExecuteAction(3501,panelClipId,false)
+            &&!inlineMidiExecuteAction(3741,panelClipId,false),
+            "preserve-duration action dispatcher rejects invalid tick values");
         // Short notes: reject the entire operation, no partial note movement.
         auto tooShort=strumBefore;
         tooShort[3].lengthTicks=2*strumStep;
