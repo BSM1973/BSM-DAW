@@ -1784,6 +1784,186 @@ bool runArrangementTests(){
             &&!inlineMidiExecuteAction(3501,panelClipId,false)
             &&!inlineMidiExecuteAction(3741,panelClipId,false),
             "preserve-duration action dispatcher rejects invalid tick values");
+
+        // Alternating strums act on a sequence of complete simultaneous chords.
+        // An isolated melody between chord 2 and 3 must not toggle the direction.
+        require(!wiredPanel.alternateStrumDirectionForTest(),
+            "alternate direction starts disabled, preserving previous behaviour");
+        std::vector<MidiEngine::NoteEvent> alternatingFixture;
+        for(const std::int64_t onset:{std::int64_t(240),
+                                      std::int64_t(1080),
+                                      std::int64_t(2880)}){
+            for(size_t k=0;k<4;++k){
+                auto note=strumBefore[k];
+                note.startTick=onset;
+                alternatingFixture.push_back(note);
+            }
+        }
+        alternatingFixture.push_back(strumBefore[4]); // isolated melody at 1920
+        require(owner.midiEngine.replaceNotes(alternatingFixture),
+            "load three independent chord onsets with one isolated melody");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        const auto alternateBefore=midiClips[(size_t)multiClip].notes;
+        require(alternateBefore.size()==13,
+            "alternating strum fixture has twelve chord notes and a melody");
+        auto hasStrumNote=[](const std::vector<MidiEngine::NoteEvent>& notes,
+                             std::int64_t tick,int pitch){
+            return std::any_of(notes.begin(),notes.end(),[&](const auto& n){
+                return n.startTick==tick&&(int)n.pitch==pitch;
+            });
+        };
+        wiredPanel.setStrumGapForTest(60);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setAlternateStrumDirectionForTest(true);
+        require(wiredPanel.alternateStrumDirectionForTest(),
+            "real JUCE checkbox enables alternating MIDI chord strum");
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)alternateBefore.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(21),
+            "real strum-up JUCE button dispatches alternating chord mode");
+        const auto alternatingUp=midiClips[(size_t)multiClip].notes;
+        require(alternatingUp.size()==alternateBefore.size()
+            &&inlineMidiSelectedNotes.size()==alternateBefore.size()
+            &&hasStrumNote(alternatingUp,240,60)
+            &&hasStrumNote(alternatingUp,300,64)
+            &&hasStrumNote(alternatingUp,360,67)
+            &&hasStrumNote(alternatingUp,420,71)
+            &&hasStrumNote(alternatingUp,1080,71)
+            &&hasStrumNote(alternatingUp,1140,67)
+            &&hasStrumNote(alternatingUp,1200,64)
+            &&hasStrumNote(alternatingUp,1260,60)
+            &&hasStrumNote(alternatingUp,2880,60)
+            &&hasStrumNote(alternatingUp,2940,64)
+            &&hasStrumNote(alternatingUp,3000,67)
+            &&hasStrumNote(alternatingUp,3060,71)
+            &&hasStrumNote(alternatingUp,1920,74),
+            "alternating strum follows up-down-up across a separate melody");
+        for(const auto& note:alternatingUp)
+            require(std::any_of(alternateBefore.begin(),alternateBefore.end(),
+                [&](const MidiEngine::NoteEvent& source){
+                    return source.pitch==note.pitch
+                        &&source.channel==note.channel
+                        &&source.velocity==note.velocity
+                        &&source.muted==note.muted
+                        &&source.probability==note.probability
+                        &&source.startTick+source.lengthTicks
+                            ==note.startTick+note.lengthTicks;
+                }),"alternating strum keeps absolute releases and MIDI expression");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,1080,60)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,2880,71),
+            "alternating strum Undo restores all three chords atomically");
+        undoArrangement(true);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,1260,60)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,3060,71),
+            "alternating strum Redo replays all three chord directions");
+        undoArrangement(false);
+        // The second button starts descending, then alternates upward,
+        // in preserve-duration mode. The melody never changes.
+        wiredPanel.setPreserveStrumLengthForTest(true);
+        wiredPanel.setStrumGapForTest(120);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)alternateBefore.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(22),
+            "real strum-down button starts alternate mode with duration preserved");
+        const auto alternateFullLength=midiClips[(size_t)multiClip].notes;
+        require(alternateFullLength.size()==alternateBefore.size()
+            &&hasStrumNote(alternateFullLength,240,71)
+            &&hasStrumNote(alternateFullLength,360,67)
+            &&hasStrumNote(alternateFullLength,480,64)
+            &&hasStrumNote(alternateFullLength,600,60)
+            &&hasStrumNote(alternateFullLength,1080,60)
+            &&hasStrumNote(alternateFullLength,1200,64)
+            &&hasStrumNote(alternateFullLength,1320,67)
+            &&hasStrumNote(alternateFullLength,1440,71)
+            &&hasStrumNote(alternateFullLength,2880,71)
+            &&hasStrumNote(alternateFullLength,3000,67)
+            &&hasStrumNote(alternateFullLength,3120,64)
+            &&hasStrumNote(alternateFullLength,3240,60)
+            &&hasStrumNote(alternateFullLength,1920,74),
+            "duration-preserving alternating strum follows down-up-down");
+        for(const auto& note:alternateFullLength)
+            require(std::any_of(alternateBefore.begin(),alternateBefore.end(),
+                [&](const MidiEngine::NoteEvent& source){
+                    return source.pitch==note.pitch
+                        &&source.channel==note.channel
+                        &&source.lengthTicks==note.lengthTicks
+                        &&source.velocity==note.velocity
+                        &&source.muted==note.muted
+                        &&source.probability==note.probability;
+                }),"alternate strum keeps every note's original length and dynamics");
+        undoArrangement(false);
+        require(hasStrumNote(midiClips[(size_t)multiClip].notes,240,60)
+            &&hasStrumNote(midiClips[(size_t)multiClip].notes,1080,71),
+            "duration-preserving alternate Undo restores all chords");
+        wiredPanel.setAlternateStrumDirectionForTest(false);
+        wiredPanel.setPreserveStrumLengthForTest(false);
+        wiredPanel.setStrumGapForTest(60);
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)alternateBefore.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        require(wiredPanel.clickActionForTest(21),
+            "disabling alternating strum restores one direction for all chords");
+        const auto noAlternation=midiClips[(size_t)multiClip].notes;
+        require(hasStrumNote(noAlternation,240,60)
+            &&hasStrumNote(noAlternation,1080,60)
+            &&hasStrumNote(noAlternation,2880,60)
+            &&hasStrumNote(noAlternation,1260,71),
+            "with alternation disabled every chord starts from its lowest voice");
+        undoArrangement(false);
+        // Failure in chord 2 must not partially apply a successful chord 1.
+        auto rejectSecondChord=alternateBefore;
+        const auto shortNote=std::find_if(rejectSecondChord.begin(),
+            rejectSecondChord.end(),[](const MidiEngine::NoteEvent& n){
+                return n.startTick==1080&&n.pitch==64;
+            });
+        require(shortNote!=rejectSecondChord.end(),
+            "second chord contains the intended short-note test voice");
+        shortNote->lengthTicks=60;
+        require(owner.midiEngine.replaceNotes(rejectSecondChord),
+            "load short second chord for atomic alternation validation");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)rejectSecondChord.size();++i)
+            inlineMidiSelectedNotes.insert(i);
+        const auto alternatingRejectBefore=midiClips[(size_t)multiClip].notes;
+        require(!inlineMidiStrumChordsSelected(true,60,false,true),
+            "alternating strum detects short notes in a later chord");
+        const auto alternatingRejectAfter=midiClips[(size_t)multiClip].notes;
+        for(size_t i=0;i<alternatingRejectBefore.size();++i)
+            require(alternatingRejectAfter[i].startTick
+                    ==alternatingRejectBefore[i].startTick
+                &&alternatingRejectAfter[i].lengthTicks
+                    ==alternatingRejectBefore[i].lengthTicks,
+                "later-chord error cannot partially edit earlier chords");
+        require(!inlineMidiExecuteAction(3801,panelClipId,false)
+            &&!inlineMidiExecuteAction(4041,panelClipId,false)
+            &&!inlineMidiExecuteAction(4101,panelClipId,false)
+            &&!inlineMidiExecuteAction(4341,panelClipId,false)
+            &&!inlineMidiExecuteAction(4401,panelClipId,false)
+            &&!inlineMidiExecuteAction(4641,panelClipId,false)
+            &&!inlineMidiExecuteAction(4701,panelClipId,false)
+            &&!inlineMidiExecuteAction(4941,panelClipId,false),
+            "alternate strum dispatcher refuses invalid timing values");
+        require(owner.midiEngine.replaceNotes(strumBefore),
+            "restore initial chord fixture after alternate-direction tests");
+        midiClips[(size_t)multiClip].notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();clearArrangementHistory();
+        inlineMidiSelectedClipId=panelClipId;
+        inlineMidiSelectedInstrument=false;
+        inlineMidiSelectedNotes={0,1,2,3,4};
         // Short notes: reject the entire operation, no partial note movement.
         auto tooShort=strumBefore;
         tooShort[3].lengthTicks=2*strumStep;
