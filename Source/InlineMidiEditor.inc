@@ -612,11 +612,12 @@ bool inlineMidiSpaceChordsSelected(bool widen){
 
 
 /* Strum selected simultaneous MIDI notes in pitch order.
-   Each successive voice begins after the configured musical tick gap. Keep each note's
-   absolute end tick fixed, so no note crosses its original chord release.
-   All groups are validated before the single Undo transaction. */
+   The default preserves each absolute end tick. Optional preserveDuration
+   instead shifts the note-off together with the attack, within clip bounds.
+   Both modes validate all groups before the single Undo transaction. */
 bool inlineMidiStrumChordsSelected(bool bassFirst,
-                                  std::int64_t stepTicks=MidiEngine::ticksPerQuarterNote/16){
+                                  std::int64_t stepTicks=MidiEngine::ticksPerQuarterNote/16,
+                                  bool preserveDuration=false){
     // 15..240 ticks = 1/256..1/16 of a whole note at 960 PPQN.
     if(stepTicks<15||stepTicks>240||stepTicks%15!=0
        ||!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
@@ -658,15 +659,27 @@ bool inlineMidiStrumChordsSelected(bool bassFirst,
             const int index=voices[i];
             const auto& old=originals[(size_t)index];
             const auto offset=(std::int64_t)i*stepTicks;
-            // Preserve the original absolute end and reject a clipped
-            // release rather than creating zero or negative-length notes.
-            if(offset>=old.lengthTicks){
-                operationMessage=juce::String::fromUTF8(
-                    "Égrenage impossible : durée des notes insuffisante");
-                return false;
+            if(preserveDuration){
+                // Original bounds are checked above; subtract before adding
+                // to avoid integer overflow and clipped note-offs.
+                if(offset>clipEnd-old.startTick-old.lengthTicks){
+                    operationMessage=juce::String::fromUTF8(
+                        "Égrenage impossible : note au-delà de la fin du clip");
+                    return false;
+                }
+                notes[(size_t)index].startTick=old.startTick+offset;
+                // Preserve the existing length, including articulation.
+            }else{
+                // Keep the absolute release fixed. Reject zero or negative
+                // durations instead of silently shortening notes too far.
+                if(offset>=old.lengthTicks){
+                    operationMessage=juce::String::fromUTF8(
+                        "Égrenage impossible : durée des notes insuffisante");
+                    return false;
+                }
+                notes[(size_t)index].startTick=old.startTick+offset;
+                notes[(size_t)index].lengthTicks=old.lengthTicks-offset;
             }
-            notes[(size_t)index].startTick=old.startTick+offset;
-            notes[(size_t)index].lengthTicks=old.lengthTicks-offset;
         }
         ++changedChords;
     }
@@ -1825,7 +1838,9 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
          ||choice==2301||choice==2302||choice==2401||choice==2402
          ||choice==2501||choice==2502
          ||(choice>=2615&&choice<=2840&&(choice-2600)%15==0)
-         ||(choice>=2915&&choice<=3140&&(choice-2900)%15==0)))return false;
+         ||(choice>=2915&&choice<=3140&&(choice-2900)%15==0)
+         ||(choice>=3215&&choice<=3440&&(choice-3200)%15==0)
+         ||(choice>=3515&&choice<=3740&&(choice-3500)%15==0)))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1860,6 +1875,10 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiStrumChordsSelected(true,choice-2600);
     if(choice>=2915&&choice<=3140)
         return inlineMidiStrumChordsSelected(false,choice-2900);
+    if(choice>=3215&&choice<=3440)
+        return inlineMidiStrumChordsSelected(true,choice-3200,true);
+    if(choice>=3515&&choice<=3740)
+        return inlineMidiStrumChordsSelected(false,choice-3500,true);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1894,6 +1913,14 @@ public:
         strumGap.setTooltip(juce::String::fromUTF8(
             "Écart entre deux notes de l'accord, par pas de 15 ticks MIDI ; 60 par défaut"));
         addAndMakeVisible(strumGap);
+        preserveStrumLength.setButtonText(juce::String::fromUTF8("CONSERVER DURÉE"));
+        preserveStrumLength.setToggleState(false,juce::dontSendNotification);
+        preserveStrumLength.setColour(juce::ToggleButton::textColourId,juce::Colour(0xfff1f7fd));
+        preserveStrumLength.setColour(juce::ToggleButton::tickColourId,juce::Colour(0xffffd08a));
+        preserveStrumLength.setTooltip(juce::String::fromUTF8(
+            "Activé : la fin de chaque note se décale avec son attaque. "
+            "Désactivé : toutes les notes conservent leur instant de fin."));
+        addAndMakeVisible(preserveStrumLength);
         static const int actions[]={
             1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,2501,2502,0};
         const juce::String labels[]={
@@ -1949,7 +1976,7 @@ public:
                                         :i<21
                                             ?juce::String::fromUTF8("Resserrer les notes dans une octave ou élargir les voix en conservant la tonalité")
                                             :i<23
-                                                ?juce::String::fromUTF8("Égrener les notes avec l'écart réglé ci-dessous, sans déplacer leur fin")
+                                                ?juce::String::fromUTF8("Égrener avec l'écart choisi. La durée est contrôlée par l'option ci-dessous")
                                                 :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
                 if(i==23){
@@ -1969,7 +1996,9 @@ public:
                 }
                 int mappedChoice=choice;
                 if(choice==2501||choice==2502)
-                    mappedChoice=(choice==2501?2600:2900)
+                    mappedChoice=(choice==2501
+                        ?(preserveStrumLength.getToggleState()?3200:2600)
+                        :(preserveStrumLength.getToggleState()?3500:2900))
                         +(int)strumGap.getValue();
                 const bool applied=dispatch&&dispatch(mappedChoice);
                 refresh();
@@ -2022,6 +2051,12 @@ public:
         strumGap.setValue(ticks,juce::sendNotificationSync);
     }
     int strumGapForTest()const{return (int)strumGap.getValue();}
+    void setPreserveStrumLengthForTest(bool enabled){
+        preserveStrumLength.setToggleState(enabled,juce::sendNotificationSync);
+    }
+    bool preserveStrumLengthForTest()const{
+        return preserveStrumLength.getToggleState();
+    }
     void resized()override {
         const int margin=24,w=getWidth()-2*margin;
         buttons[0].setBounds(margin,101,(w-10)/2,43);
@@ -2043,7 +2078,8 @@ public:
         buttons[18].setBounds(margin+(quarter+gap),707,quarter,38);
         buttons[19].setBounds(margin+2*(quarter+gap),707,quarter,38);
         buttons[20].setBounds(margin+3*(quarter+gap),707,quarter,38);
-        strumGap.setBounds(margin,788,w,43);
+        strumGap.setBounds(margin,788,w-188,43);
+        preserveStrumLength.setBounds(margin+w-182,793,182,34);
         buttons[21].setBounds(margin,843,w/2-5,42);
         buttons[22].setBounds(margin+w/2+5,843,w/2-5,42);
         buttons[23].setBounds(getWidth()-142,924,118,32);
@@ -2103,6 +2139,7 @@ private:
     std::function<State()> readState;
     std::array<juce::TextButton,24> buttons;
     juce::Slider strumGap;
+    juce::ToggleButton preserveStrumLength;
     int selected=0,total=0;
 };
 
