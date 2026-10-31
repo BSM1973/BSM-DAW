@@ -367,7 +367,8 @@ void mouseDown(const juce::MouseEvent&e)override{
     const auto ownerPoint = e.getEventRelativeTo(&owner).getPosition();
     // The overlap menu is available on right-click (or Ctrl-click on macOS).
     if(e.eventComponent==this && e.mods.isPopupMenu()){
-        if(showAudioCrossfadeMenu(ownerPoint)||inlineMidiContextMenu(ownerPoint))return;
+        if(showAudioCrossfadeMenu(ownerPoint)||showAudioClipEditor(ownerPoint)
+           ||inlineMidiContextMenu(ownerPoint))return;
     }
     if(e.mods.isLeftButtonDown()){
         const int tool=toolAt(ownerPoint);
