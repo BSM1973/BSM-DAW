@@ -478,7 +478,7 @@ void handleGridDoubleClick(juce::Point<int> point){if(renameClipAt(point))return
         if(overlaps)return;
         v.push_back(std::move(c));i=(int)v.size()-1;selectClip(ins,i);syncPlayback();repaint();owner.repaint();return;}selectClip(ins,i);openLibertyMidiEditorInDock(owner);syncPlayback();repaint();owner.repaint();}void mouseDrag(const juce::MouseEvent&e)override{
     if(e.eventComponent!=this)return;
-    if(audioDragTrack>=0){dragAudio(e.getPosition());return;}
+    if(audioDragTrack>=0){dragAudio(e.getPosition(),e.mods.isShiftDown());return;}
     if(inlineMidiMarquee){inlineMidiMarqueeDrag(e.getPosition());return;}
     if(inlineMidiDragging){inlineMidiDrag(e.getPosition());return;}
     if(selectingClips){rectangleEnd=e.getPosition();updateRectangleSelection();
