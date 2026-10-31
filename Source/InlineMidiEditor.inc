@@ -680,6 +680,156 @@ bool inlineMidiAt(juce::Point<int> p,bool& instrument,int& clip,int& note)const 
         }
     return true;
 }
+// When direct MIDI editing is enabled, the eight Arrangement tools target
+// notes inside the clip. In normal Arrangement mode they still target clips.
+// The same handler is called by the real mouseDown path and smoke tests.
+bool inlineMidiToolDown(juce::Point<int> p,bool shift=false){
+    if(!inlineMidiMode||activeArrangeTool<1||activeArrangeTool>7)return false;
+    bool instrument=false;
+    const int index=findClipAt(p,instrument);
+    if(index<0)return false;
+    auto& bank=instrument?instrumentClips:midiClips;
+    auto& clip=bank[(size_t)index];
+    const auto area=inlineMidiArea(clip,instrument);
+    if(area.isEmpty()||!area.contains(p))return false;
+    if(!isActiveClip(instrument,index))selectClip(instrument,index);
+    const int clipId=clip.id;
+    if(inlineMidiSelectedClipId!=clipId
+       ||inlineMidiSelectedInstrument!=instrument){
+        inlineMidiClearSelection();
+        inlineMidiSelectedClipId=clipId;
+        inlineMidiSelectedInstrument=instrument;
+    }
+    selectedAudio.clear();
+    selectedClipIds.clear();
+    selectedClipIds.insert(clipId);
+    int hit=-1;
+    for(int i=(int)clip.notes.size()-1;i>=0;--i)
+        if(inlineMidiNoteBounds(clip,instrument,clip.notes[(size_t)i])
+              .getIntersection(area).contains(p)){hit=i;break;}
+    if(activeArrangeTool==1){
+        // Rectangle selects notes, not clips. The old Shift-rectangle
+        // selection remains available when Selection is the active tool.
+        if(!shift)inlineMidiSelectedNotes.clear();
+        if(hit>=0)inlineMidiSelectedNotes.insert(hit);
+        inlineMidiMarquee=true;
+        inlineMidiMarqueeStart=inlineMidiMarqueeEnd=p;
+        inlineMidiMarqueeBaseline=inlineMidiSelectedNotes;
+        operationMessage=juce::String::fromUTF8("Rectangle : sélectionner les notes MIDI");
+        repaint();return true;
+    }
+    const double px=getLibertyTimelinePixelsPerSecond();
+    if(!std::isfinite(px)||px<=0.0)return true;
+    const auto end=MidiEngine::secondsToTick(clip.lengthSeconds,owner.tempoBpm);
+    const double snapSeconds=getLibertySnapSeconds(owner.tempoBpm);
+    const auto grid=snapSeconds>0
+        ?juce::jmax<std::int64_t>(1,MidiEngine::secondsToTick(snapSeconds,owner.tempoBpm))
+        :std::int64_t{MidiEngine::ticksPerQuarterNote/4};
+    const double relativeSeconds=juce::jmax(0.0,
+        ((double)p.x-owner.trackHeaderWidth)/px-clip.startSeconds);
+    const auto rawTick=MidiEngine::secondsToTick(relativeSeconds,owner.tempoBpm);
+    const auto tick=snapSeconds>0?MidiEngine::quantizeTick(rawTick,grid):rawTick;
+    auto notes=clip.notes;
+    if(activeArrangeTool==7){
+        if(hit<0)return true;
+        if(!inlineMidiSelectedNotes.count(hit))
+            inlineMidiSelectedNotes={hit};
+        inlineMidiFinishGesture();
+        inlineMidiDragging=true;
+        inlineMidiResizing=true;
+        inlineMidiVelocityDragging=false;
+        inlineMidiDuplicating=false;
+        inlineMidiInstrument=instrument;
+        inlineMidiClipId=clipId;
+        inlineMidiNoteIndex=hit;
+        inlineMidiStartX=p.x;inlineMidiStartY=p.y;
+        inlineMidiDragSelection=inlineMidiSelectedNotes;
+        inlineMidiOriginalNotes=notes;
+        const auto range=inlineMidiRange(clip);
+        inlineMidiLow=range.first;inlineMidiCount=range.second;
+        operationMessage=juce::String::fromUTF8(
+            "Étirement MIDI : glisser pour modifier la durée des notes");
+        repaint();return true;
+    }
+    if(activeArrangeTool==2){
+        if(hit>=0)return true;
+        if(tick<0||tick>=end||notes.size()>=16384)return true;
+        const auto range=inlineMidiRange(clip);
+        const int row=juce::jlimit(0,range.second-1,
+            (p.y-area.getY())*range.second/juce::jmax(1,area.getHeight()));
+        MidiEngine::NoteEvent created;
+        created.startTick=tick;
+        created.lengthTicks=juce::jmin(end-tick,grid);
+        created.pitch=(std::uint8_t)(range.first+range.second-1-row);
+        if(created.lengthTicks<=0)return true;
+        notes.push_back(created);
+        operationMessage=juce::String::fromUTF8("Crayon : note MIDI créée");
+    }else if(hit>=0&&activeArrangeTool==3){
+        notes.erase(notes.begin()+hit);
+        inlineMidiSelectedNotes.clear();
+        operationMessage=juce::String::fromUTF8("Gomme : note MIDI supprimée");
+    }else if(hit>=0&&activeArrangeTool==4){
+        auto& note=notes[(size_t)hit];
+        const auto start=note.startTick;
+        const auto stop=start+note.lengthTicks;
+        // A click in the middle of a short note must still split it,
+        // even if SNAP would put the split at a note boundary.
+        const auto split=(tick>start&&tick<stop)?tick:rawTick;
+        if(split<=start||split>=stop)return true;
+        const auto original=note;
+        note.lengthTicks=split-start;
+        auto right=original;
+        right.startTick=split;right.lengthTicks=stop-split;
+        notes.push_back(right);
+        inlineMidiSelectedNotes.clear();
+        operationMessage=juce::String::fromUTF8("Ciseaux : note MIDI découpée");
+    }else if(hit>=0&&activeArrangeTool==5){
+        const auto current=notes[(size_t)hit];
+        const auto stop=current.startTick+current.lengthTicks;
+        int next=-1;
+        for(int i=0;i<(int)notes.size();++i){
+            if(i==hit)continue;
+            const auto& other=notes[(size_t)i];
+            if(other.pitch!=current.pitch||other.channel!=current.channel
+               ||other.muted!=current.muted
+               ||other.startTick<current.startTick
+               ||other.startTick>stop+grid)continue;
+            if(next<0||other.startTick<notes[(size_t)next].startTick)
+                next=i;
+        }
+        if(next<0){
+            operationMessage=juce::String::fromUTF8(
+                "Coller : choisir deux notes consécutives de même hauteur");
+            repaint();return true;
+        }
+        notes[(size_t)hit].lengthTicks=juce::jmax(
+            stop,notes[(size_t)next].startTick+notes[(size_t)next].lengthTicks)
+            -current.startTick;
+        notes.erase(notes.begin()+next);
+        inlineMidiSelectedNotes.clear();
+        operationMessage=juce::String::fromUTF8("Coller : notes MIDI réunies");
+    }else if(hit>=0&&activeArrangeTool==6){
+        std::set<int> targets={hit};
+        if(inlineMidiSelectedNotes.count(hit)&&inlineMidiSelectedNotes.size()>1)
+            targets=inlineMidiSelectedNotes;
+        const bool mute=!notes[(size_t)hit].muted;
+        for(int n:targets)
+            if(n>=0&&n<(int)notes.size())notes[(size_t)n].muted=mute;
+        operationMessage=juce::String::fromUTF8(
+            mute?"Muet : notes MIDI désactivées":"Muet : notes MIDI réactivées");
+    }else{
+        // Stay in the note editor: never fall through to clip erasure,
+        // clip scissors or clip stretch when a note wasn't hit.
+        return true;
+    }
+    if(owner.midiEngine.replaceNotes(notes)){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        syncPlayback();
+        repaint();owner.repaint();
+    }else operationMessage=juce::String::fromUTF8(
+        "Édition MIDI impossible : notes conservées");
+    return true;
+}
 bool inlineMidiDown(juce::Point<int> p,bool option,bool shift=false){
     bool instrument=false;int index=-1,note=-1;
     if(!inlineMidiAt(p,instrument,index,note)||(note<0&&!option&&!shift))
