@@ -193,6 +193,84 @@ bool inlineMidiSetVelocitySelected(int value){
     finishArrangementEdit();
     return true;
 }
+
+bool inlineMidiDuplicateOctaveSelected(int semitones){
+    if(!inlineMidiMode||(semitones!=12&&semitones!=-12)
+       ||inlineMidiSelectedNotes.empty())return false;
+    auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
+    const it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
+        return c.id==inlineMidiSelectedClipId;
+    });
+    if(it==bank.end()){inlineMidiClearSelection();return false;}
+    const int index=(int)std::distance(bank.begin(),it);
+    if(!isActiveClip(inlineMidiSelectedInstrument,index))
+        selectClip(inlineMidiSelectedInstrument,index);
+    auto& clip=bank[(size_t)index];
+    const auto originals=clip.notes;
+    if(originals.size()+inlineMidiSelectedNotes.size()>16384){
+        operationMessage=juce::String::fromUTF8("Limite de notes MIDI atteinte");
+        return false;
+    }
+    const auto clipEnd=MidiEngine::secondsToTick(
+        clip.lengthSeconds,owner.tempoBpm);
+    std::set<std::pair<std::int64_t,int>> occupied;
+    for(const auto& n:originals)
+        occupied.insert({n.startTick,(int)n.channel*128+(int)n.pitch});
+    std::vector<std::pair<MidiEngine::NoteEvent,bool>> tagged;
+    tagged.reserve(originals.size()+inlineMidiSelectedNotes.size());
+    for(const auto& n:originals)tagged.push_back({n,false});
+    int added=0;
+    for(const int selected:inlineMidiSelectedNotes){
+        if(selected<0||selected>=(int)originals.size())return false;
+        auto copy=originals[(size_t)selected];
+        const int pitch=(int)copy.pitch+semitones;
+        if(pitch<0||pitch>127||copy.startTick<0
+            ||copy.lengthTicks<=0||copy.startTick>=clipEnd
+            ||copy.lengthTicks>clipEnd-copy.startTick){
+            operationMessage=juce::String::fromUTF8(
+                "Doublage impossible : note hors des limites MIDI ou du clip");
+            return false;
+        }
+        copy.pitch=(std::uint8_t)pitch;
+        if(occupied.insert({copy.startTick,
+               (int)copy.channel*128+pitch}).second){
+            tagged.push_back({copy,true});
+            ++added;
+        }
+    }
+    if(added==0){
+        operationMessage=juce::String::fromUTF8(
+            "Les notes à cette octave existent déjà");
+        return false;
+    }
+    // Match the engine sort to maintain the selection on the new notes.
+    std::sort(tagged.begin(),tagged.end(),[](const auto& a,const auto& b){
+        if(a.first.startTick!=b.first.startTick)
+            return a.first.startTick<b.first.startTick;
+        if(a.first.channel!=b.first.channel)
+            return a.first.channel<b.first.channel;
+        return a.first.pitch<b.first.pitch;
+    });
+    std::vector<MidiEngine::NoteEvent> notes;
+    notes.reserve(tagged.size());
+    for(const auto& entry:tagged)notes.push_back(entry.first);
+    beginArrangementEdit();
+    const bool applied=owner.midiEngine.replaceNotes(notes);
+    if(applied){
+        clip.notes=owner.midiEngine.getNotesCopy();
+        inlineMidiSelectedNotes.clear();
+        for(int i=0;i<(int)tagged.size();++i)
+            if(tagged[(size_t)i].second)inlineMidiSelectedNotes.insert(i);
+        syncPlayback();
+        operationMessage=juce::String(added)+juce::String::fromUTF8(
+            semitones>0?" notes doublées à l'octave supérieure"
+                       :" notes doublées à l'octave inférieure");
+        repaint();owner.repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
+
 // Apply a linear velocity crescendo/diminuendo in MUSICAL TIME.
 // Chord notes sharing a start tick receive the same velocity. No position,
 // length, channel or articulation information is altered.
@@ -1289,8 +1367,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         repaint();owner.repaint();
         return true;
     }
-    if(choice<1001 || (choice>1127 && choice<2001) || choice>2005)
-        return false;
+    if(!((choice>=1001&&choice<=1127)||(choice>=2001&&choice<=2005)
+         ||choice==2101||choice==2102))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1302,7 +1380,7 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         inlineMidiSelectedClipId==clipId
         &&inlineMidiSelectedInstrument==instrument;
     if(!hasCompatibleSelection||inlineMidiSelectedNotes.empty()
-       ||(choice>=2001&&inlineMidiSelectedNotes.size()<2)){
+       ||((choice>=2001&&choice<=2005)&&inlineMidiSelectedNotes.size()<2)){
         inlineMidiSelectedClipId=clipId;
         inlineMidiSelectedInstrument=instrument;
         inlineMidiSelectedNotes.clear();
@@ -1311,6 +1389,8 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     }
     if(choice>=1001&&choice<=1127)
         return inlineMidiSetVelocitySelected(choice-1000);
+    if(choice==2101||choice==2102)
+        return inlineMidiDuplicateOctaveSelected(choice==2101?12:-12);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1330,9 +1410,9 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,584);
+        setSize(608,684);
         static const int actions[]={
-            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,0};
+            1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,0};
         const juce::String labels[]={
             juce::String::fromUTF8("ÉDITION DIRECTE  [E]"),
             juce::String::fromUTF8("MODE VÉLOCITÉ  [V]"),
@@ -1347,6 +1427,8 @@ public:
             juce::String::fromUTF8("DIMINUENDO DOUX  100 à 64"),
             juce::String::fromUTF8("DIMINUENDO FORT  120 à 40"),
             juce::String::fromUTF8("PERSONNALISER LA COURBE"),
+            juce::String::fromUTF8("DOUBLER À L’OCTAVE SUPÉRIEURE"),
+            juce::String::fromUTF8("DOUBLER À L’OCTAVE INFÉRIEURE"),
             juce::String::fromUTF8("FERMER")};
         for(size_t i=0;i<buttons.size();++i){
             auto& b=buttons[i];
@@ -1356,7 +1438,7 @@ public:
             b.setColour(juce::TextButton::buttonOnColourId,
                         juce::Colour(0xff366074));
             b.setColour(juce::TextButton::textColourOffId,
-                        juce::Colour(i==13?0xffb9cbd9:0xfff1f7fd));
+                        juce::Colour(i==15?0xffb9cbd9:0xfff1f7fd));
             b.setColour(juce::TextButton::textColourOnId,
                         juce::Colour(0xffffd48a));
             b.setTooltip(i<2
@@ -1367,9 +1449,11 @@ public:
                         ?juce::String::fromUTF8("Appliquer la vélocité aux notes sélectionnées")
                         :i<13
                             ?juce::String::fromUTF8("Appliquer une progression aux notes sélectionnées")
-                            :juce::String::fromUTF8("Fermer l'éditeur"));
+                            :i<15
+                                ?juce::String::fromUTF8("Doubler la sélection en conservant les notes originales")
+                                :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
-                if(i==13){
+                if(i==15){
                     if(auto* w=findParentComponentOfClass<juce::DialogWindow>())
                         w->exitModalState(0);
                     return;
@@ -1407,6 +1491,7 @@ public:
         buttons[2].setEnabled(state[3]>0);
         for(int i=3;i<=7;++i)buttons[(size_t)i].setEnabled(state[3]>0);
         for(int i=8;i<=12;++i)buttons[(size_t)i].setEnabled(state[3]>=2);
+        for(int i=13;i<=14;++i)buttons[(size_t)i].setEnabled(state[3]>0);
         selected=state[2];total=state[3];
         repaint();
     }
@@ -1435,7 +1520,9 @@ public:
             buttons[(size_t)(8+i)].setBounds(
                 margin+(i%2)*(w/2+5),366+(i/2)*49,w/2-5,42);
         buttons[12].setBounds(margin,478,w,42);
-        buttons[13].setBounds(getWidth()-142,534,118,34);
+        buttons[13].setBounds(margin,574,w/2-5,44);
+        buttons[14].setBounds(margin+w/2+5,574,w/2-5,44);
+        buttons[15].setBounds(getWidth()-142,635,118,34);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -1463,21 +1550,24 @@ public:
         g.setColour(juce::Colour(0xff52768b));
         g.drawHorizontalLine(228,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(325,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(532,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
                    25,237,400,25,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("PROGRESSION DE VÉLOCITÉ"),
                    25,335,450,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("DOUBLAGE HARMONIQUE"),
+                   25,541,450,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,541,390,26,juce::Justification::centredLeft);
+                   25,641,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
-    std::array<juce::TextButton,14> buttons;
+    std::array<juce::TextButton,16> buttons;
     int selected=0,total=0;
 };
 
