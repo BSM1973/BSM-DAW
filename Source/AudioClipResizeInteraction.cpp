@@ -28,7 +28,7 @@ namespace
 {
 constexpr int headerWidth = MainComponent::trackHeaderWidth;
 constexpr int rulerHeight = 32;
-constexpr int handleWidth = 12;
+constexpr int handleWidth = 16;
 
 class AudioClipResizeController final : public juce::Component,
                                         private juce::Timer
@@ -62,9 +62,11 @@ public:
         void paint(juce::Graphics& g) override
         {
             const bool active = controller.dragTrack == track && controller.dragSide == side;
-            g.setColour(active ? juce::Colour(0xffffc857) : juce::Colour(0xff78d8f5));
-            const float x = (float)getWidth() * 0.5f - 1.5f;
-            g.fillRoundedRectangle(x, 4.0f, 3.0f, (float)juce::jmax(1, getHeight() - 8), 1.5f);
+            g.setColour(active ? juce::Colour(0x9955e6ff) : juce::Colour(0x5539a9d9));
+            g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2.0f, 3.0f), 4.0f);
+            g.setColour(active ? juce::Colour(0xffffcf69) : juce::Colour(0xffa8ecff));
+            const float x = (float)getWidth() * 0.5f - 2.0f;
+            g.fillRoundedRectangle(x, 5.0f, 4.0f, (float)juce::jmax(1, getHeight() - 10), 2.0f);
         }
 
         void mouseDown(const juce::MouseEvent& e) override
@@ -75,7 +77,7 @@ public:
         void mouseDrag(const juce::MouseEvent& e) override
         {
             const auto relative = e.getEventRelativeTo(&controller);
-            controller.updateResize(relative.position.x);
+            controller.updateResize(relative.position.x, e.mods.isShiftDown());
         }
 
         void mouseUp(const juce::MouseEvent&) override
@@ -168,7 +170,7 @@ private:
         return step > 0.0 ? std::round(seconds / step) * step : seconds;
     }
 
-    void updateResize(float localMouseX)
+    void updateResize(float localMouseX, bool fineAdjustment)
     {
         if (dragTrack < 0) return;
         const double pps = getLibertyTimelinePixelsPerSecond();
@@ -180,14 +182,14 @@ private:
 
         if (dragSide == Side::left)
         {
-            double newStart = snapSeconds(mouseSeconds);
+            double newStart = fineAdjustment ? mouseSeconds : snapSeconds(mouseSeconds);
             newStart = juce::jlimit(0.0, originalRight - minLength, newStart);
             previewStart = newStart;
             previewLength = originalRight - newStart;
         }
         else
         {
-            double newRight = snapSeconds(mouseSeconds);
+            double newRight = fineAdjustment ? mouseSeconds : snapSeconds(mouseSeconds);
             newRight = juce::jmax(dragStart + minLength, newRight);
             previewStart = dragStart;
             previewLength = newRight - dragStart;
