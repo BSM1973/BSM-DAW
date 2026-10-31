@@ -4,6 +4,8 @@ name: Liberty Fast Diagnostic
 # queue refresh 2
 
 on:
+  push:
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
