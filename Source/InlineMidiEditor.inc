@@ -445,7 +445,10 @@ juce::Rectangle<int> inlineMidiArea(const Clip& c,bool instrument)const {
     const int logical=owner.getAudioTrackCount()
         +(instrument?owner.getMidiTrackCount():0)+c.trackLane;
     const int height=owner.getArrangeTrackHeight(logical)-8;
-    if(width<55||height<63)return {};
+    // Normal track height must support direct MIDI editing too. The
+    // previous 63-pixel threshold silently disabled all note tools until
+    // the user enlarged a track to Large mode.
+    if(width<32||height<44)return {};
     return {x+5,owner.getArrangeTrackTop(logical)+29,width-10,height-30};
 }
 juce::Rectangle<int> inlineMidiNoteBounds(const Clip& c,bool instrument,
@@ -1241,6 +1244,14 @@ public:
     bool isActionEnabled(int index)const {
         return index>=0&&index<(int)buttons.size()
             &&buttons[(size_t)index].isEnabled();
+    }
+    // Exercise exactly the same onClick callback as a real JUCE button.
+    // No fake dialog dispatcher or duplicate test-only action path.
+    bool clickActionForTest(int index) {
+        if(!isActionEnabled(index)
+           ||!buttons[(size_t)index].onClick)return false;
+        buttons[(size_t)index].onClick();
+        return true;
     }
     void resized()override {
         const int margin=24,w=getWidth()-2*margin;
