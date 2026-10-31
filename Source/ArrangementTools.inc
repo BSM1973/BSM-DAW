@@ -576,9 +576,20 @@ bool runArrangementTests(){
         inlineMidiMode=true;activeArrangeTool=0;
         const int inlineIndex=(int)midiClips.size()-1;
         owner.setArrangeTrackHeight(midiRow,64);setBounds(owner.getLocalBounds());
-        require(!inlineMidiArea(midiClips[(size_t)inlineIndex],false).isEmpty(),
-            "normal height track supports direct MIDI note editing");
-        owner.setArrangeTrackHeight(midiRow,120);setBounds(owner.getLocalBounds());
+        require(owner.getArrangeTrackHeight(midiRow)==38
+            &&inlineMidiArea(midiClips[(size_t)inlineIndex],false).isEmpty(),
+            "collapsed Arrangement track has no editable MIDI body");
+        // Unlike the old silent no-op, selecting Edit MIDI must automatically
+        // expose the note grid in a collapsed track.
+        inlineMidiMode=false;
+        inlineMidiClearSelection();activeArrangeTool=4;
+        require(inlineMidiExecuteAction(3,
+                midiClips[(size_t)inlineIndex].id,false)
+            &&inlineMidiMode&&activeArrangeTool==0
+            &&owner.getArrangeTrackHeight(midiRow)>=144
+            &&!inlineMidiArea(midiClips[(size_t)inlineIndex],false).isEmpty(),
+            "MIDI edit expands only the collapsed target track");
+        setBounds(owner.getLocalBounds());
         const auto originalNote=midiClips[(size_t)inlineIndex].notes[0];
         const auto hitRect=inlineMidiNoteBounds(midiClips[(size_t)inlineIndex],false,originalNote);
         require(!hitRect.isEmpty(),"inline MIDI note bounds");
