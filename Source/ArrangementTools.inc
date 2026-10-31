@@ -665,8 +665,10 @@ bool runArrangementTests(){
         require(afterAudioEditor[0].startSeconds==c.startSeconds
             &&afterAudioEditor[0].offsetSeconds==c.offsetSeconds,
             "audio edit never changes clip placement or source offset");
-        require(afterAudioEditor[0].pitchSemitones==-7,
-            "audio edit transfers pitch to playback engine");
+        if(std::abs(afterAudioEditor[0].pitchSemitones+7.0)>.0001)
+            throw std::runtime_error(
+                ("audio clip pitch engine expected -7, received "
+                 +juce::String(afterAudioEditor[0].pitchSemitones,8)).toStdString());
         require(std::abs(afterAudioEditor[0].clipGain-.45f)<.0001f,
             "audio edit transfers clip gain to playback engine");
         require(std::abs(afterAudioEditor[0].fadeInSeconds-.125)<.00001,
