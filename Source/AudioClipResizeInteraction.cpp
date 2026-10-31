@@ -125,6 +125,13 @@ public:
         g.fillRoundedRectangle(r.toFloat(), 5.0f);
         g.setColour(stretchMode ? juce::Colour(0xff55e6a5) : juce::Colour(0xff78d8f5));
         g.drawRoundedRectangle(r.toFloat(), 5.0f, 2.0f);
+        // Distinct edge guides make the edited boundary readable at any zoom.
+        g.setColour(juce::Colour(0xffffd47a));
+        const float leftEdge = (float)r.getX() + 1.0f;
+        const float rightEdge = (float)r.getRight() - 1.0f;
+        const float edgeX = dragSide == Side::left ? leftEdge : rightEdge;
+        g.drawLine(edgeX, (float)r.getY() + 3.0f, edgeX,
+                   (float)r.getBottom() - 3.0f, 2.5f);
 
         const double secondsPerBeat = 60.0 / juce::jmax(1.0, owner.tempoBpm)
             * (4.0 / (double)juce::jmax(1, owner.timeSignatureDenominator));
