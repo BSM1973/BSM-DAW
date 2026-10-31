@@ -2037,8 +2037,16 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
 // Values survive reopening the MIDI editor while this Arrangement controller
 // is alive. They are session preferences, never project data or MIDI edits.
 struct InlineMidiStrumSettings {
-    int gap=60,swing=50,timing=0,dynamics=0,nuance=0;
-    bool preserve=false,alternate=false;
+    // Explicit constructor avoids Clang's incomplete outer-class issue when
+    // the nested JUCE editor uses this type as a default argument.
+    int gap,swing,timing,dynamics,nuance;
+    bool preserve,alternate;
+    InlineMidiStrumSettings(int gapIn=60,int swingIn=50,
+                            int timingIn=0,int dynamicsIn=0,int nuanceIn=0,
+                            bool preserveIn=false,bool alternateIn=false)
+      : gap(gapIn),swing(swingIn),timing(timingIn),
+        dynamics(dynamicsIn),nuance(nuanceIn),
+        preserve(preserveIn),alternate(alternateIn) {}
 };
 
 // Actual JUCE controls, not a decorative picture or a custom PopupMenu.
