@@ -1601,6 +1601,113 @@ bool runArrangementTests(){
                     ||notes[i].velocity!=strumBefore[i].velocity)return false;
             return true;
         };
+        // The real MIDI editor is a transient JUCE component. All controls
+        // must survive its destruction and reconstruction via the controller,
+        // across selected clips, without ever changing project MIDI notes.
+        int sessionSaves=0,sessionDispatches=0;
+        savedStrumSettings=InlineMidiStrumSettings{};
+        {
+            InlineMidiActionsPanel sessionFirst(
+                [&](int){++sessionDispatches;return true;},
+                []()->InlineMidiActionsPanel::State{return {1,0,4,5};},
+                savedStrumSettings,
+                [this,&sessionSaves](const InlineMidiStrumSettings& st){
+                    savedStrumSettings=st;++sessionSaves;
+                });
+            require(sessionSaves==0
+                &&sessionFirst.strumGapForTest()==60
+                &&sessionFirst.strumVelocityNuanceForTest()==0,
+                "reopening the editor initially uses previous neutral defaults");
+            require(sessionFirst.clickStrumPresetForTest(1)
+                &&sessionSaves==1
+                &&sessionDispatches==0
+                &&savedStrumSettings.gap==90
+                &&savedStrumSettings.swing==66
+                &&savedStrumSettings.timing==10
+                &&savedStrumSettings.dynamics==18
+                &&savedStrumSettings.nuance==8
+                &&savedStrumSettings.alternate
+                &&!savedStrumSettings.preserve
+                &&unchangedAfterPreset(),
+                "rhythmic guitar preset saves seven parameters with no MIDI action");
+            sessionFirst.setStrumGapForTest(135);
+            sessionFirst.setStrumVelocityNuanceForTest(11);
+            require(savedStrumSettings.gap==135
+                &&savedStrumSettings.nuance==11
+                &&sessionSaves>=3
+                &&sessionDispatches==0
+                &&unchangedAfterPreset(),
+                "manual slider adjustments are remembered without note editing");
+        }
+        {
+            const int savesBeforeReopen=sessionSaves;
+            InlineMidiActionsPanel sessionReopened(
+                [&](int){++sessionDispatches;return true;},
+                []()->InlineMidiActionsPanel::State{return {1,0,4,5};},
+                savedStrumSettings,
+                [this,&sessionSaves](const InlineMidiStrumSettings& st){
+                    savedStrumSettings=st;++sessionSaves;
+                });
+            require(sessionSaves==savesBeforeReopen
+                &&sessionDispatches==0
+                &&sessionReopened.strumGapForTest()==135
+                &&sessionReopened.strumSwingForTest()==66
+                &&sessionReopened.strumHumanizeForTest()==10
+                &&sessionReopened.strumDynamicsForTest()==18
+                &&sessionReopened.strumVelocityNuanceForTest()==11
+                &&sessionReopened.alternateStrumDirectionForTest()
+                &&!sessionReopened.preserveStrumLengthForTest()
+                &&unchangedAfterPreset(),
+                "a newly opened real JUCE panel restores all session controls");
+            sessionReopened.setPreserveStrumLengthForTest(true);
+            require(savedStrumSettings.preserve
+                &&unchangedAfterPreset(),
+                "duration checkbox also persists through real JUCE notifications");
+            require(sessionReopened.clickStrumPresetForTest(3)
+                &&sessionSaves>savesBeforeReopen
+                &&savedStrumSettings.gap==60
+                &&savedStrumSettings.swing==50
+                &&savedStrumSettings.timing==0
+                &&savedStrumSettings.dynamics==0
+                &&savedStrumSettings.nuance==0
+                &&!savedStrumSettings.alternate
+                &&!savedStrumSettings.preserve
+                &&unchangedAfterPreset(),
+                "reset preset saves neutral session preferences with no edit");
+        }
+        {
+            InlineMidiActionsPanel sessionNeutral(
+                [&](int){++sessionDispatches;return true;},
+                []()->InlineMidiActionsPanel::State{return {1,0,4,5};},
+                savedStrumSettings);
+            require(sessionNeutral.strumGapForTest()==60
+                &&sessionNeutral.strumSwingForTest()==50
+                &&sessionNeutral.strumDynamicsForTest()==0
+                &&sessionNeutral.strumVelocityNuanceForTest()==0
+                &&!sessionNeutral.alternateStrumDirectionForTest()
+                &&!sessionNeutral.preserveStrumLengthForTest()
+                &&sessionDispatches==0
+                &&unchangedAfterPreset(),
+                "reset persists in subsequent editor while MIDI stays untouched");
+        }
+        // Even malformed in-memory parameters must remain bounded to the
+        // existing JUCE slider ranges when restoring a panel.
+        InlineMidiStrumSettings corrupted={999,99,999,-999,99,true,true};
+        InlineMidiActionsPanel clampedSession(
+            [&](int){++sessionDispatches;return true;},
+            []()->InlineMidiActionsPanel::State{return {1,0,4,5};},
+            corrupted);
+        require(clampedSession.strumGapForTest()==240
+            &&clampedSession.strumSwingForTest()==75
+            &&clampedSession.strumHumanizeForTest()==20
+            &&clampedSession.strumDynamicsForTest()==-24
+            &&clampedSession.strumVelocityNuanceForTest()==12
+            &&clampedSession.alternateStrumDirectionForTest()
+            &&clampedSession.preserveStrumLengthForTest()
+            &&sessionDispatches==0
+            &&unchangedAfterPreset(),
+            "session restore clamps invalid values without affecting MIDI notes");
+        savedStrumSettings=InlineMidiStrumSettings{};
         require(wiredPanel.clickStrumPresetForTest(0)
             &&wiredPanel.strumGapForTest()==45
             &&wiredPanel.strumSwingForTest()==58
