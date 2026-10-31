@@ -612,11 +612,14 @@ bool inlineMidiSpaceChordsSelected(bool widen){
 
 
 /* Strum selected simultaneous MIDI notes in pitch order.
-   Each successive voice begins one 1/64-note later. Keep each note's
+   Each successive voice begins after the configured musical tick gap. Keep each note's
    absolute end tick fixed, so no note crosses its original chord release.
    All groups are validated before the single Undo transaction. */
-bool inlineMidiStrumChordsSelected(bool bassFirst){
-    if(!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
+bool inlineMidiStrumChordsSelected(bool bassFirst,
+                                  std::int64_t stepTicks=MidiEngine::ticksPerQuarterNote/16){
+    // 15..240 ticks = 1/256..1/16 of a whole note at 960 PPQN.
+    if(stepTicks<15||stepTicks>240||stepTicks%15!=0
+       ||!inlineMidiMode||inlineMidiSelectedNotes.size()<2)return false;
     auto& bank=inlineMidiSelectedInstrument?instrumentClips:midiClips;
     const auto it=std::find_if(bank.begin(),bank.end(),[&](const Clip& c){
         return c.id==inlineMidiSelectedClipId;
@@ -640,8 +643,6 @@ bool inlineMidiStrumChordsSelected(bool bassFirst){
         chords[n.startTick].push_back(index);
     }
     auto notes=originals;
-    const std::int64_t step=juce::jmax<std::int64_t>(
-        1,MidiEngine::ticksPerQuarterNote/16);
     int changedChords=0;
     for(const auto& entry:chords){
         auto voices=entry.second;
@@ -656,7 +657,7 @@ bool inlineMidiStrumChordsSelected(bool bassFirst){
         for(size_t i=1;i<voices.size();++i){
             const int index=voices[i];
             const auto& old=originals[(size_t)index];
-            const auto offset=(std::int64_t)i*step;
+            const auto offset=(std::int64_t)i*stepTicks;
             // Preserve the original absolute end and reject a clipped
             // release rather than creating zero or negative-length notes.
             if(offset>=old.lengthTicks){
@@ -1822,7 +1823,9 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
     if(!((choice>=1001&&choice<=1127)||(choice>=2001&&choice<=2005)
          ||choice==2101||choice==2102||choice==2201||choice==2202
          ||choice==2301||choice==2302||choice==2401||choice==2402
-         ||choice==2501||choice==2502))return false;
+         ||choice==2501||choice==2502
+         ||(choice>=2615&&choice<=2840&&(choice-2600)%15==0)
+         ||(choice>=2915&&choice<=3140&&(choice-2900)%15==0)))return false;
     if(it->notes.empty())return false;
     if(!inlineMidiMode)toggleInlineMidiMode();
     activeArrangeTool=0;
@@ -1853,6 +1856,10 @@ bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
         return inlineMidiSpaceChordsSelected(choice==2402);
     if(choice==2501||choice==2502)
         return inlineMidiStrumChordsSelected(choice==2501);
+    if(choice>=2615&&choice<=2840)
+        return inlineMidiStrumChordsSelected(true,choice-2600);
+    if(choice>=2915&&choice<=3140)
+        return inlineMidiStrumChordsSelected(false,choice-2900);
     if(inlineMidiSelectedNotes.size()<2)return false;
     if(choice==2001)return inlineMidiRampVelocitySelected(64,100);
     if(choice==2002)return inlineMidiRampVelocitySelected(40,120);
@@ -1872,7 +1879,21 @@ public:
                            std::function<State()> read)
       : dispatch(std::move(action)),readState(std::move(read))
     {
-        setSize(608,906);
+        setSize(608,975);
+        strumGap.setSliderStyle(juce::Slider::LinearHorizontal);
+        strumGap.setRange(15,240,15);
+        strumGap.setValue(60,juce::dontSendNotification);
+        strumGap.setTextBoxStyle(juce::Slider::TextBoxRight,false,104,28);
+        strumGap.setTextValueSuffix(juce::String::fromUTF8(" ticks"));
+        strumGap.setColour(juce::Slider::backgroundColourId,juce::Colour(0xff172b3d));
+        strumGap.setColour(juce::Slider::trackColourId,juce::Colour(0xff66a6c4));
+        strumGap.setColour(juce::Slider::thumbColourId,juce::Colour(0xffffd08a));
+        strumGap.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xfff4f8fb));
+        strumGap.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff182b3c));
+        strumGap.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff537e99));
+        strumGap.setTooltip(juce::String::fromUTF8(
+            "Écart entre deux notes de l'accord, par pas de 15 ticks MIDI ; 60 par défaut"));
+        addAndMakeVisible(strumGap);
         static const int actions[]={
             1,2,3,1032,1064,1080,1100,1127,2001,2002,2003,2004,2005,2101,2102,2201,2202,2301,2302,2401,2402,2501,2502,0};
         const juce::String labels[]={
@@ -1928,7 +1949,7 @@ public:
                                         :i<21
                                             ?juce::String::fromUTF8("Resserrer les notes dans une octave ou élargir les voix en conservant la tonalité")
                                             :i<23
-                                                ?juce::String::fromUTF8("Décaler les attaques des notes simultanées d'un soixante-quatrième, sans déplacer leur fin")
+                                                ?juce::String::fromUTF8("Égrener les notes avec l'écart réglé ci-dessous, sans déplacer leur fin")
                                                 :juce::String::fromUTF8("Fermer l'éditeur"));
             b.onClick=[this,i,choice=actions[i]]{
                 if(i==23){
@@ -1946,7 +1967,11 @@ public:
                     });
                     return;
                 }
-                const bool applied=dispatch&&dispatch(choice);
+                int mappedChoice=choice;
+                if(choice==2501||choice==2502)
+                    mappedChoice=(choice==2501?2600:2900)
+                        +(int)strumGap.getValue();
+                const bool applied=dispatch&&dispatch(mappedChoice);
                 refresh();
                 if(!applied)repaint();
             };
@@ -1993,6 +2018,10 @@ public:
         buttons[(size_t)index].onClick();
         return true;
     }
+    void setStrumGapForTest(int ticks){
+        strumGap.setValue(ticks,juce::sendNotificationSync);
+    }
+    int strumGapForTest()const{return (int)strumGap.getValue();}
     void resized()override {
         const int margin=24,w=getWidth()-2*margin;
         buttons[0].setBounds(margin,101,(w-10)/2,43);
@@ -2014,9 +2043,10 @@ public:
         buttons[18].setBounds(margin+(quarter+gap),707,quarter,38);
         buttons[19].setBounds(margin+2*(quarter+gap),707,quarter,38);
         buttons[20].setBounds(margin+3*(quarter+gap),707,quarter,38);
-        buttons[21].setBounds(margin,792,w/2-5,42);
-        buttons[22].setBounds(margin+w/2+5,792,w/2-5,42);
-        buttons[23].setBounds(getWidth()-142,858,118,32);
+        strumGap.setBounds(margin,788,w,43);
+        buttons[21].setBounds(margin,843,w/2-5,42);
+        buttons[22].setBounds(margin+w/2+5,843,w/2-5,42);
+        buttons[23].setBounds(getWidth()-142,924,118,32);
     }
     void paint(juce::Graphics& g)override {
         const auto bg=getLocalBounds().toFloat();
@@ -2048,7 +2078,7 @@ public:
         g.drawHorizontalLine(610,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(681,24.f,(float)getWidth()-24.f);
         g.drawHorizontalLine(752,24.f,(float)getWidth()-24.f);
-        g.drawHorizontalLine(844,24.f,(float)getWidth()-24.f);
+        g.drawHorizontalLine(910,24.f,(float)getWidth()-24.f);
         g.setColour(juce::Colour(0xffffd08a));
         g.setFont(juce::Font(13.5f,juce::Font::bold));
         g.drawText(juce::String::fromUTF8("DÉFINIR LA VÉLOCITÉ"),
@@ -2061,17 +2091,18 @@ public:
                    25,613,450,23,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("VOICINGS ET ESPACEMENT"),
                    25,683,450,23,juce::Justification::centredLeft);
-        g.drawText(juce::String::fromUTF8("JEU D'ACCORDS"),
-                   25,763,450,25,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("JEU D'ACCORDS — ÉCART ENTRE LES ATTAQUES"),
+                   25,759,540,25,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff91aebd));
         g.setFont(juce::Font(11.f));
         g.drawText(juce::String::fromUTF8("Les changements sont annulables (Undo/Redo)."),
-                   25,857,390,26,juce::Justification::centredLeft);
+                   25,926,390,26,juce::Justification::centredLeft);
     }
 private:
     std::function<bool(int)> dispatch;
     std::function<State()> readState;
     std::array<juce::TextButton,24> buttons;
+    juce::Slider strumGap;
     int selected=0,total=0;
 };
 
