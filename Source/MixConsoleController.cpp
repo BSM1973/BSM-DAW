@@ -77,9 +77,9 @@ private:
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(sp->channel.get()),[this,track](int choice){
         if(choice>=1000&&choice<1400){const int code=choice-1000;const int ratio=code%10;const int threshold=code/10-36;owner.audioEngine.setChannelCompressor(track,true,(float)threshold,(float)ratio);repaint();return;}
         if(choice>=2000&&choice<=2050){owner.audioEngine.setChannelGate(track,true,(float)(choice-2080));repaint();return;}
-        if(choice>=3000&&choice<=3030){owner.audioEngine.setChannelEq(track,true,(float)(choice-3012),0.f,0.f);repaint();return;}
-        if(choice>=3100&&choice<=3130){owner.audioEngine.setChannelEq(track,true,0.f,(float)(choice-3112),0.f);repaint();return;}
-        if(choice>=3200&&choice<=3230){owner.audioEngine.setChannelEq(track,true,0.f,0.f,(float)(choice-3212));repaint();return;}
+        if(choice>=3000&&choice<=3030){owner.audioEngine.setChannelEq(track,true,(float)(choice-3012),owner.audioEngine.getChannelEqBandDb(track,1),owner.audioEngine.getChannelEqBandDb(track,2));repaint();return;}
+        if(choice>=3100&&choice<=3130){owner.audioEngine.setChannelEq(track,true,owner.audioEngine.getChannelEqBandDb(track,0),(float)(choice-3112),owner.audioEngine.getChannelEqBandDb(track,2));repaint();return;}
+        if(choice>=3200&&choice<=3230){owner.audioEngine.setChannelEq(track,true,owner.audioEngine.getChannelEqBandDb(track,0),owner.audioEngine.getChannelEqBandDb(track,1),(float)(choice-3212));repaint();return;}
         if(choice>=100&&choice<=136){owner.audioEngine.setChannelInputGainDb(track,(float)(choice-118));repaint();return;}
         if(choice>=200&&choice<=700){owner.audioEngine.setChannelHighPassHz(track,(float)(choice-200));repaint();return;}
         switch(choice){
