@@ -529,51 +529,35 @@ void paintAudioFades(juce::Graphics& g){
         const float fi=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeInSeconds/c.lengthSeconds));
         const float fo=juce::jlimit(0.0f,box.getWidth(),(float)(box.getWidth()*c.fadeOutSeconds/c.lengthSeconds));
         const float top=box.getY()+24.0f,bottom=box.getBottom()-5.0f;
-        if(fi>0.0f){
-            // A translucent ramp identifies the affected audio without hiding peaks.
-            juce::Path fadeArea;
-            fadeArea.startNewSubPath(box.getX(),top);
-            fadeArea.lineTo(box.getX()+fi,top);
-            fadeArea.lineTo(box.getX(),bottom);
-            fadeArea.closeSubPath();
-            if(fadeArea.getBounds().getWidth()>=3.0f){
-                g.setColour(juce::Colour(0x2861c9f2));
-                g.fillPath(fadeArea);
+        // Use the same normalized gain law as the audio engine.
+        auto drawManualFade=[&](float x,float width,int curve,bool incoming){
+            if(width<3.0f)return;
+            juce::Path line,area;
+            const int segments=juce::jmax(2,(int)std::ceil(width/3.0f));
+            for(int i=0;i<=segments;++i){
+                const float p=(float)i/(float)segments;
+                const float gain=(float)LibertyAudioCrossfade::manualFadeLevel(curve,p,incoming);
+                const float px=x+p*width;
+                const float py=bottom-gain*(bottom-top);
+                if(i==0){line.startNewSubPath(px,py);area.startNewSubPath(px,py);}
+                else{line.lineTo(px,py);area.lineTo(px,py);}
             }
-            // A faint boundary keeps the faded area legible on dark waveforms.
-            if(fadeArea.getBounds().getWidth()>=8.0f){
+            area.lineTo(x+width,bottom);
+            area.lineTo(x,bottom);
+            area.closeSubPath();
+            g.setColour(juce::Colour(0x2861c9f2));
+            g.fillPath(area);
+            if(width>=8.0f){
                 g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
-                g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
+                g.strokePath(area,juce::PathStrokeType(0.8f));
             }
-            if(fi>=3.0f){
-                g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
-                g.drawLine(box.getX(),bottom,box.getX()+fi,top,4.0f);
-                g.setColour(juce::Colour(0xffffd88c));
-                g.drawLine(box.getX(),bottom,box.getX()+fi,top,2.4f);
-            }
-        }
-        if(fo>0.0f){
-            juce::Path fadeArea;
-            fadeArea.startNewSubPath(box.getRight()-fo,top);
-            fadeArea.lineTo(box.getRight(),top);
-            fadeArea.lineTo(box.getRight(),bottom);
-            fadeArea.closeSubPath();
-            if(fadeArea.getBounds().getWidth()>=3.0f){
-                g.setColour(juce::Colour(0x2861c9f2));
-                g.fillPath(fadeArea);
-            }
-            // A faint boundary keeps the faded area legible on dark waveforms.
-            if(fadeArea.getBounds().getWidth()>=8.0f){
-                g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
-                g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
-            }
-            if(fo>=3.0f){
-                g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
-                g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,4.0f);
-                g.setColour(juce::Colour(0xffffd88c));
-                g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,2.4f);
-            }
-        }
+            g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
+            g.strokePath(line,juce::PathStrokeType(4.0f));
+            g.setColour(juce::Colour(0xffffd88c));
+            g.strokePath(line,juce::PathStrokeType(2.4f));
+        };
+        if(fi>0.0f)drawManualFade(box.getX(),fi,c.fadeInCurve,true);
+        if(fo>0.0f)drawManualFade(box.getRight()-fo,fo,c.fadeOutCurve,false);
         // Keep both grips visible when short fades converge at the same pixel.
         const float fadeInX=box.getX()+fi;
         const float fadeOutX=box.getRight()-fo;
