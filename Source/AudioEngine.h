@@ -171,6 +171,11 @@ public:
     bool resetInstrumentPlayback(int trackCount) noexcept;
 
     void setTrackGain(int trackIndex, float gain) noexcept;
+    void setChannelInputGainDb(int trackIndex, float db) noexcept;
+    void setChannelHighPassHz(int trackIndex, float hz) noexcept;
+    void setChannelCompressor(int trackIndex, bool enabled, float thresholdDb, float ratio) noexcept;
+    void setChannelGate(int trackIndex, bool enabled, float thresholdDb) noexcept;
+    void setChannelEq(int trackIndex, bool enabled, float lowDb, float midDb, float highDb) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
@@ -355,6 +360,12 @@ private:
         std::atomic<double> autoCrossfadeOverlapStart { -1.0 }, autoCrossfadeOverlapEnd { -1.0 };
         std::atomic<double> clipTrimStart { 0.0 }, clipTrimEnd { 1.0 };
         std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>> regionVoices;
+        std::atomic<float> inputGainDb { 0.0f }, highPassHz { 0.0f };
+        std::atomic<bool> compressorEnabled { false }, gateEnabled { false }, eqEnabled { false };
+        std::atomic<float> compressorThresholdDb { -18.0f }, compressorRatio { 4.0f }, gateThresholdDb { -55.0f };
+        std::atomic<float> eqLowDb { 0.0f }, eqMidDb { 0.0f }, eqHighDb { 0.0f };
+        float channelHighPassState[2] {}, channelLowState[2] {}, channelHighState[2] {};
+        float channelDynamicsEnvelope = 0.0f;
         std::atomic<float> gain { 1.0f };
         std::atomic<float> clipGain { 1.0f };
         std::atomic<double> clipPitch { 0.0 };
