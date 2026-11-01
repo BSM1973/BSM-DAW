@@ -1022,6 +1022,15 @@ bool runArrangementTests(){
                 require(redone.fadeInCurve==1 && redone.fadeOutCurve==2,
                         "redo independent fade curves");
                 undoArrangement(false);
+                juce::XmlElement fadeXml("Audio");
+                AudioEngine::writeAudioClipProperties(fadeXml,redone);
+                const auto restored=AudioEngine::readAudioClipProperties(fadeXml);
+                require(restored.fadeInCurve==1 && restored.fadeOutCurve==2,
+                        "manual fade curves project XML roundtrip");
+                juce::XmlElement legacyFadeXml("Audio");
+                const auto legacy=AudioEngine::readAudioClipProperties(legacyFadeXml);
+                require(legacy.fadeInCurve==0 && legacy.fadeOutCurve==0,
+                        "legacy projects default to linear fades");
             }
             // Shift must scale only the fade movement, preserving Undo/Redo.
             beginArrangementEdit();
