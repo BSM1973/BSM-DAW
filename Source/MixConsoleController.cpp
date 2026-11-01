@@ -83,18 +83,18 @@ private:
     menu.addItem(12,"EQ désactivé");
     const int track=sp->lane;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(sp->channel.get()),[this,track,sp](int choice){
-        if(choice>=1000&&choice<1400){const int code=choice-1000;const int ratio=code%10;const int threshold=code/10-36;sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(track,true,(float)threshold,(float)ratio);repaint();return;}
-        if(choice>=2000&&choice<=2050){sp->gateOn=true;refreshPower(*sp);owner.audioEngine.setChannelGate(track,true,(float)(choice-2080));repaint();return;}
+        auto setKnob=[this](juce::Slider* knob,float value){if(!knob)return;const bool wasSyncing=syncing;syncing=true;knob->setValue(value,juce::dontSendNotification);syncing=wasSyncing;};if(choice>=1000&&choice<1400){const int code=choice-1000;const int ratio=code%10;const int threshold=code/10-36;sp->compOn=true;refreshPower(*sp);setKnob(sp->compThreshold.get(),(float)threshold);setKnob(sp->compRatio.get(),(float)ratio);owner.audioEngine.setChannelCompressor(track,true,(float)threshold,(float)ratio);repaint();return;}
+        if(choice>=2000&&choice<=2050){sp->gateOn=true;refreshPower(*sp);setKnob(sp->gateThreshold.get(),(float)(choice-2080));owner.audioEngine.setChannelGate(track,true,(float)(choice-2080));repaint();return;}
         if(choice>=3000&&choice<=3030){sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(track,true,(float)(choice-3012),owner.audioEngine.getChannelEqBandDb(track,1),owner.audioEngine.getChannelEqBandDb(track,2));repaint();return;}
         if(choice>=3100&&choice<=3130){sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(track,true,owner.audioEngine.getChannelEqBandDb(track,0),(float)(choice-3112),owner.audioEngine.getChannelEqBandDb(track,2));repaint();return;}
         if(choice>=3200&&choice<=3230){sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(track,true,owner.audioEngine.getChannelEqBandDb(track,0),owner.audioEngine.getChannelEqBandDb(track,1),(float)(choice-3212));repaint();return;}
-        if(choice>=100&&choice<=136){owner.audioEngine.setChannelInputGainDb(track,(float)(choice-118));repaint();return;}
-        if(choice>=200&&choice<=700){owner.audioEngine.setChannelHighPassHz(track,(float)(choice-200));repaint();return;}
+        if(choice>=100&&choice<=136){setKnob(sp->inputGain.get(),(float)(choice-118));owner.audioEngine.setChannelInputGainDb(track,(float)(choice-118));repaint();return;}
+        if(choice>=200&&choice<=700){setKnob(sp->highPass.get(),(float)(choice-200));owner.audioEngine.setChannelHighPassHz(track,(float)(choice-200));repaint();return;}
         switch(choice){
-        case 1:owner.audioEngine.setChannelInputGainDb(track,6.f);break;
-        case 2:owner.audioEngine.setChannelInputGainDb(track,0.f);break;
-        case 3:owner.audioEngine.setChannelHighPassHz(track,80.f);break;
-        case 4:owner.audioEngine.setChannelHighPassHz(track,0.f);break;
+        case 1:setKnob(sp->inputGain.get(),6.f);owner.audioEngine.setChannelInputGainDb(track,6.f);break;
+        case 2:setKnob(sp->inputGain.get(),0.f);owner.audioEngine.setChannelInputGainDb(track,0.f);break;
+        case 3:setKnob(sp->highPass.get(),80.f);owner.audioEngine.setChannelHighPassHz(track,80.f);break;
+        case 4:setKnob(sp->highPass.get(),0.f);owner.audioEngine.setChannelHighPassHz(track,0.f);break;
         case 5:sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(track,true,-18.f,3.f);break;
         case 6:sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(track,true,-12.f,5.f);break;
         case 7:sp->compOn=false;refreshPower(*sp);owner.audioEngine.setChannelCompressor(track,false,-18.f,4.f);break;
