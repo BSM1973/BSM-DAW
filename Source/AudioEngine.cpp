@@ -1597,12 +1597,14 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const double crossOutEnd=track.autoCrossfadeOutEnd.load();
         const int crossCurve=track.autoCrossfadeCurve.load();
         const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
+        const int fadeInCurve=track.clipFadeInCurve.load();
+        const int fadeOutCurve=track.clipFadeOutCurve.load();
         const double envelopeLength=track.clipEnvelopeLength.load();
         const double duration=envelopeLength>0?envelopeLength:track.lengthSeconds.load();
         auto envelopeAt=[&](double t){
             double e=1.0;
-            if(fi>0)e=juce::jmin(e,t/fi);
-            if(fo>0)e=juce::jmin(e,(duration-t)/fo);
+            if(fi>0)e=juce::jmin(e,LibertyAudioCrossfade::manualFadeLevel(fadeInCurve,t/fi,true));
+            if(fo>0)e=juce::jmin(e,LibertyAudioCrossfade::manualFadeLevel(fadeOutCurve,(t-(duration-fo))/fo,false));
             // Apply a second, transient envelope only where two regions overlap.
             // The explicit per-clip fade controls remain independently editable.
             const double timelineSeconds=timelineStart+t-offsetSeconds;
