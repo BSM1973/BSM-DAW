@@ -41,6 +41,7 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->clipReverse.store(c.reverse);v->clipMuted.store(c.muted);v->clipOffset.store(c.offsetSeconds);
     v->clipTrimStart.store(c.trimStartFraction);v->clipTrimEnd.store(c.trimEndFraction);
     v->clipFadeIn.store(c.fadeInSeconds);v->clipFadeOut.store(c.fadeOutSeconds);
+    v->clipFadeInCurve.store(c.fadeInCurve);v->clipFadeOutCurve.store(c.fadeOutCurve);
     v->autoCrossfadeInStart.store(c.autoCrossfadeInStart);
     v->autoCrossfadeInEnd.store(c.autoCrossfadeInEnd);
     v->autoCrossfadeOutStart.store(c.autoCrossfadeOutStart);
@@ -73,6 +74,7 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getArrangementAudioClip
         c.muted=t.clipMuted.load();c.offsetSeconds=t.clipOffset.load();c.envelopeLengthSeconds=t.clipEnvelopeLength.load();
         c.trimStartFraction=t.clipTrimStart.load();c.trimEndFraction=t.clipTrimEnd.load();
         c.fadeInSeconds=t.clipFadeIn.load();c.fadeOutSeconds=t.clipFadeOut.load();
+        c.fadeInCurve=t.clipFadeInCurve.load();c.fadeOutCurve=t.clipFadeOutCurve.load();
         c.autoCrossfadeInStart=t.autoCrossfadeInStart.load();
         c.autoCrossfadeInEnd=t.autoCrossfadeInEnd.load();
         c.autoCrossfadeOutStart=t.autoCrossfadeOutStart.load();
