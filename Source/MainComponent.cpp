@@ -218,6 +218,7 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
+    if (isLibertyMixConsoleVisible(this)) return;
     // Paint only the playhead above child clip components. The original
     // playhead/ruler and dock navigation remain in paint(); no MIDI state,
     // clip ownership, hit testing, or audio routing is changed here.
