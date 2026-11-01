@@ -1000,6 +1000,29 @@ bool runArrangementTests(){
             require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds-changed.fadeInSeconds)<.00001,
                     "redo fade");
             undoArrangement(false); // Restore the starting clip for the remaining tests.
+            // Independent fade curves must survive clip replacement and history.
+            {
+                auto curveClips=owner.audioEngine.getArrangementAudioClips(0);
+                require(!curveClips.empty(),"fade curve test clip exists");
+                beginArrangementEdit();
+                curveClips.front().fadeInCurve=1;
+                curveClips.front().fadeOutCurve=2;
+                require(owner.audioEngine.replaceArrangementAudioClips(0,curveClips),
+                        "apply independent fade curves");
+                finishArrangementEdit();
+                const auto applied=owner.audioEngine.getArrangementAudioClips(0).front();
+                require(applied.fadeInCurve==1 && applied.fadeOutCurve==2,
+                        "independent fade curves retained by audio engine");
+                undoArrangement(false);
+                const auto undone=owner.audioEngine.getArrangementAudioClips(0).front();
+                require(undone.fadeInCurve==c.fadeInCurve && undone.fadeOutCurve==c.fadeOutCurve,
+                        "undo independent fade curves");
+                undoArrangement(true);
+                const auto redone=owner.audioEngine.getArrangementAudioClips(0).front();
+                require(redone.fadeInCurve==1 && redone.fadeOutCurve==2,
+                        "redo independent fade curves");
+                undoArrangement(false);
+            }
             // Shift must scale only the fade movement, preserving Undo/Redo.
             beginArrangementEdit();
             require(handleAudioDown(fadeInPoint)&&audioDragMode==8,
