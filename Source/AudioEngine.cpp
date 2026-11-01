@@ -650,6 +650,11 @@ bool AudioEngine::isTrackClipReversed(int trackIndex) const noexcept
 {
     return isValidTrackIndex(trackIndex) && tracks[(size_t)trackIndex]->clipReverse.load();
 }
+void AudioEngine::setChannelInputGainDb(int t,float db) noexcept { if(isValidTrackIndex(t)) tracks[(size_t)t]->inputGainDb.store(juce::jlimit(-24.f,24.f,db)); }
+void AudioEngine::setChannelHighPassHz(int t,float hz) noexcept { if(isValidTrackIndex(t)) tracks[(size_t)t]->highPassHz.store(juce::jlimit(0.f,1000.f,hz)); }
+void AudioEngine::setChannelCompressor(int t,bool on,float threshold,float ratio) noexcept { if(isValidTrackIndex(t)){auto& v=*tracks[(size_t)t];v.compressorThresholdDb.store(juce::jlimit(-60.f,0.f,threshold));v.compressorRatio.store(juce::jlimit(1.f,20.f,ratio));v.compressorEnabled.store(on);}}
+void AudioEngine::setChannelGate(int t,bool on,float threshold) noexcept { if(isValidTrackIndex(t)){auto& v=*tracks[(size_t)t];v.gateThresholdDb.store(juce::jlimit(-90.f,0.f,threshold));v.gateEnabled.store(on);}}
+void AudioEngine::setChannelEq(int t,bool on,float low,float mid,float high) noexcept { if(isValidTrackIndex(t)){auto& v=*tracks[(size_t)t];v.eqLowDb.store(juce::jlimit(-18.f,18.f,low));v.eqMidDb.store(juce::jlimit(-18.f,18.f,mid));v.eqHighDb.store(juce::jlimit(-18.f,18.f,high));v.eqEnabled.store(on);}}
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
 float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
 void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
@@ -2132,6 +2137,34 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 trackBus.copyFrom(ch, 0, outputChannelData[ch], numSamples);
                 trackBus.addFrom(ch, 0, preInsertBaseline, ch, 0, numSamples, -1.0f);
                 juce::FloatVectorOperations::copy(outputChannelData[ch], preInsertBaseline.getReadPointer(ch), numSamples);
+            }
+            // Built-in channel strip: input -> high-pass -> three-band EQ -> gate -> compressor -> inserts.
+            const float input=juce::Decibels::decibelsToGain(track.inputGainDb.load());
+            const float hp=track.highPassHz.load(), low=juce::Decibels::decibelsToGain(track.eqLowDb.load());
+            const float mid=juce::Decibels::decibelsToGain(track.eqMidDb.load()), high=juce::Decibels::decibelsToGain(track.eqHighDb.load());
+            const bool eqOn=track.eqEnabled.load(), gateOn=track.gateEnabled.load(), compOn=track.compressorEnabled.load();
+            const float threshold=track.compressorThresholdDb.load(), ratio=track.compressorRatio.load();
+            const float gateThreshold=track.gateThresholdDb.load();
+            const float hpAlpha=hp>0.f?std::exp(-6.2831853f*hp/(float)rate):0.f;
+            const float lowAlpha=std::exp(-6.2831853f*250.f/(float)rate);
+            const float highAlpha=std::exp(-6.2831853f*4000.f/(float)rate);
+            for(int n=0;n<numSamples;++n){
+                float peak=0.f;
+                for(int ch=0;ch<insertChannels;++ch){
+                    float v=trackBus.getSample(ch,n)*input;
+                    if(hp>0.f){const float prev=track.channelHighPassState[ch];track.channelHighPassState[ch]=v*(1.f-hpAlpha)+prev*hpAlpha;v-=track.channelHighPassState[ch];}
+                    if(eqOn){const float lo=track.channelLowState[ch]=lowAlpha*track.channelLowState[ch]+(1.f-lowAlpha)*v;
+                        const float hiBase=track.channelHighState[ch]=highAlpha*track.channelHighState[ch]+(1.f-highAlpha)*v;
+                        v=lo*low+(hiBase-lo)*mid+(v-hiBase)*high;}
+                    trackBus.setSample(ch,n,v);peak=juce::jmax(peak,std::abs(v));
+                }
+                const float release=std::exp(-1.f/(.080f*(float)rate));
+                track.channelDynamicsEnvelope=juce::jmax(peak,track.channelDynamicsEnvelope*release);
+                const float levelDb=juce::Decibels::gainToDecibels(juce::jmax(1.e-9f,track.channelDynamicsEnvelope));
+                float gain=1.f;
+                if(gateOn&&levelDb<gateThreshold)gain=0.f;
+                if(compOn&&levelDb>threshold)gain*=juce::Decibels::decibelsToGain((threshold+(levelDb-threshold)/ratio)-levelDb);
+                for(int ch=0;ch<insertChannels;++ch)trackBus.setSample(ch,n,trackBus.getSample(ch,n)*gain);
             }
             for (int slot = 0; slot < LibertyPluginHost::effectSlotsPerTrack; ++slot)
             {
