@@ -921,6 +921,24 @@ bool runArrangementTests(){
                 "fade grip rejects clicks outside vertical boundary");
         }
         if(px>20.0 && fadeBox.getWidth()>60 && fadeBox.getHeight()>32){
+            // Exercise two almost overlapping handles through the actual hit tester.
+            auto closeClips=owner.audioEngine.getArrangementAudioClips(0);
+            if(!closeClips.empty()){
+                const auto originalCloseClip=closeClips.front();
+                closeClips.front().fadeInSeconds=closeClips.front().lengthSeconds*0.5;
+                closeClips.front().fadeOutSeconds=closeClips.front().lengthSeconds*0.5;
+                if(owner.audioEngine.replaceArrangementAudioClips(0,closeClips)){
+                    const auto closeBox=audioBounds(0,closeClips.front());
+                    const int midX=closeBox.getX()+closeBox.getWidth()/2;
+                    require(audioFadeHandleAt({midX,closeBox.getY()+19})==8,
+                            "overlapping fade upper grip");
+                    require(audioFadeHandleAt({midX,closeBox.getY()+29})==9,
+                            "overlapping fade lower grip");
+                    closeClips.front()=originalCloseClip;
+                    require(owner.audioEngine.replaceArrangementAudioClips(0,closeClips),
+                            "restore audio fade overlap test clip");
+                }
+            }
             const int dx=juce::jmax(2,(int)std::lround(.12*px));
             const juce::Point<int> fadeInPoint{
                 fadeBox.getX()+(int)std::lround(fadeBox.getWidth()*c.fadeInSeconds/c.lengthSeconds),fadeBox.getY()+24};
