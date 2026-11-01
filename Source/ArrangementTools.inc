@@ -502,8 +502,10 @@ void paintAudioFades(juce::Graphics& g){
             g.setColour(juce::Colour(0x2861c9f2));
             g.fillPath(fadeArea);
             // A faint boundary keeps the faded area legible on dark waveforms.
-            g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
-            g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
+            if(fadeArea.getBounds().getWidth()>=8.0f){
+                g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
+                g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
+            }
             g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
             g.drawLine(box.getX(),bottom,box.getX()+fi,top,4.0f);
             g.setColour(juce::Colour(0xffffd88c));
@@ -518,8 +520,10 @@ void paintAudioFades(juce::Graphics& g){
             g.setColour(juce::Colour(0x2861c9f2));
             g.fillPath(fadeArea);
             // A faint boundary keeps the faded area legible on dark waveforms.
-            g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
-            g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
+            if(fadeArea.getBounds().getWidth()>=8.0f){
+                g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
+                g.strokePath(fadeArea,juce::PathStrokeType(0.8f));
+            }
             g.setColour(juce::Colour(0xff0b1b29).withAlpha(.85f));
             g.drawLine(box.getRight()-fo,top,box.getRight(),bottom,4.0f);
             g.setColour(juce::Colour(0xffffd88c));
