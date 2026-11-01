@@ -408,6 +408,43 @@ bool showAudioCrossfadeMenu(juce::Point<int> p){
     });
     return true;
 }
+bool showAudioManualFadeMenu(juce::Point<int> p){
+    const int handle=audioFadeHandleAt(p);
+    if(handle!=8 && handle!=9)return false;
+    const int track=audioLaneAt(p);
+    const auto id=audioAt(p);
+    if(track<0 || id.isEmpty())return false;
+    const auto clips=owner.audioEngine.getArrangementAudioClips(track);
+    const auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==id;});
+    if(it==clips.end())return false;
+    const bool incoming=handle==8;
+    const int curve=incoming?it->fadeInCurve:it->fadeOutCurve;
+    juce::PopupMenu menu;
+    menu.addSectionHeader(incoming?juce::String::fromUTF8("COURBE DE FONDU D’ENTRÉE")
+                                  :juce::String::fromUTF8("COURBE DE FONDU DE SORTIE"));
+    menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,curve==0);
+    menu.addItem(2,juce::String::fromUTF8("Exponentielle"),true,curve==1);
+    menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,curve==2);
+    const auto screen=localPointToGlobal(p);
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
+                       [safe,track,id,incoming](int choice){
+        if(!safe || choice<1 || choice>3)return;
+        auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
+        auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
+        if(entry==current.end())return;
+        int& selected=incoming?entry->fadeInCurve:entry->fadeOutCurve;
+        if(selected==choice-1)return;
+        safe->beginArrangementEdit();
+        selected=choice-1;
+        if(safe->owner.audioEngine.replaceArrangementAudioClips(track,current)){
+            safe->operationMessage=juce::String::fromUTF8("Courbe de fondu audio modifiée");
+            safe->owner.repaint();safe->repaint();
+        }
+        safe->finishArrangementEdit();
+    });
+    return true;
+}
 void refreshAudio(int track){
     if(!owner.audioEngine.hasAudioFile(track)){
         owner.trackSourceFiles[(size_t)track]=juce::File{};owner.pendingAudioFileNames[(size_t)track].clear();
