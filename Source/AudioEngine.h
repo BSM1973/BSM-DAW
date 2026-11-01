@@ -177,6 +177,15 @@ public:
     void setChannelGate(int trackIndex, bool enabled, float thresholdDb) noexcept;
     void setChannelEq(int trackIndex, bool enabled, float lowDb, float midDb, float highDb) noexcept;
     float getChannelEqBandDb(int trackIndex, int band) const noexcept;
+    struct ChannelProcessingSettings
+    {
+        float inputGainDb = 0.0f, highPassHz = 0.0f;
+        bool compressorEnabled = false, gateEnabled = false, eqEnabled = false;
+        float compressorThresholdDb = -18.0f, compressorRatio = 4.0f, gateThresholdDb = -55.0f;
+        float eqLowDb = 0.0f, eqMidDb = 0.0f, eqHighDb = 0.0f;
+    };
+    ChannelProcessingSettings getChannelProcessingSettings(int trackIndex) const noexcept;
+    void setChannelProcessingSettings(int trackIndex, const ChannelProcessingSettings& settings) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
