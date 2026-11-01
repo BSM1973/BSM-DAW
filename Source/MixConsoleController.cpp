@@ -38,6 +38,11 @@ private:
  void wire(Strip&s){auto*sp=&s;if(sp->kind==Strip::midi){s.fader->setEnabled(false);s.plugin->setEnabled(false);s.unload->setEnabled(false);return;}s.fader->onValueChange=[this,sp]{if(syncing)return;float g=dbToGain((float)sp->fader->getValue());if(sp->kind==Strip::audio)owner.audioEngine.setTrackGain(sp->lane,g);else if(sp->kind==Strip::instrument)owner.audioEngine.setInstrumentTrackGain(sp->lane,g);else owner.audioEngine.setMasterGain(g);repaint();};if(s.pan)s.pan->onValueChange=[this,sp]{if(syncing)return;float p=(float)sp->pan->getValue();if(sp->kind==Strip::audio)owner.audioEngine.setTrackPan(sp->lane,p);else owner.audioEngine.setInstrumentTrackPan(sp->lane,p);repaint();};if(s.mute)s.mute->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackMuted(sp->lane,!owner.audioEngine.isTrackMuted(sp->lane));else owner.audioEngine.setInstrumentTrackMuted(sp->lane,!owner.audioEngine.isInstrumentTrackMuted(sp->lane));sync();repaint();};if(s.solo)s.solo->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackSolo(sp->lane,!owner.audioEngine.isTrackSolo(sp->lane));else owner.audioEngine.setInstrumentTrackSolo(sp->lane,!owner.audioEngine.isInstrumentTrackSolo(sp->lane));sync();repaint();};if(s.channel)s.channel->onClick=[this,sp]{
     juce::PopupMenu menu;
     menu.addSectionHeader("INPUT");
+    juce::PopupMenu gainMenu,highPassMenu;
+    for(int db=-18;db<=18;db+=3)gainMenu.addItem(100+db+18,juce::String(db>0?"+":"")+juce::String(db)+" dB");
+    for(int hz : {0,30,50,80,100,120,160,200,300,500})highPassMenu.addItem(200+hz,hz==0?"Désactivé":juce::String(hz)+" Hz");
+    menu.addSubMenu("Gain d'entrée",gainMenu);
+    menu.addSubMenu("Fréquence coupe-bas",highPassMenu);
     menu.addItem(1,"Gain +6 dB");
     menu.addItem(2,"Gain neutre");
     menu.addItem(3,"Coupe-bas 80 Hz");
@@ -56,6 +61,8 @@ private:
     menu.addItem(12,"EQ désactivé");
     const int track=sp->lane;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(sp->channel.get()),[this,track](int choice){
+        if(choice>=100&&choice<=136){owner.audioEngine.setChannelInputGainDb(track,(float)(choice-118));repaint();return;}
+        if(choice>=200&&choice<=700){owner.audioEngine.setChannelHighPassHz(track,(float)(choice-200));repaint();return;}
         switch(choice){
         case 1:owner.audioEngine.setChannelInputGainDb(track,6.f);break;
         case 2:owner.audioEngine.setChannelInputGainDb(track,0.f);break;
