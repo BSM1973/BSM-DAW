@@ -1363,6 +1363,8 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("muted",clip.muted);
     element.setAttribute("fadeInSeconds",clip.fadeInSeconds);
     element.setAttribute("fadeOutSeconds",clip.fadeOutSeconds);
+    element.setAttribute("fadeInCurve",clip.fadeInCurve);
+    element.setAttribute("fadeOutCurve",clip.fadeOutCurve);
     element.setAttribute("crossfadeCurve",clip.crossfadeCurve);
     element.setAttribute("crossfadeDurationSeconds",clip.crossfadeDurationSeconds);
     element.setAttribute("offsetSeconds",clip.offsetSeconds);
@@ -1389,6 +1391,8 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.muted=element.getBoolAttribute("muted",false);
     clip.fadeInSeconds=element.getDoubleAttribute("fadeInSeconds",0.0);
     clip.fadeOutSeconds=element.getDoubleAttribute("fadeOutSeconds",0.0);
+    clip.fadeInCurve=juce::jlimit(0,2,element.getIntAttribute("fadeInCurve",0));
+    clip.fadeOutCurve=juce::jlimit(0,2,element.getIntAttribute("fadeOutCurve",0));
     clip.crossfadeCurve=element.getIntAttribute("crossfadeCurve",0);
     clip.crossfadeDurationSeconds=element.getDoubleAttribute("crossfadeDurationSeconds",0.0);
     clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
