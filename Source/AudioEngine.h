@@ -256,6 +256,9 @@ public:
         std::shared_ptr<juce::AudioBuffer<float>> spectralCache;
         double fadeInSeconds = 0.0;
         double fadeOutSeconds = 0.0;
+        // Manual fade gain laws: 0=linear, 1=exponential, 2=smooth S.
+        int fadeInCurve = 0;
+        int fadeOutCurve = 0;
         // Persistent preference for the next automatic overlap to the left.
         // 0=linear, 1=equal-power, 2=smooth S.
         int crossfadeCurve = 0;
