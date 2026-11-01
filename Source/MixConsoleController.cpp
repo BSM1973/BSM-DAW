@@ -49,6 +49,20 @@ private:
     menu.addItem(4,"Coupe-bas désactivé");
     menu.addSeparator();
     menu.addSectionHeader("DYNAMIQUE");
+    juce::PopupMenu compressorMenu,gateMenu,eqMenu;
+    for(int threshold : {-36,-30,-24,-18,-12,-6})
+        for(int ratio : {2,4,8})
+            compressorMenu.addItem(1000+(threshold+36)*10+ratio,juce::String(threshold)+" dB / "+juce::String(ratio)+":1");
+    for(int threshold : {-80,-70,-60,-50,-40,-30})
+        gateMenu.addItem(2000+threshold+80,juce::String(threshold)+" dB");
+    for(int db : {-12,-9,-6,-3,0,3,6,9,12}){
+        eqMenu.addItem(3000+db+12,"Graves "+juce::String(db>0?"+":"")+juce::String(db)+" dB");
+        eqMenu.addItem(3100+db+12,"Médiums "+juce::String(db>0?"+":"")+juce::String(db)+" dB");
+        eqMenu.addItem(3200+db+12,"Aigus "+juce::String(db>0?"+":"")+juce::String(db)+" dB");
+    }
+    menu.addSubMenu("Compresseur : seuil / ratio",compressorMenu);
+    menu.addSubMenu("Gate : seuil",gateMenu);
+    menu.addSubMenu("EQ : bandes",eqMenu);
     menu.addItem(5,"Compresseur voix");
     menu.addItem(6,"Compresseur batterie");
     menu.addItem(7,"Compresseur désactivé");
@@ -61,6 +75,11 @@ private:
     menu.addItem(12,"EQ désactivé");
     const int track=sp->lane;
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(sp->channel.get()),[this,track](int choice){
+        if(choice>=1000&&choice<1400){const int code=choice-1000;const int ratio=code%10;const int threshold=code/10-36;owner.audioEngine.setChannelCompressor(track,true,(float)threshold,(float)ratio);repaint();return;}
+        if(choice>=2000&&choice<=2050){owner.audioEngine.setChannelGate(track,true,(float)(choice-2080));repaint();return;}
+        if(choice>=3000&&choice<=3030){owner.audioEngine.setChannelEq(track,true,(float)(choice-3012),0.f,0.f);repaint();return;}
+        if(choice>=3100&&choice<=3130){owner.audioEngine.setChannelEq(track,true,0.f,(float)(choice-3112),0.f);repaint();return;}
+        if(choice>=3200&&choice<=3230){owner.audioEngine.setChannelEq(track,true,0.f,0.f,(float)(choice-3212));repaint();return;}
         if(choice>=100&&choice<=136){owner.audioEngine.setChannelInputGainDb(track,(float)(choice-118));repaint();return;}
         if(choice>=200&&choice<=700){owner.audioEngine.setChannelHighPassHz(track,(float)(choice-200));repaint();return;}
         switch(choice){
