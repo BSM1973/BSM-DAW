@@ -17,6 +17,8 @@ bool AudioEngine::validAudioClip(const AudioClipMetadata& c)
        || !std::isfinite(c.pitchSemitones) || std::abs(c.pitchSemitones)>48
        || !std::isfinite(c.fadeInSeconds) || c.fadeInSeconds<0
        || !std::isfinite(c.fadeOutSeconds) || c.fadeOutSeconds<0
+       || c.fadeInCurve<0 || c.fadeInCurve>2
+       || c.fadeOutCurve<0 || c.fadeOutCurve>2
        || c.crossfadeCurve<0 || c.crossfadeCurve>2
        || !std::isfinite(c.crossfadeDurationSeconds) || c.crossfadeDurationSeconds<0
        || c.crossfadeDurationSeconds>86400.0
