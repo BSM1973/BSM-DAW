@@ -176,6 +176,7 @@ public:
     void setChannelCompressor(int trackIndex, bool enabled, float thresholdDb, float ratio) noexcept;
     void setChannelGate(int trackIndex, bool enabled, float thresholdDb) noexcept;
     void setChannelEq(int trackIndex, bool enabled, float lowDb, float midDb, float highDb) noexcept;
+    float getChannelEqBandDb(int trackIndex, int band) const noexcept;
     float getTrackGain(int trackIndex) const noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
