@@ -21,12 +21,13 @@ std::map<MainComponent*, std::unique_ptr<PageModeCoordinator>> coordinators;
 class ArrangementLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
+ explicit ArrangementLookAndFeel(bool redAccent = false) : red(redAccent) {}
  void drawButtonBackground(juce::Graphics& g, juce::Button& b,
                            const juce::Colour&, bool hover, bool pressed) override
  {
      auto box = b.getLocalBounds().toFloat().reduced(0.7f);
      const bool selected = b.getToggleState();
-     const auto cyan = juce::Colour(0xff58d1ed);
+     const auto cyan = red ? juce::Colour(0xffe35a5a) : juce::Colour(0xff58d1ed);
      juce::ColourGradient fill(selected ? juce::Colour(0xff305b78) : juce::Colour(0xff243a52),
                                box.getX(), box.getY(),
                                selected ? juce::Colour(0xff142b43) : juce::Colour(0xff111f32),
@@ -55,6 +56,8 @@ public:
      g.drawFittedText(b.getButtonText(), b.getLocalBounds().reduced(6, 2),
                       juce::Justification::centred, 1, 0.9f);
  }
+private:
+ bool red = false;
 };
 
 class PageModeCoordinator final : private juce::Timer
@@ -65,7 +68,8 @@ public:
         configureButton(arrangeButton, "ARRANGEMENT");
         arrangeButton.setLookAndFeel(&arrangementLook);
         arrangeButton.setTooltip("Afficher la page Arrangement");
-        configureButton(mixButton, "MIXCONSOLE");
+        configureButton(mixButton, "CONSOLE DE MIXAGE");
+        mixButton.setLookAndFeel(&mixerLook);
         configureButton(performButton, "PERFORMANCE");
 
         captureLegacyButtons();
@@ -103,6 +107,7 @@ public:
     {
         stopTimer();
         arrangeButton.setLookAndFeel(nullptr);
+        mixButton.setLookAndFeel(nullptr);
         arrangeButton.setVisible(false);
         mixButton.setVisible(false);
         performButton.setVisible(false);
@@ -162,6 +167,7 @@ private:
         const auto inactive = juce::Colour(0xff252a31);
         arrangeButton.setToggleState(arrange, juce::dontSendNotification);
         arrangeButton.setColour(juce::TextButton::buttonColourId, arrange ? active : inactive);
+        mixButton.setToggleState(mix, juce::dontSendNotification);
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
@@ -169,8 +175,8 @@ private:
         // Reserve the next slot for the NAVIGATEUR toggle.
         const int navX = 205;
         arrangeButton.setBounds(navX, 4, 120, 25);
-        mixButton.setBounds(navX + 124, 4, 98, 25);
-        performButton.setBounds(navX + 226, 4, 92, 25);
+        mixButton.setBounds(navX + 124, 4, 152, 25);
+        performButton.setBounds(navX + 280, 4, 92, 25);
 
         hideEveryLegacyPageButton();
         arrangeButton.setVisible(true);
@@ -198,6 +204,7 @@ private:
 
     MainComponent& owner;
     ArrangementLookAndFeel arrangementLook;
+    ArrangementLookAndFeel mixerLook{true};
     juce::TextButton arrangeButton, mixButton, performButton;
     juce::TextButton* legacyArrange = nullptr;
     juce::TextButton* legacyMix = nullptr;
