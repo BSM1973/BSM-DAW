@@ -164,6 +164,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         t.clipOffset.store(primary->clipOffset.load());t.clipEnvelopeLength.store(primary->clipEnvelopeLength.load());
         t.clipTrimStart.store(primary->clipTrimStart.load());t.clipTrimEnd.store(primary->clipTrimEnd.load());
         t.clipFadeIn.store(primary->clipFadeIn.load());t.clipFadeOut.store(primary->clipFadeOut.load());
+        t.clipFadeInCurve.store(primary->clipFadeInCurve.load());t.clipFadeOutCurve.store(primary->clipFadeOutCurve.load());
         t.autoCrossfadeInStart.store(primary->autoCrossfadeInStart.load());
         t.autoCrossfadeInEnd.store(primary->autoCrossfadeInEnd.load());
         t.autoCrossfadeOutStart.store(primary->autoCrossfadeOutStart.load());
