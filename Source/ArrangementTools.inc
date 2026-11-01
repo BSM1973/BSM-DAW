@@ -499,8 +499,10 @@ void paintAudioFades(juce::Graphics& g){
             fadeArea.lineTo(box.getX()+fi,top);
             fadeArea.lineTo(box.getX(),bottom);
             fadeArea.closeSubPath();
-            g.setColour(juce::Colour(0x2861c9f2));
-            g.fillPath(fadeArea);
+            if(fadeArea.getBounds().getWidth()>=3.0f){
+                g.setColour(juce::Colour(0x2861c9f2));
+                g.fillPath(fadeArea);
+            }
             // A faint boundary keeps the faded area legible on dark waveforms.
             if(fadeArea.getBounds().getWidth()>=8.0f){
                 g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
@@ -519,8 +521,10 @@ void paintAudioFades(juce::Graphics& g){
             fadeArea.lineTo(box.getRight(),top);
             fadeArea.lineTo(box.getRight(),bottom);
             fadeArea.closeSubPath();
-            g.setColour(juce::Colour(0x2861c9f2));
-            g.fillPath(fadeArea);
+            if(fadeArea.getBounds().getWidth()>=3.0f){
+                g.setColour(juce::Colour(0x2861c9f2));
+                g.fillPath(fadeArea);
+            }
             // A faint boundary keeps the faded area legible on dark waveforms.
             if(fadeArea.getBounds().getWidth()>=8.0f){
                 g.setColour(juce::Colour(0xff61c9f2).withAlpha(0.32f));
