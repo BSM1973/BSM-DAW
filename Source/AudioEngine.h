@@ -347,6 +347,7 @@ private:
         std::atomic<bool> clipMuted { false };
         std::atomic<double> clipOffset { 0.0 }, clipEnvelopeLength { 0.0 };
         std::atomic<double> clipFadeIn { 0.0 }, clipFadeOut { 0.0 };
+        std::atomic<int> clipFadeInCurve { 0 }, clipFadeOutCurve { 0 };
         std::atomic<double> autoCrossfadeInStart { -1.0 }, autoCrossfadeInEnd { -1.0 };
         std::atomic<double> autoCrossfadeOutStart { -1.0 }, autoCrossfadeOutEnd { -1.0 };
         std::atomic<int> autoCrossfadeCurve { 0 }, crossfadeCurve { 0 };
