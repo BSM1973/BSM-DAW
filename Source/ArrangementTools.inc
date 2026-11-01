@@ -121,6 +121,13 @@ int audioFadeHandleAt(juce::Point<int> p) const {
         const float outDistance=outDx*outDx+outDy*outDy;
         const bool inHit=inDx<=12.0f && inDy<=12.0f;
         const bool outHit=outDx<=12.0f && outDy<=12.0f;
+        // In a tight overlap, prefer the visibly upper/lower handle.
+        // This also avoids equal-distance ambiguity at the shared midpoint.
+        if(close && inHit && outHit){
+            const float midY=(inY+outY)*0.5f;
+            if((float)p.y<midY)return 8;
+            if((float)p.y>midY)return 9;
+        }
         if(inHit && (!outHit || inDistance<=outDistance))return 8;
         if(outHit)return 9;
         return 0;
