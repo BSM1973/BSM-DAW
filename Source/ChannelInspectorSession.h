@@ -71,6 +71,14 @@ public:
         return transferSection(Settings{},variants[(size_t)activeVariant],section);
     }
 
+    // Recover only this processing section from the bank's opening snapshot.
+    // The current A/B selection, the other sections and the DSP are unchanged.
+    bool restoreOpeningSection(Section section) noexcept
+    {
+        return transferSection(openingVariants[(size_t)activeVariant],
+                               variants[(size_t)activeVariant],section);
+    }
+
     // Swap both drafts but retain the active bank selection. Nothing becomes
     // audible until apply(), and cancel() can restore the previous state.
     void swapVariants() noexcept

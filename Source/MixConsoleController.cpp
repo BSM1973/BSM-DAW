@@ -210,7 +210,7 @@ public:
         menu.addSeparator();
         menu.addItem(1103,"RESTAURER A");
         menu.addItem(1104,"RESTAURER B");
-        juce::PopupMenu sectionsAToB,sectionsBToA,resetSections;
+        juce::PopupMenu sectionsAToB,sectionsBToA,resetSections,restoreSections;
         const juce::String sectionNames[4]={
             "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
         };
@@ -219,12 +219,15 @@ public:
             sectionsAToB.addItem(1200+section,sectionNames[section]);
             sectionsBToA.addItem(1210+section,sectionNames[section]);
             resetSections.addItem(1300+section,sectionNames[section]);
+            restoreSections.addItem(1400+section,sectionNames[section]);
         }
         menu.addSeparator();
         menu.addSubMenu("COPIER UNE SECTION A VERS B",sectionsAToB);
         menu.addSubMenu("COPIER UNE SECTION B VERS A",sectionsBToA);
         menu.addSubMenu(juce::String::fromUTF8("RÉINITIALISER UNE SECTION"),
                         resetSections);
+        menu.addSubMenu(juce::String::fromUTF8("RESTAURER UNE SECTION"),
+                        restoreSections);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -263,6 +266,8 @@ public:
                     safe->copySectionForEditing(1,0,result-1210);
                 else if(result>=1300 && result<1304)
                     safe->resetSectionForEditing(result-1300);
+                else if(result>=1400 && result<1404)
+                    safe->restoreSectionForEditing(result-1400);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -374,6 +379,18 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void restoreSectionForEditing(int section)
+ {
+    // Save any unpublished knob edits before restoring a single section.
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3
+       || !session.restoreOpeningSection(static_cast<Section>(section)))
+        return;
+    writeControls(session.pending());
+    // Keep its preset label: the existing MODIFIÉ indicator compares values.
+    repaint();
+ }
  void resetSectionForEditing(int section)
  {
     session.setPending(readControls());

@@ -403,6 +403,79 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(resetEngine.getChannelProcessingSettings(1),neutral),
                 "reset section leaked to another track");
 
+        // Restore a single section to the values captured when CANAL opens.
+        // Non-neutral opening values distinguish this from RESET TO NEUTRAL.
+        for(const auto section:sections)
+        {
+            for(int bank=0;bank<2;++bank)
+            {
+                AudioEngine sectionRestoreEngine;
+                LibertyChannelInspectorState::Session original(sectionRestoreEngine,0);
+                original.setPending(originalA);
+                original.switchVariant();
+                original.setPending(originalB);
+                original.switchVariant();
+                original.apply();
+                LibertyChannelInspectorState::Session editing(sectionRestoreEngine,0);
+                if(bank==1)editing.switchVariant();
+                const auto starting=bank==0?originalA:originalB;
+                const auto edited=bank==0?originalB:originalA;
+                editing.setPending(edited);
+                require(editing.restoreOpeningSection(section),
+                        "restore opening section rejected");
+                auto expected=edited;
+                switch(section)
+                {
+                    case Section::Input:
+                        expected.inputGainDb=starting.inputGainDb;
+                        expected.highPassHz=starting.highPassHz;
+                        break;
+                    case Section::Gate:
+                        expected.gateEnabled=starting.gateEnabled;
+                        expected.gateThresholdDb=starting.gateThresholdDb;
+                        break;
+                    case Section::Compressor:
+                        expected.compressorEnabled=starting.compressorEnabled;
+                        expected.compressorThresholdDb=starting.compressorThresholdDb;
+                        expected.compressorRatio=starting.compressorRatio;
+                        break;
+                    case Section::Equalizer:
+                        expected.eqEnabled=starting.eqEnabled;
+                        expected.eqLowDb=starting.eqLowDb;
+                        expected.eqMidDb=starting.eqMidDb;
+                        expected.eqHighDb=starting.eqHighDb;
+                        break;
+                }
+                require(equal(editing.pending(),expected),
+                        "opening section restore changed another section");
+                require(editing.variantIndex()==bank,
+                        "section restore changed active variant");
+                require(!editing.restoreOpeningSection(static_cast<Section>(9)),
+                        "invalid opening section restore accepted");
+                require(equal(editing.pending(),expected),
+                        "invalid opening section restore changed values");
+                require(equal(sectionRestoreEngine.getChannelProcessingSettings(0),originalA),
+                        "opening section restore modified live audio before APPLY");
+                editing.switchVariant();
+                const auto untouched=bank==0?originalB:originalA;
+                require(equal(editing.pending(),untouched),
+                        "opening section restore modified other A/B bank");
+                editing.switchVariant();
+                editing.apply();
+                require(equal(sectionRestoreEngine.getChannelProcessingSettings(0),expected),
+                        "opening section restore failed to APPLY");
+                LibertyChannelInspectorState::Session reopened(sectionRestoreEngine,0);
+                require(reopened.variantIndex()==bank
+                        && equal(reopened.pending(),expected),
+                        "opening section restore lost after reopening");
+                reopened.switchVariant();
+                require(equal(reopened.pending(),untouched),
+                        "opening section restore corrupted saved inactive bank");
+                require(equal(sectionRestoreEngine.getChannelProcessingSettings(1),neutral),
+                        "opening section restore changed a second track");
+            }
+        }
+
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
         LibertyChannelInspectorState::Session presetSession(presetEngine,0);
