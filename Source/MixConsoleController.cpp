@@ -3,6 +3,7 @@
 #undef private
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
+#include "MixConsoleLayout.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cmath>
@@ -24,7 +25,10 @@ struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;float 
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
- int activeModule=-1;std::array<std::unique_ptr<juce::TextButton>,4>moduleTabs;bool gateOn=false,eqOn=false;
+ std::array<bool,4> moduleExpanded{};std::array<std::unique_ptr<juce::TextButton>,4>moduleTabs;
+ std::unique_ptr<juce::TextButton> fxHeader;bool insertsExpanded=true;
+ int firstFxSlot=0;int preferredFaderHeight=250;
+ bool gateOn=false,eqOn=false;
  bool compOn=false;std::array<std::unique_ptr<juce::TextButton>,8>fx,fxUnload;juce::Rectangle<int>bounds;};
 class MixConsoleView final:public juce::Component,private juce::Timer{
 public:
@@ -32,60 +36,309 @@ public:
  ~MixConsoleView()override{stopTimer();scroll.removeListener(&scrollListener);verticalScroll.removeListener(&verticalListener);clear();}
  void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);layout();sync();updateMeters();repaint();}else{selected=nullptr;}}
  bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;rebuild();sync();repaint();}
- int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
+ int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
  void paint(juce::Graphics&g)override{g.fillAll(juce::Colour(0xff0b0f14));g.setColour(juce::Colour(0xff18212b));g.fillRect(0,0,getWidth(),54);g.setColour(juce::Colour(0xff344452));g.drawHorizontalLine(53,0.0f,(float)getWidth());g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(10.f));g.drawText(juce::String::fromUTF8("FADERS | PANORAMIQUE | MUET/SOLO | VU-MÈTRES | INSERTS | MASTER"),18,15,juce::jmax(1,getWidth()-36),20,juce::Justification::centredLeft);{juce::Graphics::ScopedSaveState clip(g);g.reduceClipRegion(0,topY,getWidth(),juce::jmax(1,getHeight()-topY-38));for(auto&s:strips)draw(g,*s);}}
  void resized()override{layout();}
- void mouseWheelMove(const juce::MouseEvent&,const juce::MouseWheelDetails&)override{}
- void mouseDown(const juce::MouseEvent&e)override{for(auto&s:strips)if(s->bounds.contains(e.getPosition())){if(s->kind==Strip::master){selected=nullptr;repaint();break;}selected=s.get();owner.selectedTrack=s->kind==Strip::audio?s->lane:(s->kind==Strip::midi?owner.getAudioTrackCount()+s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane);repaint();owner.repaint();break;}}
+ void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel)override{
+   for(auto& strip:strips){
+     if(!strip->bounds.contains(e.getPosition())||!strip->fxHeader||!strip->insertsExpanded)continue;
+     const auto g=getStripGeometry(*strip);
+     const auto y=e.getPosition().y-strip->bounds.getY();
+     if(g.visibleFx>=8||y<g.fxY||y>=g.fxY+g.visibleFx*g.fxStep)continue;
+     strip->firstFxSlot=juce::jlimit(0,8-g.visibleFx,strip->firstFxSlot+(wheel.deltaY<0?1:-1));
+     layout();repaint();return;
+   }
+ }
+ void mouseDown(const juce::MouseEvent&e)override{
+   for(auto& strip:strips){
+     if(!strip->bounds.contains(e.getPosition()))continue;
+     if(strip->kind!=Strip::master&&strip->kind!=Strip::midi){
+       const auto g=getStripGeometry(*strip);
+       const int dy=e.getPosition().y-strip->bounds.getY();
+       if(std::abs(dy-g.splitterY)<=6){
+         draggingHeight=strip.get();dragStartY=e.getPosition().y;
+         dragStartPreference=strip->preferredFaderHeight;
+         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+         return;
+       }
+     }
+     if(strip->kind==Strip::master){selected=nullptr;repaint();return;}
+     selected=strip.get();
+     owner.selectedTrack=strip->kind==Strip::audio?strip->lane:
+       (strip->kind==Strip::midi?owner.getAudioTrackCount()+strip->lane:
+       owner.getAudioTrackCount()+owner.getMidiTrackCount()+strip->lane);
+     repaint();owner.repaint();return;
+   }
+ }
+ void mouseDrag(const juce::MouseEvent&e)override{
+   if(!draggingHeight)return;
+   draggingHeight->preferredFaderHeight=juce::jlimit(100,360,
+       dragStartPreference+dragStartY-e.getPosition().y);
+   layout();repaint();
+ }
+ void mouseUp(const juce::MouseEvent&)override{
+   draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
+ }
+ void mouseMove(const juce::MouseEvent&e)override{
+   bool onHandle=false;
+   for(const auto& strip:strips){
+     if(!strip->bounds.contains(e.getPosition()))continue;
+     if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
+       onHandle=std::abs(e.getPosition().y-strip->bounds.getY()-
+                         getStripGeometry(*strip).splitterY)<=6;
+     break;
+   }
+   setMouseCursor(onHandle?juce::MouseCursor::UpDownResizeCursor:
+                         juce::MouseCursor::NormalCursor);
+ }
 private:
  struct ScrollListener:juce::ScrollBar::Listener{MixConsoleView*o=nullptr;bool vertical=false;void scrollBarMoved(juce::ScrollBar*,double v)override{if(o){if(vertical)o->verticalOffset=(int)std::round(v);else o->offset=(int)std::round(v);o->layout();o->repaint();}}}scrollListener,verticalListener;
- void clear(){selected=nullptr;for(auto&s:strips){if(s->fader)s->fader->setLookAndFeel(nullptr);if(s->pan)s->pan->setLookAndFeel(nullptr);}strips.clear();}
- std::unique_ptr<Strip> makeStrip(Strip::Kind k,int lane){auto s=std::make_unique<Strip>();s->kind=k;s->lane=lane;s->fader=std::make_unique<juce::Slider>();s->fader->setSliderStyle(juce::Slider::LinearVertical);s->fader->setRange(-60,6,.1);s->fader->setTextBoxStyle(juce::Slider::TextBoxBelow,false,62,20);s->fader->setNumDecimalPlacesToDisplay(1);s->fader->setMouseClickGrabsKeyboardFocus(false);s->fader->setTextValueSuffix(" dB");s->fader->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->fader);if(k==Strip::audio||k==Strip::instrument){if(k==Strip::audio){for(int tab=0;tab<4;++tab){auto&button=s->moduleTabs[(size_t)tab];button=std::make_unique<juce::TextButton>(tab==0?"EQ":tab==1?"GATE":tab==2?"COMP":"IN");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff263b4b));button->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffe6edf3));addAndMakeVisible(*button);}for(int section=0;section<3;++section){auto&button=s->modulePower[(size_t)section];button=std::make_unique<juce::TextButton>("OFF");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34404a));button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*button);}for(int band=0;band<3;++band){auto&knob=s->eqKnobs[(size_t)band];knob=std::make_unique<juce::Slider>();knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setRange(-12.0,12.0,0.5);knob->setValue(0.0,juce::dontSendNotification);knob->setDoubleClickReturnValue(true,0.0);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aigus")+" -12 à +12 dB");addAndMakeVisible(*knob);}s->gateThreshold=std::make_unique<juce::Slider>();s->gateThreshold->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->gateThreshold->setRange(-80.0,-20.0,1.0);s->gateThreshold->setValue(-55.0,juce::dontSendNotification);s->gateThreshold->setDoubleClickReturnValue(true,-55.0);s->gateThreshold->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->gateThreshold->setMouseClickGrabsKeyboardFocus(false);s->gateThreshold->setLookAndFeel(&lookAndFeel);s->gateThreshold->setTooltip("GATE : seuil en dB, déplacement pour activer");addAndMakeVisible(*s->gateThreshold);s->compThreshold=std::make_unique<juce::Slider>();s->compRatio=std::make_unique<juce::Slider>();for(auto*knob:{s->compThreshold.get(),s->compRatio.get()}){knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*knob);}s->compThreshold->setRange(-48.0,0.0,1.0);s->compThreshold->setValue(-18.0,juce::dontSendNotification);s->compThreshold->setDoubleClickReturnValue(true,-18.0);s->compThreshold->setTooltip("DYNAMIQUE : seuil du compresseur (dB)");s->compRatio->setRange(1.0,12.0,0.5);s->compRatio->setValue(4.0,juce::dontSendNotification);s->compRatio->setDoubleClickReturnValue(true,4.0);s->compRatio->setTooltip("DYNAMIQUE : ratio du compresseur");s->highPass=std::make_unique<juce::Slider>();s->highPass->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->highPass->setRange(0.0,500.0,1.0);s->highPass->setValue(0.0,juce::dontSendNotification);s->highPass->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->highPass->setDoubleClickReturnValue(true,0.0);s->highPass->setMouseClickGrabsKeyboardFocus(false);s->highPass->setLookAndFeel(&lookAndFeel);s->highPass->setTooltip("INPUT : coupe-bas de 0 (désactivé) à 500 Hz");addAndMakeVisible(*s->highPass);s->inputGain=std::make_unique<juce::Slider>();s->inputGain->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->inputGain->setRange(-24.0,24.0,0.5);s->inputGain->setValue(0.0,juce::dontSendNotification);s->inputGain->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->inputGain->setDoubleClickReturnValue(true,0.0);s->inputGain->setMouseClickGrabsKeyboardFocus(false);s->inputGain->setLookAndFeel(&lookAndFeel);s->inputGain->setTooltip("INPUT : gain d'entrée de -24 à +24 dB");addAndMakeVisible(*s->inputGain);s->channel=std::make_unique<juce::TextButton>("CANAL");s->channel->setMouseClickGrabsKeyboardFocus(false);s->channel->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff24465a));s->channel->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->channel);}s->pan=std::make_unique<juce::Slider>();s->pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->pan->setRange(-1,1,.01);s->pan->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->pan->setDoubleClickReturnValue(true,0.0);s->pan->setMouseClickGrabsKeyboardFocus(false);s->pan->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->pan);s->mute=std::make_unique<juce::TextButton>("M");s->solo=std::make_unique<juce::TextButton>("S");s->mute->setClickingTogglesState(false);s->solo->setClickingTogglesState(false);s->mute->setMouseClickGrabsKeyboardFocus(false);s->solo->setMouseClickGrabsKeyboardFocus(false);s->mute->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->mute->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa44141));s->solo->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa18432));s->mute->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->mute->setColour(juce::TextButton::textColourOnId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOnId,juce::Colours::white);addAndMakeVisible(*s->mute);addAndMakeVisible(*s->solo);}s->plugin=std::make_unique<juce::TextButton>();s->plugin->setMouseClickGrabsKeyboardFocus(false);s->plugin->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->plugin->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->unload=std::make_unique<juce::TextButton>("X");s->unload->setMouseClickGrabsKeyboardFocus(false);s->unload->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->unload->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->plugin);addAndMakeVisible(*s->unload);if(k==Strip::audio||k==Strip::instrument)for(int i=0;i<8;++i){s->fx[(size_t)i]=std::make_unique<juce::TextButton>("FX "+juce::String(i+1)+" · VIDE");s->fxUnload[(size_t)i]=std::make_unique<juce::TextButton>("X");s->fx[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fxUnload[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fx[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->fx[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->fxUnload[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->fxUnload[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->fx[(size_t)i]);addAndMakeVisible(*s->fxUnload[(size_t)i]);}wire(*s);return s;}
+ void clear(){selected=nullptr;draggingHeight=nullptr;for(auto&s:strips){if(s->fader)s->fader->setLookAndFeel(nullptr);if(s->pan)s->pan->setLookAndFeel(nullptr);}strips.clear();}
+ std::unique_ptr<Strip> makeStrip(Strip::Kind k,int lane){auto s=std::make_unique<Strip>();s->kind=k;s->lane=lane;s->fader=std::make_unique<juce::Slider>();s->fader->setSliderStyle(juce::Slider::LinearVertical);s->fader->setRange(-60,6,.1);s->fader->setTextBoxStyle(juce::Slider::TextBoxBelow,false,62,20);s->fader->setNumDecimalPlacesToDisplay(1);s->fader->setMouseClickGrabsKeyboardFocus(false);s->fader->setTextValueSuffix(" dB");s->fader->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->fader);if(k==Strip::audio||k==Strip::instrument){
+ s->fxHeader=std::make_unique<juce::TextButton>("INSERTS");
+ s->fxHeader->setMouseClickGrabsKeyboardFocus(false);
+ s->fxHeader->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff203b50));
+ s->fxHeader->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffe6edf3));
+ addAndMakeVisible(*s->fxHeader);
+ if(k==Strip::audio){for(int tab=0;tab<4;++tab){auto&button=s->moduleTabs[(size_t)tab];button=std::make_unique<juce::TextButton>(tab==0?"EQ":tab==1?"GATE":tab==2?"COMP":"INPUT");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff263b4b));button->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffe6edf3));addAndMakeVisible(*button);}for(int section=0;section<3;++section){auto&button=s->modulePower[(size_t)section];button=std::make_unique<juce::TextButton>("OFF");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34404a));button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*button);}for(int band=0;band<3;++band){auto&knob=s->eqKnobs[(size_t)band];knob=std::make_unique<juce::Slider>();knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setRange(-12.0,12.0,0.5);knob->setValue(0.0,juce::dontSendNotification);knob->setDoubleClickReturnValue(true,0.0);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aigus")+" -12 à +12 dB");addAndMakeVisible(*knob);}s->gateThreshold=std::make_unique<juce::Slider>();s->gateThreshold->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->gateThreshold->setRange(-80.0,-20.0,1.0);s->gateThreshold->setValue(-55.0,juce::dontSendNotification);s->gateThreshold->setDoubleClickReturnValue(true,-55.0);s->gateThreshold->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->gateThreshold->setMouseClickGrabsKeyboardFocus(false);s->gateThreshold->setLookAndFeel(&lookAndFeel);s->gateThreshold->setTooltip("GATE : seuil en dB, déplacement pour activer");addAndMakeVisible(*s->gateThreshold);s->compThreshold=std::make_unique<juce::Slider>();s->compRatio=std::make_unique<juce::Slider>();for(auto*knob:{s->compThreshold.get(),s->compRatio.get()}){knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*knob);}s->compThreshold->setRange(-48.0,0.0,1.0);s->compThreshold->setValue(-18.0,juce::dontSendNotification);s->compThreshold->setDoubleClickReturnValue(true,-18.0);s->compThreshold->setTooltip("DYNAMIQUE : seuil du compresseur (dB)");s->compRatio->setRange(1.0,12.0,0.5);s->compRatio->setValue(4.0,juce::dontSendNotification);s->compRatio->setDoubleClickReturnValue(true,4.0);s->compRatio->setTooltip("DYNAMIQUE : ratio du compresseur");s->highPass=std::make_unique<juce::Slider>();s->highPass->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->highPass->setRange(0.0,500.0,1.0);s->highPass->setValue(0.0,juce::dontSendNotification);s->highPass->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->highPass->setDoubleClickReturnValue(true,0.0);s->highPass->setMouseClickGrabsKeyboardFocus(false);s->highPass->setLookAndFeel(&lookAndFeel);s->highPass->setTooltip("INPUT : coupe-bas de 0 (désactivé) à 500 Hz");addAndMakeVisible(*s->highPass);s->inputGain=std::make_unique<juce::Slider>();s->inputGain->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->inputGain->setRange(-24.0,24.0,0.5);s->inputGain->setValue(0.0,juce::dontSendNotification);s->inputGain->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->inputGain->setDoubleClickReturnValue(true,0.0);s->inputGain->setMouseClickGrabsKeyboardFocus(false);s->inputGain->setLookAndFeel(&lookAndFeel);s->inputGain->setTooltip("INPUT : gain d'entrée de -24 à +24 dB");addAndMakeVisible(*s->inputGain);s->channel=std::make_unique<juce::TextButton>("CANAL");s->channel->setMouseClickGrabsKeyboardFocus(false);s->channel->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff24465a));s->channel->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->channel);}s->pan=std::make_unique<juce::Slider>();s->pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->pan->setRange(-1,1,.01);s->pan->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->pan->setDoubleClickReturnValue(true,0.0);s->pan->setMouseClickGrabsKeyboardFocus(false);s->pan->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->pan);s->mute=std::make_unique<juce::TextButton>("M");s->solo=std::make_unique<juce::TextButton>("S");s->mute->setClickingTogglesState(false);s->solo->setClickingTogglesState(false);s->mute->setMouseClickGrabsKeyboardFocus(false);s->solo->setMouseClickGrabsKeyboardFocus(false);s->mute->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->mute->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa44141));s->solo->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa18432));s->mute->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->mute->setColour(juce::TextButton::textColourOnId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOnId,juce::Colours::white);addAndMakeVisible(*s->mute);addAndMakeVisible(*s->solo);}s->plugin=std::make_unique<juce::TextButton>();s->plugin->setMouseClickGrabsKeyboardFocus(false);s->plugin->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->plugin->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->unload=std::make_unique<juce::TextButton>("X");s->unload->setMouseClickGrabsKeyboardFocus(false);s->unload->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->unload->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->plugin);addAndMakeVisible(*s->unload);if(k==Strip::audio||k==Strip::instrument)for(int i=0;i<8;++i){s->fx[(size_t)i]=std::make_unique<juce::TextButton>("FX "+juce::String(i+1)+" · VIDE");s->fxUnload[(size_t)i]=std::make_unique<juce::TextButton>("X");s->fx[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fxUnload[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fx[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->fx[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->fxUnload[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->fxUnload[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->fx[(size_t)i]);addAndMakeVisible(*s->fxUnload[(size_t)i]);}wire(*s);return s;}
  void configureValuePopup(Strip& s){auto configure=[](juce::Slider* slider,const juce::String&suffix){if(!slider)return;slider->setPopupDisplayEnabled(true,true,nullptr,1500);slider->setTextValueSuffix(suffix);slider->setNumDecimalPlacesToDisplay(1);};configure(s.inputGain.get()," dB");configure(s.highPass.get()," Hz");configure(s.compThreshold.get()," dB");configure(s.compRatio.get()," :1");configure(s.gateThreshold.get()," dB");for(auto&knob:s.eqKnobs)configure(knob.get()," dB");}
  void refreshPower(Strip& s){if(s.kind!=Strip::audio)return;const bool states[3]={s.eqOn,s.gateOn,s.compOn};for(int i=0;i<3;++i){auto&button=s.modulePower[(size_t)i];if(!button)continue;button->setButtonText(states[i]?"ON":"OFF");button->setColour(juce::TextButton::buttonColourId,states[i]?juce::Colour(0xff246b63):juce::Colour(0xff34404a));}}
- void wire(Strip&s){auto*sp=&s;for(int tab=0;tab<4;++tab)if(s.moduleTabs[(size_t)tab])s.moduleTabs[(size_t)tab]->onClick=[this,sp,tab]{sp->activeModule=sp->activeModule==tab?-1:tab;layout();repaint();};if(sp->kind==Strip::midi){s.fader->setEnabled(false);s.plugin->setEnabled(false);s.unload->setEnabled(false);return;}s.fader->onValueChange=[this,sp]{if(syncing)return;float g=dbToGain((float)sp->fader->getValue());if(sp->kind==Strip::audio)owner.audioEngine.setTrackGain(sp->lane,g);else if(sp->kind==Strip::instrument)owner.audioEngine.setInstrumentTrackGain(sp->lane,g);else owner.audioEngine.setMasterGain(g);repaint();};if(s.pan)s.pan->onValueChange=[this,sp]{if(syncing)return;float p=(float)sp->pan->getValue();if(sp->kind==Strip::audio)owner.audioEngine.setTrackPan(sp->lane,p);else owner.audioEngine.setInstrumentTrackPan(sp->lane,p);repaint();};if(s.mute)s.mute->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackMuted(sp->lane,!owner.audioEngine.isTrackMuted(sp->lane));else owner.audioEngine.setInstrumentTrackMuted(sp->lane,!owner.audioEngine.isInstrumentTrackMuted(sp->lane));sync();repaint();};if(s.solo)s.solo->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackSolo(sp->lane,!owner.audioEngine.isTrackSolo(sp->lane));else owner.audioEngine.setInstrumentTrackSolo(sp->lane,!owner.audioEngine.isInstrumentTrackSolo(sp->lane));sync();repaint();};for(int section=0;section<3;++section)if(s.modulePower[(size_t)section])s.modulePower[(size_t)section]->onClick=[this,sp,section]{bool on=false;if(section==0){sp->eqOn=!sp->eqOn;on=sp->eqOn;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);owner.audioEngine.setChannelEq(sp->lane,on,gains[0],gains[1],gains[2]);}else if(section==1){sp->gateOn=!sp->gateOn;on=sp->gateOn;owner.audioEngine.setChannelGate(sp->lane,on,(float)sp->gateThreshold->getValue());}else{sp->compOn=!sp->compOn;on=sp->compOn;owner.audioEngine.setChannelCompressor(sp->lane,on,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());}auto&button=*sp->modulePower[(size_t)section];button.setButtonText(on?"ON":"OFF");button.setColour(juce::TextButton::buttonColourId,on?juce::Colour(0xff246b63):juce::Colour(0xff34404a));repaint();};for(int band=0;band<3;++band)if(s.eqKnobs[(size_t)band])s.eqKnobs[(size_t)band]->onValueChange=[this,sp,band]{if(syncing)return;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);gains[band]=(float)sp->eqKnobs[(size_t)band]->getValue();sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(sp->lane,true,gains[0],gains[1],gains[2]);repaint();};if(s.gateThreshold)s.gateThreshold->onValueChange=[this,sp]{if(syncing)return;sp->gateOn=true;refreshPower(*sp);owner.audioEngine.setChannelGate(sp->lane,true,(float)sp->gateThreshold->getValue());repaint();};if(s.compThreshold)s.compThreshold->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.compRatio)s.compRatio->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.highPass)s.highPass->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelHighPassHz(sp->lane,(float)sp->highPass->getValue());repaint();};if(s.inputGain)s.inputGain->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelInputGainDb(sp->lane,(float)sp->inputGain->getValue());repaint();};if(s.channel)s.channel->onClick=[this,sp]{sp->activeModule=3;layout();repaint();juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"LIBERTY  |  CANAL AUDIO","Les réglages INPUT, GATE, COMP et EQ sont accessibles avec les quatre onglets de la tranche. Sélectionnez un onglet pour afficher et modifier ses potentiomètres.","FERMER");};s.plugin->onClick=[sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument&&h.hasInstrumentForTrack(sp->lane))h.showInstrumentEditorForTrack(sp->lane);};s.unload->onClick=[this,sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument){h.unloadInstrumentForTrack(sp->lane);owner.notifyInstrumentChanged();}sync();repaint();};if(sp->kind==Strip::audio||sp->kind==Strip::instrument)for(int i=0;i<8;++i){sp->fx[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();const int oneKey=sp->kind==Strip::audio?sp->lane*8+i:100000+sp->lane*8+i;if(k.hasEffect(oneKey))k.showEditor(oneKey);else if(sp->kind==Strip::audio)h.showEditorForTrackSlot(sp->lane,i);else h.showEffectEditorForInstrumentTrackSlot(sp->lane,i);};sp->fxUnload[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();if(sp->kind==Strip::audio){h.unloadEffectForTrackSlot(sp->lane,i);k.clearEffect(sp->lane*8+i);}else{h.unloadEffectForInstrumentTrackSlot(sp->lane,i);k.clearEffect(100000+sp->lane*8+i);}sync();repaint();};}}
+ void wire(Strip&s){auto*sp=&s;for(int tab=0;tab<4;++tab)if(s.moduleTabs[(size_t)tab])
+ s.moduleTabs[(size_t)tab]->onClick=[this,sp,tab]{
+     sp->moduleExpanded[(size_t)tab]=!sp->moduleExpanded[(size_t)tab];
+     layout();repaint();
+ };
+ if(s.fxHeader)s.fxHeader->onClick=[this,sp]{
+     sp->insertsExpanded=!sp->insertsExpanded;
+     sp->firstFxSlot=0;
+     layout();repaint();
+ };if(sp->kind==Strip::midi){s.fader->setEnabled(false);s.plugin->setEnabled(false);s.unload->setEnabled(false);return;}s.fader->onValueChange=[this,sp]{if(syncing)return;float g=dbToGain((float)sp->fader->getValue());if(sp->kind==Strip::audio)owner.audioEngine.setTrackGain(sp->lane,g);else if(sp->kind==Strip::instrument)owner.audioEngine.setInstrumentTrackGain(sp->lane,g);else owner.audioEngine.setMasterGain(g);repaint();};if(s.pan)s.pan->onValueChange=[this,sp]{if(syncing)return;float p=(float)sp->pan->getValue();if(sp->kind==Strip::audio)owner.audioEngine.setTrackPan(sp->lane,p);else owner.audioEngine.setInstrumentTrackPan(sp->lane,p);repaint();};if(s.mute)s.mute->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackMuted(sp->lane,!owner.audioEngine.isTrackMuted(sp->lane));else owner.audioEngine.setInstrumentTrackMuted(sp->lane,!owner.audioEngine.isInstrumentTrackMuted(sp->lane));sync();repaint();};if(s.solo)s.solo->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackSolo(sp->lane,!owner.audioEngine.isTrackSolo(sp->lane));else owner.audioEngine.setInstrumentTrackSolo(sp->lane,!owner.audioEngine.isInstrumentTrackSolo(sp->lane));sync();repaint();};for(int section=0;section<3;++section)if(s.modulePower[(size_t)section])s.modulePower[(size_t)section]->onClick=[this,sp,section]{bool on=false;if(section==0){sp->eqOn=!sp->eqOn;on=sp->eqOn;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);owner.audioEngine.setChannelEq(sp->lane,on,gains[0],gains[1],gains[2]);}else if(section==1){sp->gateOn=!sp->gateOn;on=sp->gateOn;owner.audioEngine.setChannelGate(sp->lane,on,(float)sp->gateThreshold->getValue());}else{sp->compOn=!sp->compOn;on=sp->compOn;owner.audioEngine.setChannelCompressor(sp->lane,on,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());}auto&button=*sp->modulePower[(size_t)section];button.setButtonText(on?"ON":"OFF");button.setColour(juce::TextButton::buttonColourId,on?juce::Colour(0xff246b63):juce::Colour(0xff34404a));repaint();};for(int band=0;band<3;++band)if(s.eqKnobs[(size_t)band])s.eqKnobs[(size_t)band]->onValueChange=[this,sp,band]{if(syncing)return;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);gains[band]=(float)sp->eqKnobs[(size_t)band]->getValue();sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(sp->lane,true,gains[0],gains[1],gains[2]);repaint();};if(s.gateThreshold)s.gateThreshold->onValueChange=[this,sp]{if(syncing)return;sp->gateOn=true;refreshPower(*sp);owner.audioEngine.setChannelGate(sp->lane,true,(float)sp->gateThreshold->getValue());repaint();};if(s.compThreshold)s.compThreshold->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.compRatio)s.compRatio->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.highPass)s.highPass->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelHighPassHz(sp->lane,(float)sp->highPass->getValue());repaint();};if(s.inputGain)s.inputGain->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelInputGainDb(sp->lane,(float)sp->inputGain->getValue());repaint();};if(s.channel)s.channel->onClick=[this,sp]{
+ sp->moduleExpanded[3]=true;layout();repaint();
+ juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+ "LIBERTY  |  CANAL AUDIO",
+ "Les sections INPUT, EQ, GATE et COMP peuvent rester ouvertes simultanément. "
+ "Glissez la séparation au-dessus du panoramique pour ajuster la hauteur des faders.",
+ "FERMER");
+ };s.plugin->onClick=[sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument&&h.hasInstrumentForTrack(sp->lane))h.showInstrumentEditorForTrack(sp->lane);};s.unload->onClick=[this,sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument){h.unloadInstrumentForTrack(sp->lane);owner.notifyInstrumentChanged();}sync();repaint();};if(sp->kind==Strip::audio||sp->kind==Strip::instrument)for(int i=0;i<8;++i){sp->fx[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();const int oneKey=sp->kind==Strip::audio?sp->lane*8+i:100000+sp->lane*8+i;if(k.hasEffect(oneKey))k.showEditor(oneKey);else if(sp->kind==Strip::audio)h.showEditorForTrackSlot(sp->lane,i);else h.showEffectEditorForInstrumentTrackSlot(sp->lane,i);};sp->fxUnload[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();if(sp->kind==Strip::audio){h.unloadEffectForTrackSlot(sp->lane,i);k.clearEffect(sp->lane*8+i);}else{h.unloadEffectForInstrumentTrackSlot(sp->lane,i);k.clearEffect(100000+sp->lane*8+i);}sync();repaint();};}}
  void rebuild(){const int audio=owner.getAudioTrackCount(),midi=owner.getMidiTrackCount(),instrument=owner.getInstrumentTrackCount();const int need=audio+midi+instrument+1;bool matches=need==(int)strips.size();if(matches){int p=0;for(int i=0;i<audio&&matches;++i,++p)matches=strips[(size_t)p]->kind==Strip::audio&&strips[(size_t)p]->lane==i;for(int i=0;i<midi&&matches;++i,++p)matches=strips[(size_t)p]->kind==Strip::midi&&strips[(size_t)p]->lane==i;for(int i=0;i<instrument&&matches;++i,++p)matches=strips[(size_t)p]->kind==Strip::instrument&&strips[(size_t)p]->lane==i;if(matches)matches=strips[(size_t)p]->kind==Strip::master;}const int arrangeTracks=audio+midi+instrument;if(matches)return;if(arrangeTracks<=0)owner.selectedTrack=-1;const auto selectedKind=selected?selected->kind:Strip::master;const int selectedLane=selected?selected->lane:-1;clear();for(int i=0;i<audio;++i){auto strip=makeStrip(Strip::audio,i);configureValuePopup(*strip);strips.push_back(std::move(strip));}for(int i=0;i<midi;++i)strips.push_back(makeStrip(Strip::midi,i));for(int i=0;i<instrument;++i)strips.push_back(makeStrip(Strip::instrument,i));strips.push_back(makeStrip(Strip::master,0));if(selectedLane>=0){for(auto&candidate:strips)if(candidate->kind==selectedKind&&candidate->lane==selectedLane){selected=candidate.get();owner.selectedTrack=selectedKind==Strip::audio?selectedLane:(selectedKind==Strip::midi?audio+selectedLane:audio+midi+selectedLane);break;}if(selected==nullptr)owner.selectedTrack=arrangeTracks>0?juce::jlimit(0,arrangeTracks-1,owner.selectedTrack):-1;}layout();sync();}
- struct StripGeometry{int fxY,step,panY,muteY,faderY;};
+ using StripGeometry=LibertyMixerLayout::Geometry;
  StripGeometry getStripGeometry(const Strip&s)const{
- const int h=s.bounds.getHeight();
- if(s.kind==Strip::master){const int fader=juce::jmin(270,juce::jmax(110,h-185));return {0,0,0,0,fader};}
- const int fxY=s.kind==Strip::instrument?122:196;
- const int step=juce::jlimit(14,24,(h-fxY-230)/8);
- const int panY=fxY+8*step+9;
- const int muteY=panY+38;
- const int faderY=muteY+36;
- return {fxY,step,panY,muteY,faderY};
+    const auto kind=s.kind==Strip::audio?LibertyMixerLayout::Kind::Audio:
+        s.kind==Strip::instrument?LibertyMixerLayout::Kind::Instrument:
+        s.kind==Strip::master?LibertyMixerLayout::Kind::Master:
+        LibertyMixerLayout::Kind::Midi;
+    return LibertyMixerLayout::calculate(s.bounds.getHeight(),kind,
+        s.moduleExpanded,s.insertsExpanded,s.preferredFaderHeight);
  }
- void layout(){const int viewportHeight=juce::jmax(1,getHeight()-topY-38);const int h=viewportHeight;verticalOffset=0;const juce::Rectangle<int> viewport(0,topY,juce::jmax(1,getWidth()),viewportHeight);const int total=(int)strips.size()*stripW,max=juce::jmax(0,total-getWidth()+24);offset=juce::jlimit(0,max,offset);int x=12-offset;for(auto&s:strips){s->bounds={x,topY-verticalOffset,stripW-4,h};bool vis=s->bounds.getRight()>0&&s->bounds.getX()<getWidth();if(s->fader)s->fader->setVisible(false);if(s->pan)s->pan->setVisible(false);if(s->mute)s->mute->setVisible(false);if(s->solo)s->solo->setVisible(false);if(s->plugin)s->plugin->setVisible(false);for(auto&tab:s->moduleTabs)if(tab)tab->setVisible(false);if(s->channel)s->channel->setVisible(false);if(s->inputGain)s->inputGain->setVisible(false);if(s->highPass)s->highPass->setVisible(false);if(s->compThreshold)s->compThreshold->setVisible(false);if(s->compRatio)s->compRatio->setVisible(false);if(s->gateThreshold)s->gateThreshold->setVisible(false);for(auto&knob:s->eqKnobs)if(knob)knob->setVisible(false);for(auto&button:s->modulePower)if(button)button->setVisible(false);if(s->unload)s->unload->setVisible(false);for(int i=0;i<8;++i){if(s->fx[(size_t)i])s->fx[(size_t)i]->setVisible(false);if(s->fxUnload[(size_t)i])s->fxUnload[(size_t)i]->setVisible(false);}if(vis){int cx=s->bounds.getCentreX();const auto geom=getStripGeometry(*s);if(s->kind==Strip::audio){for(int tab=0;tab<4;++tab){auto&button=s->moduleTabs[(size_t)tab];if(button){const auto b=juce::Rectangle<int>(s->bounds.getX()+7+tab*34,s->bounds.getY()+103,33,22);button->setBounds(b);button->setVisible(viewport.contains(b));button->setToggleState(s->activeModule==tab,juce::dontSendNotification);}}}const bool eq=s->activeModule==0,gate=s->activeModule==1,comp=s->activeModule==2,input=s->activeModule==3;auto put=[&](juce::Component*control,int xx,int yy,int ww,int hh,bool enabled){if(!control)return;const auto b=juce::Rectangle<int>(s->bounds.getX()+xx,s->bounds.getY()+yy,ww,hh);control->setBounds(b);control->setVisible(enabled&&viewport.contains(b));};put(s->channel.get(),9,150,49,20,input);put(s->inputGain.get(),69,148,29,28,input);put(s->highPass.get(),107,148,29,28,input);put(s->compThreshold.get(),31,144,36,32,comp);put(s->compRatio.get(),84,144,36,32,comp);put(s->gateThreshold.get(),57,144,34,32,gate);for(int section=0;section<3;++section)put(s->modulePower[(size_t)section].get(),111,127,26,16,(section==0&&eq)||(section==1&&gate)||(section==2&&comp));for(int band=0;band<3;++band)put(s->eqKnobs[(size_t)band].get(),15+band*44,145,32,30,eq);if(s->kind==Strip::instrument){const auto pluginBounds=juce::Rectangle<int>(s->bounds.getX()+8,s->bounds.getY()+82,s->bounds.getWidth()-36,24);const auto unloadBounds=juce::Rectangle<int>(s->bounds.getRight()-25,s->bounds.getY()+82,18,24);const bool instrumentFits=s->bounds.contains(pluginBounds)&&s->bounds.contains(unloadBounds)&&viewport.contains(pluginBounds)&&viewport.contains(unloadBounds);s->plugin->setVisible(vis&&instrumentFits);s->unload->setVisible(vis&&instrumentFits);if(instrumentFits){s->plugin->setBounds(pluginBounds);s->unload->setBounds(unloadBounds);}}if(s->kind==Strip::audio||s->kind==Strip::instrument){const int fy=s->bounds.getY()+geom.fxY;for(int i=0;i<8;++i){const auto fxBounds=juce::Rectangle<int>(s->bounds.getX()+8,fy+i*geom.step,s->bounds.getWidth()-36,geom.step-3);const auto fxUnloadBounds=juce::Rectangle<int>(s->bounds.getRight()-25,fy+i*geom.step,18,geom.step-3);const bool fxFits=s->bounds.contains(fxBounds)&&s->bounds.contains(fxUnloadBounds)&&viewport.contains(fxBounds)&&viewport.contains(fxUnloadBounds);s->fx[(size_t)i]->setVisible(vis&&fxFits);s->fxUnload[(size_t)i]->setVisible(vis&&fxFits);if(fxFits){s->fx[(size_t)i]->setBounds(fxBounds);s->fxUnload[(size_t)i]->setBounds(fxUnloadBounds);}}const auto panBounds=juce::Rectangle<int>(cx-21,s->bounds.getY()+geom.panY,42,34);const auto muteBounds=juce::Rectangle<int>(cx-42,s->bounds.getY()+geom.muteY,36,26);const auto soloBounds=juce::Rectangle<int>(cx+6,s->bounds.getY()+geom.muteY,36,26);const bool panFits=viewport.contains(panBounds),buttonsFit=viewport.contains(muteBounds)&&viewport.contains(soloBounds);s->pan->setVisible(vis&&panFits);s->mute->setVisible(vis&&buttonsFit);s->solo->setVisible(vis&&buttonsFit);if(panFits)s->pan->setBounds(panBounds);if(buttonsFit){s->mute->setBounds(muteBounds);s->solo->setBounds(soloBounds);}}const int faderTop=s->bounds.getY()+geom.faderY,faderBottom=s->bounds.getBottom()-12;const int faderHeight=faderBottom-faderTop;const bool faderApplicable=s->kind!=Strip::midi;s->fader->setVisible(vis&&faderApplicable&&faderHeight>=40&&viewport.contains(juce::Rectangle<int>(cx-29,faderTop,58,faderHeight)));if(faderApplicable&&faderHeight>=40)s->fader->setBounds(cx-29,faderTop,58,faderHeight);}x+=stripW;}scroll.setBounds(12,getHeight()-24,getWidth()-24,16);scroll.setRangeLimits(0,juce::jmax(1,max+getWidth()));scroll.setCurrentRange(offset,getWidth(),juce::dontSendNotification);scroll.setVisible(max>0);verticalScroll.setVisible(false);}
+ void layout(){
+    const int viewportHeight=juce::jmax(1,getHeight()-topY-38);
+    const juce::Rectangle<int> viewport(0,topY,juce::jmax(1,getWidth()),viewportHeight);
+    const int total=(int)strips.size()*stripW;
+    const int max=juce::jmax(0,total-getWidth()+24);
+    offset=juce::jlimit(0,max,offset);
+    int x=12-offset;
+    for(auto& s:strips){
+      s->bounds={x,topY,stripW-4,viewportHeight};
+      const bool vis=s->bounds.getRight()>0&&s->bounds.getX()<getWidth();
+      const auto g=getStripGeometry(*s);
+      const int bx=s->bounds.getX(),by=s->bounds.getY(),cx=s->bounds.getCentreX();
+      auto put=[&](juce::Component* control,int rx,int ry,int w,int h,bool enabled=true){
+          if(!control)return;
+          const juce::Rectangle<int> r(bx+rx,by+ry,w,h);
+          control->setBounds(r);
+          control->setVisible(vis&&enabled&&h>0&&s->bounds.contains(r)&&viewport.contains(r));
+      };
+      if(s->kind==Strip::audio){
+        for(int index=0;index<4;++index){
+          const auto& p=g.modules[(size_t)index];
+          auto& b=s->moduleTabs[(size_t)index];
+          if(b){
+            put(b.get(),7,p.headerY,s->bounds.getWidth()-45,20);
+            b->setToggleState(s->moduleExpanded[(size_t)index],juce::dontSendNotification);
+            b->setColour(juce::TextButton::buttonColourId,
+                s->moduleExpanded[(size_t)index]?juce::Colour(0xff315b6d):juce::Colour(0xff253544));
+          }
+          if(index<3)put(s->modulePower[(size_t)index].get(),s->bounds.getWidth()-34,
+              p.headerY+2,26,16,true);
+        }
+        const auto& e=g.modules[0],&gate=g.modules[1],&comp=g.modules[2],&input=g.modules[3];
+        auto knob=[&](juce::Slider* control,int rx,const LibertyMixerLayout::Panel& p,int w){
+          const int size=juce::jmin(29,p.bodyHeight-8);
+          put(control,rx,p.bodyY+4,w,size,p.bodyHeight>=25);
+        };
+        for(int band=0;band<3;++band)
+          knob(s->eqKnobs[(size_t)band].get(),16+band*44,e,29);
+        knob(s->gateThreshold.get(),57,gate,31);
+        knob(s->compThreshold.get(),28,comp,31);
+        knob(s->compRatio.get(),86,comp,31);
+        const int inputKnob=juce::jmin(29,input.bodyHeight-8);
+        put(s->channel.get(),8,input.bodyY+8,44,20,input.bodyHeight>=30);
+        put(s->inputGain.get(),65,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
+        put(s->highPass.get(),105,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
+      }else{
+        for(auto&b:s->moduleTabs)if(b)b->setVisible(false);
+        for(auto&b:s->modulePower)if(b)b->setVisible(false);
+        for(auto&b:s->eqKnobs)if(b)b->setVisible(false);
+        for(auto* k:{s->gateThreshold.get(),s->compThreshold.get(),s->compRatio.get(),
+                     s->inputGain.get(),s->highPass.get()})if(k)k->setVisible(false);
+        if(s->channel)s->channel->setVisible(false);
+      }
+      if(s->kind==Strip::audio||s->kind==Strip::instrument){
+        if(s->fxHeader){
+          put(s->fxHeader.get(),7,g.insertsHeaderY,s->bounds.getWidth()-14,21);
+          juce::String text="INSERTS";
+          if(s->insertsExpanded){
+            const int first=juce::jlimit(0,juce::jmax(0,8-g.visibleFx),s->firstFxSlot);
+            s->firstFxSlot=first;
+            text="INSERTS "+juce::String(first+1)+"-"+juce::String(first+g.visibleFx)+"/8";
+          }
+          s->fxHeader->setButtonText(text);
+          s->fxHeader->setToggleState(s->insertsExpanded,juce::dontSendNotification);
+        }
+        if(s->kind==Strip::instrument){
+          put(s->plugin.get(),8,82,s->bounds.getWidth()-36,24);
+          put(s->unload.get(),s->bounds.getWidth()-29,82,18,24);
+        }else{
+          if(s->plugin)s->plugin->setVisible(false);
+          if(s->unload)s->unload->setVisible(false);
+        }
+        for(int i=0;i<8;++i){
+          const int index=i-s->firstFxSlot;
+          const bool show=s->insertsExpanded&&index>=0&&index<g.visibleFx;
+          const int row=g.fxY+index*g.fxStep;
+          put(s->fx[(size_t)i].get(),8,row,s->bounds.getWidth()-36,
+             g.fxStep>0?g.fxStep-3:0,show);
+          put(s->fxUnload[(size_t)i].get(),s->bounds.getWidth()-29,row,18,
+             g.fxStep>0?g.fxStep-3:0,show);
+        }
+        put(s->pan.get(),cx-bx-21,g.panY,42,34);
+        put(s->mute.get(),cx-bx-42,g.muteY,36,26);
+        put(s->solo.get(),cx-bx+6,g.muteY,36,26);
+      }else{
+        if(s->fxHeader)s->fxHeader->setVisible(false);
+        if(s->plugin)s->plugin->setVisible(false);
+        if(s->unload)s->unload->setVisible(false);
+        if(s->pan)s->pan->setVisible(false);
+        if(s->mute)s->mute->setVisible(false);
+        if(s->solo)s->solo->setVisible(false);
+        for(auto&b:s->fx)if(b)b->setVisible(false);
+        for(auto&b:s->fxUnload)if(b)b->setVisible(false);
+      }
+      const bool showFader=s->kind!=Strip::midi&&g.faderHeight>=60;
+      put(s->fader.get(),cx-bx-29,g.faderY,58,g.faderHeight,showFader);
+      x+=stripW;
+    }
+    scroll.setBounds(12,getHeight()-24,juce::jmax(1,getWidth()-24),16);
+    scroll.setRangeLimits(0,juce::jmax(1,max+getWidth()));
+    scroll.setCurrentRange(offset,getWidth(),juce::dontSendNotification);
+    scroll.setVisible(max>0);
+    verticalScroll.setVisible(false);
+ }
  juce::String name(const Strip&s)const{if(s.kind==Strip::master)return "MASTER";const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const auto n=getLibertyTrackName(logical);if(n.isNotEmpty())return n;if(s.kind==Strip::audio)return "Audio "+juce::String(s.lane+1);if(s.kind==Strip::midi)return "MIDI "+juce::String(s.lane+1);return "Instrument "+juce::String(s.lane+1);}
- bool isSelected(const Strip&s)const{if(selected==&s)return true;if(s.kind==Strip::master)return false;const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);return owner.selectedTrack==logical;}void draw(juce::Graphics&g,Strip&s){if(s.bounds.isEmpty()||s.bounds.getRight()<0||s.bounds.getX()>getWidth())return;juce::Graphics::ScopedSaveState savedState(g);g.reduceClipRegion(s.bounds);g.setColour(isSelected(s)?juce::Colour(0xff223944):juce::Colour(0xff18212b));g.fillRoundedRectangle(s.bounds.toFloat(),6);if(s.kind!=Strip::master){const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const int colourId=getLibertyTrackColourId(logical);if(colourId!=0){const auto c=trackColour(colourId);g.setColour(c.withAlpha(0.18f));g.fillRoundedRectangle(s.bounds.toFloat(),6);}}const bool stripSelected=isSelected(s);const auto accent=s.kind==Strip::master?juce::Colour(0xffe4a85e):trackColour(getLibertyTrackColourId(s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane)));g.setColour(stripSelected?juce::Colour(0xff54d6dc):juce::Colour(0xff344452));g.drawRoundedRectangle(s.bounds.toFloat(),6,stripSelected?2.f:1.f);if(stripSelected){g.setColour(juce::Colour(0xff54d6dc));g.fillRect(s.bounds.getX(),s.bounds.getY()+8,3,juce::jmax(0,s.bounds.getHeight()-16));}g.setColour(accent);g.fillRoundedRectangle((float)s.bounds.getX(),(float)s.bounds.getY(),(float)s.bounds.getWidth(),6.f,3.f);g.setColour(juce::Colours::white);g.setFont(juce::Font(12.f,juce::Font::bold));g.drawText(name(s),s.bounds.getX()+6,s.bounds.getY()+14,s.bounds.getWidth()-12,20,juce::Justification::centred);g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.5f,juce::Font::bold));g.drawText(s.kind==Strip::audio?"PISTE AUDIO":s.kind==Strip::midi?"PISTE MIDI":s.kind==Strip::instrument?"INSTRUMENT VIRTUEL":"MASTER STÉRÉO",s.bounds.getX()+4,s.bounds.getY()+36,s.bounds.getWidth()-8,15,juce::Justification::centred);g.setColour(juce::Colour(0xff111922));g.fillRoundedRectangle((float)s.bounds.getX()+8.f,(float)s.bounds.getY()+56.f,(float)s.bounds.getWidth()-16.f,24.f,3.f);g.setColour(juce::Colour(0xffd1dce7));g.setFont(juce::Font(8.5f));g.drawText(s.kind==Strip::master?"OUT 1-2":"ROUTE > MASTER",s.bounds.getX()+10,s.bounds.getY()+58,s.bounds.getWidth()-20,18,juce::Justification::centred,true);if(s.kind==Strip::audio){const int x=s.bounds.getX()+5,y=s.bounds.getY();g.setColour(juce::Colour(0xff101d2a));g.fillRoundedRectangle((float)x,(float)(y+125),(float)(s.bounds.getWidth()-10),56.f,3.f);g.setColour(juce::Colour(0xff638da5));g.drawRoundedRectangle((float)x,(float)(y+125),(float)(s.bounds.getWidth()-10),56.f,3.f,1.f);g.setColour(juce::Colour(0xffaabecd));g.setFont(juce::Font(8.f));g.drawText(s.activeModule<0?"SECTION FERMÉE":s.activeModule==0?"ÉGALISEUR":s.activeModule==1?"GATE":s.activeModule==2?"COMPRESSEUR":"ENTRÉE",x+5,y+127,67,13,juce::Justification::centredLeft);}g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f,juce::Font::bold));if(s.kind==Strip::master)g.drawText("MASTER BUS",s.bounds.getX(),s.bounds.getY()+92,s.bounds.getWidth(),18,juce::Justification::centred);else if(s.kind!=Strip::midi){const int insertsLabelY=s.bounds.getY()+getStripGeometry(s).fxY-12;g.drawText("INSERTS 1-8",s.bounds.getX()+9,insertsLabelY,s.bounds.getWidth()-18,12,juce::Justification::centredLeft);}// Section frames sit behind the real controls, without covering their labels.
-if(s.kind==Strip::audio||s.kind==Strip::instrument){
-    const int x=s.bounds.getX()+5,w=s.bounds.getWidth()-10;
-    const auto geom=getStripGeometry(s);const int fy=s.bounds.getY()+geom.fxY;
-    auto frame=[&](int y,int h,juce::Colour colour){
-        const int clippedHeight=juce::jmin(h,s.bounds.getBottom()-y-2);
-        if(clippedHeight<=4)return;
-        g.setColour(juce::Colour(0xff101c28));
-        g.fillRoundedRectangle((float)x,(float)y,(float)w,(float)clippedHeight,3.0f);
-        g.setColour(colour.withAlpha(0.70f));
-        g.drawRoundedRectangle((float)x,(float)y,(float)w,(float)clippedHeight,3.0f,1.0f);
-        g.fillRect(x,y,3,clippedHeight);
+ bool isSelected(const Strip&s)const{if(selected==&s)return true;if(s.kind==Strip::master)return false;const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);return owner.selectedTrack==logical;}void draw(juce::Graphics&g,Strip&s){
+    if(s.bounds.isEmpty()||s.bounds.getRight()<0||s.bounds.getX()>getWidth())return;
+    juce::Graphics::ScopedSaveState savedState(g);
+    g.reduceClipRegion(s.bounds);
+    const bool chosen=isSelected(s);
+    const int x=s.bounds.getX(),y=s.bounds.getY(),w=s.bounds.getWidth(),h=s.bounds.getHeight();
+    g.setColour(chosen?juce::Colour(0xff223944):juce::Colour(0xff18212b));
+    g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+    if(s.kind!=Strip::master){
+      const int logical=s.kind==Strip::audio?s.lane:
+          (s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
+           owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);
+      const auto tint=trackColour(getLibertyTrackColourId(logical));
+      g.setColour(tint.withAlpha(.16f));g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+    }
+    g.setColour(chosen?juce::Colour(0xff54d6dc):juce::Colour(0xff344452));
+    g.drawRoundedRectangle(s.bounds.toFloat(),6.f,chosen?2.f:1.f);
+    g.setColour(s.kind==Strip::master?juce::Colour(0xffe4a85e):
+        trackColour(getLibertyTrackColourId(s.kind==Strip::audio?s.lane:
+           s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
+           owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane)));
+    g.fillRoundedRectangle((float)x,(float)y,(float)w,6.f,3.f);
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(12.f,juce::Font::bold));
+    g.drawFittedText(name(s),x+6,y+14,w-12,20,juce::Justification::centred,1);
+    g.setColour(juce::Colour(0xffbdcfdb));g.setFont(juce::Font(8.5f,juce::Font::bold));
+    g.drawText(s.kind==Strip::audio?"PISTE AUDIO":s.kind==Strip::midi?"PISTE MIDI":
+       s.kind==Strip::instrument?"INSTRUMENT VIRTUEL":"MASTER STÉRÉO",
+       x+4,y+36,w-8,15,juce::Justification::centred);
+    g.setColour(juce::Colour(0xff111922));
+    g.fillRoundedRectangle((float)x+8,(float)y+56,(float)w-16,24.f,3.f);
+    g.setColour(juce::Colour(0xffd1dce7));g.setFont(juce::Font(8.5f));
+    g.drawText(s.kind==Strip::master?"OUT 1-2":"ROUTE > MASTER",
+       x+10,y+58,w-20,18,juce::Justification::centred,true);
+    const auto geom=getStripGeometry(s);
+    auto panel=[&](int top,int height,juce::Colour accent){
+      if(height<=3)return;
+      const auto r=juce::Rectangle<float>((float)x+5,(float)(y+top),
+                        (float)w-10,(float)height);
+      g.setColour(juce::Colour(0xff101c28));g.fillRoundedRectangle(r,3.f);
+      g.setColour(accent.withAlpha(.72f));g.drawRoundedRectangle(r,3.f,1.f);
     };
-    frame(fy-4,geom.step*8+2,juce::Colour(0xff5186a5)); // eight existing insert slots
-    // Small illuminated rack status; actual plugin buttons remain interactive above it.
-    g.setColour(juce::Colour(0xff72b5c7));
-    g.fillRoundedRectangle((float)(x+w-13),(float)(fy-1),5.0f,5.0f,2.0f);
-    frame(s.bounds.getY()+geom.panY-3,40,juce::Colour(0xff688aa7)); // pan
-    frame(s.bounds.getY()+geom.muteY-2,30,juce::Colour(0xff8c9eb1)); // mute / solo
-    const int faderTop=s.bounds.getY()+geom.faderY;
-    frame(faderTop-4,s.bounds.getBottom()-faderTop,juce::Colour(0xffa88d62));
-}
-drawMeter(g,s);if(s.kind!=Strip::midi){const int meterTop=s.bounds.getY()+getStripGeometry(s).faderY;const int meterBottom=s.bounds.getBottom()-36;if(meterBottom-meterTop>=40){g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f));g.drawText("+6",s.bounds.getRight()-30,meterTop,22,12,juce::Justification::right);g.drawText("0",s.bounds.getRight()-30,meterTop+(meterBottom-meterTop)/4,22,12,juce::Justification::right);g.drawText("-18",s.bounds.getRight()-30,meterTop+(meterBottom-meterTop)/2,22,12,juce::Justification::right);g.drawText("-60",s.bounds.getRight()-30,meterBottom-12,22,12,juce::Justification::right);}}}
+    if(s.kind==Strip::audio){
+      for(int index:{3,0,1,2}){
+        const auto& p=geom.modules[(size_t)index];
+        panel(p.headerY-1,22,juce::Colour(0xff547f9a));
+        if(p.bodyHeight>0){
+          panel(p.bodyY,p.bodyHeight-1,juce::Colour(0xff3a647b));
+          if(p.bodyHeight>=40){
+            g.setColour(juce::Colour(0xffa8bccb));g.setFont(juce::Font(8.f));
+            const int labelY=y+p.bodyY+p.bodyHeight-12;
+            if(index==0){
+              for(int band=0;band<3;++band)g.drawText(
+                band==0?"GRAVES":band==1?"MÉDIUMS":"AIGUS",
+                x+8+band*44,labelY,42,10,juce::Justification::centred);
+            }else if(index==1)g.drawText("SEUIL",x+49,labelY,50,10,juce::Justification::centred);
+            else if(index==2){
+              g.drawText("SEUIL",x+22,labelY,42,10,juce::Justification::centred);
+              g.drawText("RATIO",x+80,labelY,42,10,juce::Justification::centred);
+            }else{
+              g.drawText("GAIN",x+62,labelY,35,10,juce::Justification::centred);
+              g.drawText("COUPE-BAS",x+98,labelY,45,10,juce::Justification::centred);
+            }
+          }
+        }
+      }
+    }
+    if(s.kind==Strip::audio||s.kind==Strip::instrument){
+      panel(geom.insertsHeaderY-1,23,juce::Colour(0xff5186a5));
+      if(s.insertsExpanded&&geom.visibleFx>0)
+        panel(geom.fxY-2,geom.fxStep*geom.visibleFx+3,juce::Colour(0xff5186a5));
+      panel(geom.panY-2,38,juce::Colour(0xff688aa7));
+      panel(geom.muteY-2,30,juce::Colour(0xff8c9eb1));
+      g.setColour(juce::Colour(0xff6a9eb9));
+      g.fillRoundedRectangle((float)x+12,(float)(y+geom.splitterY),
+                             (float)w-24,3.f,1.5f);
+      g.setColour(juce::Colour(0xffbed4e0));
+      g.fillRoundedRectangle((float)x+(float)w*.5f-16.f,
+                             (float)(y+geom.splitterY-1),32.f,5.f,2.f);
+    }else if(s.kind==Strip::master){
+      g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f,juce::Font::bold));
+      g.drawText("MASTER BUS",x,y+92,w,18,juce::Justification::centred);
+    }
+    if(s.kind!=Strip::midi){
+      panel(geom.faderY-3,h-geom.faderY+1,juce::Colour(0xffa88d62));
+      drawMeter(g,s);
+      const int meterTop=y+geom.faderY,meterBottom=s.bounds.getBottom()-36;
+      if(meterBottom-meterTop>=40){
+        g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f));
+        for(int i=0;i<4;++i){
+          const int yy=i==0?meterTop:i==1?meterTop+(meterBottom-meterTop)/4:
+                        i==2?meterTop+(meterBottom-meterTop)/2:meterBottom-12;
+          g.drawText(i==0?"+6":i==1?"0":i==2?"-18":"-60",
+             s.bounds.getRight()-30,yy,22,12,juce::Justification::right);
+        }
+      }
+    }
+ }
  void drawMeter(juce::Graphics&g,const Strip&s){if(s.kind==Strip::midi)return;const int top=s.bounds.getY()+getStripGeometry(s).faderY,bottom=s.bounds.getBottom()-36;if(bottom-top<40)return;auto meter=juce::Rectangle<float>((float)s.bounds.getX()+10.f,(float)top,12.f,(float)(bottom-top));g.setColour(juce::Colour(0xff0b0f14));g.fillRoundedRectangle(meter,2.f);g.setColour(juce::Colour(0xff344452));g.drawRoundedRectangle(meter,2.f,1.f);const float db=s.level<=.00001f?-60.f:juce::jlimit(-60.f,6.f,juce::Decibels::gainToDecibels(s.level));const float norm=juce::jlimit(0.f,1.f,(db+60.f)/66.f);auto fill=meter;fill.setY(meter.getBottom()-meter.getHeight()*norm);fill.setHeight(meter.getHeight()*norm);juce::ColourGradient grad(juce::Colour(0xff54d6dc),fill.getX(),fill.getBottom(),juce::Colour(0xffe4a85e),fill.getX(),fill.getY(),false);g.setGradientFill(grad);g.fillRoundedRectangle(fill,2.f);if(s.peak>.98f){g.setColour(juce::Colour(0xffff4e4e));g.fillRect((int)meter.getX(),(int)meter.getY(),(int)meter.getWidth(),3);}}
  float audioLevel(int track)const{if(!owner.audioEngine.isPlaying()||owner.audioEngine.isTrackMuted(track))return 0.f;const auto bufferSnapshot=owner.audioEngine.getAudioBufferSnapshot(track);const auto*b=bufferSnapshot.get();const double rate=owner.audioEngine.getSampleRate();if(!b||rate<=0.||b->getNumSamples()<=0)return 0.f;const double sec=owner.audioEngine.getCurrentTimeSeconds()-owner.audioEngine.getTrackStartSeconds(track);if(sec<0.||sec>=owner.audioEngine.getAudioFileLengthSeconds(track))return 0.f;const int centre=juce::jlimit(0,b->getNumSamples()-1,(int)std::llround(sec*rate)),start=juce::jmax(0,centre-128),count=juce::jmin(256,b->getNumSamples()-start);float peak=0.f;for(int c=0;c<juce::jmin(2,b->getNumChannels());++c){const float*d=b->getReadPointer(c,start);for(int i=0;i<count;++i)peak=juce::jmax(peak,std::abs(d[i]));}return peak*owner.audioEngine.getTrackGain(track);}
  void updateMeters(){float master=0.f;for(auto&s:strips){float raw=0.f;if(s->kind==Strip::audio){raw=audioLevel(s->lane);master+=raw;}else if(s->kind==Strip::midi)continue;s->peak=juce::jmax(raw,s->peak*.90f);s->level=juce::jmax(raw,s->level*.82f);}for(auto&s:strips)if(s->kind==Strip::master){const float raw=juce::jmin(1.2f,master*owner.audioEngine.getMasterGain());s->peak=juce::jmax(raw,s->peak*.90f);s->level=juce::jmax(raw,s->level*.82f);}}
  void sync(){syncing=true;auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();for(auto&s:strips){if(s->kind==Strip::audio){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getTrackPan(s->lane),juce::dontSendNotification);s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}syncing=false;}
  void timerCallback()override{if(!visible)return;updateMeters();for(auto&strip:strips)if(!strip->bounds.isEmpty()&&strip->kind!=Strip::midi){const int meterTop=strip->bounds.getY()+getStripGeometry(*strip).faderY;const int meterBottom=strip->bounds.getBottom()-36;if(meterBottom-meterTop>=40){auto meter=juce::Rectangle<int>(strip->bounds.getX()+8,meterTop,18,meterBottom-meterTop);repaint(meter);}}}
+ Strip*draggingHeight=nullptr;int dragStartY=0,dragStartPreference=0;
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
 };
 // The page tab in PageModeCoordinator is the only mixer navigation button.

@@ -37,6 +37,11 @@ jobs:
       - name: Guard validated track header controls
         run: python3 Tests/TrackHeaderRegression.py
 
+      - name: Verify independent mixer panels and pinned faders
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
+          /tmp/liberty-mixer-layout
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
