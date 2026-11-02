@@ -133,6 +133,48 @@ inline bool runLibertyChannelProcessingSmoke()
                 "rename at capacity changed count");
         require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
                 "preset library changed applied DSP");
+
+        // Import/export: two libraries must merge without overwriting names,
+        // including conflicting names containing uppercase accents.
+        LibertyChannelUserPresets::Library destinationPresets,importPresets;
+        require(destinationPresets.upsert(juce::String::fromUTF8("Voix Épurée"),voicePreset),
+                "cannot create destination preset");
+        require(importPresets.upsert(juce::String::fromUTF8("VOIX ÉPURÉE"),bassPreset),
+                "cannot create conflicting import");
+        require(importPresets.upsert("Guitare",LibertyChannelInspectorPresets::make(5)),
+                "cannot create second imported preset");
+        require(destinationPresets.mergeFrom(importPresets),"import merge rejected");
+        require(destinationPresets.items().size()==3,"import merge count");
+        require(destinationPresets.items()[0].name==juce::String::fromUTF8("Voix Épurée"),
+                "import changed original name");
+        require(equal(destinationPresets.items()[0].settings,voicePreset),
+                "import overwrote existing settings");
+        require(destinationPresets.items()[1].name
+                ==juce::String::fromUTF8("VOIX ÉPURÉE (importé)"),
+                "import collision suffix");
+        require(equal(destinationPresets.items()[1].settings,bassPreset),
+                "import lost colliding settings");
+        require(destinationPresets.mergeFrom(importPresets),"repeat import merge");
+        require(destinationPresets.items().size()==5,"repeat import count");
+        require(destinationPresets.items()[3].name
+                ==juce::String::fromUTF8("VOIX ÉPURÉE (importé 2)"),
+                "repeated import name collision");
+        const auto savedImported=destinationPresets.toXml();
+        LibertyChannelUserPresets::Library exportedRoundtrip;
+        require(exportedRoundtrip.fromXml(*savedImported),"export/import XML roundtrip");
+        require(exportedRoundtrip.items().size()==5,"export/import entry count");
+        require(equal(exportedRoundtrip.items()[1].settings,bassPreset),
+                "export/import lost preset settings");
+        // If the imported library exceeds capacity, the existing one remains
+        // unchanged rather than receiving a partially imported selection.
+        LibertyChannelUserPresets::Library tooMany;
+        for(int i=0;i<LibertyChannelUserPresets::Library::maxPresets;++i)
+            require(tooMany.upsert("Large "+juce::String(i),voicePreset),
+                    "cannot populate oversized import");
+        require(!destinationPresets.mergeFrom(tooMany),"oversized import succeeded");
+        require(destinationPresets.items().size()==5,"oversized import partly changed list");
+        require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
+                "import/export changed applied DSP");
         auto userDraft=LibertyChannelInspectorState::Session(presetEngine,0);
         userDraft.switchVariant();
         userDraft.setPending(restoredPersonal.items()[0].settings);

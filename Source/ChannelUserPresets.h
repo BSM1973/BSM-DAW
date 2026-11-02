@@ -86,6 +86,42 @@ public:
         presets.push_back({newName,settings});
         return true;
     }
+    // Merge all imported items atomically. Name collisions create new entries
+    // with a distinct French suffix, leaving existing values untouched.
+    // Reject a full import if 24 slots would be exceeded (no partial import).
+    bool mergeFrom(const Library& incoming)
+    {
+        if ((int)presets.size()+(int)incoming.presets.size()>maxPresets)
+            return false;
+        Library merged=*this;
+        for (const auto& imported:incoming.presets)
+        {
+            auto candidate=imported.name;
+            const auto collides=[&](const juce::String& name) {
+                const auto key=comparisonKey(name);
+                return std::any_of(merged.presets.begin(),merged.presets.end(),
+                    [&](const Preset& current) {
+                        return comparisonKey(current.name)==key;
+                    });
+            };
+            if (collides(candidate))
+            {
+                for(int number=1;number<=maxPresets+1;++number)
+                {
+                    const auto suffix=juce::String::fromUTF8(" (importé")
+                        +(number>1?" "+juce::String(number):juce::String{})+")";
+                    candidate=imported.name.substring(0,48-suffix.length())
+                        .trimEnd()+suffix;
+                    if(!collides(candidate))break;
+                }
+            }
+            if (!validName(candidate) || collides(candidate))
+                return false;
+            merged.presets.push_back({candidate,imported.settings});
+        }
+        presets.swap(merged.presets);
+        return true;
+    }
     bool erase(const juce::String& name)
     {
         const auto oldSize=presets.size();

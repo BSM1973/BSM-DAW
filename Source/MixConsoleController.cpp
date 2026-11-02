@@ -153,6 +153,9 @@ public:
         }
         menu.addSeparator();
         menu.addItem(1000,juce::String::fromUTF8("ENREGISTRER MES RÉGLAGES..."),loaded);
+        menu.addItem(1001,juce::String::fromUTF8("IMPORTER UNE BIBLIOTHÈQUE..."),loaded);
+        menu.addItem(1002,juce::String::fromUTF8("EXPORTER MES PRÉRÉGLAGES..."),
+                     loaded && !saved.empty());
         juce::PopupMenu remove;
         for(size_t i=0;i<saved.size();++i)
             remove.addItem(200+(int)i,saved[i].name);
@@ -186,6 +189,10 @@ public:
                 }
                 else if(result==1000)
                     safe->askToSavePreset();
+                else if(result==1001)
+                    safe->choosePresetImport();
+                else if(result==1002)
+                    safe->choosePresetExport();
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -277,6 +284,58 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void choosePresetImport()
+ {
+    const auto folder=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    presetFileChooser=std::make_unique<juce::FileChooser>(
+        juce::String::fromUTF8("Importer des préréglages CANAL"),folder,"*.xml",true);
+    presetFileChooser->launchAsync(
+        juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,
+        [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)]
+        (const juce::FileChooser& chooser)
+        {
+            if(safe==nullptr)return;
+            const auto selected=chooser.getResult();
+            if(!selected.existsAsFile())return;
+            LibertyChannelUserPresets::Library incoming,existing;
+            const auto destination=LibertyChannelUserPresets::Library::defaultFile();
+            if(!incoming.load(selected) || !existing.load(destination)
+               || !existing.mergeFrom(incoming) || !existing.save(destination))
+                safe->reportPresetError(juce::String::fromUTF8(
+                    "Importation impossible : fichier invalide, accès refusé ou limite de 24 préréglages dépassée. "
+                    "Les préréglages existants sont conservés."));
+        });
+ }
+ void choosePresetExport()
+ {
+    const auto folder=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    presetFileChooser=std::make_unique<juce::FileChooser>(
+        juce::String::fromUTF8("Exporter des préréglages CANAL"),
+        folder.getChildFile("Liberty-CANAL-Presets.xml"),"*.xml",true);
+    presetFileChooser->launchAsync(
+        juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles
+            |juce::FileBrowserComponent::warnAboutOverwriting,
+        [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)]
+        (const juce::FileChooser& chooser)
+        {
+            if(safe==nullptr)return;
+            auto destination=chooser.getResult();
+            if(destination==juce::File{})return;
+            if(!destination.hasFileExtension("xml"))
+                destination=destination.withFileExtension("xml");
+            const auto source=LibertyChannelUserPresets::Library::defaultFile();
+            if(destination==source)
+            {
+                safe->reportPresetError(juce::String::fromUTF8(
+                    "Choisissez un fichier différent de la bibliothèque Liberty active."));
+                return;
+            }
+            LibertyChannelUserPresets::Library library;
+            if(!library.load(source) || !library.save(destination))
+                safe->reportPresetError(juce::String::fromUTF8(
+                    "Impossible d'exporter les préréglages CANAL vers ce fichier."));
+        });
+ }
  void reportPresetError(const juce::String& message)
  {
     juce::AlertWindow::showMessageBoxAsync(
@@ -440,6 +499,7 @@ private:
  juce::TextButton pasteButton{"COLLER"};
  juce::TextButton variantButton{"MODE A"};
  juce::TextButton presetsButton{juce::String::fromUTF8("PRÉRÉGLAGES")};
+ std::unique_ptr<juce::FileChooser> presetFileChooser;
  juce::TextButton cancelButton{"ANNULER"};
  juce::TextButton applyButton{"APPLIQUER"};
 };
