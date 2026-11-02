@@ -1,6 +1,7 @@
 #define private public
 #include "MainComponent.h"
 #undef private
+#include "PageNavigationLayout.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <map>
@@ -171,12 +172,13 @@ private:
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
-        // Navigation starts at the beginning of the transport section, above PLAY.
-        // Reserve the next slot for the NAVIGATEUR toggle.
-        const int navX = 205;
-        arrangeButton.setBounds(navX, 4, 120, 25);
-        mixButton.setBounds(navX + 124, 4, 152, 25);
-        performButton.setBounds(navX + 280, 4, 92, 25);
+        // Shared coordinates keep all four page toggles distinct at every refresh.
+        arrangeButton.setBounds(LibertyPageNavigation::arrangeX, LibertyPageNavigation::top,
+                                LibertyPageNavigation::arrangeWidth, LibertyPageNavigation::height);
+        mixButton.setBounds(LibertyPageNavigation::mixerX, LibertyPageNavigation::top,
+                            LibertyPageNavigation::mixerWidth, LibertyPageNavigation::height);
+        performButton.setBounds(LibertyPageNavigation::performX, LibertyPageNavigation::top,
+                                LibertyPageNavigation::performWidth, LibertyPageNavigation::height);
 
         hideEveryLegacyPageButton();
         arrangeButton.setVisible(true);

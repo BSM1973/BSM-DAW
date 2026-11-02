@@ -4,6 +4,7 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include "LibertyDesignSystem.h"
+#include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -984,8 +985,11 @@ private:
             if (!isVisible()) setVisible(true);
         }
 
-        const int buttonX = 527; // Immediately after PERFORMANCE, even when browser is open.
-        const auto buttonBounds = juce::Rectangle<int>(buttonX, 4, 112, 25);
+        // The browser starts after PERFORMANCE, never on top of it.
+        const auto buttonBounds = juce::Rectangle<int>(LibertyPageNavigation::browserX,
+                                                     LibertyPageNavigation::top,
+                                                     LibertyPageNavigation::browserWidth,
+                                                     LibertyPageNavigation::height);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
 
         if (category == Category::plugins || category == Category::splice)
