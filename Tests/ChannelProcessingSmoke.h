@@ -53,14 +53,16 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(source.pending(),neutral), "reset did not prepare neutral values");
         require(equal(engine.getChannelProcessingSettings(0),neutral), "reset changed live audio");
         source.setPending(draft);
+        // Both dialogs are opened before the first one copies settings.
+        LibertyChannelInspectorState::Session alreadyOpen(engine,1);
+        require(!LibertyChannelInspectorState::Session::canPaste(), "clipboard unexpectedly set");
         source.copy();
         require(LibertyChannelInspectorState::Session::canPaste(), "clipboard copy");
 
-        LibertyChannelInspectorState::Session cancelled(engine,1);
-        require(cancelled.paste(), "clipboard paste");
-        require(equal(cancelled.pending(),draft), "pasted values differ");
+        require(alreadyOpen.paste(), "paste between already-open dialogs");
+        require(equal(alreadyOpen.pending(),draft), "pasted values differ");
         require(equal(engine.getChannelProcessingSettings(1),neutral), "paste changed live audio");
-        cancelled.cancel();
+        alreadyOpen.cancel();
         require(equal(engine.getChannelProcessingSettings(1),neutral), "cancel changed audio");
 
         // A different CANAL dialog can paste the copied settings onto its track.

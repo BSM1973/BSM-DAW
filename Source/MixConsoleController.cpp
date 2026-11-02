@@ -70,7 +70,7 @@ class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinea
                cx+std::sin(angle)*outer,cy-std::cos(angle)*outer,1.7f);
 }};
 
-class LibertyChannelInspector final:public juce::Component {
+class LibertyChannelInspector final:public juce::Component, private juce::Timer {
 public:
  LibertyChannelInspector(AudioEngine& source,int track,juce::String trackLabel,
                          std::function<void()> refresh)
@@ -131,8 +131,11 @@ public:
         closeDialog(1);
     };
     setSize(760,520);
+    // Keep the paste state up to date when another CANAL dialog copies settings.
+    startTimer(200);
  }
  ~LibertyChannelInspector()override{
+     stopTimer();
      for(auto& slider:knobs)slider.setLookAndFeel(nullptr);
  }
  void paint(juce::Graphics& g)override{
@@ -199,6 +202,10 @@ public:
     }
  }
 private:
+ void timerCallback()override{
+    const bool available=LibertyChannelInspectorState::Session::canPaste();
+    if(pasteButton.isEnabled()!=available)pasteButton.setEnabled(available);
+ }
  AudioEngine::ChannelProcessingSettings readControls()const{
     auto v=session.pending();
     v.inputGainDb=(float)knobs[0].getValue();
