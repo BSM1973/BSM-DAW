@@ -145,6 +145,14 @@ public:
         const bool loaded=library.load(LibertyChannelUserPresets::Library::defaultFile());
         const auto saved=library.items();
         menu.addSeparator();
+        menu.addSectionHeader("FAVORIS");
+        if(loaded)
+        {
+            for(size_t i=0;i<saved.size();++i)
+                if(saved[i].favorite)
+                    menu.addItem(700+(int)i,saved[i].name);
+        }
+        menu.addSeparator();
         menu.addSectionHeader(juce::String::fromUTF8("MES PRÉRÉGLAGES"));
         if(loaded)
         {
@@ -172,6 +180,14 @@ public:
         menu.addSubMenu(juce::String::fromUTF8("DUPLIQUER UN PRÉRÉGLAGE"),
                         duplicateMenu,loaded && !saved.empty()
                             && (int)saved.size()<LibertyChannelUserPresets::Library::maxPresets);
+        juce::PopupMenu favoriteMenu;
+        for(size_t i=0;i<saved.size();++i)
+            favoriteMenu.addItem(800+(int)i,
+                (saved[i].favorite
+                    ? juce::String::fromUTF8("RETIRER DES FAVORIS : ")
+                    : juce::String::fromUTF8("AJOUTER AUX FAVORIS : "))
+                +saved[i].name);
+        menu.addSubMenu("GÉRER LES FAVORIS",favoriteMenu,loaded && !saved.empty());
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -199,6 +215,20 @@ public:
                     safe->askToModifyPresetName(saved[(size_t)(result-300)].name,false);
                 else if(result>=400 && result<400+(int)saved.size())
                     safe->askToModifyPresetName(saved[(size_t)(result-400)].name,true);
+                else if(result>=700 && result<700+(int)saved.size())
+                {
+                    const auto& preset=saved[(size_t)(result-700)];
+                    if(preset.favorite)
+                    {
+                        safe->session.setPending(preset.settings);
+                        safe->writeControls(safe->session.pending());
+                    }
+                }
+                else if(result>=800 && result<800+(int)saved.size())
+                {
+                    const auto& preset=saved[(size_t)(result-800)];
+                    safe->changePresetFavorite(preset.name,!preset.favorite);
+                }
             });
     };
     cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
@@ -284,6 +314,15 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void changePresetFavorite(const juce::String& presetName,bool favorite)
+ {
+    LibertyChannelUserPresets::Library library;
+    const auto path=LibertyChannelUserPresets::Library::defaultFile();
+    if(!library.load(path) || !library.setFavorite(presetName,favorite)
+       || !library.save(path))
+        reportPresetError(juce::String::fromUTF8(
+            "Impossible de modifier les favoris CANAL. Vérifiez le dossier Liberty."));
+ }
  void choosePresetImport()
  {
     const auto folder=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);

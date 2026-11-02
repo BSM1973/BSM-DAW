@@ -73,6 +73,10 @@ inline bool runLibertyChannelProcessingSmoke()
         require(personal.upsert(juce::String::fromUTF8("VOIX ÉPURÉE"),bassPreset),
                 "could not update named preset");
         require(personal.items().size()==2,"duplicate preset name");
+        require(personal.setFavorite(juce::String::fromUTF8("voix ÉPURÉE"),true),
+                "could not favorite an accented name");
+        require(personal.items()[0].favorite,"favorite not set");
+        require(!personal.setFavorite("Missing",true),"favorited absent preset");
         require(personal.upsert(juce::String::fromUTF8("À l'été"),voicePreset),
                 "could not add accented preset");
         require(personal.upsert(juce::String::fromUTF8("à L'ÉTÉ"),bassPreset),
@@ -94,6 +98,8 @@ inline bool runLibertyChannelProcessingSmoke()
                                    juce::String::fromUTF8("Voix claire - copie")),
                 "could not duplicate a preset");
         require(personal.items().size()==3,"duplicate did not add one entry");
+        require(personal.items()[0].favorite,"rename dropped favorite");
+        require(!personal.items()[2].favorite,"duplicate inherited favorite");
         require(equal(personal.items()[0].settings,personal.items()[2].settings),
                 "duplicate changed sound settings");
         require(!personal.duplicate("Voix claire",
@@ -116,6 +122,11 @@ inline bool runLibertyChannelProcessingSmoke()
         require(restoredPersonal.items().size()==2,"personal preset count after XML");
         require(restoredPersonal.items()[0].name==juce::String::fromUTF8("VOIX CLAIRE"),
                 "renamed preset name lost in XML");
+        require(restoredPersonal.items()[0].favorite,"favorite lost in XML");
+        require(!restoredPersonal.items()[1].favorite,"non-favorite gained favorite in XML");
+        require(restoredPersonal.upsert("Voix claire",bassPreset)
+                && restoredPersonal.items()[0].favorite,
+                "re-saving favorite cleared its status");
         require(equal(restoredPersonal.items()[0].settings,bassPreset),
                 "personal preset roundtrip changed settings");
         require(restoredPersonal.erase("basse CHAUDE"),"personal preset delete");
@@ -139,8 +150,12 @@ inline bool runLibertyChannelProcessingSmoke()
         LibertyChannelUserPresets::Library destinationPresets,importPresets;
         require(destinationPresets.upsert(juce::String::fromUTF8("Voix Épurée"),voicePreset),
                 "cannot create destination preset");
+        require(destinationPresets.setFavorite(juce::String::fromUTF8("VOIX ÉPURÉE"),true),
+                "cannot mark destination as favorite");
         require(importPresets.upsert(juce::String::fromUTF8("VOIX ÉPURÉE"),bassPreset),
                 "cannot create conflicting import");
+        require(importPresets.setFavorite(juce::String::fromUTF8("VOIX ÉPURÉE"),true),
+                "cannot mark imported favorite");
         require(importPresets.upsert("Guitare",LibertyChannelInspectorPresets::make(5)),
                 "cannot create second imported preset");
         require(destinationPresets.mergeFrom(importPresets),"import merge rejected");
@@ -149,6 +164,9 @@ inline bool runLibertyChannelProcessingSmoke()
                 "import changed original name");
         require(equal(destinationPresets.items()[0].settings,voicePreset),
                 "import overwrote existing settings");
+        require(destinationPresets.items()[0].favorite
+                && destinationPresets.items()[1].favorite,
+                "import lost preset favorites");
         require(destinationPresets.items()[1].name
                 ==juce::String::fromUTF8("VOIX ÉPURÉE (importé)"),
                 "import collision suffix");
@@ -165,6 +183,20 @@ inline bool runLibertyChannelProcessingSmoke()
         require(exportedRoundtrip.items().size()==5,"export/import entry count");
         require(equal(exportedRoundtrip.items()[1].settings,bassPreset),
                 "export/import lost preset settings");
+        require(exportedRoundtrip.items()[0].favorite
+                && exportedRoundtrip.items()[1].favorite
+                && exportedRoundtrip.items()[3].favorite,
+                "export/import lost favorite metadata");
+        // Legacy preset XML has no favorite field, and must default to false.
+        juce::XmlElement legacyPresetXml("LibertyChannelUserPresets");
+        auto* legacyPresetEntry=legacyPresetXml.createNewChildElement("Preset");
+        legacyPresetEntry->setAttribute("name","Legacy");
+        LibertyChannelProjectState::write(*legacyPresetEntry,voicePreset);
+        LibertyChannelUserPresets::Library legacyPresets;
+        require(legacyPresets.fromXml(legacyPresetXml)
+                && legacyPresets.items().size()==1
+                && !legacyPresets.items()[0].favorite,
+                "legacy preset library compatibility");
         // If the imported library exceeds capacity, the existing one remains
         // unchanged rather than receiving a partially imported selection.
         LibertyChannelUserPresets::Library tooMany;

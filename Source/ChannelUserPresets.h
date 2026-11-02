@@ -12,6 +12,7 @@ struct Preset
 {
     juce::String name;
     Settings settings;
+    bool favorite = false;
 };
 class Library final
 {
@@ -35,6 +36,19 @@ public:
             .toLowerCase();
     }
     const std::vector<Preset>& items() const noexcept { return presets; }
+    // Preserve the status when a preset is renamed or overwritten; callers
+    // explicitly choose whether to add or remove a favorite.
+    bool setFavorite(const juce::String& name,bool isFavorite)
+    {
+        const auto key=comparisonKey(name);
+        for(auto& preset:presets)
+            if(comparisonKey(preset.name)==key)
+            {
+                preset.favorite=isFavorite;
+                return true;
+            }
+        return false;
+    }
 
     bool upsert(juce::String name, const Settings& settings)
     {
@@ -117,7 +131,7 @@ public:
             }
             if (!validName(candidate) || collides(candidate))
                 return false;
-            merged.presets.push_back({candidate,imported.settings});
+            merged.presets.push_back({candidate,imported.settings,imported.favorite});
         }
         presets.swap(merged.presets);
         return true;
@@ -138,6 +152,7 @@ public:
         {
             auto* entry=root->createNewChildElement("Preset");
             entry->setAttribute("name",p.name);
+            entry->setAttribute("favorite",p.favorite);
             LibertyChannelProjectState::write(*entry,p.settings);
         }
         return root;
@@ -150,7 +165,8 @@ public:
         {
             if (!element->hasTagName("Preset")) continue;
             const auto name=element->getStringAttribute("name");
-            if (!loaded.upsert(name,LibertyChannelProjectState::read(*element)))
+            if (!loaded.upsert(name,LibertyChannelProjectState::read(*element))
+                || !loaded.setFavorite(name,element->getBoolAttribute("favorite",false)))
                 return false;
         }
         presets.swap(loaded.presets);
