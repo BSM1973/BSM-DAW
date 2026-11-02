@@ -8,6 +8,7 @@
 #include "ChannelInspectorSession.h"
 #include "ChannelInspectorPresets.h"
 #include "ChannelUserPresets.h"
+#include "ChannelPresetStatus.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -87,6 +88,9 @@ public:
     configure(knobs[5],-18,18,.5,v.eqLowDb," dB",juce::Colour(0xff60d3d6));
     configure(knobs[6],-18,18,.5,v.eqMidDb," dB",juce::Colour(0xff60d3d6));
     configure(knobs[7],-18,18,.5,v.eqHighDb," dB",juce::Colour(0xff60d3d6));
+    for(auto& knob:knobs)
+        knob.onValueChange=[this]{repaint();};
+    restoreMatchingPresetLabels();
     for(auto& button:power){
         button.setMouseClickGrabsKeyboardFocus(false);
         button.setClickingTogglesState(true);
@@ -96,7 +100,7 @@ public:
     power[1].setToggleState(v.compressorEnabled,juce::dontSendNotification);
     power[2].setToggleState(v.eqEnabled,juce::dontSendNotification);
     for(int i=0;i<3;++i){
-        power[(size_t)i].onClick=[this,i]{refreshPower(i);};
+        power[(size_t)i].onClick=[this,i]{refreshPower(i);repaint();};
         refreshPower(i);
     }
     for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&presetsButton,&cancelButton,&applyButton}){
@@ -120,6 +124,9 @@ public:
     resetButton.onClick=[this]{
         session.reset();
         writeControls(session.pending());
+        presetIndicator.select(session.variantIndex(),
+            juce::String::fromUTF8("Neutre"),readControls());
+        repaint();
     };
     copyButton.onClick=[this]{
         session.setPending(readControls());
@@ -127,7 +134,12 @@ public:
         pasteButton.setEnabled(true);
     };
     pasteButton.onClick=[this]{
-        if(session.paste())writeControls(session.pending());
+        if(session.paste())
+        {
+            writeControls(session.pending());
+            presetIndicator.clear(session.variantIndex());
+            repaint();
+        }
     };
     variantButton.onClick=[this]{
         // Preserve edits in the departing variant before showing the other.
@@ -135,6 +147,7 @@ public:
         session.switchVariant();
         writeControls(session.pending());
         refreshVariantButton();
+        repaint();
     };
     presetsButton.onClick=[this]{
         juce::PopupMenu menu;
@@ -195,13 +208,14 @@ public:
                 if(safe==nullptr || result==0)return;
                 if(result>=1 && result<=LibertyChannelInspectorPresets::count)
                 {
-                    safe->session.setPending(LibertyChannelInspectorPresets::make(result));
-                    safe->writeControls(safe->session.pending());
+                    safe->loadPresetForEditing(
+                        juce::String::fromUTF8(LibertyChannelInspectorPresets::name(result)),
+                        LibertyChannelInspectorPresets::make(result));
                 }
                 else if(result>=100 && result<100+(int)saved.size())
                 {
-                    safe->session.setPending(saved[(size_t)(result-100)].settings);
-                    safe->writeControls(safe->session.pending());
+                    const auto& preset=saved[(size_t)(result-100)];
+                    safe->loadPresetForEditing(preset.name,preset.settings);
                 }
                 else if(result==1000)
                     safe->askToSavePreset();
@@ -220,8 +234,7 @@ public:
                     const auto& preset=saved[(size_t)(result-700)];
                     if(preset.favorite)
                     {
-                        safe->session.setPending(preset.settings);
-                        safe->writeControls(safe->session.pending());
+                        safe->loadPresetForEditing(preset.name,preset.settings);
                     }
                 }
                 else if(result>=800 && result<800+(int)saved.size())
@@ -283,10 +296,17 @@ public:
          const auto b=layout.controls[(size_t)i];
          g.drawText(labels[i],b.x,b.y-18,b.w,14,juce::Justification::centred);
      }
+     // Single-line footer remains above the action buttons (no overlap).
+     g.setColour(juce::Colour(0xff6ed0d7));
+     g.setFont(juce::Font(10.f,juce::Font::bold));
+     g.drawFittedText(
+         presetIndicator.description(session.variantIndex(),readControls()),
+         20,getHeight()-87,462,19,juce::Justification::centredLeft,1);
      g.setColour(juce::Colour(0xff91aabd));
      g.setFont(juce::Font(10.f));
-     g.drawText(juce::String::fromUTF8("A/B prépare deux variantes. ANNULER ignore. APPLIQUER valide la variante affichée."),
-                20,getHeight()-86,getWidth()-40,17,juce::Justification::centredLeft);
+     g.drawFittedText(juce::String::fromUTF8("ANNULER ignore. APPLIQUER valide."),
+         499,getHeight()-87,getWidth()-519,19,
+         juce::Justification::centredRight,1);
  }
  void resized()override{
     const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
@@ -314,6 +334,46 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void loadPresetForEditing(const juce::String& label,
+                           const AudioEngine::ChannelProcessingSettings& settings)
+ {
+    session.setPending(settings);
+    writeControls(session.pending());
+    // A loaded preset is the reference point; later knob/toggle edits mark
+    // it MODIFIÉ without applying any changes to the live channel.
+    presetIndicator.select(session.variantIndex(),label,readControls());
+    repaint();
+ }
+ void restoreMatchingPresetLabels()
+ {
+    const auto state=engine.getChannelABState(trackIndex);
+    LibertyChannelUserPresets::Library library;
+    const bool loaded=library.load(LibertyChannelUserPresets::Library::defaultFile());
+    for(int bank=0;bank<2;++bank)
+    {
+        const auto& settings=state.variants[(size_t)bank];
+        // Prefer user names when a personalized preset shares factory values.
+        bool found=false;
+        if(loaded)
+            for(const auto& preset:library.items())
+                if(LibertyChannelPresetStatus::sameSettings(preset.settings,settings))
+                {
+                    presetIndicator.select(bank,preset.name,settings);
+                    found=true;
+                    break;
+                }
+        if(found)continue;
+        for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
+            if(LibertyChannelPresetStatus::sameSettings(
+                LibertyChannelInspectorPresets::make(id),settings))
+            {
+                presetIndicator.select(bank,
+                    juce::String::fromUTF8(LibertyChannelInspectorPresets::name(id)),
+                    settings);
+                break;
+            }
+    }
+ }
  void changePresetFavorite(const juce::String& presetName,bool favorite)
  {
     LibertyChannelUserPresets::Library library;
@@ -530,6 +590,7 @@ private:
  juce::String name;
  std::function<void()> afterApply;
  LibertyChannelInspectorState::Session session;
+ LibertyChannelPresetStatus::Indicator presetIndicator;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
  std::array<juce::TextButton,3> power;

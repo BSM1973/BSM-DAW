@@ -4,6 +4,7 @@
 #include "ChannelInspectorSession.h"
 #include "ChannelInspectorPresets.h"
 #include "ChannelUserPresets.h"
+#include "ChannelPresetStatus.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -32,6 +33,36 @@ inline bool runLibertyChannelProcessingSmoke()
         require(engine.getAudioTrackCount()>=2, "audio track count");
         const AudioEngine::ChannelProcessingSettings neutral;
         require(equal(engine.getChannelProcessingSettings(0),neutral), "initial state");
+
+        // The CANAL display recognizes edits per A/B variant, including
+        // changes in activation toggles and a return to the saved values.
+        LibertyChannelPresetStatus::Indicator status;
+        const auto baseVoice=LibertyChannelInspectorPresets::make(2);
+        const auto baseBass=LibertyChannelInspectorPresets::make(4);
+        status.select(0,juce::String::fromUTF8("Voix épurée"),baseVoice);
+        status.select(1,juce::String::fromUTF8("Basse chaude"),baseBass);
+        require(!status.isModified(0,baseVoice),"fresh A preset marked modified");
+        require(!status.isModified(1,baseBass),"fresh B preset marked modified");
+        auto voiceEdited=baseVoice;
+        voiceEdited.eqHighDb+=1.f;
+        require(status.isModified(0,voiceEdited),"EQ edit not detected");
+        require(status.description(0,voiceEdited).contains(juce::String::fromUTF8("MODIFIÉ")),
+                "modified preset label missing");
+        require(!status.isModified(1,baseBass),"A edit affected B label");
+        voiceEdited.eqHighDb=baseVoice.eqHighDb;
+        require(!status.isModified(0,voiceEdited),"restored EQ still marked modified");
+        voiceEdited.compressorEnabled=!baseVoice.compressorEnabled;
+        require(status.isModified(0,voiceEdited),"power toggle not detected");
+        status.clear(0);
+        require(!status.isModified(0,voiceEdited),"cleared label kept modified status");
+        require(status.description(0,voiceEdited)
+            ==juce::String::fromUTF8("RÉGLAGES PERSONNALISÉS"),
+                "unlabelled status missing");
+        require(status.description(1,baseBass)
+            .contains(juce::String::fromUTF8("Basse chaude")),
+                "B label lost after switching A");
+        require(equal(engine.getChannelProcessingSettings(0),neutral),
+                "status indicator touched live DSP");
 
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
