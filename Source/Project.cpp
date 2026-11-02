@@ -156,6 +156,20 @@ juce::String MainComponent::getProjectStateSignature() const
                   << "," << juce::String(channel.gateThresholdDb, 3) << "," << (channel.eqEnabled ? 1 : 0)
                   << "," << juce::String(channel.eqLowDb, 3) << "," << juce::String(channel.eqMidDb, 3)
                   << "," << juce::String(channel.eqHighDb, 3);
+        const auto ab=audioEngine.getChannelABState(i);
+        signature << ";channelAB=" << ab.active << "," << (ab.saved?1:0);
+        for(const auto& v:ab.variants)
+            signature << "," << juce::String(v.inputGainDb,3)
+                << "," << juce::String(v.highPassHz,3)
+                << "," << (v.compressorEnabled?1:0)
+                << "," << juce::String(v.compressorThresholdDb,3)
+                << "," << juce::String(v.compressorRatio,3)
+                << "," << (v.gateEnabled?1:0)
+                << "," << juce::String(v.gateThresholdDb,3)
+                << "," << (v.eqEnabled?1:0)
+                << "," << juce::String(v.eqLowDb,3)
+                << "," << juce::String(v.eqMidDb,3)
+                << "," << juce::String(v.eqHighDb,3);
         signature << "|track=" << i
                   << ";loaded=" << (expectsAudioMedia ? 1 : 0)
                   << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
@@ -467,6 +481,7 @@ bool MainComponent::resetProjectState()
         audioEngine.clearAudioTrack(i);
         // New projects must not inherit INPUT, GATE, COMP or EQ from the previous session.
         audioEngine.setChannelProcessingSettings(i, AudioEngine::ChannelProcessingSettings{});
+        audioEngine.clearChannelABState(i);
         audioEngine.setTrackGain(i, 1.0f);
         audioEngine.setTrackPan(i, 0.0f);
         audioEngine.setTrackMuted(i, false);
@@ -785,6 +800,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("startSeconds", savedStartSeconds);
         track->setAttribute("lengthSeconds", savedLengthSeconds);
         LibertyChannelProjectState::write(*track, audioEngine.getChannelProcessingSettings(i));
+        LibertyChannelProjectState::writeVariants(*track,audioEngine.getChannelABState(i));
         track->setAttribute("gain", (double)audioEngine.getTrackGain(i));
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
@@ -1223,6 +1239,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
         audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
         audioEngine.setChannelProcessingSettings(index, LibertyChannelProjectState::read(*track));
+        const auto liveChannel=audioEngine.getChannelProcessingSettings(index);
+        const auto loadedAB=LibertyChannelProjectState::readVariants(*track,liveChannel);
+        if(loadedAB.saved)audioEngine.setChannelABState(index,loadedAB);
         audioEngine.setTrackGain(index, juce::jlimit(0.0f, 2.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
         audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));

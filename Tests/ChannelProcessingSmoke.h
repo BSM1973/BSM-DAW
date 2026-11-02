@@ -108,14 +108,37 @@ inline bool runLibertyChannelProcessingSmoke()
         source.apply();
         require(equal(engine.getChannelProcessingSettings(0),draft), "A apply after B failed");
 
+        // Closing and reopening CANAL retains both bank memories.
+        LibertyChannelInspectorState::Session reopenedDialog(engine,0);
+        require(reopenedDialog.variantIndex()==0,"A/B current bank lost");
+        require(equal(reopenedDialog.pending(),draft),"A bank lost");
+        reopenedDialog.switchVariant();
+        require(equal(reopenedDialog.pending(),draftB),"B bank lost");
+        reopenedDialog.apply();
+        require(equal(engine.getChannelProcessingSettings(0),draftB),"B apply after reopen");
+        LibertyChannelInspectorState::Session reopenedB(engine,0);
+        require(reopenedB.variantIndex()==1,"B bank selection lost");
+        reopenedB.switchVariant();
+        require(equal(reopenedB.pending(),draft),"A bank recall");
+        reopenedB.switchVariant();
+        reopenedB.apply();
+
         // Project Save/Open must use the same serialization code as the application.
         juce::XmlElement savedTrack("Track");
         LibertyChannelProjectState::write(savedTrack,engine.getChannelProcessingSettings(0));
+        LibertyChannelProjectState::writeVariants(savedTrack,engine.getChannelABState(0));
         auto parsed=juce::parseXML(savedTrack.toString());
         require(parsed!=nullptr, "project XML invalid");
         AudioEngine reopened;
         reopened.setChannelProcessingSettings(0,LibertyChannelProjectState::read(*parsed));
-        require(equal(reopened.getChannelProcessingSettings(0),draft), "project roundtrip");
+        reopened.setChannelABState(0,LibertyChannelProjectState::readVariants(
+            *parsed,reopened.getChannelProcessingSettings(0)));
+        require(equal(reopened.getChannelProcessingSettings(0),draftB),"project roundtrip");
+        LibertyChannelInspectorState::Session fromProject(reopened,0);
+        require(fromProject.variantIndex()==1,"project active bank");
+        require(equal(fromProject.pending(),draftB),"project B");
+        fromProject.switchVariant();
+        require(equal(fromProject.pending(),draft),"project A");
         require(equal(reopened.getChannelProcessingSettings(1),neutral), "new track not neutral");
 
         // Old projects without channel attributes remain compatible.
@@ -123,11 +146,15 @@ inline bool runLibertyChannelProcessingSmoke()
         reopened.setChannelProcessingSettings(1,draft);
         reopened.setChannelProcessingSettings(1,LibertyChannelProjectState::read(legacyTrack));
         require(equal(reopened.getChannelProcessingSettings(1),neutral), "legacy defaults");
+        require(!LibertyChannelProjectState::readVariants(legacyTrack,neutral).saved,
+                "legacy project invented A/B banks");
 
         // A new session must explicitly reset the DSP, including on empty tracks.
         reopened.setChannelProcessingSettings(0,neutral);
+        reopened.clearChannelABState(0);
+        require(!reopened.getChannelABState(0).saved,"new project A/B not reset");
         require(equal(reopened.getChannelProcessingSettings(0),neutral), "new-project channel reset");
-        require(equal(engine.getChannelProcessingSettings(0),draft), "unrelated engine changed");
+        require(equal(engine.getChannelProcessingSettings(0),draftB), "unrelated engine changed");
         return true;
     }
     catch (const std::exception& e)

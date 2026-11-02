@@ -189,6 +189,15 @@ public:
     };
     ChannelProcessingSettings getChannelProcessingSettings(int trackIndex) const noexcept;
     void setChannelProcessingSettings(int trackIndex, const ChannelProcessingSettings& settings) noexcept;
+    // GUI and project A/B memory, not part of the real-time DSP state.
+    struct ChannelABState {
+        std::array<ChannelProcessingSettings,2> variants{};
+        int active=0;
+        bool saved=false;
+    };
+    ChannelABState getChannelABState(int trackIndex) const noexcept;
+    void setChannelABState(int trackIndex,const ChannelABState& state) noexcept;
+    void clearChannelABState(int trackIndex) noexcept;
     float getTrackGain(int trackIndex) const noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
@@ -377,6 +386,7 @@ private:
         std::atomic<bool> compressorEnabled { false }, gateEnabled { false }, eqEnabled { false };
         std::atomic<float> compressorThresholdDb { -18.0f }, compressorRatio { 4.0f }, gateThresholdDb { -55.0f };
         std::atomic<float> eqLowDb { 0.0f }, eqMidDb { 0.0f }, eqHighDb { 0.0f };
+        ChannelABState channelAB; // under stateLock; audio callback never reads this
         float channelHighPassState[2] {}, channelLowState[2] {}, channelHighState[2] {};
         float channelDynamicsEnvelope = 0.0f;
         std::atomic<float> gain { 1.0f };

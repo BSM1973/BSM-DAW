@@ -43,4 +43,27 @@ inline AudioEngine::ChannelProcessingSettings read(const juce::XmlElement& track
     channel.eqHighDb = (float)finiteOr(track.getDoubleAttribute("channelEqHighDb", 0.0), 0.0);
     return channel;
 }
+
+inline void writeVariants(juce::XmlElement& track,const AudioEngine::ChannelABState& state)
+{
+    if(!state.saved)return;
+    auto* variants=track.createNewChildElement("ChannelVariants");
+    variants->setAttribute("active",juce::jlimit(0,1,state.active));
+    write(*variants->createNewChildElement("A"),state.variants[0]);
+    write(*variants->createNewChildElement("B"),state.variants[1]);
+}
+inline AudioEngine::ChannelABState readVariants(
+    const juce::XmlElement& track,const AudioEngine::ChannelProcessingSettings& live)
+{
+    AudioEngine::ChannelABState state;
+    state.variants.fill(live);
+    const auto* root=track.getChildByName("ChannelVariants");
+    if(!root)return state; // Legacy project
+    state.active=juce::jlimit(0,1,root->getIntAttribute("active",0));
+    if(const auto* a=root->getChildByName("A"))state.variants[0]=read(*a);
+    if(const auto* b=root->getChildByName("B"))state.variants[1]=read(*b);
+    state.variants[(size_t)state.active]=live;
+    state.saved=true;
+    return state;
+}
 }

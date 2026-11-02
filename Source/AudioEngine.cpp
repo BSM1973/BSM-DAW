@@ -658,6 +658,45 @@ float AudioEngine::getChannelEqBandDb(int t,int band) const noexcept { if(!isVal
 void AudioEngine::setChannelEq(int t,bool on,float low,float mid,float high) noexcept { if(isValidTrackIndex(t)){auto& v=*tracks[(size_t)t];v.eqLowDb.store(juce::jlimit(-18.f,18.f,low));v.eqMidDb.store(juce::jlimit(-18.f,18.f,mid));v.eqHighDb.store(juce::jlimit(-18.f,18.f,high));v.eqEnabled.store(on);}}
 AudioEngine::ChannelProcessingSettings AudioEngine::getChannelProcessingSettings(int t) const noexcept {ChannelProcessingSettings settings;if(!isValidTrackIndex(t))return settings;const auto&v=*tracks[(size_t)t];settings.inputGainDb=v.inputGainDb.load();settings.highPassHz=v.highPassHz.load();settings.compressorEnabled=v.compressorEnabled.load();settings.gateEnabled=v.gateEnabled.load();settings.eqEnabled=v.eqEnabled.load();settings.compressorThresholdDb=v.compressorThresholdDb.load();settings.compressorRatio=v.compressorRatio.load();settings.gateThresholdDb=v.gateThresholdDb.load();settings.eqLowDb=v.eqLowDb.load();settings.eqMidDb=v.eqMidDb.load();settings.eqHighDb=v.eqHighDb.load();return settings;}
 void AudioEngine::setChannelProcessingSettings(int t,const ChannelProcessingSettings& settings) noexcept {if(!isValidTrackIndex(t))return;setChannelInputGainDb(t,settings.inputGainDb);setChannelHighPassHz(t,settings.highPassHz);setChannelCompressor(t,settings.compressorEnabled,settings.compressorThresholdDb,settings.compressorRatio);setChannelGate(t,settings.gateEnabled,settings.gateThresholdDb);setChannelEq(t,settings.eqEnabled,settings.eqLowDb,settings.eqMidDb,settings.eqHighDb);}
+AudioEngine::ChannelABState AudioEngine::getChannelABState(int t) const noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    ChannelABState result;
+    if (!isValidTrackIndex(t)) return result;
+    result=tracks[(size_t)t]->channelAB;
+    const auto live=getChannelProcessingSettings(t);
+    if (!result.saved) result.variants.fill(live);
+    else result.variants[(size_t)juce::jlimit(0,1,result.active)]=live;
+    return result;
+}
+void AudioEngine::setChannelABState(int t,const ChannelABState& value) noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    if (!isValidTrackIndex(t)) return;
+    auto safe=value;
+    safe.active=juce::jlimit(0,1,safe.active);
+    for(auto& v:safe.variants)
+    {
+        const auto finite=[](float x,float fallback,float lo,float hi) noexcept
+            {return std::isfinite(x)?juce::jlimit(lo,hi,x):fallback;};
+        v.inputGainDb=finite(v.inputGainDb,0.f,-24.f,24.f);
+        v.highPassHz=finite(v.highPassHz,0.f,0.f,500.f);
+        v.compressorThresholdDb=finite(v.compressorThresholdDb,-18.f,-48.f,0.f);
+        v.compressorRatio=finite(v.compressorRatio,4.f,1.f,12.f);
+        v.gateThresholdDb=finite(v.gateThresholdDb,-55.f,-80.f,-20.f);
+        v.eqLowDb=finite(v.eqLowDb,0.f,-18.f,18.f);
+        v.eqMidDb=finite(v.eqMidDb,0.f,-18.f,18.f);
+        v.eqHighDb=finite(v.eqHighDb,0.f,-18.f,18.f);
+    }
+    safe.saved=true;
+    tracks[(size_t)t]->channelAB=safe;
+}
+void AudioEngine::clearChannelABState(int t) noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    if(!isValidTrackIndex(t))return;
+    tracks[(size_t)t]->channelAB=ChannelABState{};
+}
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
 float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
 void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }

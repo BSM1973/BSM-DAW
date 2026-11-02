@@ -14,8 +14,9 @@ public:
     Session(AudioEngine& source, int track)
       : engine(source), trackIndex(track)
     {
-        // Both variants initially reflect the same actual engine settings.
-        variants.fill(engine.getChannelProcessingSettings(trackIndex));
+        const auto memory=engine.getChannelABState(trackIndex);
+        variants=memory.variants;
+        activeVariant=memory.active;
     }
 
     const Settings& pending() const noexcept { return variants[(size_t)activeVariant]; }
@@ -23,10 +24,19 @@ public:
     void reset() noexcept { variants[(size_t)activeVariant] = Settings{}; }
     void cancel() noexcept
     {
-        variants.fill(engine.getChannelProcessingSettings(trackIndex));
-        activeVariant = 0;
+        const auto memory=engine.getChannelABState(trackIndex);
+        variants=memory.variants;
+        activeVariant=memory.active;
     }
-    void apply() noexcept { engine.setChannelProcessingSettings(trackIndex, pending()); }
+    void apply() noexcept
+    {
+        engine.setChannelProcessingSettings(trackIndex,pending());
+        AudioEngine::ChannelABState memory;
+        memory.variants=variants;
+        memory.active=activeVariant;
+        memory.saved=true;
+        engine.setChannelABState(trackIndex,memory);
+    }
 
     int variantIndex() const noexcept { return activeVariant; }
     void switchVariant() noexcept { activeVariant = 1 - activeVariant; }
