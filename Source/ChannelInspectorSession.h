@@ -61,32 +61,14 @@ public:
     {
         if(from<0 || from>=2 || to<0 || to>=2 || from==to)
             return false;
-        const auto& source=variants[(size_t)from];
-        auto& destination=variants[(size_t)to];
-        switch(section)
-        {
-            case Section::Input:
-                destination.inputGainDb=source.inputGainDb;
-                destination.highPassHz=source.highPassHz;
-                break;
-            case Section::Gate:
-                destination.gateEnabled=source.gateEnabled;
-                destination.gateThresholdDb=source.gateThresholdDb;
-                break;
-            case Section::Compressor:
-                destination.compressorEnabled=source.compressorEnabled;
-                destination.compressorThresholdDb=source.compressorThresholdDb;
-                destination.compressorRatio=source.compressorRatio;
-                break;
-            case Section::Equalizer:
-                destination.eqEnabled=source.eqEnabled;
-                destination.eqLowDb=source.eqLowDb;
-                destination.eqMidDb=source.eqMidDb;
-                destination.eqHighDb=source.eqHighDb;
-                break;
-            default: return false;
-        }
-        return true;
+        return transferSection(variants[(size_t)from],variants[(size_t)to],section);
+    }
+
+    // Return only the selected section to neutral values, leaving the other
+    // treatments, the other A/B bank and the live audio engine untouched.
+    bool resetSection(Section section) noexcept
+    {
+        return transferSection(Settings{},variants[(size_t)activeVariant],section);
     }
 
     // Swap both drafts but retain the active bank selection. Nothing becomes
@@ -114,6 +96,33 @@ public:
     static bool canPaste() noexcept { return clipboard.has_value(); }
     static void clearClipboardForTests() noexcept { clipboard.reset(); }
 private:
+    static bool transferSection(const Settings& source,Settings& destination,
+                                Section section) noexcept
+    {
+        switch(section)
+        {
+            case Section::Input:
+                destination.inputGainDb=source.inputGainDb;
+                destination.highPassHz=source.highPassHz;
+                return true;
+            case Section::Gate:
+                destination.gateEnabled=source.gateEnabled;
+                destination.gateThresholdDb=source.gateThresholdDb;
+                return true;
+            case Section::Compressor:
+                destination.compressorEnabled=source.compressorEnabled;
+                destination.compressorThresholdDb=source.compressorThresholdDb;
+                destination.compressorRatio=source.compressorRatio;
+                return true;
+            case Section::Equalizer:
+                destination.eqEnabled=source.eqEnabled;
+                destination.eqLowDb=source.eqLowDb;
+                destination.eqMidDb=source.eqMidDb;
+                destination.eqHighDb=source.eqHighDb;
+                return true;
+            default: return false;
+        }
+    }
     AudioEngine& engine;
     int trackIndex;
     std::array<Settings,2> variants{};

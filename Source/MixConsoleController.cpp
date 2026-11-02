@@ -210,7 +210,7 @@ public:
         menu.addSeparator();
         menu.addItem(1103,"RESTAURER A");
         menu.addItem(1104,"RESTAURER B");
-        juce::PopupMenu sectionsAToB,sectionsBToA;
+        juce::PopupMenu sectionsAToB,sectionsBToA,resetSections;
         const juce::String sectionNames[4]={
             "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
         };
@@ -218,10 +218,13 @@ public:
         {
             sectionsAToB.addItem(1200+section,sectionNames[section]);
             sectionsBToA.addItem(1210+section,sectionNames[section]);
+            resetSections.addItem(1300+section,sectionNames[section]);
         }
         menu.addSeparator();
         menu.addSubMenu("COPIER UNE SECTION A VERS B",sectionsAToB);
         menu.addSubMenu("COPIER UNE SECTION B VERS A",sectionsBToA);
+        menu.addSubMenu(juce::String::fromUTF8("RÉINITIALISER UNE SECTION"),
+                        resetSections);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -258,6 +261,8 @@ public:
                     safe->copySectionForEditing(0,1,result-1200);
                 else if(result>=1210 && result<1214)
                     safe->copySectionForEditing(1,0,result-1210);
+                else if(result>=1300 && result<1304)
+                    safe->resetSectionForEditing(result-1300);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -369,6 +374,17 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void resetSectionForEditing(int section)
+ {
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3
+       || !session.resetSection(static_cast<Section>(section)))
+        return;
+    writeControls(session.pending());
+    // Keep the loaded preset reference: MODIFIÉ reflects neutralised controls.
+    repaint();
+ }
  void copySectionForEditing(int from,int to,int section)
  {
     // Commit current knob/toggle edits to the draft before copying.

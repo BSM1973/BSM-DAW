@@ -320,6 +320,89 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(sectionEngine.getChannelProcessingSettings(1),neutral),
                 "section copy leaked to another track");
 
+        // Section-only reset: each control group has independent defaults,
+        // and activating B must not reset A or alter any live audio.
+        AudioEngine resetEngine;
+        for(const auto section:sections)
+        {
+            for(int bank=0;bank<2;++bank)
+            {
+                LibertyChannelInspectorState::Session resetting(resetEngine,0);
+                resetting.setPending(originalA);
+                resetting.switchVariant();
+                resetting.setPending(originalB);
+                if(bank==0)resetting.switchVariant();
+                const auto activeBefore=resetting.variantIndex();
+                const auto original=bank==0?originalA:originalB;
+                const auto other=bank==0?originalB:originalA;
+                auto expected=original;
+                switch(section)
+                {
+                    case Section::Input:
+                        expected.inputGainDb=neutral.inputGainDb;
+                        expected.highPassHz=neutral.highPassHz;
+                        break;
+                    case Section::Gate:
+                        expected.gateEnabled=neutral.gateEnabled;
+                        expected.gateThresholdDb=neutral.gateThresholdDb;
+                        break;
+                    case Section::Compressor:
+                        expected.compressorEnabled=neutral.compressorEnabled;
+                        expected.compressorThresholdDb=neutral.compressorThresholdDb;
+                        expected.compressorRatio=neutral.compressorRatio;
+                        break;
+                    case Section::Equalizer:
+                        expected.eqEnabled=neutral.eqEnabled;
+                        expected.eqLowDb=neutral.eqLowDb;
+                        expected.eqMidDb=neutral.eqMidDb;
+                        expected.eqHighDb=neutral.eqHighDb;
+                        break;
+                }
+                require(resetting.resetSection(section),"section reset rejected");
+                require(resetting.variantIndex()==activeBefore,
+                        "reset switched active bank");
+                require(equal(resetting.pending(),expected),
+                        "section reset altered other processing controls");
+                require(equal(resetEngine.getChannelProcessingSettings(0),neutral),
+                        "section reset affected live DSP");
+                require(!resetting.resetSection(static_cast<Section>(9)),
+                        "invalid reset section accepted");
+                require(equal(resetting.pending(),expected),
+                        "invalid reset changed values");
+                resetting.switchVariant();
+                require(equal(resetting.pending(),other),
+                        "reset damaged other A/B variant");
+                resetting.cancel();
+                require(equal(resetEngine.getChannelProcessingSettings(0),neutral),
+                        "cancel after section reset changed audio");
+            }
+        }
+        LibertyChannelInspectorState::Session resetApply(resetEngine,0);
+        resetApply.setPending(originalA);
+        resetApply.switchVariant();
+        resetApply.setPending(originalB);
+        require(resetApply.resetSection(Section::Equalizer),
+                "EQ section reset before apply failed");
+        auto expectedB=originalB;
+        expectedB.eqEnabled=neutral.eqEnabled;
+        expectedB.eqLowDb=neutral.eqLowDb;
+        expectedB.eqMidDb=neutral.eqMidDb;
+        expectedB.eqHighDb=neutral.eqHighDb;
+        require(equal(resetApply.pending(),expectedB),
+                "EQ section reset lost non-EQ settings");
+        resetApply.apply();
+        require(equal(resetEngine.getChannelProcessingSettings(0),expectedB),
+                "section reset not applied to engine");
+        LibertyChannelInspectorState::Session resetReopened(resetEngine,0);
+        require(resetReopened.variantIndex()==1
+                && equal(resetReopened.pending(),expectedB),
+                "reset section lost after reopening CANAL");
+        resetReopened.switchVariant();
+        require(equal(resetReopened.pending(),originalA),
+                "reset section altered saved bank A");
+        require(equal(resetEngine.getChannelProcessingSettings(1),neutral),
+                "reset section leaked to another track");
+
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
         LibertyChannelInspectorState::Session presetSession(presetEngine,0);
