@@ -39,8 +39,11 @@ public:
 
     // Headless regression entry point: render the existing audio callback
     // without opening an audio device. Use on a stopped, dedicated engine.
+    // The optional deterministic mode excludes asynchronous spectral cache
+    // transitions when checking sample-by-sample parity between clip paths.
     bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
-                                 double renderSampleRate, int blockSamples);
+                                 double renderSampleRate, int blockSamples,
+                                 bool allowSpectralCache = true);
 
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
@@ -490,6 +493,8 @@ private:
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
     std::atomic<bool> spectralWorkerStop { false };
+    // Only true while a dedicated offline test requests deterministic fallback.
+    std::atomic<bool> skipSpectralCacheForOfflineTest { false };
     std::thread spectralWorker;
     void runSpectralWorker();
     std::shared_ptr<juce::AudioBuffer<float>> diagnosticPublishedBuffer;

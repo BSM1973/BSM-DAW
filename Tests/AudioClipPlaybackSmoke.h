@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include <cmath>
 #include <stdexcept>
+#include <string>
 inline bool runLibertyAudioClipPlaybackSmoke()
 {
     try {
@@ -17,7 +18,14 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(!engine.renderOfflineForTesting(output,48000,block))throw std::runtime_error("render");
             return output;
         };
-        auto near=[](float actual,float expected){if(std::abs(actual-expected)>.0002f)throw std::runtime_error("sample");};
+        std::size_t comparisonIndex=0;
+        auto near=[&](float actual,float expected){
+            ++comparisonIndex;
+            if(!std::isfinite(actual) || std::abs(actual-expected)>.0002f)
+                throw std::runtime_error("sample comparison "
+                    + std::to_string(comparisonIndex) + ": actual="
+                    + std::to_string(actual) + ", expected=" + std::to_string(expected));
+        };
         auto normal=render(clip);near(normal.getSample(0,1200),.25f);
         clip.clipGain=.5f;auto quiet=render(clip);near(quiet.getSample(0,1200),.125f);
         clip.clipGain=1;clip.reverse=true;auto reversed=render(clip);near(reversed.getSample(0,1200),3599.f/count);
@@ -190,9 +198,13 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             warped.clipGain=.6f;warped.fadeInSeconds=.02;warped.pitchSemitones=3;
             if(!engine.replaceArrangementAudioClips(0,{warped}))throw std::runtime_error("primary warp");
             juce::AudioBuffer<float> primary(2,60000),extra(2,60000);
-            engine.renderOfflineForTesting(primary,48000,128);
+            // Compare identical fallback DSP paths without an asynchronous FFT
+            // cache becoming ready between renders; other tests retain spectral.
+            if(!engine.renderOfflineForTesting(primary,48000,128,false))
+                throw std::runtime_error("primary deterministic warp render");
             if(!engine.replaceArrangementAudioClips(0,{})||!engine.replaceAudioClips(0,{warped}))throw std::runtime_error("extra warp");
-            engine.renderOfflineForTesting(extra,48000,128);
+            if(!engine.renderOfflineForTesting(extra,48000,128,false))
+                throw std::runtime_error("extra deterministic warp render");
             for(int i=0;i<60000;++i)near(primary.getSample(0,i),extra.getSample(0,i));
         }
         return true;

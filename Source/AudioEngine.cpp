@@ -1530,13 +1530,18 @@ std::uint64_t AudioEngine::getAudioContentRevision(int trackIndex) const noexcep
 }
 
 bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
-                                          double renderSampleRate, int blockSamples)
+                                          double renderSampleRate, int blockSamples,
+                                          bool allowSpectralCache)
 {
     // Dedicated headless test instances only: do not call concurrently with
     // the hardware callback or while the audio device is running.
     if (initialised.load(std::memory_order_acquire) || renderSampleRate <= 0.0
         || blockSamples <= 0 || destination.getNumChannels() < 1)
         return false;
+    // The spectral worker may publish a cache between two offline renders.
+    // Suppress the cache only for explicit sample-parity tests; live playback
+    // and normal offline renders continue to use spectral crossfading.
+    skipSpectralCacheForOfflineTest.store(!allowSpectralCache, std::memory_order_release);
     sampleRate.store(renderSampleRate, std::memory_order_relaxed);
     bufferSize.store(blockSamples, std::memory_order_relaxed);
     outputChannels.store(destination.getNumChannels(), std::memory_order_relaxed);
@@ -1553,6 +1558,7 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
         audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
     }
     playing.store(false, std::memory_order_relaxed);
+    skipSpectralCacheForOfflineTest.store(false, std::memory_order_release);
     return true;
 }
 
@@ -1667,7 +1673,8 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             || track.bufferSampleRate.load(std::memory_order_relaxed) <= 0.0)
             continue;
         const auto spectral = std::atomic_load(&track.spectralCache);
-        const bool spectralReady = spectral != nullptr
+        const bool spectralReady = !skipSpectralCacheForOfflineTest.load(std::memory_order_acquire)
+            && spectral != nullptr
             && track.spectralReadyGeneration.load(std::memory_order_acquire)
                 == track.spectralGeneration.load(std::memory_order_acquire)
             && (warpSnapshot->mode == 0 || warpSnapshot->mode == 2)
