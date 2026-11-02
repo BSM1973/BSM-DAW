@@ -39,6 +39,12 @@ public:
     {
         if(bank>=0 && bank<2)banks[(size_t)bank]=Entry{};
     }
+    // The display label follows a variant copied in the CANAL dialog.
+    void copyBank(int from,int to) noexcept
+    {
+        if(from>=0 && from<2 && to>=0 && to<2 && from!=to)
+            banks[(size_t)to]=banks[(size_t)from];
+    }
     bool isModified(int bank,const Settings& current)const noexcept
     {
         if(bank<0 || bank>=2)return false;

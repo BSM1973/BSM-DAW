@@ -41,6 +41,16 @@ public:
     int variantIndex() const noexcept { return activeVariant; }
     void switchVariant() noexcept { activeVariant = 1 - activeVariant; }
 
+    // Duplicate a prepared variant without switching banks or touching DSP.
+    // The caller must first capture any unsaved knob edits with setPending().
+    bool copyVariant(int from,int to) noexcept
+    {
+        if(from<0 || from>=2 || to<0 || to>=2 || from==to)
+            return false;
+        variants[(size_t)to]=variants[(size_t)from];
+        return true;
+    }
+
     void copy() { clipboard = pending(); }
     bool paste() noexcept
     {

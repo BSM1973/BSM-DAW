@@ -201,6 +201,10 @@ public:
                     : juce::String::fromUTF8("AJOUTER AUX FAVORIS : "))
                 +saved[i].name);
         menu.addSubMenu("GÉRER LES FAVORIS",favoriteMenu,loaded && !saved.empty());
+        menu.addSeparator();
+        menu.addSectionHeader("VARIANTES A/B");
+        menu.addItem(1100,"COPIER A VERS B");
+        menu.addItem(1101,"COPIER B VERS A");
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -223,6 +227,10 @@ public:
                     safe->choosePresetImport();
                 else if(result==1002)
                     safe->choosePresetExport();
+                else if(result==1100)
+                    safe->copyVariantForEditing(0,1);
+                else if(result==1101)
+                    safe->copyVariantForEditing(1,0);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -334,6 +342,16 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void copyVariantForEditing(int from,int to)
+ {
+    // A knob edit may not have been published to the pending bank yet.
+    session.setPending(readControls());
+    if(!session.copyVariant(from,to))return;
+    presetIndicator.copyBank(from,to);
+    if(session.variantIndex()==to)
+        writeControls(session.pending());
+    repaint();
+ }
  void loadPresetForEditing(const juce::String& label,
                            const AudioEngine::ChannelProcessingSettings& settings)
  {

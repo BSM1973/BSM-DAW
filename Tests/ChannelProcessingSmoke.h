@@ -63,6 +63,54 @@ inline bool runLibertyChannelProcessingSmoke()
                 "B label lost after switching A");
         require(equal(engine.getChannelProcessingSettings(0),neutral),
                 "status indicator touched live DSP");
+        // Copying a label also copies the source reference and its modified
+        // status; the destination remains independent after later edits.
+        status.select(0,juce::String::fromUTF8("Voix épurée"),baseVoice);
+        status.copyBank(0,1);
+        require(!status.isModified(1,baseVoice),"copied label mismatches settings");
+        require(status.description(1,baseVoice)
+            .contains(juce::String::fromUTF8("Voix épurée")),
+            "copied label is missing");
+        auto changedCopy=baseVoice;
+        changedCopy.eqMidDb+=1.f;
+        require(status.isModified(1,changedCopy),"copied label lost modified detection");
+        require(!status.isModified(0,baseVoice),"label copy modified source");
+        status.copyBank(1,1);
+        status.copyBank(-1,0);
+        require(!status.isModified(0,baseVoice),"invalid label copy modified source");
+
+        // A/B duplication must stage without changing live track audio,
+        // even when the destination bank is selected in the dialog.
+        AudioEngine copyEngine;
+        LibertyChannelInspectorState::Session copySession(copyEngine,0);
+        copySession.setPending(baseVoice);
+        copySession.switchVariant();
+        copySession.setPending(baseBass);
+        require(copySession.copyVariant(0,1),"A to B copy rejected");
+        require(copySession.variantIndex()==1,"copy switched active bank");
+        require(equal(copySession.pending(),baseVoice),"A to B copy failed");
+        require(equal(copyEngine.getChannelProcessingSettings(0),neutral),
+                "A to B copy changed live audio");
+        copySession.setPending(baseBass);
+        require(copySession.copyVariant(1,0),"B to A copy rejected");
+        copySession.switchVariant();
+        require(equal(copySession.pending(),baseBass),"B to A copy failed");
+        require(equal(copyEngine.getChannelProcessingSettings(0),neutral),
+                "B to A copy changed live audio");
+        require(!copySession.copyVariant(-1,0) &&
+                !copySession.copyVariant(0,2) &&
+                !copySession.copyVariant(0,0),
+                "invalid copy was accepted");
+        copySession.switchVariant();
+        copySession.apply();
+        require(equal(copyEngine.getChannelProcessingSettings(0),baseBass),
+                "copied bank not applied");
+        LibertyChannelInspectorState::Session copyReopened(copyEngine,0);
+        copyReopened.switchVariant();
+        require(equal(copyReopened.pending(),baseBass),
+                "copied inactive bank not preserved after reopen");
+        require(equal(copyEngine.getChannelProcessingSettings(1),neutral),
+                "A/B copy changed another track");
 
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
