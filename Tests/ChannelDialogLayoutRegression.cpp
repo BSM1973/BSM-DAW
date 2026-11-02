@@ -24,6 +24,13 @@ int main(){
             assert(g.sections[(size_t)toggleParents[i]].contains(toggle));
             for(const auto& knob:g.controls)assert(!toggle.intersects(knob));
         }
+        for(int i=0;i<2;++i){
+            const auto button=g.clipboard[(size_t)i];
+            assert(full.contains(button));
+            for(const auto& card:g.sections)assert(!card.intersects(button));
+            for(const auto& action:g.actions)assert(!action.intersects(button));
+            for(int j=i+1;j<2;++j)assert(!button.intersects(g.clipboard[(size_t)j]));
+        }
         for(int i=0;i<3;++i){
             assert(full.contains(g.actions[(size_t)i]));
             for(const auto& card:g.sections)assert(!card.intersects(g.actions[(size_t)i]));

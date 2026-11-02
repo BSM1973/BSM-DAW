@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioEngine.h"
 #include "ChannelProjectState.h"
+#include "ChannelInspectorSession.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -30,8 +31,11 @@ inline bool runLibertyChannelProcessingSmoke()
         const AudioEngine::ChannelProcessingSettings neutral;
         require(equal(engine.getChannelProcessingSettings(0),neutral), "initial state");
 
-        // The inspector stages local values. Cancel and Reset must not touch the DSP.
-        auto draft=engine.getChannelProcessingSettings(0);
+        // Exercise the real session object used by the CANAL window.
+        LibertyChannelInspectorState::Session::clearClipboardForTests();
+        LibertyChannelInspectorState::Session source(engine,0);
+        require(!LibertyChannelInspectorState::Session::canPaste(), "clipboard not empty");
+        auto draft=source.pending();
         draft.inputGainDb=7.5f;
         draft.highPassHz=125.f;
         draft.gateEnabled=true;
@@ -43,13 +47,35 @@ inline bool runLibertyChannelProcessingSmoke()
         draft.eqLowDb=2.5f;
         draft.eqMidDb=-4.5f;
         draft.eqHighDb=6.f;
-        require(equal(engine.getChannelProcessingSettings(0),neutral), "cancel changed live audio");
-        auto pendingReset=neutral;
+        source.setPending(draft);
+        require(equal(engine.getChannelProcessingSettings(0),neutral), "staging changed audio");
+        source.reset();
+        require(equal(source.pending(),neutral), "reset did not prepare neutral values");
         require(equal(engine.getChannelProcessingSettings(0),neutral), "reset changed live audio");
-        (void)pendingReset;
+        source.setPending(draft);
+        source.copy();
+        require(LibertyChannelInspectorState::Session::canPaste(), "clipboard copy");
 
-        // APPLIQUER must publish all eleven fields to AudioEngine, on only this track.
-        engine.setChannelProcessingSettings(0,draft);
+        LibertyChannelInspectorState::Session cancelled(engine,1);
+        require(cancelled.paste(), "clipboard paste");
+        require(equal(cancelled.pending(),draft), "pasted values differ");
+        require(equal(engine.getChannelProcessingSettings(1),neutral), "paste changed live audio");
+        cancelled.cancel();
+        require(equal(engine.getChannelProcessingSettings(1),neutral), "cancel changed audio");
+
+        // A different CANAL dialog can paste the copied settings onto its track.
+        LibertyChannelInspectorState::Session target(engine,1);
+        require(target.paste(), "second paste");
+        target.apply();
+        require(equal(engine.getChannelProcessingSettings(1),draft), "apply pasted settings");
+        require(equal(engine.getChannelProcessingSettings(0),neutral), "paste affected source track");
+        target.reset();
+        require(equal(engine.getChannelProcessingSettings(1),draft), "reset modified audio before apply");
+        target.apply();
+        require(equal(engine.getChannelProcessingSettings(1),neutral), "reset apply did not neutralise");
+
+        // APPLIQUER from the original dialog publishes all eleven settings.
+        source.apply();
         require(equal(engine.getChannelProcessingSettings(0),draft), "apply / mixer sync");
         require(equal(engine.getChannelProcessingSettings(1),neutral), "cross-track DSP leak");
 

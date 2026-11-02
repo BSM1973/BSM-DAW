@@ -5,6 +5,7 @@
 #include "OneKnobEffects.h"
 #include "MixConsoleLayout.h"
 #include "ChannelDialogLayout.h"
+#include "ChannelInspectorSession.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -74,8 +75,8 @@ public:
  LibertyChannelInspector(AudioEngine& source,int track,juce::String trackLabel,
                          std::function<void()> refresh)
    :engine(source),trackIndex(track),name(std::move(trackLabel)),
-    afterApply(std::move(refresh)){
-    const auto v=engine.getChannelProcessingSettings(trackIndex);
+    afterApply(std::move(refresh)),session(source,track){
+    const auto v=session.pending();
     configure(knobs[0],-24,24,.5,v.inputGainDb," dB",juce::Colour(0xff72c6eb));
     configure(knobs[1],0,500,1,v.highPassHz," Hz",juce::Colour(0xff72c6eb));
     configure(knobs[2],-80,-20,1,v.gateThresholdDb," dB",juce::Colour(0xff91d1a8));
@@ -96,38 +97,36 @@ public:
         power[(size_t)i].onClick=[this,i]{refreshPower(i);};
         refreshPower(i);
     }
-    for(auto* button:{&resetButton,&cancelButton,&applyButton}){
+    for(auto* button:{&resetButton,&copyButton,&pasteButton,&cancelButton,&applyButton}){
         button->setMouseClickGrabsKeyboardFocus(false);
         button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
         addAndMakeVisible(*button);
     }
     resetButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
+    copyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
+    pasteButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     cancelButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
     applyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff207b86));
     resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
+    copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
+    pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
+    pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
-        const double defaults[8]={0,0,-55,-18,4,0,0,0};
-        for(int i=0;i<8;++i)knobs[(size_t)i].setValue(defaults[i],juce::dontSendNotification);
-        for(int i=0;i<3;++i){
-            power[(size_t)i].setToggleState(false,juce::dontSendNotification);
-            refreshPower(i);
-        }
+        session.reset();
+        writeControls(session.pending());
     };
-    cancelButton.onClick=[this]{closeDialog(0);};
+    copyButton.onClick=[this]{
+        session.setPending(readControls());
+        session.copy();
+        pasteButton.setEnabled(true);
+    };
+    pasteButton.onClick=[this]{
+        if(session.paste())writeControls(session.pending());
+    };
+    cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
     applyButton.onClick=[this]{
-        auto v=engine.getChannelProcessingSettings(trackIndex);
-        v.inputGainDb=(float)knobs[0].getValue();
-        v.highPassHz=(float)knobs[1].getValue();
-        v.gateThresholdDb=(float)knobs[2].getValue();
-        v.compressorThresholdDb=(float)knobs[3].getValue();
-        v.compressorRatio=(float)knobs[4].getValue();
-        v.eqLowDb=(float)knobs[5].getValue();
-        v.eqMidDb=(float)knobs[6].getValue();
-        v.eqHighDb=(float)knobs[7].getValue();
-        v.gateEnabled=power[0].getToggleState();
-        v.compressorEnabled=power[1].getToggleState();
-        v.eqEnabled=power[2].getToggleState();
-        engine.setChannelProcessingSettings(trackIndex,v);
+        session.setPending(readControls());
+        session.apply();
         if(afterApply)afterApply();
         closeDialog(1);
     };
@@ -175,7 +174,7 @@ public:
      }
      g.setColour(juce::Colour(0xff91aabd));
      g.setFont(juce::Font(10.f));
-     g.drawText(juce::String::fromUTF8("ANNULER n'affecte pas le son. APPLIQUER valide tous les réglages."),
+     g.drawText(juce::String::fromUTF8("COPIER / COLLER préparent les réglages. ANNULER ignore. APPLIQUER valide."),
                 20,getHeight()-86,getWidth()-40,17,juce::Justification::centredLeft);
  }
  void resized()override{
@@ -193,8 +192,39 @@ public:
         const auto b=layout.actions[(size_t)i];
         buttons[i]->setBounds(b.x,b.y,b.w,b.h);
     }
+    juce::TextButton* clipButtons[]={&copyButton,&pasteButton};
+    for(int i=0;i<2;++i){
+        const auto b=layout.clipboard[(size_t)i];
+        clipButtons[i]->setBounds(b.x,b.y,b.w,b.h);
+    }
  }
 private:
+ AudioEngine::ChannelProcessingSettings readControls()const{
+    auto v=session.pending();
+    v.inputGainDb=(float)knobs[0].getValue();
+    v.highPassHz=(float)knobs[1].getValue();
+    v.gateThresholdDb=(float)knobs[2].getValue();
+    v.compressorThresholdDb=(float)knobs[3].getValue();
+    v.compressorRatio=(float)knobs[4].getValue();
+    v.eqLowDb=(float)knobs[5].getValue();
+    v.eqMidDb=(float)knobs[6].getValue();
+    v.eqHighDb=(float)knobs[7].getValue();
+    v.gateEnabled=power[0].getToggleState();
+    v.compressorEnabled=power[1].getToggleState();
+    v.eqEnabled=power[2].getToggleState();
+    return v;
+ }
+ void writeControls(const AudioEngine::ChannelProcessingSettings& v){
+    const double values[8]={v.inputGainDb,v.highPassHz,v.gateThresholdDb,
+                            v.compressorThresholdDb,v.compressorRatio,
+                            v.eqLowDb,v.eqMidDb,v.eqHighDb};
+    for(int i=0;i<8;++i)knobs[(size_t)i].setValue(values[i],juce::dontSendNotification);
+    const bool enabled[3]={v.gateEnabled,v.compressorEnabled,v.eqEnabled};
+    for(int i=0;i<3;++i){
+        power[(size_t)i].setToggleState(enabled[i],juce::dontSendNotification);
+        refreshPower(i);
+    }
+ }
  void configure(juce::Slider& slider,double minimum,double maximum,double step,
                 double value,const juce::String& suffix,juce::Colour accent){
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -231,10 +261,13 @@ private:
  int trackIndex;
  juce::String name;
  std::function<void()> afterApply;
+ LibertyChannelInspectorState::Session session;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
  std::array<juce::TextButton,3> power;
  juce::TextButton resetButton{juce::String::fromUTF8("RÉINITIALISER")};
+ juce::TextButton copyButton{"COPIER"};
+ juce::TextButton pasteButton{"COLLER"};
  juce::TextButton cancelButton{"ANNULER"};
  juce::TextButton applyButton{"APPLIQUER"};
 };
