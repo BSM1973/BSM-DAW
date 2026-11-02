@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include <array>
 #include <cmath>
+#include <utility>
 
 // Display-only indicator: the selected CANAL preset and its edits are tracked
 // separately in A and B. No audio state is changed by this class.
@@ -44,6 +45,10 @@ public:
     {
         if(from>=0 && from<2 && to>=0 && to<2 && from!=to)
             banks[(size_t)to]=banks[(size_t)from];
+    }
+    void swapBanks() noexcept
+    {
+        std::swap(banks[0],banks[1]);
     }
     bool isModified(int bank,const Settings& current)const noexcept
     {

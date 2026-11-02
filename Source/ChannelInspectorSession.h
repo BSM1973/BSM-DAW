@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include <array>
 #include <optional>
+#include <utility>
 
 // A CANAL dialog edits a pending copy. Only apply() changes the audio engine.
 // The clipboard is internal to Liberty and is shared by all CANAL dialogs.
@@ -49,6 +50,13 @@ public:
             return false;
         variants[(size_t)to]=variants[(size_t)from];
         return true;
+    }
+
+    // Swap both drafts but retain the active bank selection. Nothing becomes
+    // audible until apply(), and cancel() can restore the previous state.
+    void swapVariants() noexcept
+    {
+        std::swap(variants[0],variants[1]);
     }
 
     void copy() { clipboard = pending(); }

@@ -205,6 +205,7 @@ public:
         menu.addSectionHeader("VARIANTES A/B");
         menu.addItem(1100,"COPIER A VERS B");
         menu.addItem(1101,"COPIER B VERS A");
+        menu.addItem(1102,juce::String::fromUTF8("ÉCHANGER A ET B"));
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -231,6 +232,8 @@ public:
                     safe->copyVariantForEditing(0,1);
                 else if(result==1101)
                     safe->copyVariantForEditing(1,0);
+                else if(result==1102)
+                    safe->swapVariantsForEditing();
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -342,6 +345,15 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void swapVariantsForEditing()
+ {
+    // Include the values most recently edited with the mouse.
+    session.setPending(readControls());
+    session.swapVariants();
+    presetIndicator.swapBanks();
+    writeControls(session.pending());
+    repaint();
+ }
  void copyVariantForEditing(int from,int to)
  {
     // A knob edit may not have been published to the pending bank yet.

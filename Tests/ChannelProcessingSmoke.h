@@ -112,6 +112,46 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(copyEngine.getChannelProcessingSettings(1),neutral),
                 "A/B copy changed another track");
 
+        // Swapping A/B exchanges both drafts and their display references,
+        // keeps the selected bank and remains non-destructive until APPLY.
+        AudioEngine swapEngine;
+        LibertyChannelInspectorState::Session swapSession(swapEngine,0);
+        swapSession.setPending(baseVoice);
+        swapSession.switchVariant();
+        swapSession.setPending(baseBass);
+        swapSession.switchVariant();
+        LibertyChannelPresetStatus::Indicator swapStatus;
+        swapStatus.select(0,juce::String::fromUTF8("Voix épurée"),baseVoice);
+        swapStatus.select(1,juce::String::fromUTF8("Basse chaude"),baseBass);
+        swapSession.swapVariants();
+        swapStatus.swapBanks();
+        require(swapSession.variantIndex()==0,"swap changed active bank");
+        require(equal(swapSession.pending(),baseBass),"swap did not put B into A");
+        require(swapStatus.description(0,swapSession.pending())
+            .contains(juce::String::fromUTF8("Basse chaude")),
+            "swap did not carry B preset name to A");
+        swapSession.switchVariant();
+        require(equal(swapSession.pending(),baseVoice),"swap did not put A into B");
+        require(swapStatus.description(1,swapSession.pending())
+            .contains(juce::String::fromUTF8("Voix épurée")),
+            "swap did not carry A preset name to B");
+        require(equal(swapEngine.getChannelProcessingSettings(0),neutral),
+                "swap affected live audio before APPLY");
+        swapSession.switchVariant();
+        swapSession.apply();
+        require(equal(swapEngine.getChannelProcessingSettings(0),baseBass),
+                "swap applied wrong active variant");
+        LibertyChannelInspectorState::Session swappedReopened(swapEngine,0);
+        swappedReopened.switchVariant();
+        require(equal(swappedReopened.pending(),baseVoice),
+                "swap failed to persist inactive variant");
+        swappedReopened.swapVariants();
+        swappedReopened.switchVariant();
+        require(equal(swappedReopened.pending(),baseVoice),
+                "second swap did not restore original order");
+        require(equal(swapEngine.getChannelProcessingSettings(1),neutral),
+                "swap changed a second track");
+
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
         LibertyChannelInspectorState::Session presetSession(presetEngine,0);
