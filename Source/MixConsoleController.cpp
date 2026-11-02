@@ -163,7 +163,7 @@ private:
         }
         const auto& e=g.modules[0],&gate=g.modules[1],&comp=g.modules[2],&input=g.modules[3];
         auto knob=[&](juce::Slider* control,int rx,const LibertyMixerLayout::Panel& p,int w){
-          const int size=juce::jmin(29,p.bodyHeight-8);
+          const int size=juce::jmin(26,p.bodyHeight-8);
           put(control,rx,p.bodyY+4,w,size,p.bodyHeight>=25);
         };
         for(int band=0;band<3;++band)
@@ -171,7 +171,7 @@ private:
         knob(s->gateThreshold.get(),57,gate,31);
         knob(s->compThreshold.get(),28,comp,31);
         knob(s->compRatio.get(),86,comp,31);
-        const int inputKnob=juce::jmin(29,input.bodyHeight-8);
+        const int inputKnob=juce::jmin(26,input.bodyHeight-8);
         put(s->channel.get(),8,input.bodyY+8,44,20,input.bodyHeight>=30);
         put(s->inputGain.get(),65,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
         put(s->highPass.get(),105,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
