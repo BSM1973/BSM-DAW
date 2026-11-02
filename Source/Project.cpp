@@ -148,6 +148,13 @@ juce::String MainComponent::getProjectStateSignature() const
         const auto savedLengthSeconds = audioLoaded ? audioEngine.getAudioFileLengthSeconds(i) : pendingAudioLengths[(size_t)i];
         const auto savedStartSeconds = audioLoaded ? audioEngine.getTrackStartSeconds(i) : pendingAudioStartSeconds[(size_t)i];
 
+        const auto channel = audioEngine.getChannelProcessingSettings(i);
+        signature << ";channel=" << juce::String(channel.inputGainDb, 3) << "," << juce::String(channel.highPassHz, 3)
+                  << "," << (channel.compressorEnabled ? 1 : 0) << "," << juce::String(channel.compressorThresholdDb, 3)
+                  << "," << juce::String(channel.compressorRatio, 3) << "," << (channel.gateEnabled ? 1 : 0)
+                  << "," << juce::String(channel.gateThresholdDb, 3) << "," << (channel.eqEnabled ? 1 : 0)
+                  << "," << juce::String(channel.eqLowDb, 3) << "," << juce::String(channel.eqMidDb, 3)
+                  << "," << juce::String(channel.eqHighDb, 3);
         signature << "|track=" << i
                   << ";loaded=" << (expectsAudioMedia ? 1 : 0)
                   << ";source=" << trackSourceFiles[(size_t)i].getFullPathName()
@@ -774,6 +781,18 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         track->setAttribute("fileName", savedFileName);
         track->setAttribute("startSeconds", savedStartSeconds);
         track->setAttribute("lengthSeconds", savedLengthSeconds);
+        const auto channel = audioEngine.getChannelProcessingSettings(i);
+        track->setAttribute("channelInputGainDb", (double)channel.inputGainDb);
+        track->setAttribute("channelHighPassHz", (double)channel.highPassHz);
+        track->setAttribute("channelCompressorOn", channel.compressorEnabled);
+        track->setAttribute("channelCompressorThresholdDb", (double)channel.compressorThresholdDb);
+        track->setAttribute("channelCompressorRatio", (double)channel.compressorRatio);
+        track->setAttribute("channelGateOn", channel.gateEnabled);
+        track->setAttribute("channelGateThresholdDb", (double)channel.gateThresholdDb);
+        track->setAttribute("channelEqOn", channel.eqEnabled);
+        track->setAttribute("channelEqLowDb", (double)channel.eqLowDb);
+        track->setAttribute("channelEqMidDb", (double)channel.eqMidDb);
+        track->setAttribute("channelEqHighDb", (double)channel.eqHighDb);
         track->setAttribute("gain", (double)audioEngine.getTrackGain(i));
         track->setAttribute("pan", (double)audioEngine.getTrackPan(i));
         track->setAttribute("muted", audioEngine.isTrackMuted(i));
@@ -1211,6 +1230,19 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         setLibertyTrackColourId(index, track->getIntAttribute("colourId", 0));
         setLibertyTrackName(index, track->getStringAttribute("trackName", "Audio " + juce::String(index + 1)));
         audioEngine.setTrackStartSeconds(index, juce::jmax(0.0, finiteOr(track->getDoubleAttribute("startSeconds", 0.0), 0.0)));
+        AudioEngine::ChannelProcessingSettings channel;
+        channel.inputGainDb = (float)finiteOr(track->getDoubleAttribute("channelInputGainDb", 0.0), 0.0);
+        channel.highPassHz = (float)finiteOr(track->getDoubleAttribute("channelHighPassHz", 0.0), 0.0);
+        channel.compressorEnabled = track->getBoolAttribute("channelCompressorOn", false);
+        channel.compressorThresholdDb = (float)finiteOr(track->getDoubleAttribute("channelCompressorThresholdDb", -18.0), -18.0);
+        channel.compressorRatio = (float)finiteOr(track->getDoubleAttribute("channelCompressorRatio", 4.0), 4.0);
+        channel.gateEnabled = track->getBoolAttribute("channelGateOn", false);
+        channel.gateThresholdDb = (float)finiteOr(track->getDoubleAttribute("channelGateThresholdDb", -55.0), -55.0);
+        channel.eqEnabled = track->getBoolAttribute("channelEqOn", false);
+        channel.eqLowDb = (float)finiteOr(track->getDoubleAttribute("channelEqLowDb", 0.0), 0.0);
+        channel.eqMidDb = (float)finiteOr(track->getDoubleAttribute("channelEqMidDb", 0.0), 0.0);
+        channel.eqHighDb = (float)finiteOr(track->getDoubleAttribute("channelEqHighDb", 0.0), 0.0);
+        audioEngine.setChannelProcessingSettings(index, channel);
         audioEngine.setTrackGain(index, juce::jlimit(0.0f, 2.0f, (float) finiteOr(track->getDoubleAttribute("gain", 1.0), 1.0)));
         audioEngine.setTrackPan(index, juce::jlimit(-1.0f, 1.0f, (float) finiteOr(track->getDoubleAttribute("pan", 0.0), 0.0)));
         audioEngine.setTrackMuted(index, track->getBoolAttribute("muted", false));
