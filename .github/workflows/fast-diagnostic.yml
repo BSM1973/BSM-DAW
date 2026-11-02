@@ -71,6 +71,9 @@ jobs:
       - name: Test audio clip playback and fade preservation
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --audio-clip-playback-test
 
+      - name: Test CANAL settings, neutral project reset and project XML roundtrip
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test
+
       - name: Test arrangement clip edits and fade Undo/Redo
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
 
