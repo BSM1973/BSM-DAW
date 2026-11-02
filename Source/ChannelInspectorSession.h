@@ -64,6 +64,17 @@ public:
         return transferSection(variants[(size_t)from],variants[(size_t)to],section);
     }
 
+    // Exchange just one group of controls between A and B. The selection,
+    // unrelated groups, the preset references and live DSP remain untouched.
+    bool swapSection(Section section) noexcept
+    {
+        const auto originalA=variants[0];
+        const auto originalB=variants[1];
+        if(!transferSection(originalB,variants[0],section))
+            return false;
+        return transferSection(originalA,variants[1],section);
+    }
+
     // Return only the selected section to neutral values, leaving the other
     // treatments, the other A/B bank and the live audio engine untouched.
     bool resetSection(Section section) noexcept

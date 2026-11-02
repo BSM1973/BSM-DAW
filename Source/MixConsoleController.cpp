@@ -210,7 +210,7 @@ public:
         menu.addSeparator();
         menu.addItem(1103,"RESTAURER A");
         menu.addItem(1104,"RESTAURER B");
-        juce::PopupMenu sectionsAToB,sectionsBToA,resetSections,restoreSections;
+        juce::PopupMenu sectionsAToB,sectionsBToA,resetSections,restoreSections,swapSections;
         const juce::String sectionNames[4]={
             "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
         };
@@ -220,6 +220,7 @@ public:
             sectionsBToA.addItem(1210+section,sectionNames[section]);
             resetSections.addItem(1300+section,sectionNames[section]);
             restoreSections.addItem(1400+section,sectionNames[section]);
+            swapSections.addItem(1500+section,sectionNames[section]);
         }
         menu.addSeparator();
         menu.addSubMenu("COPIER UNE SECTION A VERS B",sectionsAToB);
@@ -228,6 +229,8 @@ public:
                         resetSections);
         menu.addSubMenu(juce::String::fromUTF8("RESTAURER UNE SECTION"),
                         restoreSections);
+        menu.addSubMenu(juce::String::fromUTF8("ÉCHANGER UNE SECTION A/B"),
+                        swapSections);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -268,6 +271,8 @@ public:
                     safe->resetSectionForEditing(result-1300);
                 else if(result>=1400 && result<1404)
                     safe->restoreSectionForEditing(result-1400);
+                else if(result>=1500 && result<1504)
+                    safe->swapSectionForEditing(result-1500);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -379,6 +384,19 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void swapSectionForEditing(int section)
+ {
+    // The active bank may contain unpublished edits from its controls.
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3
+       || !session.swapSection(static_cast<Section>(section)))
+        return;
+    // Preset labels remain attached to each bank; their existing MODIFIÉ
+    // indicator reflects the selective exchange automatically.
+    writeControls(session.pending());
+    repaint();
+ }
  void restoreSectionForEditing(int section)
  {
     // Save any unpublished knob edits before restoring a single section.

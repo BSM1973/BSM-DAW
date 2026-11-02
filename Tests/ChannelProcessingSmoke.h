@@ -320,6 +320,111 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(sectionEngine.getChannelProcessingSettings(1),neutral),
                 "section copy leaked to another track");
 
+        // Swap only the requested section of A and B, including enable
+        // switches. A second swap must restore every original parameter.
+        // Neither the selected bank nor live audio may change before APPLY.
+        AudioEngine sectionSwapEngine;
+        for(const auto section:sections)
+        {
+            for(int active=0;active<2;++active)
+            {
+                LibertyChannelInspectorState::Session swapping(sectionSwapEngine,0);
+                swapping.setPending(originalA);
+                swapping.switchVariant();
+                swapping.setPending(originalB);
+                if(active==0)swapping.switchVariant();
+                auto expectedA=originalA;
+                auto expectedB=originalB;
+                switch(section)
+                {
+                    case Section::Input:
+                        expectedA.inputGainDb=originalB.inputGainDb;
+                        expectedA.highPassHz=originalB.highPassHz;
+                        expectedB.inputGainDb=originalA.inputGainDb;
+                        expectedB.highPassHz=originalA.highPassHz;
+                        break;
+                    case Section::Gate:
+                        expectedA.gateEnabled=originalB.gateEnabled;
+                        expectedA.gateThresholdDb=originalB.gateThresholdDb;
+                        expectedB.gateEnabled=originalA.gateEnabled;
+                        expectedB.gateThresholdDb=originalA.gateThresholdDb;
+                        break;
+                    case Section::Compressor:
+                        expectedA.compressorEnabled=originalB.compressorEnabled;
+                        expectedA.compressorThresholdDb=originalB.compressorThresholdDb;
+                        expectedA.compressorRatio=originalB.compressorRatio;
+                        expectedB.compressorEnabled=originalA.compressorEnabled;
+                        expectedB.compressorThresholdDb=originalA.compressorThresholdDb;
+                        expectedB.compressorRatio=originalA.compressorRatio;
+                        break;
+                    case Section::Equalizer:
+                        expectedA.eqEnabled=originalB.eqEnabled;
+                        expectedA.eqLowDb=originalB.eqLowDb;
+                        expectedA.eqMidDb=originalB.eqMidDb;
+                        expectedA.eqHighDb=originalB.eqHighDb;
+                        expectedB.eqEnabled=originalA.eqEnabled;
+                        expectedB.eqLowDb=originalA.eqLowDb;
+                        expectedB.eqMidDb=originalA.eqMidDb;
+                        expectedB.eqHighDb=originalA.eqHighDb;
+                        break;
+                }
+                require(swapping.swapSection(section),"section A/B exchange rejected");
+                require(swapping.variantIndex()==active,
+                        "section A/B exchange changed selected variant");
+                require(equal(swapping.pending(),active==0?expectedA:expectedB),
+                        "section exchange changed unrelated controls on active bank");
+                swapping.switchVariant();
+                require(equal(swapping.pending(),active==0?expectedB:expectedA),
+                        "section exchange changed unrelated controls on inactive bank");
+                require(equal(sectionSwapEngine.getChannelProcessingSettings(0),neutral),
+                        "section exchange changed live audio before APPLY");
+                require(!swapping.swapSection(static_cast<Section>(9)),
+                        "invalid section exchange accepted");
+                require(equal(swapping.pending(),active==0?expectedB:expectedA),
+                        "invalid section exchange damaged a bank");
+                require(swapping.swapSection(section),"second section exchange rejected");
+                require(equal(swapping.pending(),active==0?originalB:originalA),
+                        "second exchange failed to restore inactive bank");
+                swapping.switchVariant();
+                require(equal(swapping.pending(),active==0?originalA:originalB),
+                        "second exchange failed to restore active bank");
+                swapping.cancel();
+                require(equal(sectionSwapEngine.getChannelProcessingSettings(0),neutral),
+                        "CANCEL after section exchange affected audio");
+            }
+        }
+        // A single exchanged section must be persisted for both variants
+        // only after APPLY, while the other track remains untouched.
+        LibertyChannelInspectorState::Session exchangeApply(sectionSwapEngine,0);
+        exchangeApply.setPending(originalA);
+        exchangeApply.switchVariant();
+        exchangeApply.setPending(originalB);
+        exchangeApply.switchVariant();
+        require(exchangeApply.swapSection(Section::Compressor),
+                "compressor exchange before APPLY rejected");
+        auto exchangedA=originalA;
+        exchangedA.compressorEnabled=originalB.compressorEnabled;
+        exchangedA.compressorThresholdDb=originalB.compressorThresholdDb;
+        exchangedA.compressorRatio=originalB.compressorRatio;
+        auto exchangedB=originalB;
+        exchangedB.compressorEnabled=originalA.compressorEnabled;
+        exchangedB.compressorThresholdDb=originalA.compressorThresholdDb;
+        exchangedB.compressorRatio=originalA.compressorRatio;
+        require(equal(sectionSwapEngine.getChannelProcessingSettings(0),neutral),
+                "exchanged compressor became audible without APPLY");
+        exchangeApply.apply();
+        require(equal(sectionSwapEngine.getChannelProcessingSettings(0),exchangedA),
+                "exchanged compressor not applied");
+        LibertyChannelInspectorState::Session exchangeReopened(sectionSwapEngine,0);
+        require(exchangeReopened.variantIndex()==0
+                && equal(exchangeReopened.pending(),exchangedA),
+                "exchanged A compressor not persisted");
+        exchangeReopened.switchVariant();
+        require(equal(exchangeReopened.pending(),exchangedB),
+                "exchanged B compressor not persisted");
+        require(equal(sectionSwapEngine.getChannelProcessingSettings(1),neutral),
+                "section exchange modified other track");
+
         // Section-only reset: each control group has independent defaults,
         // and activating B must not reset A or alter any live audio.
         AudioEngine resetEngine;
