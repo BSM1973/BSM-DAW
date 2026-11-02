@@ -81,16 +81,56 @@ inline bool runLibertyChannelProcessingSmoke()
         require(personal.erase(juce::String::fromUTF8(" À L'ÉTÉ ")),
                 "cannot delete accented name with different case");
         require(personal.items().size()==2,"accented preset was not deleted");
+        require(personal.rename(juce::String::fromUTF8("VOIX ÉPURÉE"),
+                                juce::String::fromUTF8("Voix claire")),
+                "could not rename accented preset");
+        require(!personal.rename("Voix claire","basse CHAUDE"),
+                "rename overwrote another preset");
+        require(!personal.rename("Absent","Sans source"),
+                "rename invented a source preset");
+        require(!personal.rename("Voix claire","   "),
+                "rename accepted an empty name");
+        require(personal.duplicate("Voix claire",
+                                   juce::String::fromUTF8("Voix claire - copie")),
+                "could not duplicate a preset");
+        require(personal.items().size()==3,"duplicate did not add one entry");
+        require(equal(personal.items()[0].settings,personal.items()[2].settings),
+                "duplicate changed sound settings");
+        require(!personal.duplicate("Voix claire",
+                                    juce::String::fromUTF8("VOIX CLAIRE - COPIE")),
+                "duplicate overwrote a case-equivalent name");
+        require(!personal.duplicate("Absent","Nouveau"),"duplicate missing source");
+        require(personal.rename(juce::String::fromUTF8("VOIX CLAIRE"),
+                                juce::String::fromUTF8("VOIX CLAIRE")),
+                "case-only rename must be allowed");
+        require(personal.items().size()==3,"rename created a new entry");
+        require(personal.erase("Voix claire - copie"),"could not delete duplicate");
+        require(personal.items().size()==2,"duplicate delete did not restore original count");
+        require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
+                "preset rename or duplication changed DSP");
         const auto xmlPersonal=personal.toXml();
         auto parsedPersonal=juce::parseXML(xmlPersonal->toString());
         require(parsedPersonal!=nullptr,"personal preset XML invalid");
         LibertyChannelUserPresets::Library restoredPersonal;
         require(restoredPersonal.fromXml(*parsedPersonal),"personal preset XML read failed");
         require(restoredPersonal.items().size()==2,"personal preset count after XML");
+        require(restoredPersonal.items()[0].name==juce::String::fromUTF8("VOIX CLAIRE"),
+                "renamed preset name lost in XML");
         require(equal(restoredPersonal.items()[0].settings,bassPreset),
                 "personal preset roundtrip changed settings");
         require(restoredPersonal.erase("basse CHAUDE"),"personal preset delete");
         require(restoredPersonal.items().size()==1,"personal preset delete left entry");
+        for(int i=1;i<LibertyChannelUserPresets::Library::maxPresets;++i)
+            require(restoredPersonal.upsert("Test "+juce::String(i),voicePreset),
+                    "unable to fill personal preset library");
+        require((int)restoredPersonal.items().size()==LibertyChannelUserPresets::Library::maxPresets,
+                "preset maximum count");
+        require(!restoredPersonal.duplicate("VOIX CLAIRE","Beyond limit"),
+                "duplicate exceeded preset limit");
+        require(restoredPersonal.rename("VOIX CLAIRE","Voix claire"),
+                "rename at capacity rejected");
+        require(restoredPersonal.items().size()==LibertyChannelUserPresets::Library::maxPresets,
+                "rename at capacity changed count");
         require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
                 "preset library changed applied DSP");
         auto userDraft=LibertyChannelInspectorState::Session(presetEngine,0);
@@ -101,7 +141,8 @@ inline bool runLibertyChannelProcessingSmoke()
         // A bad XML document must be rejected without destroying the existing list.
         juce::XmlElement badPersonal("OtherPresets");
         require(!restoredPersonal.fromXml(badPersonal),"accepted non-Liberty XML");
-        require(restoredPersonal.items().size()==1,"corrupted preset library on read");
+        require(restoredPersonal.items().size()==LibertyChannelUserPresets::Library::maxPresets,
+                "corrupted preset library on read");
 
         // Exercise the real session object used by the CANAL window.
         LibertyChannelInspectorState::Session::clearClipboardForTests();

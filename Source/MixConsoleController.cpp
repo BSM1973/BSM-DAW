@@ -158,6 +158,17 @@ public:
             remove.addItem(200+(int)i,saved[i].name);
         menu.addSubMenu(juce::String::fromUTF8("SUPPRIMER UN PRÉRÉGLAGE"),remove,
                         loaded && !saved.empty());
+        juce::PopupMenu renameMenu,duplicateMenu;
+        for(size_t i=0;i<saved.size();++i)
+        {
+            renameMenu.addItem(300+(int)i,saved[i].name);
+            duplicateMenu.addItem(400+(int)i,saved[i].name);
+        }
+        menu.addSubMenu(juce::String::fromUTF8("RENOMMER UN PRÉRÉGLAGE"),
+                        renameMenu,loaded && !saved.empty());
+        menu.addSubMenu(juce::String::fromUTF8("DUPLIQUER UN PRÉRÉGLAGE"),
+                        duplicateMenu,loaded && !saved.empty()
+                            && (int)saved.size()<LibertyChannelUserPresets::Library::maxPresets);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -177,6 +188,10 @@ public:
                     safe->askToSavePreset();
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
+                else if(result>=300 && result<300+(int)saved.size())
+                    safe->askToModifyPresetName(saved[(size_t)(result-300)].name,false);
+                else if(result>=400 && result<400+(int)saved.size())
+                    safe->askToModifyPresetName(saved[(size_t)(result-400)].name,true);
             });
     };
     cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
@@ -291,6 +306,41 @@ private:
                    || !library.save(file))
                     safe->reportPresetError(juce::String::fromUTF8(
                         "Impossible d'enregistrer ce préréglage. Vérifiez son nom ou le dossier Liberty."));
+            }),false);
+ }
+ void askToModifyPresetName(juce::String oldName,bool duplicate)
+ {
+    const juce::String suggested=duplicate
+        ? (oldName+juce::String::fromUTF8(" - copie")).substring(0,48)
+        : oldName;
+    auto* dialog=new juce::AlertWindow("LIBERTY  |  CANAL",
+        duplicate
+            ? juce::String::fromUTF8("Dupliquer ce préréglage sous un nouveau nom (48 caractères maximum).")
+            : juce::String::fromUTF8("Renommer ce préréglage (48 caractères maximum)."),
+        juce::AlertWindow::QuestionIcon);
+    dialog->setColour(juce::AlertWindow::backgroundColourId,juce::Colour(0xff142438));
+    dialog->setColour(juce::AlertWindow::textColourId,juce::Colours::white);
+    dialog->addTextEditor("newPresetName",suggested,
+                           juce::String::fromUTF8("Nouveau nom"),false);
+    dialog->addButton(duplicate?"DUPLIQUER":"RENOMMER",1,
+                      juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("ANNULER",0,juce::KeyPress(juce::KeyPress::escapeKey));
+    dialog->enterModalState(true,
+        juce::ModalCallbackFunction::create(
+            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
+             dialog,oldName,duplicate](int result){
+                const auto newName=dialog->getTextEditorContents("newPresetName");
+                delete dialog;
+                if(safe==nullptr || result!=1)return;
+                LibertyChannelUserPresets::Library library;
+                const auto file=LibertyChannelUserPresets::Library::defaultFile();
+                const bool loaded=library.load(file);
+                const bool changed=loaded && (duplicate
+                    ? library.duplicate(oldName,newName)
+                    : library.rename(oldName,newName));
+                if(!changed || !library.save(file))
+                    safe->reportPresetError(juce::String::fromUTF8(
+                        "Modification impossible : nom invalide, déjà utilisé ou nombre maximal de préréglages atteint."));
             }),false);
  }
  void askToRemovePreset(juce::String presetName)

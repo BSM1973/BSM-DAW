@@ -52,6 +52,40 @@ public:
         presets.push_back({name,settings});
         return true;
     }
+    // Rename preserves the original DSP settings and list order. Never
+    // overwrite a different preset, even when its name differs only by case.
+    bool rename(const juce::String& currentName,juce::String replacement)
+    {
+        replacement=replacement.trim();
+        if(!validName(replacement))return false;
+        const auto fromKey=comparisonKey(currentName);
+        const auto toKey=comparisonKey(replacement);
+        auto it=std::find_if(presets.begin(),presets.end(),
+            [&](const Preset& p){return comparisonKey(p.name)==fromKey;});
+        if(it==presets.end())return false;
+        for(const auto& item:presets)
+            if(&item!=&*it && comparisonKey(item.name)==toKey)return false;
+        it->name=replacement;
+        return true;
+    }
+    // Duplication creates a distinct entry and must not alter the original
+    // preset or silently replace an existing named entry.
+    bool duplicate(const juce::String& sourceName,juce::String newName)
+    {
+        newName=newName.trim();
+        if(!validName(newName) || (int)presets.size()>=maxPresets)return false;
+        const auto sourceKey=comparisonKey(sourceName);
+        const auto newKey=comparisonKey(newName);
+        const auto it=std::find_if(presets.begin(),presets.end(),
+            [&](const Preset& p){return comparisonKey(p.name)==sourceKey;});
+        if(it==presets.end())return false;
+        for(const auto& item:presets)
+            if(comparisonKey(item.name)==newKey)return false;
+        // Copy settings before push_back to avoid invalidating the iterator.
+        const auto settings=it->settings;
+        presets.push_back({newName,settings});
+        return true;
+    }
     bool erase(const juce::String& name)
     {
         const auto oldSize=presets.size();
