@@ -17,6 +17,7 @@ public:
     {
         const auto memory=engine.getChannelABState(trackIndex);
         variants=memory.variants;
+        openingVariants=memory.variants;
         activeVariant=memory.active;
     }
 
@@ -59,6 +60,14 @@ public:
         std::swap(variants[0],variants[1]);
     }
 
+    // Restore one bank to its values when this dialog opened. No DSP change.
+    bool restoreOpeningVariant(int bank) noexcept
+    {
+        if(bank<0 || bank>=2)return false;
+        variants[(size_t)bank]=openingVariants[(size_t)bank];
+        return true;
+    }
+
     void copy() { clipboard = pending(); }
     bool paste() noexcept
     {
@@ -72,6 +81,7 @@ private:
     AudioEngine& engine;
     int trackIndex;
     std::array<Settings,2> variants{};
+    std::array<Settings,2> openingVariants{};
     int activeVariant = 0;
     inline static std::optional<Settings> clipboard{};
 };

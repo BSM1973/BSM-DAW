@@ -50,6 +50,12 @@ public:
     {
         std::swap(banks[0],banks[1]);
     }
+    // Restore just one bank's name and reference snapshot.
+    void restoreBankFrom(const Indicator& original,int bank) noexcept
+    {
+        if(bank>=0 && bank<2)
+            banks[(size_t)bank]=original.banks[(size_t)bank];
+    }
     bool isModified(int bank,const Settings& current)const noexcept
     {
         if(bank<0 || bank>=2)return false;

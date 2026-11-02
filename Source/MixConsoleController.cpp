@@ -91,6 +91,7 @@ public:
     for(auto& knob:knobs)
         knob.onValueChange=[this]{repaint();};
     restoreMatchingPresetLabels();
+    openingPresetIndicator=presetIndicator;
     for(auto& button:power){
         button.setMouseClickGrabsKeyboardFocus(false);
         button.setClickingTogglesState(true);
@@ -206,6 +207,9 @@ public:
         menu.addItem(1100,"COPIER A VERS B");
         menu.addItem(1101,"COPIER B VERS A");
         menu.addItem(1102,juce::String::fromUTF8("ÉCHANGER A ET B"));
+        menu.addSeparator();
+        menu.addItem(1103,"RESTAURER A");
+        menu.addItem(1104,"RESTAURER B");
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -234,6 +238,10 @@ public:
                     safe->copyVariantForEditing(1,0);
                 else if(result==1102)
                     safe->swapVariantsForEditing();
+                else if(result==1103)
+                    safe->restoreVariantAtOpening(0);
+                else if(result==1104)
+                    safe->restoreVariantAtOpening(1);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -345,6 +353,16 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void restoreVariantAtOpening(int bank)
+ {
+    // Capture edits in the selected bank, leaving the other bank intact.
+    session.setPending(readControls());
+    if(!session.restoreOpeningVariant(bank))return;
+    presetIndicator.restoreBankFrom(openingPresetIndicator,bank);
+    if(session.variantIndex()==bank)
+        writeControls(session.pending());
+    repaint();
+ }
  void swapVariantsForEditing()
  {
     // Include the values most recently edited with the mouse.
@@ -621,6 +639,7 @@ private:
  std::function<void()> afterApply;
  LibertyChannelInspectorState::Session session;
  LibertyChannelPresetStatus::Indicator presetIndicator;
+ LibertyChannelPresetStatus::Indicator openingPresetIndicator;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
  std::array<juce::TextButton,3> power;

@@ -152,6 +152,62 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(swapEngine.getChannelProcessingSettings(1),neutral),
                 "swap changed a second track");
 
+        // Restoring one bank uses the snapshot captured when CANAL opened.
+        // The other bank and its pending edits are preserved.
+        AudioEngine restoreEngine;
+        LibertyChannelInspectorState::Session setupRestore(restoreEngine,0);
+        setupRestore.setPending(baseVoice);
+        setupRestore.switchVariant();
+        setupRestore.setPending(baseBass);
+        setupRestore.switchVariant();
+        setupRestore.apply();
+        LibertyChannelInspectorState::Session restoring(restoreEngine,0);
+        LibertyChannelPresetStatus::Indicator openingLabels,workingLabels;
+        openingLabels.select(0,juce::String::fromUTF8("Voix épurée"),baseVoice);
+        openingLabels.select(1,juce::String::fromUTF8("Basse chaude"),baseBass);
+        workingLabels=openingLabels;
+        auto editA=baseVoice;
+        editA.eqLowDb+=2.f;
+        restoring.setPending(editA);
+        workingLabels.select(0,"Edited A",editA);
+        restoring.switchVariant();
+        auto editB=baseBass;
+        editB.inputGainDb+=3.f;
+        restoring.setPending(editB);
+        workingLabels.select(1,"Edited B",editB);
+        restoring.swapVariants();
+        workingLabels.swapBanks();
+        require(restoring.restoreOpeningVariant(0),"restoring A rejected");
+        workingLabels.restoreBankFrom(openingLabels,0);
+        require(restoring.variantIndex()==1,"restoring A switched B selection");
+        require(equal(restoring.pending(),editA),
+                "restoring A damaged prepared B settings after swap");
+        restoring.switchVariant();
+        require(equal(restoring.pending(),baseVoice),
+                "restoring A did not recover opening values");
+        require(workingLabels.description(0,restoring.pending())
+            .contains(juce::String::fromUTF8("Voix épurée")),
+            "restoring A did not recover original preset label");
+        restoring.switchVariant();
+        require(restoring.restoreOpeningVariant(1),"restoring B rejected");
+        workingLabels.restoreBankFrom(openingLabels,1);
+        require(equal(restoring.pending(),baseBass),"restoring B did not recover opening values");
+        require(workingLabels.description(1,restoring.pending())
+            .contains(juce::String::fromUTF8("Basse chaude")),
+            "restoring B did not recover original label");
+        require(!restoring.restoreOpeningVariant(-1)
+                && !restoring.restoreOpeningVariant(2),"invalid bank restore accepted");
+        require(equal(restoreEngine.getChannelProcessingSettings(0),baseVoice),
+                "restoring banks changed the live sound without APPLY");
+        restoring.cancel();
+        require(equal(restoring.pending(),baseVoice),
+                "CANCEL failed after an individual restore");
+        restoring.switchVariant();
+        require(equal(restoring.pending(),baseBass),
+                "CANCEL lost original B after individual restore");
+        require(equal(restoreEngine.getChannelProcessingSettings(1),neutral),
+                "restoring A/B changed another channel");
+
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
         LibertyChannelInspectorState::Session presetSession(presetEngine,0);
