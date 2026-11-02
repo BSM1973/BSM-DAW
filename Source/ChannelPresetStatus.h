@@ -47,11 +47,13 @@ public:
     }
     juce::String description(int bank,const Settings& current)const
     {
-        if(bank<0 || bank>=2)return "RÉGLAGES PERSONNALISÉS";
+        if(bank<0 || bank>=2)return juce::String::fromUTF8("RÉGLAGES PERSONNALISÉS");
         const auto& entry=banks[(size_t)bank];
         if(entry.name.isEmpty())return juce::String::fromUTF8("RÉGLAGES PERSONNALISÉS");
         return juce::String::fromUTF8("PRÉRÉGLAGE : ")+entry.name
-            +(isModified(bank,current)?"  (MODIFIÉ)":juce::String{});
+            +(isModified(bank,current)
+                ?juce::String::fromUTF8("  (MODIFIÉ)")
+                :juce::String{});
     }
 private:
     struct Entry
