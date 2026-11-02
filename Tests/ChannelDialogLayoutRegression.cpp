@@ -8,6 +8,14 @@ int main(){
         const auto g=LibertyChannelDialogLayout::make(width,height);
         using LibertyChannelDialogLayout::Rect;
         const Rect full{0,0,width,height};
+        const Rect title{28,17,width-260,26};
+        const Rect subtitle{29,52,width-58,16};
+        const Rect header{12,10,width-24,60};
+        assert(full.contains(g.presets));
+        assert(header.contains(g.presets));
+        assert(!title.intersects(g.presets));
+        assert(!subtitle.intersects(g.presets));
+        for(const auto& card:g.sections)assert(!card.intersects(g.presets));
         for(const auto& card:g.sections)assert(full.contains(card));
         for(int i=0;i<4;++i){
             for(int j=i+1;j<4;++j)assert(!g.sections[i].intersects(g.sections[j]));

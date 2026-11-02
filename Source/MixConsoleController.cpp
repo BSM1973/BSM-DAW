@@ -6,6 +6,7 @@
 #include "MixConsoleLayout.h"
 #include "ChannelDialogLayout.h"
 #include "ChannelInspectorSession.h"
+#include "ChannelInspectorPresets.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -97,7 +98,7 @@ public:
         power[(size_t)i].onClick=[this,i]{refreshPower(i);};
         refreshPower(i);
     }
-    for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&cancelButton,&applyButton}){
+    for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&presetsButton,&cancelButton,&applyButton}){
         button->setMouseClickGrabsKeyboardFocus(false);
         button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
         addAndMakeVisible(*button);
@@ -106,12 +107,14 @@ public:
     copyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     pasteButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     refreshVariantButton();
+    presetsButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     cancelButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
     applyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff207b86));
     resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
     copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
     variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
+    presetsButton.setTooltip(juce::String::fromUTF8("Charger un préréglage dans la variante affichée. APPLIQUER valide le son."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         session.reset();
@@ -131,6 +134,19 @@ public:
         session.switchVariant();
         writeControls(session.pending());
         refreshVariantButton();
+    };
+    presetsButton.onClick=[this]{
+        juce::PopupMenu menu;
+        for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
+            menu.addItem(id,juce::String::fromUTF8(LibertyChannelInspectorPresets::name(id)));
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(&presetsButton),
+            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)](int result){
+                if(safe==nullptr || result<1 || result>LibertyChannelInspectorPresets::count)
+                    return;
+                safe->session.setPending(LibertyChannelInspectorPresets::make(result));
+                safe->writeControls(safe->session.pending());
+            });
     };
     cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
     applyButton.onClick=[this]{
@@ -155,11 +171,11 @@ public:
      g.fillRoundedRectangle(12.f,10.f,4.f,60.f,2.f);
      g.setColour(juce::Colours::white);
      g.setFont(juce::Font(20.f,juce::Font::bold));
-     g.drawFittedText("LIBERTY  |  CANAL AUDIO",28,17,getWidth()-56,26,
+     g.drawFittedText("LIBERTY  |  CANAL AUDIO",28,17,getWidth()-260,26,
                        juce::Justification::centredLeft,1);
      g.setFont(juce::Font(11.f));
      g.setColour(juce::Colour(0xffb5cbd9));
-     g.drawFittedText(name+"  |  Traitements audio",29,46,getWidth()-58,16,
+     g.drawFittedText(name+"  |  Traitements audio",29,52,getWidth()-58,16,
                       juce::Justification::centredLeft,1);
      const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
      const juce::String headings[4]={"INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")};
@@ -211,6 +227,8 @@ public:
     }
     const auto variantBounds=layout.variant;
     variantButton.setBounds(variantBounds.x,variantBounds.y,variantBounds.w,variantBounds.h);
+    const auto presetBounds=layout.presets;
+    presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
  void refreshVariantButton(){
@@ -293,6 +311,7 @@ private:
  juce::TextButton copyButton{"COPIER"};
  juce::TextButton pasteButton{"COLLER"};
  juce::TextButton variantButton{"MODE A"};
+ juce::TextButton presetsButton{juce::String::fromUTF8("PRÉRÉGLAGES")};
  juce::TextButton cancelButton{"ANNULER"};
  juce::TextButton applyButton{"APPLIQUER"};
 };

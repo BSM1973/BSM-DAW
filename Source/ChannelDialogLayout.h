@@ -22,6 +22,7 @@ struct Layout {
     std::array<Rect,3> actions;
     std::array<Rect,2> clipboard;
     Rect variant;
+    Rect presets;
 };
 // The fixed-size, dark-blue Channel Inspector has a deterministic geometry.
 // This geometry is reused by the JUCE UI and a dedicated CI no-overlap test.
@@ -49,6 +50,7 @@ constexpr Layout make(int width=760,int height=520){
     l.clipboard={{{190,height-58,110,34},   // copy
                   {314,height-58,110,34}}}; // paste
     l.variant={435,height-58,66,34};        // A/B variant, between paste and cancel
+    l.presets={width-205,19,180,29};        // header, clear of title and subtitle
     return l;
 }
 }

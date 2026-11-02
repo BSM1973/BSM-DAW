@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include "ChannelProjectState.h"
 #include "ChannelInspectorSession.h"
+#include "ChannelInspectorPresets.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -30,6 +31,34 @@ inline bool runLibertyChannelProcessingSmoke()
         require(engine.getAudioTrackCount()>=2, "audio track count");
         const AudioEngine::ChannelProcessingSettings neutral;
         require(equal(engine.getChannelProcessingSettings(0),neutral), "initial state");
+
+        // Factory presets are non-destructive, in-range A/B starting points.
+        AudioEngine presetEngine;
+        LibertyChannelInspectorState::Session presetSession(presetEngine,0);
+        for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
+        {
+            const auto v=LibertyChannelInspectorPresets::make(id);
+            require(LibertyChannelInspectorPresets::name(id)[0]!=0,"preset without name");
+            require(std::isfinite(v.inputGainDb) && v.inputGainDb>=-24.f && v.inputGainDb<=24.f,"preset gain");
+            require(std::isfinite(v.highPassHz) && v.highPassHz>=0.f && v.highPassHz<=500.f,"preset highpass");
+            require(std::isfinite(v.gateThresholdDb) && v.gateThresholdDb>=-80.f && v.gateThresholdDb<=-20.f,"preset gate");
+            require(std::isfinite(v.compressorThresholdDb) && v.compressorThresholdDb>=-48.f && v.compressorThresholdDb<=0.f,"preset compressor");
+            require(std::isfinite(v.compressorRatio) && v.compressorRatio>=1.f && v.compressorRatio<=12.f,"preset ratio");
+            require(std::isfinite(v.eqLowDb) && std::abs(v.eqLowDb)<=18.f,"preset low");
+            require(std::isfinite(v.eqMidDb) && std::abs(v.eqMidDb)<=18.f,"preset mid");
+            require(std::isfinite(v.eqHighDb) && std::abs(v.eqHighDb)<=18.f,"preset high");
+            presetSession.setPending(v);
+            require(equal(presetSession.pending(),v),"preset draft");
+            require(equal(presetEngine.getChannelProcessingSettings(0),neutral),"preset changed audio");
+            presetSession.switchVariant();
+            require(equal(presetSession.pending(),neutral),"preset changed inactive bank");
+            presetSession.switchVariant();
+        }
+        const auto voicePreset=LibertyChannelInspectorPresets::make(2);
+        presetSession.setPending(voicePreset);
+        presetSession.apply();
+        require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),"preset APPLY");
+        require(equal(presetEngine.getChannelProcessingSettings(1),neutral),"preset leaked to track 2");
 
         // Exercise the real session object used by the CANAL window.
         LibertyChannelInspectorState::Session::clearClipboardForTests();
