@@ -210,6 +210,18 @@ public:
         menu.addSeparator();
         menu.addItem(1103,"RESTAURER A");
         menu.addItem(1104,"RESTAURER B");
+        juce::PopupMenu sectionsAToB,sectionsBToA;
+        const juce::String sectionNames[4]={
+            "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
+        };
+        for(int section=0;section<4;++section)
+        {
+            sectionsAToB.addItem(1200+section,sectionNames[section]);
+            sectionsBToA.addItem(1210+section,sectionNames[section]);
+        }
+        menu.addSeparator();
+        menu.addSubMenu("COPIER UNE SECTION A VERS B",sectionsAToB);
+        menu.addSubMenu("COPIER UNE SECTION B VERS A",sectionsBToA);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -242,6 +254,10 @@ public:
                     safe->restoreVariantAtOpening(0);
                 else if(result==1104)
                     safe->restoreVariantAtOpening(1);
+                else if(result>=1200 && result<1204)
+                    safe->copySectionForEditing(0,1,result-1200);
+                else if(result>=1210 && result<1214)
+                    safe->copySectionForEditing(1,0,result-1210);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -353,6 +369,20 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void copySectionForEditing(int from,int to,int section)
+ {
+    // Commit current knob/toggle edits to the draft before copying.
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3 ||
+       !session.copySection(from,to,static_cast<Section>(section)))
+        return;
+    // A partial mix remains associated with the target preset; the existing
+    // MODIFIÉ indicator tells the user when its values have changed.
+    if(session.variantIndex()==to)
+        writeControls(session.pending());
+    repaint();
+ }
  void restoreVariantAtOpening(int bank)
  {
     // Capture edits in the selected bank, leaving the other bank intact.

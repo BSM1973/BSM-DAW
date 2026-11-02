@@ -208,6 +208,118 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(restoreEngine.getChannelProcessingSettings(1),neutral),
                 "restoring A/B changed another channel");
 
+        // Selective A/B copy: each section transfers its full parameters and
+        // activation state, leaving all other sections and live audio intact.
+        using Section=LibertyChannelInspectorState::Session::Section;
+        AudioEngine sectionEngine;
+        const auto prepareSectionSettings=[](bool first) {
+            AudioEngine::ChannelProcessingSettings values;
+            values.inputGainDb=first?4.5f:-7.5f;
+            values.highPassHz=first?125.f:45.f;
+            values.gateEnabled=first;
+            values.gateThresholdDb=first?-38.f:-65.f;
+            values.compressorEnabled=!first;
+            values.compressorThresholdDb=first?-25.f:-15.f;
+            values.compressorRatio=first?5.f:2.f;
+            values.eqEnabled=first;
+            values.eqLowDb=first?3.f:-4.f;
+            values.eqMidDb=first?-2.f:6.f;
+            values.eqHighDb=first?5.f:-1.f;
+            return values;
+        };
+        const auto originalA=prepareSectionSettings(true);
+        const auto originalB=prepareSectionSettings(false);
+        const Section sections[]={
+            Section::Input,Section::Gate,Section::Compressor,Section::Equalizer
+        };
+        for(const auto section:sections)
+        {
+            for(int from=0;from<2;++from)
+            {
+                LibertyChannelInspectorState::Session staged(sectionEngine,0);
+                staged.setPending(originalA);
+                staged.switchVariant();
+                staged.setPending(originalB);
+                if(from==0)staged.switchVariant();
+                const auto selectedBefore=staged.variantIndex();
+                const auto copiedFrom=from==0?originalA:originalB;
+                const auto originalTo=from==0?originalB:originalA;
+                require(staged.copySection(from,1-from,section),
+                        "selective section copy rejected");
+                require(staged.variantIndex()==selectedBefore,
+                        "selective copy changed bank selection");
+                staged.switchVariant();
+                auto expected=originalTo;
+                switch(section)
+                {
+                    case Section::Input:
+                        expected.inputGainDb=copiedFrom.inputGainDb;
+                        expected.highPassHz=copiedFrom.highPassHz;
+                        break;
+                    case Section::Gate:
+                        expected.gateEnabled=copiedFrom.gateEnabled;
+                        expected.gateThresholdDb=copiedFrom.gateThresholdDb;
+                        break;
+                    case Section::Compressor:
+                        expected.compressorEnabled=copiedFrom.compressorEnabled;
+                        expected.compressorThresholdDb=copiedFrom.compressorThresholdDb;
+                        expected.compressorRatio=copiedFrom.compressorRatio;
+                        break;
+                    case Section::Equalizer:
+                        expected.eqEnabled=copiedFrom.eqEnabled;
+                        expected.eqLowDb=copiedFrom.eqLowDb;
+                        expected.eqMidDb=copiedFrom.eqMidDb;
+                        expected.eqHighDb=copiedFrom.eqHighDb;
+                        break;
+                }
+                require(equal(staged.pending(),expected),
+                        "section copy changed wrong parameters or missed power state");
+                require(equal(sectionEngine.getChannelProcessingSettings(0),neutral),
+                        "selective section copy changed audio before APPLY");
+                staged.switchVariant();
+                require(equal(staged.pending(),copiedFrom),
+                        "section copy modified source bank");
+                require(!staged.copySection(-1,1,section)
+                        && !staged.copySection(0,2,section)
+                        && !staged.copySection(0,0,section)
+                        && !staged.copySection(0,1,static_cast<Section>(9)),
+                        "invalid section copy accepted");
+                staged.cancel();
+                require(equal(sectionEngine.getChannelProcessingSettings(0),neutral),
+                        "CANCEL after section copy modified DSP");
+            }
+        }
+        // Combining sections must leave DSP untouched until APPLY, then persist
+        // the mixed destination to the project's saved A/B state.
+        LibertyChannelInspectorState::Session mix(sectionEngine,0);
+        mix.setPending(originalA);
+        mix.switchVariant();
+        mix.setPending(originalB);
+        require(mix.copySection(0,1,Section::Input)
+                && mix.copySection(0,1,Section::Equalizer),
+                "multi-section copy rejected");
+        require(equal(sectionEngine.getChannelProcessingSettings(0),neutral),
+                "multi-section copy applied without approval");
+        auto mixed=originalB;
+        mixed.inputGainDb=originalA.inputGainDb;
+        mixed.highPassHz=originalA.highPassHz;
+        mixed.eqEnabled=originalA.eqEnabled;
+        mixed.eqLowDb=originalA.eqLowDb;
+        mixed.eqMidDb=originalA.eqMidDb;
+        mixed.eqHighDb=originalA.eqHighDb;
+        require(equal(mix.pending(),mixed),"combined section copy wrong result");
+        mix.apply();
+        require(equal(sectionEngine.getChannelProcessingSettings(0),mixed),
+                "combined copy APPLY did not update audio");
+        LibertyChannelInspectorState::Session mixedReopened(sectionEngine,0);
+        require(equal(mixedReopened.pending(),mixed),
+                "mixed section settings lost after reopening");
+        mixedReopened.switchVariant();
+        require(equal(mixedReopened.pending(),originalA),
+                "source variant lost after combined APPLY");
+        require(equal(sectionEngine.getChannelProcessingSettings(1),neutral),
+                "section copy leaked to another track");
+
         // Factory presets are non-destructive, in-range A/B starting points.
         AudioEngine presetEngine;
         LibertyChannelInspectorState::Session presetSession(presetEngine,0);

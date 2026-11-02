@@ -12,6 +12,7 @@ class Session final
 {
 public:
     using Settings = AudioEngine::ChannelProcessingSettings;
+    enum class Section { Input, Gate, Compressor, Equalizer };
     Session(AudioEngine& source, int track)
       : engine(source), trackIndex(track)
     {
@@ -50,6 +51,41 @@ public:
         if(from<0 || from>=2 || to<0 || to>=2 || from==to)
             return false;
         variants[(size_t)to]=variants[(size_t)from];
+        return true;
+    }
+
+    // Copy only the specified signal-processing section. Gate, compressor
+    // and EQ each copy their activation switch as well as their parameters.
+    // Neither the selection nor the actual audio engine is changed.
+    bool copySection(int from,int to,Section section) noexcept
+    {
+        if(from<0 || from>=2 || to<0 || to>=2 || from==to)
+            return false;
+        const auto& source=variants[(size_t)from];
+        auto& destination=variants[(size_t)to];
+        switch(section)
+        {
+            case Section::Input:
+                destination.inputGainDb=source.inputGainDb;
+                destination.highPassHz=source.highPassHz;
+                break;
+            case Section::Gate:
+                destination.gateEnabled=source.gateEnabled;
+                destination.gateThresholdDb=source.gateThresholdDb;
+                break;
+            case Section::Compressor:
+                destination.compressorEnabled=source.compressorEnabled;
+                destination.compressorThresholdDb=source.compressorThresholdDb;
+                destination.compressorRatio=source.compressorRatio;
+                break;
+            case Section::Equalizer:
+                destination.eqEnabled=source.eqEnabled;
+                destination.eqLowDb=source.eqLowDb;
+                destination.eqMidDb=source.eqMidDb;
+                destination.eqHighDb=source.eqHighDb;
+                break;
+            default: return false;
+        }
         return true;
     }
 
