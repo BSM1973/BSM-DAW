@@ -196,7 +196,7 @@ private:
           s->fxHeader->setToggleState(s->insertsExpanded,juce::dontSendNotification);
         }
         if(s->kind==Strip::instrument){
-          put(s->plugin.get(),8,82,s->bounds.getWidth()-36,24);
+          put(s->plugin.get(),8,82,s->bounds.getWidth()-43,24);
           put(s->unload.get(),s->bounds.getWidth()-29,82,18,24);
         }else{
           if(s->plugin)s->plugin->setVisible(false);
@@ -206,7 +206,7 @@ private:
           const int index=i-s->firstFxSlot;
           const bool show=s->insertsExpanded&&index>=0&&index<g.visibleFx;
           const int row=g.fxY+index*g.fxStep;
-          put(s->fx[(size_t)i].get(),8,row,s->bounds.getWidth()-36,
+          put(s->fx[(size_t)i].get(),8,row,s->bounds.getWidth()-43,
              g.fxStep>0?g.fxStep-3:0,show);
           put(s->fxUnload[(size_t)i].get(),s->bounds.getWidth()-29,row,18,
              g.fxStep>0?g.fxStep-3:0,show);
