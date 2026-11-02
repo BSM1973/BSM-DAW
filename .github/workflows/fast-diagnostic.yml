@@ -3,11 +3,12 @@ name: Liberty Fast Diagnostic
 # queue refresh
 # queue refresh 2
 
+# One diagnostic per update to the active development branch.
+# Previously push + pull_request scheduled duplicate macOS jobs for the same SHA.
+# Keep manual runs available; the separate build.yml handles pushes to main.
 on:
   push:
     branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab' ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
