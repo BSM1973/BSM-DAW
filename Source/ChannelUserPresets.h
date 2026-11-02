@@ -23,14 +23,26 @@ public:
         return name.isNotEmpty() && name.length() <= 48
             && !name.containsAnyOf("\r\n");
     }
+    // JUCE equalsIgnoreCase does not reliably fold accented uppercase letters
+    // on every platform. Normalise French/Latin uppercase characters before
+    // comparing user-preset names, while preserving the name shown in the UI.
+    static juce::String comparisonKey(juce::String name)
+    {
+        return name.trim()
+            .replaceCharacters(
+                juce::String::fromUTF8("ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸÆŒ"),
+                juce::String::fromUTF8("àâäçéèêëîïôöùûüÿæœ"))
+            .toLowerCase();
+    }
     const std::vector<Preset>& items() const noexcept { return presets; }
 
     bool upsert(juce::String name, const Settings& settings)
     {
         name = name.trim();
         if (!validName(name)) return false;
+        const auto key=comparisonKey(name);
         for (auto& preset : presets)
-            if (preset.name.equalsIgnoreCase(name))
+            if (comparisonKey(preset.name)==key)
             {
                 preset.name=name;
                 preset.settings=settings;
@@ -43,8 +55,9 @@ public:
     bool erase(const juce::String& name)
     {
         const auto oldSize=presets.size();
+        const auto key=comparisonKey(name);
         presets.erase(std::remove_if(presets.begin(),presets.end(),
-            [&](const Preset& p){return p.name.equalsIgnoreCase(name);}),presets.end());
+            [&](const Preset& p){return comparisonKey(p.name)==key;}),presets.end());
         return oldSize != presets.size();
     }
     std::unique_ptr<juce::XmlElement> toXml() const

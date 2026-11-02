@@ -73,6 +73,14 @@ inline bool runLibertyChannelProcessingSmoke()
         require(personal.upsert(juce::String::fromUTF8("VOIX ÉPURÉE"),bassPreset),
                 "could not update named preset");
         require(personal.items().size()==2,"duplicate preset name");
+        require(personal.upsert(juce::String::fromUTF8("À l'été"),voicePreset),
+                "could not add accented preset");
+        require(personal.upsert(juce::String::fromUTF8("à L'ÉTÉ"),bassPreset),
+                "could not update accented preset");
+        require(personal.items().size()==3,"duplicate accented preset");
+        require(personal.erase(juce::String::fromUTF8(" À L'ÉTÉ ")),
+                "cannot delete accented name with different case");
+        require(personal.items().size()==2,"accented preset was not deleted");
         const auto xmlPersonal=personal.toXml();
         auto parsedPersonal=juce::parseXML(xmlPersonal->toString());
         require(parsedPersonal!=nullptr,"personal preset XML invalid");
