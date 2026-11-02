@@ -31,6 +31,10 @@ int main(){
             for(const auto& action:g.actions)assert(!action.intersects(button));
             for(int j=i+1;j<2;++j)assert(!button.intersects(g.clipboard[(size_t)j]));
         }
+        assert(full.contains(g.variant));
+        for(const auto& card:g.sections)assert(!card.intersects(g.variant));
+        for(const auto& action:g.actions)assert(!action.intersects(g.variant));
+        for(const auto& button:g.clipboard)assert(!button.intersects(g.variant));
         for(int i=0;i<3;++i){
             assert(full.contains(g.actions[(size_t)i]));
             for(const auto& card:g.sections)assert(!card.intersects(g.actions[(size_t)i]));

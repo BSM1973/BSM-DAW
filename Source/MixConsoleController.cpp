@@ -97,7 +97,7 @@ public:
         power[(size_t)i].onClick=[this,i]{refreshPower(i);};
         refreshPower(i);
     }
-    for(auto* button:{&resetButton,&copyButton,&pasteButton,&cancelButton,&applyButton}){
+    for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&cancelButton,&applyButton}){
         button->setMouseClickGrabsKeyboardFocus(false);
         button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
         addAndMakeVisible(*button);
@@ -105,11 +105,13 @@ public:
     resetButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
     copyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     pasteButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
+    refreshVariantButton();
     cancelButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
     applyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff207b86));
     resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
     copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
+    variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         session.reset();
@@ -122,6 +124,13 @@ public:
     };
     pasteButton.onClick=[this]{
         if(session.paste())writeControls(session.pending());
+    };
+    variantButton.onClick=[this]{
+        // Preserve edits in the departing variant before showing the other.
+        session.setPending(readControls());
+        session.switchVariant();
+        writeControls(session.pending());
+        refreshVariantButton();
     };
     cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
     applyButton.onClick=[this]{
@@ -177,7 +186,7 @@ public:
      }
      g.setColour(juce::Colour(0xff91aabd));
      g.setFont(juce::Font(10.f));
-     g.drawText(juce::String::fromUTF8("COPIER / COLLER préparent les réglages. ANNULER ignore. APPLIQUER valide."),
+     g.drawText(juce::String::fromUTF8("A/B prépare deux variantes. ANNULER ignore. APPLIQUER valide la variante affichée."),
                 20,getHeight()-86,getWidth()-40,17,juce::Justification::centredLeft);
  }
  void resized()override{
@@ -200,8 +209,16 @@ public:
         const auto b=layout.clipboard[(size_t)i];
         clipButtons[i]->setBounds(b.x,b.y,b.w,b.h);
     }
+    const auto variantBounds=layout.variant;
+    variantButton.setBounds(variantBounds.x,variantBounds.y,variantBounds.w,variantBounds.h);
  }
 private:
+ void refreshVariantButton(){
+    const bool isB=session.variantIndex()==1;
+    variantButton.setButtonText(isB?"MODE B":"MODE A");
+    variantButton.setColour(juce::TextButton::buttonColourId,
+                            isB?juce::Colour(0xff256e6c):juce::Colour(0xff28546a));
+ }
  void timerCallback()override{
     const bool available=LibertyChannelInspectorState::Session::canPaste();
     if(pasteButton.isEnabled()!=available)pasteButton.setEnabled(available);
@@ -275,6 +292,7 @@ private:
  juce::TextButton resetButton{juce::String::fromUTF8("RÉINITIALISER")};
  juce::TextButton copyButton{"COPIER"};
  juce::TextButton pasteButton{"COLLER"};
+ juce::TextButton variantButton{"MODE A"};
  juce::TextButton cancelButton{"ANNULER"};
  juce::TextButton applyButton{"APPLIQUER"};
 };

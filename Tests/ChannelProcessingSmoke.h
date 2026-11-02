@@ -48,6 +48,22 @@ inline bool runLibertyChannelProcessingSmoke()
         draft.eqMidDb=-4.5f;
         draft.eqHighDb=6.f;
         source.setPending(draft);
+        require(source.variantIndex()==0, "default A variant");
+        source.switchVariant();
+        require(source.variantIndex()==1, "switch to B");
+        require(equal(source.pending(),neutral), "B should start from engine values");
+        auto draftB=draft;
+        draftB.inputGainDb=-6.0f;
+        draftB.eqLowDb=-3.5f;
+        draftB.gateEnabled=false;
+        source.setPending(draftB);
+        require(equal(engine.getChannelProcessingSettings(0),neutral), "B changed live audio");
+        source.switchVariant();
+        require(equal(source.pending(),draft), "A settings lost");
+        source.switchVariant();
+        require(equal(source.pending(),draftB), "B settings lost");
+        source.switchVariant();
+        require(equal(source.pending(),draft), "return to A lost edits");
         require(equal(engine.getChannelProcessingSettings(0),neutral), "staging changed audio");
         source.reset();
         require(equal(source.pending(),neutral), "reset did not prepare neutral values");
@@ -80,6 +96,17 @@ inline bool runLibertyChannelProcessingSmoke()
         source.apply();
         require(equal(engine.getChannelProcessingSettings(0),draft), "apply / mixer sync");
         require(equal(engine.getChannelProcessingSettings(1),neutral), "cross-track DSP leak");
+
+        // B only becomes audible when it is explicitly applied.
+        source.switchVariant();
+        require(equal(engine.getChannelProcessingSettings(0),draft), "switch changed live audio");
+        require(equal(source.pending(),draftB), "B settings changed unexpectedly");
+        source.apply();
+        require(equal(engine.getChannelProcessingSettings(0),draftB), "B apply failed");
+        source.switchVariant();
+        require(equal(source.pending(),draft), "A unavailable after B apply");
+        source.apply();
+        require(equal(engine.getChannelProcessingSettings(0),draft), "A apply after B failed");
 
         // Project Save/Open must use the same serialization code as the application.
         juce::XmlElement savedTrack("Track");
