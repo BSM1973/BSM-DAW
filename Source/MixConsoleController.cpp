@@ -7,6 +7,7 @@
 #include "ChannelDialogLayout.h"
 #include "ChannelInspectorSession.h"
 #include "ChannelInspectorPresets.h"
+#include "ChannelUserPresets.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -137,15 +138,45 @@ public:
     };
     presetsButton.onClick=[this]{
         juce::PopupMenu menu;
+        menu.addSectionHeader(juce::String::fromUTF8("PRÉRÉGLAGES D'USINE"));
         for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
             menu.addItem(id,juce::String::fromUTF8(LibertyChannelInspectorPresets::name(id)));
+        LibertyChannelUserPresets::Library library;
+        const bool loaded=library.load(LibertyChannelUserPresets::Library::defaultFile());
+        const auto saved=library.items();
+        menu.addSeparator();
+        menu.addSectionHeader(juce::String::fromUTF8("MES PRÉRÉGLAGES"));
+        if(loaded)
+        {
+            for(size_t i=0;i<saved.size();++i)
+                menu.addItem(100+(int)i,saved[i].name);
+        }
+        menu.addSeparator();
+        menu.addItem(1000,juce::String::fromUTF8("ENREGISTRER MES RÉGLAGES..."),loaded);
+        juce::PopupMenu remove;
+        for(size_t i=0;i<saved.size();++i)
+            remove.addItem(200+(int)i,saved[i].name);
+        menu.addSubMenu(juce::String::fromUTF8("SUPPRIMER UN PRÉRÉGLAGE"),remove,
+                        loaded && !saved.empty());
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
-            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)](int result){
-                if(safe==nullptr || result<1 || result>LibertyChannelInspectorPresets::count)
-                    return;
-                safe->session.setPending(LibertyChannelInspectorPresets::make(result));
-                safe->writeControls(safe->session.pending());
+            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
+             saved](int result){
+                if(safe==nullptr || result==0)return;
+                if(result>=1 && result<=LibertyChannelInspectorPresets::count)
+                {
+                    safe->session.setPending(LibertyChannelInspectorPresets::make(result));
+                    safe->writeControls(safe->session.pending());
+                }
+                else if(result>=100 && result<100+(int)saved.size())
+                {
+                    safe->session.setPending(saved[(size_t)(result-100)].settings);
+                    safe->writeControls(safe->session.pending());
+                }
+                else if(result==1000)
+                    safe->askToSavePreset();
+                else if(result>=200 && result<200+(int)saved.size())
+                    safe->askToRemovePreset(saved[(size_t)(result-200)].name);
             });
     };
     cancelButton.onClick=[this]{session.cancel();closeDialog(0);};
@@ -231,6 +262,53 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void reportPresetError(const juce::String& message)
+ {
+    juce::AlertWindow::showMessageBoxAsync(
+        juce::AlertWindow::WarningIcon, "LIBERTY  |  CANAL", message, "OK");
+ }
+ void askToSavePreset()
+ {
+    auto* dialog=new juce::AlertWindow("LIBERTY  |  CANAL",
+        juce::String::fromUTF8("Nom du préréglage personnel (48 caractères maximum). Un nom existant sera remplacé."),
+        juce::AlertWindow::QuestionIcon);
+    dialog->setColour(juce::AlertWindow::backgroundColourId,juce::Colour(0xff142438));
+    dialog->setColour(juce::AlertWindow::textColourId,juce::Colours::white);
+    dialog->addTextEditor("presetName",juce::String::fromUTF8("Mon préréglage"),
+                          juce::String::fromUTF8("Nom"),false);
+    dialog->addButton("ENREGISTRER",1,juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("ANNULER",0,juce::KeyPress(juce::KeyPress::escapeKey));
+    dialog->enterModalState(true,
+        juce::ModalCallbackFunction::create(
+            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),dialog](int result){
+                const juce::String presetName=dialog->getTextEditorContents("presetName");
+                delete dialog;
+                if(safe==nullptr || result!=1)return;
+                auto library=LibertyChannelUserPresets::Library{};
+                const auto file=LibertyChannelUserPresets::Library::defaultFile();
+                if(!library.load(file)
+                   || !library.upsert(presetName,safe->readControls())
+                   || !library.save(file))
+                    safe->reportPresetError(juce::String::fromUTF8(
+                        "Impossible d'enregistrer ce préréglage. Vérifiez son nom ou le dossier Liberty."));
+            }),false);
+ }
+ void askToRemovePreset(juce::String presetName)
+ {
+    juce::AlertWindow::showOkCancelBox(juce::AlertWindow::QuestionIcon,
+        "LIBERTY  |  CANAL",
+        juce::String::fromUTF8("Supprimer le préréglage personnel : ") + presetName + " ?",
+        "SUPPRIMER","ANNULER",nullptr,
+        juce::ModalCallbackFunction::create(
+            [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),presetName](int result){
+                if(safe==nullptr || result!=1)return;
+                auto library=LibertyChannelUserPresets::Library{};
+                const auto file=LibertyChannelUserPresets::Library::defaultFile();
+                if(!library.load(file) || !library.erase(presetName) || !library.save(file))
+                    safe->reportPresetError(juce::String::fromUTF8(
+                        "Impossible de supprimer ce préréglage personnel."));
+            }));
+ }
  void refreshVariantButton(){
     const bool isB=session.variantIndex()==1;
     variantButton.setButtonText(isB?"MODE B":"MODE A");

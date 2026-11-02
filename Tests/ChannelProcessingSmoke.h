@@ -3,6 +3,7 @@
 #include "ChannelProjectState.h"
 #include "ChannelInspectorSession.h"
 #include "ChannelInspectorPresets.h"
+#include "ChannelUserPresets.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -59,6 +60,40 @@ inline bool runLibertyChannelProcessingSmoke()
         presetSession.apply();
         require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),"preset APPLY");
         require(equal(presetEngine.getChannelProcessingSettings(1),neutral),"preset leaked to track 2");
+
+        // Named user presets survive XML roundtrip and preserve Unicode names.
+        LibertyChannelUserPresets::Library personal;
+        require(!personal.upsert("   ",voicePreset),"accepted blank preset name");
+        require(!personal.upsert(juce::String::repeatedString("x",49),voicePreset),
+                "accepted overly long preset name");
+        require(personal.upsert(juce::String::fromUTF8("Voix épurée"),voicePreset),
+                "could not create named preset");
+        auto bassPreset=LibertyChannelInspectorPresets::make(4);
+        require(personal.upsert("Basse chaude",bassPreset),"could not save second preset");
+        require(personal.upsert(juce::String::fromUTF8("VOIX ÉPURÉE"),bassPreset),
+                "could not update named preset");
+        require(personal.items().size()==2,"duplicate preset name");
+        const auto xmlPersonal=personal.toXml();
+        auto parsedPersonal=juce::parseXML(xmlPersonal->toString());
+        require(parsedPersonal!=nullptr,"personal preset XML invalid");
+        LibertyChannelUserPresets::Library restoredPersonal;
+        require(restoredPersonal.fromXml(*parsedPersonal),"personal preset XML read failed");
+        require(restoredPersonal.items().size()==2,"personal preset count after XML");
+        require(equal(restoredPersonal.items()[0].settings,bassPreset),
+                "personal preset roundtrip changed settings");
+        require(restoredPersonal.erase("basse CHAUDE"),"personal preset delete");
+        require(restoredPersonal.items().size()==1,"personal preset delete left entry");
+        require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
+                "preset library changed applied DSP");
+        auto userDraft=LibertyChannelInspectorState::Session(presetEngine,0);
+        userDraft.switchVariant();
+        userDraft.setPending(restoredPersonal.items()[0].settings);
+        require(equal(presetEngine.getChannelProcessingSettings(0),voicePreset),
+                "loading personal preset changed live DSP");
+        // A bad XML document must be rejected without destroying the existing list.
+        juce::XmlElement badPersonal("OtherPresets");
+        require(!restoredPersonal.fromXml(badPersonal),"accepted non-Liberty XML");
+        require(restoredPersonal.items().size()==1,"corrupted preset library on read");
 
         // Exercise the real session object used by the CANAL window.
         LibertyChannelInspectorState::Session::clearClipboardForTests();
