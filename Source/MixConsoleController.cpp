@@ -4,6 +4,8 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include "MixConsoleLayout.h"
+#include "ChannelDialogLayout.h"
+#include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cmath>
@@ -66,6 +68,177 @@ class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinea
     g.drawLine(cx+std::sin(angle)*inner,cy-std::cos(angle)*inner,
                cx+std::sin(angle)*outer,cy-std::cos(angle)*outer,1.7f);
 }};
+
+class LibertyChannelInspector final:public juce::Component {
+public:
+ LibertyChannelInspector(AudioEngine& source,int track,juce::String trackLabel,
+                         std::function<void()> refresh)
+   :engine(source),trackIndex(track),name(std::move(trackLabel)),
+    afterApply(std::move(refresh)){
+    const auto v=engine.getChannelProcessingSettings(trackIndex);
+    configure(knobs[0],-24,24,.5,v.inputGainDb," dB",juce::Colour(0xff72c6eb));
+    configure(knobs[1],0,500,1,v.highPassHz," Hz",juce::Colour(0xff72c6eb));
+    configure(knobs[2],-80,-20,1,v.gateThresholdDb," dB",juce::Colour(0xff91d1a8));
+    configure(knobs[3],-48,0,1,v.compressorThresholdDb," dB",juce::Colour(0xffe0b276));
+    configure(knobs[4],1,12,.5,v.compressorRatio," :1",juce::Colour(0xffe0b276));
+    configure(knobs[5],-18,18,.5,v.eqLowDb," dB",juce::Colour(0xff60d3d6));
+    configure(knobs[6],-18,18,.5,v.eqMidDb," dB",juce::Colour(0xff60d3d6));
+    configure(knobs[7],-18,18,.5,v.eqHighDb," dB",juce::Colour(0xff60d3d6));
+    for(auto& button:power){
+        button.setMouseClickGrabsKeyboardFocus(false);
+        button.setClickingTogglesState(true);
+        addAndMakeVisible(button);
+    }
+    power[0].setToggleState(v.gateEnabled,juce::dontSendNotification);
+    power[1].setToggleState(v.compressorEnabled,juce::dontSendNotification);
+    power[2].setToggleState(v.eqEnabled,juce::dontSendNotification);
+    for(int i=0;i<3;++i){
+        power[(size_t)i].onClick=[this,i]{refreshPower(i);};
+        refreshPower(i);
+    }
+    for(auto* button:{&resetButton,&cancelButton,&applyButton}){
+        button->setMouseClickGrabsKeyboardFocus(false);
+        button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+        addAndMakeVisible(*button);
+    }
+    resetButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
+    cancelButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
+    applyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff207b86));
+    resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
+    resetButton.onClick=[this]{
+        const double defaults[8]={0,0,-55,-18,4,0,0,0};
+        for(int i=0;i<8;++i)knobs[(size_t)i].setValue(defaults[i],juce::dontSendNotification);
+        for(int i=0;i<3;++i){
+            power[(size_t)i].setToggleState(false,juce::dontSendNotification);
+            refreshPower(i);
+        }
+    };
+    cancelButton.onClick=[this]{closeDialog(0);};
+    applyButton.onClick=[this]{
+        auto v=engine.getChannelProcessingSettings(trackIndex);
+        v.inputGainDb=(float)knobs[0].getValue();
+        v.highPassHz=(float)knobs[1].getValue();
+        v.gateThresholdDb=(float)knobs[2].getValue();
+        v.compressorThresholdDb=(float)knobs[3].getValue();
+        v.compressorRatio=(float)knobs[4].getValue();
+        v.eqLowDb=(float)knobs[5].getValue();
+        v.eqMidDb=(float)knobs[6].getValue();
+        v.eqHighDb=(float)knobs[7].getValue();
+        v.gateEnabled=power[0].getToggleState();
+        v.compressorEnabled=power[1].getToggleState();
+        v.eqEnabled=power[2].getToggleState();
+        engine.setChannelProcessingSettings(trackIndex,v);
+        if(afterApply)afterApply();
+        closeDialog(1);
+    };
+    setSize(760,520);
+ }
+ ~LibertyChannelInspector()override{
+     for(auto& slider:knobs)slider.setLookAndFeel(nullptr);
+ }
+ void paint(juce::Graphics& g)override{
+     g.fillAll(juce::Colour(0xff101b2a));
+     g.setColour(juce::Colour(0xff263e56));
+     g.fillRoundedRectangle(12.f,10.f,(float)getWidth()-24.f,60.f,8.f);
+     g.setColour(juce::Colour(0xff63cfd8));
+     g.fillRoundedRectangle(12.f,10.f,4.f,60.f,2.f);
+     g.setColour(juce::Colours::white);
+     g.setFont(juce::Font(20.f,juce::Font::bold));
+     g.drawFittedText("LIBERTY  |  CANAL AUDIO",28,17,getWidth()-56,26,
+                       juce::Justification::centredLeft,1);
+     g.setFont(juce::Font(11.f));
+     g.setColour(juce::Colour(0xffb5cbd9));
+     g.drawFittedText(name+"  |  Traitements audio",29,46,getWidth()-58,16,
+                      juce::Justification::centredLeft,1);
+     const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
+     const char* headings[4]={"INPUT","GATE","COMPRESSEUR","ÉGALISEUR"};
+     const juce::Colour accents[4]={juce::Colour(0xff72c6eb),juce::Colour(0xff91d1a8),
+                                   juce::Colour(0xffe0b276),juce::Colour(0xff60d3d6)};
+     for(int i=0;i<4;++i){
+        const auto b=layout.sections[(size_t)i];
+        g.setColour(juce::Colour(0xff16283a));
+        g.fillRoundedRectangle((float)b.x,(float)b.y,(float)b.w,(float)b.h,7.f);
+        g.setColour(juce::Colour(0xff49657b));
+        g.drawRoundedRectangle((float)b.x,(float)b.y,(float)b.w,(float)b.h,7.f,1.f);
+        g.setColour(accents[i]);
+        g.fillRoundedRectangle((float)b.x+11,(float)b.y+13,3.f,22.f,1.5f);
+        g.setFont(juce::Font(14.f,juce::Font::bold));
+        g.drawText(headings[i],b.x+23,b.y+13,b.w-140,22,juce::Justification::centredLeft);
+     }
+     const char* labels[8]={"GAIN","COUPE-BAS","SEUIL","SEUIL","RATIO",
+                            "GRAVES","MÉDIUMS","AIGUS"};
+     g.setColour(juce::Colour(0xffcedde7));
+     g.setFont(juce::Font(10.f,juce::Font::bold));
+     for(int i=0;i<8;++i){
+         const auto b=layout.controls[(size_t)i];
+         g.drawText(labels[i],b.x,b.y-18,b.w,14,juce::Justification::centred);
+     }
+     g.setColour(juce::Colour(0xff91aabd));
+     g.setFont(juce::Font(10.f));
+     g.drawText("ANNULER n'affecte pas le son. APPLIQUER valide tous les réglages.",
+                20,getHeight()-86,getWidth()-40,17,juce::Justification::centredLeft);
+ }
+ void resized()override{
+    const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
+    for(int i=0;i<8;++i){
+        const auto b=layout.controls[(size_t)i];
+        knobs[(size_t)i].setBounds(b.x,b.y,b.w,b.h);
+    }
+    for(int i=0;i<3;++i){
+        const auto b=layout.powers[(size_t)i];
+        power[(size_t)i].setBounds(b.x,b.y,b.w,b.h);
+    }
+    juce::TextButton* buttons[]={&resetButton,&cancelButton,&applyButton};
+    for(int i=0;i<3;++i){
+        const auto b=layout.actions[(size_t)i];
+        buttons[i]->setBounds(b.x,b.y,b.w,b.h);
+    }
+ }
+private:
+ void configure(juce::Slider& slider,double minimum,double maximum,double step,
+                double value,const juce::String& suffix,juce::Colour accent){
+    slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    slider.setRange(minimum,maximum,step);
+    slider.setValue(value,juce::dontSendNotification);
+    slider.setTextBoxStyle(juce::Slider::TextBoxBelow,false,86,21);
+    slider.setNumDecimalPlacesToDisplay(step>=1?0:1);
+    slider.setTextValueSuffix(suffix);
+    slider.setDoubleClickReturnValue(true,minimum<0&&maximum>0?0.0:
+        (minimum==1?1.0:minimum));
+    slider.setColour(juce::Slider::rotarySliderFillColourId,accent);
+    slider.setColour(juce::Slider::rotarySliderOutlineColourId,juce::Colour(0xff435d6e));
+    slider.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffeef5fa));
+    slider.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff0c1b29));
+    slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff3f667d));
+    slider.setLookAndFeel(&metallicStyle);
+    addAndMakeVisible(slider);
+ }
+ void refreshPower(int index){
+    auto& button=power[(size_t)index];
+    const bool on=button.getToggleState();
+    button.setButtonText(on?"ACTIF":"INACTIF");
+    button.setColour(juce::TextButton::buttonColourId,
+         on?juce::Colour(0xff267164):juce::Colour(0xff324458));
+    button.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff267164));
+    button.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+    button.setColour(juce::TextButton::textColourOnId,juce::Colours::white);
+ }
+ void closeDialog(int result){
+    if(auto* dialog=findParentComponentOfClass<juce::DialogWindow>())
+        dialog->exitModalState(result);
+ }
+ AudioEngine& engine;
+ int trackIndex;
+ juce::String name;
+ std::function<void()> afterApply;
+ ConsoleLookAndFeel metallicStyle;
+ std::array<juce::Slider,8> knobs;
+ std::array<juce::TextButton,3> power;
+ juce::TextButton resetButton{"RÉINITIALISER"};
+ juce::TextButton cancelButton{"ANNULER"};
+ juce::TextButton applyButton{"APPLIQUER"};
+};
+
 struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;float level=0.f,peak=0.f;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
@@ -151,9 +324,9 @@ private:
  addAndMakeVisible(*s->fxHeader);
  s->fxHeader->setTooltip("Ouvrir ou fermer les inserts. Maj + clic : toutes les pistes.");
  if(k==Strip::audio){for(int tab=0;tab<4;++tab){auto&button=s->moduleTabs[(size_t)tab];button=std::make_unique<juce::TextButton>(tab==0?"EQ":tab==1?"GATE":tab==2?"COMP":"INPUT");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff263b4b));button->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffe6edf3));button->setTooltip("Ouvrir ou fermer cette section. Maj + clic : toutes les pistes audio.");
- addAndMakeVisible(*button);}for(int section=0;section<3;++section){auto&button=s->modulePower[(size_t)section];button=std::make_unique<juce::TextButton>("OFF");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34404a));button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*button);}for(int band=0;band<3;++band){auto&knob=s->eqKnobs[(size_t)band];knob=std::make_unique<juce::Slider>();knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setRange(-12.0,12.0,0.5);knob->setValue(0.0,juce::dontSendNotification);knob->setDoubleClickReturnValue(true,0.0);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);
+ addAndMakeVisible(*button);}for(int section=0;section<3;++section){auto&button=s->modulePower[(size_t)section];button=std::make_unique<juce::TextButton>("OFF");button->setMouseClickGrabsKeyboardFocus(false);button->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34404a));button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*button);}for(int band=0;band<3;++band){auto&knob=s->eqKnobs[(size_t)band];knob=std::make_unique<juce::Slider>();knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setRange(-18.0,18.0,0.5);knob->setValue(0.0,juce::dontSendNotification);knob->setDoubleClickReturnValue(true,0.0);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);
 knob->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff56cbdc));
-knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aigus")+" -12 à +12 dB");addAndMakeVisible(*knob);}s->gateThreshold=std::make_unique<juce::Slider>();s->gateThreshold->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->gateThreshold->setRange(-80.0,-20.0,1.0);s->gateThreshold->setValue(-55.0,juce::dontSendNotification);s->gateThreshold->setDoubleClickReturnValue(true,-55.0);s->gateThreshold->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->gateThreshold->setMouseClickGrabsKeyboardFocus(false);s->gateThreshold->setLookAndFeel(&lookAndFeel);s->gateThreshold->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff8bc99e));s->gateThreshold->setTooltip("GATE : seuil en dB, déplacement pour activer");addAndMakeVisible(*s->gateThreshold);s->compThreshold=std::make_unique<juce::Slider>();s->compRatio=std::make_unique<juce::Slider>();for(auto*knob:{s->compThreshold.get(),s->compRatio.get()}){knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);knob->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffe2ac65));addAndMakeVisible(*knob);}s->compThreshold->setRange(-48.0,0.0,1.0);s->compThreshold->setValue(-18.0,juce::dontSendNotification);s->compThreshold->setDoubleClickReturnValue(true,-18.0);s->compThreshold->setTooltip("DYNAMIQUE : seuil du compresseur (dB)");s->compRatio->setRange(1.0,12.0,0.5);s->compRatio->setValue(4.0,juce::dontSendNotification);s->compRatio->setDoubleClickReturnValue(true,4.0);s->compRatio->setTooltip("DYNAMIQUE : ratio du compresseur");s->highPass=std::make_unique<juce::Slider>();s->highPass->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->highPass->setRange(0.0,500.0,1.0);s->highPass->setValue(0.0,juce::dontSendNotification);s->highPass->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->highPass->setDoubleClickReturnValue(true,0.0);s->highPass->setMouseClickGrabsKeyboardFocus(false);s->highPass->setLookAndFeel(&lookAndFeel);s->highPass->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff73bbdb));s->highPass->setTooltip("INPUT : coupe-bas de 0 (désactivé) à 500 Hz");addAndMakeVisible(*s->highPass);s->inputGain=std::make_unique<juce::Slider>();s->inputGain->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->inputGain->setRange(-24.0,24.0,0.5);s->inputGain->setValue(0.0,juce::dontSendNotification);s->inputGain->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->inputGain->setDoubleClickReturnValue(true,0.0);s->inputGain->setMouseClickGrabsKeyboardFocus(false);s->inputGain->setLookAndFeel(&lookAndFeel);s->inputGain->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff73bbdb));s->inputGain->setTooltip("INPUT : gain d'entrée de -24 à +24 dB");addAndMakeVisible(*s->inputGain);s->channel=std::make_unique<juce::TextButton>("CANAL");s->channel->setMouseClickGrabsKeyboardFocus(false);s->channel->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff24465a));s->channel->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->channel);}s->pan=std::make_unique<juce::Slider>();s->pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->pan->setRange(-1,1,.01);s->pan->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->pan->setDoubleClickReturnValue(true,0.0);s->pan->setMouseClickGrabsKeyboardFocus(false);s->pan->setLookAndFeel(&lookAndFeel);s->pan->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffe1c58a));addAndMakeVisible(*s->pan);s->mute=std::make_unique<juce::TextButton>("M");s->solo=std::make_unique<juce::TextButton>("S");s->mute->setClickingTogglesState(false);s->solo->setClickingTogglesState(false);s->mute->setMouseClickGrabsKeyboardFocus(false);s->solo->setMouseClickGrabsKeyboardFocus(false);s->mute->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->mute->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa44141));s->solo->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa18432));s->mute->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->mute->setColour(juce::TextButton::textColourOnId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOnId,juce::Colours::white);addAndMakeVisible(*s->mute);addAndMakeVisible(*s->solo);}s->plugin=std::make_unique<juce::TextButton>();s->plugin->setMouseClickGrabsKeyboardFocus(false);s->plugin->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->plugin->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->unload=std::make_unique<juce::TextButton>("X");s->unload->setMouseClickGrabsKeyboardFocus(false);s->unload->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->unload->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->plugin);addAndMakeVisible(*s->unload);if(k==Strip::audio||k==Strip::instrument)for(int i=0;i<8;++i){s->fx[(size_t)i]=std::make_unique<juce::TextButton>("FX "+juce::String(i+1)+" · VIDE");s->fxUnload[(size_t)i]=std::make_unique<juce::TextButton>("X");s->fx[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fxUnload[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fx[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->fx[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->fxUnload[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->fxUnload[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->fx[(size_t)i]);addAndMakeVisible(*s->fxUnload[(size_t)i]);}wire(*s);return s;}
+knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aigus")+" -18 à +18 dB");addAndMakeVisible(*knob);}s->gateThreshold=std::make_unique<juce::Slider>();s->gateThreshold->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->gateThreshold->setRange(-80.0,-20.0,1.0);s->gateThreshold->setValue(-55.0,juce::dontSendNotification);s->gateThreshold->setDoubleClickReturnValue(true,-55.0);s->gateThreshold->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->gateThreshold->setMouseClickGrabsKeyboardFocus(false);s->gateThreshold->setLookAndFeel(&lookAndFeel);s->gateThreshold->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff8bc99e));s->gateThreshold->setTooltip("GATE : seuil en dB, déplacement pour activer");addAndMakeVisible(*s->gateThreshold);s->compThreshold=std::make_unique<juce::Slider>();s->compRatio=std::make_unique<juce::Slider>();for(auto*knob:{s->compThreshold.get(),s->compRatio.get()}){knob->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);knob->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);knob->setMouseClickGrabsKeyboardFocus(false);knob->setLookAndFeel(&lookAndFeel);knob->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffe2ac65));addAndMakeVisible(*knob);}s->compThreshold->setRange(-48.0,0.0,1.0);s->compThreshold->setValue(-18.0,juce::dontSendNotification);s->compThreshold->setDoubleClickReturnValue(true,-18.0);s->compThreshold->setTooltip("DYNAMIQUE : seuil du compresseur (dB)");s->compRatio->setRange(1.0,12.0,0.5);s->compRatio->setValue(4.0,juce::dontSendNotification);s->compRatio->setDoubleClickReturnValue(true,4.0);s->compRatio->setTooltip("DYNAMIQUE : ratio du compresseur");s->highPass=std::make_unique<juce::Slider>();s->highPass->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->highPass->setRange(0.0,500.0,1.0);s->highPass->setValue(0.0,juce::dontSendNotification);s->highPass->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->highPass->setDoubleClickReturnValue(true,0.0);s->highPass->setMouseClickGrabsKeyboardFocus(false);s->highPass->setLookAndFeel(&lookAndFeel);s->highPass->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff73bbdb));s->highPass->setTooltip("INPUT : coupe-bas de 0 (désactivé) à 500 Hz");addAndMakeVisible(*s->highPass);s->inputGain=std::make_unique<juce::Slider>();s->inputGain->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->inputGain->setRange(-24.0,24.0,0.5);s->inputGain->setValue(0.0,juce::dontSendNotification);s->inputGain->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->inputGain->setDoubleClickReturnValue(true,0.0);s->inputGain->setMouseClickGrabsKeyboardFocus(false);s->inputGain->setLookAndFeel(&lookAndFeel);s->inputGain->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xff73bbdb));s->inputGain->setTooltip("INPUT : gain d'entrée de -24 à +24 dB");addAndMakeVisible(*s->inputGain);s->channel=std::make_unique<juce::TextButton>("CANAL");s->channel->setMouseClickGrabsKeyboardFocus(false);s->channel->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff24465a));s->channel->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->channel);}s->pan=std::make_unique<juce::Slider>();s->pan->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);s->pan->setRange(-1,1,.01);s->pan->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);s->pan->setDoubleClickReturnValue(true,0.0);s->pan->setMouseClickGrabsKeyboardFocus(false);s->pan->setLookAndFeel(&lookAndFeel);s->pan->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffe1c58a));addAndMakeVisible(*s->pan);s->mute=std::make_unique<juce::TextButton>("M");s->solo=std::make_unique<juce::TextButton>("S");s->mute->setClickingTogglesState(false);s->solo->setClickingTogglesState(false);s->mute->setMouseClickGrabsKeyboardFocus(false);s->solo->setMouseClickGrabsKeyboardFocus(false);s->mute->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff25323e));s->mute->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa44141));s->solo->setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xffa18432));s->mute->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOffId,juce::Colours::white);s->mute->setColour(juce::TextButton::textColourOnId,juce::Colours::white);s->solo->setColour(juce::TextButton::textColourOnId,juce::Colours::white);addAndMakeVisible(*s->mute);addAndMakeVisible(*s->solo);}s->plugin=std::make_unique<juce::TextButton>();s->plugin->setMouseClickGrabsKeyboardFocus(false);s->plugin->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->plugin->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->unload=std::make_unique<juce::TextButton>("X");s->unload->setMouseClickGrabsKeyboardFocus(false);s->unload->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->unload->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->plugin);addAndMakeVisible(*s->unload);if(k==Strip::audio||k==Strip::instrument)for(int i=0;i<8;++i){s->fx[(size_t)i]=std::make_unique<juce::TextButton>("FX "+juce::String(i+1)+" · VIDE");s->fxUnload[(size_t)i]=std::make_unique<juce::TextButton>("X");s->fx[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fxUnload[(size_t)i]->setMouseClickGrabsKeyboardFocus(false);s->fx[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff18212b));s->fx[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colour(0xffd4d8de));s->fxUnload[(size_t)i]->setColour(juce::TextButton::buttonColourId,juce::Colour(0xff342126));s->fxUnload[(size_t)i]->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*s->fx[(size_t)i]);addAndMakeVisible(*s->fxUnload[(size_t)i]);}wire(*s);return s;}
  void configureValuePopup(Strip& s){auto configure=[](juce::Slider* slider,const juce::String&suffix){if(!slider)return;slider->setPopupDisplayEnabled(true,true,nullptr,1500);slider->setTextValueSuffix(suffix);slider->setNumDecimalPlacesToDisplay(1);};configure(s.inputGain.get()," dB");configure(s.highPass.get()," Hz");configure(s.compThreshold.get()," dB");configure(s.compRatio.get()," :1");configure(s.gateThreshold.get()," dB");for(auto&knob:s.eqKnobs)configure(knob.get()," dB");}
  void refreshPower(Strip& s){if(s.kind!=Strip::audio)return;const bool states[3]={s.eqOn,s.gateOn,s.compOn};for(int i=0;i<3;++i){auto&button=s.modulePower[(size_t)i];if(!button)continue;button->setButtonText(states[i]?"ON":"OFF");button->setColour(juce::TextButton::buttonColourId,states[i]?juce::Colour(0xff246b63):juce::Colour(0xff34404a));}}
  void wire(Strip&s){auto*sp=&s;for(int tab=0;tab<4;++tab)if(s.moduleTabs[(size_t)tab])
@@ -173,12 +346,19 @@ knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aig
      }else{sp->insertsExpanded=expand;sp->firstFxSlot=0;}
      layout();repaint();
  };if(sp->kind==Strip::midi){s.fader->setEnabled(false);s.plugin->setEnabled(false);s.unload->setEnabled(false);return;}s.fader->onValueChange=[this,sp]{if(syncing)return;float g=dbToGain((float)sp->fader->getValue());if(sp->kind==Strip::audio)owner.audioEngine.setTrackGain(sp->lane,g);else if(sp->kind==Strip::instrument)owner.audioEngine.setInstrumentTrackGain(sp->lane,g);else owner.audioEngine.setMasterGain(g);repaint();};if(s.pan)s.pan->onValueChange=[this,sp]{if(syncing)return;float p=(float)sp->pan->getValue();if(sp->kind==Strip::audio)owner.audioEngine.setTrackPan(sp->lane,p);else owner.audioEngine.setInstrumentTrackPan(sp->lane,p);repaint();};if(s.mute)s.mute->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackMuted(sp->lane,!owner.audioEngine.isTrackMuted(sp->lane));else owner.audioEngine.setInstrumentTrackMuted(sp->lane,!owner.audioEngine.isInstrumentTrackMuted(sp->lane));sync();repaint();};if(s.solo)s.solo->onClick=[this,sp]{if(sp->kind==Strip::audio)owner.audioEngine.setTrackSolo(sp->lane,!owner.audioEngine.isTrackSolo(sp->lane));else owner.audioEngine.setInstrumentTrackSolo(sp->lane,!owner.audioEngine.isInstrumentTrackSolo(sp->lane));sync();repaint();};for(int section=0;section<3;++section)if(s.modulePower[(size_t)section])s.modulePower[(size_t)section]->onClick=[this,sp,section]{bool on=false;if(section==0){sp->eqOn=!sp->eqOn;on=sp->eqOn;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);owner.audioEngine.setChannelEq(sp->lane,on,gains[0],gains[1],gains[2]);}else if(section==1){sp->gateOn=!sp->gateOn;on=sp->gateOn;owner.audioEngine.setChannelGate(sp->lane,on,(float)sp->gateThreshold->getValue());}else{sp->compOn=!sp->compOn;on=sp->compOn;owner.audioEngine.setChannelCompressor(sp->lane,on,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());}auto&button=*sp->modulePower[(size_t)section];button.setButtonText(on?"ON":"OFF");button.setColour(juce::TextButton::buttonColourId,on?juce::Colour(0xff246b63):juce::Colour(0xff34404a));repaint();};for(int band=0;band<3;++band)if(s.eqKnobs[(size_t)band])s.eqKnobs[(size_t)band]->onValueChange=[this,sp,band]{if(syncing)return;float gains[3];for(int j=0;j<3;++j)gains[j]=owner.audioEngine.getChannelEqBandDb(sp->lane,j);gains[band]=(float)sp->eqKnobs[(size_t)band]->getValue();sp->eqOn=true;refreshPower(*sp);owner.audioEngine.setChannelEq(sp->lane,true,gains[0],gains[1],gains[2]);repaint();};if(s.gateThreshold)s.gateThreshold->onValueChange=[this,sp]{if(syncing)return;sp->gateOn=true;refreshPower(*sp);owner.audioEngine.setChannelGate(sp->lane,true,(float)sp->gateThreshold->getValue());repaint();};if(s.compThreshold)s.compThreshold->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;refreshPower(*sp);owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.compRatio)s.compRatio->onValueChange=[this,sp]{if(syncing)return;sp->compOn=true;owner.audioEngine.setChannelCompressor(sp->lane,true,(float)sp->compThreshold->getValue(),(float)sp->compRatio->getValue());repaint();};if(s.highPass)s.highPass->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelHighPassHz(sp->lane,(float)sp->highPass->getValue());repaint();};if(s.inputGain)s.inputGain->onValueChange=[this,sp]{if(syncing)return;owner.audioEngine.setChannelInputGainDb(sp->lane,(float)sp->inputGain->getValue());repaint();};if(s.channel)s.channel->onClick=[this,sp]{
- sp->moduleExpanded[3]=true;layout();repaint();
- juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
- "LIBERTY  |  CANAL AUDIO",
- "Les sections INPUT, EQ, GATE et COMP peuvent rester ouvertes simultanément. "
- "Glissez la séparation au-dessus du panoramique pour ajuster la hauteur des faders.",
- "FERMER");
+   juce::DialogWindow::LaunchOptions options;
+   options.dialogTitle="LIBERTY  |  CANAL AUDIO";
+   options.dialogBackgroundColour=juce::Colour(0xff101b2a);
+   options.content.setOwned(new LibertyChannelInspector(
+       owner.audioEngine,sp->lane,name(*sp),
+       [safe=juce::Component::SafePointer<MixConsoleView>(this)]{
+           if(safe!=nullptr){safe->sync();safe->repaint();}
+       }));
+   options.componentToCentreAround=&owner;
+   options.escapeKeyTriggersCloseButton=true;
+   options.useNativeTitleBar=false;
+   options.resizable=false;
+   options.launchAsync();
  };s.plugin->onClick=[sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument&&h.hasInstrumentForTrack(sp->lane))h.showInstrumentEditorForTrack(sp->lane);};s.unload->onClick=[this,sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument){h.unloadInstrumentForTrack(sp->lane);owner.notifyInstrumentChanged();}sync();repaint();};if(sp->kind==Strip::audio||sp->kind==Strip::instrument)for(int i=0;i<8;++i){sp->fx[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();const int oneKey=sp->kind==Strip::audio?sp->lane*8+i:100000+sp->lane*8+i;if(k.hasEffect(oneKey))k.showEditor(oneKey);else if(sp->kind==Strip::audio)h.showEditorForTrackSlot(sp->lane,i);else h.showEffectEditorForInstrumentTrackSlot(sp->lane,i);};sp->fxUnload[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();if(sp->kind==Strip::audio){h.unloadEffectForTrackSlot(sp->lane,i);k.clearEffect(sp->lane*8+i);}else{h.unloadEffectForInstrumentTrackSlot(sp->lane,i);k.clearEffect(100000+sp->lane*8+i);}sync();repaint();};}}
  
  void rebuild(){
@@ -280,7 +460,7 @@ knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aig
           const auto& p=g.modules[(size_t)index];
           auto& b=s->moduleTabs[(size_t)index];
           if(b){
-            put(b.get(),7,p.headerY,s->bounds.getWidth()-45,20);
+            put(b.get(),7,p.headerY,index==3?68:s->bounds.getWidth()-45,20);
             b->setToggleState(s->moduleExpanded[(size_t)index],juce::dontSendNotification);
             b->setColour(juce::TextButton::buttonColourId,
                 s->moduleExpanded[(size_t)index]?juce::Colour(0xff315b6d):juce::Colour(0xff253544));
@@ -299,9 +479,9 @@ knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aig
         knob(s->compThreshold.get(),28,comp,31);
         knob(s->compRatio.get(),86,comp,31);
         const int inputKnob=juce::jmin(26,input.bodyHeight-8);
-        put(s->channel.get(),8,input.bodyY+8,44,20,input.bodyHeight>=30);
-        put(s->inputGain.get(),65,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
-        put(s->highPass.get(),105,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
+        put(s->channel.get(),s->bounds.getWidth()-60,input.headerY+1,53,19,true);
+        put(s->inputGain.get(),39,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
+        put(s->highPass.get(),96,input.bodyY+4,28,inputKnob,input.bodyHeight>=25);
       }else{
         for(auto&b:s->moduleTabs)if(b)b->setVisible(false);
         for(auto&b:s->modulePower)if(b)b->setVisible(false);
@@ -422,8 +602,8 @@ knob->setTooltip(juce::String("EQ : ")+(band==0?"graves":band==1?"médiums":"aig
               g.drawText("SEUIL",x+22,labelY,42,10,juce::Justification::centred);
               g.drawText("RATIO",x+80,labelY,42,10,juce::Justification::centred);
             }else{
-              g.drawText("GAIN",x+62,labelY,35,10,juce::Justification::centred);
-              g.drawText("COUPE-BAS",x+98,labelY,45,10,juce::Justification::centred);
+              g.drawText("GAIN",x+35,labelY,35,10,juce::Justification::centred);
+              g.drawText("COUPE-BAS",x+88,labelY,45,10,juce::Justification::centred);
             }
           }
         }

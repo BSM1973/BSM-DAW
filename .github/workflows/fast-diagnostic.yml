@@ -42,6 +42,11 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
           /tmp/liberty-mixer-layout
 
+      - name: Verify channel inspector controls never overlap
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror Tests/ChannelDialogLayoutRegression.cpp -o /tmp/liberty-channel-dialog-layout
+          /tmp/liberty-channel-dialog-layout
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
