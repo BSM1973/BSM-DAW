@@ -1048,14 +1048,22 @@ private:
      if(redoButton.isEnabled()!=(redoCount>0))redoButton.setEnabled(redoCount>0);
      // Tooltips disclose how many edits can be reversed without changing
      // the header geometry or using placeholder glyphs for French labels.
-     undoButton.setTooltip(undoCount>0
-         ? juce::String::fromUTF8("ANNULER A/B : ")+juce::String((int)undoCount)
-             +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Z")
-         : juce::String::fromUTF8("Aucune modification A/B à annuler."));
-     redoButton.setTooltip(redoCount>0
-         ? juce::String::fromUTF8("RÉTABLIR A/B : ")+juce::String((int)redoCount)
-             +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Maj+Z")
-         : juce::String::fromUTF8("Aucune modification A/B à rétablir."));
+     if(undoCount!=shownUndoDepth)
+     {
+         undoButton.setTooltip(undoCount>0
+             ? juce::String::fromUTF8("ANNULER A/B : ")+juce::String((int)undoCount)
+                 +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Z")
+             : juce::String::fromUTF8("Aucune modification A/B à annuler."));
+         shownUndoDepth=undoCount;
+     }
+     if(redoCount!=shownRedoDepth)
+     {
+         redoButton.setTooltip(redoCount>0
+             ? juce::String::fromUTF8("RÉTABLIR A/B : ")+juce::String((int)redoCount)
+                 +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Maj+Z")
+             : juce::String::fromUTF8("Aucune modification A/B à rétablir."));
+         shownRedoDepth=redoCount;
+     }
  }
  void refreshVariantButton(){
     const bool isB=session.variantIndex()==1;
@@ -1134,6 +1142,8 @@ private:
  LibertyChannelPresetStatus::Indicator presetIndicator;
  LibertyChannelABHistory::History<HistoryFrame> abHistory;
  LibertyChannelABGestureHistory::Tracker gestureHistory;
+ std::size_t shownUndoDepth=static_cast<std::size_t>(-1);
+ std::size_t shownRedoDepth=static_cast<std::size_t>(-1);
  LibertyChannelPresetStatus::Indicator openingPresetIndicator;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
