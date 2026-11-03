@@ -211,6 +211,7 @@ public:
         menu.addItem(1103,"RESTAURER A");
         menu.addItem(1104,"RESTAURER B");
         juce::PopupMenu sectionsAToB,sectionsBToA,resetSections,restoreSections,swapSections;
+        juce::PopupMenu copyToClipboardSections,pasteFromClipboardSections;
         const juce::String sectionNames[4]={
             "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
         };
@@ -221,6 +222,11 @@ public:
             resetSections.addItem(1300+section,sectionNames[section]);
             restoreSections.addItem(1400+section,sectionNames[section]);
             swapSections.addItem(1500+section,sectionNames[section]);
+            copyToClipboardSections.addItem(1600+section,sectionNames[section]);
+            pasteFromClipboardSections.addItem(
+                1610+section,sectionNames[section],
+                LibertyChannelInspectorState::Session::canPasteSection(
+                    static_cast<LibertyChannelInspectorState::Session::Section>(section)));
         }
         menu.addSeparator();
         menu.addSubMenu("COPIER UNE SECTION A VERS B",sectionsAToB);
@@ -231,6 +237,9 @@ public:
                         restoreSections);
         menu.addSubMenu(juce::String::fromUTF8("ÉCHANGER UNE SECTION A/B"),
                         swapSections);
+        menu.addSeparator();
+        menu.addSubMenu("COPIER UNE SECTION DE LA PISTE",copyToClipboardSections);
+        menu.addSubMenu("COLLER UNE SECTION SUR LA PISTE",pasteFromClipboardSections);
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetComponent(&presetsButton),
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
@@ -273,6 +282,10 @@ public:
                     safe->restoreSectionForEditing(result-1400);
                 else if(result>=1500 && result<1504)
                     safe->swapSectionForEditing(result-1500);
+                else if(result>=1600 && result<1604)
+                    safe->copySectionToClipboardForEditing(result-1600);
+                else if(result>=1610 && result<1614)
+                    safe->pasteSectionFromClipboardForEditing(result-1610);
                 else if(result>=200 && result<200+(int)saved.size())
                     safe->askToRemovePreset(saved[(size_t)(result-200)].name);
                 else if(result>=300 && result<300+(int)saved.size())
@@ -384,6 +397,25 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void copySectionToClipboardForEditing(int section)
+ {
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3)return;
+    session.copySectionToClipboard(static_cast<Section>(section));
+ }
+ void pasteSectionFromClipboardForEditing(int section)
+ {
+    // Keep the current section's unrelated settings and the inactive bank.
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>3
+       || !session.pasteSectionFromClipboard(static_cast<Section>(section)))
+        return;
+    writeControls(session.pending());
+    // Preserve destination preset reference; MODIFIÉ flags the new values.
+    repaint();
+ }
  void swapSectionForEditing(int section)
  {
     // The active bank may contain unpublished edits from its controls.

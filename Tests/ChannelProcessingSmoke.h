@@ -425,6 +425,122 @@ inline bool runLibertyChannelProcessingSmoke()
         require(equal(sectionSwapEngine.getChannelProcessingSettings(1),neutral),
                 "section exchange modified other track");
 
+        // Each section clipboard can transfer one processing group across
+        // different tracks/dialogs, without replacing the whole-track clipboard
+        // or modifying audio until the destination confirms APPLY.
+        using ChannelSession=LibertyChannelInspectorState::Session;
+        ChannelSession::clearClipboardForTests();
+        ChannelSession::clearSectionClipboardForTests();
+        AudioEngine clipboardEngine;
+        ChannelSession sectionSource(clipboardEngine,0);
+        ChannelSession sectionDestination(clipboardEngine,1);
+        const auto invalidSection=static_cast<Section>(99);
+        require(!sectionSource.copySectionToClipboard(invalidSection),
+                "invalid section copied into clipboard");
+        require(!sectionDestination.pasteSectionFromClipboard(Section::Input)
+                && !ChannelSession::canPasteSection(Section::Input),
+                "empty section clipboard unexpectedly accepted paste");
+        require(!sectionDestination.pasteSectionFromClipboard(invalidSection)
+                && !ChannelSession::canPasteSection(invalidSection),
+                "invalid section clipboard unexpectedly available");
+        for(const auto section:sections)
+        {
+            ChannelSession::clearSectionClipboardForTests();
+            sectionSource.setPending(originalA);
+            sectionDestination.setPending(originalB);
+            const auto expectedSource=originalA;
+            require(sectionSource.copySectionToClipboard(section),
+                    "could not copy a section between tracks");
+            require(ChannelSession::canPasteSection(section),
+                    "copied section not available on destination");
+            for(const auto other:sections)
+                if(other!=section)
+                    require(!ChannelSession::canPasteSection(other),
+                        "copying a section activated another clipboard");
+            require(!ChannelSession::canPaste(),
+                    "section copy contaminated full-channel clipboard");
+            // Mutations of the source after COPY must not change its snapshot.
+            sectionSource.setPending(originalB);
+            require(sectionDestination.pasteSectionFromClipboard(section),
+                    "destination could not paste copied section");
+            auto expected=originalB;
+            switch(section)
+            {
+                case Section::Input:
+                    expected.inputGainDb=expectedSource.inputGainDb;
+                    expected.highPassHz=expectedSource.highPassHz;
+                    break;
+                case Section::Gate:
+                    expected.gateEnabled=expectedSource.gateEnabled;
+                    expected.gateThresholdDb=expectedSource.gateThresholdDb;
+                    break;
+                case Section::Compressor:
+                    expected.compressorEnabled=expectedSource.compressorEnabled;
+                    expected.compressorThresholdDb=expectedSource.compressorThresholdDb;
+                    expected.compressorRatio=expectedSource.compressorRatio;
+                    break;
+                case Section::Equalizer:
+                    expected.eqEnabled=expectedSource.eqEnabled;
+                    expected.eqLowDb=expectedSource.eqLowDb;
+                    expected.eqMidDb=expectedSource.eqMidDb;
+                    expected.eqHighDb=expectedSource.eqHighDb;
+                    break;
+            }
+            require(equal(sectionDestination.pending(),expected),
+                    "section paste changed unrelated settings");
+            require(equal(clipboardEngine.getChannelProcessingSettings(0),neutral)
+                    && equal(clipboardEngine.getChannelProcessingSettings(1),neutral),
+                    "section clipboard modified DSP before APPLY");
+            sectionDestination.switchVariant();
+            require(equal(sectionDestination.pending(),neutral),
+                    "section clipboard modified inactive bank");
+            sectionDestination.switchVariant();
+            sectionDestination.cancel();
+            require(equal(sectionDestination.pending(),neutral),
+                    "CANCEL failed after cross-track section paste");
+        }
+        // The clipboard belongs to a section, not a source track or variant:
+        // copy from source A, paste into destination B, then APPLY and reopen.
+        ChannelSession::clearSectionClipboardForTests();
+        sectionSource.setPending(originalA);
+        require(sectionSource.copySectionToClipboard(Section::Equalizer),
+                "cannot copy EQ to clipboard");
+        ChannelSession channelClipboardCheck(clipboardEngine,0);
+        channelClipboardCheck.setPending(originalB);
+        channelClipboardCheck.copy();
+        require(ChannelSession::canPaste(),"full-channel clipboard copy failed");
+        sectionDestination.switchVariant();
+        sectionDestination.setPending(originalB);
+        require(sectionDestination.pasteSectionFromClipboard(Section::Equalizer),
+                "cannot paste EQ into destination B");
+        auto expectedEQ=originalB;
+        expectedEQ.eqEnabled=originalA.eqEnabled;
+        expectedEQ.eqLowDb=originalA.eqLowDb;
+        expectedEQ.eqMidDb=originalA.eqMidDb;
+        expectedEQ.eqHighDb=originalA.eqHighDb;
+        require(equal(sectionDestination.pending(),expectedEQ),
+                "cross-track EQ clipboard paste incorrect");
+        require(equal(clipboardEngine.getChannelProcessingSettings(1),neutral),
+                "cross-track EQ paste affected live audio");
+        sectionDestination.apply();
+        require(equal(clipboardEngine.getChannelProcessingSettings(1),expectedEQ),
+                "cross-track EQ paste failed to APPLY");
+        ChannelSession reopenedClipboard(clipboardEngine,1);
+        require(reopenedClipboard.variantIndex()==1
+                && equal(reopenedClipboard.pending(),expectedEQ),
+                "pasted EQ not preserved after reopen");
+        reopenedClipboard.switchVariant();
+        require(equal(reopenedClipboard.pending(),neutral),
+                "cross-track paste changed destination A");
+        require(equal(clipboardEngine.getChannelProcessingSettings(0),neutral),
+                "cross-track paste affected source track");
+        ChannelSession fullClipboardTarget(clipboardEngine,0);
+        require(fullClipboardTarget.paste(),"section clipboard broke full paste");
+        require(equal(fullClipboardTarget.pending(),originalB),
+                "section clipboard corrupted full-channel snapshot");
+        ChannelSession::clearSectionClipboardForTests();
+        ChannelSession::clearClipboardForTests();
+
         // Section-only reset: each control group has independent defaults,
         // and activating B must not reset A or alter any live audio.
         AudioEngine resetEngine;

@@ -114,6 +114,34 @@ public:
     }
     static bool canPaste() noexcept { return clipboard.has_value(); }
     static void clearClipboardForTests() noexcept { clipboard.reset(); }
+
+    // Per-section clipboards are shared between CANAL windows. They are
+    // independent of the existing full-channel clipboard and of each other.
+    bool copySectionToClipboard(Section section) noexcept
+    {
+        const auto index=static_cast<int>(section);
+        if(index<0 || index>=4)return false;
+        sectionClipboard[(size_t)index]=pending();
+        return true;
+    }
+    bool pasteSectionFromClipboard(Section section) noexcept
+    {
+        const auto index=static_cast<int>(section);
+        if(index<0 || index>=4 || !sectionClipboard[(size_t)index])
+            return false;
+        return transferSection(*sectionClipboard[(size_t)index],
+                               variants[(size_t)activeVariant],section);
+    }
+    static bool canPasteSection(Section section) noexcept
+    {
+        const auto index=static_cast<int>(section);
+        return index>=0 && index<4
+            && sectionClipboard[(size_t)index].has_value();
+    }
+    static void clearSectionClipboardForTests() noexcept
+    {
+        for(auto& item:sectionClipboard)item.reset();
+    }
 private:
     static bool transferSection(const Settings& source,Settings& destination,
                                 Section section) noexcept
@@ -148,5 +176,6 @@ private:
     std::array<Settings,2> openingVariants{};
     int activeVariant = 0;
     inline static std::optional<Settings> clipboard{};
+    inline static std::array<std::optional<Settings>,4> sectionClipboard{};
 };
 }
