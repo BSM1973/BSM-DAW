@@ -38,22 +38,20 @@ int main()
         b=Settings{};
         assert(LibertyChannelParameterTransfer::copy(b,a,c.section,c.row));
         const auto after=values(b);
-        for(size_t i=0;i<after.size();++i)
+        for(std::size_t i=0;i<after.size();++i)
             assert(after[i]==(static_cast<int>(i)==c.field?source[i]:initial[i]));
     }
+    // Exercise the inverse direction as well: only the chosen field can reset.
     for(const auto c:cases)
     {
-        b=Settings{};
-        assert(LibertyChannelParameterTransfer::copy(a,b,c.section,c.row));
-        // A reverse copy must not mutate B.
-        assert(values(b)==initial);
-        // Restore A for the next reverse-direction check.
-        a=Settings{};
-        a.inputGainDb=1.5f;a.highPassHz=70.f;
-        a.gateEnabled=true;a.gateThresholdDb=-40.f;
-        a.compressorEnabled=true;a.compressorThresholdDb=-15.f;
-        a.compressorRatio=6.f;a.eqEnabled=true;
-        a.eqLowDb=-3.f;a.eqMidDb=5.f;a.eqHighDb=9.f;
+        Settings destination=a;
+        const Settings sourceB{};
+        assert(LibertyChannelParameterTransfer::copy(
+            destination,sourceB,c.section,c.row));
+        const auto after=values(destination);
+        for(std::size_t i=0;i<after.size();++i)
+            assert(after[i]==(static_cast<int>(i)==c.field?initial[i]:source[i]));
+        assert(values(sourceB)==initial);
     }
     for(const auto invalid:std::array<std::array<int,2>,8>{{
         {{-1,0}},{{4,0}},{{0,-1}},{{0,2}},
