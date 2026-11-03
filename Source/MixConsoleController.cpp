@@ -351,6 +351,11 @@ public:
      const juce::String headings[4]={"INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")};
      const juce::Colour accents[4]={juce::Colour(0xff72c6eb),juce::Colour(0xff91d1a8),
                                    juce::Colour(0xffe0b276),juce::Colour(0xff60d3d6)};
+     // Read the displayed controls (including pending knob edits) without
+     // changing the Session, variant selection or live audio processing.
+     const auto visibleSettings=readControls();
+     const auto* otherSettings=session.variantSettings(1-session.variantIndex());
+     using Section=LibertyChannelInspectorState::Session::Section;
      for(int i=0;i<4;++i){
         const auto b=layout.sections[(size_t)i];
         g.setColour(juce::Colour(0xff16283a));
@@ -360,7 +365,24 @@ public:
         g.setColour(accents[i]);
         g.fillRoundedRectangle((float)b.x+11,(float)b.y+13,3.f,22.f,1.5f);
         g.setFont(juce::Font(14.f,juce::Font::bold));
-        g.drawText(headings[i],b.x+23,b.y+13,b.w-140,22,juce::Justification::centredLeft);
+        g.drawText(headings[i],b.x+23,b.y+13,b.w-220,22,juce::Justification::centredLeft);
+        const int count=otherSettings!=nullptr
+            ?LibertyChannelSectionComparison::differenceCount(
+                LibertyChannelSectionComparison::rows(
+                    visibleSettings,*otherSettings,static_cast<Section>(i)))
+            :0;
+        const auto indicator=layout.abIndicators[(size_t)i];
+        g.setColour(juce::Colour(count>0?0xff51432f:0xff24394a));
+        g.fillRoundedRectangle((float)indicator.x,(float)indicator.y,
+                               (float)indicator.w,(float)indicator.h,5.f);
+        g.setColour(juce::Colour(count>0?0xffe0b276:0xff617f96));
+        g.drawRoundedRectangle((float)indicator.x,(float)indicator.y,
+                               (float)indicator.w,(float)indicator.h,5.f,1.f);
+        g.setFont(juce::Font(10.f,juce::Font::bold));
+        g.setColour(juce::Colour(count>0?0xffffdfa5:0xffbacbd8));
+        g.drawText("A/B "+juce::String(count),
+                   indicator.x,indicator.y,indicator.w,indicator.h,
+                   juce::Justification::centred);
      }
      const juce::String labels[8]={"GAIN","COUPE-BAS","SEUIL","SEUIL","RATIO",
                             "GRAVES",juce::String::fromUTF8("MÉDIUMS"),"AIGUS"};

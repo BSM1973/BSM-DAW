@@ -17,6 +17,7 @@ struct Rect {
 };
 struct Layout {
     std::array<Rect,4> sections;
+    std::array<Rect,4> abIndicators;
     std::array<Rect,8> controls;
     std::array<Rect,3> powers;
     std::array<Rect,3> actions;
@@ -33,6 +34,9 @@ constexpr Layout make(int width=760,int height=520){
     const int right=margin+pw+gap;
     l.sections={{{margin,82,pw,168},{right,82,pw,168},
                  {margin,262,pw,170},{right,262,pw,170}}};
+    // A/B read-only badges sit between the title and the power switch.
+    l.abIndicators={{{margin+pw-181,96,61,22},{right+pw-181,96,61,22},
+                     {margin+pw-181,276,61,22},{right+pw-181,276,61,22}}};
     l.controls={{{margin+33,146,108,93},    // input gain
                  {margin+184,146,108,93},   // input high-pass
                  {right+122,146,108,93},    // gate threshold
@@ -60,7 +64,7 @@ constexpr Rect sectionTitleArea(const Layout& layout,int section) noexcept
 {
     if(section<0 || section>=4)return {};
     const auto card=layout.sections[(size_t)section];
-    return {card.x+14,card.y+10,card.w-150,31};
+    return {card.x+14,card.y+10,card.w-130,31};
 }
 constexpr int sectionTitleAt(const Layout& layout,int x,int y) noexcept
 {

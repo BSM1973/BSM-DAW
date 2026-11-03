@@ -19,7 +19,21 @@ int main(){
         for(const auto& card:g.sections)assert(full.contains(card));
         for(int section=0;section<4;++section)
         {
+            const auto card=g.sections[(size_t)section];
+            const auto indicator=g.abIndicators[(size_t)section];
+            const Rect drawnHeading{card.x+23,card.y+13,card.w-220,22};
             const auto title=LibertyChannelDialogLayout::sectionTitleArea(g,section);
+            assert(card.contains(indicator));
+            assert(card.contains(drawnHeading));
+            assert(!drawnHeading.intersects(indicator));
+            assert(title.contains(indicator));
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                g,indicator.x+indicator.w/2,indicator.y+indicator.h/2)==section);
+            for(const auto& knob:g.controls)assert(!indicator.intersects(knob));
+            for(const auto& toggle:g.powers)assert(!indicator.intersects(toggle));
+            for(const auto& other:g.abIndicators)
+                if(&other!=&g.abIndicators[(size_t)section])
+                    assert(!indicator.intersects(other));
             assert(g.sections[(size_t)section].contains(title));
             assert(title.w>0 && title.h>0);
             assert(LibertyChannelDialogLayout::sectionTitleAt(g,title.x,title.y)
