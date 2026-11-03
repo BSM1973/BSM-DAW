@@ -53,6 +53,11 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelParameterTransferRegression.cpp -o /tmp/liberty-canal-parameter-copy
           /tmp/liberty-canal-parameter-copy
 
+      - name: Verify CANAL A/B undo and redo history
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABHistoryRegression.cpp -o /tmp/liberty-canal-ab-history
+          /tmp/liberty-canal-ab-history
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
