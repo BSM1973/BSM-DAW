@@ -111,12 +111,13 @@ public:
         power[(size_t)i].onClick=[this,i]{
             abHistory.record(captureHistoryFrame());
             session.setPending(readControls());
+            refreshHistoryButtons();
             refreshPower(i);
             repaint();
         };
         refreshPower(i);
     }
-    for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&presetsButton,&cancelButton,&applyButton}){
+    for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&presetsButton,&undoButton,&redoButton,&cancelButton,&applyButton}){
         button->setMouseClickGrabsKeyboardFocus(false);
         button->setColour(juce::TextButton::textColourOffId,juce::Colours::white);
         addAndMakeVisible(*button);
@@ -126,6 +127,8 @@ public:
     pasteButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
     refreshVariantButton();
     presetsButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff28546a));
+    undoButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff305065));
+    redoButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff305065));
     cancelButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff34475a));
     applyButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff207b86));
     resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
@@ -135,6 +138,11 @@ public:
     presetsButton.setTooltip(juce::String::fromUTF8(
         "Préréglages CANAL et historique A/B. Cmd+Z : annuler ; Cmd+Maj+Z : rétablir. "
         "La saisie numérique conserve son propre Annuler/Rétablir."));
+    undoButton.setTooltip(juce::String::fromUTF8("ANNULER la dernière modification A/B (Cmd+Z)."));
+    redoButton.setTooltip(juce::String::fromUTF8("RÉTABLIR la modification A/B annulée (Cmd+Maj+Z)."));
+    undoButton.onClick=[this]{restoreABEdit(false);};
+    redoButton.onClick=[this]{restoreABEdit(true);};
+    refreshHistoryButtons();
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         rememberABEdit();
@@ -521,6 +529,10 @@ public:
     variantButton.setBounds(variantBounds.x,variantBounds.y,variantBounds.w,variantBounds.h);
     const auto presetBounds=layout.presets;
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
+    const auto undoBounds=layout.historyActions[0];
+    const auto redoBounds=layout.historyActions[1];
+    undoButton.setBounds(undoBounds.x,undoBounds.y,undoBounds.w,undoBounds.h);
+    redoButton.setBounds(redoBounds.x,redoBounds.y,redoBounds.w,redoBounds.h);
  }
 private:
  bool isTextEditorFocused()const
@@ -549,6 +561,7 @@ private:
  {
      session.setPending(readControls());
      abHistory.record(captureHistoryFrame());
+     refreshHistoryButtons();
  }
  // One undo step per knob drag; text and keyboard changes are separate steps.
  void trackControlChange()
@@ -559,6 +572,7 @@ private:
          if(sliderDragging)sliderGestureRecorded=true;
      }
      session.setPending(readControls());
+     refreshHistoryButtons();
      repaint();
  }
  void restoreABEdit(bool redo)
@@ -570,6 +584,7 @@ private:
      presetIndicator=frame.labels;
      writeControls(session.pending());
      refreshVariantButton();
+     refreshHistoryButtons();
      repaint();
  }
  void loadPresetSectionForEditing(
@@ -1025,6 +1040,13 @@ private:
                         "Impossible de supprimer ce préréglage personnel."));
             }));
  }
+ void refreshHistoryButtons()
+ {
+     const bool undo=abHistory.canUndo();
+     const bool redo=abHistory.canRedo();
+     if(undoButton.isEnabled()!=undo)undoButton.setEnabled(undo);
+     if(redoButton.isEnabled()!=redo)redoButton.setEnabled(redo);
+ }
  void refreshVariantButton(){
     const bool isB=session.variantIndex()==1;
     variantButton.setButtonText(isB?"MODE B":"MODE A");
@@ -1034,6 +1056,7 @@ private:
  void timerCallback()override{
     const bool available=LibertyChannelInspectorState::Session::canPaste();
     if(pasteButton.isEnabled()!=available)pasteButton.setEnabled(available);
+    refreshHistoryButtons();
  }
  AudioEngine::ChannelProcessingSettings readControls()const{
     auto v=session.pending();
@@ -1110,6 +1133,8 @@ private:
  juce::TextButton pasteButton{"COLLER"};
  juce::TextButton variantButton{"MODE A"};
  juce::TextButton presetsButton{juce::String::fromUTF8("PRÉRÉGLAGES")};
+ juce::TextButton undoButton{"ANN"};
+ juce::TextButton redoButton{juce::String::fromUTF8("RÉT")};
  std::unique_ptr<juce::FileChooser> presetFileChooser;
  juce::TextButton cancelButton{"ANNULER"};
  juce::TextButton applyButton{"APPLIQUER"};
