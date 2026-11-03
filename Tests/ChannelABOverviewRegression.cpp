@@ -55,7 +55,7 @@ int main()
         const auto ba=decodeCommand(LibertyChannelABOverview::copySectionBToABase+section);
         assert(ab.kind==CommandKind::sectionAToB && ab.section==section);
         assert(ba.kind==CommandKind::sectionBToA && ba.section==section);
-        assert(counts.canCopySection(section)==(counts.bySection[(size_t)section]>0));
+        assert(counts.canCopySection(section)==(counts.bySection[static_cast<unsigned>(section)]>0));
     }
     assert(decodeCommand(-1).kind==CommandKind::none);
     std::cout<<"CANAL A/B overview: section counts, total and menu routing OK\n";
