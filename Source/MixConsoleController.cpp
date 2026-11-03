@@ -669,10 +669,11 @@ private:
              [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
               from,to](int accepted)
              {
-                 if(safe==nullptr || accepted!=1)return;
+                 if(safe==nullptr)return;
                  // A draft may have changed while confirmation was open.
-                 // Avoid an empty history frame.
-                 if(safe->globalABDifferences().identical())return;
+                 // Neither cancellation nor identical drafts add history.
+                 if(!LibertyChannelABOverview::commitConfirmedWholeCopy(
+                        accepted,safe->globalABDifferences()))return;
                  safe->copyVariantForEditing(from,to);
              }));
  }
