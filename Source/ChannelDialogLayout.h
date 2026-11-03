@@ -53,4 +53,23 @@ constexpr Layout make(int width=760,int height=520){
     l.presets={width-205,19,180,29};        // header, clear of title and subtitle
     return l;
 }
+
+// The right-click target is the visible title area of each treatment card.
+// It stays clear of the power toggles and rotary controls.
+constexpr Rect sectionTitleArea(const Layout& layout,int section) noexcept
+{
+    if(section<0 || section>=4)return {};
+    const auto card=layout.sections[(size_t)section];
+    return {card.x+14,card.y+10,card.w-150,31};
+}
+constexpr int sectionTitleAt(const Layout& layout,int x,int y) noexcept
+{
+    for(int section=0;section<4;++section)
+    {
+        const auto title=sectionTitleArea(layout,section);
+        if(x>=title.x && x<title.right() && y>=title.y && y<title.bottom())
+            return section;
+    }
+    return -1;
+}
 }

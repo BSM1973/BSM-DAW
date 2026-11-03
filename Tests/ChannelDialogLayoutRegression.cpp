@@ -17,6 +17,26 @@ int main(){
         assert(!subtitle.intersects(g.presets));
         for(const auto& card:g.sections)assert(!card.intersects(g.presets));
         for(const auto& card:g.sections)assert(full.contains(card));
+        for(int section=0;section<4;++section)
+        {
+            const auto title=LibertyChannelDialogLayout::sectionTitleArea(g,section);
+            assert(g.sections[(size_t)section].contains(title));
+            assert(title.w>0 && title.h>0);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(g,title.x,title.y)
+                   ==section);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                       g,title.right()-1,title.bottom()-1)==section);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                       g,title.right(),title.y)!=section);
+            for(const auto& knob:g.controls)assert(!title.intersects(knob));
+            for(const auto& power:g.powers)assert(!title.intersects(power));
+        }
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,-1,-1)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,0,0)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,32,height-36)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,width-36,32)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleArea(g,-1).w==0);
+        assert(LibertyChannelDialogLayout::sectionTitleArea(g,4).h==0);
         for(int i=0;i<4;++i){
             for(int j=i+1;j<4;++j)assert(!g.sections[i].intersects(g.sections[j]));
         }

@@ -120,7 +120,8 @@ public:
     copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
     variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
-    presetsButton.setTooltip(juce::String::fromUTF8("Charger un préréglage dans la variante affichée. APPLIQUER valide le son."));
+    presetsButton.setTooltip(juce::String::fromUTF8(
+        "Préréglages CANAL. Clic droit sur le titre de chaque section pour accéder directement à ses outils."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         session.reset();
@@ -322,6 +323,15 @@ public:
      stopTimer();
      for(auto& slider:knobs)slider.setLookAndFeel(nullptr);
  }
+ void mouseDown(const juce::MouseEvent& event)override
+ {
+     if(!event.mods.isPopupMenu())return;
+     const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
+     const int section=LibertyChannelDialogLayout::sectionTitleAt(
+         layout,event.getPosition().x,event.getPosition().y);
+     if(section>=0)
+         showSectionContextMenu(section,event.getPosition());
+ }
  void paint(juce::Graphics& g)override{
      g.fillAll(juce::Colour(0xff101b2a));
      g.setColour(juce::Colour(0xff263e56));
@@ -397,6 +407,47 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void showSectionContextMenu(int section,juce::Point<int> localPosition)
+ {
+    if(section<0 || section>=4)return;
+    using Section=LibertyChannelInspectorState::Session::Section;
+    const juce::String names[4]={
+        "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
+    };
+    juce::PopupMenu menu;
+    menu.addSectionHeader(names[section]);
+    menu.addItem(1,juce::String::fromUTF8("COPIER LA SECTION"));
+    menu.addItem(2,juce::String::fromUTF8("COLLER LA SECTION"),
+                 LibertyChannelInspectorState::Session::canPasteSection(
+                     static_cast<Section>(section)));
+    menu.addSeparator();
+    menu.addItem(3,"COPIER A VERS B");
+    menu.addItem(4,"COPIER B VERS A");
+    menu.addItem(5,juce::String::fromUTF8("ÉCHANGER A ET B"));
+    menu.addSeparator();
+    menu.addItem(6,juce::String::fromUTF8("RÉINITIALISER LA SECTION"));
+    menu.addItem(7,juce::String::fromUTF8("RESTAURER LA SECTION"));
+    const auto screen=localPointToGlobal(localPosition);
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(screen.x,screen.y,1,1)),
+        [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
+         section](int result)
+        {
+            if(safe==nullptr)return;
+            switch(result)
+            {
+                case 1: safe->copySectionToClipboardForEditing(section);break;
+                case 2: safe->pasteSectionFromClipboardForEditing(section);break;
+                case 3: safe->copySectionForEditing(0,1,section);break;
+                case 4: safe->copySectionForEditing(1,0,section);break;
+                case 5: safe->swapSectionForEditing(section);break;
+                case 6: safe->resetSectionForEditing(section);break;
+                case 7: safe->restoreSectionForEditing(section);break;
+                default: break;
+            }
+        });
+ }
  void copySectionToClipboardForEditing(int section)
  {
     session.setPending(readControls());
