@@ -4,6 +4,8 @@
 
 using LibertyChannelABOverview::Counts;
 using LibertyChannelABOverview::sectionFromMenu;
+using LibertyChannelABOverview::CommandKind;
+using LibertyChannelABOverview::decodeCommand;
 
 static_assert(Counts{}.total()==0);
 static_assert(Counts{}.identical());
@@ -17,6 +19,27 @@ static_assert(sectionFromMenu(5213)==3);
 static_assert(sectionFromMenu(5200)==-1);
 static_assert(sectionFromMenu(5201)==-1);
 static_assert(sectionFromMenu(5214)==-1);
+static_assert(Counts{{1,0,2,0}}.canCopySection(0));
+static_assert(!Counts{{1,0,2,0}}.canCopySection(1));
+static_assert(Counts{{1,0,2,0}}.canCopySection(2));
+static_assert(!Counts{{1,0,2,0}}.canCopySection(3));
+static_assert(!Counts{{1,0,2,0}}.canCopySection(-1));
+static_assert(!Counts{{1,0,2,0}}.canCopySection(4));
+static_assert(decodeCommand(5210).kind==CommandKind::details);
+static_assert(decodeCommand(5213).section==3);
+static_assert(decodeCommand(5220).kind==CommandKind::sectionAToB);
+static_assert(decodeCommand(5223).section==3);
+static_assert(decodeCommand(5230).kind==CommandKind::sectionBToA);
+static_assert(decodeCommand(5233).section==3);
+static_assert(decodeCommand(5240).kind==CommandKind::allAToB);
+static_assert(decodeCommand(5241).kind==CommandKind::allBToA);
+static_assert(decodeCommand(5240).section==-1);
+static_assert(decodeCommand(5200).kind==CommandKind::none);
+static_assert(decodeCommand(5201).kind==CommandKind::none);
+static_assert(decodeCommand(5224).kind==CommandKind::none);
+static_assert(decodeCommand(5234).kind==CommandKind::none);
+static_assert(decodeCommand(5242).kind==CommandKind::none);
+
 
 int main()
 {
@@ -26,5 +49,14 @@ int main()
     for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
         assert(sectionFromMenu(LibertyChannelABOverview::openSectionBase+section)==section);
     assert(sectionFromMenu(-1)==-1);
+    for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
+    {
+        const auto ab=decodeCommand(LibertyChannelABOverview::copySectionAToBBase+section);
+        const auto ba=decodeCommand(LibertyChannelABOverview::copySectionBToABase+section);
+        assert(ab.kind==CommandKind::sectionAToB && ab.section==section);
+        assert(ba.kind==CommandKind::sectionBToA && ba.section==section);
+        assert(counts.canCopySection(section)==(counts.bySection[(size_t)section]>0));
+    }
+    assert(decodeCommand(-1).kind==CommandKind::none);
     std::cout<<"CANAL A/B overview: section counts, total and menu routing OK\n";
 }
