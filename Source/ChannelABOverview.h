@@ -71,6 +71,13 @@ struct Counts
     }
 };
 
+// Never replace either draft on Cancel, and ignore stale confirmations
+// when the drafts became identical while the popup was open.
+constexpr bool commitConfirmedWholeCopy(int answer,const Counts& current) noexcept
+{
+    return answer==1 && !current.identical();
+}
+
 constexpr int sectionFromMenu(int selected) noexcept
 {
     return selected>=openSectionBase && selected<openSectionBase+sectionCount
