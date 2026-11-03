@@ -49,6 +49,12 @@ static_assert(Counts{}.affectedSections()==0);
 static_assert(Counts{{2,0,3,0}}.affectedSections()==2);
 static_assert(Counts{{0,1,0,4}}.affectedSections()==2);
 static_assert(Counts{{2,1,3,4}}.affectedSections()==4);
+// Dismissing the warning must never replace A or B.
+static_assert(!LibertyChannelABOverview::commitConfirmedWholeCopy(0,Counts{{2,0,1,0}}));
+static_assert(!LibertyChannelABOverview::commitConfirmedWholeCopy(-1,Counts{{2,0,1,0}}));
+// Confirming stale identical drafts is a no-op, including history.
+static_assert(!LibertyChannelABOverview::commitConfirmedWholeCopy(1,Counts{}));
+static_assert(LibertyChannelABOverview::commitConfirmedWholeCopy(1,Counts{{2,0,1,0}}));
 
 
 int main()
@@ -56,6 +62,9 @@ int main()
     Counts counts{{2,0,1,4}};
     assert(counts.total()==7);
     assert(counts.affectedSections()==3);
+    assert(!LibertyChannelABOverview::commitConfirmedWholeCopy(0,counts));
+    assert(LibertyChannelABOverview::commitConfirmedWholeCopy(1,counts));
+    assert(!LibertyChannelABOverview::commitConfirmedWholeCopy(1,Counts{}));
     assert(LibertyChannelABOverview::needsFullCopyConfirmation(
         decodeCommand(LibertyChannelABOverview::copyAllAToB).kind));
     assert(LibertyChannelABOverview::needsFullCopyConfirmation(
