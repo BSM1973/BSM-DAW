@@ -5,6 +5,7 @@
 #include "ChannelInspectorPresets.h"
 #include "ChannelUserPresets.h"
 #include "ChannelPresetStatus.h"
+#include "ChannelSectionComparison.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -631,6 +632,64 @@ inline bool runLibertyChannelProcessingSmoke()
                 "partial preset modified saved A settings");
         require(equal(presetSectionEngine.getChannelProcessingSettings(1),neutral),
                 "partial preset modified another track");
+
+        // Compare pending A/B section values without touching live audio or
+        // changing which variant is selected. Both values and switch states
+        // must be included, and equal values must not be flagged different.
+        AudioEngine comparisonEngine;
+        LibertyChannelInspectorState::Session comparison(comparisonEngine,0);
+        const int expectedCounts[]={2,2,3,4};
+        const int expectedRows[]={2,2,3,4};
+        comparison.setPending(originalA);
+        comparison.switchVariant();
+        comparison.setPending(originalB);
+        for(int sectionIndex=0;sectionIndex<4;++sectionIndex)
+        {
+            const auto section=sections[sectionIndex];
+            const auto* a=comparison.variantSettings(0);
+            const auto* b=comparison.variantSettings(1);
+            require(a!=nullptr && b!=nullptr,
+                    "comparison cannot access valid A/B banks");
+            const auto details=LibertyChannelSectionComparison::rows(*a,*b,section);
+            require((int)details.size()==expectedRows[sectionIndex],
+                    "comparison omitted a processing parameter");
+            require(LibertyChannelSectionComparison::differenceCount(details)
+                    ==expectedCounts[sectionIndex],
+                    "comparison failed to identify A/B differences");
+            for(const auto& row:details)
+                require(row.label.isNotEmpty() && row.valueA.isNotEmpty()
+                        && row.valueB.isNotEmpty(),
+                        "comparison produced an empty field");
+            const auto same=LibertyChannelSectionComparison::rows(*a,*a,section);
+            require(LibertyChannelSectionComparison::differenceCount(same)==0,
+                    "comparison flagged equal parameter values");
+            require(comparison.variantIndex()==1
+                    && equal(comparison.pending(),originalB),
+                    "read-only comparison changed selected B bank");
+            require(equal(comparisonEngine.getChannelProcessingSettings(0),neutral),
+                    "read-only comparison changed live audio");
+        }
+        require(comparison.variantSettings(-1)==nullptr
+                && comparison.variantSettings(2)==nullptr,
+                "comparison returned invalid bank");
+        require(LibertyChannelSectionComparison::rows(
+                    originalA,originalB,static_cast<Section>(9)).empty(),
+                "invalid comparison section returned parameters");
+        require(LibertyChannelSectionComparison::differenceCount(
+                    LibertyChannelSectionComparison::rows(
+                        originalA,originalB,Section::Equalizer))==4,
+                "EQ enable state was excluded from comparison");
+        auto almostSame=originalA;
+        almostSame.inputGainDb+=0.0001f;
+        const auto tolerance=LibertyChannelSectionComparison::rows(
+            originalA,almostSame,Section::Input);
+        require(LibertyChannelSectionComparison::differenceCount(tolerance)==0,
+                "comparison did not respect fractional tolerance");
+        comparison.switchVariant();
+        require(equal(comparison.pending(),originalA),
+                "read-only comparison changed A bank");
+        require(equal(comparisonEngine.getChannelProcessingSettings(1),neutral),
+                "read-only comparison modified another track");
 
         // Section-only reset: each control group has independent defaults,
         // and activating B must not reset A or alter any live audio.

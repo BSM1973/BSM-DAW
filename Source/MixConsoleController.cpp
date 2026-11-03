@@ -9,6 +9,7 @@
 #include "ChannelInspectorPresets.h"
 #include "ChannelUserPresets.h"
 #include "ChannelPresetStatus.h"
+#include "ChannelSectionComparison.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -456,6 +457,31 @@ private:
                              personalPresets,loaded && !saved.empty());
     menu.addSubMenu(juce::String::fromUTF8("CHARGER CETTE SECTION DEPUIS..."),
                     presetSections);
+    // Capture unpublished edits so this view compares what is on screen.
+    // Comparison is read-only and never applies the live DSP.
+    session.setPending(readControls());
+    const auto* bankA=session.variantSettings(0);
+    const auto* bankB=session.variantSettings(1);
+    if(bankA!=nullptr && bankB!=nullptr)
+    {
+        const auto detail=LibertyChannelSectionComparison::rows(
+            *bankA,*bankB,static_cast<Section>(section));
+        juce::PopupMenu comparison;
+        comparison.addSectionHeader(
+            juce::String::fromUTF8("PARAMÈTRES DIFFÉRENTS : ")
+            +juce::String(LibertyChannelSectionComparison::differenceCount(detail)));
+        for(size_t i=0;i<detail.size();++i)
+        {
+            const auto& row=detail[i];
+            const auto state=row.different
+                ?juce::String::fromUTF8("DIFFÉRENT : ")
+                :juce::String::fromUTF8("IDENTIQUE : ");
+            comparison.addItem(3000+(int)i,
+                state+row.label+"  |  A : "+row.valueA+"  |  B : "+row.valueB,
+                false);
+        }
+        menu.addSubMenu("COMPARER A ET B",comparison);
+    }
     const auto screen=localPointToGlobal(localPosition);
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea(

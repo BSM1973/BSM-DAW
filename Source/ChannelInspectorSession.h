@@ -42,6 +42,10 @@ public:
     }
 
     int variantIndex() const noexcept { return activeVariant; }
+    const Settings* variantSettings(int bank) const noexcept
+    {
+        return bank>=0 && bank<2 ? &variants[(size_t)bank] : nullptr;
+    }
     void switchVariant() noexcept { activeVariant = 1 - activeVariant; }
 
     // Duplicate a prepared variant without switching banks or touching DSP.
