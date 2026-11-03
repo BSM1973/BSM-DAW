@@ -655,13 +655,29 @@ private:
      for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
      {
          const int count=summary.bySection[(size_t)section];
-         menu.addItem(LibertyChannelABOverview::openSectionBase+section,
-             names[section]+"  |  "+juce::String(count)
+         juce::PopupMenu operations;
+         operations.addItem(LibertyChannelABOverview::openSectionBase+section,
+             juce::String::fromUTF8("VOIR LES PARAMÈTRES A/B"));
+         operations.addSeparator();
+         operations.addItem(LibertyChannelABOverview::copySectionAToBBase+section,
+             "COPIER LA SECTION A VERS B",summary.canCopySection(section));
+         operations.addItem(LibertyChannelABOverview::copySectionBToABase+section,
+             "COPIER LA SECTION B VERS A",summary.canCopySection(section));
+         menu.addSubMenu(names[section]+"  |  "+juce::String(count)
                 +(count==1?juce::String::fromUTF8(" DIFFÉRENCE")
-                          :juce::String::fromUTF8(" DIFFÉRENCES")));
+                          :juce::String::fromUTF8(" DIFFÉRENCES")),
+             operations);
      }
-     // Reuse per-section comparison; neither this menu nor a drilldown
-     // touches the real-time DSP or modifies either pending bank.
+     menu.addSeparator();
+     menu.addSectionHeader(juce::String::fromUTF8("ALIGNER TOUTES LES SECTIONS"));
+     menu.addItem(LibertyChannelABOverview::copyAllAToB,
+         juce::String::fromUTF8("COPIER A VERS B — RÉGLAGES ET PRÉRÉGLAGE"),
+         !summary.identical());
+     menu.addItem(LibertyChannelABOverview::copyAllBToA,
+         juce::String::fromUTF8("COPIER B VERS A — RÉGLAGES ET PRÉRÉGLAGE"),
+         !summary.identical());
+     // No operation touches the real-time DSP before APPLIQUER.
+     // Each copy reuses the current reversible CANAL A/B session.
      menu.showMenuAsync(
          juce::PopupMenu::Options().withTargetComponent(&variantButton),
          [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)](int chosen)
@@ -677,13 +693,28 @@ private:
                  safe->selectVariantForEditing(1);
                  return;
              }
-             const int section=LibertyChannelABOverview::sectionFromMenu(chosen);
-             if(section>=0)
+             const auto command=LibertyChannelABOverview::decodeCommand(chosen);
+             using Kind=LibertyChannelABOverview::CommandKind;
+             if(command.kind==Kind::none)return;
+             // The popup snapshot may be stale if an external input changes
+             // the pending controls; check live differences before copying.
+             const auto differences=safe->globalABDifferences();
+             if(command.kind==Kind::details)
              {
                  const auto bounds=safe->variantButton.getBounds();
                  safe->showSectionComparisonMenu(
-                     section,{bounds.getCentreX(),bounds.getY()});
+                     command.section,{bounds.getCentreX(),bounds.getY()});
              }
+             else if(command.kind==Kind::sectionAToB
+                  && differences.canCopySection(command.section))
+                 safe->copySectionForEditing(0,1,command.section);
+             else if(command.kind==Kind::sectionBToA
+                  && differences.canCopySection(command.section))
+                 safe->copySectionForEditing(1,0,command.section);
+             else if(command.kind==Kind::allAToB && !differences.identical())
+                 safe->copyVariantForEditing(0,1);
+             else if(command.kind==Kind::allBToA && !differences.identical())
+                 safe->copyVariantForEditing(1,0);
          });
  }
  juce::PopupMenu makeSectionComparisonMenu(int section)
