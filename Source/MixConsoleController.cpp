@@ -520,9 +520,16 @@ private:
         const auto state=row.different
             ?juce::String::fromUTF8("DIFFÉRENT : ")
             :juce::String::fromUTF8("IDENTIQUE : ");
-        comparison.addItem(3000+(int)i,
-            state+row.label+"  |  A : "+row.valueA+"  |  B : "+row.valueB,
-            false);
+        const auto label=state+row.label+"  |  A : "+row.valueA
+            +"  |  B : "+row.valueB;
+        if(row.different)
+        {
+            juce::PopupMenu directions;
+            directions.addItem(4000+2*(int)i,"COPIER A VERS B");
+            directions.addItem(4001+2*(int)i,"COPIER B VERS A");
+            comparison.addSubMenu(label,directions);
+        }
+        else comparison.addItem(3000+(int)i,label,false);
     }
     return comparison;
  }
@@ -533,7 +540,27 @@ private:
     makeSectionComparisonMenu(section).showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea(
             juce::Rectangle<int>(screen.x,screen.y,1,1)),
-        [](int){});
+        [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
+         section](int result)
+        {
+            if(safe!=nullptr)safe->applyComparisonCopy(section,result);
+        });
+ }
+ void applyComparisonCopy(int section,int result)
+ {
+     if(section<0 || section>=4 || result<4000 || result>=4008)return;
+     // Preserve unpublished edits in the currently displayed A/B bank.
+     session.setPending(readControls());
+     using Section=LibertyChannelInspectorState::Session::Section;
+     const int chosen=result-4000;
+     const int from=(chosen%2)==0?0:1;
+     const int to=1-from;
+     if(!session.copyParameter(from,to,static_cast<Section>(section),chosen/2))
+         return;
+     // Only refresh visible controls if the destination is the active bank.
+     // No engine changes occur until the existing APPLIQUER button is pressed.
+     if(session.variantIndex()==to)writeControls(session.pending());
+     repaint();
  }
  void showSectionContextMenu(int section,juce::Point<int> localPosition)
  {
@@ -581,6 +608,11 @@ private:
          section,saved](int result)
         {
             if(safe==nullptr)return;
+            if(result>=4000 && result<4008)
+            {
+                safe->applyComparisonCopy(section,result);
+                return;
+            }
             if(result>=2001 && result<=2000+LibertyChannelInspectorPresets::count)
             {
                 safe->loadPresetSectionForEditing(
