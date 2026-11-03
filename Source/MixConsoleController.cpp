@@ -13,6 +13,7 @@
 #include "ChannelABHistory.h"
 #include "ChannelABGestureHistory.h"
 #include "ChannelABShortcut.h"
+#include "ChannelABOverview.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -138,8 +139,8 @@ public:
     copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
     variantButton.setTooltip(juce::String::fromUTF8(
-        "Basculer entre deux variantes A et B. Cmd+1 : MODE A ; Cmd+2 : MODE B. "
-        "Aucun changement sonore avant APPLIQUER."));
+        "Clic : changer de variante. Maj + clic : vue globale des différences A/B. "
+        "Cmd+1 : MODE A ; Cmd+2 : MODE B. Aucun son modifié avant APPLIQUER."));
     presetsButton.setTooltip(juce::String::fromUTF8(
         "Préréglages CANAL et historique A/B. Cmd+Z : annuler ; Cmd+Maj+Z : rétablir. "
         "La saisie numérique conserve son propre Annuler/Rétablir."));
@@ -173,7 +174,12 @@ public:
         }
     };
     variantButton.onClick=[this]{
-        // Same path as Cmd+1/Cmd+2, including A/B history.
+        // Shift+click shows a read-only comparison instead of switching.
+        if(juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown())
+        {
+            showGlobalABComparison();
+            return;
+        }
         selectVariantForEditing(1-session.variantIndex());
     };
     presetsButton.onClick=[this]{
@@ -233,6 +239,7 @@ public:
         menu.addSubMenu("GÉRER LES FAVORIS",favoriteMenu,loaded && !saved.empty());
         menu.addSeparator();
         menu.addSectionHeader("VARIANTES A/B");
+        menu.addItem(5300,juce::String::fromUTF8("COMPARER A ET B : VUE GLOBALE"));
         menu.addItem(1100,"COPIER A VERS B");
         menu.addItem(1101,"COPIER B VERS A");
         menu.addItem(1102,juce::String::fromUTF8("ÉCHANGER A ET B"));
@@ -276,6 +283,7 @@ public:
                 if(safe==nullptr || result==0)return;
                 if(result==1700){safe->restoreABEdit(false);return;}
                 if(result==1701){safe->restoreABEdit(true);return;}
+                if(result==5300){safe->showGlobalABComparison();return;}
                 if(result>=1 && result<=LibertyChannelInspectorPresets::count)
                 {
                     safe->loadPresetForEditing(
@@ -609,6 +617,74 @@ private:
     writeControls(session.pending());
     // Keep the target bank's label: MODIFIÉ reflects selective changes.
     repaint();
+ }
+ LibertyChannelABOverview::Counts globalABDifferences()const
+ {
+     LibertyChannelABOverview::Counts summary;
+     const auto* storedA=session.variantSettings(0);
+     const auto* storedB=session.variantSettings(1);
+     if(storedA==nullptr || storedB==nullptr)return summary;
+     // Include every uncommitted value visible in the current bank.
+     const auto displayed=readControls();
+     const auto& a=session.variantIndex()==0?displayed:*storedA;
+     const auto& b=session.variantIndex()==1?displayed:*storedB;
+     for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
+     {
+         summary.bySection[(size_t)section]=
+             LibertyChannelSectionComparison::differenceCount(
+                 LibertyChannelSectionComparison::rows(a,b,
+                     static_cast<LibertyChannelInspectorState::Session::Section>(section)));
+     }
+     return summary;
+ }
+ void showGlobalABComparison()
+ {
+     const auto summary=globalABDifferences();
+     juce::PopupMenu menu;
+     menu.addSectionHeader(
+         juce::String::fromUTF8("A/B : ")+juce::String(summary.total())
+             +juce::String::fromUTF8(" PARAMÈTRES DIFFÉRENTS"));
+     menu.addItem(LibertyChannelABOverview::chooseA,"MODE A  |  Cmd+1",
+                  true,session.variantIndex()==0);
+     menu.addItem(LibertyChannelABOverview::chooseB,"MODE B  |  Cmd+2",
+                  true,session.variantIndex()==1);
+     menu.addSeparator();
+     const juce::String names[4]={
+         "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
+     };
+     for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
+     {
+         const int count=summary.bySection[(size_t)section];
+         menu.addItem(LibertyChannelABOverview::openSectionBase+section,
+             names[section]+"  |  "+juce::String(count)
+                +(count==1?juce::String::fromUTF8(" DIFFÉRENCE")
+                          :juce::String::fromUTF8(" DIFFÉRENCES")));
+     }
+     // Reuse per-section comparison; neither this menu nor a drilldown
+     // touches the real-time DSP or modifies either pending bank.
+     menu.showMenuAsync(
+         juce::PopupMenu::Options().withTargetComponent(&variantButton),
+         [safe=juce::Component::SafePointer<LibertyChannelInspector>(this)](int chosen)
+         {
+             if(safe==nullptr || chosen==0)return;
+             if(chosen==LibertyChannelABOverview::chooseA)
+             {
+                 safe->selectVariantForEditing(0);
+                 return;
+             }
+             if(chosen==LibertyChannelABOverview::chooseB)
+             {
+                 safe->selectVariantForEditing(1);
+                 return;
+             }
+             const int section=LibertyChannelABOverview::sectionFromMenu(chosen);
+             if(section>=0)
+             {
+                 const auto bounds=safe->variantButton.getBounds();
+                 safe->showSectionComparisonMenu(
+                     section,{bounds.getCentreX(),bounds.getY()});
+             }
+         });
  }
  juce::PopupMenu makeSectionComparisonMenu(int section)
  {
