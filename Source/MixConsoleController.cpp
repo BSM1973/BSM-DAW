@@ -356,8 +356,7 @@ public:
  }
  bool keyPressed(const juce::KeyPress& key)override
  {
-     // Do not steal Undo/Redo from an active numeric TextEditor.
-     // Only route to CANAL's history outside text-entry mode.
+     // Keep numeric text editing native; all other shortcuts stay in CANAL.
      const auto modifiers=key.getModifiers();
      const auto action=LibertyChannelABShortcut::resolve(
          key.getKeyCode(),modifiers.isCommandDown(),
@@ -563,7 +562,8 @@ private:
  // bank is a true no-op: it must not add an Undo step or clear Redo.
  void selectVariantForEditing(int target)
  {
-     if(target<0 || target>=2 || session.variantIndex()==target)return;
+     if(!LibertyChannelABShortcut::selectBankWouldChange(
+            session.variantIndex(),target))return;
      rememberABEdit();
      session.switchVariant();
      writeControls(session.pending());
