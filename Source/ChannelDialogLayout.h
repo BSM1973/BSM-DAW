@@ -76,4 +76,17 @@ constexpr int sectionTitleAt(const Layout& layout,int x,int y) noexcept
     }
     return -1;
 }
+
+// Only the painted A/B badge opens the quick comparison on a left click.
+// The surrounding header retains its right-click section tools.
+constexpr int abIndicatorAt(const Layout& layout,int x,int y) noexcept
+{
+    for(int section=0;section<4;++section)
+    {
+        const auto badge=layout.abIndicators[(size_t)section];
+        if(x>=badge.x && x<badge.right() && y>=badge.y && y<badge.bottom())
+            return section;
+    }
+    return -1;
+}
 }

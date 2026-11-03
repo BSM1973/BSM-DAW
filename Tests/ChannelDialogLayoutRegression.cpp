@@ -29,6 +29,16 @@ int main(){
             assert(title.contains(indicator));
             assert(LibertyChannelDialogLayout::sectionTitleAt(
                 g,indicator.x+indicator.w/2,indicator.y+indicator.h/2)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.x,indicator.y)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.right()-1,indicator.bottom()-1)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.right(),indicator.y)!=section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.x,indicator.bottom())!=section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,card.x+23,card.y+23)==-1);
             for(const auto& knob:g.controls)assert(!indicator.intersects(knob));
             for(const auto& toggle:g.powers)assert(!indicator.intersects(toggle));
             for(const auto& other:g.abIndicators)
@@ -45,6 +55,10 @@ int main(){
             for(const auto& knob:g.controls)assert(!title.intersects(knob));
             for(const auto& power:g.powers)assert(!title.intersects(power));
         }
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,-1,-1)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,0,0)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,width-36,32)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,32,height-36)==-1);
         assert(LibertyChannelDialogLayout::sectionTitleAt(g,-1,-1)==-1);
         assert(LibertyChannelDialogLayout::sectionTitleAt(g,0,0)==-1);
         assert(LibertyChannelDialogLayout::sectionTitleAt(g,32,height-36)==-1);

@@ -326,12 +326,33 @@ public:
  }
  void mouseDown(const juce::MouseEvent& event)override
  {
-     if(!event.mods.isPopupMenu())return;
      const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
-     const int section=LibertyChannelDialogLayout::sectionTitleAt(
-         layout,event.getPosition().x,event.getPosition().y);
-     if(section>=0)
-         showSectionContextMenu(section,event.getPosition());
+     const auto position=event.getPosition();
+     if(event.mods.isPopupMenu())
+     {
+         const int section=LibertyChannelDialogLayout::sectionTitleAt(
+             layout,position.x,position.y);
+         if(section>=0)showSectionContextMenu(section,position);
+     }
+     else if(event.mods.isLeftButtonDown())
+     {
+         const int section=LibertyChannelDialogLayout::abIndicatorAt(
+             layout,position.x,position.y);
+         if(section>=0)showSectionComparisonMenu(section,position);
+     }
+ }
+ void mouseMove(const juce::MouseEvent& event)override
+ {
+     const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
+     const auto position=event.getPosition();
+     setMouseCursor(LibertyChannelDialogLayout::abIndicatorAt(
+                        layout,position.x,position.y)>=0
+         ?juce::MouseCursor::PointingHandCursor
+         :juce::MouseCursor::NormalCursor);
+ }
+ void mouseExit(const juce::MouseEvent&)override
+ {
+     setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void paint(juce::Graphics& g)override{
      g.fillAll(juce::Colour(0xff101b2a));
@@ -442,6 +463,44 @@ private:
     // Keep the target bank's label: MODIFIÉ reflects selective changes.
     repaint();
  }
+ juce::PopupMenu makeSectionComparisonMenu(int section)
+ {
+    juce::PopupMenu comparison;
+    if(section<0 || section>=4)return comparison;
+    const auto* storedA=session.variantSettings(0);
+    const auto* storedB=session.variantSettings(1);
+    if(storedA==nullptr || storedB==nullptr)return comparison;
+    // One bank can have knob edits that have not yet been copied to Session.
+    // Read them locally, keeping this operation strictly read-only.
+    const auto displayed=readControls();
+    const auto& a=session.variantIndex()==0?displayed:*storedA;
+    const auto& b=session.variantIndex()==1?displayed:*storedB;
+    const auto detail=LibertyChannelSectionComparison::rows(
+        a,b,static_cast<LibertyChannelInspectorState::Session::Section>(section));
+    comparison.addSectionHeader(
+        juce::String::fromUTF8("PARAMÈTRES DIFFÉRENTS : ")
+        +juce::String(LibertyChannelSectionComparison::differenceCount(detail)));
+    for(size_t i=0;i<detail.size();++i)
+    {
+        const auto& row=detail[i];
+        const auto state=row.different
+            ?juce::String::fromUTF8("DIFFÉRENT : ")
+            :juce::String::fromUTF8("IDENTIQUE : ");
+        comparison.addItem(3000+(int)i,
+            state+row.label+"  |  A : "+row.valueA+"  |  B : "+row.valueB,
+            false);
+    }
+    return comparison;
+ }
+ void showSectionComparisonMenu(int section,juce::Point<int> localPosition)
+ {
+    if(section<0 || section>=4)return;
+    const auto screen=localPointToGlobal(localPosition);
+    makeSectionComparisonMenu(section).showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(screen.x,screen.y,1,1)),
+        [](int){});
+ }
  void showSectionContextMenu(int section,juce::Point<int> localPosition)
  {
     if(section<0 || section>=4)return;
@@ -479,31 +538,7 @@ private:
                              personalPresets,loaded && !saved.empty());
     menu.addSubMenu(juce::String::fromUTF8("CHARGER CETTE SECTION DEPUIS..."),
                     presetSections);
-    // Capture unpublished edits so this view compares what is on screen.
-    // Comparison is read-only and never applies the live DSP.
-    session.setPending(readControls());
-    const auto* bankA=session.variantSettings(0);
-    const auto* bankB=session.variantSettings(1);
-    if(bankA!=nullptr && bankB!=nullptr)
-    {
-        const auto detail=LibertyChannelSectionComparison::rows(
-            *bankA,*bankB,static_cast<Section>(section));
-        juce::PopupMenu comparison;
-        comparison.addSectionHeader(
-            juce::String::fromUTF8("PARAMÈTRES DIFFÉRENTS : ")
-            +juce::String(LibertyChannelSectionComparison::differenceCount(detail)));
-        for(size_t i=0;i<detail.size();++i)
-        {
-            const auto& row=detail[i];
-            const auto state=row.different
-                ?juce::String::fromUTF8("DIFFÉRENT : ")
-                :juce::String::fromUTF8("IDENTIQUE : ");
-            comparison.addItem(3000+(int)i,
-                state+row.label+"  |  A : "+row.valueA+"  |  B : "+row.valueB,
-                false);
-        }
-        menu.addSubMenu("COMPARER A ET B",comparison);
-    }
+    menu.addSubMenu("COMPARER A ET B",makeSectionComparisonMenu(section));
     const auto screen=localPointToGlobal(localPosition);
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea(
