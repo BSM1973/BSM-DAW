@@ -58,6 +58,11 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABHistoryRegression.cpp -o /tmp/liberty-canal-ab-history
           /tmp/liberty-canal-ab-history
 
+      - name: Verify CANAL A/B shortcut routing and numeric text protection
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABShortcutRegression.cpp -o /tmp/liberty-canal-ab-shortcuts
+          /tmp/liberty-canal-ab-shortcuts
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
