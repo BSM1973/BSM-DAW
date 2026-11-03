@@ -6,6 +6,13 @@ namespace LibertyChannelABShortcut
 {
 enum class Action { none, undo, redo, consumeText, selectA, selectB };
 
+// Only a genuine bank change should create an Undo step.
+constexpr bool selectBankWouldChange(int current,int target) noexcept
+{
+    return current>=0 && current<2 && target>=0 && target<2
+        && current!=target;
+}
+
 constexpr Action resolve(int keyCode,bool command,bool shift,bool alt,
                          bool textEditing) noexcept
 {
