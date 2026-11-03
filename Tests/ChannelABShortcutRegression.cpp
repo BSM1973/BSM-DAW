@@ -25,6 +25,12 @@ static_assert(resolve('1',false,false,false,false)==Action::none);
 static_assert(resolve('2',true,true,false,false)==Action::none);
 static_assert(resolve('2',true,false,true,false)==Action::none);
 static_assert(resolve('3',true,false,false,false)==Action::none);
+static_assert(LibertyChannelABShortcut::selectBankWouldChange(0,1));
+static_assert(LibertyChannelABShortcut::selectBankWouldChange(1,0));
+static_assert(!LibertyChannelABShortcut::selectBankWouldChange(0,0));
+static_assert(!LibertyChannelABShortcut::selectBankWouldChange(1,1));
+static_assert(!LibertyChannelABShortcut::selectBankWouldChange(-1,0));
+static_assert(!LibertyChannelABShortcut::selectBankWouldChange(0,2));
 
 int main()
 {
