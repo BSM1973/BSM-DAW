@@ -23,6 +23,21 @@ public:
         activeVariant=memory.active;
     }
 
+    // Complete reversible state of the editing dialog (never the live DSP).
+    struct Snapshot
+    {
+        std::array<Settings,2> variants{};
+        int activeVariant=0;
+    };
+    Snapshot snapshot() const noexcept { return {variants,activeVariant}; }
+    bool restoreSnapshot(const Snapshot& state) noexcept
+    {
+        if(state.activeVariant<0 || state.activeVariant>=2)return false;
+        variants=state.variants;
+        activeVariant=state.activeVariant;
+        return true;
+    }
+
     const Settings& pending() const noexcept { return variants[(size_t)activeVariant]; }
     void setPending(const Settings& settings) noexcept { variants[(size_t)activeVariant] = settings; }
     void reset() noexcept { variants[(size_t)activeVariant] = Settings{}; }
