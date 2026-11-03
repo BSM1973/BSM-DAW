@@ -16,6 +16,19 @@ int main(){
         assert(!title.intersects(g.presets));
         assert(!subtitle.intersects(g.presets));
         for(const auto& card:g.sections)assert(!card.intersects(g.presets));
+        // Two compact French history buttons must be fully visible and never
+        // collide with titles, cards, presets or each other.
+        for(int i=0;i<2;++i){
+            const auto undoOrRedo=g.historyActions[(size_t)i];
+            assert(full.contains(undoOrRedo));
+            assert(header.contains(undoOrRedo));
+            assert(!title.intersects(undoOrRedo));
+            assert(!subtitle.intersects(undoOrRedo));
+            assert(!g.presets.intersects(undoOrRedo));
+            for(const auto& card:g.sections)assert(!card.intersects(undoOrRedo));
+            for(int j=i+1;j<2;++j)
+                assert(!undoOrRedo.intersects(g.historyActions[(size_t)j]));
+        }
         for(const auto& card:g.sections)assert(full.contains(card));
         for(int section=0;section<4;++section)
         {
