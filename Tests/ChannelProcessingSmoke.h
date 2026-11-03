@@ -541,6 +541,97 @@ inline bool runLibertyChannelProcessingSmoke()
         ChannelSession::clearSectionClipboardForTests();
         ChannelSession::clearClipboardForTests();
 
+        // A preset may supply just one section to the selected A/B bank.
+        // Nonselected controls, the second bank and live audio are unchanged,
+        // including when the factory preset enables a processor.
+        AudioEngine presetSectionEngine;
+        for(int factoryId=1;factoryId<=LibertyChannelInspectorPresets::count;++factoryId)
+        {
+            const auto factory=LibertyChannelInspectorPresets::make(factoryId);
+            for(const auto section:sections)
+            {
+                for(int bank=0;bank<2;++bank)
+                {
+                    LibertyChannelInspectorState::Session draft(presetSectionEngine,0);
+                    draft.setPending(originalA);
+                    draft.switchVariant();
+                    draft.setPending(originalB);
+                    if(bank==0)draft.switchVariant();
+                    const auto original=bank==0?originalA:originalB;
+                    const auto other=bank==0?originalB:originalA;
+                    auto expected=original;
+                    switch(section)
+                    {
+                        case Section::Input:
+                            expected.inputGainDb=factory.inputGainDb;
+                            expected.highPassHz=factory.highPassHz;
+                            break;
+                        case Section::Gate:
+                            expected.gateEnabled=factory.gateEnabled;
+                            expected.gateThresholdDb=factory.gateThresholdDb;
+                            break;
+                        case Section::Compressor:
+                            expected.compressorEnabled=factory.compressorEnabled;
+                            expected.compressorThresholdDb=factory.compressorThresholdDb;
+                            expected.compressorRatio=factory.compressorRatio;
+                            break;
+                        case Section::Equalizer:
+                            expected.eqEnabled=factory.eqEnabled;
+                            expected.eqLowDb=factory.eqLowDb;
+                            expected.eqMidDb=factory.eqMidDb;
+                            expected.eqHighDb=factory.eqHighDb;
+                            break;
+                    }
+                    require(draft.loadPresetSection(factory,section),
+                            "partial preset load rejected");
+                    require(draft.variantIndex()==bank,
+                            "partial preset load changed active bank");
+                    require(equal(draft.pending(),expected),
+                            "partial preset changed unrelated controls");
+                    require(!draft.loadPresetSection(factory,static_cast<Section>(9)),
+                            "partial preset accepted invalid section");
+                    require(equal(draft.pending(),expected),
+                            "invalid preset section changed controls");
+                    require(equal(presetSectionEngine.getChannelProcessingSettings(0),neutral),
+                            "partial preset became audible before APPLY");
+                    draft.switchVariant();
+                    require(equal(draft.pending(),other),
+                            "partial preset changed inactive bank");
+                    draft.cancel();
+                    require(equal(presetSectionEngine.getChannelProcessingSettings(0),neutral),
+                            "CANCEL after partial preset changed engine");
+                }
+            }
+        }
+        // A personal preset is an arbitrary snapshot. Its selected section
+        // must persist after APPLY, without changing source or other tracks.
+        LibertyChannelInspectorState::Session personalDraft(presetSectionEngine,0);
+        personalDraft.setPending(originalA);
+        personalDraft.switchVariant();
+        personalDraft.setPending(originalB);
+        const auto personalSource=originalA;
+        require(personalDraft.loadPresetSection(personalSource,Section::Equalizer),
+                "personal EQ section load failed");
+        auto personalExpected=originalB;
+        personalExpected.eqEnabled=personalSource.eqEnabled;
+        personalExpected.eqLowDb=personalSource.eqLowDb;
+        personalExpected.eqMidDb=personalSource.eqMidDb;
+        personalExpected.eqHighDb=personalSource.eqHighDb;
+        require(equal(personalDraft.pending(),personalExpected),
+                "personal EQ section load changed other sections");
+        personalDraft.apply();
+        require(equal(presetSectionEngine.getChannelProcessingSettings(0),personalExpected),
+                "partial preset APPLY changed wrong channel parameters");
+        LibertyChannelInspectorState::Session personalReopened(presetSectionEngine,0);
+        require(personalReopened.variantIndex()==1
+                && equal(personalReopened.pending(),personalExpected),
+                "partial preset not preserved after reopen");
+        personalReopened.switchVariant();
+        require(equal(personalReopened.pending(),originalA),
+                "partial preset modified saved A settings");
+        require(equal(presetSectionEngine.getChannelProcessingSettings(1),neutral),
+                "partial preset modified another track");
+
         // Section-only reset: each control group has independent defaults,
         // and activating B must not reset A or alter any live audio.
         AudioEngine resetEngine;

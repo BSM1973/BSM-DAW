@@ -407,6 +407,18 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ void loadPresetSectionForEditing(
+     const AudioEngine::ChannelProcessingSettings& preset,int section)
+ {
+    session.setPending(readControls());
+    using Section=LibertyChannelInspectorState::Session::Section;
+    if(section<0 || section>=4 ||
+       !session.loadPresetSection(preset,static_cast<Section>(section)))
+        return;
+    writeControls(session.pending());
+    // Keep the target bank's label: MODIFIÉ reflects selective changes.
+    repaint();
+ }
  void showSectionContextMenu(int section,juce::Point<int> localPosition)
  {
     if(section<0 || section>=4)return;
@@ -427,14 +439,43 @@ private:
     menu.addSeparator();
     menu.addItem(6,juce::String::fromUTF8("RÉINITIALISER LA SECTION"));
     menu.addItem(7,juce::String::fromUTF8("RESTAURER LA SECTION"));
+    menu.addSeparator();
+    juce::PopupMenu factoryPresets,personalPresets,presetSections;
+    for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
+        factoryPresets.addItem(2000+id,
+            juce::String::fromUTF8(LibertyChannelInspectorPresets::name(id)));
+    LibertyChannelUserPresets::Library library;
+    const bool loaded=library.load(LibertyChannelUserPresets::Library::defaultFile());
+    const auto saved=library.items();
+    if(loaded)
+        for(size_t i=0;i<saved.size();++i)
+            personalPresets.addItem(2100+(int)i,saved[i].name);
+    presetSections.addSubMenu(juce::String::fromUTF8("PRÉRÉGLAGES D'USINE"),
+                             factoryPresets);
+    presetSections.addSubMenu(juce::String::fromUTF8("MES PRÉRÉGLAGES"),
+                             personalPresets,loaded && !saved.empty());
+    menu.addSubMenu(juce::String::fromUTF8("CHARGER CETTE SECTION DEPUIS..."),
+                    presetSections);
     const auto screen=localPointToGlobal(localPosition);
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea(
             juce::Rectangle<int>(screen.x,screen.y,1,1)),
         [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
-         section](int result)
+         section,saved](int result)
         {
             if(safe==nullptr)return;
+            if(result>=2001 && result<=2000+LibertyChannelInspectorPresets::count)
+            {
+                safe->loadPresetSectionForEditing(
+                    LibertyChannelInspectorPresets::make(result-2000),section);
+                return;
+            }
+            if(result>=2100 && result<2100+(int)saved.size())
+            {
+                safe->loadPresetSectionForEditing(
+                    saved[(size_t)(result-2100)].settings,section);
+                return;
+            }
             switch(result)
             {
                 case 1: safe->copySectionToClipboardForEditing(section);break;

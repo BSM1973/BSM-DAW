@@ -64,6 +64,13 @@ public:
         return transferSection(variants[(size_t)from],variants[(size_t)to],section);
     }
 
+    // Prepare a single processing block from a factory or personal preset.
+    // Only the selected draft changes, and never the running audio engine.
+    bool loadPresetSection(const Settings& preset,Section section) noexcept
+    {
+        return transferSection(preset,variants[(size_t)activeVariant],section);
+    }
+
     // Exchange just one group of controls between A and B. The selection,
     // unrelated groups, the preset references and live DSP remain untouched.
     bool swapSection(Section section) noexcept
