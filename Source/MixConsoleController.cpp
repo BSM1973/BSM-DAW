@@ -637,6 +637,45 @@ private:
      }
      return summary;
  }
+ void confirmWholeVariantCopy(int from,int to)
+ {
+     if(from<0 || from>=2 || to<0 || to>=2 || from==to)return;
+     const auto summary=globalABDifferences();
+     if(summary.identical())return;
+     const juce::String names[4]={
+         "INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")
+     };
+     juce::String message=juce::String::fromUTF8("La variante ")
+         +(to==0?"A":"B")
+         +juce::String::fromUTF8(" sera remplacée par les réglages et le préréglage de ")
+         +(from==0?"A":"B")+juce::String::fromUTF8(".\n\n");
+     message+=juce::String(summary.total())
+         +juce::String::fromUTF8(" paramètres différents dans ")
+         +juce::String(summary.affectedSections())
+         +juce::String::fromUTF8(" section(s) :\n");
+     for(int section=0;section<LibertyChannelABOverview::sectionCount;++section)
+         if(summary.canCopySection(section))
+             message+=names[section]+": "
+                 +juce::String(summary.bySection[(size_t)section])
+                 +juce::String::fromUTF8(" différence(s)\n");
+     message+=juce::String::fromUTF8(
+         "\nCette opération sera annulable en une étape. "
+         "Le son ne changera pas avant APPLIQUER.");
+     juce::AlertWindow::showOkCancelBox(
+         juce::AlertWindow::WarningIcon,
+         "LIBERTY  |  CANAL",
+         message,"CONFIRMER","ANNULER",nullptr,
+         juce::ModalCallbackFunction::create(
+             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
+              from,to](int accepted)
+             {
+                 if(safe==nullptr || accepted!=1)return;
+                 // A draft may have changed while confirmation was open.
+                 // Avoid an empty history frame.
+                 if(safe->globalABDifferences().identical())return;
+                 safe->copyVariantForEditing(from,to);
+             }));
+ }
  void showGlobalABComparison()
  {
      const auto summary=globalABDifferences();
@@ -711,10 +750,11 @@ private:
              else if(command.kind==Kind::sectionBToA
                   && differences.canCopySection(command.section))
                  safe->copySectionForEditing(1,0,command.section);
-             else if(command.kind==Kind::allAToB && !differences.identical())
-                 safe->copyVariantForEditing(0,1);
-             else if(command.kind==Kind::allBToA && !differences.identical())
-                 safe->copyVariantForEditing(1,0);
+             else if(LibertyChannelABOverview::needsFullCopyConfirmation(
+                         command.kind) && !differences.identical())
+                 safe->confirmWholeVariantCopy(
+                     command.kind==Kind::allAToB?0:1,
+                     command.kind==Kind::allAToB?1:0);
          });
  }
  juce::PopupMenu makeSectionComparisonMenu(int section)
