@@ -377,6 +377,9 @@ public:
      const auto visibleSettings=readControls();
      const auto* otherSettings=session.variantSettings(1-session.variantIndex());
      using Section=LibertyChannelInspectorState::Session::Section;
+     // A/B highlights follow uncommitted knob edits; no session or DSP writes.
+     std::array<bool,8> differingKnobs{};
+     std::array<bool,3> differingPower{};
      for(int i=0;i<4;++i){
         const auto b=layout.sections[(size_t)i];
         g.setColour(juce::Colour(0xff16283a));
@@ -387,11 +390,26 @@ public:
         g.fillRoundedRectangle((float)b.x+11,(float)b.y+13,3.f,22.f,1.5f);
         g.setFont(juce::Font(14.f,juce::Font::bold));
         g.drawText(headings[i],b.x+23,b.y+13,b.w-220,22,juce::Justification::centredLeft);
-        const int count=otherSettings!=nullptr
-            ?LibertyChannelSectionComparison::differenceCount(
-                LibertyChannelSectionComparison::rows(
-                    visibleSettings,*otherSettings,static_cast<Section>(i)))
-            :0;
+        const auto comparison=otherSettings!=nullptr
+            ?LibertyChannelSectionComparison::rows(
+                visibleSettings,*otherSettings,static_cast<Section>(i))
+            :std::vector<LibertyChannelSectionComparison::Row>{};
+        const int count=LibertyChannelSectionComparison::differenceCount(comparison);
+        if(otherSettings!=nullptr)
+        {
+            // Row order matches ChannelSectionComparison::rows().
+            if(i==0){differingKnobs[0]=comparison[0].different;
+                     differingKnobs[1]=comparison[1].different;}
+            else if(i==1){differingPower[0]=comparison[0].different;
+                          differingKnobs[2]=comparison[1].different;}
+            else if(i==2){differingPower[1]=comparison[0].different;
+                          differingKnobs[3]=comparison[1].different;
+                          differingKnobs[4]=comparison[2].different;}
+            else {differingPower[2]=comparison[0].different;
+                  differingKnobs[5]=comparison[1].different;
+                  differingKnobs[6]=comparison[2].different;
+                  differingKnobs[7]=comparison[3].different;}
+        }
         const auto indicator=layout.abIndicators[(size_t)i];
         g.setColour(juce::Colour(count>0?0xff51432f:0xff24394a));
         g.fillRoundedRectangle((float)indicator.x,(float)indicator.y,
@@ -407,10 +425,26 @@ public:
      }
      const juce::String labels[8]={"GAIN","COUPE-BAS","SEUIL","SEUIL","RATIO",
                             "GRAVES",juce::String::fromUTF8("MÉDIUMS"),"AIGUS"};
-     g.setColour(juce::Colour(0xffcedde7));
+     // Amber outlines identify changed enable switches without covering buttons.
+     for(int i=0;i<3;++i)
+     {
+         if(!differingPower[(size_t)i])continue;
+         const auto p=layout.powers[(size_t)i];
+         g.setColour(juce::Colour(0xfff3c77a));
+         g.drawRoundedRectangle((float)p.x-2.f,(float)p.y-2.f,
+                                (float)p.w+4.f,(float)p.h+4.f,5.f,2.f);
+     }
      g.setFont(juce::Font(10.f,juce::Font::bold));
      for(int i=0;i<8;++i){
          const auto b=layout.controls[(size_t)i];
+         if(differingKnobs[(size_t)i])
+         {
+             g.setColour(juce::Colour(0xff493b2e));
+             g.fillRoundedRectangle((float)b.x+9.f,(float)b.y-20.f,
+                                    (float)b.w-18.f,18.f,4.f);
+         }
+         g.setColour(juce::Colour(differingKnobs[(size_t)i]
+                                    ?0xffffdfa5:0xffcedde7));
          g.drawText(labels[i],b.x,b.y-18,b.w,14,juce::Justification::centred);
      }
      // Single-line footer remains above the action buttons (no overlap).
