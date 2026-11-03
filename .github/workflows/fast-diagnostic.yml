@@ -68,6 +68,11 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABGestureHistoryRegression.cpp -o /tmp/liberty-canal-gesture-history
           /tmp/liberty-canal-gesture-history
 
+      - name: Verify CANAL A/B global overview counts and menu routing
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABOverviewRegression.cpp -o /tmp/liberty-canal-ab-overview
+          /tmp/liberty-canal-ab-overview
+
       - name: Configure CMake arm64
         run: |
           rm -rf build-fast
