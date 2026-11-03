@@ -16,6 +16,13 @@ constexpr int copyAllBToA=5241;
 
 enum class CommandKind { none, details, sectionAToB, sectionBToA, allAToB, allBToA };
 
+// Whole-bank alignment also replaces its preset reference, so it requires
+// explicit confirmation. Section copies retain their existing quick workflow.
+constexpr bool needsFullCopyConfirmation(CommandKind command) noexcept
+{
+    return command==CommandKind::allAToB || command==CommandKind::allBToA;
+}
+
 struct Command
 {
     CommandKind kind=CommandKind::none;
@@ -48,6 +55,14 @@ struct Counts
     }
 
     constexpr bool identical() const noexcept { return total()==0; }
+
+    constexpr int affectedSections() const noexcept
+    {
+        int count=0;
+        for(const int value:bySection)
+            if(value>0)++count;
+        return count;
+    }
 
     constexpr bool canCopySection(int section) const noexcept
     {
