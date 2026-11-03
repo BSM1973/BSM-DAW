@@ -15,6 +15,7 @@ public:
     bool canUndo() const noexcept { return !undone.empty(); }
     bool canRedo() const noexcept { return !redone.empty(); }
     std::size_t undoDepth() const noexcept { return undone.size(); }
+    std::size_t redoDepth() const noexcept { return redone.size(); }
 
     void record(const Snapshot& before)
     {
