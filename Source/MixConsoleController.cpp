@@ -10,6 +10,7 @@
 #include "ChannelUserPresets.h"
 #include "ChannelPresetStatus.h"
 #include "ChannelSectionComparison.h"
+#include "ChannelABHistory.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -90,7 +91,11 @@ public:
     configure(knobs[6],-18,18,.5,v.eqMidDb," dB",juce::Colour(0xff60d3d6));
     configure(knobs[7],-18,18,.5,v.eqHighDb," dB",juce::Colour(0xff60d3d6));
     for(auto& knob:knobs)
-        knob.onValueChange=[this]{repaint();};
+    {
+        knob.onDragStart=[this]{sliderDragging=true;sliderGestureRecorded=false;};
+        knob.onDragEnd=[this]{sliderDragging=false;sliderGestureRecorded=false;};
+        knob.onValueChange=[this]{trackControlChange();};
+    }
     restoreMatchingPresetLabels();
     openingPresetIndicator=presetIndicator;
     for(auto& button:power){
@@ -102,7 +107,12 @@ public:
     power[1].setToggleState(v.compressorEnabled,juce::dontSendNotification);
     power[2].setToggleState(v.eqEnabled,juce::dontSendNotification);
     for(int i=0;i<3;++i){
-        power[(size_t)i].onClick=[this,i]{refreshPower(i);repaint();};
+        power[(size_t)i].onClick=[this,i]{
+            abHistory.record(captureHistoryFrame());
+            session.setPending(readControls());
+            refreshPower(i);
+            repaint();
+        };
         refreshPower(i);
     }
     for(auto* button:{&resetButton,&copyButton,&pasteButton,&variantButton,&presetsButton,&cancelButton,&applyButton}){
@@ -125,6 +135,7 @@ public:
         "Préréglages CANAL. Clic droit sur le titre de chaque section pour accéder directement à ses outils."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
+        rememberABEdit();
         session.reset();
         writeControls(session.pending());
         presetIndicator.select(session.variantIndex(),
@@ -137,6 +148,8 @@ public:
         pasteButton.setEnabled(true);
     };
     pasteButton.onClick=[this]{
+        if(!LibertyChannelInspectorState::Session::canPaste())return;
+        rememberABEdit();
         if(session.paste())
         {
             writeControls(session.pending());
@@ -145,8 +158,8 @@ public:
         }
     };
     variantButton.onClick=[this]{
-        // Preserve edits in the departing variant before showing the other.
-        session.setPending(readControls());
+        // Preserve the departing variant and its current knob edits.
+        rememberABEdit();
         session.switchVariant();
         writeControls(session.pending());
         refreshVariantButton();
@@ -154,6 +167,9 @@ public:
     };
     presetsButton.onClick=[this]{
         juce::PopupMenu menu;
+        menu.addItem(1700,juce::String::fromUTF8("ANNULER MODIFICATION A/B"),abHistory.canUndo());
+        menu.addItem(1701,juce::String::fromUTF8("RÉTABLIR MODIFICATION A/B"),abHistory.canRedo());
+        menu.addSeparator();
         menu.addSectionHeader(juce::String::fromUTF8("PRÉRÉGLAGES D'USINE"));
         for(int id=1;id<=LibertyChannelInspectorPresets::count;++id)
             menu.addItem(id,juce::String::fromUTF8(LibertyChannelInspectorPresets::name(id)));
@@ -247,6 +263,8 @@ public:
             [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
              saved](int result){
                 if(safe==nullptr || result==0)return;
+                if(result==1700){safe->restoreABEdit(false);return;}
+                if(result==1701){safe->restoreABEdit(true);return;}
                 if(result>=1 && result<=LibertyChannelInspectorPresets::count)
                 {
                     safe->loadPresetForEditing(
@@ -485,6 +503,43 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ struct HistoryFrame
+ {
+     LibertyChannelInspectorState::Session::Snapshot state;
+     LibertyChannelPresetStatus::Indicator labels;
+ };
+ HistoryFrame captureHistoryFrame() const
+ {
+     return {session.snapshot(),presetIndicator};
+ }
+ // Capture current screen edits before an A/B command mutates either bank.
+ void rememberABEdit()
+ {
+     session.setPending(readControls());
+     abHistory.record(captureHistoryFrame());
+ }
+ // One undo step per knob drag; text and keyboard changes are separate steps.
+ void trackControlChange()
+ {
+     if(!sliderDragging || !sliderGestureRecorded)
+     {
+         abHistory.record(captureHistoryFrame());
+         if(sliderDragging)sliderGestureRecorded=true;
+     }
+     session.setPending(readControls());
+     repaint();
+ }
+ void restoreABEdit(bool redo)
+ {
+     // This history is local to CANAL; never call Session::apply() here.
+     auto frame=captureHistoryFrame();
+     if(!(redo?abHistory.redo(frame):abHistory.undo(frame)))return;
+     if(!session.restoreSnapshot(frame.state))return;
+     presetIndicator=frame.labels;
+     writeControls(session.pending());
+     refreshVariantButton();
+     repaint();
+ }
  void loadPresetSectionForEditing(
      const AudioEngine::ChannelProcessingSettings& preset,int section)
  {
@@ -993,6 +1048,8 @@ private:
  std::function<void()> afterApply;
  LibertyChannelInspectorState::Session session;
  LibertyChannelPresetStatus::Indicator presetIndicator;
+ LibertyChannelABHistory::History<HistoryFrame> abHistory;
+ bool sliderDragging=false,sliderGestureRecorded=false;
  LibertyChannelPresetStatus::Indicator openingPresetIndicator;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
