@@ -132,7 +132,8 @@ public:
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
     variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
     presetsButton.setTooltip(juce::String::fromUTF8(
-        "Préréglages CANAL. Clic droit sur le titre de chaque section pour accéder directement à ses outils."));
+        "Préréglages CANAL et historique A/B. Annuler : Cmd+Z. Rétablir : Cmd+Maj+Z. "
+        "Clic droit sur le titre d'une section pour ses outils."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         rememberABEdit();
@@ -334,6 +335,7 @@ public:
         if(afterApply)afterApply();
         closeDialog(1);
     };
+    setWantsKeyboardFocus(true);
     setSize(760,520);
     // Keep the paste state up to date when another CANAL dialog copies settings.
     startTimer(200);
@@ -341,6 +343,25 @@ public:
  ~LibertyChannelInspector()override{
      stopTimer();
      for(auto& slider:knobs)slider.setLookAndFeel(nullptr);
+ }
+ bool keyPressed(const juce::KeyPress& key)override
+ {
+     // Handled only while CANAL or its child controls have keyboard focus.
+     // A text editor may consume its own native Undo/Redo before bubbling.
+     const int code=key.getKeyCode();
+     const auto modifiers=key.getModifiers();
+     if((code!='z' && code!='Z') || !modifiers.isCommandDown()
+        || modifiers.isAltDown())
+         return false;
+     if(modifiers.isShiftDown())
+     {
+         if(abHistory.canRedo())restoreABEdit(true);
+     }
+     else
+     {
+         if(abHistory.canUndo())restoreABEdit(false);
+     }
+     return true;
  }
  void mouseDown(const juce::MouseEvent& event)override
  {
