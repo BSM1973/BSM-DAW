@@ -525,15 +525,14 @@ public:
 private:
  bool isTextEditorFocused()const
  {
-     // The numeric boxes inside JUCE Sliders use embedded text editors.
-     for(auto* focused=juce::Component::getCurrentlyFocusedComponent();
-         focused!=nullptr && focused!=this;
-         focused=focused->getParentComponent())
-     {
-         if(dynamic_cast<juce::TextEditor*>(focused)!=nullptr)return true;
-         if(auto* label=dynamic_cast<juce::Label*>(focused))
-             if(label->isBeingEdited())return true;
-     }
+     // Numeric editors are descendants of the eight CANAL sliders.
+     // Use Component identity/hierarchy, without RTTI: compatible with
+     // JUCE builds where C++ run-time type information is disabled.
+     const auto* focused=juce::Component::getCurrentlyFocusedComponent();
+     if(focused==nullptr)return false;
+     for(const auto& knob:knobs)
+         if(&knob!=focused && knob.isParentOf(focused))
+             return true;
      return false;
  }
  struct HistoryFrame
