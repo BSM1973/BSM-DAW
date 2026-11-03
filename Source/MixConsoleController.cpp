@@ -11,6 +11,7 @@
 #include "ChannelPresetStatus.h"
 #include "ChannelSectionComparison.h"
 #include "ChannelABHistory.h"
+#include "ChannelABShortcut.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -132,8 +133,8 @@ public:
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
     variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
     presetsButton.setTooltip(juce::String::fromUTF8(
-        "Préréglages CANAL et historique A/B. Annuler : Cmd+Z. Rétablir : Cmd+Maj+Z. "
-        "Clic droit sur le titre d'une section pour ses outils."));
+        "Préréglages CANAL et historique A/B. Cmd+Z : annuler ; Cmd+Maj+Z : rétablir. "
+        "La saisie numérique conserve son propre Annuler/Rétablir."));
     pasteButton.setEnabled(LibertyChannelInspectorState::Session::canPaste());
     resetButton.onClick=[this]{
         rememberABEdit();
@@ -346,21 +347,19 @@ public:
  }
  bool keyPressed(const juce::KeyPress& key)override
  {
-     // Handled only while CANAL or its child controls have keyboard focus.
-     // A text editor may consume its own native Undo/Redo before bubbling.
-     const int code=key.getKeyCode();
+     // Do not steal Undo/Redo from an active numeric TextEditor.
+     // Only route to CANAL's history outside text-entry mode.
      const auto modifiers=key.getModifiers();
-     if((code!='z' && code!='Z') || !modifiers.isCommandDown()
-        || modifiers.isAltDown())
-         return false;
-     if(modifiers.isShiftDown())
-     {
-         if(abHistory.canRedo())restoreABEdit(true);
-     }
-     else
-     {
-         if(abHistory.canUndo())restoreABEdit(false);
-     }
+     const auto action=LibertyChannelABShortcut::resolve(
+         key.getKeyCode(),modifiers.isCommandDown(),
+         modifiers.isShiftDown(),modifiers.isAltDown(),
+         isTextEditorFocused());
+     using Action=LibertyChannelABShortcut::Action;
+     if(action==Action::none)return false;
+     if(action==Action::undo && abHistory.canUndo())restoreABEdit(false);
+     if(action==Action::redo && abHistory.canRedo())restoreABEdit(true);
+     // If a text editor did not consume Cmd+Z itself, swallow the bubbled
+     // event here to protect both CANAL and the global DAW undo history.
      return true;
  }
  void mouseDown(const juce::MouseEvent& event)override
@@ -524,6 +523,19 @@ public:
     presetsButton.setBounds(presetBounds.x,presetBounds.y,presetBounds.w,presetBounds.h);
  }
 private:
+ bool isTextEditorFocused()const
+ {
+     // The numeric boxes inside JUCE Sliders use embedded text editors.
+     for(auto* focused=juce::Component::getCurrentlyFocusedComponent();
+         focused!=nullptr && focused!=this;
+         focused=focused->getParentComponent())
+     {
+         if(dynamic_cast<juce::TextEditor*>(focused)!=nullptr)return true;
+         if(auto* label=dynamic_cast<juce::Label*>(focused))
+             if(label->isBeingEdited())return true;
+     }
+     return false;
+ }
  struct HistoryFrame
  {
      LibertyChannelInspectorState::Session::Snapshot state;
