@@ -1,5 +1,6 @@
 #pragma once
 #include "AudioEngine.h"
+#include "ChannelParameterTransfer.h"
 #include <array>
 #include <optional>
 #include <utility>
@@ -66,6 +67,17 @@ public:
         if(from<0 || from>=2 || to<0 || to>=2 || from==to)
             return false;
         return transferSection(variants[(size_t)from],variants[(size_t)to],section);
+    }
+
+    // Transfer a single A/B comparison parameter to the chosen draft only.
+    // Invalid banks and row indices leave both variants untouched.
+    bool copyParameter(int from,int to,Section section,int row) noexcept
+    {
+        if(from<0 || from>=2 || to<0 || to>=2 || from==to)
+            return false;
+        return LibertyChannelParameterTransfer::copy(
+            variants[(size_t)to],variants[(size_t)from],
+            static_cast<int>(section),row);
     }
 
     // Prepare a single processing block from a factory or personal preset.
