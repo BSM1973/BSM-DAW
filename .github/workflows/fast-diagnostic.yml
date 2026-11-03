@@ -84,8 +84,23 @@ jobs:
           cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
           ccache --show-stats
 
-      - name: Test audio clip playback and fade preservation
-        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --audio-clip-playback-test
+      - name: Test audio clip playback and fade preservation (5 independent launches)
+        shell: bash
+        run: |
+          # The #2963 run crashed intermittently with SIGSEGV during this test.
+          # Run fresh processes to expose lifetime/race defects; NEVER retry
+          # a failed attempt and NEVER hide its original nonzero exit status.
+          app="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for attempt in 1 2 3 4 5; do
+            echo "Audio clip playback smoke - independent launch ${attempt}/5"
+            if "$app" --audio-clip-playback-test; then
+              echo "Audio clip playback smoke - launch ${attempt}/5 OK"
+            else
+              exit_code=$?
+              echo "::error::Audio playback smoke failed on launch ${attempt}/5 (exit ${exit_code})"
+              exit "$exit_code"
+            fi
+          done
 
       - name: Test CANAL settings, neutral project reset and project XML roundtrip
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test
