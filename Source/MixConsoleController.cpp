@@ -137,7 +137,9 @@ public:
     resetButton.setTooltip("Valeurs neutres, sans modifier le son avant APPLIQUER");
     copyButton.setTooltip(juce::String::fromUTF8("Copier les réglages préparés pour les coller sur une autre piste audio."));
     pasteButton.setTooltip(juce::String::fromUTF8("Coller les réglages sans modifier le son avant APPLIQUER."));
-    variantButton.setTooltip(juce::String::fromUTF8("Basculer entre deux variantes A et B. Aucun changement sonore avant APPLIQUER."));
+    variantButton.setTooltip(juce::String::fromUTF8(
+        "Basculer entre deux variantes A et B. Cmd+1 : MODE A ; Cmd+2 : MODE B. "
+        "Aucun changement sonore avant APPLIQUER."));
     presetsButton.setTooltip(juce::String::fromUTF8(
         "Préréglages CANAL et historique A/B. Cmd+Z : annuler ; Cmd+Maj+Z : rétablir. "
         "La saisie numérique conserve son propre Annuler/Rétablir."));
@@ -171,12 +173,8 @@ public:
         }
     };
     variantButton.onClick=[this]{
-        // Preserve the departing variant and its current knob edits.
-        rememberABEdit();
-        session.switchVariant();
-        writeControls(session.pending());
-        refreshVariantButton();
-        repaint();
+        // Same path as Cmd+1/Cmd+2, including A/B history.
+        selectVariantForEditing(1-session.variantIndex());
     };
     presetsButton.onClick=[this]{
         juce::PopupMenu menu;
@@ -369,8 +367,10 @@ public:
      if(action==Action::none)return false;
      if(action==Action::undo && abHistory.canUndo())restoreABEdit(false);
      if(action==Action::redo && abHistory.canRedo())restoreABEdit(true);
-     // If a text editor did not consume Cmd+Z itself, swallow the bubbled
-     // event here to protect both CANAL and the global DAW undo history.
+     if(action==Action::selectA)selectVariantForEditing(0);
+     if(action==Action::selectB)selectVariantForEditing(1);
+     // A bubbled Cmd+Z from a numeric editor must never mutate global or
+     // A/B history. Direct bank selection never runs during text entry.
      return true;
  }
  void mouseDown(const juce::MouseEvent& event)override
@@ -558,6 +558,17 @@ private:
  HistoryFrame captureHistoryFrame() const
  {
      return {session.snapshot(),presetIndicator};
+ }
+ // Select one draft without touching live DSP. Re-selecting the active
+ // bank is a true no-op: it must not add an Undo step or clear Redo.
+ void selectVariantForEditing(int target)
+ {
+     if(target<0 || target>=2 || session.variantIndex()==target)return;
+     rememberABEdit();
+     session.switchVariant();
+     writeControls(session.pending());
+     refreshVariantButton();
+     repaint();
  }
  // Capture current screen edits before an A/B command mutates either bank.
  void rememberABEdit()
