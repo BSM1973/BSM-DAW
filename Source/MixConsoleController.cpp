@@ -543,10 +543,10 @@ private:
  void loadPresetSectionForEditing(
      const AudioEngine::ChannelProcessingSettings& preset,int section)
  {
-    session.setPending(readControls());
+    if(section<0 || section>=4)return;
+    rememberABEdit();
     using Section=LibertyChannelInspectorState::Session::Section;
-    if(section<0 || section>=4 ||
-       !session.loadPresetSection(preset,static_cast<Section>(section)))
+    if(!session.loadPresetSection(preset,static_cast<Section>(section)))
         return;
     writeControls(session.pending());
     // Keep the target bank's label: MODIFIÉ reflects selective changes.
@@ -586,6 +586,9 @@ private:
         }
         else comparison.addItem(3000+(int)i,label,false);
     }
+    comparison.addSeparator();
+    comparison.addItem(1700,juce::String::fromUTF8("ANNULER MODIFICATION A/B"),abHistory.canUndo());
+    comparison.addItem(1701,juce::String::fromUTF8("RÉTABLIR MODIFICATION A/B"),abHistory.canRedo());
     return comparison;
  }
  void showSectionComparisonMenu(int section,juce::Point<int> localPosition)
@@ -598,16 +601,21 @@ private:
         [safe=juce::Component::SafePointer<LibertyChannelInspector>(this),
          section](int result)
         {
-            if(safe!=nullptr)safe->applyComparisonCopy(section,result);
+            if(safe==nullptr)return;
+            if(result==1700)safe->restoreABEdit(false);
+            else if(result==1701)safe->restoreABEdit(true);
+            else safe->applyComparisonCopy(section,result);
         });
  }
  void applyComparisonCopy(int section,int result)
  {
      if(section<0 || section>=4 || result<4000 || result>=4008)return;
-     // Preserve unpublished edits in the currently displayed A/B bank.
-     session.setPending(readControls());
-     using Section=LibertyChannelInspectorState::Session::Section;
      const int chosen=result-4000;
+     constexpr int rowCounts[4]={2,2,3,4};
+     if(chosen/2>=rowCounts[section])return;
+     // Save the entire draft before the targeted copy.
+     rememberABEdit();
+     using Section=LibertyChannelInspectorState::Session::Section;
      const int from=(chosen%2)==0?0:1;
      const int to=1-from;
      if(!session.copyParameter(from,to,static_cast<Section>(section),chosen/2))
@@ -626,6 +634,9 @@ private:
     };
     juce::PopupMenu menu;
     menu.addSectionHeader(names[section]);
+    menu.addItem(1700,juce::String::fromUTF8("ANNULER MODIFICATION A/B"),abHistory.canUndo());
+    menu.addItem(1701,juce::String::fromUTF8("RÉTABLIR MODIFICATION A/B"),abHistory.canRedo());
+    menu.addSeparator();
     menu.addItem(1,juce::String::fromUTF8("COPIER LA SECTION"));
     menu.addItem(2,juce::String::fromUTF8("COLLER LA SECTION"),
                  LibertyChannelInspectorState::Session::canPasteSection(
@@ -663,6 +674,8 @@ private:
          section,saved](int result)
         {
             if(safe==nullptr)return;
+            if(result==1700){safe->restoreABEdit(false);return;}
+            if(result==1701){safe->restoreABEdit(true);return;}
             if(result>=4000 && result<4008)
             {
                 safe->applyComparisonCopy(section,result);
@@ -703,10 +716,12 @@ private:
  void pasteSectionFromClipboardForEditing(int section)
  {
     // Keep the current section's unrelated settings and the inactive bank.
-    session.setPending(readControls());
     using Section=LibertyChannelInspectorState::Session::Section;
     if(section<0 || section>3
-       || !session.pasteSectionFromClipboard(static_cast<Section>(section)))
+       || !LibertyChannelInspectorState::Session::canPasteSection(static_cast<Section>(section)))
+        return;
+    rememberABEdit();
+    if(!session.pasteSectionFromClipboard(static_cast<Section>(section)))
         return;
     writeControls(session.pending());
     // Preserve destination preset reference; MODIFIÉ flags the new values.
@@ -715,10 +730,10 @@ private:
  void swapSectionForEditing(int section)
  {
     // The active bank may contain unpublished edits from its controls.
-    session.setPending(readControls());
+    if(section<0 || section>3)return;
+    rememberABEdit();
     using Section=LibertyChannelInspectorState::Session::Section;
-    if(section<0 || section>3
-       || !session.swapSection(static_cast<Section>(section)))
+    if(!session.swapSection(static_cast<Section>(section)))
         return;
     // Preset labels remain attached to each bank; their existing MODIFIÉ
     // indicator reflects the selective exchange automatically.
@@ -728,10 +743,10 @@ private:
  void restoreSectionForEditing(int section)
  {
     // Save any unpublished knob edits before restoring a single section.
-    session.setPending(readControls());
+    if(section<0 || section>3)return;
+    rememberABEdit();
     using Section=LibertyChannelInspectorState::Session::Section;
-    if(section<0 || section>3
-       || !session.restoreOpeningSection(static_cast<Section>(section)))
+    if(!session.restoreOpeningSection(static_cast<Section>(section)))
         return;
     writeControls(session.pending());
     // Keep its preset label: the existing MODIFIÉ indicator compares values.
@@ -739,10 +754,10 @@ private:
  }
  void resetSectionForEditing(int section)
  {
-    session.setPending(readControls());
+    if(section<0 || section>3)return;
+    rememberABEdit();
     using Section=LibertyChannelInspectorState::Session::Section;
-    if(section<0 || section>3
-       || !session.resetSection(static_cast<Section>(section)))
+    if(!session.resetSection(static_cast<Section>(section)))
         return;
     writeControls(session.pending());
     // Keep the loaded preset reference: MODIFIÉ reflects neutralised controls.
@@ -751,10 +766,11 @@ private:
  void copySectionForEditing(int from,int to,int section)
  {
     // Commit current knob/toggle edits to the draft before copying.
-    session.setPending(readControls());
+    if(section<0 || section>3 || from<0 || from>=2 || to<0 || to>=2 || from==to)
+        return;
+    rememberABEdit();
     using Section=LibertyChannelInspectorState::Session::Section;
-    if(section<0 || section>3 ||
-       !session.copySection(from,to,static_cast<Section>(section)))
+    if(!session.copySection(from,to,static_cast<Section>(section)))
         return;
     // A partial mix remains associated with the target preset; the existing
     // MODIFIÉ indicator tells the user when its values have changed.
@@ -765,7 +781,8 @@ private:
  void restoreVariantAtOpening(int bank)
  {
     // Capture edits in the selected bank, leaving the other bank intact.
-    session.setPending(readControls());
+    if(bank<0 || bank>=2)return;
+    rememberABEdit();
     if(!session.restoreOpeningVariant(bank))return;
     presetIndicator.restoreBankFrom(openingPresetIndicator,bank);
     if(session.variantIndex()==bank)
@@ -775,7 +792,7 @@ private:
  void swapVariantsForEditing()
  {
     // Include the values most recently edited with the mouse.
-    session.setPending(readControls());
+    rememberABEdit();
     session.swapVariants();
     presetIndicator.swapBanks();
     writeControls(session.pending());
@@ -784,7 +801,8 @@ private:
  void copyVariantForEditing(int from,int to)
  {
     // A knob edit may not have been published to the pending bank yet.
-    session.setPending(readControls());
+    if(from<0 || from>=2 || to<0 || to>=2 || from==to)return;
+    rememberABEdit();
     if(!session.copyVariant(from,to))return;
     presetIndicator.copyBank(from,to);
     if(session.variantIndex()==to)
@@ -794,6 +812,7 @@ private:
  void loadPresetForEditing(const juce::String& label,
                            const AudioEngine::ChannelProcessingSettings& settings)
  {
+    rememberABEdit();
     session.setPending(settings);
     writeControls(session.pending());
     // A loaded preset is the reference point; later knob/toggle edits mark
