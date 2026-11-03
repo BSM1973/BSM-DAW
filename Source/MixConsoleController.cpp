@@ -11,6 +11,7 @@
 #include "ChannelPresetStatus.h"
 #include "ChannelSectionComparison.h"
 #include "ChannelABHistory.h"
+#include "ChannelABGestureHistory.h"
 #include "ChannelABShortcut.h"
 #include <functional>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -91,11 +92,13 @@ public:
     configure(knobs[5],-18,18,.5,v.eqLowDb," dB",juce::Colour(0xff60d3d6));
     configure(knobs[6],-18,18,.5,v.eqMidDb," dB",juce::Colour(0xff60d3d6));
     configure(knobs[7],-18,18,.5,v.eqHighDb," dB",juce::Colour(0xff60d3d6));
-    for(auto& knob:knobs)
+    for(size_t i=0;i<knobs.size();++i)
     {
-        knob.onDragStart=[this]{sliderDragging=true;sliderGestureRecorded=false;};
-        knob.onDragEnd=[this]{sliderDragging=false;sliderGestureRecorded=false;};
-        knob.onValueChange=[this]{trackControlChange();};
+        auto& knob=knobs[i];
+        const int index=static_cast<int>(i);
+        knob.onDragStart=[this,index]{gestureHistory.begin(index);};
+        knob.onDragEnd=[this,index]{gestureHistory.end(index);};
+        knob.onValueChange=[this,index]{trackControlChange(index);};
     }
     restoreMatchingPresetLabels();
     openingPresetIndicator=presetIndicator;
@@ -564,13 +567,10 @@ private:
      refreshHistoryButtons();
  }
  // One undo step per knob drag; text and keyboard changes are separate steps.
- void trackControlChange()
+ void trackControlChange(int index)
  {
-     if(!sliderDragging || !sliderGestureRecorded)
-     {
+     if(gestureHistory.shouldRecord(index))
          abHistory.record(captureHistoryFrame());
-         if(sliderDragging)sliderGestureRecorded=true;
-     }
      session.setPending(readControls());
      refreshHistoryButtons();
      repaint();
@@ -1042,10 +1042,20 @@ private:
  }
  void refreshHistoryButtons()
  {
-     const bool undo=abHistory.canUndo();
-     const bool redo=abHistory.canRedo();
-     if(undoButton.isEnabled()!=undo)undoButton.setEnabled(undo);
-     if(redoButton.isEnabled()!=redo)redoButton.setEnabled(redo);
+     const auto undoCount=abHistory.undoDepth();
+     const auto redoCount=abHistory.redoDepth();
+     if(undoButton.isEnabled()!=(undoCount>0))undoButton.setEnabled(undoCount>0);
+     if(redoButton.isEnabled()!=(redoCount>0))redoButton.setEnabled(redoCount>0);
+     // Tooltips disclose how many edits can be reversed without changing
+     // the header geometry or using placeholder glyphs for French labels.
+     undoButton.setTooltip(undoCount>0
+         ? juce::String::fromUTF8("ANNULER A/B : ")+juce::String((int)undoCount)
+             +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Z")
+         : juce::String::fromUTF8("Aucune modification A/B à annuler."));
+     redoButton.setTooltip(redoCount>0
+         ? juce::String::fromUTF8("RÉTABLIR A/B : ")+juce::String((int)redoCount)
+             +juce::String::fromUTF8(" étape(s) disponibles — Cmd+Maj+Z")
+         : juce::String::fromUTF8("Aucune modification A/B à rétablir."));
  }
  void refreshVariantButton(){
     const bool isB=session.variantIndex()==1;
@@ -1123,7 +1133,7 @@ private:
  LibertyChannelInspectorState::Session session;
  LibertyChannelPresetStatus::Indicator presetIndicator;
  LibertyChannelABHistory::History<HistoryFrame> abHistory;
- bool sliderDragging=false,sliderGestureRecorded=false;
+ LibertyChannelABGestureHistory::Tracker gestureHistory;
  LibertyChannelPresetStatus::Indicator openingPresetIndicator;
  ConsoleLookAndFeel metallicStyle;
  std::array<juce::Slider,8> knobs;
