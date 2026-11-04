@@ -43,7 +43,10 @@ fi
 
 # Notarization requires an authentic Developer ID signature, a secure
 # timestamp and Hardened Runtime. Never replace these with ad-hoc signing.
+entitlements="Scripts/Liberty-DAW.entitlements"
+plutil -lint "$entitlements"
 codesign --force --deep --options runtime --timestamp \
+  --entitlements "$entitlements" \
   --sign "$MACOS_SIGNING_IDENTITY" --keychain "$keychain" "$1"
 codesign --verify --deep --strict --verbose=2 "$1"
 
