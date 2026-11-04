@@ -59,3 +59,17 @@ Le certificat Developer ID, l'accès Apple Developer et les autorisations
 App Store Connect doivent être mis en place par le propriétaire du compte.
 La notarisation ne remplace pas les tests réels sur macOS, notamment
 les tests des instruments, plugins et périphériques audio sous Hardened Runtime.
+
+### Hébergement des plugins AU/VST
+
+Liberty charge des plugins audio de différents éditeurs. Lors de la signature
+Developer ID, le workflow applique `Scripts/Liberty-DAW.entitlements` avec
+`com.apple.security.cs.disable-library-validation=true`. Sans cette exception,
+Hardened Runtime peut bloquer les plugins tiers signés par un autre éditeur.
+
+Cette exception n'est utilisée **que pour la signature de production**.
+Elle n'autorise pas automatiquement des plugins mis en quarantaine, non
+notariés ou incompatibles. Tester sur un vrai Mac l'analyse AU/VST, le
+chargement des instruments/effets, les entrées audio et les sauvegardes
+avant toute diffusion commerciale. Les autres exceptions Hardened Runtime
+(JIT, mémoire exécutable) ne sont pas activées sans nécessité démontrée.
