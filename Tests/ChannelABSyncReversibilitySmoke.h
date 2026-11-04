@@ -7,6 +7,7 @@
 #include "ChannelSectionComparison.h"
 #include "ChannelABOverview.h"
 #include <cmath>
+#include <cstdio>
 #include <stdexcept>
 #include <vector>
 
@@ -19,7 +20,6 @@ inline void runLibertyChannelABSyncReversibilitySmoke()
     using Settings=Session::Settings;
     using Section=Session::Section;
     using Labels=LibertyChannelPresetStatus::Indicator;
-    using History=LibertyChannelABHistory::History<struct SyncFrame>;
     const auto require=[](bool condition,const char* message)
     {
         if(!condition)throw std::runtime_error(message);
@@ -213,4 +213,7 @@ inline void runLibertyChannelABSyncReversibilitySmoke()
     require(equal(engine.getChannelProcessingSettings(0),
                   approved.state.variants[(size_t)approved.state.activeVariant]),
             "CANAL A/B CANCEL modified the DSP");
+    std::fprintf(stdout,
+        "CANAL A/B synchronization: 11 operations, 11 Undo, 11 Redo, "
+        "branch invalidation, preset labels, APPLY/CANCEL OK\\n");
 }
