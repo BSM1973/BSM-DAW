@@ -175,3 +175,17 @@ jobs:
           path: dist-fast/Liberty-macOS-arm64-Diagnostic.zip
           if-no-files-found: error
           retention-days: 7
+
+      - name: Package and verify Liberty DMG installer
+        run: |
+          bash Scripts/create-macos-dmg.sh \
+            "build-fast/BSM_DAW_artefacts/Release/Liberty.app" \
+            "dist-fast/Liberty-macOS-arm64.dmg"
+
+      - name: Upload Liberty DMG installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-macOS-arm64-DMG
+          path: dist-fast/Liberty-macOS-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14
