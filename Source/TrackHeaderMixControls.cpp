@@ -2,8 +2,8 @@
 #include "MainComponent.h"
 #include "PluginHost.h"
 #include "TrackInputPaletteLookAndFeel.h"
-#include "MixConsoleSoloLogic.h"
 #undef private
+#include "MixConsoleSoloLogic.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cmath>
