@@ -50,6 +50,11 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
           /tmp/liberty-mixer-layout
 
+      - name: Verify mixer Solo exclusive and all-clear controls
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleSoloRegression.cpp -o /tmp/liberty-mixer-solo
+          /tmp/liberty-mixer-solo
+
       - name: Verify channel inspector controls never overlap
         run: |
           clang++ -std=c++17 -Wall -Wextra -Werror Tests/ChannelDialogLayoutRegression.cpp -o /tmp/liberty-channel-dialog-layout
