@@ -49,7 +49,7 @@ test -f "$mountpoint/Liberty.app/Contents/MacOS/Liberty"
 test -L "$mountpoint/Applications"
 test "$(readlink "$mountpoint/Applications")" = "/Applications"
 codesign --verify --deep --strict "$mountpoint/Liberty.app"
-lipo -verify_arch arm64 "$mountpoint/Liberty.app/Contents/MacOS/Liberty"
+lipo "$mountpoint/Liberty.app/Contents/MacOS/Liberty" -verify_arch arm64
 
 hdiutil detach -quiet "$mountpoint"
 mounted=false
