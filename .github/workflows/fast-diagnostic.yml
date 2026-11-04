@@ -32,6 +32,12 @@ jobs:
           restore-keys: |
             liberty-ccache-arm64-${{ runner.os }}-
 
+      - name: Verify macOS packaging and notarization scripts syntax
+        run: |
+          bash -n Scripts/create-macos-dmg.sh
+          bash -n Scripts/sign-macos-release.sh
+          bash -n Scripts/notarize-macos-dmg.sh
+
       - name: Validate Riche WAV analyzer
         run: python3 Tests/RicheAudioValidation.py --self-test
 
@@ -182,10 +188,18 @@ jobs:
             "build-fast/BSM_DAW_artefacts/Release/Liberty.app" \
             "dist-fast/Liberty-macOS-arm64.dmg"
 
+      - name: Generate and verify Liberty DMG SHA-256 checksum
+        run: |
+          cd dist-fast
+          shasum -a 256 Liberty-macOS-arm64.dmg > Liberty-macOS-arm64.dmg.sha256
+          shasum -a 256 -c Liberty-macOS-arm64.dmg.sha256
+
       - name: Upload Liberty DMG installer
         uses: actions/upload-artifact@v4
         with:
           name: Liberty-macOS-arm64-DMG
-          path: dist-fast/Liberty-macOS-arm64.dmg
+          path: |
+            dist-fast/Liberty-macOS-arm64.dmg
+            dist-fast/Liberty-macOS-arm64.dmg.sha256
           if-no-files-found: error
           retention-days: 14
