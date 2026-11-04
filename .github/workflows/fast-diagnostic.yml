@@ -12,9 +12,29 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Independent, fast console regressions. They run even if GitHub cannot
+  # allocate a hosted macOS ARM64 machine for the complete application.
+  mixer-unit-regressions:
+    name: MIXER C++ regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify mixer layout and pinned faders
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
+          /tmp/liberty-mixer-layout
+      - name: Verify normal and exclusive Solo across audio and instrument tracks
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleSoloRegression.cpp -o /tmp/liberty-mixer-solo
+          /tmp/liberty-mixer-solo
+
   fast-macos-arm64:
-    name: Fast macOS arm64
-    runs-on: macos-15
+    name: Fast macOS arm64 (macOS 26)
+    # GitHub cancelled two macos-15 attempts with zero steps and no runner.
+    # macos-26 is an official Apple Silicon/arm64 standard hosted label.
+    runs-on: macos-26
     timeout-minutes: 35
 
     steps:
