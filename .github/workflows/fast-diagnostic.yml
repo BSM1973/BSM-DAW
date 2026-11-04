@@ -37,6 +37,7 @@ jobs:
           bash -n Scripts/create-macos-dmg.sh
           bash -n Scripts/sign-macos-release.sh
           bash -n Scripts/notarize-macos-dmg.sh
+          plutil -lint Scripts/Liberty-DAW.entitlements
 
       - name: Validate Riche WAV analyzer
         run: python3 Tests/RicheAudioValidation.py --self-test
