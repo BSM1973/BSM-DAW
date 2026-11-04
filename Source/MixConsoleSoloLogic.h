@@ -8,6 +8,13 @@ namespace LibertyMixConsoleSoloLogic
 {
 enum class Kind { audio, instrument };
 enum class Action { toggle, exclusive, clearAll };
+ // Shared modifier priority for both the Console and Arrangement header.
+ // Shift wins if Shift and Option happen to be held together.
+ constexpr Action resolveAction(bool shift,bool alt) noexcept
+ {
+     return shift?Action::clearAll:(alt?Action::exclusive:Action::toggle);
+ }
+
 struct Target
 {
     Kind kind=Kind::audio;
