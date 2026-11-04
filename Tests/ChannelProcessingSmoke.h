@@ -6,6 +6,7 @@
 #include "ChannelUserPresets.h"
 #include "ChannelPresetStatus.h"
 #include "ChannelSectionComparison.h"
+#include "ChannelABSyncReversibilitySmoke.h"
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -34,6 +35,10 @@ inline bool runLibertyChannelProcessingSmoke()
         require(engine.getAudioTrackCount()>=2, "audio track count");
         const AudioEngine::ChannelProcessingSettings neutral;
         require(equal(engine.getChannelProcessingSettings(0),neutral), "initial state");
+
+        // Actual CANAL Session + History integration: repeated A/B copies,
+        // per-section operations and all Undo/Redo paths must be reversible.
+        runLibertyChannelABSyncReversibilitySmoke();
 
         // The CANAL display recognizes edits per A/B variant, including
         // changes in activation toggles and a return to the saved values.
