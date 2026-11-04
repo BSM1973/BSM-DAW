@@ -1417,8 +1417,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      if(strip.kind!=Strip::audio && strip.kind!=Strip::instrument)return;
      using namespace LibertyMixConsoleSoloLogic;
      const auto modifiers=juce::ModifierKeys::getCurrentModifiersRealtime();
-     const Action action=modifiers.isShiftDown()?Action::clearAll:
-         modifiers.isAltDown()?Action::exclusive:Action::toggle;
+     const Action action=resolveAction(modifiers.isShiftDown(),modifiers.isAltDown());
      State before;
      before.audio.resize(static_cast<size_t>(owner.getAudioTrackCount()));
      before.instruments.resize(static_cast<size_t>(owner.getInstrumentTrackCount()));
