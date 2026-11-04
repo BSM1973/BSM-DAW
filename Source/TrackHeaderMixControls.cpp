@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #include "PluginHost.h"
 #include "TrackInputPaletteLookAndFeel.h"
+#include "MixConsoleSoloLogic.h"
 #undef private
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
@@ -183,6 +184,33 @@ public:
 private:
  bool isAudio(int i)const{return i<owner.getAudioTrackCount();}
  int logicalTrack(int i)const{return isAudio(i)?i:owner.getAudioTrackCount()+owner.getMidiTrackCount()+(i-owner.getAudioTrackCount());}
+ // Same Solo gestures as the Console in both audio and instrument headers.
+ // The helper handles normal, exclusive and all-clear without changing Mute.
+ void applyHeaderSolo(int index)
+ {
+     const int audioCount=owner.getAudioTrackCount();
+     const int instrumentCount=owner.getInstrumentTrackCount();
+     if(index<0 || index>=audioCount+instrumentCount)return;
+     using namespace LibertyMixConsoleSoloLogic;
+     State before;
+     before.audio.resize(static_cast<size_t>(audioCount));
+     before.instruments.resize(static_cast<size_t>(instrumentCount));
+     for(size_t i=0;i<before.audio.size();++i)
+         before.audio[i]=owner.audioEngine.isTrackSolo(static_cast<int>(i));
+     for(size_t i=0;i<before.instruments.size();++i)
+         before.instruments[i]=owner.audioEngine.isInstrumentTrackSolo(static_cast<int>(i));
+     const auto mods=juce::ModifierKeys::getCurrentModifiersRealtime();
+     const auto kind=index<audioCount?Kind::audio:Kind::instrument;
+     const Target target{kind,index<audioCount?index:index-audioCount};
+     const auto after=apply(before,target,resolveAction(mods.isShiftDown(),mods.isAltDown()));
+     for(size_t i=0;i<before.audio.size();++i)
+         if(before.audio[i]!=after.audio[i])
+             owner.audioEngine.setTrackSolo(static_cast<int>(i),after.audio[i]);
+     for(size_t i=0;i<before.instruments.size();++i)
+         if(before.instruments[i]!=after.instruments[i])
+             owner.audioEngine.setInstrumentTrackSolo(static_cast<int>(i),after.instruments[i]);
+     owner.repaint();
+ }
  void ensure(){int wanted=owner.getAudioTrackCount()+owner.getInstrumentTrackCount();while((int)controls.size()>wanted)controls.pop_back();while((int)controls.size()<wanted){int i=(int)controls.size();Controls c;c.vol=std::make_unique<juce::Slider>();c.pan=std::make_unique<juce::Slider>();c.mute=std::make_unique<juce::TextButton>("M");c.solo=std::make_unique<juce::TextButton>("S");c.mask=std::make_unique<juce::Component>();
 if(!isAudio(i))
 {
@@ -214,7 +242,8 @@ if(isAudio(i))
  c.instrumentGui->onClick=[this,i]{LibertyPluginHost::instance().toggleEditorForTrackSlot(i,0);};
  addAndMakeVisible(*c.instrumentGui);
 }
-auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScrollWheelEnabled(false);v->setLookAndFeel(&volumeLf);v->setVelocityBasedMode(false);v->setRange(0,2,.001);v->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);v->setTooltip("Volume de la piste (double-clic = 0 dB)");v->setDoubleClickReturnValue(true,1.0);v->textFromValueFunction=[](double value){return value <= 0.00001 ? juce::String("-inf dB") : juce::String(20.0*std::log10(value),1)+" dB";};v->valueFromTextFunction=[](const juce::String& text){return juce::jlimit(0.0,2.0,std::pow(10.0,text.getDoubleValue()/20.0));};v->onValueChange=[this,i,v]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackGain(i,(float)v->getValue());else owner.audioEngine.setInstrumentTrackGain(i-owner.getAudioTrackCount(),(float)v->getValue());};auto*p=c.pan.get();p->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);p->setRotaryParameters(juce::MathConstants<float>::pi * 1.25f,juce::MathConstants<float>::pi * 2.75f,true);p->setDoubleClickReturnValue(true,0.0);p->setTooltip("PAN : gauche / centre / droite (double-clic = centre)");p->setRange(-1,1,.001);p->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);p->setLookAndFeel(&lf);p->onValueChange=[this,i,p]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackPan(i,(float)p->getValue());else owner.audioEngine.setInstrumentTrackPan(i-owner.getAudioTrackCount(),(float)p->getValue());};c.mute->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackMuted(i,!owner.audioEngine.isTrackMuted(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackMuted(t,!owner.audioEngine.isInstrumentTrackMuted(t));}};c.solo->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackSolo(i,!owner.audioEngine.isTrackSolo(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackSolo(t,!owner.audioEngine.isInstrumentTrackSolo(t));}};for(auto*b:{c.mute.get(),c.solo.get()}){b->setMouseClickGrabsKeyboardFocus(false);b->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*b);}addAndMakeVisible(*v);addAndMakeVisible(*p);addAndMakeVisible(*c.mask);controls.push_back(std::move(c));}}
+auto* v=c.vol.get();v->setSliderStyle(juce::Slider::LinearHorizontal);v->setScrollWheelEnabled(false);v->setLookAndFeel(&volumeLf);v->setVelocityBasedMode(false);v->setRange(0,2,.001);v->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);v->setTooltip("Volume de la piste (double-clic = 0 dB)");v->setDoubleClickReturnValue(true,1.0);v->textFromValueFunction=[](double value){return value <= 0.00001 ? juce::String("-inf dB") : juce::String(20.0*std::log10(value),1)+" dB";};v->valueFromTextFunction=[](const juce::String& text){return juce::jlimit(0.0,2.0,std::pow(10.0,text.getDoubleValue()/20.0));};v->onValueChange=[this,i,v]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackGain(i,(float)v->getValue());else owner.audioEngine.setInstrumentTrackGain(i-owner.getAudioTrackCount(),(float)v->getValue());};auto*p=c.pan.get();p->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);p->setRotaryParameters(juce::MathConstants<float>::pi * 1.25f,juce::MathConstants<float>::pi * 2.75f,true);p->setDoubleClickReturnValue(true,0.0);p->setTooltip("PAN : gauche / centre / droite (double-clic = centre)");p->setRange(-1,1,.001);p->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);p->setLookAndFeel(&lf);p->onValueChange=[this,i,p]{if(syncing)return;if(isAudio(i))owner.audioEngine.setTrackPan(i,(float)p->getValue());else owner.audioEngine.setInstrumentTrackPan(i-owner.getAudioTrackCount(),(float)p->getValue());};c.mute->onClick=[this,i]{if(isAudio(i))owner.audioEngine.setTrackMuted(i,!owner.audioEngine.isTrackMuted(i));else{int t=i-owner.getAudioTrackCount();owner.audioEngine.setInstrumentTrackMuted(t,!owner.audioEngine.isInstrumentTrackMuted(t));}};c.solo->setTooltip(juce::String::fromUTF8(
+ "Solo : clic = normal, Option + clic = exclusif, Maj + clic = retirer tous les Solo."));c.solo->onClick=[this,i]{applyHeaderSolo(i);};for(auto*b:{c.mute.get(),c.solo.get()}){b->setMouseClickGrabsKeyboardFocus(false);b->setColour(juce::TextButton::textColourOffId,juce::Colours::white);addAndMakeVisible(*b);}addAndMakeVisible(*v);addAndMakeVisible(*p);addAndMakeVisible(*c.mask);controls.push_back(std::move(c));}}
  void layout()
  {
      reorderGrip.setBounds(0, owner.getArrangeTop(), 14,
