@@ -55,12 +55,9 @@ jobs:
             "$APP" \
             "dist/Liberty-macOS.zip"
 
-          hdiutil create \
-            -volname "Liberty" \
-            -srcfolder "$APP" \
-            -ov \
-            -format UDZO \
-            "dist/Liberty-macOS.dmg"
+          # Package Liberty.app plus an Applications shortcut, then mount
+          # the DMG and verify its signature, architecture and contents.
+          bash Scripts/create-macos-dmg.sh "$APP" "dist/Liberty-macOS.dmg"
 
           unzip -l "dist/Liberty-macOS.zip"
           hdiutil imageinfo "dist/Liberty-macOS.dmg"
