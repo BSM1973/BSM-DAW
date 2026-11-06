@@ -1,6 +1,7 @@
 #include <set>
 #include "AudioEngine.h"
 #include "AudioCrossfadeCurve.h"
+#include "MixConsoleMeter.h"
 
 // PERFORM contributes audio to this engine-owned hardware callback. It never
 // registers its own AudioIODeviceCallback.
@@ -699,6 +700,21 @@ void AudioEngine::clearChannelABState(int t) noexcept
 }
 void AudioEngine::setTrackGain(int trackIndex, float gain) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->gain.store(juce::jlimit(0.0f, 2.0f, gain)); }
 float AudioEngine::getTrackGain(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->gain.load() : 0.0f; }
+float AudioEngine::consumeTrackMeterPeak(int trackIndex) noexcept
+{
+    return isValidTrackIndex(trackIndex)
+        ?LibertyMixConsoleMeter::consume(tracks[(size_t)trackIndex]->meterPeak):0.f;
+}
+float AudioEngine::consumeInstrumentMeterPeak(int instrumentTrack) noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    return instrumentTrack>=0 && instrumentTrack<(int)instrumentPlayback.size()
+        ?LibertyMixConsoleMeter::consume(instrumentPlayback[(size_t)instrumentTrack]->meterPeak):0.f;
+}
+float AudioEngine::consumeMasterMeterPeak() noexcept
+{
+    return LibertyMixConsoleMeter::consume(masterMeterPeak);
+}
 void AudioEngine::setTrackPan(int trackIndex, float pan) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->pan.store(juce::jlimit(-1.0f, 1.0f, pan)); }
 float AudioEngine::getTrackPan(int trackIndex) const noexcept { return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->pan.load() : 0.0f; }
 void AudioEngine::setTrackMuted(int trackIndex, bool muted) noexcept { if (isValidTrackIndex(trackIndex)) tracks[(size_t)trackIndex]->muted.store(muted); }
@@ -1997,6 +2013,22 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 {
     processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
+    // Audition/monitoring also sends audio while the arrangement is stopped.
+    // Measure the actual output in these early-return paths, not a file snapshot.
+    const auto meterIdleOutput=[&]()
+    {
+        if(numSamples<=0)return;
+        float maximum=0.f;
+        for(int channel=0;channel<numOutputChannels;++channel)
+            if(outputChannelData[channel]!=nullptr)
+            {
+                const auto range=juce::FloatVectorOperations::findMinAndMax(
+                    outputChannelData[channel],numSamples);
+                maximum=juce::jmax(maximum,std::abs(range.getStart()),
+                                                  std::abs(range.getEnd()));
+            }
+        LibertyMixConsoleMeter::publish(masterMeterPeak,maximum);
+    };
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
     // Drum Sampler audition bus. Runs on the audio callback, even while
     // arrangement transport is stopped. This is not yet track routing.
@@ -2096,6 +2128,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                                   state.gain.load(std::memory_order_relaxed),
                                                   state.pan.load(std::memory_order_relaxed)))
                 {
+                    if(bus.getNumChannels()>0 && bus.getNumSamples()>0)
+                        LibertyMixConsoleMeter::publish(state.meterPeak,
+                            bus.getMagnitude(0,bus.getNumSamples()));
                     for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
                         if (outputChannelData[ch] != nullptr)
                             juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
@@ -2103,6 +2138,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             }
             stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
         }
+        meterIdleOutput();
         return;
     }
 
@@ -2151,11 +2187,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                               state.gain.load(std::memory_order_relaxed),
                                               state.pan.load(std::memory_order_relaxed)))
             {
+                if(bus.getNumChannels()>0 && bus.getNumSamples()>0)
+                    LibertyMixConsoleMeter::publish(state.meterPeak,
+                        bus.getMagnitude(0,bus.getNumSamples()));
                 for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
                     if (outputChannelData[ch] != nullptr)
                         juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
             }
         }
+        meterIdleOutput();
         return;
     }
 
@@ -2220,6 +2260,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.processAudioEffectSlot(trackIndex, slot, trackBus);
                 oneKnob.processInsertSlot(trackIndex, slot, trackBus);
             }
+            // Post channel processing and post-inserts; shared with the real
+            // mixer output before the summing bus. No DSP parameter changes.
+            if(trackBus.getNumChannels()>0 && trackBus.getNumSamples()>0)
+                LibertyMixConsoleMeter::publish(track.meterPeak,
+                    trackBus.getMagnitude(0,trackBus.getNumSamples()));
             for (int ch = 0; ch < insertChannels; ++ch)
                 if (outputChannelData[ch] != nullptr)
                     juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
@@ -2353,6 +2398,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     pluginHost.processInstrumentEffectSlot(instrumentTrack, slot, instrumentBus);
                     oneKnob.process(100000 + instrumentTrack * 8 + slot, instrumentBus);
                 }
+                // Instrument strips must show audio after instruments and FX.
+                if(instrumentBus.getNumChannels()>0 && instrumentBus.getNumSamples()>0)
+                    LibertyMixConsoleMeter::publish(state.meterPeak,
+                        instrumentBus.getMagnitude(0,instrumentBus.getNumSamples()));
                 const int channels = juce::jmin(2, numOutputChannels);
                 for (int channel = 0; channel < channels; ++channel)
                     if (outputChannelData[channel] != nullptr)
@@ -2399,6 +2448,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     }
     // Last-resort realtime protection: a DAW must never be allowed to emit
     // runaway/non-finite output. Stop transport and mute the current block.
+    if (!unsafeOutput && peak<=8.f)
+        LibertyMixConsoleMeter::publish(masterMeterPeak,peak);
     if (unsafeOutput || peak > 8.0f)
     {
         for (int channel = 0; channel < numOutputChannels; ++channel)
