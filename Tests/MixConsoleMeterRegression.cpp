@@ -169,6 +169,37 @@ int main()
     assert(std::abs(readoutAmplitude(readout,ReadoutMode::rms)-0.32f)<0.0001f);
     assert(readoutAmplitude(StereoDisplay{},ReadoutMode::peak)==0.f);
     assert(readoutAmplitude(StereoDisplay{},ReadoutMode::rms)==0.f);
+    // Separate digital readings for left and right in both modes.
+    StereoDisplay split;
+    advance(split,StereoPeaks{{0.75f,0.25f}},
+            StereoPeaks{{0.125f,0.0625f}});
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::peak,0)-0.75f)<0.0001f);
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::peak,1)-0.25f)<0.0001f);
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::rms,0)-0.125f)<0.0001f);
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::rms,1)-0.0625f)<0.0001f);
+    assert(std::abs(toDb(channelReadoutAmplitude(split,ReadoutMode::peak,0))+2.4988f)<0.002f);
+    assert(std::abs(toDb(channelReadoutAmplitude(split,ReadoutMode::peak,1))+12.0412f)<0.002f);
+    assert(readoutAmplitude(split,ReadoutMode::peak)==
+           channelReadoutAmplitude(split,ReadoutMode::peak,0));
+    assert(channelReadoutAmplitude(split,ReadoutMode::peak,-1)==0.f);
+    assert(channelReadoutAmplitude(split,ReadoutMode::peak,2)==0.f);
+
+    // A transient in R never rewrites the held PEAK in L. RMS numbers
+    // follow the measured block, not the decaying cyan bars.
+    advance(split,StereoPeaks{{0.f,1.1f}},
+            StereoPeaks{{0.f,0.32f}});
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::peak,0)-0.75f)<0.0001f);
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::peak,1)-1.1f)<0.0001f);
+    assert(channelReadoutAmplitude(split,ReadoutMode::rms,0)==0.f);
+    assert(std::abs(channelReadoutAmplitude(split,ReadoutMode::rms,1)-0.32f)<0.0001f);
+    assert(split.channel[0].rms>0.f);
+    assert(split.channel[1].clipped && !split.channel[0].clipped);
+    split.resetPeak();
+    assert(channelReadoutAmplitude(split,ReadoutMode::peak,0)==0.f);
+    assert(channelReadoutAmplitude(split,ReadoutMode::peak,1)==0.f);
+    assert(channelReadoutAmplitude(split,ReadoutMode::rms,1)>0.f);
+    assert(!split.clipped());
+
     // Numeric / bar hit regions are disjoint and never steal the fader.
     const int top=100,bottom=340;
     assert(resolveMeterClick(4,bottom+4,top,bottom)==MeterClick::toggleDigital);
