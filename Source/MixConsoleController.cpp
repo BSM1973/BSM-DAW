@@ -1359,16 +1359,14 @@ public:
        const int meterBottom=strip->bounds.getBottom()-36;
        // Click the numeric readout/legend to switch all strips PEAK/RMS.
        // Click the bars themselves to reset held sample peaks and CLIP.
-       const juce::Rectangle<int> readoutHit(
-           strip->bounds.getX()+4,meterBottom+4,40,31);
-       const juce::Rectangle<int> meterHit(
-           strip->bounds.getX()+4,meterTop,40,
-           juce::jmax(0,meterBottom-meterTop+2));
-       if(meterBottom-meterTop>=40 && readoutHit.contains(e.getPosition())){
+       const auto hit=LibertyMixConsoleMeter::resolveMeterClick(
+           e.getPosition().x-strip->bounds.getX(),e.getPosition().y,
+           meterTop,meterBottom);
+       if(hit==LibertyMixConsoleMeter::MeterClick::toggleDigital){
          meterReadoutMode=LibertyMixConsoleMeter::toggleReadoutMode(meterReadoutMode);
          repaint();return;
        }
-       if(meterBottom-meterTop>=40 && meterHit.contains(e.getPosition())){
+       if(hit==LibertyMixConsoleMeter::MeterClick::resetPeaks){
          strip->meter.resetPeak();
          repaint(strip->bounds.getX()+3,meterTop,44,meterBottom-meterTop+35);
          return;
@@ -1412,9 +1410,9 @@ public:
        const auto geometry=getStripGeometry(*strip);
        const int top=strip->bounds.getY()+geometry.faderY;
        const int bottom=strip->bounds.getBottom()-36;
-       onReadout=bottom-top>=40&&
-           juce::Rectangle<int>(strip->bounds.getX()+4,bottom+4,40,31)
-             .contains(e.getPosition());
+       onReadout=LibertyMixConsoleMeter::resolveMeterClick(
+           e.getPosition().x-strip->bounds.getX(),e.getPosition().y,
+           top,bottom)==LibertyMixConsoleMeter::MeterClick::toggleDigital;
      }
      if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
        onHandle=std::abs(e.getPosition().y-strip->bounds.getY()-
