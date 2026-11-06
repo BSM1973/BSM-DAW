@@ -204,6 +204,11 @@ public:
     float consumeTrackMeterPeak(int trackIndex) noexcept;
     float consumeInstrumentMeterPeak(int instrumentTrack) noexcept;
     float consumeMasterMeterPeak() noexcept;
+    // Post-FX sample peaks separated by channel, always {left, right}.
+    // The older mono methods remain as compatibility wrappers.
+    std::array<float,2> consumeTrackStereoMeterPeaks(int trackIndex) noexcept;
+    std::array<float,2> consumeInstrumentStereoMeterPeaks(int instrumentTrack) noexcept;
+    std::array<float,2> consumeMasterStereoMeterPeaks() noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
     void setTrackClipPitch(int trackIndex, double semitones) noexcept;
@@ -395,7 +400,8 @@ private:
         float channelHighPassState[2] {}, channelLowState[2] {}, channelHighState[2] {};
         float channelDynamicsEnvelope = 0.0f;
         std::atomic<float> gain { 1.0f };
-        std::atomic<float> meterPeak { 0.0f }; // audio callback -> console
+        std::atomic<float> meterPeak { 0.0f }; // audio callback -> L
+        std::atomic<float> meterPeakRight { 0.0f }; // audio callback -> R
         std::atomic<float> clipGain { 1.0f };
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
@@ -472,7 +478,8 @@ private:
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
         std::atomic<float> gain { 1.0f };
-        std::atomic<float> meterPeak { 0.0f }; // rendered instrument bus
+        std::atomic<float> meterPeak { 0.0f }; // rendered instrument L
+        std::atomic<float> meterPeakRight { 0.0f }; // rendered instrument R
         std::atomic<float> pan { 0.0f };
         std::atomic<bool> muted { false };
         std::atomic<bool> solo { false };
@@ -538,7 +545,8 @@ private:
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
-    std::atomic<float> masterMeterPeak { 0.0f }; // post-master output peak
+    std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
+    std::atomic<float> masterMeterPeakRight { 0.0f }; // post-master right
     std::atomic<bool> inputMonitoringEnabled { false };
     std::atomic<int> monitorInputLeft { 0 };
     std::atomic<int> monitorInputRight { 1 };
