@@ -57,5 +57,35 @@ int main()
     assert(instrument.clipped && !channel.clipped);
     instrument.resetPeak();
     assert(!instrument.clipped && channel.heldPeak==0.2f);
-    std::cout<<"MIXER meter: atomic max, sample dBFS, peak hold, sticky clip, reset, NaN OK\n";
+    // Each stereo side has independent level, hold, decay and clip state.
+    StereoDisplay stereo;
+    advance(stereo,StereoPeaks{{0.7f,0.18f}});
+    assert(stereo.channel[0].level==0.7f);
+    assert(stereo.channel[1].level==0.18f);
+    assert(stereo.heldPeak()==0.7f);
+    assert(!stereo.clipped());
+
+    advance(stereo,StereoPeaks{{0.1f,1.15f}});
+    assert(stereo.channel[0].heldPeak==0.7f);
+    assert(stereo.channel[1].heldPeak==1.15f);
+    assert(stereo.clipped());
+    assert(stereo.heldPeak()==1.15f);
+    assert(stereo.channel[0].level!=stereo.channel[1].level);
+    for(int frame=0;frame<40;++frame)
+        advance(stereo,StereoPeaks{{0.f,0.f}});
+    assert(stereo.clipped()); // Overload survives the end of the signal.
+    stereo.resetPeak();
+    assert(!stereo.clipped());
+    assert(stereo.channel[0].heldPeak==0.f);
+    assert(stereo.channel[1].heldPeak==0.f);
+    advance(stereo,StereoPeaks{{1.01f,0.08f}});
+    assert(stereo.channel[0].clipped && !stereo.channel[1].clipped);
+    assert(stereo.clipped());
+    stereo.resetPeak();
+    advance(stereo,StereoPeaks{{0.25f,0.f}});
+    assert(stereo.channel[0].heldPeak==0.25f);
+    assert(stereo.channel[1].heldPeak==0.f && !stereo.clipped());
+    assert(meterPosition(stereo.channel[0].level)>=meterPosition(stereo.channel[1].level));
+
+    std::cout<<"MIXER meter: stereo L/R independent levels and peak holds, clip and reset OK\n";
 }
