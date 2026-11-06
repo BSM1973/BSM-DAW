@@ -68,6 +68,21 @@ inline void publishRms(std::atomic<std::uint64_t>& accumulator,
             std::memory_order_release,std::memory_order_relaxed))return;
     }
 }
+inline void publishRmsSamples(std::atomic<std::uint64_t>& accumulator,
+                              const float* data,int samples) noexcept
+{
+    if(data==nullptr||samples<=0)return;
+    double sumSquares=0.0;
+    for(int i=0;i<samples;++i)
+    {
+        const double x=std::isfinite(data[i])?data[i]:0.0;
+        sumSquares+=x*x;
+    }
+    const float rms=static_cast<float>(
+        std::sqrt(sumSquares/static_cast<double>(samples)));
+    publishRms(accumulator,rms,samples);
+}
+
 inline float consumeRms(std::atomic<std::uint64_t>& accumulator) noexcept
 {
     const auto state=accumulator.exchange(0,std::memory_order_acq_rel);
