@@ -169,6 +169,21 @@ int main()
     assert(std::abs(readoutAmplitude(readout,ReadoutMode::rms)-0.32f)<0.0001f);
     assert(readoutAmplitude(StereoDisplay{},ReadoutMode::peak)==0.f);
     assert(readoutAmplitude(StereoDisplay{},ReadoutMode::rms)==0.f);
+    // Numeric / bar hit regions are disjoint and never steal the fader.
+    const int top=100,bottom=340;
+    assert(resolveMeterClick(4,bottom+4,top,bottom)==MeterClick::toggleDigital);
+    assert(resolveMeterClick(43,bottom+35,top,bottom)==MeterClick::toggleDigital);
+    assert(resolveMeterClick(18,bottom+30,top,bottom)==MeterClick::toggleDigital);
+    assert(resolveMeterClick(18,top+10,top,bottom)==MeterClick::resetPeaks);
+    assert(resolveMeterClick(18,bottom+1,top,bottom)==MeterClick::resetPeaks);
+    assert(resolveMeterClick(18,bottom+2,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(18,bottom+3,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(18,bottom+36,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(3,top+5,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(44,top+5,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(44,bottom+5,top,bottom)==MeterClick::none);
+    assert(resolveMeterClick(10,top+10,top,top+39)==MeterClick::none);
+    assert(resolveMeterClick(10,top+45,top,top+39)==MeterClick::none);
 
     std::cout<<"MIXER meter: PEAK/RMS digital mode, dBFS, stereo peaks and RMS OK\n";
 }
