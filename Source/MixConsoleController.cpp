@@ -1839,29 +1839,29 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          g.setColour(juce::Colour(0xffff4e4e));
          g.fillEllipse(frame.getRight()+2.f,frame.getY()+2.f,7.f,7.f);
      }
-     // Numerical PEAK = held sample peak; RMS = actual last-interval
-     // weighted RMS, not its smoothed cyan visual release.
-     // CLIP stays visible in the separate red LED.
-     const auto amplitude=LibertyMixConsoleMeter::readoutAmplitude(
-         s.meter,meterReadoutMode);
-     const auto label=amplitude>0.f
-         ?juce::String(LibertyMixConsoleMeter::toDb(amplitude),1)
-         :juce::String("--");
+     // Each stereo channel has its own dBFS number: PEAK is the held
+     // sample peak, RMS the last measured interval (not its visual tail).
+     // The global PEAK/RMS toggle and persistent per-channel CLIP remain.
      const bool isPeak=meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::peak;
-     const auto labelBox=juce::Rectangle<float>(x-4.f,(float)bottom+3.f,39.f,15.f);
+     const auto labelBox=juce::Rectangle<float>(x-4.f,(float)bottom+3.f,39.f,24.f);
      g.setColour(juce::Colour(0xff182b3a));
      g.fillRoundedRectangle(labelBox,2.f);
      g.setColour(isPeak?juce::Colour(0xffd8b66e):juce::Colour(0xff8cf4fb));
      g.drawRoundedRectangle(labelBox,2.f,1.f);
-     g.setColour(s.meter.clipped()?juce::Colour(0xffff7777):
-                                     juce::Colour(0xffe6f2f8));
-     g.setFont(juce::Font(8.f,juce::Font::bold));
-     g.drawFittedText(label,(int)x-4,bottom+5,39,12,
-                      juce::Justification::centred,1);
-     g.setColour(juce::Colour(0xffa7c8d2));
-     g.setFont(juce::Font(7.f));
-     g.drawText("L",(int)x+1,bottom+19,8,8,juce::Justification::centred);
-     g.drawText("R",(int)x+11,bottom+19,8,8,juce::Justification::centred);
+     g.setFont(juce::Font(7.f,juce::Font::bold));
+     for(int channel=0;channel<2;++channel)
+     {
+         const float amplitude=LibertyMixConsoleMeter::channelReadoutAmplitude(
+             s.meter,meterReadoutMode,channel);
+         const auto value=amplitude>0.f
+             ?juce::String(LibertyMixConsoleMeter::toDb(amplitude),1)
+             :juce::String("--");
+         const auto label=juce::String(channel==0?"L ":"R ")+value;
+         g.setColour(s.meter.channel[(size_t)channel].clipped
+             ?juce::Colour(0xffff7777):juce::Colour(0xffe6f2f8));
+         g.drawFittedText(label,(int)x-4,bottom+4+channel*11,39,11,
+                          juce::Justification::centred,1);
+     }
      g.setColour(isPeak?juce::Colour(0xffd8b66e):
                          juce::Colour(0xff8cf4fb));
      g.setFont(juce::Font(6.f,juce::Font::bold));
