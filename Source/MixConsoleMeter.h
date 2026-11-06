@@ -200,11 +200,19 @@ inline void advance(StereoDisplay& display,const StereoPeaks& peaks,
 
 // PEAK shows the existing 1.5s held sample peak. RMS shows the actual
 // weighted reading over the latest ~42ms GUI interval, not its smoothed
-// visual release. Both readouts use the loudest stereo channel in dBFS.
+// visual release. Stereo readouts keep L and R independent.
+inline float channelReadoutAmplitude(const StereoDisplay& display,
+                                    ReadoutMode mode,int channel) noexcept
+{
+    if(channel<0||channel>=2)return 0.f;
+    const auto& meter=display.channel[static_cast<std::size_t>(channel)];
+    return sanitize(mode==ReadoutMode::peak?meter.heldPeak:meter.measuredRms);
+}
+
+// Backwards-compatible combined readout used elsewhere in the mixer.
 inline float readoutAmplitude(const StereoDisplay& display,ReadoutMode mode) noexcept
 {
-    if(mode==ReadoutMode::peak)return display.heldPeak();
-    return std::max(display.channel[0].measuredRms,
-                    display.channel[1].measuredRms);
+    return std::max(channelReadoutAmplitude(display,mode,0),
+                    channelReadoutAmplitude(display,mode,1));
 }
 }
