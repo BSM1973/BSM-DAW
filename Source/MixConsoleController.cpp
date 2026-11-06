@@ -1405,16 +1405,25 @@ public:
    draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void mouseMove(const juce::MouseEvent&e)override{
-   bool onHandle=false;
+   bool onHandle=false,onReadout=false;
    for(const auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
+     if(strip->kind!=Strip::midi){
+       const auto geometry=getStripGeometry(*strip);
+       const int top=strip->bounds.getY()+geometry.faderY;
+       const int bottom=strip->bounds.getBottom()-36;
+       onReadout=bottom-top>=40&&
+           juce::Rectangle<int>(strip->bounds.getX()+4,bottom+4,40,31)
+             .contains(e.getPosition());
+     }
      if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
        onHandle=std::abs(e.getPosition().y-strip->bounds.getY()-
                          getStripGeometry(*strip).splitterY)<=6;
      break;
    }
-   setMouseCursor(onHandle?juce::MouseCursor::UpDownResizeCursor:
-                         juce::MouseCursor::NormalCursor);
+   setMouseCursor(onReadout?juce::MouseCursor::PointingHandCursor:
+       onHandle?juce::MouseCursor::UpDownResizeCursor:
+                juce::MouseCursor::NormalCursor);
  }
 private:
  struct ScrollListener:juce::ScrollBar::Listener{MixConsoleView*o=nullptr;bool vertical=false;void scrollBarMoved(juce::ScrollBar*,double v)override{if(o){if(vertical)o->verticalOffset=(int)std::round(v);else o->offset=(int)std::round(v);o->layout();o->repaint();}}}scrollListener,verticalListener;
@@ -1832,23 +1841,35 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          g.setColour(juce::Colour(0xffff4e4e));
          g.fillEllipse(frame.getRight()+2.f,frame.getY()+2.f,7.f,7.f);
      }
-     // Compact maximum L/R held peak. CLIP if either channel overloaded.
-     const auto label=s.meter.clipped()?juce::String("CLIP"):
-         s.meter.heldPeak()>0.001f?
-             juce::String(juce::jmax(-60.f,
-                 LibertyMixConsoleMeter::toDb(s.meter.heldPeak())),1)+" dB":
-             juce::String("--");
+     // Numerical PEAK = held sample peak; RMS = actual last-interval
+     // weighted RMS, not its smoothed cyan visual release.
+     // CLIP stays visible in the separate red LED.
+     const auto amplitude=LibertyMixConsoleMeter::readoutAmplitude(
+         s.meter,meterReadoutMode);
+     const auto label=amplitude>0.f
+         ?juce::String(LibertyMixConsoleMeter::toDb(amplitude),1)
+         :juce::String("--");
+     const bool isPeak=meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::peak;
+     const auto labelBox=juce::Rectangle<float>(x-4.f,(float)bottom+3.f,39.f,15.f);
+     g.setColour(juce::Colour(0xff182b3a));
+     g.fillRoundedRectangle(labelBox,2.f);
+     g.setColour(isPeak?juce::Colour(0xffd8b66e):juce::Colour(0xff8cf4fb));
+     g.drawRoundedRectangle(labelBox,2.f,1.f);
      g.setColour(s.meter.clipped()?juce::Colour(0xffff7777):
-                                     juce::Colour(0xffbed4e0));
+                                     juce::Colour(0xffe6f2f8));
      g.setFont(juce::Font(8.f,juce::Font::bold));
-     g.drawFittedText(label,(int)x-4,bottom+5,39,12,juce::Justification::centred,1);
+     g.drawFittedText(label,(int)x-4,bottom+5,39,12,
+                      juce::Justification::centred,1);
      g.setColour(juce::Colour(0xffa7c8d2));
      g.setFont(juce::Font(7.f));
      g.drawText("L",(int)x+1,bottom+19,8,8,juce::Justification::centred);
      g.drawText("R",(int)x+11,bottom+19,8,8,juce::Justification::centred);
-     g.setColour(juce::Colour(0xff8cf4fb));
-     g.setFont(juce::Font(6.f));
-     g.drawText("RMS",(int)x-1,bottom+28,23,7,juce::Justification::centred);
+     g.setColour(isPeak?juce::Colour(0xffd8b66e):
+                         juce::Colour(0xff8cf4fb));
+     g.setFont(juce::Font(6.f,juce::Font::bold));
+     g.drawFittedText(isPeak?"PEAK dBFS":"RMS dBFS",
+                      (int)x-4,bottom+28,39,8,
+                      juce::Justification::centred,1);
  }
 
  void updateMeters()
@@ -1904,9 +1925,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              const int top=strip->bounds.getY()+getStripGeometry(*strip).faderY;
              const int bottom=strip->bounds.getBottom()-36;
              if(bottom-top>=40)
-                 repaint(strip->bounds.getX()+3,top,44,bottom-top+24);
+                 repaint(strip->bounds.getX()+3,top,44,bottom-top+35);
          }
  }
+ LibertyMixConsoleMeter::ReadoutMode meterReadoutMode=
+     LibertyMixConsoleMeter::ReadoutMode::peak;
  Strip*draggingHeight=nullptr;int dragStartY=0,dragStartPreference=0;
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
 };
