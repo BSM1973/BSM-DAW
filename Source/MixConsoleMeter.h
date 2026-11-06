@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 
@@ -69,5 +70,33 @@ inline void advance(Display& display,float blockPeak) noexcept
         display.heldPeak=std::max(current,display.heldPeak*0.94f);
     if(current>=1.f)
         display.clipped=true;
+}
+
+// Two independent channel readings. Keeping the mono Display and its
+// regression tests intact preserves existing one-channel behaviour.
+using StereoPeaks=std::array<float,2>;
+
+struct StereoDisplay
+{
+    std::array<Display,2> channel{};
+
+    void resetPeak() noexcept
+    {
+        for(auto& meter:channel)meter.resetPeak();
+    }
+    bool clipped() const noexcept
+    {
+        return channel[0].clipped||channel[1].clipped;
+    }
+    float heldPeak() const noexcept
+    {
+        return std::max(channel[0].heldPeak,channel[1].heldPeak);
+    }
+};
+
+inline void advance(StereoDisplay& display,const StereoPeaks& peaks) noexcept
+{
+    advance(display.channel[0],peaks[0]);
+    advance(display.channel[1],peaks[1]);
 }
 }
