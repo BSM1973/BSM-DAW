@@ -5,6 +5,7 @@
 #include "OneKnobEffects.h"
 #include "MixConsoleLayout.h"
 #include "MixConsoleSoloLogic.h"
+#include "MixConsoleMeter.h"
 #include "ChannelDialogLayout.h"
 #include "ChannelInspectorSession.h"
 #include "ChannelInspectorPresets.h"
@@ -1320,7 +1321,7 @@ private:
  juce::TextButton applyButton{"APPLIQUER"};
 };
 
-struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;float level=0.f,peak=0.f;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
+struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;LibertyMixConsoleMeter::Display meter;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
@@ -1352,6 +1353,16 @@ public:
  void mouseDown(const juce::MouseEvent&e)override{
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
+     if(strip->kind!=Strip::midi){
+       const auto geometry=getStripGeometry(*strip);
+       const int meterTop=strip->bounds.getY()+geometry.faderY;
+       const int meterBottom=strip->bounds.getBottom()-36;
+       const juce::Rectangle<int> meterHit(
+           strip->bounds.getX()+4,meterTop,40,juce::jmax(0,meterBottom-meterTop+24));
+       if(meterBottom-meterTop>=40 && meterHit.contains(e.getPosition())){
+         strip->meter.resetPeak();repaint(meterHit);return;
+       }
+     }
      if(strip->kind!=Strip::master&&strip->kind!=Strip::midi){
        const auto g=getStripGeometry(*strip);
        const int dy=e.getPosition().y-strip->bounds.getY();
@@ -1747,9 +1758,72 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       }
     }
  }
- void drawMeter(juce::Graphics&g,const Strip&s){if(s.kind==Strip::midi)return;const int top=s.bounds.getY()+getStripGeometry(s).faderY,bottom=s.bounds.getBottom()-36;if(bottom-top<40)return;auto meter=juce::Rectangle<float>((float)s.bounds.getX()+10.f,(float)top,12.f,(float)(bottom-top));g.setColour(juce::Colour(0xff0b0f14));g.fillRoundedRectangle(meter,2.f);g.setColour(juce::Colour(0xff344452));g.drawRoundedRectangle(meter,2.f,1.f);const float db=s.level<=.00001f?-60.f:juce::jlimit(-60.f,6.f,juce::Decibels::gainToDecibels(s.level));const float norm=juce::jlimit(0.f,1.f,(db+60.f)/66.f);auto fill=meter;fill.setY(meter.getBottom()-meter.getHeight()*norm);fill.setHeight(meter.getHeight()*norm);juce::ColourGradient grad(juce::Colour(0xff54d6dc),fill.getX(),fill.getBottom(),juce::Colour(0xffe4a85e),fill.getX(),fill.getY(),false);g.setGradientFill(grad);g.fillRoundedRectangle(fill,2.f);if(s.peak>.98f){g.setColour(juce::Colour(0xffff4e4e));g.fillRect((int)meter.getX(),(int)meter.getY(),(int)meter.getWidth(),3);}}
- float audioLevel(int track)const{if(!owner.audioEngine.isPlaying()||owner.audioEngine.isTrackMuted(track))return 0.f;const auto bufferSnapshot=owner.audioEngine.getAudioBufferSnapshot(track);const auto*b=bufferSnapshot.get();const double rate=owner.audioEngine.getSampleRate();if(!b||rate<=0.||b->getNumSamples()<=0)return 0.f;const double sec=owner.audioEngine.getCurrentTimeSeconds()-owner.audioEngine.getTrackStartSeconds(track);if(sec<0.||sec>=owner.audioEngine.getAudioFileLengthSeconds(track))return 0.f;const int centre=juce::jlimit(0,b->getNumSamples()-1,(int)std::llround(sec*rate)),start=juce::jmax(0,centre-128),count=juce::jmin(256,b->getNumSamples()-start);float peak=0.f;for(int c=0;c<juce::jmin(2,b->getNumChannels());++c){const float*d=b->getReadPointer(c,start);for(int i=0;i<count;++i)peak=juce::jmax(peak,std::abs(d[i]));}return peak*owner.audioEngine.getTrackGain(track);}
- void updateMeters(){float master=0.f;for(auto&s:strips){float raw=0.f;if(s->kind==Strip::audio){raw=audioLevel(s->lane);master+=raw;}else if(s->kind==Strip::midi)continue;s->peak=juce::jmax(raw,s->peak*.90f);s->level=juce::jmax(raw,s->level*.82f);}for(auto&s:strips)if(s->kind==Strip::master){const float raw=juce::jmin(1.2f,master*owner.audioEngine.getMasterGain());s->peak=juce::jmax(raw,s->peak*.90f);s->level=juce::jmax(raw,s->level*.82f);}}
+ void drawMeter(juce::Graphics&g,const Strip&s)
+ {
+     if(s.kind==Strip::midi)return;
+     const int top=s.bounds.getY()+getStripGeometry(s).faderY;
+     const int bottom=s.bounds.getBottom()-36;
+     if(bottom-top<40)return;
+     const auto bar=juce::Rectangle<float>(
+         (float)s.bounds.getX()+10.f,(float)top,12.f,(float)(bottom-top));
+     g.setColour(juce::Colour(0xff0b1721));
+     g.fillRoundedRectangle(bar,2.f);
+     g.setColour(juce::Colour(0xff3e596e));
+     g.drawRoundedRectangle(bar,2.f,1.f);
+     const float amount=LibertyMixConsoleMeter::meterPosition(s.meter.level);
+     if(amount>0.f){
+         auto fill=bar;
+         fill.setY(bar.getBottom()-bar.getHeight()*amount);
+         fill.setHeight(bar.getHeight()*amount);
+         juce::ColourGradient gradient(
+             juce::Colour(0xff43cdbd),bar.getX(),bar.getBottom(),
+             juce::Colour(0xffff5959),bar.getX(),bar.getY(),false);
+         gradient.addColour(0.68,juce::Colour(0xffe1ba57));
+         gradient.addColour(0.91,juce::Colour(0xfff08c49));
+         g.setGradientFill(gradient);
+         g.fillRect(fill);
+     }
+     if(s.meter.heldPeak>0.f){
+         const float y=bar.getBottom()-bar.getHeight()*
+             LibertyMixConsoleMeter::meterPosition(s.meter.heldPeak);
+         g.setColour(s.meter.heldPeak>=1.f?
+             juce::Colour(0xffff6565):juce::Colour(0xfff2f6f8));
+         g.fillRect((int)bar.getX()-1,(int)std::round(y)-1,
+                    (int)bar.getWidth()+2,2);
+     }
+     // Peak hold and clipping are indicators only, never audio processing.
+     if(s.meter.clipped){
+         g.setColour(juce::Colour(0xffff4e4e));
+         g.fillEllipse(bar.getRight()+3.f,bar.getY()+2.f,7.f,7.f);
+     }
+     const auto peakLabel=s.meter.clipped?juce::String("CLIP"):
+         s.meter.heldPeak>0.001f
+             ?juce::String(juce::jmax(-60.f,
+                 LibertyMixConsoleMeter::toDb(s.meter.heldPeak)),1)+" dB"
+             :juce::String("--");
+     g.setColour(s.meter.clipped?juce::Colour(0xffff7777):juce::Colour(0xffbed4e0));
+     g.setFont(juce::Font(8.f,juce::Font::bold));
+     g.drawFittedText(peakLabel,(int)bar.getX()-6,bottom+5,43,12,
+                      juce::Justification::centred,1);
+ }
+
+ void updateMeters()
+ {
+     // Maximum rendered since the last 24 Hz frame, not the original file.
+     for(auto& strip:strips)
+     {
+         float raw=0.f;
+         if(strip->kind==Strip::audio)
+             raw=owner.audioEngine.consumeTrackMeterPeak(strip->lane);
+         else if(strip->kind==Strip::instrument)
+             raw=owner.audioEngine.consumeInstrumentMeterPeak(strip->lane);
+         else if(strip->kind==Strip::master)
+             raw=owner.audioEngine.consumeMasterMeterPeak();
+         else
+             continue;
+         LibertyMixConsoleMeter::advance(strip->meter,raw);
+     }
+ }
  void sync(){syncing=true;auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();for(auto&s:strips){if(s->kind==Strip::audio){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getTrackPan(s->lane),juce::dontSendNotification);
  // Always show the actual audio-engine values, even after changing projects,
  // loading a snapshot or adding/removing tracks.
