@@ -141,5 +141,34 @@ int main()
     assert(rmsStereo.channel[1].rms<0.35f);
     assert(std::isfinite(rmsStereo.channel[1].rms));
 
-    std::cout<<"MIXER meter: stereo peaks, weighted RMS, clip hold and reset OK\n";
+    // Numeric readout uses peak hold or the most recent measured RMS;
+    // the RMS visual bar can continue releasing without changing the number.
+    auto mode=ReadoutMode::peak;
+    assert(toggleReadoutMode(mode)==ReadoutMode::rms);
+    mode=toggleReadoutMode(mode);
+    assert(mode==ReadoutMode::rms);
+    assert(toggleReadoutMode(mode)==ReadoutMode::peak);
+    StereoDisplay readout;
+    advance(readout,StereoPeaks{{0.8f,0.3f}},
+            StereoPeaks{{0.25f,0.1f}});
+    assert(std::abs(readoutAmplitude(readout,ReadoutMode::peak)-0.8f)<0.0001f);
+    assert(std::abs(readoutAmplitude(readout,ReadoutMode::rms)-0.25f)<0.0001f);
+    assert(std::abs(toDb(readoutAmplitude(readout,ReadoutMode::rms))+12.0412f)<0.002f);
+    advance(readout,StereoPeaks{{0.f,0.f}},
+            StereoPeaks{{0.f,0.f}});
+    assert(readoutAmplitude(readout,ReadoutMode::peak)==0.8f);
+    assert(readoutAmplitude(readout,ReadoutMode::rms)==0.f);
+    assert(readout.channel[0].rms>0.f); // Visual decay independent of exact readout.
+    advance(readout,StereoPeaks{{0.4f,1.1f}},
+            StereoPeaks{{0.1f,0.32f}});
+    assert(readout.clipped());
+    assert(std::abs(readoutAmplitude(readout,ReadoutMode::rms)-0.32f)<0.0001f);
+    readout.resetPeak();
+    assert(!readout.clipped());
+    assert(readoutAmplitude(readout,ReadoutMode::peak)==0.f);
+    assert(std::abs(readoutAmplitude(readout,ReadoutMode::rms)-0.32f)<0.0001f);
+    assert(readoutAmplitude(StereoDisplay{},ReadoutMode::peak)==0.f);
+    assert(readoutAmplitude(StereoDisplay{},ReadoutMode::rms)==0.f);
+
+    std::cout<<"MIXER meter: PEAK/RMS digital mode, dBFS, stereo peaks and RMS OK\n";
 }
