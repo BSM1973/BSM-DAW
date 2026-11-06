@@ -1749,11 +1749,15 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       const int meterTop=y+geom.faderY,meterBottom=s.bounds.getBottom()-36;
       if(meterBottom-meterTop>=40){
         g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f));
+        // Correct dBFS graduation, not evenly spaced amplitude labels.
+        // Keep sparse labels when a collapsed mixer provides less height.
+        const int ticks[]={0,-18,-36,-60};
         for(int i=0;i<4;++i){
-          const int yy=i==0?meterTop:i==1?meterTop+(meterBottom-meterTop)/4:
-                        i==2?meterTop+(meterBottom-meterTop)/2:meterBottom-12;
-          g.drawText(i==0?"+6":i==1?"0":i==2?"-18":"-60",
-             s.bounds.getRight()-30,yy,22,12,juce::Justification::right);
+          if(meterBottom-meterTop<110 && (i==1||i==2))continue;
+          const float fraction=(ticks[i]+60.f)/66.f;
+          const int yy=meterBottom-(int)std::round((meterBottom-meterTop)*fraction);
+          g.drawText(juce::String(ticks[i]),s.bounds.getRight()-30,
+                     yy-6,22,12,juce::Justification::right);
         }
       }
     }
@@ -1841,7 +1845,18 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  s->eqKnobs[2]->setValue(channelSettings.eqHighDb,juce::dontSendNotification);
  refreshPower(*s);
  s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}syncing=false;}
- void timerCallback()override{if(!visible)return;updateMeters();for(auto&strip:strips)if(!strip->bounds.isEmpty()&&strip->kind!=Strip::midi){const int meterTop=strip->bounds.getY()+getStripGeometry(*strip).faderY;const int meterBottom=strip->bounds.getBottom()-36;if(meterBottom-meterTop>=40){auto meter=juce::Rectangle<int>(strip->bounds.getX()+8,meterTop,18,meterBottom-meterTop);repaint(meter);}}}
+ void timerCallback()override
+ {
+     if(!visible)return;
+     updateMeters();
+     for(auto& strip:strips)
+         if(!strip->bounds.isEmpty() && strip->kind!=Strip::midi){
+             const int top=strip->bounds.getY()+getStripGeometry(*strip).faderY;
+             const int bottom=strip->bounds.getBottom()-36;
+             if(bottom-top>=40)
+                 repaint(strip->bounds.getX()+3,top,44,bottom-top+24);
+         }
+ }
  Strip*draggingHeight=nullptr;int dragStartY=0,dragStartPreference=0;
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
 };
