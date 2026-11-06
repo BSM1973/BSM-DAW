@@ -1321,7 +1321,7 @@ private:
  juce::TextButton applyButton{"APPLIQUER"};
 };
 
-struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;LibertyMixConsoleMeter::Display meter;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
+struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;LibertyMixConsoleMeter::StereoDisplay meter;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
@@ -1768,47 +1768,62 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      const int top=s.bounds.getY()+getStripGeometry(s).faderY;
      const int bottom=s.bounds.getBottom()-36;
      if(bottom-top<40)return;
-     const auto bar=juce::Rectangle<float>(
-         (float)s.bounds.getX()+10.f,(float)top,12.f,(float)(bottom-top));
+     // Stereo twin bars, no change to existing fader/control geometry.
+     const float x=(float)s.bounds.getX()+8.f;
+     const auto frame=juce::Rectangle<float>(x,(float)top,21.f,(float)(bottom-top));
      g.setColour(juce::Colour(0xff0b1721));
-     g.fillRoundedRectangle(bar,2.f);
+     g.fillRoundedRectangle(frame,2.f);
      g.setColour(juce::Colour(0xff3e596e));
-     g.drawRoundedRectangle(bar,2.f,1.f);
-     const float amount=LibertyMixConsoleMeter::meterPosition(s.meter.level);
-     if(amount>0.f){
-         auto fill=bar;
-         fill.setY(bar.getBottom()-bar.getHeight()*amount);
-         fill.setHeight(bar.getHeight()*amount);
-         juce::ColourGradient gradient(
-             juce::Colour(0xff43cdbd),bar.getX(),bar.getBottom(),
-             juce::Colour(0xffff5959),bar.getX(),bar.getY(),false);
-         gradient.addColour(0.68,juce::Colour(0xffe1ba57));
-         gradient.addColour(0.91,juce::Colour(0xfff08c49));
-         g.setGradientFill(gradient);
-         g.fillRect(fill);
+     g.drawRoundedRectangle(frame,2.f,1.f);
+     for(int channel=0;channel<2;++channel)
+     {
+         const auto& value=s.meter.channel[(size_t)channel];
+         const auto bar=juce::Rectangle<float>(
+             x+1.f+10.f*(float)channel,(float)top+1.f,8.f,
+             (float)(bottom-top-2));
+         const float amount=LibertyMixConsoleMeter::meterPosition(value.level);
+         if(amount>0.f)
+         {
+             auto fill=bar;
+             fill.setY(bar.getBottom()-bar.getHeight()*amount);
+             fill.setHeight(bar.getHeight()*amount);
+             juce::ColourGradient gradient(
+                 juce::Colour(0xff43cdbd),bar.getX(),bar.getBottom(),
+                 juce::Colour(0xffff5959),bar.getX(),bar.getY(),false);
+             gradient.addColour(0.68,juce::Colour(0xffe1ba57));
+             gradient.addColour(0.91,juce::Colour(0xfff08c49));
+             g.setGradientFill(gradient);
+             g.fillRect(fill);
+         }
+         if(value.heldPeak>0.f)
+         {
+             const float y=bar.getBottom()-bar.getHeight()*
+                 LibertyMixConsoleMeter::meterPosition(value.heldPeak);
+             g.setColour(value.heldPeak>=1.f?
+                 juce::Colour(0xffff6565):juce::Colour(0xfff2f6f8));
+             g.fillRect((int)bar.getX(),(int)std::round(y)-1,
+                        (int)bar.getWidth(),2);
+         }
      }
-     if(s.meter.heldPeak>0.f){
-         const float y=bar.getBottom()-bar.getHeight()*
-             LibertyMixConsoleMeter::meterPosition(s.meter.heldPeak);
-         g.setColour(s.meter.heldPeak>=1.f?
-             juce::Colour(0xffff6565):juce::Colour(0xfff2f6f8));
-         g.fillRect((int)bar.getX()-1,(int)std::round(y)-1,
-                    (int)bar.getWidth()+2,2);
-     }
-     // Peak hold and clipping are indicators only, never audio processing.
-     if(s.meter.clipped){
+     if(s.meter.clipped())
+     {
          g.setColour(juce::Colour(0xffff4e4e));
-         g.fillEllipse(bar.getRight()+3.f,bar.getY()+2.f,7.f,7.f);
+         g.fillEllipse(frame.getRight()+2.f,frame.getY()+2.f,7.f,7.f);
      }
-     const auto peakLabel=s.meter.clipped?juce::String("CLIP"):
-         s.meter.heldPeak>0.001f
-             ?juce::String(juce::jmax(-60.f,
-                 LibertyMixConsoleMeter::toDb(s.meter.heldPeak)),1)+" dB"
-             :juce::String("--");
-     g.setColour(s.meter.clipped?juce::Colour(0xffff7777):juce::Colour(0xffbed4e0));
+     // Compact maximum L/R held peak. CLIP if either channel overloaded.
+     const auto label=s.meter.clipped()?juce::String("CLIP"):
+         s.meter.heldPeak()>0.001f?
+             juce::String(juce::jmax(-60.f,
+                 LibertyMixConsoleMeter::toDb(s.meter.heldPeak())),1)+" dB":
+             juce::String("--");
+     g.setColour(s.meter.clipped()?juce::Colour(0xffff7777):
+                                     juce::Colour(0xffbed4e0));
      g.setFont(juce::Font(8.f,juce::Font::bold));
-     g.drawFittedText(peakLabel,(int)bar.getX()-6,bottom+5,43,12,
-                      juce::Justification::centred,1);
+     g.drawFittedText(label,(int)x-4,bottom+5,43,12,juce::Justification::centred,1);
+     g.setColour(juce::Colour(0xffa7c8d2));
+     g.setFont(juce::Font(7.f));
+     g.drawText("L",(int)x+1,bottom+19,8,8,juce::Justification::centred);
+     g.drawText("R",(int)x+11,bottom+19,8,8,juce::Justification::centred);
  }
 
  void updateMeters()
