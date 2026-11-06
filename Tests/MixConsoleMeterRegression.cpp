@@ -107,6 +107,18 @@ int main()
     publishRms(rmsL,0.001f,512);
     assert(std::abs(toDb(consumeRms(rmsL))+60.f)<0.001f);
 
+    // Identical peak amplitudes can have completely different RMS energy.
+    // Use actual PCM samples, not the instantaneous peak as an RMS proxy.
+    std::atomic<std::uint64_t> pulseEnergy{0},steadyEnergy{0};
+    const float pulse[]={1.f,0.f,0.f,0.f};
+    const float steady[]={1.f,1.f,1.f,1.f};
+    publishRmsSamples(pulseEnergy,pulse,4);
+    publishRmsSamples(steadyEnergy,steady,4);
+    assert(std::abs(consumeRms(pulseEnergy)-0.5f)<0.0001f);
+    assert(std::abs(consumeRms(steadyEnergy)-1.f)<0.0001f);
+    publishRmsSamples(pulseEnergy,nullptr,4);
+    assert(consumeRms(pulseEnergy)==0.f);
+
     StereoDisplay rmsStereo;
     advance(rmsStereo,StereoPeaks{{0.9f,0.2f}},
             StereoPeaks{{0.25f,0.08f}});
