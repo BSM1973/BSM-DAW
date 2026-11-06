@@ -105,6 +105,7 @@ struct Display
 {
     float level=0.f;
     float rms=0.f;
+    float measuredRms=0.f; // exact per-refresh RMS before visual release
     float heldPeak=0.f;
     int holdFrames=0;
     bool clipped=false;
@@ -139,6 +140,12 @@ inline void advance(Display& display,float blockPeak) noexcept
 // Two independent channel readings. Keeping the mono Display and its
 // regression tests intact preserves existing one-channel behaviour.
 using StereoPeaks=std::array<float,2>;
+enum class ReadoutMode { peak, rms };
+
+inline constexpr ReadoutMode toggleReadoutMode(ReadoutMode current) noexcept
+{
+    return current==ReadoutMode::peak?ReadoutMode::rms:ReadoutMode::peak;
+}
 
 struct StereoDisplay
 {
@@ -174,7 +181,18 @@ inline void advance(StereoDisplay& display,const StereoPeaks& peaks,
     {
         auto& channel=display.channel[i];
         const auto current=std::min(4.f,sanitize(rms[i]));
+        channel.measuredRms=current;
         channel.rms=std::max(current,channel.rms*0.88f);
     }
+}
+
+// PEAK shows the existing 1.5s held sample peak. RMS shows the actual
+// weighted reading over the latest ~42ms GUI interval, not its smoothed
+// visual release. Both readouts use the loudest stereo channel in dBFS.
+inline float readoutAmplitude(const StereoDisplay& display,ReadoutMode mode) noexcept
+{
+    if(mode==ReadoutMode::peak)return display.heldPeak();
+    return std::max(display.channel[0].measuredRms,
+                    display.channel[1].measuredRms);
 }
 }
