@@ -1795,6 +1795,17 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              g.setGradientFill(gradient);
              g.fillRect(fill);
          }
+         // Actual RMS level: narrow cyan centre inside each peak bar.
+         const float rmsAmount=LibertyMixConsoleMeter::meterPosition(value.rms);
+         if(rmsAmount>0.f)
+         {
+             const auto rmsBar=juce::Rectangle<float>(
+                 bar.getX()+2.f,
+                 bar.getBottom()-bar.getHeight()*rmsAmount,
+                 4.f,bar.getHeight()*rmsAmount);
+             g.setColour(juce::Colour(0xff8cf4fb));
+             g.fillRect(rmsBar);
+         }
          if(value.heldPeak>0.f)
          {
              const float y=bar.getBottom()-bar.getHeight()*
@@ -1824,6 +1835,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      g.setFont(juce::Font(7.f));
      g.drawText("L",(int)x+1,bottom+19,8,8,juce::Justification::centred);
      g.drawText("R",(int)x+11,bottom+19,8,8,juce::Justification::centred);
+     g.setColour(juce::Colour(0xff8cf4fb));
+     g.setFont(juce::Font(6.f));
+     g.drawText("RMS",(int)x-1,bottom+28,23,7,juce::Justification::centred);
  }
 
  void updateMeters()
@@ -1832,15 +1846,25 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      for(auto& strip:strips)
      {
          std::array<float,2> peaks{{0.f,0.f}};
+         std::array<float,2> rms{{0.f,0.f}};
          if(strip->kind==Strip::audio)
+         {
              peaks=owner.audioEngine.consumeTrackStereoMeterPeaks(strip->lane);
+             rms=owner.audioEngine.consumeTrackStereoMeterRms(strip->lane);
+         }
          else if(strip->kind==Strip::instrument)
+         {
              peaks=owner.audioEngine.consumeInstrumentStereoMeterPeaks(strip->lane);
+             rms=owner.audioEngine.consumeInstrumentStereoMeterRms(strip->lane);
+         }
          else if(strip->kind==Strip::master)
+         {
              peaks=owner.audioEngine.consumeMasterStereoMeterPeaks();
+             rms=owner.audioEngine.consumeMasterStereoMeterRms();
+         }
          else
              continue;
-         LibertyMixConsoleMeter::advance(strip->meter,peaks);
+         LibertyMixConsoleMeter::advance(strip->meter,peaks,rms);
      }
  }
  void sync(){syncing=true;auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();for(auto&s:strips){if(s->kind==Strip::audio){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getTrackPan(s->lane),juce::dontSendNotification);
