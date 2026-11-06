@@ -147,6 +147,18 @@ inline constexpr ReadoutMode toggleReadoutMode(ReadoutMode current) noexcept
     return current==ReadoutMode::peak?ReadoutMode::rms:ReadoutMode::peak;
 }
 
+enum class MeterClick { none, resetPeaks, toggleDigital };
+
+// Pure pointer-region logic, same for audio, instrument and master strips.
+// Local X coordinates leave the fader starting at x=44 untouched.
+inline MeterClick resolveMeterClick(int localX,int y,int top,int bottom) noexcept
+{
+    if(bottom-top<40||localX<4||localX>=44)return MeterClick::none;
+    if(y>=bottom+4&&y<bottom+36)return MeterClick::toggleDigital;
+    if(y>=top&&y<bottom+2)return MeterClick::resetPeaks;
+    return MeterClick::none;
+}
+
 struct StereoDisplay
 {
     std::array<Display,2> channel{};
