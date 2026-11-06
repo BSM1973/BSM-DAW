@@ -1819,7 +1819,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      g.setColour(s.meter.clipped()?juce::Colour(0xffff7777):
                                      juce::Colour(0xffbed4e0));
      g.setFont(juce::Font(8.f,juce::Font::bold));
-     g.drawFittedText(label,(int)x-4,bottom+5,43,12,juce::Justification::centred,1);
+     g.drawFittedText(label,(int)x-4,bottom+5,39,12,juce::Justification::centred,1);
      g.setColour(juce::Colour(0xffa7c8d2));
      g.setFont(juce::Font(7.f));
      g.drawText("L",(int)x+1,bottom+19,8,8,juce::Justification::centred);
