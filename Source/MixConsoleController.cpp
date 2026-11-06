@@ -1828,19 +1828,19 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
 
  void updateMeters()
  {
-     // Maximum rendered since the last 24 Hz frame, not the original file.
+     // Consume each rendered channel independently at the existing 24 Hz.
      for(auto& strip:strips)
      {
-         float raw=0.f;
+         std::array<float,2> peaks{{0.f,0.f}};
          if(strip->kind==Strip::audio)
-             raw=owner.audioEngine.consumeTrackMeterPeak(strip->lane);
+             peaks=owner.audioEngine.consumeTrackStereoMeterPeaks(strip->lane);
          else if(strip->kind==Strip::instrument)
-             raw=owner.audioEngine.consumeInstrumentMeterPeak(strip->lane);
+             peaks=owner.audioEngine.consumeInstrumentStereoMeterPeaks(strip->lane);
          else if(strip->kind==Strip::master)
-             raw=owner.audioEngine.consumeMasterMeterPeak();
+             peaks=owner.audioEngine.consumeMasterStereoMeterPeaks();
          else
              continue;
-         LibertyMixConsoleMeter::advance(strip->meter,raw);
+         LibertyMixConsoleMeter::advance(strip->meter,peaks);
      }
  }
  void sync(){syncing=true;auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();for(auto&s:strips){if(s->kind==Strip::audio){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getTrackPan(s->lane),juce::dontSendNotification);
