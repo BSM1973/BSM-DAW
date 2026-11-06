@@ -1357,10 +1357,21 @@ public:
        const auto geometry=getStripGeometry(*strip);
        const int meterTop=strip->bounds.getY()+geometry.faderY;
        const int meterBottom=strip->bounds.getBottom()-36;
+       // Click the numeric readout/legend to switch all strips PEAK/RMS.
+       // Click the bars themselves to reset held sample peaks and CLIP.
+       const juce::Rectangle<int> readoutHit(
+           strip->bounds.getX()+4,meterBottom+4,40,31);
        const juce::Rectangle<int> meterHit(
-           strip->bounds.getX()+4,meterTop,40,juce::jmax(0,meterBottom-meterTop+24));
+           strip->bounds.getX()+4,meterTop,40,
+           juce::jmax(0,meterBottom-meterTop+2));
+       if(meterBottom-meterTop>=40 && readoutHit.contains(e.getPosition())){
+         meterReadoutMode=LibertyMixConsoleMeter::toggleReadoutMode(meterReadoutMode);
+         repaint();return;
+       }
        if(meterBottom-meterTop>=40 && meterHit.contains(e.getPosition())){
-         strip->meter.resetPeak();repaint(meterHit);return;
+         strip->meter.resetPeak();
+         repaint(strip->bounds.getX()+3,meterTop,44,meterBottom-meterTop+35);
+         return;
        }
      }
      if(strip->kind!=Strip::master&&strip->kind!=Strip::midi){
