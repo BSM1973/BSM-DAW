@@ -3,6 +3,9 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 
 // Signal peaks are published by the audio callback and exchanged by the GUI.
 // The maximum is accumulated without locks or allocating on the audio thread.
@@ -27,6 +30,51 @@ inline float consume(std::atomic<float>& maximum) noexcept
     return sanitize(maximum.exchange(0.f,std::memory_order_acq_rel));
 }
 
+// A single 64-bit atomic keeps the sample count and weighted mean-square
+// together, avoiding mismatched GUI reads and any audio-thread locks.
+// High word: sample count. Low word: IEEE-754 mean-square float.
+inline std::uint32_t rmsBits(float value) noexcept
+{
+    std::uint32_t bits=0;
+    std::memcpy(&bits,&value,sizeof(bits));
+    return bits;
+}
+inline float rmsFromBits(std::uint32_t bits) noexcept
+{
+    float value=0.f;
+    std::memcpy(&value,&bits,sizeof(value));
+    return sanitize(value);
+}
+inline void publishRms(std::atomic<std::uint64_t>& accumulator,
+                       float blockRms,int samples) noexcept
+{
+    if(samples<=0)return;
+    const float safe=std::min(16.f,sanitize(blockRms));
+    const double square=static_cast<double>(safe)*safe;
+    const auto blockCount=static_cast<std::uint32_t>(samples);
+    std::uint64_t old=accumulator.load(std::memory_order_relaxed);
+    for(;;)
+    {
+        const auto prevCount=static_cast<std::uint32_t>(old>>32);
+        const float prevSquare=rmsFromBits(static_cast<std::uint32_t>(old));
+        const auto total=static_cast<std::uint64_t>(prevCount)+blockCount;
+        const auto count=static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(total,std::numeric_limits<std::uint32_t>::max()));
+        const float meanSquare=static_cast<float>(
+            (static_cast<double>(prevCount)*prevSquare+
+             static_cast<double>(blockCount)*square) / static_cast<double>(total));
+        const auto next=(static_cast<std::uint64_t>(count)<<32)|rmsBits(meanSquare);
+        if(accumulator.compare_exchange_weak(old,next,
+            std::memory_order_release,std::memory_order_relaxed))return;
+    }
+}
+inline float consumeRms(std::atomic<std::uint64_t>& accumulator) noexcept
+{
+    const auto state=accumulator.exchange(0,std::memory_order_acq_rel);
+    if((state>>32)==0)return 0.f;
+    return std::sqrt(rmsFromBits(static_cast<std::uint32_t>(state)));
+}
+
 inline float toDb(float amplitude) noexcept
 {
     return amplitude>0.f && std::isfinite(amplitude)
@@ -41,6 +89,7 @@ inline float meterPosition(float amplitude) noexcept
 struct Display
 {
     float level=0.f;
+    float rms=0.f;
     float heldPeak=0.f;
     int holdFrames=0;
     bool clipped=false;
@@ -98,5 +147,19 @@ inline void advance(StereoDisplay& display,const StereoPeaks& peaks) noexcept
 {
     advance(display.channel[0],peaks[0]);
     advance(display.channel[1],peaks[1]);
+}
+// RMS is the actual sample-weighted mean-square energy for each channel
+// over the latest GUI interval. A gentle visual release avoids jumping to
+// zero between device callbacks while preserving the original peak latches.
+inline void advance(StereoDisplay& display,const StereoPeaks& peaks,
+                    const StereoPeaks& rms) noexcept
+{
+    advance(display,peaks);
+    for(std::size_t i=0;i<2;++i)
+    {
+        auto& channel=display.channel[i];
+        const auto current=std::min(4.f,sanitize(rms[i]));
+        channel.rms=std::max(current,channel.rms*0.88f);
+    }
 }
 }
