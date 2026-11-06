@@ -87,5 +87,47 @@ int main()
     assert(stereo.channel[1].heldPeak==0.f && !stereo.clipped());
     assert(meterPosition(stereo.channel[0].level)>=meterPosition(stereo.channel[1].level));
 
-    std::cout<<"MIXER meter: stereo L/R independent levels and peak holds, clip and reset OK\n";
+    // Weighted RMS across unequal device blocks must not average peak values.
+    std::atomic<std::uint64_t> rmsL{0},rmsR{0};
+    publishRms(rmsL,0.5f,100);
+    publishRms(rmsL,0.f,300);
+    // sqrt((100 * 0.5^2 + 300 * 0^2)/400) == 0.25
+    assert(std::abs(consumeRms(rmsL)-0.25f)<0.0001f);
+    assert(consumeRms(rmsL)==0.f);
+    publishRms(rmsL,1.f,50);
+    publishRms(rmsR,0.125f,200);
+    assert(std::abs(consumeRms(rmsL)-1.f)<0.0001f);
+    assert(std::abs(consumeRms(rmsR)-0.125f)<0.0001f);
+    publishRms(rmsL,-1.f,128);
+    publishRms(rmsL,std::numeric_limits<float>::quiet_NaN(),128);
+    publishRms(rmsL,std::numeric_limits<float>::infinity(),128);
+    assert(consumeRms(rmsL)==0.f);
+    publishRms(rmsL,0.6f,0);
+    assert(consumeRms(rmsL)==0.f);
+    publishRms(rmsL,0.001f,512);
+    assert(std::abs(toDb(consumeRms(rmsL))+60.f)<0.001f);
+
+    StereoDisplay rmsStereo;
+    advance(rmsStereo,StereoPeaks{{0.9f,0.2f}},
+            StereoPeaks{{0.25f,0.08f}});
+    assert(rmsStereo.channel[0].level==0.9f);
+    assert(rmsStereo.channel[0].rms==0.25f);
+    assert(rmsStereo.channel[1].rms==0.08f);
+    assert(!rmsStereo.clipped());
+    advance(rmsStereo,StereoPeaks{{0.f,1.2f}},
+            StereoPeaks{{0.f,0.35f}});
+    assert(rmsStereo.channel[0].rms<0.25f);
+    assert(rmsStereo.channel[0].rms>0.f);
+    assert(rmsStereo.channel[1].rms==0.35f);
+    assert(rmsStereo.channel[1].clipped);
+    assert(rmsStereo.clipped()); // RMS does not change sample-peak CLIP.
+    rmsStereo.resetPeak();
+    assert(!rmsStereo.clipped());
+    assert(rmsStereo.channel[1].rms==0.35f); // Reset affects only peak hold.
+    advance(rmsStereo,StereoPeaks{{0.f,0.f}},
+            StereoPeaks{{0.f,0.f}});
+    assert(rmsStereo.channel[1].rms<0.35f);
+    assert(std::isfinite(rmsStereo.channel[1].rms));
+
+    std::cout<<"MIXER meter: stereo peaks, weighted RMS, clip hold and reset OK\n";
 }
