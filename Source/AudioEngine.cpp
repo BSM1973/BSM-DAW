@@ -758,6 +758,107 @@ LibertyMixConsoleMeter::StereoCorrelationReading AudioEngine::consumeMasterStere
 {
     return LibertyMixConsoleMeter::consumeStereoCorrelation(masterMeterCorrelation);
 }
+
+int AudioEngine::addMixerBus() noexcept
+{
+    const int count=getMixerBusCount();
+    if(count>=maxMixerBuses)return -1;
+    auto& b=mixerBuses[(size_t)count];
+    b.gain.store(1.f);b.pan.store(0.f);b.muted.store(false);b.solo.store(false);
+    b.peakLeft.store(0.f);b.peakRight.store(0.f);b.rmsLeft.store(0);b.rmsRight.store(0);
+    LibertyMixConsoleMeter::consumeStereoCorrelation(b.correlation);
+    mixerBusCount.store(count+1,std::memory_order_release);
+    return count;
+}
+void AudioEngine::resetMixerBuses() noexcept
+{
+    mixerBusCount.store(0,std::memory_order_release);
+    for(auto& t:tracks)if(t)t->mixerBusRoute.store(-1);
+    const juce::ScopedLock lock(stateLock);
+    for(auto& t:instrumentPlayback)if(t)t->mixerBusRoute.store(-1);
+    for(auto& b:mixerBuses)
+    {
+        b.gain.store(1.f);b.pan.store(0.f);b.muted.store(false);b.solo.store(false);
+        b.peakLeft.store(0.f);b.peakRight.store(0.f);b.rmsLeft.store(0);b.rmsRight.store(0);
+        LibertyMixConsoleMeter::consumeStereoCorrelation(b.correlation);
+    }
+}
+void AudioEngine::setTrackMixerBus(int i,int bus) noexcept
+{
+    if(isValidTrackIndex(i))tracks[(size_t)i]->mixerBusRoute.store(
+        LibertyMixerBusRouting::destination(bus,getMixerBusCount()));
+}
+int AudioEngine::getTrackMixerBus(int i) const noexcept
+{
+    return isValidTrackIndex(i)?LibertyMixerBusRouting::destination(
+        tracks[(size_t)i]->mixerBusRoute.load(),getMixerBusCount()):-1;
+}
+void AudioEngine::setInstrumentMixerBus(int i,int bus) noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    if(i>=0&&i<(int)instrumentPlayback.size())instrumentPlayback[(size_t)i]->mixerBusRoute.store(
+        LibertyMixerBusRouting::destination(bus,getMixerBusCount()));
+}
+int AudioEngine::getInstrumentMixerBus(int i) const noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    return i>=0&&i<(int)instrumentPlayback.size()?LibertyMixerBusRouting::destination(
+        instrumentPlayback[(size_t)i]->mixerBusRoute.load(),getMixerBusCount()):-1;
+}
+void AudioEngine::setMixerBusGain(int i,float x) noexcept
+{
+    if(i>=0&&i<getMixerBusCount())mixerBuses[(size_t)i].gain.store(std::clamp(x,0.f,2.f));
+}
+float AudioEngine::getMixerBusGain(int i) const noexcept
+{
+    return i>=0&&i<getMixerBusCount()?mixerBuses[(size_t)i].gain.load():1.f;
+}
+void AudioEngine::setMixerBusPan(int i,float x) noexcept
+{
+    if(i>=0&&i<getMixerBusCount())mixerBuses[(size_t)i].pan.store(std::clamp(x,-1.f,1.f));
+}
+float AudioEngine::getMixerBusPan(int i) const noexcept
+{
+    return i>=0&&i<getMixerBusCount()?mixerBuses[(size_t)i].pan.load():0.f;
+}
+void AudioEngine::setMixerBusMuted(int i,bool v) noexcept
+{
+    if(i>=0&&i<getMixerBusCount())mixerBuses[(size_t)i].muted.store(v);
+}
+bool AudioEngine::isMixerBusMuted(int i) const noexcept
+{
+    return i>=0&&i<getMixerBusCount()&&mixerBuses[(size_t)i].muted.load();
+}
+void AudioEngine::setMixerBusSolo(int i,bool v) noexcept
+{
+    if(i>=0&&i<getMixerBusCount())mixerBuses[(size_t)i].solo.store(v);
+}
+bool AudioEngine::isMixerBusSolo(int i) const noexcept
+{
+    return i>=0&&i<getMixerBusCount()&&mixerBuses[(size_t)i].solo.load();
+}
+std::array<float,2> AudioEngine::consumeMixerBusPeaks(int i) noexcept
+{
+    if(i<0||i>=getMixerBusCount())return {{0.f,0.f}};
+    auto& b=mixerBuses[(size_t)i];
+    return {{LibertyMixConsoleMeter::consume(b.peakLeft),
+             LibertyMixConsoleMeter::consume(b.peakRight)}};
+}
+std::array<float,2> AudioEngine::consumeMixerBusRms(int i) noexcept
+{
+    if(i<0||i>=getMixerBusCount())return {{0.f,0.f}};
+    auto& b=mixerBuses[(size_t)i];
+    return {{LibertyMixConsoleMeter::consumeRms(b.rmsLeft),
+             LibertyMixConsoleMeter::consumeRms(b.rmsRight)}};
+}
+LibertyMixConsoleMeter::StereoCorrelationReading
+AudioEngine::consumeMixerBusCorrelation(int i) noexcept
+{
+    return i>=0&&i<getMixerBusCount()
+        ?LibertyMixConsoleMeter::consumeStereoCorrelation(mixerBuses[(size_t)i].correlation)
+        :LibertyMixConsoleMeter::StereoCorrelationReading{};
+}
+
 // Previous mono methods still return the strongest of the two channels.
 float AudioEngine::consumeTrackMeterPeak(int trackIndex) noexcept
 {
@@ -2093,6 +2194,54 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 correlation,bus.getReadPointer(0),bus.getReadPointer(1),samples);
         }
     };
+
+    // Persistent audio-thread scratch, cleared for each device block.
+    const int activeBuses=std::clamp(mixerBusCount.load(std::memory_order_acquire),0,maxMixerBuses);
+    const int busChannels=juce::jmin(2,numOutputChannels);
+    thread_local std::array<juce::AudioBuffer<float>,maxMixerBuses> busBuffers;
+    if(busChannels>0&&numSamples>0)
+        for(int i=0;i<activeBuses;++i)
+        {
+            auto& b=busBuffers[(size_t)i];
+            b.setSize(busChannels,numSamples,false,false,true);
+            b.clear();
+        }
+    const auto routeToBus=[&](int desired,const juce::AudioBuffer<float>& source)
+    {
+        const int target=LibertyMixerBusRouting::destination(desired,activeBuses);
+        if(target<0||busChannels<=0||numSamples<=0||source.getNumChannels()==0)
+            return false;
+        const int count=juce::jmin(numSamples,source.getNumSamples());
+        auto& destination=busBuffers[(size_t)target];
+        for(int channel=0;channel<busChannels;++channel)
+            destination.addFrom(channel,0,source,
+                juce::jmin(channel,source.getNumChannels()-1),0,count);
+        return true;
+    };
+    bool anyBusSolo=false;
+    for(int i=0;i<activeBuses;++i)
+        anyBusSolo=anyBusSolo||mixerBuses[(size_t)i].solo.load(std::memory_order_relaxed);
+    const auto flushBuses=[&]()
+    {
+        if(busChannels<=0||numSamples<=0)return;
+        for(int i=0;i<activeBuses;++i)
+        {
+            auto& state=mixerBuses[(size_t)i];
+            if(!LibertyMixerBusRouting::busAudible(
+                state.muted.load(),state.solo.load(),anyBusSolo))continue;
+            auto& bus=busBuffers[(size_t)i];
+            const float gain=state.gain.load(),pan=state.pan.load();
+            bus.applyGain(0,0,numSamples,LibertyMixerBusRouting::leftGain(gain,pan));
+            if(busChannels>1)
+                bus.applyGain(1,0,numSamples,LibertyMixerBusRouting::rightGain(gain,pan));
+            meterBus(state.peakLeft,state.peakRight,state.rmsLeft,state.rmsRight,
+                     state.correlation,bus);
+            for(int channel=0;channel<busChannels;++channel)
+                if(outputChannelData[channel]!=nullptr)
+                    juce::FloatVectorOperations::add(outputChannelData[channel],
+                        bus.getReadPointer(channel),numSamples);
+        }
+    };
     // Audition/monitoring also sends audio while the transport is stopped.
     const auto meterIdleOutput=[&]()
     {
@@ -2215,13 +2364,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 {
                     meterBus(state.meterPeak,state.meterPeakRight,
                              state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
-                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                        if (outputChannelData[ch] != nullptr)
-                            juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
+                    if(!routeToBus(state.mixerBusRoute.load(),bus)&&!anyBusSolo)
+                        for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                            if(outputChannelData[ch]!=nullptr&&ch<bus.getNumChannels())
+                                juce::FloatVectorOperations::add(outputChannelData[ch],
+                                    bus.getReadPointer(ch),numSamples);
                 }
             }
             stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
         }
+        flushBuses();
         meterIdleOutput();
         return;
     }
@@ -2273,11 +2425,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             {
                 meterBus(state.meterPeak,state.meterPeakRight,
                              state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
-                for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                    if (outputChannelData[ch] != nullptr)
-                        juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
+                if(!routeToBus(state.mixerBusRoute.load(),bus)&&!anyBusSolo)
+                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
+                        if(outputChannelData[ch]!=nullptr&&ch<bus.getNumChannels())
+                            juce::FloatVectorOperations::add(outputChannelData[ch],
+                                bus.getReadPointer(ch),numSamples);
             }
         }
+        flushBuses();
         meterIdleOutput();
         return;
     }
@@ -2347,9 +2502,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // mixer output before the summing bus. No DSP parameter changes.
             meterBus(track.meterPeak,track.meterPeakRight,
                      track.meterRmsLeft,track.meterRmsRight,track.meterCorrelation,trackBus);
-            for (int ch = 0; ch < insertChannels; ++ch)
-                if (outputChannelData[ch] != nullptr)
-                    juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
+            if(!routeToBus(track.mixerBusRoute.load(),trackBus)&&!anyBusSolo)
+                for (int ch = 0; ch < insertChannels; ++ch)
+                    if (outputChannelData[ch] != nullptr)
+                        juce::FloatVectorOperations::add(outputChannelData[ch],
+                            trackBus.getReadPointer(ch), numSamples);
         };
 
 
@@ -2484,13 +2641,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 meterBus(state.meterPeak,state.meterPeakRight,
                          state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,instrumentBus);
                 const int channels = juce::jmin(2, numOutputChannels);
-                for (int channel = 0; channel < channels; ++channel)
-                    if (outputChannelData[channel] != nullptr)
-                        juce::FloatVectorOperations::add(outputChannelData[channel], instrumentBus.getReadPointer(channel), numSamples);
+                if(!routeToBus(state.mixerBusRoute.load(),instrumentBus)&&!anyBusSolo)
+                    for (int channel = 0; channel < channels; ++channel)
+                        if(outputChannelData[channel]!=nullptr&&channel<instrumentBus.getNumChannels())
+                            juce::FloatVectorOperations::add(outputChannelData[channel],
+                                instrumentBus.getReadPointer(channel),numSamples);
             }
         }
     }
 
+    flushBuses();
     if (metronomeEnabled.load(std::memory_order_relaxed) && rate > 0.0)
     {
         const double bpm = juce::jmax(1.0, metronomeBpm.load(std::memory_order_relaxed));

@@ -1,4 +1,5 @@
 #include "../Source/MixConsoleMeter.h"
+#include "../Source/MixerBusRouting.h"
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -310,5 +311,18 @@ int main()
     corrDisplay.advance({});
     assert(!corrDisplay.valid&&corrDisplay.value==0.f);
     assert(same[0]==0.5f&&opposite[0]==-0.5f);
-    std::cout<<"MIXER meter: PEAK/RMS, balance, correlation and clip reset OK\n";
+
+    using namespace LibertyMixerBusRouting;
+    assert(destination(-1,3)==-1&&destination(2,3)==2);
+    assert(destination(3,3)==-1&&destination(0,0)==-1);
+    assert(destination(8,8)==-1);
+    assert(std::abs(leftGain(1.f,0.f)-1.f)<0.0001f);
+    assert(std::abs(rightGain(1.f,0.f)-1.f)<0.0001f);
+    assert(std::abs(leftGain(0.5f,1.f))<0.0001f);
+    assert(std::abs(rightGain(0.5f,1.f)-0.5f)<0.0001f);
+    assert(busAudible(false,false,false));
+    assert(busAudible(false,true,true));
+    assert(!busAudible(true,true,true));
+    assert(!busAudible(false,false,true));
+    std::cout<<"MIXER: phase correlation, routing BUS and stereo gains OK\n";
 }

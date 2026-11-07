@@ -1,5 +1,6 @@
 #pragma once
 #include "MixConsoleMeter.h"
+#include "MixerBusRouting.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -21,6 +22,7 @@ public:
     static constexpr int maxAudioTracks = 4;
     static constexpr int initialAudioTracks = 4;
     static constexpr int maxWarpMarkers = 32;
+    static constexpr int maxMixerBuses = LibertyMixerBusRouting::maxBuses;
 
     AudioEngine();
     ~AudioEngine() override;
@@ -214,6 +216,25 @@ public:
     std::array<float,2> consumeTrackStereoMeterRms(int trackIndex) noexcept;
     std::array<float,2> consumeInstrumentStereoMeterRms(int instrumentTrack) noexcept;
     std::array<float,2> consumeMasterStereoMeterRms() noexcept;
+    // Audio/instruments can feed one BUS or Master, never another BUS.
+    int getMixerBusCount() const noexcept { return mixerBusCount.load(std::memory_order_acquire); }
+    int addMixerBus() noexcept;
+    void resetMixerBuses() noexcept;
+    void setTrackMixerBus(int track,int bus) noexcept;
+    int getTrackMixerBus(int track) const noexcept;
+    void setInstrumentMixerBus(int track,int bus) noexcept;
+    int getInstrumentMixerBus(int track) const noexcept;
+    void setMixerBusGain(int bus,float value) noexcept;
+    float getMixerBusGain(int bus) const noexcept;
+    void setMixerBusPan(int bus,float value) noexcept;
+    float getMixerBusPan(int bus) const noexcept;
+    void setMixerBusMuted(int bus,bool muted) noexcept;
+    bool isMixerBusMuted(int bus) const noexcept;
+    void setMixerBusSolo(int bus,bool solo) noexcept;
+    bool isMixerBusSolo(int bus) const noexcept;
+    std::array<float,2> consumeMixerBusPeaks(int bus) noexcept;
+    std::array<float,2> consumeMixerBusRms(int bus) noexcept;
+    LibertyMixConsoleMeter::StereoCorrelationReading consumeMixerBusCorrelation(int bus) noexcept;
     LibertyMixConsoleMeter::StereoCorrelationReading consumeTrackStereoCorrelation(int trackIndex) noexcept;
     LibertyMixConsoleMeter::StereoCorrelationReading consumeInstrumentStereoCorrelation(int instrumentTrack) noexcept;
     LibertyMixConsoleMeter::StereoCorrelationReading consumeMasterStereoCorrelation() noexcept;
@@ -408,6 +429,7 @@ private:
         float channelHighPassState[2] {}, channelLowState[2] {}, channelHighState[2] {};
         float channelDynamicsEnvelope = 0.0f;
         std::atomic<float> gain { 1.0f };
+        std::atomic<int> mixerBusRoute{-1};
         std::atomic<float> meterPeak { 0.0f }; // audio callback -> L
         std::atomic<float> meterPeakRight { 0.0f }; // audio callback -> R
         std::atomic<std::uint64_t> meterRmsLeft { 0 }, meterRmsRight { 0 };
@@ -488,6 +510,7 @@ private:
         std::atomic<double> clipLengthSeconds { 0.0 };
         std::atomic<double> tempoBpm { 120.0 };
         std::atomic<float> gain { 1.0f };
+        std::atomic<int> mixerBusRoute{-1};
         std::atomic<float> meterPeak { 0.0f }; // rendered instrument L
         std::atomic<float> meterPeakRight { 0.0f }; // rendered instrument R
         std::atomic<std::uint64_t> meterRmsLeft { 0 }, meterRmsRight { 0 };
@@ -557,6 +580,16 @@ private:
     std::atomic<double> playbackClockBaseSeconds { 0.0 };
     std::atomic<double> playbackClockStartMilliseconds { 0.0 };
     std::atomic<float> masterGain { 1.0f };
+    struct MixerBusState
+    {
+        std::atomic<float> gain{1.f},pan{0.f};
+        std::atomic<bool> muted{false},solo{false};
+        std::atomic<float> peakLeft{0.f},peakRight{0.f};
+        std::atomic<std::uint64_t> rmsLeft{0},rmsRight{0};
+        LibertyMixConsoleMeter::StereoCorrelationAccumulator correlation;
+    };
+    std::atomic<int> mixerBusCount{0};
+    std::array<MixerBusState,maxMixerBuses> mixerBuses{};
     std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
     std::atomic<float> masterMeterPeakRight { 0.0f }; // post-master right
     std::atomic<std::uint64_t> masterMeterRmsLeft { 0 }, masterMeterRmsRight { 0 };
