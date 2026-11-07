@@ -6,6 +6,8 @@ int main()
 {
     using namespace LibertyNoOverlap;
     static_assert(creationControlsHaveSafeGaps(),"creation controls overlap");
+    static_assert(creationZone.bottom()<=arrangementRowsTop,
+                  "creation toolbar overlaps Arrangement track headers");
     static_assert(!intersects(audioButton,midiButton),"audio and midi overlap");
     static_assert(!intersects(instrumentButton,busButton),"BUS overlaps instrument");
     static_assert(!intersects(busButton,heightIcon),"BUS overlaps height selector");

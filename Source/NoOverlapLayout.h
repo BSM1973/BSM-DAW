@@ -22,6 +22,7 @@ constexpr bool inside(Rect r,Rect bounds) noexcept
     return r.x>=bounds.x&&r.y>=bounds.y&&r.right()<=bounds.right()&&r.bottom()<=bounds.bottom();
 }
 constexpr int transportHeight=76;
+constexpr int arrangementRowsTop=108;
 constexpr int creationZoneWidth=330;
 constexpr int mixerToolbarHeight=54;
 constexpr int mixerTopY=66;
@@ -36,7 +37,8 @@ constexpr Rect heightIcon{292,79,22,21};
 constexpr std::array<Rect,5> creationControls{
     audioButton,midiButton,instrumentButton,busButton,heightIcon
 };
-constexpr Rect creationZone{0,transportHeight,creationZoneWidth,mixerToolbarHeight};
+// Keep creation row entirely above Arrangement track rows at y=108.
+constexpr Rect creationZone{0,transportHeight,creationZoneWidth,30};
 inline Rect mixerHint(int windowWidth) noexcept
 {
     return {creationZoneWidth+14,15,
@@ -98,6 +100,8 @@ inline bool routingHasNoOverlap(int width,int height) noexcept
     }
     return true;
 }
+static_assert(creationZone.bottom()<=arrangementRowsTop,
+              "Liberty: creation toolbar must never cover Arrangement track rows");
 static_assert(creationControlsHaveSafeGaps(),
               "Liberty: controls must not overlap the wordmark or each other");
 }
