@@ -2822,6 +2822,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      }
  }
  syncing=false;
+ }
  void timerCallback()override
  {
      if(!visible)return;
