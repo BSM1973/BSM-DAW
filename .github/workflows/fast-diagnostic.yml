@@ -21,6 +21,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Reject corrupted French UI text (UTF-8)
+        run: python3 Tests/FrenchTextRegression.py
+
       - name: Verify global UI no-overlap zones and routing panel
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
@@ -78,6 +81,9 @@ jobs:
 
       - name: Guard validated track header controls
         run: python3 Tests/TrackHeaderRegression.py
+
+      - name: Reject corrupted French UI text before macOS build
+        run: python3 Tests/FrenchTextRegression.py
 
       - name: Verify strict non-overlapping global UI regions
         run: |
