@@ -216,5 +216,50 @@ int main()
     assert(resolveMeterClick(10,top+10,top,top+39)==MeterClick::none);
     assert(resolveMeterClick(10,top+45,top,top+39)==MeterClick::none);
 
-    std::cout<<"MIXER meter: PEAK/RMS digital mode, dBFS, stereo peaks and RMS OK\n";
+    // STEREO BALANCE: sample-weighted RMS difference, not a pan change.
+    // The number identifies the louder side; the pointer saturates at 24 dB.
+    auto equal=evaluateStereoBalance(0.25f,0.25f);
+    assert(equal.side==BalanceSide::center&&equal.differenceDb==0.f);
+    assert(equal.position==0.f);
+    const auto leftLouder=evaluateStereoBalance(0.5f,0.25f);
+    assert(leftLouder.side==BalanceSide::left);
+    assert(std::abs(leftLouder.differenceDb-6.0206f)<0.002f);
+    assert(leftLouder.position<0.f&&leftLouder.position>-1.f);
+    const auto rightLouder=evaluateStereoBalance(0.25f,0.5f);
+    assert(rightLouder.side==BalanceSide::right);
+    assert(std::abs(rightLouder.differenceDb-6.0206f)<0.002f);
+    assert(rightLouder.position>0.f&&rightLouder.position<1.f);
+    assert(std::abs(leftLouder.position+rightLouder.position)<0.0001f);
+    assert(evaluateStereoBalance(0.f,0.f).side==BalanceSide::silent);
+    assert(evaluateStereoBalance(0.0005f,0.0004f).side==BalanceSide::silent);
+    assert(evaluateStereoBalance(0.5f,0.f).side==BalanceSide::left);
+    assert(evaluateStereoBalance(0.f,0.5f).side==BalanceSide::right);
+    assert(evaluateStereoBalance(1.f,0.f).differenceDb==60.f);
+    assert(evaluateStereoBalance(1.f,0.f).position==-1.f);
+    assert(evaluateStereoBalance(0.f,1.f).position==1.f);
+    assert(evaluateStereoBalance(0.3f,0.299f).side==BalanceSide::center);
+    assert(evaluateStereoBalance(std::numeric_limits<float>::quiet_NaN(),0.4f)
+           .side==BalanceSide::right);
+    assert(evaluateStereoBalance(0.4f,std::numeric_limits<float>::infinity())
+           .side==BalanceSide::left);
+    assert(std::isfinite(evaluateStereoBalance(0.f,1.f).differenceDb));
+
+    StereoDisplay balanceDisplay;
+    advance(balanceDisplay,StereoPeaks{{0.7f,0.4f}},
+            StereoPeaks{{0.4f,0.2f}});
+    assert(stereoRmsBalance(balanceDisplay).side==BalanceSide::left);
+    assert(std::abs(stereoRmsBalance(balanceDisplay).differenceDb-6.0206f)<0.002f);
+    // Switch PEAK/RMS or clear CLIP: neither changes the RMS balance.
+    const auto previousBalance=stereoRmsBalance(balanceDisplay);
+    mode=toggleReadoutMode(mode);
+    balanceDisplay.resetPeak();
+    assert(stereoRmsBalance(balanceDisplay).side==previousBalance.side);
+    assert(stereoRmsBalance(balanceDisplay).differenceDb==previousBalance.differenceDb);
+    advance(balanceDisplay,StereoPeaks{{0.f,0.f}},StereoPeaks{{0.f,0.f}});
+    assert(stereoRmsBalance(balanceDisplay).side==BalanceSide::left);
+    for(int frame=0;frame<100;++frame)
+        advance(balanceDisplay,StereoPeaks{{0.f,0.f}},StereoPeaks{{0.f,0.f}});
+    assert(stereoRmsBalance(balanceDisplay).side==BalanceSide::silent);
+
+    std::cout<<"MIXER meter: PEAK/RMS L/R, RMS stereo balance and clip reset OK\n";
 }
