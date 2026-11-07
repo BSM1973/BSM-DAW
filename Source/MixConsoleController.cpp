@@ -1383,18 +1383,18 @@ public:
  // Route choices occupy a reserved, non-overlapping right-hand inspector.
  routeClose.setButtonText("X");
  routeClose.setTooltip("Fermer le panneau de routage.");
- routeClose.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff31435b));
- routeClose.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+ routeClose.setColour(juce::TextButton::buttonColourId,ModernMixer::panel);
+ routeClose.setColour(juce::TextButton::textColourOffId,ModernMixer::text);
  addAndMakeVisible(routeClose);
  routeClose.setVisible(false);
  routeClose.onClick=[this]{routingLane=-1;layout();repaint();};
  for(int i=0;i<(int)routeChoices.size();++i)
  {
      auto& button=routeChoices[(size_t)i];
-     button.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff253b50));
-     button.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff376275));
-     button.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
-     button.setColour(juce::TextButton::textColourOnId,juce::Colours::white);
+     button.setColour(juce::TextButton::buttonColourId,ModernMixer::panel);
+     button.setColour(juce::TextButton::buttonOnColourId,ModernMixer::sage.darker(.4f));
+     button.setColour(juce::TextButton::textColourOffId,ModernMixer::text);
+     button.setColour(juce::TextButton::textColourOnId,ModernMixer::text);
      button.setMouseClickGrabsKeyboardFocus(false);
      button.setClickingTogglesState(false);
      addAndMakeVisible(button);
@@ -1495,19 +1495,19 @@ public:
      if(routingLane>=0)
      {
          const auto pane=LibertyNoOverlap::routingPanel(getWidth(),getHeight(),true);
-         g.setColour(juce::Colour(0xff18283a));
+         g.setColour(ModernMixer::strip);
          g.fillRoundedRectangle((float)pane.x+2.f,(float)pane.y+2.f,
                                 (float)pane.w-4.f,(float)pane.h-4.f,7.f);
-         g.setColour(juce::Colour(0xff6686a2));
+         g.setColour(ModernMixer::border);
          g.drawRoundedRectangle((float)pane.x+2.f,(float)pane.y+2.f,
                                 (float)pane.w-4.f,(float)pane.h-4.f,7.f,1.f);
-         g.setColour(juce::Colours::white);
+         g.setColour(ModernMixer::text);
          g.setFont(juce::Font(12.f,juce::Font::bold));
          g.drawFittedText("ROUTAGE AUDIO",pane.x+14,pane.y+15,pane.w-60,25,
                           juce::Justification::centredLeft,1);
          const int logical=routingKind==Strip::audio?routingLane:
              owner.getAudioTrackCount()+owner.getMidiTrackCount()+routingLane;
-         g.setColour(juce::Colour(0xffa6c4d7));
+         g.setColour(ModernMixer::secondary);
          g.setFont(juce::Font(10.f));
          g.drawFittedText(owner.getTrackDisplayName(logical),
              pane.x+14,pane.y+42,pane.w-28,18,juce::Justification::centredLeft,1);
@@ -2028,7 +2028,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       if(s->kind==Strip::audio||s->kind==Strip::instrument||s->kind==Strip::bus){
         if(s->fxHeader){
           put(s->fxHeader.get(),7,g.insertsHeaderY,s->bounds.getWidth()-14,21);
-          juce::String text="INSERTS";
+          juce::String text="EFFETS / INSERTS";
           if(s->insertsExpanded){
             const int first=juce::jlimit(0,juce::jmax(0,8-g.visibleFx),s->firstFxSlot);
             s->firstFxSlot=first;
@@ -2112,7 +2112,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         button.setButtonText(i==0?"MASTER (direct)":"BUS "+juce::String(i));
         button.setToggleState(destination==i-1,juce::dontSendNotification);
         button.setColour(juce::TextButton::buttonColourId,destination==i-1?
-            juce::Colour(0xff376275):juce::Colour(0xff253b50));
+            ModernMixer::sage.darker(.4f):ModernMixer::panel);
     }
  }
  juce::String name(const Strip&s)const{if(s.kind==Strip::master)return owner.getMixerMasterName();if(s.kind==Strip::bus)return owner.getMixerBusName(s.lane);const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const auto n=getLibertyTrackName(logical);if(n.isNotEmpty())return n;if(s.kind==Strip::audio)return "Audio "+juce::String(s.lane+1);if(s.kind==Strip::midi)return "MIDI "+juce::String(s.lane+1);return "Instrument "+juce::String(s.lane+1);}
@@ -2136,7 +2136,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
           (s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
            owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);
       const auto tint=trackColour(getLibertyTrackColourId(logical));
-      g.setColour(tint.withAlpha(.16f));g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+      g.setColour(tint.withAlpha(.08f));g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
     }
     g.setColour(chosen?ModernMixer::sage:ModernMixer::border);
     g.drawRoundedRectangle(s.bounds.toFloat(),6.f,chosen?2.f:1.f);
@@ -2266,6 +2266,60 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       panel(geom.insertsHeaderY-1,23,ModernMixer::sage);
       if(s.insertsExpanded&&geom.visibleFx>0)
         panel(geom.fxY-2,geom.fxStep*geom.visibleFx+3,ModernMixer::sage);
+      // MorningDAW-style channel overview: show only loaded inserts
+      // while the full eight-slot panel is collapsed. Bounds end ABOVE pan.
+      if(!s.insertsExpanded)
+      {
+          const int areaTop=geom.insertsHeaderY+28;
+          const int areaBottom=geom.splitterY-5;
+          const int available=areaBottom-areaTop;
+          if(available>=52)
+          {
+              const auto overview=juce::Rectangle<float>(
+                  (float)x+9.f,(float)y+(float)areaTop,
+                  (float)w-18.f,(float)available);
+              g.setColour(juce::Colour(0xff182728));
+              g.fillRoundedRectangle(overview,3.f);
+              g.setColour(ModernMixer::border.withAlpha(.43f));
+              g.drawRoundedRectangle(overview,3.f,.7f);
+              g.setColour(ModernMixer::secondary);
+              g.setFont(juce::Font(8.f,juce::Font::bold));
+              g.drawFittedText("CHAÎNE D'EFFETS",x+15,y+areaTop+7,w-30,12,
+                               juce::Justification::centredLeft,1);
+              int shown=0,loaded=0;
+              const int maxLines=juce::jmax(0,juce::jmin(3,(available-34)/18));
+              for(const auto& fxButton:s.fx)
+              {
+                  if(!fxButton)continue;
+                  const auto label=fxButton->getButtonText();
+                  if(label.isEmpty()||label.containsIgnoreCase("EMPTY")||
+                     label.containsIgnoreCase("VIDE"))continue;
+                  ++loaded;
+                  if(shown>=maxLines)continue;
+                  g.setColour(ModernMixer::sage);
+                  g.fillEllipse((float)x+16.f,(float)(y+areaTop+27+shown*18),4.f,4.f);
+                  g.setColour(ModernMixer::text);
+                  g.setFont(juce::Font(9.f));
+                  g.drawFittedText(label,x+25,y+areaTop+23+shown*18,w-42,15,
+                                   juce::Justification::centredLeft,1);
+                  ++shown;
+              }
+              if(loaded==0)
+              {
+                  g.setColour(ModernMixer::secondary.withAlpha(.65f));
+                  g.setFont(juce::Font(9.f));
+                  g.drawFittedText("AUCUN INSERT ACTIF",x+15,y+areaTop+25,w-30,16,
+                                   juce::Justification::centredLeft,1);
+              }
+              else if(loaded>shown&&shown>0)
+              {
+                  g.setColour(ModernMixer::sage);
+                  g.setFont(juce::Font(8.f,juce::Font::bold));
+                  g.drawFittedText("+"+juce::String(loaded-shown)+" FX",
+                      x+w-49,y+areaTop+7,36,12,juce::Justification::centredRight,1);
+              }
+          }
+      }
       panel(geom.panY-2,38,ModernMixer::sage);
       panel(geom.muteY-2,30,ModernMixer::sage);
       g.setColour(juce::Colour(0xff6a9eb9));
