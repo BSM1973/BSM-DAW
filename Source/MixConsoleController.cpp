@@ -1396,6 +1396,7 @@ struct Strip{enum Kind{audio,midi,instrument,master,bus}kind=audio;int lane=0;Li
  std::array<bool,4> moduleExpanded{};std::array<std::unique_ptr<juce::TextButton>,4>moduleTabs;
  std::unique_ptr<juce::TextButton> fxHeader;bool insertsExpanded=true;
  int firstFxSlot=0;int preferredFaderHeight=320;int lastFxCount=0;
+ bool instrumentLoaded=false; // Detect a newly loaded synth independently from FX insert occupancy.
  bool gateOn=false,eqOn=false;
  bool compOn=false;std::array<std::unique_ptr<juce::TextButton>,8>fx,fxUnload;juce::Rectangle<int>bounds;};
 class MixConsoleView final:public juce::Component,private juce::Timer{
@@ -2026,12 +2027,13 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        bool inserts=true;
        int firstFx=0;
        int faderHeight=320;
+       bool instrumentLoaded=false;
    };
    std::map<std::pair<int,int>,ViewSnapshot> previous;
    for(const auto& item:strips)
        previous[{(int)item->kind,item->lane}]=
           {item->moduleExpanded,item->insertsExpanded,
-           item->firstFxSlot,item->preferredFaderHeight};
+           item->firstFxSlot,item->preferredFaderHeight,item->instrumentLoaded};
    const auto selectedKind=selected?selected->kind:Strip::master;
    const int selectedLane=selected?selected->lane:-1;
    clear();
@@ -2045,6 +2047,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
            strip->insertsExpanded=found->second.inserts;
            strip->firstFxSlot=found->second.firstFx;
            strip->preferredFaderHeight=found->second.faderHeight;
+           strip->instrumentLoaded=found->second.instrumentLoaded;
        }
        if(item.first==Strip::audio)configureValuePopup(*strip);
        if(item.first==selectedKind&&item.second==selectedLane)selected=strip.get();
@@ -2622,7 +2625,17 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  s->eqKnobs[1]->setValue(channelSettings.eqMidDb,juce::dontSendNotification);
  s->eqKnobs[2]->setValue(channelSettings.eqHighDb,juce::dontSendNotification);
  refreshPower(*s);
- s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+"  + CHARGER");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+"  + CHARGER");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::bus){
+ s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+"  + CHARGER");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);
+ // Loading the instrument does not use an FX insert. Make the first empty FX
+ // slot visible immediately, even if the rack was previously collapsed.
+ // Preserve a manual collapse while the same instrument remains loaded.
+ if(LibertyMixerProgressiveFx::revealOnInstrumentLoad(s->instrumentLoaded,ho))
+ {
+     s->insertsExpanded=true;
+     s->firstFxSlot=0;
+ }
+ s->instrumentLoaded=ho;
+ juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+"  + CHARGER");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::bus){
      s->fader->setEnabled(true);
      s->fader->setTextValueSuffix(" dB");
      s->fader->setValue(gainToDb(owner.audioEngine.getMixerBusGain(s->lane)),juce::dontSendNotification);
@@ -2641,10 +2654,18 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      if(!visible)return;
      updateMeters();
      bool fxCountChanged=false;
+     auto& host=LibertyPluginHost::instance();
      for(const auto& strip:strips)
+     {
          if((strip->kind==Strip::audio||strip->kind==Strip::instrument)&&
              strip->lastFxCount!=neededFxSlots(*strip))
              fxCountChanged=true;
+         // An instrument may be loaded from the browser, drag & drop or
+         // project restore. None of those is necessarily an FX-slot change.
+         if(strip->kind==Strip::instrument &&
+            strip->instrumentLoaded!=host.hasInstrumentForTrack(strip->lane))
+             fxCountChanged=true;
+     }
      if(fxCountChanged)
      {
          sync();layout();repaint();
