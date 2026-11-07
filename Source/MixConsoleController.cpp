@@ -1477,8 +1477,8 @@ public:
     verticalScroll.removeListener(&verticalListener);
     clear();
 }
- void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);layout();sync();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
- bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;finishRename(true);routingLane=-1;rebuild();layout();sync();repaint();}
+ void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);sync();layout();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
+ bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;finishRename(true);routingLane=-1;rebuild();sync();layout();repaint();}
  int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);if(routingLane>=0&&q.x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return -1;for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
  void paint(juce::Graphics&g)override
  {
@@ -2050,7 +2050,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        if(item.first==selectedKind&&item.second==selectedLane)selected=strip.get();
        strips.push_back(std::move(strip));
    }
-   layout();sync();
+   sync();layout();
  }
  using StripGeometry=LibertyMixerLayout::Geometry;
  int neededFxSlots(const Strip& s) const
