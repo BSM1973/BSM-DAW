@@ -1511,22 +1511,34 @@ public:
      g.fillRoundedRectangle((float)hint.x,(float)hint.y+1.f,3.f,19.f,1.5f);
      g.setColour(ModernMixer::secondary);
      g.setFont(juce::Font(10.f,juce::Font::bold));
-     g.drawFittedText(juce::String::fromUTF8(
-         "LIBERTY MIXER  |  DOUBLE-CLIC : RENOMMER  |  CLIC DROIT : COULEUR  |  GLISSER : DÉPLACER"),
-         hint.x+12,hint.y,juce::jmax(1,hint.w-12),hint.h,
-         juce::Justification::centredLeft,1);
-     const auto content=LibertyNoOverlap::mixerStripViewport(getWidth(),getHeight(),routingLane>=0);
+     const auto caption=juce::String("LIBERTY MIXER  |  ")
+         +juce::String(owner.getAudioTrackCount()+owner.getMidiTrackCount()
+                       +owner.getInstrumentTrackCount())+" PISTES  |  "
+         +juce::String(owner.audioEngine.getMixerBusCount())+" BUS  |  "
+         +juce::String::fromUTF8("MAJ + MOLETTE : DÉFILER");
+     g.drawFittedText(caption,hint.x+12,hint.y,juce::jmax(1,hint.w-12),
+                      hint.h,juce::Justification::centredLeft,1);
+     const auto bank=LibertyNoOverlap::scrollableChannels(getWidth(),getHeight(),routingLane>=0);
+     const auto master=LibertyNoOverlap::pinnedMaster(getWidth(),getHeight(),routingLane>=0);
      {
          juce::Graphics::ScopedSaveState clip(g);
-         g.reduceClipRegion(content.x,content.y,content.w,content.h);
-         for(auto& item:strips)draw(g,*item);
-         if(draggingStrip&&dropStripIndex>=0&&dropStripIndex<(int)strips.size())
+         g.reduceClipRegion(bank.x,bank.y,bank.w,bank.h);
+         for(auto& strip:strips)if(strip->kind!=Strip::master)draw(g,*strip);
+         if(draggingStrip&&dropStripIndex>=0&&dropStripIndex<(int)strips.size()-1)
          {
              const int dropX=strips[(size_t)dropStripIndex]->bounds.getX()-2;
-             g.setColour(juce::Colour(0xff6fe2ef));
-             g.fillRect(dropX,content.y,3,content.h);
+             g.setColour(ModernMixer::sage);
+             g.fillRect(dropX,bank.y,3,bank.h);
          }
      }
+     {
+         juce::Graphics::ScopedSaveState clip(g);
+         g.reduceClipRegion(master.x,master.y,master.w,master.h);
+         for(auto& strip:strips)if(strip->kind==Strip::master)draw(g,*strip);
+     }
+     g.setColour(ModernMixer::sage.withAlpha(.32f));
+     g.drawVerticalLine(master.x-6,(float)master.y+4.f,
+                        (float)master.bottom()-4.f);
      if(routingLane>=0)
      {
          const auto pane=LibertyNoOverlap::routingPanel(getWidth(),getHeight(),true);
@@ -1550,7 +1562,19 @@ public:
  }
  void resized()override{layout();}
  void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel)override{
-   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return;
+   const auto bank=LibertyNoOverlap::scrollableChannels(getWidth(),getHeight(),routingLane>=0);
+   if(e.getPosition().x>=bank.right())return;
+   // Shift+wheel or a horizontal trackpad swipe scrolls ONLY tracks.
+   if(e.mods.isShiftDown()||std::abs(wheel.deltaX)>0.001f)
+   {
+       const float amount=std::abs(wheel.deltaX)>0.001f?wheel.deltaX:wheel.deltaY;
+       const int maximum=LibertyNoOverlap::channelMaxScroll(
+           juce::jmax(0,(int)strips.size()-1),bank.w);
+       const int next=LibertyNoOverlap::channelScroll(
+           offset,(int)std::round(-amount*180.f),maximum);
+       if(next!=offset){offset=next;layout();repaint();}
+       return;
+   }
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition())||!strip->fxHeader||!strip->insertsExpanded)continue;
      const auto g=getStripGeometry(*strip);
@@ -1651,6 +1675,13 @@ public:
    if(renamingLane>=0)return;
    if(draggingStrip)
    {
+       const auto bank=LibertyNoOverlap::scrollableChannels(getWidth(),getHeight(),routingLane>=0);
+       if(e.getPosition().x<bank.x||e.getPosition().x>=bank.right())
+       {
+           dropStripIndex=-1; // Never reorder onto the fixed Master.
+           repaint();
+           return;
+       }
        dropStripIndex=juce::jlimit(0,juce::jmax(0,(int)strips.size()-2),
            (e.getPosition().x-12+offset)/stripW);
        repaint();
@@ -2053,6 +2084,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
    {
        auto strip=makeStrip(item.first,item.second);
        const auto found=previous.find({(int)item.first,item.second});
+       if(found==previous.end()&&item.first==Strip::audio)
+           strip->moduleExpanded.fill(detailedView);
        if(found!=previous.end())
        {
            strip->moduleExpanded=found->second.modules;
@@ -2068,10 +2101,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
    sync();layout();
  }
  using StripGeometry=LibertyMixerLayout::Geometry;
- int neededFxSlots(const Strip& s) const
+ std::array<bool,LibertyMixerProgressiveFx::slotLimit>
+ effectOccupancy(const Strip& s) const
  {
-     if(s.kind!=Strip::audio && s.kind!=Strip::instrument)return 1;
      std::array<bool,LibertyMixerProgressiveFx::slotLimit> occupied{};
+     if(s.kind!=Strip::audio&&s.kind!=Strip::instrument)return occupied;
      auto& host=LibertyPluginHost::instance();
      auto& one=LibertyOneKnobManager::instance();
      for(int slot=0;slot<LibertyMixerProgressiveFx::slotLimit;++slot)
@@ -2081,7 +2115,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              (s.kind==Strip::audio?host.hasEffectForTrackSlot(s.lane,slot)
                  :host.hasEffectForInstrumentTrackSlot(s.lane,slot));
      }
-     return LibertyMixerProgressiveFx::revealedCount(occupied);
+     return occupied;
+ }
+ int neededFxSlots(const Strip& s) const
+ {
+     return LibertyMixerProgressiveFx::revealedCount(effectOccupancy(s));
  }
  StripGeometry getStripGeometry(const Strip&s)const{
     const auto kind=s.kind==Strip::audio?LibertyMixerLayout::Kind::Audio:
@@ -2096,17 +2134,25 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     const auto view=LibertyNoOverlap::mixerViewButton(getWidth());
     detailButton.setBounds(view.x,view.y,view.w,view.h);
     const bool routingOpen=routingLane>=0;
-    const auto nativeViewport=LibertyNoOverlap::mixerStripViewport(getWidth(),getHeight(),routingOpen);
+    const auto nativeViewport=LibertyNoOverlap::scrollableChannels(
+        getWidth(),getHeight(),routingOpen);
+    const auto fixedMaster=LibertyNoOverlap::pinnedMaster(
+        getWidth(),getHeight(),routingOpen);
     const int viewportHeight=juce::jmax(1,nativeViewport.h);
     const int viewportWidth=juce::jmax(1,nativeViewport.w);
-    const juce::Rectangle<int> viewport(0,topY,viewportWidth,viewportHeight);
-    const int total=(int)strips.size()*stripW;
-    const int max=juce::jmax(0,total-viewportWidth+24);
+    const juce::Rectangle<int> viewport(
+        nativeViewport.x,nativeViewport.y,viewportWidth,viewportHeight);
+    const juce::Rectangle<int> pinned(fixedMaster.x,fixedMaster.y,
+                                      fixedMaster.w,fixedMaster.h);
+    const int max=LibertyNoOverlap::channelMaxScroll(
+        juce::jmax(0,(int)strips.size()-1),viewportWidth);
     offset=juce::jlimit(0,max,offset);
     int x=12-offset;
     for(auto& s:strips){
-      s->bounds={x,topY,stripW-4,viewportHeight};
-      const bool vis=s->bounds.getRight()>0&&s->bounds.getX()<viewportWidth;
+      const bool isMaster=s->kind==Strip::master;
+      s->bounds=isMaster?pinned:juce::Rectangle<int>(x,topY,stripW-4,viewportHeight);
+      const bool vis=isMaster||
+          (s->bounds.getRight()>viewport.getX()&&s->bounds.getX()<viewport.getRight());
       const int needed=neededFxSlots(*s);
       s->lastFxCount=needed;
       const auto g=getStripGeometry(*s);
@@ -2115,7 +2161,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
           if(!control)return;
           const juce::Rectangle<int> r(bx+rx,by+ry,w,h);
           control->setBounds(r);
-          control->setVisible(vis&&enabled&&h>0&&s->bounds.contains(r)&&viewport.contains(r));
+          control->setVisible(vis&&enabled&&h>0&&s->bounds.contains(r)&&
+              (isMaster?pinned.contains(r):viewport.contains(r)));
       };
       // A unique hit rectangle for every track, including instruments.
       // Child handlers forward drag to the existing channel-order system.
@@ -2158,12 +2205,14 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       if(s->kind==Strip::audio||s->kind==Strip::instrument||s->kind==Strip::bus){
         if(s->fxHeader){
           put(s->fxHeader.get(),7,g.insertsHeaderY,s->bounds.getWidth()-14,21);
-          juce::String text="EFFETS / INSERTS";
+          const int active=LibertyMixerProgressiveFx::activeCount(effectOccupancy(*s));
+          juce::String text="EFFETS "+juce::String(active)+"/8";
           if(s->insertsExpanded){
             const int first=LibertyMixerProgressiveFx::windowStart(needed,g.visibleFx,s->firstFxSlot);
             s->firstFxSlot=first;
-            text="EFFETS "+juce::String(first+1)+"-"+juce::String(first+g.visibleFx)+"/"+juce::String(needed);
+            if(g.visibleFx>0)text+="  |  "+juce::String(first+1)+"-"+juce::String(first+g.visibleFx);
           }
+          if(s->kind==Strip::bus)text="BUS VERS MASTER";
           s->fxHeader->setButtonText(text);
           s->fxHeader->setToggleState(s->insertsExpanded,juce::dontSendNotification);
         }
@@ -2201,7 +2250,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       }
       const bool showFader=s->kind!=Strip::midi&&g.faderHeight>=60;
       put(s->fader.get(),cx-bx-29,g.faderY,58,g.faderHeight,showFader);
-      x+=stripW;
+      if(!isMaster)x+=stripW;
     }
     scroll.setBounds(12,getHeight()-24,juce::jmax(1,viewportWidth-24),16);
     scroll.setRangeLimits(0,juce::jmax(1,max+viewportWidth));
@@ -2475,7 +2524,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       g.drawText("GROUP BUS",x,y+92,w,18,juce::Justification::centred);
     }else if(s.kind==Strip::master){
       g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f,juce::Font::bold));
-      g.drawText("MASTER BUS",x,y+92,w,18,juce::Justification::centred);
+      g.drawText("MASTER FIXE",x,y+92,w,18,juce::Justification::centred);
     }
     if(s.kind!=Strip::midi){
       panel(geom.faderY-3,h-geom.faderY+1,ModernMixer::amber);

@@ -13,6 +13,10 @@ constexpr bool revealOnInstrumentLoad(bool wasLoaded,bool nowLoaded) noexcept
 {
     return !wasLoaded && nowLoaded;
 }
+inline int activeCount(const std::array<bool,slotLimit>& occupied) noexcept
+{
+    return static_cast<int>(std::count(occupied.begin(),occupied.end(),true));
+}
 inline int revealedCount(const std::array<bool,slotLimit>& occupied) noexcept
 {
     int last=-1;

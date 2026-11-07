@@ -29,6 +29,24 @@ int main()
             assert(routingHasNoOverlap(width,height));
             assert(routingPanel(width,height,false).w==0);
             assert(mixerStripViewport(width,height,false).w==width);
+            for(bool routed:{false,true})
+            {
+                assert(pinnedMasterDoesNotOverlap(width,height,routed));
+                const auto bank=scrollableChannels(width,height,routed);
+                const auto master=pinnedMaster(width,height,routed);
+                assert(!intersects(bank,master));
+                assert(bank.right()+pinnedMasterGap<=master.x);
+                assert(master.right()==mixerStripViewport(width,height,routed).right());
+                assert(!intersects(master,routingPanel(width,height,routed)));
+                for(int n:{0,1,2,4,8,32})
+                {
+                    const int max=channelMaxScroll(n,bank.w);
+                    assert(max>=0);
+                    assert(channelScroll(0,-100,max)==0);
+                    assert(channelScroll(0,max+100,max)==max);
+                    assert(channelScroll(max,-100000,max)==0);
+                }
+            }
         }
     std::cout<<"Liberty: header, creation buttons and routing inspector have no overlap\n";
     return 0;

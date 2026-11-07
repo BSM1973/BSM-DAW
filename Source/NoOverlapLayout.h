@@ -28,6 +28,9 @@ constexpr int mixerToolbarHeight=54;
 constexpr int mixerTopY=66;
 constexpr int mixerBottomInset=38;
 constexpr int routingPaneWidth=224;
+constexpr int pinnedMasterWidth=146;
+constexpr int pinnedMasterGap=12;
+constexpr int mixerStripPitch=150;
 constexpr Rect logo{8,8,178,60};
 constexpr Rect audioButton{8,78,58,24};
 constexpr Rect midiButton{72,78,50,24};
@@ -70,6 +73,37 @@ inline Rect mixerStripViewport(int windowWidth,int windowHeight,bool routingOpen
     return {0,mixerTopY,
         std::max(0,windowWidth-(routingOpen?routingPaneWidth:0)),
         std::max(0,windowHeight-mixerTopY-mixerBottomInset)};
+}
+// Separate disjoint rectangles: routing inspector | pinned Master | scrollable bank.
+inline Rect pinnedMaster(int width,int height,bool routing) noexcept
+{
+    const auto all=mixerStripViewport(width,height,routing);
+    return {all.right()-pinnedMasterWidth,all.y,pinnedMasterWidth,all.h};
+}
+inline Rect scrollableChannels(int width,int height,bool routing) noexcept
+{
+    const auto all=mixerStripViewport(width,height,routing);
+    const auto master=pinnedMaster(width,height,routing);
+    return {all.x,all.y,std::max(0,master.x-all.x-pinnedMasterGap),all.h};
+}
+inline int channelMaxScroll(int channels,int areaWidth) noexcept
+{
+    return std::max(0,std::max(0,channels)*mixerStripPitch-
+                      std::max(0,areaWidth-12));
+}
+inline int channelScroll(int current,int increment,int limit) noexcept
+{
+    return std::clamp(current+increment,0,std::max(0,limit));
+}
+inline bool pinnedMasterDoesNotOverlap(int width,int height,bool routing) noexcept
+{
+    const auto master=pinnedMaster(width,height,routing);
+    const auto tracks=scrollableChannels(width,height,routing);
+    const auto inspector=routingPanel(width,height,routing);
+    return !intersects(master,tracks)&&!intersects(master,inspector)&&
+           !intersects(tracks,inspector)&&tracks.right()+pinnedMasterGap<=master.x&&
+           master.right()==mixerStripViewport(width,height,routing).right()&&
+           tracks.w>=pinnedMasterWidth;
 }
 inline Rect routingCloseButton(int windowWidth) noexcept
 {
