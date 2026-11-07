@@ -250,4 +250,100 @@ inline StereoBalance stereoRmsBalance(const StereoDisplay& display) noexcept
     return evaluateStereoBalance(display.channel[0].rms,
                                  display.channel[1].rms);
 }
+ 
+// A zero-lag stereo correlation is based on matched L/R samples, not
+// their individual RMS magnitudes. Each sample-weighted running mean and
+// count share one lock-free atomic. A torn GUI snapshot is marked invalid.
+struct StereoCorrelationAccumulator
+{
+    std::atomic<std::uint64_t> leftSquare{0},rightSquare{0},product{0};
+};
+struct StereoCorrelationReading
+{
+    float value=0.f; // -1 opposite polarity, 0 uncorrelated, +1 identical
+    bool valid=false;
+};
+inline float correlationMeanFromBits(std::uint32_t bits) noexcept
+{
+    float value=0.f;
+    std::memcpy(&value,&bits,sizeof(value));
+    return std::isfinite(value)?std::clamp(value,-256.f,256.f):0.f;
+}
+inline void publishCorrelationMean(std::atomic<std::uint64_t>& accumulator,
+                                   double blockMean,int samples) noexcept
+{
+    if(samples<=0)return;
+    const float safe=std::isfinite(blockMean)
+        ?static_cast<float>(std::clamp(blockMean,-256.0,256.0)):0.f;
+    const auto blockCount=static_cast<std::uint32_t>(samples);
+    std::uint64_t old=accumulator.load(std::memory_order_relaxed);
+    for(;;)
+    {
+        const auto previousCount=static_cast<std::uint32_t>(old>>32);
+        const double previous=correlationMeanFromBits(static_cast<std::uint32_t>(old));
+        const auto total=static_cast<std::uint64_t>(previousCount)+blockCount;
+        const auto count=static_cast<std::uint32_t>(
+            std::min<std::uint64_t>(total,std::numeric_limits<std::uint32_t>::max()));
+        const float mean=static_cast<float>(
+            (static_cast<double>(previousCount)*previous+
+             static_cast<double>(blockCount)*safe)/static_cast<double>(total));
+        const auto next=(static_cast<std::uint64_t>(count)<<32)|rmsBits(mean);
+        if(accumulator.compare_exchange_weak(old,next,
+            std::memory_order_release,std::memory_order_relaxed))return;
+    }
+}
+inline void publishStereoCorrelationSamples(StereoCorrelationAccumulator& accumulator,
+                                             const float* left,const float* right,
+                                             int samples) noexcept
+{
+    if(left==nullptr||right==nullptr||samples<=0)return;
+    double leftEnergy=0.0,rightEnergy=0.0,cross=0.0;
+    for(int i=0;i<samples;++i)
+    {
+        const double l=std::isfinite(left[i])
+            ?std::clamp(static_cast<double>(left[i]),-16.0,16.0):0.0;
+        const double r=std::isfinite(right[i])
+            ?std::clamp(static_cast<double>(right[i]),-16.0,16.0):0.0;
+        leftEnergy+=l*l;rightEnergy+=r*r;cross+=l*r;
+    }
+    const double inverse=1.0/static_cast<double>(samples);
+    publishCorrelationMean(accumulator.leftSquare,leftEnergy*inverse,samples);
+    publishCorrelationMean(accumulator.rightSquare,rightEnergy*inverse,samples);
+    publishCorrelationMean(accumulator.product,cross*inverse,samples);
+}
+inline StereoCorrelationReading consumeStereoCorrelation(
+    StereoCorrelationAccumulator& accumulator) noexcept
+{
+    const auto left=accumulator.leftSquare.exchange(0,std::memory_order_acq_rel);
+    const auto right=accumulator.rightSquare.exchange(0,std::memory_order_acq_rel);
+    const auto cross=accumulator.product.exchange(0,std::memory_order_acq_rel);
+    const auto count=left>>32;
+    if(count==0||count!=(right>>32)||count!=(cross>>32))return {};
+    const double le=correlationMeanFromBits(static_cast<std::uint32_t>(left));
+    const double re=correlationMeanFromBits(static_cast<std::uint32_t>(right));
+    // Below -60 dBFS in either channel, phase is indeterminate.
+    if(le<1.e-6||re<1.e-6)return {};
+    const double product=correlationMeanFromBits(static_cast<std::uint32_t>(cross));
+    const double value=product/std::sqrt(le*re);
+    if(!std::isfinite(value))return {};
+    return {static_cast<float>(std::clamp(value,-1.0,1.0)),true};
+}
+struct StereoCorrelationDisplay
+{
+    float value=0.f;
+    bool valid=false;
+    void advance(StereoCorrelationReading reading) noexcept
+    {
+        if(!reading.valid){value=0.f;valid=false;return;}
+        if(!valid)value=reading.value;
+        else
+        {
+            // Phase opposition appears quickly; positive recovery is gentler.
+            const float response=reading.value<value?0.65f:0.24f;
+            value+=response*(reading.value-value);
+        }
+        valid=true;
+    }
+};
+
 }

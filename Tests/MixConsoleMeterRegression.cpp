@@ -261,5 +261,54 @@ int main()
         advance(balanceDisplay,StereoPeaks{{0.f,0.f}},StereoPeaks{{0.f,0.f}});
     assert(stereoRmsBalance(balanceDisplay).side==BalanceSide::silent);
 
-    std::cout<<"MIXER meter: PEAK/RMS L/R, RMS stereo balance and clip reset OK\n";
+
+    // Stereo correlation is sample-pair phase, not a balance estimate.
+    StereoCorrelationAccumulator correlation;
+    const float same[4] {0.5f,-0.5f,0.5f,-0.5f};
+    const float opposite[4] {-0.5f,0.5f,-0.5f,0.5f};
+    publishStereoCorrelationSamples(correlation,same,same,4);
+    auto correlationReading=consumeStereoCorrelation(correlation);
+    assert(correlationReading.valid&&std::abs(correlationReading.value-1.f)<0.0001f);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    publishStereoCorrelationSamples(correlation,same,opposite,4);
+    correlationReading=consumeStereoCorrelation(correlation);
+    assert(correlationReading.valid&&std::abs(correlationReading.value+1.f)<0.0001f);
+    const float leftQ[4] {1.f,0.f,-1.f,0.f};
+    const float rightQ[4] {0.f,1.f,0.f,-1.f};
+    publishStereoCorrelationSamples(correlation,leftQ,rightQ,4);
+    correlationReading=consumeStereoCorrelation(correlation);
+    assert(correlationReading.valid&&std::abs(correlationReading.value)<0.0001f);
+    const float strong[4] {1.f,1.f,1.f,1.f};
+    const float quiet[4] {0.25f,0.25f,0.25f,0.25f};
+    const float inverted[4] {-0.25f,-0.25f,-0.25f,-0.25f};
+    publishStereoCorrelationSamples(correlation,strong,strong,4);
+    publishStereoCorrelationSamples(correlation,quiet,inverted,4);
+    correlationReading=consumeStereoCorrelation(correlation);
+    assert(correlationReading.valid);
+    assert(std::abs(correlationReading.value-(1.f-0.0625f)/(1.f+0.0625f))<0.001f);
+    const float silence[4] {0.f,0.f,0.f,0.f};
+    publishStereoCorrelationSamples(correlation,silence,silence,4);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    publishStereoCorrelationSamples(correlation,strong,silence,4);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    publishStereoCorrelationSamples(correlation,strong,nullptr,4);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    const float noise[4] {0.0001f,-0.0001f,0.0001f,-0.0001f};
+    publishStereoCorrelationSamples(correlation,noise,noise,4);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    const float nonFinite[4] {std::numeric_limits<float>::quiet_NaN(),
+                              std::numeric_limits<float>::infinity(),0.f,0.f};
+    publishStereoCorrelationSamples(correlation,nonFinite,strong,4);
+    assert(!consumeStereoCorrelation(correlation).valid);
+    StereoCorrelationDisplay corrDisplay;
+    corrDisplay.advance({1.f,true});
+    assert(corrDisplay.valid&&corrDisplay.value==1.f);
+    corrDisplay.advance({-1.f,true});
+    assert(corrDisplay.valid&&corrDisplay.value<0.f);
+    corrDisplay.advance({1.f,true});
+    assert(corrDisplay.value<1.f);
+    corrDisplay.advance({});
+    assert(!corrDisplay.valid&&corrDisplay.value==0.f);
+    assert(same[0]==0.5f&&opposite[0]==-0.5f);
+    std::cout<<"MIXER meter: PEAK/RMS, balance, correlation and clip reset OK\n";
 }

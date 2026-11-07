@@ -1321,7 +1321,7 @@ private:
  juce::TextButton applyButton{"APPLIQUER"};
 };
 
-struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;LibertyMixConsoleMeter::StereoDisplay meter;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
+struct Strip{enum Kind{audio,midi,instrument,master}kind=audio;int lane=0;LibertyMixConsoleMeter::StereoDisplay meter;LibertyMixConsoleMeter::StereoCorrelationDisplay correlation;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
@@ -1709,8 +1709,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        x+4,y+36,w-8,15,juce::Justification::centred);
     g.setColour(juce::Colour(0xff111922));
     g.fillRoundedRectangle((float)x+8,(float)y+56,(float)w-16,24.f,3.f);
-    // The routing capsule shows a live RMS stereo balance in the unused
-    // right half, without resizing or moving any module, meter or fader.
+    // The 24px route capsule holds phase correlation (left) and RMS balance
+    // (right) without moving faders, meters or any processing module.
     if(s.kind==Strip::midi){
        g.setColour(juce::Colour(0xffd1dce7));g.setFont(juce::Font(8.5f));
        g.drawText("ROUTE > MASTER",x+10,y+58,w-20,18,
@@ -1729,7 +1729,20 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        g.setColour(juce::Colour(0xffd1dce7));
        g.setFont(juce::Font(8.f,juce::Font::bold));
        g.drawFittedText(s.kind==Strip::master?"OUT 1-2":"VERS MASTER",
-                        x+10,y+57,67,15,juce::Justification::centredLeft,1);
+                        x+10,y+57,67,10,juce::Justification::centredLeft,1);
+       const auto corr=s.correlation;
+       const auto colour=!corr.valid?juce::Colour(0xff8b9ca8):
+           corr.value<0.f?juce::Colour(0xffff7777):
+           corr.value<0.3f?juce::Colour(0xfff0bc80):
+                             juce::Colour(0xff7fe0e5);
+       const juce::String corrLabel=!corr.valid?"COR --":
+           juce::String("COR ")+(corr.value>=0.f?"+":"")+juce::String(corr.value,2);
+       g.setColour(colour);
+       g.fillEllipse((float)x+11.f,(float)y+71.f,4.f,4.f);
+       g.setFont(juce::Font(7.8f,juce::Font::bold));
+       g.drawFittedText(corrLabel,x+19,y+68,56,10,
+                        juce::Justification::centredLeft,1);
+       g.setFont(juce::Font(8.f,juce::Font::bold));
        g.setColour(balance.side==LibertyMixConsoleMeter::BalanceSide::left
            ?juce::Colour(0xff7fe0e5):
            balance.side==LibertyMixConsoleMeter::BalanceSide::right
@@ -1921,16 +1934,19 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          {
              peaks=owner.audioEngine.consumeTrackStereoMeterPeaks(strip->lane);
              rms=owner.audioEngine.consumeTrackStereoMeterRms(strip->lane);
+             strip->correlation.advance(owner.audioEngine.consumeTrackStereoCorrelation(strip->lane));
          }
          else if(strip->kind==Strip::instrument)
          {
              peaks=owner.audioEngine.consumeInstrumentStereoMeterPeaks(strip->lane);
              rms=owner.audioEngine.consumeInstrumentStereoMeterRms(strip->lane);
+             strip->correlation.advance(owner.audioEngine.consumeInstrumentStereoCorrelation(strip->lane));
          }
          else if(strip->kind==Strip::master)
          {
              peaks=owner.audioEngine.consumeMasterStereoMeterPeaks();
              rms=owner.audioEngine.consumeMasterStereoMeterRms();
+             strip->correlation.advance(owner.audioEngine.consumeMasterStereoCorrelation());
          }
          else
              continue;
@@ -1960,7 +1976,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      updateMeters();
      for(auto& strip:strips)
          if(!strip->bounds.isEmpty() && strip->kind!=Strip::midi){
-             // Refresh only the existing 24px route/balance capsule.
+             // Refresh only the 24px route/correlation/balance capsule.
              // Faders and other channel modules are never repainted.
              repaint(strip->bounds.getX()+8,strip->bounds.getY()+56,
                      strip->bounds.getWidth()-16,24);

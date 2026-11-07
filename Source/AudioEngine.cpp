@@ -742,6 +742,22 @@ std::array<float,2> AudioEngine::consumeMasterStereoMeterRms() noexcept
     return {{LibertyMixConsoleMeter::consumeRms(masterMeterRmsLeft),
              LibertyMixConsoleMeter::consumeRms(masterMeterRmsRight)}};
 }
+
+LibertyMixConsoleMeter::StereoCorrelationReading AudioEngine::consumeTrackStereoCorrelation(int index) noexcept
+{
+    if(!isValidTrackIndex(index))return {};
+    return LibertyMixConsoleMeter::consumeStereoCorrelation(tracks[(size_t)index]->meterCorrelation);
+}
+LibertyMixConsoleMeter::StereoCorrelationReading AudioEngine::consumeInstrumentStereoCorrelation(int index) noexcept
+{
+    const juce::ScopedLock lock(stateLock);
+    if(index<0||index>=(int)instrumentPlayback.size())return {};
+    return LibertyMixConsoleMeter::consumeStereoCorrelation(instrumentPlayback[(size_t)index]->meterCorrelation);
+}
+LibertyMixConsoleMeter::StereoCorrelationReading AudioEngine::consumeMasterStereoCorrelation() noexcept
+{
+    return LibertyMixConsoleMeter::consumeStereoCorrelation(masterMeterCorrelation);
+}
 // Previous mono methods still return the strongest of the two channels.
 float AudioEngine::consumeTrackMeterPeak(int trackIndex) noexcept
 {
@@ -2062,6 +2078,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                            std::atomic<float>& right,
                            std::atomic<std::uint64_t>& rmsLeft,
                            std::atomic<std::uint64_t>& rmsRight,
+                           LibertyMixConsoleMeter::StereoCorrelationAccumulator& correlation,
                            const juce::AudioBuffer<float>& bus)
     {
         const int samples=bus.getNumSamples();
@@ -2072,6 +2089,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         {
             LibertyMixConsoleMeter::publish(right,bus.getMagnitude(1,0,samples));
             LibertyMixConsoleMeter::publishRms(rmsRight,bus.getRMSLevel(1,0,samples),samples);
+            LibertyMixConsoleMeter::publishStereoCorrelationSamples(
+                correlation,bus.getReadPointer(0),bus.getReadPointer(1),samples);
         }
     };
     // Audition/monitoring also sends audio while the transport is stopped.
@@ -2091,6 +2110,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     channel==0?masterMeterRmsLeft:masterMeterRmsRight,
                     outputChannelData[channel],numSamples);
             }
+        if(numOutputChannels>1&&outputChannelData[0]!=nullptr&&outputChannelData[1]!=nullptr)
+            LibertyMixConsoleMeter::publishStereoCorrelationSamples(
+                masterMeterCorrelation,outputChannelData[0],outputChannelData[1],numSamples);
     };
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
     // Drum Sampler audition bus. Runs on the audio callback, even while
@@ -2192,7 +2214,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                                   state.pan.load(std::memory_order_relaxed)))
                 {
                     meterBus(state.meterPeak,state.meterPeakRight,
-                             state.meterRmsLeft,state.meterRmsRight,bus);
+                             state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
                     for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
                         if (outputChannelData[ch] != nullptr)
                             juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
@@ -2250,7 +2272,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                               state.pan.load(std::memory_order_relaxed)))
             {
                 meterBus(state.meterPeak,state.meterPeakRight,
-                             state.meterRmsLeft,state.meterRmsRight,bus);
+                             state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
                 for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
                     if (outputChannelData[ch] != nullptr)
                         juce::FloatVectorOperations::add(outputChannelData[ch], bus.getReadPointer(ch), numSamples);
@@ -2324,7 +2346,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // Post channel processing and post-inserts; shared with the real
             // mixer output before the summing bus. No DSP parameter changes.
             meterBus(track.meterPeak,track.meterPeakRight,
-                     track.meterRmsLeft,track.meterRmsRight,trackBus);
+                     track.meterRmsLeft,track.meterRmsRight,track.meterCorrelation,trackBus);
             for (int ch = 0; ch < insertChannels; ++ch)
                 if (outputChannelData[ch] != nullptr)
                     juce::FloatVectorOperations::add(outputChannelData[ch], trackBus.getReadPointer(ch), numSamples);
@@ -2460,7 +2482,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 }
                 // Instrument strips must show audio after instruments and FX.
                 meterBus(state.meterPeak,state.meterPeakRight,
-                         state.meterRmsLeft,state.meterRmsRight,instrumentBus);
+                         state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,instrumentBus);
                 const int channels = juce::jmin(2, numOutputChannels);
                 for (int channel = 0; channel < channels; ++channel)
                     if (outputChannelData[channel] != nullptr)
@@ -2522,6 +2544,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     LibertyMixConsoleMeter::publishRmsSamples(
                         channel==0?masterMeterRmsLeft:masterMeterRmsRight,
                         outputChannelData[channel],numSamples);
+        if(numSamples>0&&numOutputChannels>1&&outputChannelData[0]!=nullptr&&outputChannelData[1]!=nullptr)
+            LibertyMixConsoleMeter::publishStereoCorrelationSamples(
+                masterMeterCorrelation,outputChannelData[0],outputChannelData[1],numSamples);
     }
     if (unsafeOutput || peak > 8.0f)
     {

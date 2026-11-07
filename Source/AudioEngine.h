@@ -1,4 +1,5 @@
 #pragma once
+#include "MixConsoleMeter.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -213,6 +214,9 @@ public:
     std::array<float,2> consumeTrackStereoMeterRms(int trackIndex) noexcept;
     std::array<float,2> consumeInstrumentStereoMeterRms(int instrumentTrack) noexcept;
     std::array<float,2> consumeMasterStereoMeterRms() noexcept;
+    LibertyMixConsoleMeter::StereoCorrelationReading consumeTrackStereoCorrelation(int trackIndex) noexcept;
+    LibertyMixConsoleMeter::StereoCorrelationReading consumeInstrumentStereoCorrelation(int instrumentTrack) noexcept;
+    LibertyMixConsoleMeter::StereoCorrelationReading consumeMasterStereoCorrelation() noexcept;
     void setTrackClipGain(int trackIndex, float gain) noexcept;
     float getTrackClipGain(int trackIndex) const noexcept;
     void setTrackClipPitch(int trackIndex, double semitones) noexcept;
@@ -407,6 +411,7 @@ private:
         std::atomic<float> meterPeak { 0.0f }; // audio callback -> L
         std::atomic<float> meterPeakRight { 0.0f }; // audio callback -> R
         std::atomic<std::uint64_t> meterRmsLeft { 0 }, meterRmsRight { 0 };
+        LibertyMixConsoleMeter::StereoCorrelationAccumulator meterCorrelation;
         std::atomic<float> clipGain { 1.0f };
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
@@ -486,6 +491,7 @@ private:
         std::atomic<float> meterPeak { 0.0f }; // rendered instrument L
         std::atomic<float> meterPeakRight { 0.0f }; // rendered instrument R
         std::atomic<std::uint64_t> meterRmsLeft { 0 }, meterRmsRight { 0 };
+        LibertyMixConsoleMeter::StereoCorrelationAccumulator meterCorrelation;
         std::atomic<float> pan { 0.0f };
         std::atomic<bool> muted { false };
         std::atomic<bool> solo { false };
@@ -554,6 +560,7 @@ private:
     std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
     std::atomic<float> masterMeterPeakRight { 0.0f }; // post-master right
     std::atomic<std::uint64_t> masterMeterRmsLeft { 0 }, masterMeterRmsRight { 0 };
+    LibertyMixConsoleMeter::StereoCorrelationAccumulator masterMeterCorrelation;
     std::atomic<bool> inputMonitoringEnabled { false };
     std::atomic<int> monitorInputLeft { 0 };
     std::atomic<int> monitorInputRight { 1 };
