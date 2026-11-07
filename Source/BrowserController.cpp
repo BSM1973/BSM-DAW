@@ -6,6 +6,7 @@
 #include "LibertyDesignSystem.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
+void resizeLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -159,6 +160,7 @@ public:
         toggleButton.setVisible(true);
         toggleButton.toFront(false);
     }
+    bool isOpenForMixer() const noexcept {return browserOpen;}
 
     void openForEffectSlot(bool instrument,int lane,int slot)
     {
@@ -508,6 +510,9 @@ private:
         setVisible(browserOpen);
         if (browserOpen) toFront(false);
         adjustHostWindow(browserOpen);
+        // The mixer claims only the left viewport, so the right plugin
+        // browser never covers channel strips or floating fader controls.
+        resizeLibertyMixConsole(&owner);
         owner.repaint();
     }
 
@@ -1173,6 +1178,15 @@ void ensureLibertyBrowserController(MainComponent* main)
         it->second->ensureToggleVisible();
 }
 
+
+int getLibertyBrowserReservedWidth(MainComponent* owner)
+{
+    if(owner==nullptr)return 0;
+    const auto it=browsers.find(owner);
+    if(it==browsers.end()||!it->second||!it->second->isOpenForMixer())return 0;
+    return juce::jlimit(260,juce::jmax(260,owner->getWidth()-220),
+                       getLibertyPreferredBrowserWidth(owner));
+}
 
 void showLibertyEffectBrowserForSlot(MainComponent* owner,bool instrument,int lane,int slot)
 {
