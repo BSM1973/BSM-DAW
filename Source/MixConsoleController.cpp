@@ -4,6 +4,7 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include "MixConsoleLayout.h"
+#include "NoOverlapLayout.h"
 #include "MixConsoleSoloLogic.h"
 #include "MixConsoleMeter.h"
 #include "ChannelDialogLayout.h"
@@ -1333,30 +1334,99 @@ struct Strip{enum Kind{audio,midi,instrument,master,bus}kind=audio;int lane=0;Li
 class MixConsoleView final:public juce::Component,private juce::Timer{
 public:
  explicit MixConsoleView(MainComponent&o):owner(o){scrollListener.o=this;verticalListener.o=this;verticalListener.vertical=true;verticalScroll.addListener(&verticalListener);addAndMakeVisible(verticalScroll);setOpaque(true);setInterceptsMouseClicks(true,true);scroll.setRangeLimits(0,1);scroll.addListener(&scrollListener);addAndMakeVisible(scroll);owner.addAndMakeVisible(this);
- addBusButton.setButtonText("+ BUS");
- addBusButton.setTooltip("Créer un BUS stéréo pour regrouper des pistes.");
- addBusButton.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff503767));
- addBusButton.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
- addAndMakeVisible(addBusButton);
- addBusButton.onClick=[this]{
-   if(owner.audioEngine.addMixerBus()>=0){rebuild();sync();repaint();}
- };
+ // The shared +BUS lives with +AUDIO/+MIDI/+INSTRUMENT under the logo.
+ // Route choices occupy a reserved, non-overlapping right-hand inspector.
+ routeClose.setButtonText("X");
+ routeClose.setTooltip("Fermer le panneau de routage.");
+ routeClose.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff31435b));
+ routeClose.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+ addAndMakeVisible(routeClose);
+ routeClose.setVisible(false);
+ routeClose.onClick=[this]{routingLane=-1;layout();repaint();};
+ for(int i=0;i<(int)routeChoices.size();++i)
+ {
+     auto& button=routeChoices[(size_t)i];
+     button.setColour(juce::TextButton::buttonColourId,juce::Colour(0xff253b50));
+     button.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff376275));
+     button.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+     button.setColour(juce::TextButton::textColourOnId,juce::Colours::white);
+     button.setMouseClickGrabsKeyboardFocus(false);
+     button.setClickingTogglesState(false);
+     addAndMakeVisible(button);
+     button.setVisible(false);
+     button.onClick=[this,i]
+     {
+         if(routingLane<0)return;
+         const int destination=i-1; // 0 -> Master, 1...8 -> BUS
+         if(routingKind==Strip::audio)
+             owner.audioEngine.setTrackMixerBus(routingLane,destination);
+         else
+             owner.audioEngine.setInstrumentMixerBus(routingLane,destination);
+         routingLane=-1;
+         layout();
+         repaint();
+     };
+ }
  startTimerHz(24);setVisible(false);}
  ~MixConsoleView()override{stopTimer();scroll.removeListener(&scrollListener);verticalScroll.removeListener(&verticalListener);clear();}
  void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);layout();sync();updateMeters();repaint();}else{selected=nullptr;}}
- bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;rebuild();sync();repaint();}
- int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
- void paint(juce::Graphics&g)override{g.fillAll(juce::Colour(0xff0b0f14));g.setColour(juce::Colour(0xff18212b));g.fillRect(0,0,getWidth(),54);g.setColour(juce::Colour(0xff344452));g.drawHorizontalLine(53,0.0f,(float)getWidth());g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(10.f));g.drawFittedText(juce::String::fromUTF8("SECTIONS LIBRES  |  MAJ + CLIC : MÊME SECTION SUR TOUTES LES PISTES  |  DOUBLE-CLIC SÉPARATEUR : HAUTEUR NORMALE"),
-  18,15,juce::jmax(1,getWidth()-155),20,juce::Justification::centredLeft,1);{juce::Graphics::ScopedSaveState clip(g);g.reduceClipRegion(0,topY,getWidth(),juce::jmax(1,getHeight()-topY-38));for(auto&s:strips)draw(g,*s);
- if(draggingStrip&&dropStripIndex>=0&&dropStripIndex<(int)strips.size())
+ bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;routingLane=-1;rebuild();layout();sync();repaint();}
+ int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);if(routingLane>=0&&q.x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return -1;for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
+ void paint(juce::Graphics&g)override
  {
-     const int x=strips[(size_t)dropStripIndex]->bounds.getX()-2;
-     g.setColour(juce::Colour(0xff6fe2ef));
-     g.fillRect(x,topY,3,juce::jmax(1,getHeight()-topY-38));
+     g.fillAll(juce::Colour(0xff0b0f14));
+     g.setColour(juce::Colour(0xff18212b));
+     g.fillRect(0,0,getWidth(),LibertyNoOverlap::mixerToolbarHeight);
+     // The 330px left zone belongs exclusively to the creation controls.
+     // Never draw a caption or another mixer command over it.
+     g.setColour(juce::Colour(0xff122332));
+     g.fillRect(0,0,LibertyNoOverlap::creationZoneWidth,
+                LibertyNoOverlap::mixerToolbarHeight);
+     g.setColour(juce::Colour(0xff344452));
+     g.drawHorizontalLine(53,0.0f,(float)getWidth());
+     g.drawVerticalLine(LibertyNoOverlap::creationZoneWidth,3.0f,50.0f);
+     const auto hint=LibertyNoOverlap::mixerHint(getWidth());
+     g.setColour(juce::Colour(0xffb5c3d1));
+     g.setFont(juce::Font(10.f));
+     g.drawFittedText(juce::String::fromUTF8(
+         "SECTIONS LIBRES  |  MAJ + CLIC : MÊME SECTION SUR TOUTES LES PISTES  |  DOUBLE-CLIC SÉPARATEUR : HAUTEUR NORMALE"),
+         hint.x,hint.y,hint.w,hint.h,juce::Justification::centredLeft,1);
+     const auto content=LibertyNoOverlap::mixerStripViewport(getWidth(),getHeight(),routingLane>=0);
+     {
+         juce::Graphics::ScopedSaveState clip(g);
+         g.reduceClipRegion(content.x,content.y,content.w,content.h);
+         for(auto& item:strips)draw(g,*item);
+         if(draggingStrip&&dropStripIndex>=0&&dropStripIndex<(int)strips.size())
+         {
+             const int dropX=strips[(size_t)dropStripIndex]->bounds.getX()-2;
+             g.setColour(juce::Colour(0xff6fe2ef));
+             g.fillRect(dropX,content.y,3,content.h);
+         }
+     }
+     if(routingLane>=0)
+     {
+         const auto pane=LibertyNoOverlap::routingPanel(getWidth(),getHeight(),true);
+         g.setColour(juce::Colour(0xff18283a));
+         g.fillRoundedRectangle((float)pane.x+2.f,(float)pane.y+2.f,
+                                (float)pane.w-4.f,(float)pane.h-4.f,7.f);
+         g.setColour(juce::Colour(0xff6686a2));
+         g.drawRoundedRectangle((float)pane.x+2.f,(float)pane.y+2.f,
+                                (float)pane.w-4.f,(float)pane.h-4.f,7.f,1.f);
+         g.setColour(juce::Colours::white);
+         g.setFont(juce::Font(12.f,juce::Font::bold));
+         g.drawFittedText("ROUTAGE AUDIO",pane.x+14,pane.y+15,pane.w-60,25,
+                          juce::Justification::centredLeft,1);
+         const int logical=routingKind==Strip::audio?routingLane:
+             owner.getAudioTrackCount()+owner.getMidiTrackCount()+routingLane;
+         g.setColour(juce::Colour(0xffa6c4d7));
+         g.setFont(juce::Font(10.f));
+         g.drawFittedText(owner.getTrackDisplayName(logical),
+             pane.x+14,pane.y+42,pane.w-28,18,juce::Justification::centredLeft,1);
+     }
  }
- }}
  void resized()override{layout();}
  void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel)override{
+   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return;
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition())||!strip->fxHeader||!strip->insertsExpanded)continue;
      const auto g=getStripGeometry(*strip);
@@ -1367,6 +1437,8 @@ public:
    }
  }
  void mouseDown(const juce::MouseEvent&e)override{
+   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)
+       return; // Reserved routing sidebar, never a strip.
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
      // The route label is clickable, with no conflict with COR/BAL or faders.
@@ -1377,27 +1449,10 @@ public:
         e.getPosition().y>=strip->bounds.getY()+55&&
         e.getPosition().y<strip->bounds.getY()+68)
      {
-         const auto kind=strip->kind;
-         const int lane=strip->lane;
-         const int current=kind==Strip::audio?
-             owner.audioEngine.getTrackMixerBus(lane):
-             owner.audioEngine.getInstrumentMixerBus(lane);
-         juce::PopupMenu menu;
-         menu.addSectionHeader("ROUTAGE AUDIO");
-         menu.addItem(1,"MASTER (direct)",true,current<0);
-         for(int i=0;i<owner.audioEngine.getMixerBusCount();++i)
-             menu.addItem(i+2,"BUS "+juce::String(i+1),true,current==i);
-         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
-             [safe=juce::Component::SafePointer<MixConsoleView>(this),kind,lane](int choice)
-             {
-                 if(safe==nullptr||choice==0)return;
-                 const int destination=choice-2;
-                 if(kind==Strip::audio)
-                     safe->owner.audioEngine.setTrackMixerBus(lane,destination);
-                 else
-                     safe->owner.audioEngine.setInstrumentMixerBus(lane,destination);
-                 safe->repaint();
-             });
+         routingKind=strip->kind;
+         routingLane=strip->lane;
+         layout();
+         repaint();
          return;
      }
 
@@ -1505,6 +1560,11 @@ public:
    draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void mouseMove(const juce::MouseEvent&e)override{
+   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)
+   {
+       setMouseCursor(juce::MouseCursor::NormalCursor);
+       return;
+   }
    bool onHandle=false,onReadout=false,onRoute=false;
    for(const auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
@@ -1736,16 +1796,18 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         s.moduleExpanded,s.insertsExpanded,s.preferredFaderHeight);
  }
  void layout(){
-    addBusButton.setBounds(juce::jmax(5,getWidth()-120),12,94,27);
-    const int viewportHeight=juce::jmax(1,getHeight()-topY-38);
-    const juce::Rectangle<int> viewport(0,topY,juce::jmax(1,getWidth()),viewportHeight);
+    const bool routingOpen=routingLane>=0;
+    const auto nativeViewport=LibertyNoOverlap::mixerStripViewport(getWidth(),getHeight(),routingOpen);
+    const int viewportHeight=juce::jmax(1,nativeViewport.h);
+    const int viewportWidth=juce::jmax(1,nativeViewport.w);
+    const juce::Rectangle<int> viewport(0,topY,viewportWidth,viewportHeight);
     const int total=(int)strips.size()*stripW;
-    const int max=juce::jmax(0,total-getWidth()+24);
+    const int max=juce::jmax(0,total-viewportWidth+24);
     offset=juce::jlimit(0,max,offset);
     int x=12-offset;
     for(auto& s:strips){
       s->bounds={x,topY,stripW-4,viewportHeight};
-      const bool vis=s->bounds.getRight()>0&&s->bounds.getX()<getWidth();
+      const bool vis=s->bounds.getRight()>0&&s->bounds.getX()<viewportWidth;
       const auto g=getStripGeometry(*s);
       const int bx=s->bounds.getX(),by=s->bounds.getY(),cx=s->bounds.getCentreX();
       auto put=[&](juce::Component* control,int rx,int ry,int w,int h,bool enabled=true){
@@ -1834,11 +1896,34 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       put(s->fader.get(),cx-bx-29,g.faderY,58,g.faderHeight,showFader);
       x+=stripW;
     }
-    scroll.setBounds(12,getHeight()-24,juce::jmax(1,getWidth()-24),16);
-    scroll.setRangeLimits(0,juce::jmax(1,max+getWidth()));
-    scroll.setCurrentRange(offset,getWidth(),juce::dontSendNotification);
+    scroll.setBounds(12,getHeight()-24,juce::jmax(1,viewportWidth-24),16);
+    scroll.setRangeLimits(0,juce::jmax(1,max+viewportWidth));
+    scroll.setCurrentRange(offset,viewportWidth,juce::dontSendNotification);
     scroll.setVisible(max>0);
     verticalScroll.setVisible(false);
+    routeClose.setVisible(routingOpen);
+    if(routingOpen)
+    {
+        const auto closeRect=LibertyNoOverlap::routingCloseButton(getWidth());
+        routeClose.setBounds(closeRect.x,closeRect.y,closeRect.w,closeRect.h);
+    }
+    const int buses=owner.audioEngine.getMixerBusCount();
+    const int destination=routingOpen?(routingKind==Strip::audio?
+        owner.audioEngine.getTrackMixerBus(routingLane):
+        owner.audioEngine.getInstrumentMixerBus(routingLane)):-1;
+    for(int i=0;i<(int)routeChoices.size();++i)
+    {
+        auto& button=routeChoices[(size_t)i];
+        const bool show=routingOpen&&(i==0||i<=buses);
+        button.setVisible(show);
+        if(!show)continue;
+        const auto r=LibertyNoOverlap::routingOptionButton(getWidth(),i);
+        button.setBounds(r.x,r.y,r.w,r.h);
+        button.setButtonText(i==0?"MASTER (direct)":"BUS "+juce::String(i));
+        button.setToggleState(destination==i-1,juce::dontSendNotification);
+        button.setColour(juce::TextButton::buttonColourId,destination==i-1?
+            juce::Colour(0xff376275):juce::Colour(0xff253b50));
+    }
  }
  juce::String name(const Strip&s)const{if(s.kind==Strip::master)return "MASTER";if(s.kind==Strip::bus)return "BUS "+juce::String(s.lane+1);const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const auto n=getLibertyTrackName(logical);if(n.isNotEmpty())return n;if(s.kind==Strip::audio)return "Audio "+juce::String(s.lane+1);if(s.kind==Strip::midi)return "MIDI "+juce::String(s.lane+1);return "Instrument "+juce::String(s.lane+1);}
  bool isSelected(const Strip&s)const{if(selected==&s)return true;if(s.kind==Strip::master||s.kind==Strip::bus)return false;const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);return owner.selectedTrack==logical;}void draw(juce::Graphics&g,Strip&s){
@@ -2192,7 +2277,12 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      LibertyMixConsoleMeter::ReadoutMode::peak;
  Strip*draggingHeight=nullptr;Strip*draggingStrip=nullptr;int dropStripIndex=-1;
  int dragStartY=0,dragStartPreference=0;
- MainComponent&owner;ConsoleLookAndFeel lookAndFeel;juce::TextButton addBusButton;std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
+ MainComponent&owner;ConsoleLookAndFeel lookAndFeel;
+ juce::TextButton routeClose;
+ std::array<juce::TextButton,9> routeChoices;
+ int routingLane=-1;
+ Strip::Kind routingKind=Strip::audio;
+ std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
 };
 // The page tab in PageModeCoordinator is the only mixer navigation button.
 // Do not create duplicate controls over the transport.
