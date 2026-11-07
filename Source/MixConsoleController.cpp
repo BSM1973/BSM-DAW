@@ -1960,6 +1960,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      updateMeters();
      for(auto& strip:strips)
          if(!strip->bounds.isEmpty() && strip->kind!=Strip::midi){
+             // Refresh only the existing 24px route/balance capsule.
+             // Faders and other channel modules are never repainted.
+             repaint(strip->bounds.getX()+8,strip->bounds.getY()+56,
+                     strip->bounds.getWidth()-16,24);
              const int top=strip->bounds.getY()+getStripGeometry(*strip).faderY;
              const int bottom=strip->bounds.getBottom()-36;
              if(bottom-top>=40)
