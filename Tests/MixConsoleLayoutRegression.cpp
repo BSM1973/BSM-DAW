@@ -59,6 +59,21 @@ int main(){
              assert(g.muteY+26<=g.faderY);
              assert(g.faderHeight>=90);
          }
+ // Synthesizer slot is visually separate (y=82..106), above the FX section.
+ // A loaded instrument still owns one visible EMPTY FX insert before any
+ // audio effects are loaded. Neither section intersects pan or the fader.
+ for(int height:{400,480,620,720,900,1200})
+ {
+     const auto instrument=calculate(height,Kind::Instrument,
+                 {false,false,false,false},true,320,1);
+     assert(instrument.insertsHeaderY>=116);
+     assert(instrument.fxY>=instrument.insertsHeaderY+21);
+     assert(instrument.visibleFx==1);
+     assert(instrument.fxY+instrument.fxStep<=instrument.splitterY);
+     assert(instrument.splitterY+4<=instrument.panY);
+     assert(instrument.panY+34<=instrument.muteY);
+     assert(instrument.muteY+26<=instrument.faderY);
+ }
  // All four modules and eight effect slots must fit in a normal 900px window.
  const auto all=calculate(720,Kind::Audio,{true,true,true,true},true,250);
  assert(all.visibleFx==8&&all.faderHeight>=90);
