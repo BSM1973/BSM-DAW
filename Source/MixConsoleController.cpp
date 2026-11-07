@@ -1724,7 +1724,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  using StripGeometry=LibertyMixerLayout::Geometry;
  StripGeometry getStripGeometry(const Strip&s)const{
     const auto kind=s.kind==Strip::audio?LibertyMixerLayout::Kind::Audio:
-        s.kind==Strip::instrument?LibertyMixerLayout::Kind::Instrument:
+        (s.kind==Strip::instrument||s.kind==Strip::bus)?LibertyMixerLayout::Kind::Instrument:
         s.kind==Strip::master?LibertyMixerLayout::Kind::Master:
         LibertyMixerLayout::Kind::Midi;
     return LibertyMixerLayout::calculate(s.bounds.getHeight(),kind,
