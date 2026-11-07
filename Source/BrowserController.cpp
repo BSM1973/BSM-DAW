@@ -160,6 +160,22 @@ public:
         toggleButton.toFront(false);
     }
 
+    void openForEffectSlot(bool instrument,int lane,int slot)
+    {
+        if(slot<0||slot>=LibertyPluginHost::effectSlotsPerTrack ||
+           lane<0||(instrument?lane>=owner.getInstrumentTrackCount()
+                                :lane>=owner.getAudioTrackCount()))
+            return;
+        targetIsInstrument=instrument;
+        targetEffectLane=lane;
+        targetEffectSlot=slot;
+        owner.selectedTrack=instrument
+            ?owner.getAudioTrackCount()+owner.getMidiTrackCount()+lane:lane;
+        setCategory(Category::plugins);
+        toggleButton.setToggleState(true,juce::dontSendNotification);
+        setBrowserOpen(true);
+    }
+
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
     {
@@ -483,6 +499,11 @@ private:
 
     void setBrowserOpen(bool shouldOpen)
     {
+        if(!shouldOpen)
+        {
+            targetEffectSlot=-1;
+            targetEffectLane=-1;
+        }
         browserOpen = shouldOpen;
         setVisible(browserOpen);
         if (browserOpen) toFront(false);
@@ -708,6 +729,52 @@ private:
     void loadPluginDescription(const juce::PluginDescription& d)
     {
         if (scanning.load()) return;
+        if(targetEffectSlot>=0)
+        {
+            if(d.isInstrument)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon,"Liberty - Effets",
+                    "Sélectionne un effet audio AU ou VST3, pas un instrument.","OK");
+                return;
+            }
+            auto& host=LibertyPluginHost::instance();
+            auto& one=LibertyOneKnobManager::instance();
+            const int lane=targetEffectLane,slot=targetEffectSlot;
+            const bool instrument=targetIsInstrument;
+            const int key=instrument?100000+lane*8+slot:lane*8+slot;
+            const bool valid=lane>=0&&slot>=0&&slot<LibertyPluginHost::effectSlotsPerTrack&&
+                (instrument?lane<owner.getInstrumentTrackCount()
+                           :lane<owner.getAudioTrackCount());
+            const bool occupied=one.hasEffect(key)||
+                (instrument?host.hasEffectForInstrumentTrackSlot(lane,slot)
+                           :host.hasEffectForTrackSlot(lane,slot));
+            if(!valid||occupied)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon,"Liberty - Effets",
+                    "Ce slot n'est plus libre. Rouvre la chaîne d'effets.","OK");
+                return;
+            }
+            juce::String error;
+            const bool ok=instrument
+                ?host.loadEffectForInstrumentTrackSlot(lane,slot,d,error)
+                :host.loadEffectForTrackSlot(lane,slot,d,error);
+            if(!ok)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::AlertWindow::WarningIcon,"Liberty - Plugin",error,"OK");
+                return;
+            }
+            toggleButton.setToggleState(false,juce::dontSendNotification);
+            setBrowserOpen(false);
+            refreshLibertyMixConsole(&owner);
+            refreshPluginStatus();
+            owner.repaint();
+            if(instrument)host.showEffectEditorForInstrumentTrackSlot(lane,slot);
+            else host.showEditorForTrackSlot(lane,slot);
+            return;
+        }
         juce::String error;
         bool ok = false;
         auto& host = LibertyPluginHost::instance();
@@ -759,7 +826,9 @@ private:
             }
         }
         if (!ok) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
-        refreshPluginStatus(); owner.repaint();
+        refreshPluginStatus();
+        refreshLibertyMixConsole(&owner);
+        owner.repaint();
     }
 
     int selectedAudioTrack() const
@@ -796,7 +865,9 @@ private:
 
     void loadOneKnob(LibertyOneKnobRack::Type type)
     {
-        const int insertSlot = firstFreeOneKnobInsertSlot();
+        // When an empty slot invoked the browser, honor that exact slot ID.
+        // The ordinary browser continues using the next free insert.
+        const int insertSlot = targetEffectSlot>=0?targetEffectSlot:firstFreeOneKnobInsertSlot();
         const int instrumentLane = selectedInstrumentTrack();
         const int audioLane = selectedAudioTrack();
         if (insertSlot < 0)
@@ -810,7 +881,22 @@ private:
         }
         const int key = instrumentLane >= 0 ? 100000 + instrumentLane * 8 + insertSlot : audioLane * 8 + insertSlot;
         auto& manager = LibertyOneKnobManager::instance();
+        auto& host = LibertyPluginHost::instance();
+        if((instrumentLane>=0?host.hasEffectForInstrumentTrackSlot(instrumentLane,insertSlot)
+                             :host.hasEffectForTrackSlot(audioLane,insertSlot)) ||
+           manager.hasEffect(key))
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon,"Liberty - One Knob",
+                "Ce slot FX est déjà occupé.","OK");
+            return;
+        }
         manager.setEffect(key, type);
+        if(targetEffectSlot>=0)
+        {
+            toggleButton.setToggleState(false,juce::dontSendNotification);
+            setBrowserOpen(false);
+        }
         manager.showEditor(key);
         refreshPluginStatus();
         refreshLibertyMixConsole(&owner);
@@ -1042,6 +1128,8 @@ private:
     juce::String scanStatusText;
     std::thread scanThread;
     bool browserOpen = false, hostExpanded = false;
+    bool targetIsInstrument=false;
+    int targetEffectLane=-1,targetEffectSlot=-1;
     juce::Rectangle<int> originalWindowBounds;
 };
 
@@ -1085,6 +1173,15 @@ void ensureLibertyBrowserController(MainComponent* main)
         it->second->ensureToggleVisible();
 }
 
+
+void showLibertyEffectBrowserForSlot(MainComponent* owner,bool instrument,int lane,int slot)
+{
+    if(owner==nullptr)return;
+    ensureLibertyBrowserController(owner);
+    const auto it=browsers.find(owner);
+    if(it!=browsers.end()&&it->second)
+        it->second->openForEffectSlot(instrument,lane,slot);
+}
 
 void shutdownLibertyBrowserController()
 {
