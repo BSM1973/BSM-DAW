@@ -1709,9 +1709,49 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        x+4,y+36,w-8,15,juce::Justification::centred);
     g.setColour(juce::Colour(0xff111922));
     g.fillRoundedRectangle((float)x+8,(float)y+56,(float)w-16,24.f,3.f);
-    g.setColour(juce::Colour(0xffd1dce7));g.setFont(juce::Font(8.5f));
-    g.drawText(s.kind==Strip::master?"OUT 1-2":"ROUTE > MASTER",
-       x+10,y+58,w-20,18,juce::Justification::centred,true);
+    // The routing capsule shows a live RMS stereo balance in the unused
+    // right half, without resizing or moving any module, meter or fader.
+    if(s.kind==Strip::midi){
+       g.setColour(juce::Colour(0xffd1dce7));g.setFont(juce::Font(8.5f));
+       g.drawText("ROUTE > MASTER",x+10,y+58,w-20,18,
+                  juce::Justification::centred,true);
+    }else{
+       const auto balance=LibertyMixConsoleMeter::stereoRmsBalance(s.meter);
+       juce::String label="BAL --";
+       if(balance.side==LibertyMixConsoleMeter::BalanceSide::center)
+           label=juce::String::fromUTF8("Δ 0.0 dB");
+       else if(balance.side==LibertyMixConsoleMeter::BalanceSide::left||
+               balance.side==LibertyMixConsoleMeter::BalanceSide::right){
+           const auto side=balance.side==LibertyMixConsoleMeter::BalanceSide::left
+               ?"L +":"R +";
+           label=juce::String(side)+juce::String(balance.differenceDb,1)+" dB";
+       }
+       g.setColour(juce::Colour(0xffd1dce7));
+       g.setFont(juce::Font(8.f,juce::Font::bold));
+       g.drawFittedText(s.kind==Strip::master?"OUT 1-2":"VERS MASTER",
+                        x+10,y+57,67,15,juce::Justification::centredLeft,1);
+       g.setColour(balance.side==LibertyMixConsoleMeter::BalanceSide::left
+           ?juce::Colour(0xff7fe0e5):
+           balance.side==LibertyMixConsoleMeter::BalanceSide::right
+           ?juce::Colour(0xfff0bc80):juce::Colour(0xffd1dce7));
+       g.drawFittedText(label,x+77,y+57,60,15,
+                        juce::Justification::centredRight,1);
+       // A miniature -24..+24 dB balance pointer below the text.
+       g.setColour(juce::Colour(0xff4f6572));
+       g.drawLine((float)x+81.f,(float)y+77.f,
+                  (float)x+135.f,(float)y+77.f,1.f);
+       g.setColour(juce::Colour(0xffa8bdc8));
+       g.drawLine((float)x+108.f,(float)y+74.f,
+                  (float)x+108.f,(float)y+79.f,1.f);
+       if(balance.side!=LibertyMixConsoleMeter::BalanceSide::silent){
+           const float dot=(float)x+108.f+27.f*balance.position;
+           g.setColour(balance.side==LibertyMixConsoleMeter::BalanceSide::left
+               ?juce::Colour(0xff7fe0e5):
+               balance.side==LibertyMixConsoleMeter::BalanceSide::right
+               ?juce::Colour(0xfff0bc80):juce::Colour(0xffd1dce7));
+           g.fillEllipse(dot-2.f,(float)y+75.f,4.f,4.f);
+       }
+    }
     const auto geom=getStripGeometry(s);
     auto panel=[&](int top,int height,juce::Colour accent){
       if(height<=3)return;
