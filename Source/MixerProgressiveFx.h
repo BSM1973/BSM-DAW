@@ -7,6 +7,12 @@
 // non-consecutive occupied slots still appear in their original order.
 namespace LibertyMixerProgressiveFx {
 inline constexpr int slotLimit=8;
+// The virtual instrument occupies its own dedicated generator position,
+// not FX 1. A newly loaded synth must open the FX rack automatically.
+constexpr bool revealOnInstrumentLoad(bool wasLoaded,bool nowLoaded) noexcept
+{
+    return !wasLoaded && nowLoaded;
+}
 inline int revealedCount(const std::array<bool,slotLimit>& occupied) noexcept
 {
     int last=-1;
