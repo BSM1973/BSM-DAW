@@ -1369,6 +1369,38 @@ public:
  void mouseDown(const juce::MouseEvent&e)override{
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
+     // The route label is clickable, with no conflict with COR/BAL or faders.
+     if((strip->kind==Strip::audio||strip->kind==Strip::instrument)&&
+        e.mods.isLeftButtonDown()&&
+        e.getPosition().x>=strip->bounds.getX()+9&&
+        e.getPosition().x<strip->bounds.getX()+77&&
+        e.getPosition().y>=strip->bounds.getY()+55&&
+        e.getPosition().y<strip->bounds.getY()+68)
+     {
+         const auto kind=strip->kind;
+         const int lane=strip->lane;
+         const int current=kind==Strip::audio?
+             owner.audioEngine.getTrackMixerBus(lane):
+             owner.audioEngine.getInstrumentMixerBus(lane);
+         juce::PopupMenu menu;
+         menu.addSectionHeader("ROUTAGE AUDIO");
+         menu.addItem(1,"MASTER (direct)",true,current<0);
+         for(int i=0;i<owner.audioEngine.getMixerBusCount();++i)
+             menu.addItem(i+2,"BUS "+juce::String(i+1),true,current==i);
+         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+             [safe=juce::Component::SafePointer<MixConsoleView>(this),kind,lane](int choice)
+             {
+                 if(safe==nullptr||choice==0)return;
+                 const int destination=choice-2;
+                 if(kind==Strip::audio)
+                     safe->owner.audioEngine.setTrackMixerBus(lane,destination);
+                 else
+                     safe->owner.audioEngine.setInstrumentMixerBus(lane,destination);
+                 safe->repaint();
+             });
+         return;
+     }
+
      if(strip->kind!=Strip::midi){
        const auto geometry=getStripGeometry(*strip);
        const int meterTop=strip->bounds.getY()+geometry.faderY;
@@ -1862,7 +1894,16 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        }
        g.setColour(juce::Colour(0xffd1dce7));
        g.setFont(juce::Font(8.f,juce::Font::bold));
-       g.drawFittedText(s.kind==Strip::master?"OUT 1-2":"VERS MASTER",
+       juce::String routeLabel=s.kind==Strip::master?"OUT 1-2":
+           s.kind==Strip::bus?"BUS > MASTER":"VERS MASTER";
+       if(s.kind==Strip::audio||s.kind==Strip::instrument)
+       {
+           const int destination=s.kind==Strip::audio?
+               owner.audioEngine.getTrackMixerBus(s.lane):
+               owner.audioEngine.getInstrumentMixerBus(s.lane);
+           routeLabel=destination<0?"VERS MASTER":"VERS BUS "+juce::String(destination+1);
+       }
+       g.drawFittedText(routeLabel,
                         x+10,y+57,67,10,juce::Justification::centredLeft,1);
        const auto corr=s.correlation;
        const auto colour=!corr.valid?juce::Colour(0xff8b9ca8):
@@ -1944,6 +1985,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       g.setColour(juce::Colour(0xffbed4e0));
       g.fillRoundedRectangle((float)x+(float)w*.5f-16.f,
                              (float)(y+geom.splitterY-1),32.f,5.f,2.f);
+    }else if(s.kind==Strip::bus){
+      g.setColour(juce::Colour(0xffbda1e2));g.setFont(juce::Font(8.f,juce::Font::bold));
+      g.drawText("GROUP BUS",x,y+92,w,18,juce::Justification::centred);
     }else if(s.kind==Strip::master){
       g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f,juce::Font::bold));
       g.drawText("MASTER BUS",x,y+92,w,18,juce::Justification::centred);
@@ -2076,6 +2120,12 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              rms=owner.audioEngine.consumeInstrumentStereoMeterRms(strip->lane);
              strip->correlation.advance(owner.audioEngine.consumeInstrumentStereoCorrelation(strip->lane));
          }
+         else if(strip->kind==Strip::bus)
+         {
+             peaks=owner.audioEngine.consumeMixerBusPeaks(strip->lane);
+             rms=owner.audioEngine.consumeMixerBusRms(strip->lane);
+             strip->correlation.advance(owner.audioEngine.consumeMixerBusCorrelation(strip->lane));
+         }
          else if(strip->kind==Strip::master)
          {
              peaks=owner.audioEngine.consumeMasterStereoMeterPeaks();
@@ -2103,7 +2153,20 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  s->eqKnobs[1]->setValue(channelSettings.eqMidDb,juce::dontSendNotification);
  s->eqKnobs[2]->setValue(channelSettings.eqHighDb,juce::dontSendNotification);
  refreshPower(*s);
- s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}syncing=false;}
+ s->plugin->setButtonText("AUDIO");s->plugin->setEnabled(false);for(int i=0;i<8;++i){const bool has=h.hasEffectForTrackSlot(s->lane,i);const int oneKey=s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isTrackMuted(s->lane),so=owner.audioEngine.isTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::midi){s->fader->setValue(-60.0,juce::dontSendNotification);s->fader->setTextValueSuffix("");s->plugin->setButtonText("MIDI");s->plugin->setEnabled(false);s->unload->setEnabled(false);}else if(s->kind==Strip::instrument){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getInstrumentTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getInstrumentTrackPan(s->lane),juce::dontSendNotification);bool ho=h.hasInstrumentForTrack(s->lane);juce::String n=ho?h.getInstrumentNameForTrack(s->lane):"INSTRUMENT - EMPTY";s->plugin->setButtonText(n);s->unload->setEnabled(ho);for(int i=0;i<8;++i){const bool has=h.hasEffectForInstrumentTrackSlot(s->lane,i);const int oneKey=100000+s->lane*8+i;const bool hasOne=k.hasEffect(oneKey);const auto label=has?h.getEffectNameForInstrumentTrackSlot(s->lane,i):(hasOne?k.getName(oneKey):"FX "+juce::String(i+1)+" - EMPTY");if(s->fx[(size_t)i]->getButtonText()!=label)s->fx[(size_t)i]->setButtonText(label);if(s->fxUnload[(size_t)i]->isEnabled()!=(has||hasOne))s->fxUnload[(size_t)i]->setEnabled(has||hasOne);}{const bool m=owner.audioEngine.isInstrumentTrackMuted(s->lane),so=owner.audioEngine.isInstrumentTrackSolo(s->lane);s->mute->setToggleState(m,juce::dontSendNotification);s->solo->setToggleState(so,juce::dontSendNotification);s->mute->setColour(juce::TextButton::buttonColourId,m?juce::Colour(0xffa44141):juce::Colour(0xff25323e));s->solo->setColour(juce::TextButton::buttonColourId,so?juce::Colour(0xffa18432):juce::Colour(0xff25323e));}}else if(s->kind==Strip::bus){
+     s->fader->setEnabled(true);
+     s->fader->setTextValueSuffix(" dB");
+     s->fader->setValue(gainToDb(owner.audioEngine.getMixerBusGain(s->lane)),juce::dontSendNotification);
+     s->pan->setValue(owner.audioEngine.getMixerBusPan(s->lane),juce::dontSendNotification);
+     const bool muted=owner.audioEngine.isMixerBusMuted(s->lane);
+     const bool solo=owner.audioEngine.isMixerBusSolo(s->lane);
+     s->mute->setToggleState(muted,juce::dontSendNotification);
+     s->solo->setToggleState(solo,juce::dontSendNotification);
+     s->mute->setColour(juce::TextButton::buttonColourId,
+         muted?juce::Colour(0xffa44141):juce::Colour(0xff25323e));
+     s->solo->setColour(juce::TextButton::buttonColourId,
+         solo?juce::Colour(0xffa18432):juce::Colour(0xff25323e));
+ }else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}syncing=false;}
  void timerCallback()override
  {
      if(!visible)return;
