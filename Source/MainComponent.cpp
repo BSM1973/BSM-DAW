@@ -1674,7 +1674,9 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     // LIBERTY PRO 2.0: a modern, custom vector brand panel replacing the old
     // scripted logo. Everything is drawn inside the existing 182 x 66 region.
-    const auto brandPanel = juce::Rectangle<float>(8.0f, 8.0f, 178.0f, 60.0f);
+    const auto logoBounds=LibertyNoOverlap::logo;
+    const auto brandPanel=juce::Rectangle<float>((float)logoBounds.x,(float)logoBounds.y,
+                                                 (float)logoBounds.w,(float)logoBounds.h);
     g.setColour(LibertyUI::Colour::surface);
     g.fillRoundedRectangle(brandPanel, 10.0f);
     g.setColour(LibertyUI::Colour::divider);

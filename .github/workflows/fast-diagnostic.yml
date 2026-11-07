@@ -21,6 +21,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Verify global UI no-overlap zones and routing panel
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
+          /tmp/liberty-no-overlap
+
       - name: Verify mixer layout and pinned faders
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
@@ -68,6 +73,11 @@ jobs:
 
       - name: Guard validated track header controls
         run: python3 Tests/TrackHeaderRegression.py
+
+      - name: Verify strict non-overlapping global UI regions
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
+          /tmp/liberty-no-overlap
 
       - name: Verify independent mixer panels and pinned faders
         run: |

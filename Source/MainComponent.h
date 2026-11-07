@@ -6,6 +6,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "AudioEngine.h"
+#include "NoOverlapLayout.h"
 #include "MidiEngine.h"
 #include "StepSequencer.h"
 #include <array>
@@ -154,6 +155,16 @@ public:
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
+    int addMixerBusTrack() noexcept
+    {
+        const int index=audioEngine.addMixerBus();
+        if(index>=0)
+        {
+            refreshLibertyMixConsole(this);
+            repaint();
+        }
+        return index;
+    }
     int addMidiTrack() noexcept
     {
         const int i = dynamicMidiTrackCount;
