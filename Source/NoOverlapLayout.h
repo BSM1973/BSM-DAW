@@ -39,10 +39,25 @@ constexpr std::array<Rect,5> creationControls{
 };
 // Keep creation row entirely above Arrangement track rows at y=108.
 constexpr Rect creationZone{0,transportHeight,creationZoneWidth,30};
+// A 150px-width channel strip (146px active width) keeps the three
+// separate interactions strictly out of one another's hit rectangles.
+constexpr Rect mixerNameEditor{7,10,132,24};
+constexpr Rect mixerKindCaption{6,36,134,15};
+constexpr Rect mixerRoutingCapsule{8,56,130,24};
+constexpr bool mixerHeaderGeometryValid() noexcept
+{
+    return !intersects(mixerNameEditor,mixerKindCaption)&&
+           !intersects(mixerKindCaption,mixerRoutingCapsule)&&
+           !intersects(mixerNameEditor,mixerRoutingCapsule);
+}
+inline Rect mixerViewButton(int windowWidth) noexcept
+{
+    return {windowWidth-148,12,130,28};
+}
 inline Rect mixerHint(int windowWidth) noexcept
 {
     return {creationZoneWidth+14,15,
-            std::max(0,windowWidth-creationZoneWidth-28),20};
+            std::max(0,windowWidth-creationZoneWidth-190),20};
 }
 inline Rect routingPanel(int windowWidth,int windowHeight,bool open) noexcept
 {
@@ -80,8 +95,11 @@ constexpr bool creationControlsHaveSafeGaps() noexcept
 inline bool mixerHeaderIsSeparate(int windowWidth) noexcept
 {
     const auto hint=mixerHint(windowWidth);
+    const auto button=mixerViewButton(windowWidth);
     return windowWidth>=600&&hint.x>=creationZone.right()&&
-           hint.right()<=windowWidth&&hint.y>=0&&
+           hint.right()+12<=button.x&&
+           button.right()<=windowWidth&&hint.y>=0&&
+           button.y>=0&&button.bottom()<=mixerToolbarHeight&&
            hint.bottom()<=mixerToolbarHeight;
 }
 inline bool routingHasNoOverlap(int width,int height) noexcept
@@ -104,4 +122,6 @@ static_assert(creationZone.bottom()<=arrangementRowsTop,
               "Liberty: creation toolbar must never cover Arrangement track rows");
 static_assert(creationControlsHaveSafeGaps(),
               "Liberty: controls must not overlap the wordmark or each other");
+static_assert(mixerHeaderGeometryValid(),
+              "Liberty: name editor, kind label and routing must never overlap");
 }

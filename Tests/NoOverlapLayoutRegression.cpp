@@ -6,6 +6,7 @@ int main()
 {
     using namespace LibertyNoOverlap;
     static_assert(creationControlsHaveSafeGaps(),"creation controls overlap");
+    static_assert(mixerHeaderGeometryValid(),"name editor and routing area overlap");
     static_assert(creationZone.bottom()<=arrangementRowsTop,
                   "creation toolbar overlaps Arrangement track headers");
     static_assert(!intersects(audioButton,midiButton),"audio and midi overlap");
@@ -17,6 +18,7 @@ int main()
         for(int height:{620,720,890,1080})
         {
             assert(mixerHeaderIsSeparate(width));
+            assert(!intersects(mixerHint(width),mixerViewButton(width)));
             const auto hint=mixerHint(width);
             const auto globalHint=Rect{hint.x,hint.y+transportHeight,hint.w,hint.h};
             for(auto control:creationControls)
