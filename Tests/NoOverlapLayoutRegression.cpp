@@ -35,6 +35,17 @@ int main()
     assert(!accepts(Category::bus,Kind::master));
     assert(accepts(Category::master,Kind::master));
     assert(!accepts(Category::master,Kind::midi));
+    const std::array<bool,5> matching{{false,true,false,true,false}};
+    const auto match=[&matching](int i){return matching[(size_t)i];};
+    assert(findMatchingIndex(5,-1,0,match)==1);
+    assert(findMatchingIndex(5,1,1,match)==3);
+    assert(findMatchingIndex(5,3,1,match)==1);
+    assert(findMatchingIndex(5,1,-1,match)==3);
+    assert(findMatchingIndex(5,3,-1,match)==1);
+    assert(findMatchingIndex(5,-1,-1,match)==3);
+    assert(findMatchingIndex(5,-1,1,match)==1);
+    assert(findMatchingIndex(0,0,1,match)==-1);
+    assert(findMatchingIndex(5,3,0,[](int){return false;})==-1);
 
     for(int width:{600,1024,1100,1279,1280,1440,1672,1920,2560})
         for(int height:{620,720,890,1080})

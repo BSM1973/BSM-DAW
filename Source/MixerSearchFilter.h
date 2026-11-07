@@ -44,6 +44,30 @@ inline Filter parse(std::string_view query) noexcept
         return {Category::master,colon+1};
     return {}; // Unknown prefixes remain normal track-name searches.
 }
+// direction = 0: first match, +1: next, -1: previous.
+// Always wraps around; no match returns -1. Predicate receives the
+// unchanged strip index, so selection and plug-in routing stay stable.
+template<typename Predicate>
+inline int findMatchingIndex(int count,int current,int direction,
+                             Predicate matches)
+{
+    if(count<=0)return -1;
+    const bool backwards=direction<0;
+    int first=0;
+    if(direction!=0)
+    {
+        first=current>=0&&current<count?
+            (current+(backwards?count-1:1))%count:
+            (backwards?count-1:0);
+    }
+    for(int step=0;step<count;++step)
+    {
+        const int index=backwards?(first+count-step)%count:
+                                  (first+step)%count;
+        if(matches(index))return index;
+    }
+    return -1;
+}
 constexpr bool accepts(Category category,Kind kind) noexcept
 {
     return category==Category::all||

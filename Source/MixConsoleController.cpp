@@ -1488,10 +1488,13 @@ public:
  searchBox.setColour(juce::TextEditor::focusedOutlineColourId,ModernMixer::sage);
  searchBox.onTextChange=[this]{
      if(searchBox.getText().trim().isEmpty())lastObservedTrack=-99999;
-     findMixerTrack(false);
+     findMixerTrack(0);
      repaint();
  };
- searchBox.onReturnKey=[this]{findMixerTrack(true);};
+ searchBox.onReturnKey=[this]{
+     const bool previous=juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown();
+     findMixerTrack(previous?-1:1);
+ };
  searchBox.onEscapeKey=[this]{clearMixerSearch();};
  addAndMakeVisible(searchBox);
  searchBox.setVisible(false);
@@ -1596,7 +1599,7 @@ public:
              }
          caption=juce::String::fromUTF8("RECHERCHE : ")+query+"  |  "+
              juce::String(position)+"/"+juce::String(matches)+
-             juce::String::fromUTF8("  |  ENTRÉE : SUIVANT");
+             juce::String::fromUTF8("  |  ENTRÉE : SUIVANT  |  MAJ+ENTRÉE : PRÉCÉDENT");
      }
      g.drawFittedText(caption,hint.x+12,hint.y,juce::jmax(1,hint.w-12),
                       hint.h,juce::Justification::centredLeft,1);
@@ -1736,8 +1739,18 @@ public:
          return;
        }
        if(hit==LibertyMixConsoleMeter::MeterClick::resetPeaks){
-         strip->meter.resetPeak();
-         repaint(strip->bounds.getX()+3,meterTop,44,meterBottom-meterTop+35);
+         if(e.mods.isShiftDown())
+         {
+             // Only held peak and CLIP state; no faders, DSP or RMS changes.
+             for(auto& channel:strips)channel->meter.resetPeak();
+             repaint();
+         }
+         else
+         {
+             strip->meter.resetPeak();
+             // The existing top accent and channel outline may leave CLIP red.
+             repaint(strip->bounds);
+         }
          return;
        }
      }
@@ -1946,7 +1959,7 @@ private:
      repaint();
      owner.repaint();
  }
- void findMixerTrack(bool next)
+ void findMixerTrack(int direction)
  {
      const auto query=searchBox.getText().trim();
      if(query.isEmpty())
@@ -1957,23 +1970,24 @@ private:
      }
      const int count=(int)strips.size();
      if(count==0)return;
-     int start=0;
-     if(next&&selected)
+     int currentIndex=-1;
+     if(selected)
      {
          const auto current=std::find_if(strips.begin(),strips.end(),
              [this](const auto& item){return item.get()==selected;});
          if(current!=strips.end())
-             start=((int)std::distance(strips.begin(),current)+1)%count;
+             currentIndex=(int)std::distance(strips.begin(),current);
      }
-     for(int step=0;step<count;++step)
+     const int result=LibertyMixerSearch::findMatchingIndex(
+         count,currentIndex,direction,
+         [this,&query](int index){
+             return matchesMixerSearch(*strips[(size_t)index],query);
+         });
+     if(result>=0)
      {
-         auto& candidate=*strips[(size_t)((start+step)%count)];
-         if(matchesMixerSearch(candidate,query))
-         {
-             searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
-             focusMixerStrip(candidate);
-             return;
-         }
+         searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+         focusMixerStrip(*strips[(size_t)result]);
+         return;
      }
      searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::amber);
      repaint();
@@ -2559,6 +2573,12 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     juce::Graphics::ScopedSaveState savedState(g);
     g.reduceClipRegion(s.bounds);
     const bool chosen=isSelected(s);
+    const auto searchQuery=searchBox.getText().trim();
+    const bool searchMatch=searchQuery.isNotEmpty()&&
+        matchesMixerSearch(s,searchQuery);
+    const bool clipWarning=s.kind!=Strip::midi&&s.meter.clipped();
+    const bool muted=s.mute!=nullptr&&s.mute->getToggleState();
+    const bool soloed=s.solo!=nullptr&&s.solo->getToggleState();
     const int x=s.bounds.getX(),y=s.bounds.getY(),w=s.bounds.getWidth(),h=s.bounds.getHeight();
     g.setColour(chosen?ModernMixer::selected:ModernMixer::strip);
     g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
@@ -2585,15 +2605,23 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
                                  (float)juce::jmax(0,h-18),2.f);
       }
     }
-    g.setColour(chosen?ModernMixer::sage:ModernMixer::border);
-    g.drawRoundedRectangle(s.bounds.toFloat(),6.f,chosen?2.f:1.f);
-    g.setColour(s.kind==Strip::bus?
+    g.setColour(chosen?ModernMixer::sage:
+                clipWarning?juce::Colour(0xffff6868):
+                searchMatch?ModernMixer::amber:ModernMixer::border);
+    g.drawRoundedRectangle(s.bounds.toFloat(),6.f,
+                           chosen||clipWarning||searchMatch?2.f:1.f);
+    const auto originalHeaderColour=s.kind==Strip::bus?
         (owner.getMixerBusColourId(s.lane)>0?trackColour(owner.getMixerBusColourId(s.lane)):juce::Colour(0xffad8bda)):
         s.kind==Strip::master?
         (owner.getMixerMasterColourId()>0?trackColour(owner.getMixerMasterColourId()):juce::Colour(0xffe4a85e)):
         trackColour(getLibertyTrackColourId(s.kind==Strip::audio?s.lane:
            s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
-           owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane)));
+           owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane));
+    // Status tint on the existing header: CLIP > MUTE > SOLO > track colour.
+    // The original geometry, hit targets and text remain unchanged.
+    g.setColour(clipWarning?juce::Colour(0xffff6868):
+                muted?juce::Colour(0xff717b82):
+                soloed?ModernMixer::amber:originalHeaderColour);
     g.fillRoundedRectangle((float)x+1.f,(float)y+1.f,(float)w-2.f,4.f,2.f);
     g.setColour(ModernMixer::border.withAlpha(.35f));
     g.drawVerticalLine(x+w-1,(float)y+8.f,(float)(y+h-8));
@@ -2924,7 +2952,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          }
          else
              continue;
+         const bool wasClipped=strip->meter.clipped();
          LibertyMixConsoleMeter::advance(strip->meter,peaks,rms);
+         if(wasClipped!=strip->meter.clipped())
+             repaint(strip->bounds); // Refresh header CLIP indicator on transitions.
      }
  }
  void sync(){syncing=true;auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();for(auto&s:strips){if(s->kind==Strip::audio){s->fader->setEnabled(true);s->plugin->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getTrackGain(s->lane)),juce::dontSendNotification);s->pan->setValue(owner.audioEngine.getTrackPan(s->lane),juce::dontSendNotification);
