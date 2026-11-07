@@ -284,6 +284,8 @@ juce::String MainComponent::getProjectStateSignature() const
 
 
     // Moving a console strip or changing a bus route must mark the project dirty.
+    signature << "|arrangeOrder=";
+    for(const int logical:arrangeTrackOrder)signature << logical << ",";
     signature << "|mixerOrder=" << mixerStripOrder.joinIntoString(",");
     signature << "|mixerBusCount=" << audioEngine.getMixerBusCount();
     for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
@@ -683,6 +685,10 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
         item->setAttribute("index",i);
         item->setAttribute("bus",audioEngine.getInstrumentMixerBus(i));
     }
+    reconcileArrangeTrackOrder();
+    auto* arrangeOrderXml=project.createNewChildElement("ArrangementTrackOrder");
+    for(const int logical:arrangeTrackOrder)
+        arrangeOrderXml->createNewChildElement("Track")->setAttribute("logical",logical);
     auto* mixerOrderXml=project.createNewChildElement("MixerStripOrder");
     for(const auto& key:mixerStripOrder)
     {
@@ -1465,6 +1471,25 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 audioEngine.setInstrumentMixerBus(index,destination);
         }
     }
+    // Keep the visible arrangement order aligned with the saved mixer order
+    // without moving stable audio, MIDI, clip or plugin identities.
+    arrangeTrackOrder.clear();
+    if(auto* order=project->getChildByName("ArrangementTrackOrder"))
+    {
+        int visited=0;
+        for(auto* entry=order->getFirstChildElement();entry!=nullptr;
+            entry=entry->getNextElement())
+        {
+            if(++visited>2048)break;
+            if(entry->getTagName()!="Track")continue;
+            const int logical=entry->getIntAttribute("logical",-1);
+            if(logical>=0&&logical<getTotalArrangeTrackCount()&&
+               std::find(arrangeTrackOrder.begin(),arrangeTrackOrder.end(),logical)==arrangeTrackOrder.end())
+                arrangeTrackOrder.push_back(logical);
+        }
+    }
+    reconcileArrangeTrackOrder();
+
     if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
     {
         constexpr std::size_t maxVisitedInstrumentMixerElements = 1024;
