@@ -2674,6 +2674,12 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
                              juce::Colour(0xff7fe0e5);
        const juce::String corrLabel=!corr.valid?"COR --":
            juce::String("COR ")+(corr.value>=0.f?"+":"")+juce::String(corr.value,2);
+       // A dark, fixed-size correlation badge improves contrast without
+       // changing the strip geometry or any interactive hit region.
+       g.setColour(colour.withAlpha(0.13f));
+       g.fillRoundedRectangle((float)x+9.f,(float)y+67.f,68.f,12.f,2.f);
+       g.setColour(colour.withAlpha(0.55f));
+       g.drawRoundedRectangle((float)x+9.f,(float)y+67.f,68.f,12.f,2.f,.7f);
        g.setColour(colour);
        g.fillEllipse((float)x+11.f,(float)y+71.f,4.f,4.f);
        g.setFont(juce::Font(7.8f,juce::Font::bold));
@@ -2897,7 +2903,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      g.fillRoundedRectangle(labelBox,2.f);
      g.setColour(isPeak?juce::Colour(0xffd8b66e):juce::Colour(0xff8cf4fb));
      g.drawRoundedRectangle(labelBox,2.f,1.f);
-     g.setFont(juce::Font(7.f,juce::Font::bold));
+     g.setFont(juce::Font(8.f,juce::Font::bold));
+     // Separate the L/R readouts inside the existing 39 x 24 px panel.
+     g.setColour(juce::Colour(0xff3e596e));
+     g.drawHorizontalLine(bottom+15,x-1.f,x+32.f);
      for(int channel=0;channel<2;++channel)
      {
          const float amplitude=LibertyMixConsoleMeter::channelReadoutAmplitude(
@@ -2913,7 +2922,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      }
      g.setColour(isPeak?juce::Colour(0xffd8b66e):
                          juce::Colour(0xff8cf4fb));
-     g.setFont(juce::Font(6.f,juce::Font::bold));
+     g.setFont(juce::Font(7.f,juce::Font::bold));
      g.drawFittedText(isPeak?"PEAK dBFS":"RMS dBFS",
                       (int)x-4,bottom+28,39,8,
                       juce::Justification::centred,1);
