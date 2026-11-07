@@ -4968,8 +4968,12 @@ void MainComponent::mouseUp(const juce::MouseEvent& event)
         arrangeDropDisplayRow = -1;
         if (event.getDistanceFromDragStart() >= 5 && moveArrangeTrackToDisplayRow(movedTrack,target))
         {
+            // ARRANGEMENT is authoritative when it reorders a lane directly.
+            // The next mixer refresh follows it; no audio or plug-in indices move.
+            mixerStripOrder.clear();
             refreshLibertyRecordingTrackLayout(this);
             refreshLibertyTrackHeaderMixLayout(this);
+            refreshLibertyMixConsole(this);
         }
         repaint();
         return;

@@ -376,6 +376,9 @@ public:
         return -1;
     }
     std::vector<int> arrangeTrackOrder;
+    // Stable presentation IDs (A, M, I, B) for the Console de mixage.
+    // Does not mutate audio, MIDI, instrument or clip identity.
+    juce::StringArray mixerStripOrder;
     int draggingArrangeTrack = -1;
     int arrangeDropDisplayRow = -1;
 

@@ -1338,7 +1338,14 @@ public:
  bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;rebuild();sync();repaint();}
  int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
  void paint(juce::Graphics&g)override{g.fillAll(juce::Colour(0xff0b0f14));g.setColour(juce::Colour(0xff18212b));g.fillRect(0,0,getWidth(),54);g.setColour(juce::Colour(0xff344452));g.drawHorizontalLine(53,0.0f,(float)getWidth());g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(10.f));g.drawFittedText(juce::String::fromUTF8("SECTIONS LIBRES  |  MAJ + CLIC : MÊME SECTION SUR TOUTES LES PISTES  |  DOUBLE-CLIC SÉPARATEUR : HAUTEUR NORMALE"),
-  18,15,juce::jmax(1,getWidth()-36),20,juce::Justification::centredLeft,1);{juce::Graphics::ScopedSaveState clip(g);g.reduceClipRegion(0,topY,getWidth(),juce::jmax(1,getHeight()-topY-38));for(auto&s:strips)draw(g,*s);}}
+  18,15,juce::jmax(1,getWidth()-36),20,juce::Justification::centredLeft,1);{juce::Graphics::ScopedSaveState clip(g);g.reduceClipRegion(0,topY,getWidth(),juce::jmax(1,getHeight()-topY-38));for(auto&s:strips)draw(g,*s);
+ if(draggingStrip&&dropStripIndex>=0&&dropStripIndex<(int)strips.size())
+ {
+     const int x=strips[(size_t)dropStripIndex]->bounds.getX()-2;
+     g.setColour(juce::Colour(0xff6fe2ef));
+     g.fillRect(x,topY,3,juce::jmax(1,getHeight()-topY-38));
+ }
+ }}
  void resized()override{layout();}
  void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel)override{
    for(auto& strip:strips){
@@ -1386,6 +1393,16 @@ public:
        }
      }
      if(strip->kind==Strip::master){selected=nullptr;repaint();return;}
+     // Drag only the name header, never a fader, pan, insert, meter or splitter.
+     if(e.mods.isLeftButtonDown()&&e.getPosition().y>=strip->bounds.getY()+12&&
+        e.getPosition().y<strip->bounds.getY()+34)
+     {
+         draggingStrip=strip.get();
+         dropStripIndex=(int)std::distance(strips.begin(),
+             std::find_if(strips.begin(),strips.end(),
+                 [stripPtr=strip.get()](const auto& s){return s.get()==stripPtr;}));
+         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+     }
      selected=strip.get();
      owner.selectedTrack=strip->kind==Strip::audio?strip->lane:
        (strip->kind==Strip::midi?owner.getAudioTrackCount()+strip->lane:
@@ -1394,12 +1411,54 @@ public:
    }
  }
  void mouseDrag(const juce::MouseEvent&e)override{
+   if(draggingStrip)
+   {
+       dropStripIndex=juce::jlimit(0,juce::jmax(0,(int)strips.size()-2),
+           (e.getPosition().x-12+offset)/stripW);
+       repaint();
+       return;
+   }
    if(!draggingHeight)return;
    draggingHeight->preferredFaderHeight=juce::jlimit(100,360,
        dragStartPreference+dragStartY-e.getPosition().y);
    layout();repaint();
  }
- void mouseUp(const juce::MouseEvent&)override{
+ void mouseUp(const juce::MouseEvent& e)override{
+   if(draggingStrip)
+   {
+       const auto* moving=draggingStrip;
+       draggingStrip=nullptr;
+       const auto it=std::find_if(strips.begin(),strips.end(),
+           [moving](const auto& strip){return strip.get()==moving;});
+       const int from=it==strips.end()?-1:(int)std::distance(strips.begin(),it);
+       const int dest=dropStripIndex;
+       dropStripIndex=-1;
+       if(from>=0&&dest>=0&&from!=dest&&e.getDistanceFromDragStart()>=5)
+       {
+           auto strip=std::move(strips[(size_t)from]);
+           strips.erase(strips.begin()+from);
+           strips.insert(strips.begin()+dest,std::move(strip));
+           owner.mixerStripOrder.clear();
+           owner.arrangeTrackOrder.clear();
+           const int audio=owner.getAudioTrackCount(),midi=owner.getMidiTrackCount();
+           for(const auto& item:strips)
+           {
+               if(item->kind==Strip::master)continue;
+               owner.mixerStripOrder.add(stripKey(item->kind,item->lane));
+               const int logical=item->kind==Strip::audio?item->lane:
+                   item->kind==Strip::midi?audio+item->lane:
+                   audio+midi+item->lane;
+               owner.arrangeTrackOrder.push_back(logical);
+           }
+           owner.reconcileArrangeTrackOrder();
+           refreshLibertyTrackHeaderMixLayout(&owner);
+           owner.repaint();
+           layout();
+       }
+       setMouseCursor(juce::MouseCursor::NormalCursor);
+       repaint();
+       return;
+   }
    draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void mouseMove(const juce::MouseEvent&e)override{
@@ -1425,7 +1484,7 @@ public:
  }
 private:
  struct ScrollListener:juce::ScrollBar::Listener{MixConsoleView*o=nullptr;bool vertical=false;void scrollBarMoved(juce::ScrollBar*,double v)override{if(o){if(vertical)o->verticalOffset=(int)std::round(v);else o->offset=(int)std::round(v);o->layout();o->repaint();}}}scrollListener,verticalListener;
- void clear(){selected=nullptr;draggingHeight=nullptr;for(auto&s:strips){if(s->fader)s->fader->setLookAndFeel(nullptr);if(s->pan)s->pan->setLookAndFeel(nullptr);}strips.clear();}
+ void clear(){selected=nullptr;draggingHeight=nullptr;draggingStrip=nullptr;dropStripIndex=-1;for(auto&s:strips){if(s->fader)s->fader->setLookAndFeel(nullptr);if(s->pan)s->pan->setLookAndFeel(nullptr);}strips.clear();}
  std::unique_ptr<Strip> makeStrip(Strip::Kind k,int lane){auto s=std::make_unique<Strip>();s->kind=k;s->lane=lane;s->fader=std::make_unique<juce::Slider>();s->fader->setSliderStyle(juce::Slider::LinearVertical);s->fader->setRange(-60,6,.1);s->fader->setDoubleClickReturnValue(true,0.0);s->fader->setTextBoxStyle(juce::Slider::TextBoxBelow,false,62,20);s->fader->setNumDecimalPlacesToDisplay(1);s->fader->setMouseClickGrabsKeyboardFocus(false);s->fader->setTextValueSuffix(" dB");s->fader->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->fader);if(k==Strip::audio||k==Strip::instrument){
  s->fxHeader=std::make_unique<juce::TextButton>("INSERTS");
  s->fxHeader->setMouseClickGrabsKeyboardFocus(false);
@@ -1497,70 +1556,77 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
    options.launchAsync();
  };s.plugin->onClick=[sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument&&h.hasInstrumentForTrack(sp->lane))h.showInstrumentEditorForTrack(sp->lane);};s.unload->onClick=[this,sp]{auto&h=LibertyPluginHost::instance();if(sp->kind==Strip::instrument){h.unloadInstrumentForTrack(sp->lane);owner.notifyInstrumentChanged();}sync();repaint();};if(sp->kind==Strip::audio||sp->kind==Strip::instrument)for(int i=0;i<8;++i){sp->fx[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();const int oneKey=sp->kind==Strip::audio?sp->lane*8+i:100000+sp->lane*8+i;if(k.hasEffect(oneKey))k.showEditor(oneKey);else if(sp->kind==Strip::audio)h.showEditorForTrackSlot(sp->lane,i);else h.showEffectEditorForInstrumentTrackSlot(sp->lane,i);};sp->fxUnload[(size_t)i]->onClick=[this,sp,i]{auto&h=LibertyPluginHost::instance();auto&k=LibertyOneKnobManager::instance();if(sp->kind==Strip::audio){h.unloadEffectForTrackSlot(sp->lane,i);k.clearEffect(sp->lane*8+i);}else{h.unloadEffectForInstrumentTrackSlot(sp->lane,i);k.clearEffect(100000+sp->lane*8+i);}sync();repaint();};}}
  
- void rebuild(){
+
+ static juce::String stripKey(Strip::Kind kind,int lane)
+ {
+     return (kind==Strip::audio?"A":kind==Strip::midi?"M":
+             kind==Strip::instrument?"I":"X")
+            +juce::String(lane);
+ }
+ void rebuild()
+ {
    const int audio=owner.getAudioTrackCount();
    const int midi=owner.getMidiTrackCount();
    const int instrument=owner.getInstrumentTrackCount();
-   const int wanted=audio+midi+instrument+1;
-   bool matches=wanted==(int)strips.size();
-   if(matches){
-     int p=0;
-     for(int i=0;i<audio&&matches;++i,++p)
-       matches=strips[(size_t)p]->kind==Strip::audio&&strips[(size_t)p]->lane==i;
-     for(int i=0;i<midi&&matches;++i,++p)
-       matches=strips[(size_t)p]->kind==Strip::midi&&strips[(size_t)p]->lane==i;
-     for(int i=0;i<instrument&&matches;++i,++p)
-       matches=strips[(size_t)p]->kind==Strip::instrument&&strips[(size_t)p]->lane==i;
-     if(matches)matches=strips[(size_t)p]->kind==Strip::master;
+   // Follow ARRANGEMENT on first open. Saved console order is an override.
+   owner.reconcileArrangeTrackOrder();
+   std::vector<std::pair<Strip::Kind,int>> wanted;
+   for(int row=0;row<audio+midi+instrument;++row)
+   {
+       const int logical=owner.getLogicalTrackAtDisplayRow(row);
+       if(logical<audio)wanted.push_back({Strip::audio,logical});
+       else if(logical<audio+midi)wanted.push_back({Strip::midi,logical-audio});
+       else wanted.push_back({Strip::instrument,logical-audio-midi});
    }
+   if(!owner.mixerStripOrder.isEmpty())
+   {
+       std::vector<std::pair<Strip::Kind,int>> ordered;
+       for(const auto& key:owner.mixerStripOrder)
+       {
+           const auto found=std::find_if(wanted.begin(),wanted.end(),
+               [&](const auto& item){return stripKey(item.first,item.second)==key;});
+           if(found!=wanted.end()&&std::find(ordered.begin(),ordered.end(),*found)==ordered.end())
+               ordered.push_back(*found);
+       }
+       for(const auto& item:wanted)
+           if(std::find(ordered.begin(),ordered.end(),item)==ordered.end())
+               ordered.push_back(item);
+       wanted.swap(ordered);
+   }
+   wanted.push_back({Strip::master,0}); // Master is fixed on the right.
+   bool matches=wanted.size()==strips.size();
+   for(std::size_t i=0;matches&&i<wanted.size();++i)
+       matches=strips[i]->kind==wanted[i].first&&strips[i]->lane==wanted[i].second;
    if(matches)return;
-
-   // Keep the mixer view as the track list changes, without copying audio DSP.
-   // Values and enable states always come from AudioEngine in sync().
-   struct ViewSnapshot{
-     std::array<bool,4> modules{};
-     bool inserts=true;
-     int firstFx=0;
-     int faderHeight=250;
+   struct ViewSnapshot
+   {
+       std::array<bool,4> modules{};
+       bool inserts=true;
+       int firstFx=0;
+       int faderHeight=250;
    };
-   std::map<std::pair<int,int>,ViewSnapshot> viewSnapshots;
-   for(const auto& item:strips){
-     viewSnapshots[{(int)item->kind,item->lane}]=
-       {item->moduleExpanded,item->insertsExpanded,
-        item->firstFxSlot,item->preferredFaderHeight};
-   }
+   std::map<std::pair<int,int>,ViewSnapshot> previous;
+   for(const auto& item:strips)
+       previous[{(int)item->kind,item->lane}]=
+          {item->moduleExpanded,item->insertsExpanded,
+           item->firstFxSlot,item->preferredFaderHeight};
    const auto selectedKind=selected?selected->kind:Strip::master;
    const int selectedLane=selected?selected->lane:-1;
    clear();
-   auto makeRestored=[&](Strip::Kind kind,int lane){
-      auto result=makeStrip(kind,lane);
-      auto old=viewSnapshots.find({(int)kind,lane});
-      if(old!=viewSnapshots.end()){
-        result->moduleExpanded=old->second.modules;
-        result->insertsExpanded=old->second.inserts;
-        result->firstFxSlot=old->second.firstFx;
-        result->preferredFaderHeight=old->second.faderHeight;
-      }
-      if(kind==Strip::audio)configureValuePopup(*result);
-      return result;
-   };
-   for(int i=0;i<audio;++i)strips.push_back(makeRestored(Strip::audio,i));
-   for(int i=0;i<midi;++i)strips.push_back(makeRestored(Strip::midi,i));
-   for(int i=0;i<instrument;++i)strips.push_back(makeRestored(Strip::instrument,i));
-   strips.push_back(makeRestored(Strip::master,0));
-   const int arrangeTracks=audio+midi+instrument;
-   if(arrangeTracks<=0)owner.selectedTrack=-1;
-   if(selectedLane>=0){
-     for(auto& item:strips){
-       if(item->kind!=selectedKind||item->lane!=selectedLane)continue;
-       selected=item.get();
-       owner.selectedTrack=selectedKind==Strip::audio?selectedLane:
-           (selectedKind==Strip::midi?audio+selectedLane:audio+midi+selectedLane);
-       break;
-     }
-     if(selected==nullptr)
-       owner.selectedTrack=arrangeTracks>0?
-          juce::jlimit(0,arrangeTracks-1,owner.selectedTrack):-1;
+   for(const auto& item:wanted)
+   {
+       auto strip=makeStrip(item.first,item.second);
+       const auto found=previous.find({(int)item.first,item.second});
+       if(found!=previous.end())
+       {
+           strip->moduleExpanded=found->second.modules;
+           strip->insertsExpanded=found->second.inserts;
+           strip->firstFxSlot=found->second.firstFx;
+           strip->preferredFaderHeight=found->second.faderHeight;
+       }
+       if(item.first==Strip::audio)configureValuePopup(*strip);
+       if(item.first==selectedKind&&item.second==selectedLane)selected=strip.get();
+       strips.push_back(std::move(strip));
    }
    layout();sync();
  }
@@ -1988,7 +2054,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  }
  LibertyMixConsoleMeter::ReadoutMode meterReadoutMode=
      LibertyMixConsoleMeter::ReadoutMode::peak;
- Strip*draggingHeight=nullptr;int dragStartY=0,dragStartPreference=0;
+ Strip*draggingHeight=nullptr;Strip*draggingStrip=nullptr;int dropStripIndex=-1;
+ int dragStartY=0,dragStartPreference=0;
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
 };
 // The page tab in PageModeCoordinator is the only mixer navigation button.

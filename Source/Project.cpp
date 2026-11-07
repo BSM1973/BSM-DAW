@@ -468,6 +468,8 @@ bool MainComponent::resetProjectState()
     stepSequencerPage = 0;
     stepSequencerSelectedStep = 0;
     trackScrollRows = 0;
+    arrangeTrackOrder.clear();
+    mixerStripOrder.clear();
     waveformMin.resize((size_t)AudioEngine::initialAudioTracks);
     waveformMax.resize((size_t)AudioEngine::initialAudioTracks);
     trackSourceFiles.resize((size_t)AudioEngine::initialAudioTracks);
@@ -523,6 +525,8 @@ bool MainComponent::configureStartupTracks(int audioCount, int instrumentCount)
     instrumentStepSequencers.clear();
     instrumentStepSequencers.resize((size_t) instrumentCount);
     trackScrollRows = 0;
+    arrangeTrackOrder.clear();
+    mixerStripOrder.clear();
     selectedTrack = audioCount > 0 ? 0 : (instrumentCount > 0 ? audioCount : -1);
     dockStepSequencerMode = false;
     currentProjectFile = juce::File{};
@@ -636,6 +640,13 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
+    auto* mixerOrderXml=project.createNewChildElement("MixerStripOrder");
+    for(const auto& key:mixerStripOrder)
+    {
+        auto* entry=mixerOrderXml->createNewChildElement("Strip");
+        entry->setAttribute("key",key);
+    }
+
     project.setAttribute("tempo", tempoBpm);
     project.setAttribute("timeSignatureNumerator", timeSignatureNumerator);
     project.setAttribute("timeSignatureDenominator", timeSignatureDenominator);
@@ -1057,6 +1068,20 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
+    // Optional in projects created before console reordering.
+    mixerStripOrder.clear();
+    if(auto* mixerOrderXml=project->getChildByName("MixerStripOrder"))
+    {
+        for(auto* element=mixerOrderXml->getFirstChildElement();element!=nullptr;
+            element=element->getNextElement())
+        {
+            if(element->getTagName()!="Strip"||mixerStripOrder.size()>=2048)continue;
+            const juce::String key=element->getStringAttribute("key");
+            if(key.length()>1&&key.length()<12&&
+               (key[0]=='A'||key[0]=='M'||key[0]=='I'||key[0]=='B'))
+                mixerStripOrder.addIfNotAlreadyThere(key);
+        }
+    }
     // Restore the sampler only after project reset, so a previous project's kit
     // cannot leak into the newly opened session.
     if (auto* drum = project->getChildByName("DrumSampler"))
