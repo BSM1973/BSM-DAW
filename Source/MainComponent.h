@@ -116,7 +116,7 @@ public:
             g.drawText("STEP SEQUENCER", area.removeFromTop(65), juce::Justification::centred);
             g.setColour(juce::Colour(0xffa3b7cc));
             g.setFont(juce::Font(14.0f));
-            g.drawText("Sélectionnez une piste Instrument pour éditer ses Patterns.",
+            g.drawText(juce::String::fromUTF8("Sélectionnez une piste Instrument pour éditer ses Patterns."),
                        area, juce::Justification::centred);
         }
         selectedTrack = previousTrack;

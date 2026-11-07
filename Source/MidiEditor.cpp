@@ -610,7 +610,7 @@ public:
             addAndMakeVisible(button);
         }
         quantizeButton.setButtonText("Q");
-        quantizeButton.setTooltip("Quantifier les notes sélectionnées sur la grille SNAP (Q)");
+        quantizeButton.setTooltip(juce::String::fromUTF8("Quantifier les notes sélectionnées sur la grille SNAP (Q)"));
         quantizeButton.onClick = [this] { quantizeSelection(); };
         addAndMakeVisible(quantizeButton);
         selectAllButton.setButtonText(juce::String::fromUTF8("ÉDITER"));
@@ -693,7 +693,7 @@ public:
         velocityValue.setJustification(juce::Justification::centred);
         velocityValue.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff233746));
         velocityValue.setColour(juce::TextEditor::textColourId, juce::Colour(0xffffdf99));
-        velocityValue.setTooltip("Vélocité MIDI (1 à 127) : Entrée pour appliquer aux notes sélectionnées");
+        velocityValue.setTooltip(juce::String::fromUTF8("Vélocité MIDI (1 à 127) : Entrée pour appliquer aux notes sélectionnées"));
         velocityValue.onReturnKey = [this] { applyVelocityValue(); };
         velocityValue.onEscapeKey = [this] { velocityValue.giveAwayKeyboardFocus(); };
         velocityValue.setVisible(false);

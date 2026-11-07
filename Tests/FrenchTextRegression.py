@@ -37,14 +37,14 @@ for path in FILES:
         # damaged captions in the past. Require explicit UTF-8 conversion.
         # Match only strings which are the direct first parameter to avoid
         # false positives on comments and ordinary Unicode handling.
-        direct = re.search(
+        for direct in re.finditer(
             r'\b(?:setButtonText|setTooltip|drawText|drawFittedText)\s*\(\s*"([^"]*)"',
             line
-        )
-        if direct and any(ord(ch) > 127 for ch in direct.group(1)):
-            ISSUES.append(
-                f"{path.relative_to(ROOT)}:{line_no} : libellé français direct sans fromUTF8"
-            )
+        ):
+            if any(ord(ch) > 127 for ch in direct.group(1)):
+                ISSUES.append(
+                    f"{path.relative_to(ROOT)}:{line_no} : libellé français direct sans fromUTF8"
+                )
 
 mixer_path = SOURCE / "MixConsoleController.cpp"
 labels_path = SOURCE / "LibertyFrenchLabels.h"

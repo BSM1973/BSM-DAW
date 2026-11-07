@@ -808,7 +808,7 @@ public:
             selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
             selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffffdf99));
             selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff42596b));
-            selector->setTooltip("Entrée audio de cette piste : mono ou paire stéréo");
+            selector->setTooltip(juce::String::fromUTF8("Entrée audio de cette piste : mono ou paire stéréo"));
             selector->onChange = [this, i]
             {
                 if (i >= (int)inputSelectors.size() || recording) return;

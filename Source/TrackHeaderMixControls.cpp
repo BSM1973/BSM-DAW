@@ -215,7 +215,7 @@ private:
 if(!isAudio(i))
 {
  c.instrumentGui=std::make_unique<juce::TextButton>("GUI");
- c.instrumentGui->setTooltip("Afficher ou masquer l’interface de l’instrument virtuel");
+ c.instrumentGui->setTooltip(juce::String::fromUTF8("Afficher ou masquer l’interface de l’instrument virtuel"));
  c.instrumentGui->onClick=[this,i]{LibertyPluginHost::instance().toggleInstrumentEditorForTrack(i-owner.getAudioTrackCount());owner.repaint();};
  c.instrumentGui->setMouseClickGrabsKeyboardFocus(false);
  addAndMakeVisible(*c.instrumentGui);
@@ -237,7 +237,7 @@ if(!isAudio(i))
 if(isAudio(i))
 {
  c.instrumentGui=std::make_unique<juce::TextButton>("GUI");
- c.instrumentGui->setTooltip("Ouvrir l’interface du premier effet audio");
+ c.instrumentGui->setTooltip(juce::String::fromUTF8("Ouvrir l’interface du premier effet audio"));
  c.instrumentGui->setMouseClickGrabsKeyboardFocus(false);
  c.instrumentGui->onClick=[this,i]{LibertyPluginHost::instance().toggleEditorForTrackSlot(i,0);};
  addAndMakeVisible(*c.instrumentGui);
