@@ -39,7 +39,51 @@ constexpr int transportHeight=76, stripW=150, topY=66;
 float gainToDb(float g){return g<=.00001f?-60.f:juce::jlimit(-60.f,6.f,juce::Decibels::gainToDecibels(g));}
 float dbToGain(float d){return d<=-59.9f?0.f:juce::Decibels::decibelsToGain(d);}
 juce::Colour trackColour(int id){return libertySharedTrackColour(id);}
-class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinearSlider(juce::Graphics&g,int x,int y,int w,int h,float pos,float,float,const juce::Slider::SliderStyle style,juce::Slider&s)override{if(style!=juce::Slider::LinearVertical){juce::LookAndFeel_V4::drawLinearSlider(g,x,y,w,h,pos,0.f,0.f,style,s);return;}const float cx=(float)x+(float)w*.5f;const auto rail=juce::Rectangle<float>(cx-3.f,(float)y+4.f,6.f,(float)h-8.f);g.setColour(juce::Colour(0xff090b0e));g.fillRoundedRectangle(rail,3.f);g.setColour(juce::Colour(0xff344452));g.drawRoundedRectangle(rail,3.f,1.f);const auto knob=juce::Rectangle<float>((float)x+2.f,pos-7.f,(float)w-4.f,14.f);g.setColour(juce::Colour(0xffe8eff7));g.fillRoundedRectangle(knob,3.f);g.setColour(juce::Colour(0xff879aa9));g.drawRoundedRectangle(knob,3.f,1.f);g.setColour(juce::Colour(0xff24292f));g.drawHorizontalLine((int)pos,knob.getX()+4.f,knob.getRight()-4.f);}void drawRotarySlider(juce::Graphics&g,int x,int y,int w,int h,
+// Compact console inspired by the uploaded reference video: understated
+// graphite surfaces, sage accents and a warm Master, preserving DSP layout.
+namespace ModernMixer {
+const juce::Colour canvas{0xff101a1c};
+const juce::Colour header{0xff172627};
+const juce::Colour strip{0xff1d2d2e};
+const juce::Colour selected{0xff2b4141};
+const juce::Colour border{0xff385052};
+const juce::Colour panel{0xff223638};
+const juce::Colour text{0xffeef5f2};
+const juce::Colour secondary{0xffa5bdb6};
+const juce::Colour sage{0xff75d3b9};
+const juce::Colour amber{0xffdfa167};
+}
+
+class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{
+public:
+ void drawLinearSlider(juce::Graphics& g,int x,int y,int w,int h,float pos,float,
+                       float,const juce::Slider::SliderStyle style,juce::Slider& slider)override
+ {
+     if(style!=juce::Slider::LinearVertical)
+     {
+         juce::LookAndFeel_V4::drawLinearSlider(g,x,y,w,h,pos,0.f,0.f,style,slider);
+         return;
+     }
+     const float cx=(float)x+(float)w*.5f;
+     const auto rail=juce::Rectangle<float>(cx-2.2f,(float)y+6.f,4.4f,
+                                           (float)juce::jmax(0,h-12));
+     g.setColour(juce::Colour(0xff091415));
+     g.fillRoundedRectangle(rail,2.2f);
+     g.setColour(juce::Colour(0xff455d59));
+     g.drawRoundedRectangle(rail,2.2f,.8f);
+     g.setColour(ModernMixer::sage.withAlpha(.5f));
+     g.fillRoundedRectangle(cx-1.f,pos+5.f,2.f,
+         juce::jmax(0.f,rail.getBottom()-pos-5.f),1.f);
+     const auto thumb=juce::Rectangle<float>((float)x+3.f,pos-7.f,
+                                            (float)juce::jmax(1,w-6),14.f);
+     g.setColour(juce::Colour(0xffd4ded9));
+     g.fillRoundedRectangle(thumb,3.f);
+     g.setColour(juce::Colour(0xff6c8984));
+     g.drawRoundedRectangle(thumb,3.f,.8f);
+     g.setColour(juce::Colour(0xff536d67));
+     g.drawHorizontalLine((int)pos,thumb.getX()+5.f,thumb.getRight()-5.f);
+ }
+ void drawRotarySlider(juce::Graphics&g,int x,int y,int w,int h,
     float position,float start,float end,juce::Slider& slider)override{
     const float d=(float)juce::jmin(w,h);
     if(d<10.f)return;
@@ -48,10 +92,10 @@ class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinea
     const float radius=(d-2.f)*.5f;
     const float angle=start+juce::jlimit(0.f,1.f,position)*(end-start);
     const auto accent=slider.findColour(juce::Slider::rotarySliderFillColourId);
-    // Engraved dial markings stay inside the slider's own bounding rectangle.
-    g.setColour(juce::Colour(0xff12202c));
+    // Flat rotary dial rather than brushed-metal bevels.
+    g.setColour(juce::Colour(0xff182a2c));
     g.fillEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius);
-    g.setColour(juce::Colour(0xff607688));
+    g.setColour(juce::Colour(0xff66827a));
     g.drawEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius,.7f);
     for(int tick=0;tick<=8;++tick){
         const float a=start+(end-start)*(float)tick/8.f;
@@ -69,15 +113,11 @@ class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinea
     g.setColour(accent.withAlpha(.93f));
     g.strokePath(filled,juce::PathStrokeType(1.9f));
     const float bodyRadius=radius*.70f;
-    juce::ColourGradient metal(juce::Colour(0xff7a8b98),
-                              cx-bodyRadius*.60f,cy-bodyRadius*.75f,
-                              juce::Colour(0xff1a2833),
-                              cx+bodyRadius*.75f,cy+bodyRadius*.85f,false);
-    g.setGradientFill(metal);
+    g.setColour(juce::Colour(0xff364d4d));
     g.fillEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius);
-    g.setColour(juce::Colour(0xffa3b1bb).withAlpha(.70f));
+    g.setColour(juce::Colour(0xffa0bcb3).withAlpha(.68f));
     g.drawEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius,.85f);
-    g.setColour(juce::Colour(0xff18232d));
+    g.setColour(juce::Colour(0xff223334));
     g.fillEllipse(cx-bodyRadius*.58f,cy-bodyRadius*.58f,
                   1.16f*bodyRadius,1.16f*bodyRadius);
     const float inner=bodyRadius*.15f,outer=bodyRadius*.83f;
@@ -1332,8 +1372,8 @@ struct Strip{enum Kind{audio,midi,instrument,master,bus}kind=audio;int lane=0;Li
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
  std::array<bool,4> moduleExpanded{};std::array<std::unique_ptr<juce::TextButton>,4>moduleTabs;
- std::unique_ptr<juce::TextButton> fxHeader;bool insertsExpanded=true;
- int firstFxSlot=0;int preferredFaderHeight=250;
+ std::unique_ptr<juce::TextButton> fxHeader;bool insertsExpanded=false;
+ int firstFxSlot=0;int preferredFaderHeight=320;
  bool gateOn=false,eqOn=false;
  bool compOn=false;std::array<std::unique_ptr<juce::TextButton>,8>fx,fxUnload;juce::Rectangle<int>bounds;};
 class MixConsoleView final:public juce::Component,private juce::Timer{
@@ -1867,9 +1907,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
    struct ViewSnapshot
    {
        std::array<bool,4> modules{};
-       bool inserts=true;
+       bool inserts=false;
        int firstFx=0;
-       int faderHeight=250;
+       int faderHeight=320;
    };
    std::map<std::pair<int,int>,ViewSnapshot> previous;
    for(const auto& item:strips)
