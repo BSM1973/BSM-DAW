@@ -2166,10 +2166,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
           const int index=i-s->firstFxSlot;
           const bool show=s->insertsExpanded&&index>=0&&index<g.visibleFx;
           const int row=g.fxY+index*g.fxStep;
-          put(s->fx[(size_t)i].get(),8,row,s->bounds.getWidth()-43,
-             g.fxStep>0?g.fxStep-3:0,show);
           const bool populated=s->fxUnload[(size_t)i]&&
               s->fxUnload[(size_t)i]->isEnabled();
+          // Give an empty insert the full width: no hidden X hitbox.
+          put(s->fx[(size_t)i].get(),8,row,s->bounds.getWidth()-(populated?43:16),
+              g.fxStep>0?g.fxStep-3:0,show);
           put(s->fxUnload[(size_t)i].get(),s->bounds.getWidth()-29,row,18,
               g.fxStep>0?g.fxStep-3:0,show&&populated);
         }
