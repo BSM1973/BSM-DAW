@@ -312,6 +312,23 @@ int main()
     assert(!corrDisplay.valid&&corrDisplay.value==0.f);
     assert(same[0]==0.5f&&opposite[0]==-0.5f);
 
+    // A right-click meter menu may clear one channel's held clips or all
+    // channels together. RMS/instantaneous levels stay unchanged.
+    std::array<StereoDisplay,3> meterBank{};
+    for(auto& meter:meterBank)
+        advance(meter,StereoPeaks{{1.2f,0.5f}},StereoPeaks{{0.4f,0.2f}});
+    const float measuredBefore=meterBank[0].channel[0].measuredRms;
+    meterBank[1].resetPeak();
+    assert(meterBank[0].clipped()&&!meterBank[1].clipped()&&meterBank[2].clipped());
+    for(auto& meter:meterBank)meter.resetPeak();
+    for(const auto& meter:meterBank)
+    {
+        assert(!meter.clipped());
+        assert(meter.channel[0].heldPeak==0.f);
+        assert(meter.channel[1].heldPeak==0.f);
+    }
+    assert(meterBank[0].channel[0].measuredRms==measuredBefore);
+
     using namespace LibertyMixerBusRouting;
     assert(destination(-1,3)==-1&&destination(2,3)==2);
     assert(destination(3,3)==-1&&destination(0,0)==-1);

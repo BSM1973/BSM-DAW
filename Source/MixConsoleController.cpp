@@ -1476,12 +1476,18 @@ public:
  searchBox.setColour(juce::TextEditor::textColourId,ModernMixer::text);
  searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
  searchBox.setColour(juce::TextEditor::focusedOutlineColourId,ModernMixer::sage);
- searchBox.onTextChange=[this]{findMixerTrack(false);};
+ searchBox.onTextChange=[this]{
+     if(searchBox.getText().trim().isEmpty())lastObservedTrack=-99999;
+     findMixerTrack(false);
+     repaint();
+ };
  searchBox.onReturnKey=[this]{findMixerTrack(true);};
  searchBox.onEscapeKey=[this]{
      searchBox.setText(juce::String(),false);
      searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+     lastObservedTrack=-99999;
      searchBox.giveAwayKeyboardFocus();
+     followArrangementSelection();
  };
  addAndMakeVisible(searchBox);
  searchBox.setVisible(false);
@@ -1514,7 +1520,32 @@ public:
 }
  void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){lastObservedTrack=-99999;setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);sync();layout();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
  bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;finishRename(true);routingLane=-1;rebuild();sync();layout();repaint();}
- int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);if(routingLane>=0&&q.x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return -1;for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
+ int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const
+ {
+     if(!visible||p.y<transportHeight)return -1;
+     const auto q=p-juce::Point<int>(0,transportHeight);
+     // A track hidden behind pinned Master or routing can never accept a drop.
+     if(!LibertyNoOverlap::mixerChannelHit(
+          getWidth(),getHeight(),routingLane>=0,q.x,q.y))return -1;
+     for(const auto& strip:strips)
+     {
+         if(strip->kind==Strip::master||!strip->bounds.contains(q))continue;
+         if(instrumentPlugin&&strip->kind==Strip::instrument)
+             return owner.getAudioTrackCount()+owner.getMidiTrackCount()+strip->lane;
+         if(!instrumentPlugin&&(strip->kind==Strip::audio||
+                                strip->kind==Strip::instrument))
+         {
+             for(int slot=0;slot<8;++slot)
+                 if(strip->fx[(size_t)slot]&&strip->fx[(size_t)slot]->isVisible()&&
+                    strip->fx[(size_t)slot]->getBounds().contains(q))
+                     return 1000000+(strip->kind==Strip::audio?strip->lane:
+                        owner.getAudioTrackCount()+owner.getMidiTrackCount()+
+                        strip->lane)*8+slot;
+             return -1;
+         }
+     }
+     return -1;
+ }
  void paint(juce::Graphics&g)override
  {
      g.fillAll(ModernMixer::canvas);
@@ -1533,11 +1564,25 @@ public:
      g.fillRoundedRectangle((float)hint.x,(float)hint.y+1.f,3.f,19.f,1.5f);
      g.setColour(ModernMixer::secondary);
      g.setFont(juce::Font(10.f,juce::Font::bold));
-     const auto caption=juce::String("LIBERTY MIXER  |  ")
+     juce::String caption=juce::String("LIBERTY MIXER  |  ")
          +juce::String(owner.getAudioTrackCount()+owner.getMidiTrackCount()
                        +owner.getInstrumentTrackCount())+" PISTES  |  "
          +juce::String(owner.audioEngine.getMixerBusCount())+" BUS  |  "
          +juce::String::fromUTF8("MAJ + MOLETTE : DÉFILER");
+     const auto query=searchBox.getText().trim();
+     if(query.isNotEmpty())
+     {
+         int matches=0,position=0;
+         for(const auto& strip:strips)
+             if(name(*strip).containsIgnoreCase(query))
+             {
+                 ++matches;
+                 if(strip.get()==selected)position=matches;
+             }
+         caption=juce::String::fromUTF8("RECHERCHE : ")+query+"  |  "+
+             juce::String(position)+"/"+juce::String(matches)+
+             juce::String::fromUTF8("  |  ENTRÉE : SUIVANT");
+     }
      g.drawFittedText(caption,hint.x+12,hint.y,juce::jmax(1,hint.w-12),
                       hint.h,juce::Justification::centredLeft,1);
      const auto bank=LibertyNoOverlap::scrollableChannels(getWidth(),getHeight(),routingLane>=0);
@@ -1585,7 +1630,8 @@ public:
  void resized()override{layout();}
  void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel)override{
    const auto bank=LibertyNoOverlap::scrollableChannels(getWidth(),getHeight(),routingLane>=0);
-   if(e.getPosition().x>=bank.right())return;
+   if(!LibertyNoOverlap::mixerChannelHit(getWidth(),getHeight(),
+             routingLane>=0,e.getPosition().x,e.getPosition().y))return;
    // Shift+wheel or a horizontal trackpad swipe scrolls ONLY tracks.
    if(e.mods.isShiftDown()||std::abs(wheel.deltaX)>0.001f)
    {
@@ -1609,10 +1655,15 @@ public:
    }
  }
  void mouseDown(const juce::MouseEvent&e)override{
-   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)
-       return; // Reserved routing sidebar, never a strip.
+   const auto p=e.getPosition();
+   const bool masterArea=LibertyNoOverlap::mixerMasterHit(
+       getWidth(),getHeight(),routingLane>=0,p.x,p.y);
+   const bool bankArea=LibertyNoOverlap::mixerChannelHit(
+       getWidth(),getHeight(),routingLane>=0,p.x,p.y);
+   if(!masterArea&&!bankArea)return;
    for(auto& strip:strips){
-     if(!strip->bounds.contains(e.getPosition()))continue;
+     if((strip->kind==Strip::master)!=masterArea||
+        !strip->bounds.contains(p))continue;
      const bool nameHeader=e.getPosition().x>=strip->bounds.getX()+6 &&
          e.getPosition().x<strip->bounds.getRight()-6 &&
          e.getPosition().y>=strip->bounds.getY()+10 &&
@@ -1627,7 +1678,20 @@ public:
          beginRename(*strip);
          return;
      }
-     if(e.mods.isPopupMenu())return; // No right click starts a drag.
+     if(e.mods.isPopupMenu())
+     {
+         if(strip->kind!=Strip::midi)
+         {
+             const auto geom=getStripGeometry(*strip);
+             const int meterTop=strip->bounds.getY()+geom.faderY;
+             const int meterBottom=strip->bounds.getBottom()-36;
+             if(LibertyMixConsoleMeter::resolveMeterClick(
+                 p.x-strip->bounds.getX(),p.y,meterTop,meterBottom)!=
+                 LibertyMixConsoleMeter::MeterClick::none)
+                 showMeterMenu(*strip,e.getScreenPosition());
+         }
+         return; // No right-click starts a drag.
+     }
      // The route label is clickable, with no conflict with COR/BAL or faders.
      if((strip->kind==Strip::audio||strip->kind==Strip::instrument)&&
         e.mods.isLeftButtonDown()&&
@@ -1754,14 +1818,20 @@ public:
    draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void mouseMove(const juce::MouseEvent&e)override{
-   if(routingLane>=0&&e.getPosition().x>=getWidth()-LibertyNoOverlap::routingPaneWidth)
+   const auto p=e.getPosition();
+   const bool masterArea=LibertyNoOverlap::mixerMasterHit(
+       getWidth(),getHeight(),routingLane>=0,p.x,p.y);
+   const bool bankArea=LibertyNoOverlap::mixerChannelHit(
+       getWidth(),getHeight(),routingLane>=0,p.x,p.y);
+   if(!masterArea&&!bankArea)
    {
        setMouseCursor(juce::MouseCursor::NormalCursor);
        return;
    }
    bool onHandle=false,onReadout=false,onRoute=false;
    for(const auto& strip:strips){
-     if(!strip->bounds.contains(e.getPosition()))continue;
+     if((strip->kind==Strip::master)!=masterArea||
+        !strip->bounds.contains(p))continue;
      if(strip->kind!=Strip::midi){
        const auto geometry=getStripGeometry(*strip);
        const int top=strip->bounds.getY()+geometry.faderY;
@@ -1785,6 +1855,25 @@ public:
                 juce::MouseCursor::NormalCursor);
  }
 private:
+ void showMeterMenu(const Strip& source,juce::Point<int> point)
+ {
+     juce::PopupMenu menu;
+     menu.addItem(1,juce::String::fromUTF8("EFFACER LA CRÊTE DE CETTE PISTE"));
+     menu.addItem(2,juce::String::fromUTF8("EFFACER TOUTES LES CRÊTES"));
+     menu.showMenuAsync(
+         juce::PopupMenu::Options().withTargetScreenArea(
+             juce::Rectangle<int>(point.x,point.y,1,1)),
+         [safe=juce::Component::SafePointer<MixConsoleView>(this),
+          kind=source.kind,lane=source.lane](int action)
+         {
+             if(safe==nullptr||action==0)return;
+             for(auto& channel:safe->strips)
+                 if(action==2||(action==1&&channel->kind==kind&&
+                                channel->lane==lane))
+                     channel->meter.resetPeak();
+             safe->repaint();
+         });
+ }
  void focusMixerStrip(Strip& strip)
  {
      if(routingLane>=0)routingLane=-1;
@@ -1812,6 +1901,7 @@ private:
      if(query.isEmpty())
      {
          searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+         repaint();
          return;
      }
      const int count=(int)strips.size();
@@ -1835,6 +1925,7 @@ private:
          }
      }
      searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::amber);
+     repaint();
  }
  void followArrangementSelection()
  {
@@ -1987,6 +2078,15 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      s->pan->setColour(juce::Slider::rotarySliderFillColourId,ModernMixer::sage);
  if(s->kind==Strip::bus&&s->pan)
      s->pan->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffc6a4de));
+ if(s->pan)
+     s->pan->setTooltip(juce::String::fromUTF8(
+         "PANORAMIQUE : double-clic pour revenir au centre."));
+ if(s->fader)
+     s->fader->setTooltip(juce::String::fromUTF8(
+         "VOLUME : double-clic pour revenir à 0 dB."));
+ if(s->mute)
+     s->mute->setTooltip(juce::String::fromUTF8(
+         "MUET : couper ou rétablir cette piste."));
  // This target sits above the name text ONLY and cannot intercept routing,
  // channel plugins, pan controls, mute/solo, meters or faders.
  s->nameHit=std::make_unique<MixerNameHitTarget>();
@@ -2226,6 +2326,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     const auto search=LibertyNoOverlap::mixerSearchField(getWidth());
     searchBox.setBounds(search.x,search.y,search.w,search.h);
     searchBox.setVisible(search.w>0&&search.h>0);
+    if(search.w==0&&searchBox.getText().isNotEmpty())
+    {
+        searchBox.setText(juce::String(),false);
+        lastObservedTrack=-99999;
+    }
     const bool routingOpen=routingLane>=0;
     const auto nativeViewport=LibertyNoOverlap::scrollableChannels(
         getWidth(),getHeight(),routingOpen);
@@ -2578,7 +2683,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
               {
                   if(!occupied[(size_t)slot]||!s.fx[(size_t)slot])continue;
                   if(shown>=maxLines)continue;
-                  const auto label=s.fx[(size_t)slot]->getButtonText();
+                  const auto label=juce::String("FX ")+juce::String(slot+1)+
+                      " : "+s.fx[(size_t)slot]->getButtonText();
                   g.setColour(ModernMixer::sage);
                   g.fillEllipse((float)x+16.f,(float)(y+areaTop+27+shown*18),4.f,4.f);
                   g.setColour(ModernMixer::text);

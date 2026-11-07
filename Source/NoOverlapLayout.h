@@ -123,6 +123,19 @@ inline bool pinnedMasterDoesNotOverlap(int width,int height,bool routing) noexce
            master.right()==mixerStripViewport(width,height,routing).right()&&
            tracks.w>=pinnedMasterWidth;
 }
+constexpr bool pointIn(Rect area,int x,int y) noexcept
+{
+    return area.w>0&&area.h>0&&x>=area.x&&x<area.right()&&
+           y>=area.y&&y<area.bottom();
+}
+inline bool mixerChannelHit(int width,int height,bool routed,int x,int y) noexcept
+{
+    return pointIn(scrollableChannels(width,height,routed),x,y);
+}
+inline bool mixerMasterHit(int width,int height,bool routed,int x,int y) noexcept
+{
+    return pointIn(pinnedMaster(width,height,routed),x,y);
+}
 inline Rect routingCloseButton(int windowWidth) noexcept
 {
     return {windowWidth-routingPaneWidth+186,mixerTopY+15,24,24};

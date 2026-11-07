@@ -47,6 +47,21 @@ int main()
                 assert(bank.right()+pinnedMasterGap<=master.x);
                 assert(master.right()==mixerStripViewport(width,height,routed).right());
                 assert(!intersects(master,routingPanel(width,height,routed)));
+                const int insideY=bank.y+15;
+                assert(mixerChannelHit(width,height,routed,bank.x+1,insideY));
+                assert(mixerMasterHit(width,height,routed,master.x+1,insideY));
+                assert(!mixerChannelHit(width,height,routed,master.x+1,insideY));
+                assert(!mixerMasterHit(width,height,routed,bank.x+1,insideY));
+                assert(!mixerMasterHit(width,height,routed,bank.right(),insideY));
+                assert(!mixerChannelHit(width,height,routed,master.right(),insideY));
+                assert(!mixerMasterHit(width,height,routed,master.x+1,master.bottom()));
+                assert(!mixerChannelHit(width,height,routed,bank.x+1,bank.y-1));
+                if(routed)
+                {
+                    const auto route=routingPanel(width,height,true);
+                    assert(!mixerChannelHit(width,height,true,route.x+1,insideY));
+                    assert(!mixerMasterHit(width,height,true,route.x+1,insideY));
+                }
                 for(int n:{0,1,2,4,8,32})
                 {
                     const int max=channelMaxScroll(n,bank.w);
