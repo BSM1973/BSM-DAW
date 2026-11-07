@@ -55,6 +55,34 @@ else:
     if 'juce::String("D")' not in labels or '"TAILS"' not in labels:
         ISSUES.append("Le libellé DÉTAILS n'est plus correctement assemblé")
 
+# The live UI cleaner is a second safety net for legacy garbled text.
+# Verify real French letters (including upper case) remain repairable,
+# and a valid stand-alone accent is never inadvertently stripped.
+cleaner = (SOURCE / "UISymbolCleaner.cpp").read_text(encoding="utf-8")
+replacements = {
+    int(bad, 16): int(good, 16)
+    for bad, good in re.findall(
+        r"\\{0x([0-9A-Fa-f]{4}),0x([0-9A-Fa-f]{4})\\}", cleaner
+    )
+}
+for trailing, expected in {
+    0x00A9: 0x00E9,  # e acute
+    0x00A8: 0x00E8,  # e grave
+    0x00EA: None,    # do not rewrite an already correct e circumflex
+    0x00A0: 0x00E0,  # a grave
+    0x00A7: 0x00E7,  # c cedilla
+    0x00B4: 0x00F4,  # o circumflex
+    0x2030: 0x00C9,  # E acute: DÉTAILS
+    0x02C6: 0x00C8,  # E grave
+    0x2021: 0x00C7,  # C cedilla
+}.items():
+    if expected is not None and replacements.get(trailing) != expected:
+        ISSUES.append(
+            f"Réparation d'accent absente : 0x{trailing:04X} -> 0x{expected:04X}"
+        )
+if "if(text.contains(brokenPrefix))" not in cleaner:
+    ISSUES.append("Le nettoyeur doit ne modifier que les séquences vraiment corrompues")
+
 if ISSUES:
     print("ÉCHEC : intégrité des caractères français")
     print("\n".join(ISSUES[:60]))
