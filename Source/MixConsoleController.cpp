@@ -1858,8 +1858,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  s->nameHit=std::make_unique<MixerNameHitTarget>();
  auto* hit=s->nameHit.get();
  auto* strip=s.get();
- hit->setTooltip(juce::String::fromUTF8(
-     "Double-clic : renommer. Clic droit : couleur. Glisser : déplacer."));
+ // This transparent hit target is not a TooltipClient; the Help hint
+ // appears in the mixer toolbar without adding an overlapping child.
  hit->onDown=[this](const juce::MouseEvent& event)
  {
      mouseDown(event.getEventRelativeTo(this));
