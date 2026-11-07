@@ -62,7 +62,7 @@ cleaner = (SOURCE / "UISymbolCleaner.cpp").read_text(encoding="utf-8")
 replacements = {
     int(bad, 16): int(good, 16)
     for bad, good in re.findall(
-        r"\\{0x([0-9A-Fa-f]{4}),0x([0-9A-Fa-f]{4})\\}", cleaner
+        r"\{0x([0-9A-Fa-f]{4}),0x([0-9A-Fa-f]{4})\}", cleaner
     )
 }
 for trailing, expected in {
