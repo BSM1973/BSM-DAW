@@ -5,6 +5,12 @@
 int main()
 {
     using namespace LibertyMixerProgressiveFx;
+    // Loading a synth on a collapsed instrument strip automatically
+    // opens its separate FX rack. Repeated sync must respect manual collapse.
+    static_assert(revealOnInstrumentLoad(false,true),"synth load must expose FX 1");
+    static_assert(!revealOnInstrumentLoad(true,true),"no repeated forced expansion");
+    static_assert(!revealOnInstrumentLoad(false,false),"empty instrument is unchanged");
+    static_assert(!revealOnInstrumentLoad(true,false),"unload doesn't force expansion");
     std::array<bool,slotLimit> state{};
     assert(revealedCount(state)==1);
     for(int index=0;index<slotLimit;++index)
