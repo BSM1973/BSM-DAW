@@ -27,6 +27,34 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                     + std::to_string(actual) + ", expected=" + std::to_string(expected));
         };
         auto normal=render(clip);near(normal.getSample(0,1200),.25f);
+        // Real BUS signal path: exactly one source contribution reaches Master.
+        if(engine.addMixerBus()!=0)throw std::runtime_error("bus creation");
+        engine.setTrackMixerBus(0,0);
+        if(engine.getTrackMixerBus(0)!=0)throw std::runtime_error("bus assign");
+        auto grouped=render(clip);
+        near(grouped.getSample(0,1200),normal.getSample(0,1200));
+        near(grouped.getSample(1,1200),normal.getSample(1,1200));
+        engine.setMixerBusGain(0,.5f);
+        grouped=render(clip);
+        near(grouped.getSample(0,1200),.125f);
+        engine.setMixerBusGain(0,1.f);
+        engine.setMixerBusMuted(0,true);
+        grouped=render(clip);
+        near(grouped.getSample(0,1200),0.f);
+        engine.setMixerBusMuted(0,false);
+        engine.setMixerBusSolo(0,true);
+        grouped=render(clip);
+        near(grouped.getSample(0,1200),.25f);
+        engine.setTrackMixerBus(0,-1);
+        grouped=render(clip);
+        near(grouped.getSample(0,1200),0.f); // solo BUS filters direct sources
+        engine.setMixerBusSolo(0,false);
+        grouped=render(clip);
+        near(grouped.getSample(0,1200),.25f);
+        engine.resetMixerBuses();
+        if(engine.getMixerBusCount()!=0||engine.getTrackMixerBus(0)!=-1)
+            throw std::runtime_error("bus project reset");
+
         clip.clipGain=.5f;auto quiet=render(clip);near(quiet.getSample(0,1200),.125f);
         clip.clipGain=1;clip.reverse=true;auto reversed=render(clip);near(reversed.getSample(0,1200),3599.f/count);
         clip.reverse=false;clip.fadeInSeconds=.05;auto fade=render(clip);near(fade.getSample(0,1200),.125f);
