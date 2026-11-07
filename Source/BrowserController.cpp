@@ -555,6 +555,13 @@ private:
 
     void setCategory(Category newCategory)
     {
+        // Changing tabs abandons the explicit FX target instead of
+        // unexpectedly loading a plugin into a stale slot later.
+        if(newCategory!=Category::plugins)
+        {
+            targetEffectSlot=-1;
+            targetEffectLane=-1;
+        }
         category = newCategory;
         filesButton.setToggleState(category == Category::files, juce::dontSendNotification);
         audioButton.setToggleState(category == Category::audio, juce::dontSendNotification);
@@ -873,9 +880,13 @@ private:
         // When an empty slot invoked the browser, honor that exact slot ID.
         // The ordinary browser continues using the next free insert.
         const int insertSlot = targetEffectSlot>=0?targetEffectSlot:firstFreeOneKnobInsertSlot();
-        const int instrumentLane = selectedInstrumentTrack();
-        const int audioLane = selectedAudioTrack();
-        if (insertSlot < 0)
+        const int instrumentLane = targetEffectSlot>=0
+            ?(targetIsInstrument?targetEffectLane:-1):selectedInstrumentTrack();
+        const int audioLane = targetEffectSlot>=0
+            ?(targetIsInstrument?-1:targetEffectLane):selectedAudioTrack();
+        if (insertSlot < 0 ||
+            (instrumentLane>=0 && instrumentLane>=owner.getInstrumentTrackCount()) ||
+            (audioLane>=0 && audioLane>=owner.getAudioTrackCount()))
         {
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - One Knob",
                                                    (instrumentLane < 0 && audioLane < 0)
