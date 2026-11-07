@@ -35,6 +35,7 @@ juce::Colour libertySharedTrackColour(int colourId);
 void showLibertyMixerColourPalette(juce::Point<int> screenPoint,int selectedId,
                                   std::function<void(int)> onSelect);
 void showLibertyEffectBrowserForSlot(MainComponent*,bool instrument,int lane,int slot);
+int getLibertyBrowserReservedWidth(MainComponent*);
 
 namespace {
 constexpr int transportHeight=76, stripW=150, topY=66;
@@ -2684,10 +2685,29 @@ public:
  explicit MixConsoleController(MainComponent&o):owner(o),view(o){}
  ~MixConsoleController(){shutdown();}
  void shutdown(){if(stopped.exchange(true))return;shown=false;view.setConsoleVisible(false);}
- void show(bool b){if(stopped.load())return;shown=b;view.setConsoleVisible(b);if(b)view.toFront(true);owner.repaint();}
+ void show(bool b)
+ {
+     if(stopped.load())return;
+     shown=b;
+     view.setConsoleVisible(b);
+     if(b)
+     {
+         resizeToOwner();
+         view.toFront(true);
+     }
+     owner.repaint();
+ }
  bool isVisible()const{return shown;}
  void refresh(){if(stopped.load())return;view.refreshStatic();}
- void resizeToOwner(){if(stopped.load()||!shown)return;view.setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));}
+ void resizeToOwner()
+ {
+     if(stopped.load()||!shown)return;
+     const int available=juce::jmax(1,owner.getWidth()-
+         getLibertyBrowserReservedWidth(&owner));
+     const auto target=juce::Rectangle<int>(0,transportHeight,available,
+         juce::jmax(1,owner.getHeight()-transportHeight));
+     if(view.getBounds()!=target)view.setBounds(target);
+ }
  int getDropTrack(juce::Point<int>p,bool i)const{return view.getDropTrackForOwnerPoint(p,i);}
 private:
  MainComponent&owner;MixConsoleView view;std::atomic<bool>stopped{false};bool shown=false;
