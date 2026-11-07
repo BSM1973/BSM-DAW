@@ -215,4 +215,39 @@ inline float readoutAmplitude(const StereoDisplay& display,ReadoutMode mode) noe
     return std::max(channelReadoutAmplitude(display,mode,0),
                     channelReadoutAmplitude(display,mode,1));
 }
+
+// An RMS-based stereo balance indicator. Positive difference means LEFT
+// dominates, negative means RIGHT. The position is -1 for left, 0 centre,
+// +1 for right. It is a level balance, not a phase/correlation meter.
+enum class BalanceSide { silent, left, center, right };
+struct StereoBalance
+{
+    BalanceSide side=BalanceSide::silent;
+    float differenceDb=0.f; // non-negative magnitude for digital display
+    float position=0.f;     // -1 left, +1 right; saturates at 24 dB
+};
+
+inline StereoBalance evaluateStereoBalance(float rmsLeft,float rmsRight) noexcept
+{
+    constexpr float floor=0.001f; // -60 dBFS: ignore silence/noise floor
+    const float left=sanitize(rmsLeft);
+    const float right=sanitize(rmsRight);
+    if(std::max(left,right)<floor)return {};
+    const float signedDb=std::clamp(
+        20.f*std::log10(std::max(left,floor)/std::max(right,floor)),
+        -60.f,60.f);
+    // Prevent a jittering L/R direction on nearly balanced material.
+    if(std::abs(signedDb)<0.15f)
+        return {BalanceSide::center,0.f,0.f};
+    return {signedDb>0.f?BalanceSide::left:BalanceSide::right,
+            std::abs(signedDb),std::clamp(-signedDb/24.f,-1.f,1.f)};
+}
+
+inline StereoBalance stereoRmsBalance(const StereoDisplay& display) noexcept
+{
+    // The console's gently released RMS provides a stable, musically useful
+    // stereo placement indication independently of the PEAK/RMS digits.
+    return evaluateStereoBalance(display.channel[0].rms,
+                                 display.channel[1].rms);
+}
 }
