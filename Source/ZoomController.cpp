@@ -1,0 +1,311 @@
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <atomic>
+#include <cmath>
+#define private public
+#include "MainComponent.h"
+#undef private
+
+namespace
+{
+std::atomic<float> timelineHorizontalZoom { 1.0f };
+std::atomic<float> timelineVerticalZoom { 1.0f };
+std::atomic<int> trackHeightPreset { 2 }; // 0 compact (row 1), 1 normal (rows 1-2), 2 large (all 3; default)
+std::atomic<float> pianoHorizontalZoom { 1.0f };
+std::atomic<float> pianoVerticalZoom { 1.0f };
+
+float applyWheelZoom(float current, float delta, float minimum, float maximum)
+{
+    if (std::abs(delta) < 0.0001f)
+        return current;
+    const float factor = delta > 0.0f ? 1.12f : (1.0f / 1.12f);
+    return juce::jlimit(minimum, maximum, current * factor);
+}
+
+// Floating instrument windows own their wheel interactions. In particular,
+// Drum Sampler waveform zoom must never modify the arrange timeline zoom.
+bool isInsideDrumSampler(juce::Component* component)
+{
+    while (component != nullptr)
+    {
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(component))
+            return window->getName().startsWithIgnoreCase("Liberty - Drum Sampler");
+        component = component->getParentComponent();
+    }
+    return false;
+}
+
+bool isInsideMidiEditor(juce::Component* component)
+{
+    while (component != nullptr)
+    {
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(component))
+            return window->getName().startsWithIgnoreCase("Liberty - MIDI");
+        component = component->getParentComponent();
+    }
+    return false;
+}
+
+bool isInsideScrollableBrowserContent(juce::Component* component)
+{
+    while (component != nullptr)
+    {
+        if (dynamic_cast<juce::ListBox*>(component) != nullptr
+            || dynamic_cast<juce::TreeView*>(component) != nullptr)
+            return true;
+
+        component = component->getParentComponent();
+    }
+    return false;
+}
+
+void repaintRelevantWindows()
+{
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* component = desktop.getComponent(i))
+            component->repaint();
+}
+
+class ZoomMouseListener final : public juce::MouseListener
+{
+public:
+    ZoomMouseListener() { juce::Desktop::getInstance().addGlobalMouseListener(this); }
+    ~ZoomMouseListener() override { shutdown(); }
+
+    void shutdown()
+    {
+        if (!registered)
+            return;
+        juce::Desktop::getInstance().removeGlobalMouseListener(this);
+        registered = false;
+    }
+
+    // Detect a resize handle by its actual lane boundary, not the lane
+    // returned by hit testing (which can be the NEXT lane at the edge).
+    static int trackAtResizeEdge(MainComponent& owner, juce::Point<int> p)
+    {
+        if (p.x < 0 || p.x >= owner.trackHeaderWidth
+            || p.y < owner.getArrangeTop() || p.y >= owner.getMixerTop())
+            return -1;
+        for (int row = owner.getTrackScrollRows(); row < owner.getTotalArrangeTrackCount(); ++row)
+        {
+            const int bottom = owner.getArrangeTrackTop(row) + owner.getArrangeTrackHeight(row);
+            if (std::abs(p.y - bottom) <= 8) return row;
+            if (bottom > p.y + 8) break;
+        }
+        return -1;
+    }
+    void mouseMove(const juce::MouseEvent& event) override
+    {
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        const int track = trackAtResizeEdge(*owner, p);
+        if (track >= 0)
+            owner->setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        else
+            owner->setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr || event.mods.isPopupMenu()) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        const int track = trackAtResizeEdge(*owner, p);
+        if (track >= 0)
+        {
+            dragMode = 1;
+            draggedTrack = track;
+            dragStart = p.y;
+            initialTrackHeight = owner->getArrangeTrackHeight(track);
+        }
+        // No timeline zoom drag on the track-height preset icon.
+        // Its bounds are x=188..208, y=79..100. The former x=202..218
+        // gesture overlapped it and caused a preset click to zoom the timeline.
+    }
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (dragMode == 0) return;
+        auto* component = event.eventComponent;
+        MainComponent* owner = nullptr;
+        while (component != nullptr)
+        {
+            if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+            component = component->getParentComponent();
+        }
+        if (owner == nullptr) return;
+        const auto p = event.getEventRelativeTo(owner).getPosition();
+        if (dragMode == 1 && draggedTrack >= 0)
+            owner->setArrangeTrackHeight(draggedTrack, initialTrackHeight + p.y - dragStart);
+        else
+            timelineHorizontalZoom.store(juce::jlimit(0.08f, 5.0f, initialZoom + (p.x - dragStart) / 160.0f));
+        repaintRelevantWindows();
+    }
+    void mouseUp(const juce::MouseEvent&) override { dragMode = 0; draggedTrack = -1; }
+
+    void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
+    {
+        // Dock Piano Roll is embedded in MainComponent, not a MIDI window.
+        // The global zoom listener must not steal its wheel events.
+        MainComponent* dockOwner = nullptr;
+        for (auto* component = event.eventComponent; component != nullptr;
+             component = component->getParentComponent())
+            if ((dockOwner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+        if (dockOwner != nullptr)
+        {
+            const auto p = event.getEventRelativeTo(dockOwner).getPosition();
+            if (p.y >= dockOwner->getMixerTop() + 30
+                && p.x >= MainComponent::trackHeaderWidth - 30
+                && p.y < dockOwner->getHeight()
+                && !isInsideDrumSampler(event.eventComponent))
+                return;
+        }
+        if (isInsideDrumSampler(event.eventComponent)
+            || isInsideScrollableBrowserContent(event.eventComponent))
+            return;
+
+        const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
+        if (std::abs(delta) < 0.0001f)
+            return;
+
+        // Plain wheel over the track headers scrolls track rows only.
+        // Leave timeline wheel zoom/scroll and modifier shortcuts unchanged.
+        if (!isInsideMidiEditor(event.eventComponent) && !event.mods.isCtrlDown()
+            && !event.mods.isCommandDown() && !event.mods.isAltDown()
+            && !event.mods.isShiftDown())
+        {
+            auto* component = event.eventComponent;
+            MainComponent* owner = nullptr;
+            while (component != nullptr)
+            {
+                if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+                component = component->getParentComponent();
+            }
+            if (owner != nullptr)
+            {
+                const auto p = event.getEventRelativeTo(owner).getPosition();
+                if (p.x >= 0 && p.x < MainComponent::trackHeaderWidth
+                    && p.y >= owner->getArrangeTop() && p.y < owner->getMixerTop())
+                {
+                    const int rowH = juce::jmax(1, getLibertyTrackRowHeight());
+                    const int visible = juce::jmax(1, owner->getArrangeRowsBounds().getHeight() / rowH);
+                    const int maxStart = juce::jmax(0, owner->getTotalArrangeTrackCount() - visible);
+                    const int step = juce::jmax(1, (int) std::lround(std::abs(wheel.deltaY) * 3.0f));
+                    const int next = owner->getTrackScrollRows() + (wheel.deltaY > 0.0f ? -step : step);
+                    owner->setTrackScrollRows(juce::jlimit(0, maxStart, next));
+                    return;
+                }
+            }
+        }
+
+        if (event.mods.isCtrlDown() && !isInsideMidiEditor(event.eventComponent))
+        {
+            auto* component = event.eventComponent;
+            MainComponent* owner = nullptr;
+            while (component != nullptr)
+            {
+                if ((owner = dynamic_cast<MainComponent*>(component)) != nullptr) break;
+                component = component->getParentComponent();
+            }
+            if (owner != nullptr)
+            {
+                const int rowH = getLibertyTrackRowHeight();
+                const int available = juce::jmax(1, owner->getArrangeRowsBounds().getHeight());
+                const int visible = juce::jmax(1, (available + rowH - 1) / rowH);
+                const int maxStart = juce::jmax(0, owner->getTotalArrangeTrackCount() - visible);
+                owner->setTrackScrollRows(juce::jlimit(0, maxStart, owner->getTrackScrollRows() + (delta > 0.0f ? -1 : 1)));
+            }
+            return;
+        }
+
+        const bool vertical = event.mods.isCommandDown();
+        if (isInsideMidiEditor(event.eventComponent))
+        {
+            if (vertical)
+                pianoVerticalZoom.store(applyWheelZoom(pianoVerticalZoom.load(), delta, 0.55f, 2.5f));
+            else
+                pianoHorizontalZoom.store(applyWheelZoom(pianoHorizontalZoom.load(), delta, 0.40f, 5.0f));
+        }
+        else
+        {
+            if (vertical)
+                timelineVerticalZoom.store(applyWheelZoom(timelineVerticalZoom.load(), delta, 0.58f, 2.5f));
+            else
+                timelineHorizontalZoom.store(applyWheelZoom(timelineHorizontalZoom.load(), delta, 0.08f, 5.0f));
+        }
+        repaintRelevantWindows();
+    }
+
+private:
+    bool registered = true;
+    int dragMode = 0, dragStart = 0;
+    int draggedTrack = -1, initialTrackHeight = 0;
+    float initialZoom = 1.0f;
+};
+
+ZoomMouseListener zoomMouseListener;
+}
+
+double getLibertyTimelinePixelsPerSecond() noexcept
+{
+    return 80.0 * (double) timelineHorizontalZoom.load(std::memory_order_relaxed);
+}
+
+float getLibertyTimelineVerticalZoom() noexcept
+{
+    return timelineVerticalZoom.load(std::memory_order_relaxed);
+}
+
+int getLibertyTrackRowHeight() noexcept
+{
+    // Exact row-based presets. The large three-row layout is the default.
+    switch (trackHeightPreset.load(std::memory_order_relaxed))
+    {
+        case 0: return 38;   // title + REC / MON
+        case 1: return 94;   // title + REC / MON, PAN / M / S
+        default: return juce::jlimit(144, 240,
+            (int)std::lround(144.0f * timelineVerticalZoom.load(std::memory_order_relaxed)));
+    }
+}
+
+int getLibertyTrackHeightPreset() noexcept { return trackHeightPreset.load(); }
+
+void cycleLibertyTrackHeightPreset()
+{
+    const int next = (trackHeightPreset.load() + 1) % 3;
+    trackHeightPreset.store(next);
+    // Reapply the chosen preset to all tracks, including manually resized ones.
+    auto& desktop = juce::Desktop::getInstance();
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* window = dynamic_cast<juce::DocumentWindow*>(desktop.getComponent(i)))
+            if (auto* main = dynamic_cast<MainComponent*>(window->getContentComponent()))
+                main->applyArrangeTrackHeightPreset();
+    repaintRelevantWindows();
+}
+
+float getLibertyPianoHorizontalZoom() noexcept
+{
+    return pianoHorizontalZoom.load(std::memory_order_relaxed);
+}
+
+float getLibertyPianoVerticalZoom() noexcept
+{
+    return pianoVerticalZoom.load(std::memory_order_relaxed);
+}
+
+void shutdownLibertyZoomController()
+{
+    zoomMouseListener.shutdown();
+}
