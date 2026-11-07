@@ -1505,7 +1505,7 @@ public:
    draggingHeight=nullptr;setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void mouseMove(const juce::MouseEvent&e)override{
-   bool onHandle=false,onReadout=false;
+   bool onHandle=false,onReadout=false,onRoute=false;
    for(const auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
      if(strip->kind!=Strip::midi){
@@ -1517,11 +1517,16 @@ public:
            top,bottom)==LibertyMixConsoleMeter::MeterClick::toggleDigital;
      }
      if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
+       onRoute=e.getPosition().x>=strip->bounds.getX()+9&&
+           e.getPosition().x<strip->bounds.getX()+77&&
+           e.getPosition().y>=strip->bounds.getY()+55&&
+           e.getPosition().y<strip->bounds.getY()+68;
+     if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
        onHandle=std::abs(e.getPosition().y-strip->bounds.getY()-
                          getStripGeometry(*strip).splitterY)<=6;
      break;
    }
-   setMouseCursor(onReadout?juce::MouseCursor::PointingHandCursor:
+   setMouseCursor((onReadout||onRoute)?juce::MouseCursor::PointingHandCursor:
        onHandle?juce::MouseCursor::UpDownResizeCursor:
                 juce::MouseCursor::NormalCursor);
  }
