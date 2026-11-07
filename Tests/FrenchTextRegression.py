@@ -38,7 +38,7 @@ for path in FILES:
         # Match only strings which are the direct first parameter to avoid
         # false positives on comments and ordinary Unicode handling.
         direct = re.search(
-            r'\\b(?:setButtonText|setTooltip|drawText|drawFittedText)\\s*\\(\\s*"([^"]*)"',
+            r'\b(?:setButtonText|setTooltip|drawText|drawFittedText)\s*\(\s*"([^"]*)"',
             line
         )
         if direct and any(ord(ch) > 127 for ch in direct.group(1)):
