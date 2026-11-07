@@ -289,8 +289,12 @@ juce::String MainComponent::getProjectStateSignature() const
         signature << getLogicalTrackAtDisplayRow(row) << ",";
     signature << "|mixerOrder=" << mixerStripOrder.joinIntoString(",");
     signature << "|mixerBusCount=" << audioEngine.getMixerBusCount();
+    signature << "|masterLabel=" << mixerMasterName
+              << ",masterColour=" << mixerMasterColourId;
     for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
         signature << "|bus" << bus << "="
+                  << mixerBusNames[(size_t)bus] << ","
+                  << mixerBusColourIds[(size_t)bus] << ","
                   << audioEngine.getMixerBusGain(bus) << ","
                   << audioEngine.getMixerBusPan(bus) << ","
                   << (int)audioEngine.isMixerBusMuted(bus) << ","
@@ -457,6 +461,10 @@ bool MainComponent::resetProjectState()
     midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
     audioEngine.resetMixerBuses();
+    mixerBusNames.fill({});
+    mixerBusColourIds.fill(0);
+    mixerMasterName="MASTER";
+    mixerMasterColourId=0;
     audioEngine.setMidiTrackMuted(false);
     audioEngine.setMidiTrackSolo(false);
     audioEngine.setInstrumentTrackMuted(false);
@@ -528,6 +536,10 @@ bool MainComponent::configureStartupTracks(int audioCount, int instrumentCount)
     instrumentCount = juce::jlimit(0, 8, instrumentCount);
     audioEngine.setPlaying(false);
     audioEngine.resetMixerBuses();
+    mixerBusNames.fill({});
+    mixerBusColourIds.fill(0);
+    mixerMasterName="MASTER";
+    mixerMasterColourId=0;
     if (!audioEngine.resetInstrumentPlayback(instrumentCount)) return false;
     while (audioEngine.getAudioTrackCount() > audioCount)
         if (!audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1)) return false;
@@ -663,10 +675,14 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     // Stable, backward-compatible bus routing embedded in the .bsmproj.
     auto* busRouting=project.createNewChildElement("MixerRouting");
     busRouting->setAttribute("busCount",audioEngine.getMixerBusCount());
+    busRouting->setAttribute("masterName",mixerMasterName);
+    busRouting->setAttribute("masterColourId",mixerMasterColourId);
     for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
     {
         auto* item=busRouting->createNewChildElement("Bus");
         item->setAttribute("index",bus);
+        item->setAttribute("name",mixerBusNames[(size_t)bus]);
+        item->setAttribute("colourId",mixerBusColourIds[(size_t)bus]);
         item->setAttribute("gain",(double)audioEngine.getMixerBusGain(bus));
         item->setAttribute("pan",(double)audioEngine.getMixerBusPan(bus));
         item->setAttribute("muted",audioEngine.isMixerBusMuted(bus));
@@ -1448,6 +1464,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     // Missing routing (projects v1-16) means direct-to-Master as before.
     if(auto* busRouting=project->getChildByName("MixerRouting"))
     {
+        setMixerMasterName(busRouting->getStringAttribute("masterName","MASTER"));
+        setMixerMasterColourId(busRouting->getIntAttribute("masterColourId",0));
         const int count=juce::jlimit(0,AudioEngine::maxMixerBuses,
             busRouting->getIntAttribute("busCount",0));
         for(int bus=0;bus<count;++bus)audioEngine.addMixerBus();
@@ -1459,6 +1477,8 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
             const int index=item->getIntAttribute("index",-1);
             if(item->getTagName()=="Bus"&&index>=0&&index<count)
             {
+                setMixerBusName(index,item->getStringAttribute("name"));
+                setMixerBusColourId(index,item->getIntAttribute("colourId",0));
                 audioEngine.setMixerBusGain(index,(float)finiteOr(item->getDoubleAttribute("gain",1.0),1.0));
                 audioEngine.setMixerBusPan(index,(float)finiteOr(item->getDoubleAttribute("pan",0.0),0.0));
                 audioEngine.setMixerBusMuted(index,item->getBoolAttribute("muted",false));

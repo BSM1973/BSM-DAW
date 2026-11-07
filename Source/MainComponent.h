@@ -15,6 +15,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include <cmath>
 
 int getLibertyTrackRowHeight() noexcept;
+juce::String getLibertyTrackName(int);
 class MainComponent;
 void refreshLibertyRecordingTrackLayout(MainComponent* owner);
 void refreshLibertyTrackHeaderMixLayout(MainComponent* owner);
@@ -146,6 +147,8 @@ public:
     }
     juce::String getTrackDisplayName(int logical) const
     {
+        const auto sharedName=getLibertyTrackName(logical);
+        if(sharedName.isNotEmpty())return sharedName;
         auto it = customTrackNames.find(logical);
         if (it != customTrackNames.end()) return it->second;
         if (logical < getAudioTrackCount()) return "Audio " + juce::String(logical + 1);
@@ -155,6 +158,37 @@ public:
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
+    // BUS and Master labels/colors are independent of Arrangement lane IDs.
+    // Used by the same 32-color chooser and inline mixer rename editor.
+    juce::String getMixerBusName(int bus) const
+    {
+        if(bus<0||bus>=AudioEngine::maxMixerBuses)return {};
+        const auto& label=mixerBusNames[(size_t)bus];
+        return label.isNotEmpty()?label:"BUS "+juce::String(bus+1);
+    }
+    void setMixerBusName(int bus,const juce::String& name)
+    {
+        if(bus>=0&&bus<AudioEngine::maxMixerBuses)
+            mixerBusNames[(size_t)bus]=name.trim().substring(0,32);
+    }
+    int getMixerBusColourId(int bus) const noexcept
+    {
+        return bus>=0&&bus<AudioEngine::maxMixerBuses
+            ?mixerBusColourIds[(size_t)bus]:0;
+    }
+    void setMixerBusColourId(int bus,int id) noexcept
+    {
+        if(bus>=0&&bus<AudioEngine::maxMixerBuses)
+            mixerBusColourIds[(size_t)bus]=juce::jlimit(0,32,id);
+    }
+    juce::String getMixerMasterName() const {return mixerMasterName;}
+    void setMixerMasterName(const juce::String& label)
+    {
+        auto clean=label.trim().substring(0,32);
+        mixerMasterName=clean.isNotEmpty()?clean:"MASTER";
+    }
+    int getMixerMasterColourId() const noexcept {return mixerMasterColourId;}
+    void setMixerMasterColourId(int id) noexcept {mixerMasterColourId=juce::jlimit(0,32,id);}
     int addMixerBusTrack() noexcept
     {
         const int index=audioEngine.addMixerBus();
@@ -610,6 +644,10 @@ public:
     }
 
 private:
+    std::array<juce::String,AudioEngine::maxMixerBuses> mixerBusNames{};
+    std::array<int,AudioEngine::maxMixerBuses> mixerBusColourIds{};
+    juce::String mixerMasterName{"MASTER"};
+    int mixerMasterColourId=0;
     int headerGainDragTrack = -1;
     class AudioSettingsWindow final : public juce::DocumentWindow
     {

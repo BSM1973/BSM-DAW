@@ -9,6 +9,7 @@
 #include <memory>
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
+bool isLibertyMixConsoleVisible(MainComponent*);
 int getLibertyTrackRowHeight() noexcept;
 
 namespace
@@ -288,6 +289,8 @@ private:
         explicit OwnerMouseListener(TrackColourController& c) : controller(c) {}
         void mouseDown(const juce::MouseEvent& event) override
         {
+            // The arrangement editor must never activate behind the mixer.
+            if(isLibertyMixConsoleVisible(&controller.owner))return;
             const auto relative = event.getEventRelativeTo(&controller.owner);
             if (event.mods.isPopupMenu())
             {
@@ -489,6 +492,18 @@ void setLibertyTrackName(int track, const juce::String& name)
 void resetLibertyTrackNames()
 {
     for (auto& name : trackNames) name.clear();
+}
+
+// The mixer calls the exact Arrangement palette: one set of 32 swatches,
+ // with its existing monitor-edge clamping and single active popup.
+juce::Colour libertySharedTrackColour(int colourId)
+{
+    return colourForId(juce::jlimit(0,32,colourId));
+}
+void showLibertyMixerColourPalette(juce::Point<int> screenPoint,int selectedId,
+                                  std::function<void(int)> onSelect)
+{
+    showColourGrid(screenPoint,selectedId,std::move(onSelect));
 }
 
 void shutdownLibertyTrackColourInteraction()
