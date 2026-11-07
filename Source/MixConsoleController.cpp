@@ -2891,8 +2891,17 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      }
      if(s.meter.clipped())
      {
-         g.setColour(juce::Colour(0xffff4e4e));
-         g.fillEllipse(frame.getRight()+2.f,frame.getY()+2.f,7.f,7.f);
+         // Persistent overload warning, painted inside the existing meter
+         // gutter; no additional component or altered click target.
+         const auto warning=juce::Rectangle<float>(frame.getRight()+1.f,
+             frame.getY()+1.f,11.f,11.f);
+         g.setColour(juce::Colour(0xff61292d));
+         g.fillRoundedRectangle(warning,2.f);
+         g.setColour(juce::Colour(0xffff7777));
+         g.drawRoundedRectangle(warning,2.f,.8f);
+         g.setFont(juce::Font(8.f,juce::Font::bold));
+         g.drawFittedText("!",warning.toNearestInt(),
+                          juce::Justification::centred,1);
      }
      // Each stereo channel has its own dBFS number: PEAK is the held
      // sample peak, RMS the last measured interval (not its visual tail).
