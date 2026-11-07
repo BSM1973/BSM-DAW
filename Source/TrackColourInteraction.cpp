@@ -203,6 +203,10 @@ public:
 
     void paint(juce::Graphics& g) override
     {
+        // The arrangement colour/name overlay must never paint on top of
+        // the full-screen mixer. This also fixes instrument name/color edits
+        // which were visually hidden by its periodic toFront() calls.
+        if(isLibertyMixConsoleVisible(&owner))return;
         // Track overlays belong strictly to the arranger viewport. Never allow
         // dynamic rows to paint over the fixed mixer at the bottom.
         g.reduceClipRegion(juce::Rectangle<int>(0, 108, getWidth(),
@@ -386,6 +390,15 @@ private:
     void timerCallback() override
     {
         if (shutDown) return;
+        if(isLibertyMixConsoleVisible(&owner))
+        {
+            // Do not bring the Arrangement overlay above the mixer every 125ms.
+            // Restore it automatically when the Arrangement becomes active.
+            if(editingTrack>=0)finishRename(true);
+            if(isVisible())setVisible(false);
+            return;
+        }
+        if(!isVisible())setVisible(true);
         const auto wantedBounds = owner.getLocalBounds();
         if (getBounds() != wantedBounds)
             setBounds(wantedBounds);
