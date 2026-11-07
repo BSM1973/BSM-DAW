@@ -13,7 +13,8 @@ struct Geometry {
     int splitterY=0, panY=0, muteY=0, faderY=0, faderHeight=0;
 };
 inline Geometry calculate(int height,Kind kind,const std::array<bool,4>& expanded,
-                          bool insertsExpanded,int preferredFaderHeight) {
+                          bool insertsExpanded,int preferredFaderHeight,
+                          int requestedSlots=8) {
     Geometry g;
     const int h=std::max(1,height);
     if(kind==Kind::Master) {
@@ -44,12 +45,14 @@ inline Geometry calculate(int height,Kind kind,const std::array<bool,4>& expande
     g.fxY=y+26;
     const int preferred=std::clamp(preferredFaderHeight,100,360);
     const int lastFaderStart=h-12-90;
-    const int required=g.fxY+(insertsExpanded?8*16:0)+78;
+    const int desired=std::clamp(requestedSlots,1,8);
+    const int required=g.fxY+(insertsExpanded?desired*16:0)+78;
     g.faderY=std::min(lastFaderStart,std::max(h-12-preferred,required));
     const int available=std::max(0,g.faderY-78-g.fxY);
     if(insertsExpanded) {
-        g.visibleFx=std::min(8,available/16);
-        g.fxStep=g.visibleFx==8?std::clamp(available/8,16,24):16;
+        g.visibleFx=std::min(desired,available/16);
+        g.fxStep=g.visibleFx==desired&&g.visibleFx>0
+            ?std::clamp(available/g.visibleFx,16,24):16;
     }
     g.splitterY=g.faderY-77;
     g.panY=g.faderY-70;

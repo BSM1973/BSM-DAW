@@ -43,6 +43,22 @@ int main(){
      }
    }
  }
+
+ // Every progressive FX state reserves a single new empty slot after the last
+ // loaded insert, preserves at least a 90px pinned fader and never overlaps pan.
+ for(int height=400;height<=1200;height+=20)
+     for(int slots=1;slots<=8;++slots)
+         for(auto kind:{Kind::Audio,Kind::Instrument})
+         {
+             const auto g=calculate(height,kind,{false,false,false,false},
+                                    true,320,slots);
+             assert(g.visibleFx>=1&&g.visibleFx<=slots);
+             assert(g.fxY+g.visibleFx*g.fxStep<=g.splitterY+1);
+             assert(g.splitterY+4<=g.panY);
+             assert(g.panY+34<=g.muteY);
+             assert(g.muteY+26<=g.faderY);
+             assert(g.faderHeight>=90);
+         }
  // All four modules and eight effect slots must fit in a normal 900px window.
  const auto all=calculate(720,Kind::Audio,{true,true,true,true},true,250);
  assert(all.visibleFx==8&&all.faderHeight>=90);

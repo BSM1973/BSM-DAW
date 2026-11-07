@@ -26,6 +26,11 @@ jobs:
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
           /tmp/liberty-no-overlap
 
+      - name: Verify progressively revealed FX slots
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerProgressiveFxRegression.cpp -o /tmp/liberty-progressive-fx
+          /tmp/liberty-progressive-fx
+
       - name: Verify mixer layout and pinned faders
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
@@ -78,6 +83,11 @@ jobs:
         run: |
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
           /tmp/liberty-no-overlap
+
+      - name: Verify progressive FX and no-overlap geometry on macOS
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerProgressiveFxRegression.cpp -o /tmp/liberty-progressive-fx
+          /tmp/liberty-progressive-fx
 
       - name: Verify independent mixer panels and pinned faders
         run: |
