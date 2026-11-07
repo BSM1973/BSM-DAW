@@ -6,6 +6,7 @@
 #include "MixConsoleLayout.h"
 #include "MixerProgressiveFx.h"
 #include "NoOverlapLayout.h"
+#include "LibertyFrenchLabels.h"
 #include "MixConsoleSoloLogic.h"
 #include "MixConsoleMeter.h"
 #include "ChannelDialogLayout.h"
@@ -1435,11 +1436,17 @@ public:
          repaint();
      };
  }
- detailButton.setButtonText("AFFICHER DÉTAILS");
- detailButton.setTooltip("Basculer entre des tranches compactes et les sections complètes.");
+ detailButton.setButtonText(LibertyFrenchLabels::mixerDetails());
+ detailButton.setTooltip(juce::String::fromUTF8(
+     "Afficher ou masquer les modules de la Console sans déplacer les faders."));
+
  detailButton.setMouseClickGrabsKeyboardFocus(false);
  detailButton.setColour(juce::TextButton::buttonColourId,ModernMixer::panel);
  detailButton.setColour(juce::TextButton::textColourOffId,ModernMixer::text);
+ detailButton.setColour(juce::TextButton::buttonOnColourId,ModernMixer::sage.darker(.65f));
+ detailButton.setColour(juce::TextButton::textColourOnId,ModernMixer::text);
+ detailButton.setClickingTogglesState(false);
+ detailButton.setToggleState(false,juce::dontSendNotification);
  detailButton.onClick=[this]
  {
      detailedView=!detailedView;
@@ -1449,7 +1456,12 @@ public:
          if(strip->kind==Strip::audio||strip->kind==Strip::instrument)
              strip->insertsExpanded=true; // Compact mode still shows next empty insert.
      }
-     detailButton.setButtonText(detailedView?"MODE COMPACT":"AFFICHER DÉTAILS");
+     detailButton.setButtonText(detailedView
+         ?LibertyFrenchLabels::mixerCompact()
+         :LibertyFrenchLabels::mixerDetails());
+     detailButton.setToggleState(detailedView,juce::dontSendNotification);
+     detailButton.setColour(juce::TextButton::buttonColourId,
+         detailedView?ModernMixer::sage.darker(.65f):ModernMixer::panel);
      layout();
      repaint();
  };
