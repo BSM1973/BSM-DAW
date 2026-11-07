@@ -1387,7 +1387,7 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
         // Obsidian resize hint remains legible in compact floating windows.
         g.setColour(juce::Colour(0xffc2d8e2));
         g.setFont(juce::Font(13.0f));
-        g.drawFittedText("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI",
+        g.drawFittedText(juce::String::fromUTF8("Agrandissez la fenêtre pour afficher le Step Sequencer MIDI"),
                          area.reduced(12), juce::Justification::centred, 2);
         return;
     }
@@ -1494,7 +1494,8 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     // Empty-pattern status stays readable without competing with the enabled action.
     g.setColour(hasPlayableNotes ? juce::Colour(0xffeffcfd) : juce::Colour(0xffb9ccd6));
     g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawText(hasPlayableNotes ? "CRÉER CLIP MIDI" : "PATTERN VIDE",
+    g.drawText(hasPlayableNotes ? juce::String::fromUTF8("CRÉER CLIP MIDI")
+                               : juce::String("PATTERN VIDE"),
                exportButton, juce::Justification::centred);
     for (int pageIndex = 0; pageIndex < 4; ++pageIndex)
     {

@@ -54,7 +54,8 @@ public:
         addMidi.setButtonText("+ MIDI");
         addInstrument.setButtonText("+ INSTRUMENT");
         addBus.setButtonText("+ BUS");
-        addBus.setTooltip("Créer une piste BUS stéréo dans la Console de mixage.");
+        addBus.setTooltip(juce::String::fromUTF8(
+            "Créer une piste BUS stéréo dans la Console de mixage."));
         for (auto* b : { &addAudio, &addMidi, &addInstrument, &addBus })
         {
             b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff245b70));

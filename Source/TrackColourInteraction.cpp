@@ -75,7 +75,8 @@ public:
         g.fillRoundedRectangle(17.0f, 264.0f, 312.0f, 29.0f, 5.0f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(12.0f));
-        g.drawText("Couleur par défaut", 17, 264, 312, 29, juce::Justification::centred);
+        g.drawText(juce::String::fromUTF8("Couleur par défaut"),
+                   17, 264, 312, 29, juce::Justification::centred);
     }
 
     void mouseDown(const juce::MouseEvent& e) override

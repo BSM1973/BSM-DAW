@@ -130,7 +130,7 @@ public:
         libraryButton.setButtonText("MES SAMPLES");
         soundsButton.setButtonText("SONS");
         loginButton.setButtonText("CONNEXION");
-        rescanButton.setButtonText("RÉANALYSER");
+        rescanButton.setButtonText(juce::String::fromUTF8("RÉANALYSER"));
         folderButton.setButtonText("DOSSIER");
         desktopButton.setButtonText("DESKTOP");
 
@@ -208,8 +208,9 @@ public:
         g.drawText("SPLICE", 10, 4, 100, 22, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(9.0f));
-        g.drawText(libraryMode ? "Bibliothèque locale téléchargée - glisser les fichiers audio dans Liberty"
-                               : "Splice web - achats et accès au compte",
+        g.drawText(libraryMode
+                   ? juce::String::fromUTF8("Bibliothèque locale téléchargée - glisser les fichiers audio dans Liberty")
+                   : juce::String::fromUTF8("Splice web - achats et accès au compte"),
                    74, 6, getWidth() - 84, 18, juce::Justification::centredRight, true);
     }
 
