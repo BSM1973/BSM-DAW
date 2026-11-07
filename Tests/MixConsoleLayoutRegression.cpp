@@ -52,5 +52,28 @@ int main(){
  // An independent collapsed insert rack never hides the fader.
  const auto noInserts=calculate(720,Kind::Audio,{true,true,true,true},false,250);
  assert(noInserts.visibleFx==0&&noInserts.faderHeight>=90);
+ // Compact modern FX overview is bounded strictly between the insert
+ // header and the pan/splitter, for every legal strip height and width.
+ for(int h=400;h<=1400;h+=10)
+ {
+    for(auto kind:{Kind::Audio,Kind::Instrument})
+    {
+        const auto geometry=calculate(h,kind,{false,false,false,false},false,320);
+        const int fxTop=geometry.insertsHeaderY+28;
+        const int fxBottom=geometry.splitterY-5;
+        const int overviewHeight=fxBottom-fxTop;
+        if(overviewHeight>=52)
+        {
+            assert(fxTop>=geometry.insertsHeaderY+23);
+            assert(fxBottom+5==geometry.splitterY);
+            assert(fxBottom+7<=geometry.panY);
+            assert(fxBottom<geometry.faderY);
+            const int maxLines=std::max(0,std::min(3,(overviewHeight-34)/18));
+            assert(maxLines>=1&&maxLines<=3);
+            assert(fxTop+23+(maxLines-1)*18+15<=fxBottom);
+        }
+        assert(geometry.faderHeight>=90);
+    }
+ }
  std::cout<<"Liberty mixer geometry: all widths and section combinations OK\n";
 }
