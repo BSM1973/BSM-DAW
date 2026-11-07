@@ -282,6 +282,20 @@ juce::String MainComponent::getProjectStateSignature() const
     signature << "|stepSequencersHash="
               << juce::String::toHexString((juce::int64) stepSequencerState.toString().hashCode64());
 
+
+    // Moving a console strip or changing a bus route must mark the project dirty.
+    signature << "|mixerOrder=" << mixerStripOrder.joinIntoString(",");
+    signature << "|mixerBusCount=" << audioEngine.getMixerBusCount();
+    for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
+        signature << "|bus" << bus << "="
+                  << audioEngine.getMixerBusGain(bus) << ","
+                  << audioEngine.getMixerBusPan(bus) << ","
+                  << (int)audioEngine.isMixerBusMuted(bus) << ","
+                  << (int)audioEngine.isMixerBusSolo(bus);
+    for(int i=0;i<getAudioTrackCount();++i)
+        signature << "|Aroute" << i << "=" << audioEngine.getTrackMixerBus(i);
+    for(int i=0;i<getInstrumentTrackCount();++i)
+        signature << "|Iroute" << i << "=" << audioEngine.getInstrumentMixerBus(i);
     signature << "|arrangement=" << getLibertyMultiMidiStateSignature(*this);
     return signature;
 }
@@ -439,6 +453,7 @@ bool MainComponent::resetProjectState()
     midiClipLengthSeconds = 2.0;
     midiClipLengthUserDefined = false;
     audioEngine.setMasterGain(1.0f);
+    audioEngine.resetMixerBuses();
     audioEngine.setMidiTrackMuted(false);
     audioEngine.setMidiTrackSolo(false);
     audioEngine.setInstrumentTrackMuted(false);
@@ -509,6 +524,7 @@ bool MainComponent::configureStartupTracks(int audioCount, int instrumentCount)
     audioCount = juce::jlimit(0, 8, audioCount);
     instrumentCount = juce::jlimit(0, 8, instrumentCount);
     audioEngine.setPlaying(false);
+    audioEngine.resetMixerBuses();
     if (!audioEngine.resetInstrumentPlayback(instrumentCount)) return false;
     while (audioEngine.getAudioTrackCount() > audioCount)
         if (!audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1)) return false;
@@ -636,10 +652,37 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
     std::vector<PreparedProjectMedia> preparedMedia;
 
     juce::XmlElement project("LibertyProject");
-    project.setAttribute("version", 16);
+    project.setAttribute("version", 17);
     project.setAttribute("audioTrackCount", getAudioTrackCount());
     project.setAttribute("midiTrackCount", getMidiTrackCount());
     project.setAttribute("instrumentTrackCount", getInstrumentTrackCount());
+
+    // Stable, backward-compatible bus routing embedded in the .bsmproj.
+    auto* busRouting=project.createNewChildElement("MixerRouting");
+    busRouting->setAttribute("busCount",audioEngine.getMixerBusCount());
+    for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
+    {
+        auto* item=busRouting->createNewChildElement("Bus");
+        item->setAttribute("index",bus);
+        item->setAttribute("gain",(double)audioEngine.getMixerBusGain(bus));
+        item->setAttribute("pan",(double)audioEngine.getMixerBusPan(bus));
+        item->setAttribute("muted",audioEngine.isMixerBusMuted(bus));
+        item->setAttribute("solo",audioEngine.isMixerBusSolo(bus));
+    }
+    for(int i=0;i<getAudioTrackCount();++i)
+    {
+        auto* item=busRouting->createNewChildElement("Source");
+        item->setAttribute("kind","audio");
+        item->setAttribute("index",i);
+        item->setAttribute("bus",audioEngine.getTrackMixerBus(i));
+    }
+    for(int i=0;i<getInstrumentTrackCount();++i)
+    {
+        auto* item=busRouting->createNewChildElement("Source");
+        item->setAttribute("kind","instrument");
+        item->setAttribute("index",i);
+        item->setAttribute("bus",audioEngine.getInstrumentMixerBus(i));
+    }
     auto* mixerOrderXml=project.createNewChildElement("MixerStripOrder");
     for(const auto& key:mixerStripOrder)
     {
@@ -1046,7 +1089,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         return false;
     }
 
-    constexpr int currentProjectVersion = 16;
+    constexpr int currentProjectVersion = 17;
     const int projectVersion = project->getIntAttribute("version", 1);
     if (projectVersion < 1 || projectVersion > currentProjectVersion)
     {
@@ -1393,6 +1436,35 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         }
     }
 
+
+    // Restore BUS states after all audio and instrument channels exist.
+    // Missing routing (projects v1-16) means direct-to-Master as before.
+    if(auto* busRouting=project->getChildByName("MixerRouting"))
+    {
+        const int count=juce::jlimit(0,AudioEngine::maxMixerBuses,
+            busRouting->getIntAttribute("busCount",0));
+        for(int bus=0;bus<count;++bus)audioEngine.addMixerBus();
+        int visited=0;
+        for(auto* item=busRouting->getFirstChildElement();item!=nullptr;
+            item=item->getNextElement())
+        {
+            if(++visited>4096)break;
+            const int index=item->getIntAttribute("index",-1);
+            if(item->getTagName()=="Bus"&&index>=0&&index<count)
+            {
+                audioEngine.setMixerBusGain(index,(float)finiteOr(item->getDoubleAttribute("gain",1.0),1.0));
+                audioEngine.setMixerBusPan(index,(float)finiteOr(item->getDoubleAttribute("pan",0.0),0.0));
+                audioEngine.setMixerBusMuted(index,item->getBoolAttribute("muted",false));
+                audioEngine.setMixerBusSolo(index,item->getBoolAttribute("solo",false));
+            }
+            if(item->getTagName()!="Source")continue;
+            const int destination=item->getIntAttribute("bus",-1);
+            if(item->getStringAttribute("kind")=="audio"&&index>=0&&index<getAudioTrackCount())
+                audioEngine.setTrackMixerBus(index,destination);
+            else if(item->getStringAttribute("kind")=="instrument"&&index>=0&&index<getInstrumentTrackCount())
+                audioEngine.setInstrumentMixerBus(index,destination);
+        }
+    }
     if (auto* instrumentMixer = project->getChildByName("InstrumentMixer"))
     {
         constexpr std::size_t maxVisitedInstrumentMixerElements = 1024;
