@@ -285,7 +285,8 @@ juce::String MainComponent::getProjectStateSignature() const
 
     // Moving a console strip or changing a bus route must mark the project dirty.
     signature << "|arrangeOrder=";
-    for(const int logical:arrangeTrackOrder)signature << logical << ",";
+    for(int row=0;row<getTotalArrangeTrackCount();++row)
+        signature << getLogicalTrackAtDisplayRow(row) << ",";
     signature << "|mixerOrder=" << mixerStripOrder.joinIntoString(",");
     signature << "|mixerBusCount=" << audioEngine.getMixerBusCount();
     for(int bus=0;bus<audioEngine.getMixerBusCount();++bus)
