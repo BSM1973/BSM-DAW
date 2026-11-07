@@ -27,13 +27,18 @@
 #include <vector>
 
 int getLibertyTrackColourId(int track);
+void setLibertyTrackColourId(int track,int colourId);
 juce::String getLibertyTrackName(int track);
+void setLibertyTrackName(int track,const juce::String&);
+juce::Colour libertySharedTrackColour(int colourId);
+void showLibertyMixerColourPalette(juce::Point<int> screenPoint,int selectedId,
+                                  std::function<void(int)> onSelect);
 
 namespace {
 constexpr int transportHeight=76, stripW=150, topY=66;
 float gainToDb(float g){return g<=.00001f?-60.f:juce::jlimit(-60.f,6.f,juce::Decibels::gainToDecibels(g));}
 float dbToGain(float d){return d<=-59.9f?0.f:juce::Decibels::decibelsToGain(d);}
-juce::Colour trackColour(int id){static constexpr juce::uint32 palette[]{0xff31506a,0xff3b82f6,0xff22c55e,0xffeab308,0xfff97316,0xffef4444,0xffa855f7,0xffec4899,0xff14b8a6};return juce::Colour(palette[(size_t)juce::jlimit(0,8,id)]);}
+juce::Colour trackColour(int id){return libertySharedTrackColour(id);}
 class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{public:void drawLinearSlider(juce::Graphics&g,int x,int y,int w,int h,float pos,float,float,const juce::Slider::SliderStyle style,juce::Slider&s)override{if(style!=juce::Slider::LinearVertical){juce::LookAndFeel_V4::drawLinearSlider(g,x,y,w,h,pos,0.f,0.f,style,s);return;}const float cx=(float)x+(float)w*.5f;const auto rail=juce::Rectangle<float>(cx-3.f,(float)y+4.f,6.f,(float)h-8.f);g.setColour(juce::Colour(0xff090b0e));g.fillRoundedRectangle(rail,3.f);g.setColour(juce::Colour(0xff344452));g.drawRoundedRectangle(rail,3.f,1.f);const auto knob=juce::Rectangle<float>((float)x+2.f,pos-7.f,(float)w-4.f,14.f);g.setColour(juce::Colour(0xffe8eff7));g.fillRoundedRectangle(knob,3.f);g.setColour(juce::Colour(0xff879aa9));g.drawRoundedRectangle(knob,3.f,1.f);g.setColour(juce::Colour(0xff24292f));g.drawHorizontalLine((int)pos,knob.getX()+4.f,knob.getRight()-4.f);}void drawRotarySlider(juce::Graphics&g,int x,int y,int w,int h,
     float position,float start,float end,juce::Slider& slider)override{
     const float d=(float)juce::jmin(w,h);
@@ -1367,10 +1372,32 @@ public:
          repaint();
      };
  }
+ renameEditor.setMultiLine(false);
+ renameEditor.setReturnKeyStartsNewLine(false);
+ renameEditor.setEscapeAndReturnKeysConsumed(true);
+ renameEditor.setSelectAllWhenFocused(true);
+ renameEditor.setColour(juce::TextEditor::backgroundColourId,juce::Colour(0xff243638));
+ renameEditor.setColour(juce::TextEditor::textColourId,juce::Colour(0xfff1faf8));
+ renameEditor.setColour(juce::TextEditor::outlineColourId,juce::Colour(0xff8ecbb2));
+ renameEditor.setColour(juce::TextEditor::focusedOutlineColourId,juce::Colour(0xff8ecbb2));
+ renameEditor.onReturnKey=[this]{finishRename(true);};
+ renameEditor.onEscapeKey=[this]{finishRename(false);};
+ renameEditor.onFocusLost=[this]{finishRename(true);};
+ addAndMakeVisible(renameEditor);
+ renameEditor.setVisible(false);
  startTimerHz(24);setVisible(false);}
- ~MixConsoleView()override{stopTimer();scroll.removeListener(&scrollListener);verticalScroll.removeListener(&verticalListener);clear();}
- void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);layout();sync();updateMeters();repaint();}else{selected=nullptr;}}
- bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;routingLane=-1;rebuild();layout();sync();repaint();}
+ ~MixConsoleView()override{
+    stopTimer();
+    renameEditor.onReturnKey=nullptr;
+    renameEditor.onEscapeKey=nullptr;
+    renameEditor.onFocusLost=nullptr;
+    finishRename(true);
+    scroll.removeListener(&scrollListener);
+    verticalScroll.removeListener(&verticalListener);
+    clear();
+}
+ void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);layout();sync();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
+ bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;finishRename(true);routingLane=-1;rebuild();layout();sync();repaint();}
  int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);if(routingLane>=0&&q.x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return -1;for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
  void paint(juce::Graphics&g)override
  {
@@ -1441,6 +1468,21 @@ public:
        return; // Reserved routing sidebar, never a strip.
    for(auto& strip:strips){
      if(!strip->bounds.contains(e.getPosition()))continue;
+     const bool nameHeader=e.getPosition().x>=strip->bounds.getX()+6 &&
+         e.getPosition().x<strip->bounds.getRight()-6 &&
+         e.getPosition().y>=strip->bounds.getY()+10 &&
+         e.getPosition().y<strip->bounds.getY()+35;
+     if(nameHeader && e.mods.isPopupMenu())
+     {
+         showStripColour(*strip,e.getScreenPosition());
+         return;
+     }
+     if(nameHeader && e.mods.isLeftButtonDown() && e.getNumberOfClicks()>=2)
+     {
+         beginRename(*strip);
+         return;
+     }
+     if(e.mods.isPopupMenu())return; // No right click starts a drag.
      // The route label is clickable, with no conflict with COR/BAL or faders.
      if((strip->kind==Strip::audio||strip->kind==Strip::instrument)&&
         e.mods.isLeftButtonDown()&&
@@ -1489,9 +1531,8 @@ public:
        }
      }
      if(strip->kind==Strip::master){selected=nullptr;repaint();return;}
-     // Drag only the name header, never a fader, pan, insert, meter or splitter.
-     if(e.mods.isLeftButtonDown()&&e.getPosition().y>=strip->bounds.getY()+12&&
-        e.getPosition().y<strip->bounds.getY()+34)
+     // Drag only the name header; double click is handled above first.
+     if(nameHeader&&e.mods.isLeftButtonDown())
      {
          draggingStrip=strip.get();
          dropStripIndex=(int)std::distance(strips.begin(),
@@ -1508,6 +1549,7 @@ public:
    }
  }
  void mouseDrag(const juce::MouseEvent&e)override{
+   if(renamingLane>=0)return;
    if(draggingStrip)
    {
        dropStripIndex=juce::jlimit(0,juce::jmax(0,(int)strips.size()-2),
@@ -1591,6 +1633,74 @@ public:
                 juce::MouseCursor::NormalCursor);
  }
 private:
+ int logicalTrack(const Strip& strip) const noexcept
+ {
+     if(strip.kind==Strip::audio)return strip.lane;
+     if(strip.kind==Strip::midi)return owner.getAudioTrackCount()+strip.lane;
+     if(strip.kind==Strip::instrument)
+         return owner.getAudioTrackCount()+owner.getMidiTrackCount()+strip.lane;
+     return -1;
+ }
+ void showStripColour(const Strip& strip,juce::Point<int> screenPoint)
+ {
+     const auto kind=strip.kind;
+     const int lane=strip.lane;
+     const int logical=logicalTrack(strip);
+     const int colour=kind==Strip::bus?owner.getMixerBusColourId(lane):
+         kind==Strip::master?owner.getMixerMasterColourId():
+         getLibertyTrackColourId(logical);
+     juce::Component::SafePointer<MixConsoleView> safe(this);
+     showLibertyMixerColourPalette(screenPoint,colour,
+         [safe,kind,lane,logical](int id)
+         {
+             if(safe==nullptr)return;
+             if(kind==Strip::bus)safe->owner.setMixerBusColourId(lane,id);
+             else if(kind==Strip::master)safe->owner.setMixerMasterColourId(id);
+             else setLibertyTrackColourId(logical,id);
+             safe->owner.repaint();
+             safe->repaint();
+         });
+ }
+ void beginRename(const Strip& strip)
+ {
+     finishRename(true);
+     renamingKind=strip.kind;
+     renamingLane=strip.lane;
+     renameEditor.setText(name(strip),false);
+     const auto bounds=strip.bounds;
+     renameEditor.setBounds(bounds.getX()+7,bounds.getY()+10,bounds.getWidth()-14,24);
+     renameEditor.setVisible(true);
+     renameEditor.toFront(true);
+     renameEditor.grabKeyboardFocus();
+     renameEditor.selectAll();
+     repaint(bounds.getX(),bounds.getY()+8,bounds.getWidth(),30);
+ }
+ void finishRename(bool commit)
+ {
+     if(renamingLane<0)return;
+     const int lane=renamingLane;
+     const auto kind=renamingKind;
+     renamingLane=-1; // Prevent reentrancy through focus callbacks.
+     if(commit)
+     {
+         const auto label=renameEditor.getText().trim().substring(0,32);
+         if(label.isNotEmpty())
+         {
+             if(kind==Strip::bus)owner.setMixerBusName(lane,label);
+             else if(kind==Strip::master)owner.setMixerMasterName(label);
+             else
+             {
+                 const int logical=kind==Strip::audio?lane:
+                     kind==Strip::midi?owner.getAudioTrackCount()+lane:
+                     owner.getAudioTrackCount()+owner.getMidiTrackCount()+lane;
+                 setLibertyTrackName(logical,label);
+             }
+         }
+     }
+     renameEditor.setVisible(false);
+     owner.repaint(); // Arrangement label and project state share the value.
+     repaint();
+ }
  struct ScrollListener:juce::ScrollBar::Listener{MixConsoleView*o=nullptr;bool vertical=false;void scrollBarMoved(juce::ScrollBar*,double v)override{if(o){if(vertical)o->verticalOffset=(int)std::round(v);else o->offset=(int)std::round(v);o->layout();o->repaint();}}}scrollListener,verticalListener;
  void clear(){selected=nullptr;draggingHeight=nullptr;draggingStrip=nullptr;dropStripIndex=-1;for(auto&s:strips){if(s->fader)s->fader->setLookAndFeel(nullptr);if(s->pan)s->pan->setLookAndFeel(nullptr);}strips.clear();}
  std::unique_ptr<Strip> makeStrip(Strip::Kind k,int lane){auto s=std::make_unique<Strip>();s->kind=k;s->lane=lane;s->fader=std::make_unique<juce::Slider>();s->fader->setSliderStyle(juce::Slider::LinearVertical);s->fader->setRange(-60,6,.1);s->fader->setDoubleClickReturnValue(true,0.0);s->fader->setTextBoxStyle(juce::Slider::TextBoxBelow,false,62,20);s->fader->setNumDecimalPlacesToDisplay(1);s->fader->setMouseClickGrabsKeyboardFocus(false);s->fader->setTextValueSuffix(" dB");s->fader->setLookAndFeel(&lookAndFeel);addAndMakeVisible(*s->fader);if(k==Strip::audio||k==Strip::instrument){
@@ -1901,6 +2011,22 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     scroll.setCurrentRange(offset,viewportWidth,juce::dontSendNotification);
     scroll.setVisible(max>0);
     verticalScroll.setVisible(false);
+    if(renamingLane>=0)
+    {
+        const auto it=std::find_if(strips.begin(),strips.end(),
+            [this](const auto& strip)
+            {
+                return strip->kind==renamingKind && strip->lane==renamingLane;
+            });
+        if(it!=strips.end())
+        {
+            const auto header=juce::Rectangle<int>(
+                (*it)->bounds.getX()+7,(*it)->bounds.getY()+10,
+                (*it)->bounds.getWidth()-14,24);
+            renameEditor.setBounds(header);
+            renameEditor.setVisible(viewport.contains(header));
+        }
+    }
     routeClose.setVisible(routingOpen);
     if(routingOpen)
     {
@@ -1925,7 +2051,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
             juce::Colour(0xff376275):juce::Colour(0xff253b50));
     }
  }
- juce::String name(const Strip&s)const{if(s.kind==Strip::master)return "MASTER";if(s.kind==Strip::bus)return "BUS "+juce::String(s.lane+1);const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const auto n=getLibertyTrackName(logical);if(n.isNotEmpty())return n;if(s.kind==Strip::audio)return "Audio "+juce::String(s.lane+1);if(s.kind==Strip::midi)return "MIDI "+juce::String(s.lane+1);return "Instrument "+juce::String(s.lane+1);}
+ juce::String name(const Strip&s)const{if(s.kind==Strip::master)return owner.getMixerMasterName();if(s.kind==Strip::bus)return owner.getMixerBusName(s.lane);const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);const auto n=getLibertyTrackName(logical);if(n.isNotEmpty())return n;if(s.kind==Strip::audio)return "Audio "+juce::String(s.lane+1);if(s.kind==Strip::midi)return "MIDI "+juce::String(s.lane+1);return "Instrument "+juce::String(s.lane+1);}
  bool isSelected(const Strip&s)const{if(selected==&s)return true;if(s.kind==Strip::master||s.kind==Strip::bus)return false;const int logical=s.kind==Strip::audio?s.lane:(s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);return owner.selectedTrack==logical;}void draw(juce::Graphics&g,Strip&s){
     if(s.bounds.isEmpty()||s.bounds.getRight()<0||s.bounds.getX()>getWidth())return;
     juce::Graphics::ScopedSaveState savedState(g);
@@ -1936,7 +2062,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
     if(s.kind==Strip::bus)
     {
-        g.setColour(juce::Colour(0xffad8bda).withAlpha(.18f));
+        g.setColour((owner.getMixerBusColourId(s.lane)>0?
+             trackColour(owner.getMixerBusColourId(s.lane)):
+             juce::Colour(0xffad8bda)).withAlpha(.18f));
         g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
     }
     else if(s.kind!=Strip::master){
@@ -1948,15 +2076,18 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     }
     g.setColour(chosen?juce::Colour(0xff54d6dc):juce::Colour(0xff344452));
     g.drawRoundedRectangle(s.bounds.toFloat(),6.f,chosen?2.f:1.f);
-    g.setColour(s.kind==Strip::bus?juce::Colour(0xffad8bda):
-        s.kind==Strip::master?juce::Colour(0xffe4a85e):
+    g.setColour(s.kind==Strip::bus?
+        (owner.getMixerBusColourId(s.lane)>0?trackColour(owner.getMixerBusColourId(s.lane)):juce::Colour(0xffad8bda)):
+        s.kind==Strip::master?
+        (owner.getMixerMasterColourId()>0?trackColour(owner.getMixerMasterColourId()):juce::Colour(0xffe4a85e)):
         trackColour(getLibertyTrackColourId(s.kind==Strip::audio?s.lane:
            s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
            owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane)));
     g.fillRoundedRectangle((float)x,(float)y,(float)w,6.f,3.f);
     g.setColour(juce::Colours::white);
     g.setFont(juce::Font(12.f,juce::Font::bold));
-    g.drawFittedText(name(s),x+6,y+14,w-12,20,juce::Justification::centred,1);
+    if(renamingLane!=s.lane||renamingKind!=s.kind)
+        g.drawFittedText(name(s),x+6,y+14,w-12,20,juce::Justification::centred,1);
     g.setColour(juce::Colour(0xffbdcfdb));g.setFont(juce::Font(8.5f,juce::Font::bold));
     g.drawText(s.kind==Strip::audio?"PISTE AUDIO":s.kind==Strip::midi?"PISTE MIDI":
        s.kind==Strip::instrument?"INSTRUMENT VIRTUEL":
@@ -2280,6 +2411,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;
  juce::TextButton routeClose;
  std::array<juce::TextButton,9> routeChoices;
+ juce::TextEditor renameEditor;
+ int renamingLane=-1;
+ Strip::Kind renamingKind=Strip::audio;
  int routingLane=-1;
  Strip::Kind routingKind=Strip::audio;
  std::vector<std::unique_ptr<Strip>>strips;juce::ScrollBar scroll{false};juce::ScrollBar verticalScroll{true};int verticalOffset=0;int offset=0;bool syncing=false,visible=false;Strip*selected=nullptr;
