@@ -1369,7 +1369,26 @@ private:
  juce::TextButton applyButton{"APPLIQUER"};
 };
 
-struct Strip{enum Kind{audio,midi,instrument,master,bus}kind=audio;int lane=0;LibertyMixConsoleMeter::StereoDisplay meter;LibertyMixConsoleMeter::StereoCorrelationDisplay correlation;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
+// An explicit, transparent name hit-target is required: the instrument
+// buttons live in separate regions, while rename/color input must always
+// land on the channel header, even after a panel is re-ordered.
+class MixerNameHitTarget final:public juce::Component
+{
+public:
+ std::function<void(const juce::MouseEvent&)> onDown,onDrag,onUp,onDouble;
+ void mouseDown(const juce::MouseEvent& e)override
+ {
+     if(e.getNumberOfClicks()>=2){if(onDouble)onDouble(e);}
+     else if(onDown)onDown(e);
+ }
+ void mouseDoubleClick(const juce::MouseEvent& e)override
+ {
+     if(onDouble)onDouble(e);
+ }
+ void mouseDrag(const juce::MouseEvent& e)override {if(onDrag)onDrag(e);}
+ void mouseUp(const juce::MouseEvent& e)override {if(onUp)onUp(e);}
+};
+struct Strip{enum Kind{audio,midi,instrument,master,bus}kind=audio;int lane=0;LibertyMixConsoleMeter::StereoDisplay meter;LibertyMixConsoleMeter::StereoCorrelationDisplay correlation;std::unique_ptr<juce::Slider>fader,pan;std::unique_ptr<MixerNameHitTarget>nameHit;std::unique_ptr<juce::TextButton>mute,solo,plugin,unload,channel;
  std::unique_ptr<juce::Slider>inputGain,highPass,compThreshold,compRatio,gateThreshold;
  std::array<std::unique_ptr<juce::Slider>,3>eqKnobs;
  std::array<std::unique_ptr<juce::TextButton>,3>modulePower;
@@ -1833,6 +1852,31 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      s->pan->setColour(juce::Slider::rotarySliderFillColourId,ModernMixer::sage);
  if(s->kind==Strip::bus&&s->pan)
      s->pan->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffc6a4de));
+ // This target sits above the name text ONLY and cannot intercept routing,
+ // channel plugins, pan controls, mute/solo, meters or faders.
+ s->nameHit=std::make_unique<MixerNameHitTarget>();
+ auto* hit=s->nameHit.get();
+ auto* strip=s.get();
+ hit->setTooltip(juce::String::fromUTF8(
+     "Double-clic : renommer. Clic droit : couleur. Glisser : déplacer."));
+ hit->onDown=[this](const juce::MouseEvent& event)
+ {
+     mouseDown(event.getEventRelativeTo(this));
+ };
+ hit->onDrag=[this](const juce::MouseEvent& event)
+ {
+     mouseDrag(event.getEventRelativeTo(this));
+ };
+ hit->onUp=[this](const juce::MouseEvent& event)
+ {
+     mouseUp(event.getEventRelativeTo(this));
+ };
+ hit->onDouble=[this,strip](const juce::MouseEvent&)
+ {
+     if(renamingLane!=strip->lane||renamingKind!=strip->kind)
+         beginRename(*strip);
+ };
+ addAndMakeVisible(*hit);
  wire(*s);return s;}
  void configureValuePopup(Strip& s){auto configure=[](juce::Slider* slider,const juce::String&suffix){if(!slider)return;slider->setPopupDisplayEnabled(true,true,nullptr,1500);slider->setTextValueSuffix(suffix);slider->setNumDecimalPlacesToDisplay(1);};configure(s.inputGain.get()," dB");configure(s.highPass.get()," Hz");configure(s.compThreshold.get()," dB");configure(s.compRatio.get()," :1");configure(s.gateThreshold.get()," dB");for(auto&knob:s.eqKnobs)configure(knob.get()," dB");}
  void refreshPower(Strip& s){if(s.kind!=Strip::audio)return;const bool states[3]={s.eqOn,s.gateOn,s.compOn};for(int i=0;i<3;++i){auto&button=s.modulePower[(size_t)i];if(!button)continue;button->setButtonText(states[i]?"ON":"OFF");button->setColour(juce::TextButton::buttonColourId,states[i]?juce::Colour(0xff246b63):juce::Colour(0xff34404a));}}
@@ -2057,6 +2101,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
           control->setBounds(r);
           control->setVisible(vis&&enabled&&h>0&&s->bounds.contains(r)&&viewport.contains(r));
       };
+      // A unique hit rectangle for every track, including instruments.
+      // Child handlers forward drag to the existing channel-order system.
+      put(s->nameHit.get(),7,10,s->bounds.getWidth()-14,24);
       if(s->kind==Strip::audio){
         for(int index=0;index<4;++index){
           const auto& p=g.modules[(size_t)index];
@@ -2204,8 +2251,17 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       const int logical=s.kind==Strip::audio?s.lane:
           (s.kind==Strip::midi?owner.getAudioTrackCount()+s.lane:
            owner.getAudioTrackCount()+owner.getMidiTrackCount()+s.lane);
-      const auto tint=trackColour(getLibertyTrackColourId(logical));
-      g.setColour(tint.withAlpha(.08f));g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+      const auto colourId=getLibertyTrackColourId(logical);
+      const auto tint=trackColour(colourId);
+      g.setColour(tint.withAlpha(colourId>0?.17f:.04f));
+      g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+      if(colourId>0)
+      {
+          // A visible colour cue, including for instrumental tracks.
+          g.setColour(tint.withAlpha(.96f));
+          g.fillRoundedRectangle((float)x+1.f,(float)y+9.f,4.f,
+                                 (float)juce::jmax(0,h-18),2.f);
+      }
     }
     g.setColour(chosen?ModernMixer::sage:ModernMixer::border);
     g.drawRoundedRectangle(s.bounds.toFloat(),6.f,chosen?2.f:1.f);
