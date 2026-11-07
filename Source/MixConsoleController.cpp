@@ -6,6 +6,7 @@
 #include "MixConsoleLayout.h"
 #include "MixerProgressiveFx.h"
 #include "NoOverlapLayout.h"
+#include "MixerSearchFilter.h"
 #include "LibertyFrenchLabels.h"
 #include "MixConsoleSoloLogic.h"
 #include "MixConsoleMeter.h"
@@ -1466,6 +1467,15 @@ public:
      repaint();
  };
  addAndMakeVisible(detailButton);
+ meterModeButton.setButtonText("PEAK");
+ meterModeButton.setMouseClickGrabsKeyboardFocus(false);
+ meterModeButton.setTooltip(juce::String::fromUTF8(
+     "Afficher les crêtes PEAK ou les niveaux moyens RMS en dBFS."));
+ meterModeButton.setColour(juce::TextButton::buttonColourId,ModernMixer::panel);
+ meterModeButton.setColour(juce::TextButton::textColourOffId,ModernMixer::text);
+ meterModeButton.onClick=[this]{toggleMeterReadout();};
+ addAndMakeVisible(meterModeButton);
+ meterModeButton.setVisible(false);
  searchBox.setMultiLine(false);
  searchBox.setReturnKeyStartsNewLine(false);
  searchBox.setEscapeAndReturnKeysConsumed(true);
@@ -1482,15 +1492,18 @@ public:
      repaint();
  };
  searchBox.onReturnKey=[this]{findMixerTrack(true);};
- searchBox.onEscapeKey=[this]{
-     searchBox.setText(juce::String(),false);
-     searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
-     lastObservedTrack=-99999;
-     searchBox.giveAwayKeyboardFocus();
-     followArrangementSelection();
- };
+ searchBox.onEscapeKey=[this]{clearMixerSearch();};
  addAndMakeVisible(searchBox);
  searchBox.setVisible(false);
+ clearSearchButton.setButtonText("X");
+ clearSearchButton.setMouseClickGrabsKeyboardFocus(false);
+ clearSearchButton.setTooltip(juce::String::fromUTF8(
+     "Effacer la recherche et revenir à la piste sélectionnée."));
+ clearSearchButton.setColour(juce::TextButton::buttonColourId,ModernMixer::panel);
+ clearSearchButton.setColour(juce::TextButton::textColourOffId,ModernMixer::text);
+ clearSearchButton.onClick=[this]{clearMixerSearch();};
+ addAndMakeVisible(clearSearchButton);
+ clearSearchButton.setVisible(false);
  renameEditor.setMultiLine(false);
  renameEditor.setReturnKeyStartsNewLine(false);
  renameEditor.setEscapeAndReturnKeysConsumed(true);
@@ -1510,6 +1523,8 @@ public:
     searchBox.onTextChange=nullptr;
     searchBox.onReturnKey=nullptr;
     searchBox.onEscapeKey=nullptr;
+    clearSearchButton.onClick=nullptr;
+    meterModeButton.onClick=nullptr;
     renameEditor.onReturnKey=nullptr;
     renameEditor.onEscapeKey=nullptr;
     renameEditor.onFocusLost=nullptr;
@@ -1574,7 +1589,7 @@ public:
      {
          int matches=0,position=0;
          for(const auto& strip:strips)
-             if(name(*strip).containsIgnoreCase(query))
+             if(matchesMixerSearch(*strip,query))
              {
                  ++matches;
                  if(strip.get()==selected)position=matches;
@@ -1717,8 +1732,8 @@ public:
            e.getPosition().x-strip->bounds.getX(),e.getPosition().y,
            meterTop,meterBottom);
        if(hit==LibertyMixConsoleMeter::MeterClick::toggleDigital){
-         meterReadoutMode=LibertyMixConsoleMeter::toggleReadoutMode(meterReadoutMode);
-         repaint();return;
+         toggleMeterReadout();
+         return;
        }
        if(hit==LibertyMixConsoleMeter::MeterClick::resetPeaks){
          strip->meter.resetPeak();
@@ -1855,6 +1870,42 @@ public:
                 juce::MouseCursor::NormalCursor);
  }
 private:
+ void clearMixerSearch()
+ {
+     searchBox.setText(juce::String(),false);
+     searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+     lastObservedTrack=-99999;
+     searchBox.giveAwayKeyboardFocus();
+     followArrangementSelection();
+     repaint();
+ }
+ void toggleMeterReadout()
+ {
+     meterReadoutMode=LibertyMixConsoleMeter::toggleReadoutMode(meterReadoutMode);
+     meterModeButton.setButtonText(meterReadoutMode==
+         LibertyMixConsoleMeter::ReadoutMode::peak?"PEAK":"RMS");
+     repaint();
+ }
+ static LibertyMixerSearch::Kind mixerSearchKind(Strip::Kind kind) noexcept
+ {
+     switch(kind)
+     {
+         case Strip::audio:return LibertyMixerSearch::Kind::audio;
+         case Strip::midi:return LibertyMixerSearch::Kind::midi;
+         case Strip::instrument:return LibertyMixerSearch::Kind::instrument;
+         case Strip::bus:return LibertyMixerSearch::Kind::bus;
+         case Strip::master:return LibertyMixerSearch::Kind::master;
+     }
+     return LibertyMixerSearch::Kind::audio;
+ }
+ bool matchesMixerSearch(const Strip& strip,const juce::String& raw) const
+ {
+     const auto parsed=LibertyMixerSearch::parse(raw.toStdString());
+     if(!LibertyMixerSearch::accepts(parsed.category,mixerSearchKind(strip.kind)))
+         return false;
+     const auto needle=raw.substring((int)parsed.prefixLength).trim();
+     return needle.isEmpty()||name(strip).containsIgnoreCase(needle);
+ }
  void showMeterMenu(const Strip& source,juce::Point<int> point)
  {
      juce::PopupMenu menu;
@@ -1917,7 +1968,7 @@ private:
      for(int step=0;step<count;++step)
      {
          auto& candidate=*strips[(size_t)((start+step)%count)];
-         if(name(candidate).containsIgnoreCase(query))
+         if(matchesMixerSearch(candidate,query))
          {
              searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
              focusMixerStrip(candidate);
@@ -2323,9 +2374,16 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  void layout(){
     const auto view=LibertyNoOverlap::mixerViewButton(getWidth());
     detailButton.setBounds(view.x,view.y,view.w,view.h);
+    const auto meter=LibertyNoOverlap::mixerMeterButton(getWidth());
+    meterModeButton.setBounds(meter.x,meter.y,meter.w,meter.h);
+    meterModeButton.setVisible(meter.w>0);
     const auto search=LibertyNoOverlap::mixerSearchField(getWidth());
-    searchBox.setBounds(search.x,search.y,search.w,search.h);
-    searchBox.setVisible(search.w>0&&search.h>0);
+    const auto input=LibertyNoOverlap::mixerSearchInput(getWidth());
+    const auto clear=LibertyNoOverlap::mixerSearchClear(getWidth());
+    searchBox.setBounds(input.x,input.y,input.w,input.h);
+    searchBox.setVisible(input.w>0&&input.h>0);
+    clearSearchButton.setBounds(clear.x,clear.y,clear.w,clear.h);
+    clearSearchButton.setVisible(clear.w>0&&clear.h>0);
     if(search.w==0&&searchBox.getText().isNotEmpty())
     {
         searchBox.setText(juce::String(),false);
@@ -2972,8 +3030,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  juce::TextButton routeClose;
  std::array<juce::TextButton,9> routeChoices;
  juce::TextButton detailButton;
+ juce::TextButton meterModeButton;
  bool detailedView=false;
  juce::TextEditor searchBox;
+ juce::TextButton clearSearchButton;
  int lastObservedTrack=-99999;
  juce::TextEditor renameEditor;
  int renamingLane=-1;

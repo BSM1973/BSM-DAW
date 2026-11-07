@@ -1,4 +1,5 @@
 #include "../Source/NoOverlapLayout.h"
+#include "../Source/MixerSearchFilter.h"
 #include <cassert>
 #include <iostream>
 
@@ -14,14 +15,56 @@ int main()
     static_assert(!intersects(busButton,heightIcon),"BUS overlaps height selector");
     static_assert(!intersects(logo,busButton),"logo overlaps BUS");
 
-    for(int width:{600,1024,1100,1440,1672,1920,2560})
+    using namespace LibertyMixerSearch;
+    assert(parse("Kick").category==Category::all);
+    assert(parse("A: Kick").category==Category::audio);
+    assert(parse("A: Kick").prefixLength==2);
+    assert(parse("AUDIO:Kick").prefixLength==6);
+    assert(parse("MiDi: Keys").category==Category::midi);
+    assert(parse("INST: Piano").category==Category::instrument);
+    assert(parse("I: Pad").category==Category::instrument);
+    assert(parse("BUS: Reverb").category==Category::bus);
+    assert(parse("B:").category==Category::bus);
+    assert(parse("MASTER:").category==Category::master);
+    assert(parse("X: Lead").category==Category::all);
+    assert(parse("B : Reverb").category==Category::bus);
+    assert(accepts(Category::all,Kind::bus));
+    assert(accepts(Category::audio,Kind::audio));
+    assert(!accepts(Category::audio,Kind::instrument));
+    assert(accepts(Category::bus,Kind::bus));
+    assert(!accepts(Category::bus,Kind::master));
+    assert(accepts(Category::master,Kind::master));
+    assert(!accepts(Category::master,Kind::midi));
+
+    for(int width:{600,1024,1100,1279,1280,1440,1672,1920,2560})
         for(int height:{620,720,890,1080})
         {
             assert(mixerHeaderIsSeparate(width));
             assert(!intersects(mixerHint(width),mixerViewButton(width)));
             const auto search=mixerSearchField(width);
+            const auto input=mixerSearchInput(width);
+            const auto clear=mixerSearchClear(width);
+            const auto meter=mixerMeterButton(width);
             assert(search.w==0||(!intersects(mixerHint(width),search)&&
                    !intersects(search,mixerViewButton(width))));
+            if(search.w>0)
+            {
+                assert(inside(input,search));
+                assert(inside(clear,search));
+                assert(!intersects(input,clear));
+                assert(!intersects(clear,mixerViewButton(width)));
+            }
+            else assert(input.w==0&&clear.w==0);
+            if(width>=mixerMeterButtonThreshold)
+            {
+                assert(meter.w==76);
+                assert(!intersects(meter,mixerHint(width)));
+                assert(!intersects(meter,search));
+                assert(!intersects(meter,mixerViewButton(width)));
+                assert(meter.right()+12<=search.x);
+                assert(meter.y>=0&&meter.bottom()<=mixerToolbarHeight);
+            }
+            else assert(meter.w==0);
             if(width>=mixerSearchThreshold)
             {
                 assert(search.w==218);
