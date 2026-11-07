@@ -14,11 +14,20 @@ int main()
     static_assert(!intersects(busButton,heightIcon),"BUS overlaps height selector");
     static_assert(!intersects(logo,busButton),"logo overlaps BUS");
 
-    for(int width:{600,1024,1440,1672,1920,2560})
+    for(int width:{600,1024,1100,1440,1672,1920,2560})
         for(int height:{620,720,890,1080})
         {
             assert(mixerHeaderIsSeparate(width));
             assert(!intersects(mixerHint(width),mixerViewButton(width)));
+            const auto search=mixerSearchField(width);
+            assert(search.w==0||(!intersects(mixerHint(width),search)&&
+                   !intersects(search,mixerViewButton(width))));
+            if(width>=mixerSearchThreshold)
+            {
+                assert(search.w==218);
+                assert(search.y>=0&&search.bottom()<=mixerToolbarHeight);
+                assert(search.right()+12<=mixerViewButton(width).x);
+            }
             const auto hint=mixerHint(width);
             const auto globalHint=Rect{hint.x,hint.y+transportHeight,hint.w,hint.h};
             for(auto control:creationControls)
@@ -45,6 +54,15 @@ int main()
                     assert(channelScroll(0,-100,max)==0);
                     assert(channelScroll(0,max+100,max)==max);
                     assert(channelScroll(max,-100000,max)==0);
+                    assert(centeredChannelOffset(-1,n,bank.w)==0);
+                    assert(centeredChannelOffset(n,n,bank.w)==0);
+                    for(int index=0;index<n;++index)
+                    {
+                        const int centered=centeredChannelOffset(index,n,bank.w);
+                        assert(centered>=0&&centered<=max);
+                        const int left=12+index*mixerStripPitch-centered;
+                        assert(left<bank.w&&left+mixerStripPitch-4>0);
+                    }
                 }
             }
         }

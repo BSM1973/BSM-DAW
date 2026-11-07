@@ -1466,6 +1466,25 @@ public:
      repaint();
  };
  addAndMakeVisible(detailButton);
+ searchBox.setMultiLine(false);
+ searchBox.setReturnKeyStartsNewLine(false);
+ searchBox.setEscapeAndReturnKeysConsumed(true);
+ searchBox.setInputRestrictions(40);
+ searchBox.setTextToShowWhenEmpty(
+     juce::String::fromUTF8("RECHERCHER UNE PISTE"),ModernMixer::secondary);
+ searchBox.setColour(juce::TextEditor::backgroundColourId,ModernMixer::panel);
+ searchBox.setColour(juce::TextEditor::textColourId,ModernMixer::text);
+ searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+ searchBox.setColour(juce::TextEditor::focusedOutlineColourId,ModernMixer::sage);
+ searchBox.onTextChange=[this]{findMixerTrack(false);};
+ searchBox.onReturnKey=[this]{findMixerTrack(true);};
+ searchBox.onEscapeKey=[this]{
+     searchBox.setText(juce::String(),false);
+     searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+     searchBox.giveAwayKeyboardFocus();
+ };
+ addAndMakeVisible(searchBox);
+ searchBox.setVisible(false);
  renameEditor.setMultiLine(false);
  renameEditor.setReturnKeyStartsNewLine(false);
  renameEditor.setEscapeAndReturnKeysConsumed(true);
@@ -1482,6 +1501,9 @@ public:
  startTimerHz(24);setVisible(false);}
  ~MixConsoleView()override{
     stopTimer();
+    searchBox.onTextChange=nullptr;
+    searchBox.onReturnKey=nullptr;
+    searchBox.onEscapeKey=nullptr;
     renameEditor.onReturnKey=nullptr;
     renameEditor.onEscapeKey=nullptr;
     renameEditor.onFocusLost=nullptr;
@@ -1490,7 +1512,7 @@ public:
     verticalScroll.removeListener(&verticalListener);
     clear();
 }
- void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);sync();layout();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
+ void setConsoleVisible(bool b){visible=b;setVisible(b);if(b){lastObservedTrack=-99999;setBounds(0,transportHeight,owner.getWidth(),juce::jmax(1,owner.getHeight()-transportHeight));rebuild();toFront(true);sync();layout();updateMeters();repaint();}else{finishRename(true);selected=nullptr;}}
  bool isConsoleVisible()const{return visible;} void refreshStatic(){if(!visible)return;finishRename(true);routingLane=-1;rebuild();sync();layout();repaint();}
  int getDropTrackForOwnerPoint(juce::Point<int> p,bool instrumentPlugin)const{if(!visible||p.y<transportHeight)return-1;auto q=p-juce::Point<int>(0,transportHeight);if(routingLane>=0&&q.x>=getWidth()-LibertyNoOverlap::routingPaneWidth)return -1;for(auto&s:strips)if(s->bounds.contains(q)){if(instrumentPlugin&&s->kind==Strip::instrument)return owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane;if(!instrumentPlugin&&(s->kind==Strip::audio||s->kind==Strip::instrument)){for(int i=0;i<8;++i)if(s->fx[(size_t)i]&&s->fx[(size_t)i]->isVisible()&&s->fx[(size_t)i]->getBounds().contains(q))return 1000000+(s->kind==Strip::audio?s->lane:owner.getAudioTrackCount()+owner.getMidiTrackCount()+s->lane)*8+i;return-1;}}return-1;}
  void paint(juce::Graphics&g)override
@@ -1763,6 +1785,74 @@ public:
                 juce::MouseCursor::NormalCursor);
  }
 private:
+ void focusMixerStrip(Strip& strip)
+ {
+     if(routingLane>=0)routingLane=-1;
+     selected=&strip;
+     if(strip.kind!=Strip::master&&strip.kind!=Strip::bus)
+         owner.selectedTrack=logicalTrack(strip);
+     if(strip.kind!=Strip::master)
+     {
+         const auto bank=LibertyNoOverlap::scrollableChannels(
+             getWidth(),getHeight(),false);
+         const auto it=std::find_if(strips.begin(),strips.end(),
+             [&strip](const auto& item){return item.get()==&strip;});
+         if(it!=strips.end())
+             offset=LibertyNoOverlap::centeredChannelOffset(
+                 (int)std::distance(strips.begin(),it),
+                 juce::jmax(0,(int)strips.size()-1),bank.w);
+     }
+     layout();
+     repaint();
+     owner.repaint();
+ }
+ void findMixerTrack(bool next)
+ {
+     const auto query=searchBox.getText().trim();
+     if(query.isEmpty())
+     {
+         searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+         return;
+     }
+     const int count=(int)strips.size();
+     if(count==0)return;
+     int start=0;
+     if(next&&selected)
+     {
+         const auto current=std::find_if(strips.begin(),strips.end(),
+             [this](const auto& item){return item.get()==selected;});
+         if(current!=strips.end())
+             start=((int)std::distance(strips.begin(),current)+1)%count;
+     }
+     for(int step=0;step<count;++step)
+     {
+         auto& candidate=*strips[(size_t)((start+step)%count)];
+         if(name(candidate).containsIgnoreCase(query))
+         {
+             searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::border);
+             focusMixerStrip(candidate);
+             return;
+         }
+     }
+     searchBox.setColour(juce::TextEditor::outlineColourId,ModernMixer::amber);
+ }
+ void followArrangementSelection()
+ {
+     const int logical=owner.selectedTrack;
+     if(lastObservedTrack==logical)return;
+     lastObservedTrack=logical;
+     if(logical<0||!searchBox.getText().isEmpty()||draggingStrip||
+        draggingHeight||renamingLane>=0)return;
+     for(auto& item:strips)
+     {
+         if(item->kind!=Strip::bus&&item->kind!=Strip::master&&
+            logicalTrack(*item)==logical)
+         {
+             focusMixerStrip(*item);
+             return;
+         }
+     }
+ }
  int logicalTrack(const Strip& strip) const noexcept
  {
      if(strip.kind==Strip::audio)return strip.lane;
@@ -2133,6 +2223,9 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  void layout(){
     const auto view=LibertyNoOverlap::mixerViewButton(getWidth());
     detailButton.setBounds(view.x,view.y,view.w,view.h);
+    const auto search=LibertyNoOverlap::mixerSearchField(getWidth());
+    searchBox.setBounds(search.x,search.y,search.w,search.h);
+    searchBox.setVisible(search.w>0&&search.h>0);
     const bool routingOpen=routingLane>=0;
     const auto nativeViewport=LibertyNoOverlap::scrollableChannels(
         getWidth(),getHeight(),routingOpen);
@@ -2477,16 +2570,15 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
               g.setFont(juce::Font(8.f,juce::Font::bold));
               g.drawFittedText(juce::String::fromUTF8("CHAÎNE D'EFFETS"),x+15,y+areaTop+7,w-30,12,
                                juce::Justification::centredLeft,1);
-              int shown=0,loaded=0;
+              int shown=0;
+              const auto occupied=effectOccupancy(s);
+              const int loaded=LibertyMixerProgressiveFx::activeCount(occupied);
               const int maxLines=juce::jmax(0,juce::jmin(3,(available-34)/18));
-              for(const auto& fxButton:s.fx)
+              for(int slot=0;slot<LibertyMixerProgressiveFx::slotLimit;++slot)
               {
-                  if(!fxButton)continue;
-                  const auto label=fxButton->getButtonText();
-                  if(label.isEmpty()||label.containsIgnoreCase("EMPTY")||
-                     label.containsIgnoreCase("VIDE"))continue;
-                  ++loaded;
+                  if(!occupied[(size_t)slot]||!s.fx[(size_t)slot])continue;
                   if(shown>=maxLines)continue;
+                  const auto label=s.fx[(size_t)slot]->getButtonText();
                   g.setColour(ModernMixer::sage);
                   g.fillEllipse((float)x+16.f,(float)(y+areaTop+27+shown*18),4.f,4.f);
                   g.setColour(ModernMixer::text);
@@ -2710,11 +2802,31 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          muted?juce::Colour(0xffa44141):juce::Colour(0xff25323e));
      s->solo->setColour(juce::TextButton::buttonColourId,
          solo?juce::Colour(0xffa18432):juce::Colour(0xff25323e));
- }else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}syncing=false;}
+ }else{s->fader->setEnabled(true);s->fader->setTextValueSuffix(" dB");s->fader->setValue(gainToDb(owner.audioEngine.getMasterGain()),juce::dontSendNotification);s->plugin->setButtonText("MASTER OUTPUT");s->plugin->setEnabled(false);s->unload->setEnabled(false);}}
+ // Occupied inserts stand out from the next empty slot, on both audio
+ // and instrument channels. Existing FX indices and DSP are untouched.
+ for(const auto& strip:strips)
+ {
+     if(strip->kind!=Strip::audio&&strip->kind!=Strip::instrument)continue;
+     const auto occupied=effectOccupancy(*strip);
+     for(int slot=0;slot<LibertyMixerProgressiveFx::slotLimit;++slot)
+     {
+         auto* button=strip->fx[(size_t)slot].get();
+         if(!button)continue;
+         const bool loaded=occupied[(size_t)slot];
+         button->setColour(juce::TextButton::buttonColourId,
+             loaded?ModernMixer::sage.darker(.65f):ModernMixer::panel);
+         button->setTooltip(loaded
+             ?juce::String::fromUTF8("Cliquer pour ouvrir cet effet chargé.")
+             :juce::String::fromUTF8("Cliquer pour charger un effet dans ce slot."));
+     }
+ }
+ syncing=false;
  void timerCallback()override
  {
      if(!visible)return;
      updateMeters();
+     followArrangementSelection();
      bool fxCountChanged=false;
      auto& host=LibertyPluginHost::instance();
      for(const auto& strip:strips)
@@ -2754,6 +2866,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  std::array<juce::TextButton,9> routeChoices;
  juce::TextButton detailButton;
  bool detailedView=false;
+ juce::TextEditor searchBox;
+ int lastObservedTrack=-99999;
  juce::TextEditor renameEditor;
  int renamingLane=-1;
  Strip::Kind renamingKind=Strip::audio;

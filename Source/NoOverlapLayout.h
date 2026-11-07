@@ -57,10 +57,19 @@ inline Rect mixerViewButton(int windowWidth) noexcept
 {
     return {windowWidth-148,12,130,28};
 }
+// The search field only occupies space when the header is wide enough.
+// Narrow windows retain the original controls without any collision.
+constexpr int mixerSearchThreshold=1100;
+inline Rect mixerSearchField(int windowWidth) noexcept
+{
+    return windowWidth>=mixerSearchThreshold?
+        Rect{windowWidth-378,12,218,28}:Rect{};
+}
 inline Rect mixerHint(int windowWidth) noexcept
 {
     return {creationZoneWidth+14,15,
-            std::max(0,windowWidth-creationZoneWidth-190),20};
+            std::max(0,windowWidth-creationZoneWidth-190-
+                (windowWidth>=mixerSearchThreshold?230:0)),20};
 }
 inline Rect routingPanel(int windowWidth,int windowHeight,bool open) noexcept
 {
@@ -94,6 +103,15 @@ inline int channelMaxScroll(int channels,int areaWidth) noexcept
 inline int channelScroll(int current,int increment,int limit) noexcept
 {
     return std::clamp(current+increment,0,std::max(0,limit));
+}
+// Centers a channel when there is space, or reveals it at the bank edge.
+// Never changes the identity or order of a track, FX insert or BUS.
+inline int centeredChannelOffset(int index,int channels,int viewportWidth) noexcept
+{
+    if(index<0||index>=channels)return 0;
+    const int target=12+index*mixerStripPitch+(mixerStripPitch-4)/2-
+                     std::max(0,viewportWidth)/2;
+    return std::clamp(target,0,channelMaxScroll(channels,viewportWidth));
 }
 inline bool pinnedMasterDoesNotOverlap(int width,int height,bool routing) noexcept
 {
@@ -130,11 +148,16 @@ inline bool mixerHeaderIsSeparate(int windowWidth) noexcept
 {
     const auto hint=mixerHint(windowWidth);
     const auto button=mixerViewButton(windowWidth);
+    const auto search=mixerSearchField(windowWidth);
     return windowWidth>=600&&hint.x>=creationZone.right()&&
            hint.right()+12<=button.x&&
            button.right()<=windowWidth&&hint.y>=0&&
            button.y>=0&&button.bottom()<=mixerToolbarHeight&&
-           hint.bottom()<=mixerToolbarHeight;
+           hint.bottom()<=mixerToolbarHeight&&
+           (search.w==0||(!intersects(hint,search)&&
+               search.x>=creationZoneWidth&&
+               search.right()+12<=button.x&&
+               search.y>=0&&search.bottom()<=mixerToolbarHeight));
 }
 inline bool routingHasNoOverlap(int width,int height) noexcept
 {
