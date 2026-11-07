@@ -1799,7 +1799,37 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     }
     s->mute->setTooltip("Couper ce BUS.");
     s->solo->setTooltip("Solo des groupes BUS.");
-}wire(*s);return s;}
+}// Final appearance pass: consistent matte surfaces for the controls
+ // created inside each strip. Only colors change, not hit rectangles.
+ s->fader->setColour(juce::Slider::textBoxBackgroundColourId,
+                     juce::Colour(0xff182829));
+ s->fader->setColour(juce::Slider::textBoxTextColourId,ModernMixer::text);
+ s->fader->setColour(juce::Slider::textBoxOutlineColourId,ModernMixer::border);
+ s->fader->setColour(juce::Slider::textBoxHighlightColourId,ModernMixer::sage.withAlpha(.35f));
+ auto buttonSkin=[](juce::TextButton* button,juce::Colour face,
+                    juce::Colour foreground)
+ {
+     if(button==nullptr)return;
+     button->setColour(juce::TextButton::buttonColourId,face);
+     button->setColour(juce::TextButton::textColourOffId,foreground);
+ };
+ buttonSkin(s->fxHeader.get(),juce::Colour(0xff25403e),ModernMixer::text);
+ buttonSkin(s->plugin.get(),juce::Colour(0xff1b3031),ModernMixer::secondary);
+ buttonSkin(s->unload.get(),juce::Colour(0xff372c2c),juce::Colour(0xffe6bbbb));
+ buttonSkin(s->channel.get(),juce::Colour(0xff36544e),ModernMixer::text);
+ for(auto& button:s->moduleTabs)
+     buttonSkin(button.get(),juce::Colour(0xff2a403e),ModernMixer::secondary);
+ for(auto& button:s->modulePower)
+     buttonSkin(button.get(),juce::Colour(0xff30413e),ModernMixer::secondary);
+ for(auto& button:s->fx)
+     buttonSkin(button.get(),juce::Colour(0xff1c3030),ModernMixer::text);
+ for(auto& button:s->fxUnload)
+     buttonSkin(button.get(),juce::Colour(0xff332b2b),juce::Colour(0xffd6a2a2));
+ if(s->pan)
+     s->pan->setColour(juce::Slider::rotarySliderFillColourId,ModernMixer::sage);
+ if(s->kind==Strip::bus&&s->pan)
+     s->pan->setColour(juce::Slider::rotarySliderFillColourId,juce::Colour(0xffc6a4de));
+ wire(*s);return s;}
  void configureValuePopup(Strip& s){auto configure=[](juce::Slider* slider,const juce::String&suffix){if(!slider)return;slider->setPopupDisplayEnabled(true,true,nullptr,1500);slider->setTextValueSuffix(suffix);slider->setNumDecimalPlacesToDisplay(1);};configure(s.inputGain.get()," dB");configure(s.highPass.get()," Hz");configure(s.compThreshold.get()," dB");configure(s.compRatio.get()," :1");configure(s.gateThreshold.get()," dB");for(auto&knob:s.eqKnobs)configure(knob.get()," dB");}
  void refreshPower(Strip& s){if(s.kind!=Strip::audio)return;const bool states[3]={s.eqOn,s.gateOn,s.compOn};for(int i=0;i<3;++i){auto&button=s.modulePower[(size_t)i];if(!button)continue;button->setButtonText(states[i]?"ON":"OFF");button->setColour(juce::TextButton::buttonColourId,states[i]?juce::Colour(0xff246b63):juce::Colour(0xff34404a));}}
  void applyMixerSolo(Strip& strip)
