@@ -503,9 +503,13 @@ public:
         // Respect the right-hand A/B badge and enable switch at every
         // supported inspector width. Never paint a heading outside its card.
         const auto titleBounds=LibertyChannelDialogLayout::sectionTitleArea(layout,i);
-        if(titleBounds.w>0)
-            g.drawFittedText(headings[i],titleBounds.x+9,b.y+13,
-                             juce::jmax(0,titleBounds.w-9),22,
+        const auto badgeBounds=layout.abIndicators[(size_t)i];
+        // The title hit region intentionally extends under the A/B badge;
+        // painting must stop before the visible badge instead.
+        const int titleX=titleBounds.x+9;
+        const int titleRight=juce::jmin(titleBounds.right(),badgeBounds.x-8);
+        if(titleRight>titleX)
+            g.drawFittedText(headings[i],titleX,b.y+13,titleRight-titleX,22,
                              juce::Justification::centredLeft,1);
         const auto comparison=otherSettings!=nullptr
             ?LibertyChannelSectionComparison::rows(
