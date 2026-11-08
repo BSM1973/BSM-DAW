@@ -473,16 +473,16 @@ public:
      g.fillRoundedRectangle(12.f,10.f,4.f,60.f,2.f);
      g.setColour(juce::Colours::white);
      g.setFont(juce::Font(20.f,juce::Font::bold));
-     g.drawFittedText("LIBERTY  |  CANAL AUDIO",28,17,getWidth()-260,26,
+     g.drawFittedText("LIBERTY  |  CANAL AUDIO",28,17,juce::jmax(1,getWidth()-260),26,
                        juce::Justification::centredLeft,1);
      g.setFont(juce::Font(11.f));
-     g.setColour(juce::Colour(0xffb5cbd9));
+     g.setColour(ModernMixer::secondary);
      g.drawFittedText(name+"  |  Traitements audio",29,52,getWidth()-58,16,
                       juce::Justification::centredLeft,1);
      const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
      const juce::String headings[4]={"INPUT","GATE","COMPRESSEUR",juce::String::fromUTF8("ÉGALISEUR")};
-     const juce::Colour accents[4]={juce::Colour(0xff72c6eb),juce::Colour(0xff91d1a8),
-                                   juce::Colour(0xffe0b276),juce::Colour(0xff60d3d6)};
+     const juce::Colour accents[4]={juce::Colour(0xff72c6eb),ModernMixer::sage,
+                                   ModernMixer::amber,juce::Colour(0xff60d3d6)};
      // Read the displayed controls (including pending knob edits) without
      // changing the Session, variant selection or live audio processing.
      const auto visibleSettings=readControls();
