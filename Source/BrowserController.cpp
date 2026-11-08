@@ -806,7 +806,7 @@ private:
         juce::String categoryName = "Autres";
         if (library.isDirectory() && (location == library || location.isAChildOf(library)))
         {
-            const auto relative = location.getRelativePathFrom(library).replaceCharacter('\\\\', '/');
+            const auto relative = location.getRelativePathFrom(library).replaceCharacter('\\', '/');
             const auto parts = juce::StringArray::fromTokens(relative, "/", "");
             if (parts.size() >= 1 && location != library) manufacturer = parts[0];
             if (parts.size() >= 2) pack = parts[1];
@@ -816,7 +816,7 @@ private:
         const auto summary = "FABRICANT : " + manufacturer + "  |  PACK : " + pack
                            + "  |  CATÉGORIE : " + categoryName;
         samplePackInfo.setText(summary, juce::dontSendNotification);
-        samplePackInfo.setTooltip(summary + "\\nDossier : " + location.getFullPathName());
+        samplePackInfo.setTooltip(summary + "\nDossier : " + location.getFullPathName());
     }
 
     void updateSampleFolderControls()
