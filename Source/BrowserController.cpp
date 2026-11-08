@@ -273,6 +273,11 @@ public:
         pluginSearch.setColour(juce::TextEditor::textColourId, juce::Colour(0xffeffcfd));
         pluginSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff40515f));
         pluginSearch.onTextChange = [this] { rebuildPluginTree(); };
+        pluginSearch.onEscapeKey = [this]
+        {
+            pluginSearch.clear();
+            pluginTree.grabKeyboardFocus();
+        };
         addAndMakeVisible(pluginSearch);
         spliceButton.setButtonText("SPLICE");
         for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
@@ -724,6 +729,14 @@ private:
                 }
                 if (group != nullptr) group->addSubItem(makePluginItem(d));
             }
+        }
+        // During a search, reveal matching manufacturers without requiring
+        // the user to expand every nested folder manually.
+        if (query.isNotEmpty())
+        {
+            for (auto* family : { instruments, audioEffects })
+                for (int i = 0; i < family->getNumSubItems(); ++i)
+                    family->getSubItem(i)->setOpen(true);
         }
         pluginTree.setRootItem(pluginRoot.get());
         pluginRoot->setOpen(true); fav->setOpen(true); instruments->setOpen(true); audioEffects->setOpen(true); pluginTree.repaint();
