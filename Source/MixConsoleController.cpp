@@ -1953,6 +1953,8 @@ private:
                   meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::peak);
      menu.addItem(4,"AFFICHAGE RMS",true,
                   meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::rms);
+     menu.addSeparator();
+     menu.addItem(5,juce::String::fromUTF8("COPIER LES NIVEAUX L/R (dBFS)"));
      menu.showMenuAsync(
          juce::PopupMenu::Options().withTargetScreenArea(
              juce::Rectangle<int>(point.x,point.y,1,1)),
@@ -1960,6 +1962,31 @@ private:
           kind=source.kind,lane=source.lane](int action)
          {
              if(safe==nullptr||action==0)return;
+             if(action==5)
+             {
+                 const auto it=std::find_if(safe->strips.begin(),safe->strips.end(),
+                     [kind,lane](const auto& item){
+                         return item->kind==kind&&item->lane==lane;
+                     });
+                 if(it==safe->strips.end())return;
+                 const auto& strip=**it;
+                 const auto mode=safe->meterReadoutMode;
+                 juce::String report=safe->name(strip);
+                 report+=mode==LibertyMixConsoleMeter::ReadoutMode::peak
+                     ?" | PEAK (dBFS)":" | RMS (dBFS)";
+                 for(int channel=0;channel<2;++channel)
+                 {
+                     const float amplitude=LibertyMixConsoleMeter::channelReadoutAmplitude(
+                         strip.meter,mode,channel);
+                     report+=juce::String(channel==0?" | L: ":" | R: ");
+                     report+=amplitude>0.f
+                         ?juce::String(LibertyMixConsoleMeter::toDb(amplitude),1)
+                         :juce::String("--");
+                 }
+                 if(strip.meter.clipped())report+=" | CLIP";
+                 juce::SystemClipboard::copyTextToClipboard(report);
+                 return;
+             }
              if(action==3||action==4)
              {
                  safe->meterReadoutMode=action==3
