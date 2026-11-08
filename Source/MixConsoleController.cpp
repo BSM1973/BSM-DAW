@@ -2011,7 +2011,7 @@ private:
                  for(const auto& item:safe->strips)
                  {
                      if(item->kind==Strip::midi)continue;
-                     report+="\\n"+safe->name(*item);
+                     report+="\n"+safe->name(*item);
                      for(int channel=0;channel<2;++channel)
                      {
                          const float amplitude=LibertyMixConsoleMeter::channelReadoutAmplitude(
