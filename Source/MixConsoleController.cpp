@@ -561,14 +561,26 @@ public:
      // Single-line footer remains above the action buttons (no overlap).
      g.setColour(ModernMixer::sage);
      g.setFont(juce::Font(10.f,juce::Font::bold));
-     g.drawFittedText(
-         presetIndicator.description(session.variantIndex(),readControls()),
-         20,getHeight()-87,462,19,juce::Justification::centredLeft,1);
-     g.setColour(juce::Colour(0xff91aabd));
+     // The footer captions share a single row. Reserve a fixed gap so
+     // neither caption can paint over the other when the dialog narrows.
+     const int footerLeft=20;
+     const int footerRight=juce::jmax(footerLeft,getWidth()-20);
+     const int footerGap=16;
+     const int footerSplit=juce::jlimit(footerLeft,footerRight,
+                                      juce::jmin(482,footerRight-190));
+     const int presetWidth=juce::jmax(0,footerSplit-footerLeft);
+     if(presetWidth>0)
+         g.drawFittedText(
+             presetIndicator.description(session.variantIndex(),readControls()),
+             footerLeft,getHeight()-87,presetWidth,19,
+             juce::Justification::centredLeft,1);
+     g.setColour(ModernMixer::secondary);
      g.setFont(juce::Font(10.f));
-     g.drawFittedText(juce::String::fromUTF8("ANNULER ignore. APPLIQUER valide."),
-         499,getHeight()-87,getWidth()-519,19,
-         juce::Justification::centredRight,1);
+     const int helpLeft=footerSplit+footerGap;
+     if(footerRight>helpLeft)
+         g.drawFittedText(juce::String::fromUTF8("ANNULER ignore. APPLIQUER valide."),
+             helpLeft,getHeight()-87,footerRight-helpLeft,19,
+             juce::Justification::centredRight,1);
  }
  void resized()override{
     const auto layout=LibertyChannelDialogLayout::make(getWidth(),getHeight());
