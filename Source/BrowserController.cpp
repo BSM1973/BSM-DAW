@@ -358,6 +358,19 @@ public:
         }
         previewPlay.onClick = [this] { if (previewReader != nullptr) previewTransport.start(); };
         previewStop.onClick = [this] { previewTransport.stop(); previewTransport.setPosition(0.0); };
+        previewVolume.setSliderStyle(juce::Slider::LinearHorizontal);
+        previewVolume.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        previewVolume.setRange(0.0, 1.0, 0.01);
+        previewVolume.setValue(0.7, juce::dontSendNotification);
+        previewVolume.onValueChange = [this] { previewTransport.setGain((float)previewVolume.getValue()); };
+        addAndMakeVisible(previewVolume);
+        previewAuto.setButtonText("AUTO");
+        previewAuto.setColour(juce::ToggleButton::textColourId, juce::Colour(0xffeffcfd));
+        addAndMakeVisible(previewAuto);
+        previewInfo.setText("Aucun sample sélectionné", juce::dontSendNotification);
+        previewInfo.setColour(juce::Label::textColourId, juce::Colour(0xffeffcfd));
+        previewInfo.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(previewInfo);
 
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
@@ -506,10 +519,14 @@ public:
 
         homeButton.setBounds(12, 105, 70, 24);
         parentFolderButton.setBounds(86, 105, juce::jmax(0, getWidth() - 98), 24);
-        fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 216));
-        const int previewY = juce::jmax(136, getHeight() - 72);
-        previewPlay.setBounds(10, previewY, juce::jmax(0, (getWidth() - 24) / 2), 27);
-        previewStop.setBounds(14 + (getWidth() - 24) / 2, previewY, juce::jmax(0, (getWidth() - 24) / 2), 27);
+        fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 248));
+        const int previewY = juce::jmax(136, getHeight() - 104);
+        const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
+        previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
+        previewPlay.setBounds(10, previewY + 25, previewW, 26);
+        previewStop.setBounds(14 + previewW, previewY + 25, previewW, 26);
+        previewVolume.setBounds(10, previewY + 57, juce::jmax(0, getWidth() - 96), 24);
+        previewAuto.setBounds(juce::jmax(10, getWidth() - 78), previewY + 57, 68, 24);
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
@@ -582,12 +599,19 @@ private:
         previewTransport.stop();
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        previewInfo.setText("Aucun sample sélectionné", juce::dontSendNotification);
         auto reader = std::unique_ptr<juce::AudioFormatReader>(previewFormats.createReaderFor(file));
         if (reader == nullptr) return;
         const double rate = reader->sampleRate;
+        const double seconds = rate > 0.0 ? (double)reader->lengthInSamples / rate : 0.0;
+        const int totalSeconds = juce::jmax(0, (int)seconds);
+        previewInfo.setText(file.getFileName() + "  -  " + juce::String(totalSeconds / 60)
+                            + ":" + juce::String(totalSeconds % 60).paddedLeft('0', 2),
+                            juce::dontSendNotification);
         previewReader = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
         previewTransport.setSource(previewReader.get(), 0, nullptr, rate);
-        previewTransport.setGain(0.7f);
+        previewTransport.setGain((float)previewVolume.getValue());
+        if (previewAuto.getToggleState()) previewTransport.start();
     }
     void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
     void browserRootChanged(const juce::File&) override {}
@@ -660,6 +684,9 @@ private:
         category = newCategory;
         previewPlay.setVisible(category == Category::audio);
         previewStop.setVisible(category == Category::audio);
+        previewVolume.setVisible(category == Category::audio);
+        previewAuto.setVisible(category == Category::audio);
+        previewInfo.setVisible(category == Category::audio);
         filesButton.setToggleState(category == Category::files, juce::dontSendNotification);
         audioButton.setToggleState(category == Category::audio, juce::dontSendNotification);
         midiButton.setToggleState(category == Category::midi, juce::dontSendNotification);
@@ -1279,6 +1306,9 @@ private:
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::StringArray favouriteKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton, previewPlay, previewStop;
+    juce::Slider previewVolume;
+    juce::ToggleButton previewAuto;
+    juce::Label previewInfo;
     juce::AudioFormatManager previewFormats;
     std::unique_ptr<juce::AudioFormatReaderSource> previewReader;
     juce::AudioTransportSource previewTransport;
