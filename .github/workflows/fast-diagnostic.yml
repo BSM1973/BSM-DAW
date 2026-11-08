@@ -38,6 +38,11 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
           /tmp/liberty-mixer-layout
+      - name: Verify saved bus routes and Master fallback
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerBusRoutingRegression.cpp -o /tmp/liberty-bus-routing
+          /tmp/liberty-bus-routing
+
       - name: Verify normal and exclusive Solo across audio and instrument tracks
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleSoloRegression.cpp -o /tmp/liberty-mixer-solo

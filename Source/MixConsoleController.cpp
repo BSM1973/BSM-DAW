@@ -1732,6 +1732,24 @@ public:
          beginRename(*strip);
          return;
      }
+     // Right-click the source route for explicit destination navigation.
+     const bool routeLabel=(strip->kind==Strip::audio||
+                            strip->kind==Strip::instrument)&&
+         p.x>=strip->bounds.getX()+9&&p.x<strip->bounds.getX()+77&&
+         p.y>=strip->bounds.getY()+55&&p.y<strip->bounds.getY()+68;
+     if(routeLabel&&e.mods.isPopupMenu())
+     {
+         showRoutingDestinationMenu(*strip,e.getScreenPosition());
+         return;
+     }
+     // The BUS route capsule opens its member list without covering controls.
+     if(strip->kind==Strip::bus&&e.mods.isLeftButtonDown()&&
+        p.x>=strip->bounds.getX()+9&&p.x<strip->bounds.getRight()-9&&
+        p.y>=strip->bounds.getY()+55&&p.y<strip->bounds.getY()+80)
+     {
+         showBusMembers(*strip,e.getScreenPosition());
+         return;
+     }
      if(e.mods.isPopupMenu())
      {
          if(strip->kind!=Strip::midi)
@@ -1756,17 +1774,11 @@ public:
      {
          // Shift-click the route to jump to its actual destination.
          // An ordinary click still opens the routing selector.
-         if(e.mods.isShiftDown())
+         if(e.mods.isShiftDown()||e.getNumberOfClicks()>=2)
          {
-             const int destination=strip->kind==Strip::audio
-                 ?owner.audioEngine.getTrackMixerBus(strip->lane)
-                 :owner.audioEngine.getInstrumentMixerBus(strip->lane);
-             const auto target=std::find_if(strips.begin(),strips.end(),
-                 [destination](const auto& item){
-                     return destination<0?item->kind==Strip::master
-                         :(item->kind==Strip::bus&&item->lane==destination);
-                 });
-             if(target!=strips.end())focusMixerStrip(**target);
+             // Keep the historic Maj+clic shortcut; a double-click also
+             // navigates directly to Master or the assigned BUS.
+             focusRouteDestination(*strip);
              return;
          }
          routingKind=strip->kind;
@@ -2053,6 +2065,118 @@ private:
                                 channel->lane==lane))
                      channel->meter.resetPeak();
              safe->repaint();
+         });
+ }
+ // One stable destination per source: Master (-1) or an existing BUS.
+ int destinationOf(const Strip& source) const noexcept
+ {
+     if(source.kind==Strip::audio)
+         return owner.audioEngine.getTrackMixerBus(source.lane);
+     if(source.kind==Strip::instrument)
+         return owner.audioEngine.getInstrumentMixerBus(source.lane);
+     return -1;
+ }
+ std::vector<std::pair<Strip::Kind,int>> busMembers(int busLane) const
+ {
+     std::vector<std::pair<Strip::Kind,int>> result;
+     if(busLane<0||busLane>=owner.audioEngine.getMixerBusCount())return result;
+     for(const auto& channel:strips)
+         if((channel->kind==Strip::audio||channel->kind==Strip::instrument)
+             &&destinationOf(*channel)==busLane)
+             result.push_back({channel->kind,channel->lane});
+     return result;
+ }
+ void focusRouteDestination(const Strip& source)
+ {
+     const int destination=destinationOf(source);
+     const auto target=std::find_if(strips.begin(),strips.end(),
+         [destination](const auto& item){
+             return destination<0?item->kind==Strip::master:
+                 (item->kind==Strip::bus&&item->lane==destination);
+         });
+     if(target!=strips.end())focusMixerStrip(**target);
+ }
+ // Popup menus do not occupy channel-strip geometry. Resolve the selected
+ // member by stable kind/lane AFTER the asynchronous menu has closed.
+ void showBusMembers(const Strip& bus,juce::Point<int> point)
+ {
+     if(bus.kind!=Strip::bus)return;
+     const auto members=busMembers(bus.lane);
+     juce::PopupMenu menu;
+     menu.addSectionHeader(juce::String::fromUTF8("PISTES AFFECTÉES À ")+
+                           owner.getMixerBusName(bus.lane));
+     const int displayed=juce::jmin(24,(int)members.size());
+     if(displayed==0)
+         menu.addItem(1,juce::String::fromUTF8("Aucune piste affectée"),false);
+     for(int index=0;index<displayed;++index)
+     {
+         const auto [kind,lane]=members[(size_t)index];
+         const auto item=std::find_if(strips.begin(),strips.end(),
+             [kind,lane](const auto& strip){
+                 return strip->kind==kind&&strip->lane==lane;
+             });
+         if(item!=strips.end())
+             menu.addItem(index+1,name(**item),true);
+     }
+     if((int)members.size()>displayed)
+         menu.addItem(1001,"+ "+juce::String((int)members.size()-displayed)
+             +juce::String::fromUTF8(" autres pistes"),false);
+     menu.addSeparator();
+     menu.addItem(1000,juce::String::fromUTF8("ALLER À CE BUS"));
+     menu.showMenuAsync(
+         juce::PopupMenu::Options().withTargetScreenArea(
+             juce::Rectangle<int>(point.x,point.y,1,1)),
+         [safe=juce::Component::SafePointer<MixConsoleView>(this),
+          members,busLane=bus.lane,displayed](int result){
+             if(safe==nullptr||result==0)return;
+             Strip::Kind kind=Strip::bus;
+             int lane=busLane;
+             if(result>=1&&result<=displayed)
+             {
+                 kind=members[(size_t)(result-1)].first;
+                 lane=members[(size_t)(result-1)].second;
+             }
+             else if(result!=1000)return;
+             const auto target=std::find_if(safe->strips.begin(),safe->strips.end(),
+                 [kind,lane](const auto& item){
+                     return item->kind==kind&&item->lane==lane;
+                 });
+             if(target!=safe->strips.end())safe->focusMixerStrip(**target);
+         });
+ }
+ void showRoutingDestinationMenu(const Strip& source,juce::Point<int> point)
+ {
+     const int destination=destinationOf(source);
+     juce::PopupMenu menu;
+     menu.addItem(1,destination<0
+         ?juce::String::fromUTF8("ALLER AU MASTER")
+         :juce::String::fromUTF8("ALLER AU BUS DE DESTINATION"));
+     if(destination>=0)
+         menu.addItem(2,juce::String::fromUTF8("VOIR LES PISTES DU BUS"));
+     menu.showMenuAsync(
+         juce::PopupMenu::Options().withTargetScreenArea(
+             juce::Rectangle<int>(point.x,point.y,1,1)),
+         [safe=juce::Component::SafePointer<MixConsoleView>(this),
+          kind=source.kind,lane=source.lane](int action){
+             if(safe==nullptr||action==0)return;
+             const auto sourceIt=std::find_if(safe->strips.begin(),safe->strips.end(),
+                 [kind,lane](const auto& strip){
+                     return strip->kind==kind&&strip->lane==lane;
+                 });
+             if(sourceIt==safe->strips.end())return;
+             const int targetBus=safe->destinationOf(**sourceIt);
+             if(action==1)safe->focusRouteDestination(**sourceIt);
+             else if(action==2&&targetBus>=0)
+             {
+                 const auto bus=std::find_if(safe->strips.begin(),safe->strips.end(),
+                     [targetBus](const auto& item){
+                         return item->kind==Strip::bus&&item->lane==targetBus;
+                     });
+                 if(bus!=safe->strips.end())
+                     safe->showBusMembers(**bus,safe->localPointToGlobal(
+                         juce::Point<int>(safe->getWidth()/2,
+                                          LibertyNoOverlap::mixerToolbarHeight+35)));
+             }
          });
  }
  void focusMixerStrip(Strip& strip)
@@ -2945,8 +3069,30 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
       g.fillRoundedRectangle((float)x+(float)w*.5f-16.f,
                              (float)(y+geom.splitterY-1),32.f,5.f,2.f);
     }else if(s.kind==Strip::bus){
-      g.setColour(juce::Colour(0xffbda1e2));g.setFont(juce::Font(8.f,juce::Font::bold));
-      g.drawText("GROUP BUS",x,y+92,w,18,juce::Justification::centred);
+      // Reuse the empty BUS information area above the pan/splitter.
+      // No control rectangle, meter or fader position is changed.
+      const auto members=busMembers(s.lane);
+      g.setColour(juce::Colour(0xffbda1e2));
+      g.setFont(juce::Font(8.5f,juce::Font::bold));
+      g.drawFittedText(juce::String((int)members.size())+
+          ((int)members.size()==1?" PISTE AFFECTÉE":" PISTES AFFECTÉES"),
+          x+7,y+92,w-14,17,juce::Justification::centred,1);
+      const int available=getStripGeometry(s).splitterY-115;
+      const int lines=available>=33?2:available>=17?1:0;
+      for(int index=0;index<juce::jmin(lines,(int)members.size());++index)
+      {
+          const auto [kind,lane]=members[(size_t)index];
+          const auto item=std::find_if(strips.begin(),strips.end(),
+              [kind,lane](const auto& strip){
+                  return strip->kind==kind&&strip->lane==lane;
+              });
+          if(item==strips.end())continue;
+          g.setColour(ModernMixer::secondary);
+          g.setFont(juce::Font(8.5f));
+          g.drawFittedText(name(**item),
+              x+10,y+113+index*16,w-20,13,
+              juce::Justification::centredLeft,1);
+      }
     }else if(s.kind==Strip::master){
       g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f,juce::Font::bold));
       g.drawText("MASTER FIXE",x,y+92,w,18,juce::Justification::centred);
@@ -3200,6 +3346,15 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              // Faders and other channel modules are never repainted.
              repaint(strip->bounds.getX()+8,strip->bounds.getY()+56,
                      strip->bounds.getWidth()-16,24);
+             if(strip->kind==Strip::bus)
+             {
+                 // Member count can change from the Arrangement as well.
+                 const int lower=juce::jmin(strip->bounds.getHeight()-1,
+                     getStripGeometry(*strip).splitterY-5);
+                 if(lower>91)
+                     repaint(strip->bounds.getX()+6,strip->bounds.getY()+91,
+                             strip->bounds.getWidth()-12,lower-91);
+             }
              const int top=strip->bounds.getY()+getStripGeometry(*strip).faderY;
              const int bottom=strip->bounds.getBottom()-36;
              if(bottom-top>=40)

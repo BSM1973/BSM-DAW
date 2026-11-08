@@ -1460,8 +1460,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     }
 
 
-    // Restore BUS states after all audio and instrument channels exist.
-    // Missing routing (projects v1-16) means direct-to-Master as before.
+    // Preserve legacy projects without MixerRouting: their tracks go to Master.
+    // For projects with a saved BUS graph, validate every restored destination.
+    juce::String mixerRoutingWarning;
     if(auto* busRouting=project->getChildByName("MixerRouting"))
     {
         setMixerMasterName(busRouting->getStringAttribute("masterName","MASTER"));
@@ -1469,13 +1470,17 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         const int count=juce::jlimit(0,AudioEngine::maxMixerBuses,
             busRouting->getIntAttribute("busCount",0));
         for(int bus=0;bus<count;++bus)audioEngine.addMixerBus();
+        const int actualBusCount=audioEngine.getMixerBusCount();
+        std::vector<bool> seenAudio((size_t)getAudioTrackCount(),false);
+        std::vector<bool> seenInstrument((size_t)getInstrumentTrackCount(),false);
+        int invalidDestinations=0, duplicateSources=0, failedRestores=0;
         int visited=0;
         for(auto* item=busRouting->getFirstChildElement();item!=nullptr;
             item=item->getNextElement())
         {
             if(++visited>4096)break;
             const int index=item->getIntAttribute("index",-1);
-            if(item->getTagName()=="Bus"&&index>=0&&index<count)
+            if(item->getTagName()=="Bus"&&index>=0&&index<actualBusCount)
             {
                 setMixerBusName(index,item->getStringAttribute("name"));
                 setMixerBusColourId(index,item->getIntAttribute("colourId",0));
@@ -1485,11 +1490,48 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                 audioEngine.setMixerBusSolo(index,item->getBoolAttribute("solo",false));
             }
             if(item->getTagName()!="Source")continue;
-            const int destination=item->getIntAttribute("bus",-1);
-            if(item->getStringAttribute("kind")=="audio"&&index>=0&&index<getAudioTrackCount())
-                audioEngine.setTrackMixerBus(index,destination);
-            else if(item->getStringAttribute("kind")=="instrument"&&index>=0&&index<getInstrumentTrackCount())
-                audioEngine.setInstrumentMixerBus(index,destination);
+            const int savedDestination=item->getIntAttribute("bus",-1);
+            const int checkedDestination=LibertyMixerBusRouting::destination(
+                savedDestination,actualBusCount);
+            const auto kind=item->getStringAttribute("kind");
+            if(kind=="audio"&&index>=0&&index<getAudioTrackCount())
+            {
+                if(seenAudio[(size_t)index]){++duplicateSources;continue;}
+                seenAudio[(size_t)index]=true;
+                if(savedDestination!=checkedDestination)++invalidDestinations;
+                audioEngine.setTrackMixerBus(index,checkedDestination);
+                if(!LibertyMixerBusRouting::matchesRestored(
+                       checkedDestination,audioEngine.getTrackMixerBus(index),actualBusCount))
+                    ++failedRestores;
+            }
+            else if(kind=="instrument"&&index>=0&&index<getInstrumentTrackCount())
+            {
+                if(seenInstrument[(size_t)index]){++duplicateSources;continue;}
+                seenInstrument[(size_t)index]=true;
+                if(savedDestination!=checkedDestination)++invalidDestinations;
+                audioEngine.setInstrumentMixerBus(index,checkedDestination);
+                if(!LibertyMixerBusRouting::matchesRestored(
+                       checkedDestination,audioEngine.getInstrumentMixerBus(index),actualBusCount))
+                    ++failedRestores;
+            }
+        }
+        const int missingSources=(int)std::count(seenAudio.begin(),seenAudio.end(),false)
+            +(int)std::count(seenInstrument.begin(),seenInstrument.end(),false);
+        if(actualBusCount!=count||invalidDestinations>0||duplicateSources>0||
+           failedRestores>0||missingSources>0||visited>4096)
+        {
+            mixerRoutingWarning=juce::String::fromUTF8(
+                "Vérification du routage à l'ouverture du projet :\n")
+                +juce::String::fromUTF8("Destinations invalides (redirigées vers Master) : ")
+                +juce::String(invalidDestinations)+"\n"
+                +juce::String::fromUTF8("Sources en double ignorées : ")
+                +juce::String(duplicateSources)+"\n"
+                +juce::String::fromUTF8("Routages non restaurés : ")
+                +juce::String(failedRestores)+"\n"
+                +juce::String::fromUTF8("Sources manquantes (Master par défaut) : ")
+                +juce::String(missingSources)+"\n"
+                +juce::String::fromUTF8("Bus attendus / restaurés : ")
+                +juce::String(count)+" / "+juce::String(actualBusCount);
         }
     }
     // Keep the visible arrangement order aligned with the saved mixer order
@@ -1669,6 +1711,12 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
                                                "Liberty - Plugin State",
                                                "Some plugin settings could not be restored. The plugins remain loaded with their current/default settings:\n\n" + pluginStateWarnings,
                                                "OK");
+
+    if(mixerRoutingWarning.isNotEmpty())
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Liberty - Vérification des bus"),
+            mixerRoutingWarning, "OK");
 
     return true;
 }
