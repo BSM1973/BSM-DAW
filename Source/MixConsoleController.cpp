@@ -1452,6 +1452,18 @@ public:
      {
          if(routingLane<0)return;
          const int destination=i-1; // 0 -> Master, 1...8 -> BUS
+         // Avoid needless engine writes when the current destination is
+         // selected again. Keep the routing panel's close behaviour.
+         const int current=routingKind==Strip::audio
+             ?owner.audioEngine.getTrackMixerBus(routingLane)
+             :owner.audioEngine.getInstrumentMixerBus(routingLane);
+         if(current==destination)
+         {
+             routingLane=-1;
+             layout();
+             repaint();
+             return;
+         }
          if(routingKind==Strip::audio)
              owner.audioEngine.setTrackMixerBus(routingLane,destination);
          else
@@ -2652,6 +2664,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         const auto r=LibertyNoOverlap::routingOptionButton(getWidth(),i);
         button.setBounds(r.x,r.y,r.w,r.h);
         button.setButtonText(i==0?"MASTER (direct)":"BUS "+juce::String(i));
+        button.setTooltip(i==0
+            ?juce::String::fromUTF8("Envoyer cette piste directement vers le Master.")
+            :juce::String::fromUTF8("Envoyer cette piste vers le bus ")+juce::String(i)
+                +juce::String::fromUTF8(". Un seul bus de destination à la fois."));
         button.setToggleState(destination==i-1,juce::dontSendNotification);
         button.setColour(juce::TextButton::buttonColourId,destination==i-1?
             ModernMixer::sage.darker(.4f):ModernMixer::panel);
