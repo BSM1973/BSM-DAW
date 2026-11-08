@@ -811,12 +811,18 @@ private:
         juce::Array<juce::File> packFolders;
         juce::Array<juce::File> manufacturers;
         library.findChildFiles(manufacturers, juce::File::findDirectories, false);
-        manufacturers.sort();
+        std::sort(manufacturers.begin(), manufacturers.end(), [](const auto& a, const auto& b)
+        {
+            return a.getFileName().compareNatural(b.getFileName(), false) < 0;
+        });
         for (const auto& manufacturer : manufacturers)
         {
             juce::Array<juce::File> packs;
             manufacturer.findChildFiles(packs, juce::File::findDirectories, false);
-            packs.sort();
+            std::sort(packs.begin(), packs.end(), [](const auto& a, const auto& b)
+            {
+                return a.getFileName().compareNatural(b.getFileName(), false) < 0;
+            });
             juce::PopupMenu submenu;
             for (const auto& pack : packs)
             {
