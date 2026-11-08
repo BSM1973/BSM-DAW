@@ -500,7 +500,13 @@ public:
         g.setColour(accents[i]);
         g.fillRoundedRectangle((float)b.x+11,(float)b.y+13,3.f,22.f,1.5f);
         g.setFont(juce::Font(14.f,juce::Font::bold));
-        g.drawText(headings[i],b.x+23,b.y+13,b.w-220,22,juce::Justification::centredLeft);
+        // Respect the right-hand A/B badge and enable switch at every
+        // supported inspector width. Never paint a heading outside its card.
+        const auto titleBounds=LibertyChannelDialogLayout::sectionTitleArea(layout,i);
+        if(titleBounds.w>0)
+            g.drawFittedText(headings[i],titleBounds.x+9,b.y+13,
+                             juce::jmax(0,titleBounds.w-9),22,
+                             juce::Justification::centredLeft,1);
         const auto comparison=otherSettings!=nullptr
             ?LibertyChannelSectionComparison::rows(
                 visibleSettings,*otherSettings,static_cast<Section>(i))
