@@ -74,15 +74,27 @@ public:
             g.fillRect(0, 0, 2, height);
         }
 
-        // Obsidian soft white keeps plugin names prominent without harsh pure white.
+        // Compact, two-line rows inspired by a modern library browser.
+        // Reserve the favourite indicator's area so labels never overlap it.
+        const bool favourite = isFavourite && isFavourite(description);
+        const int trailingWidth = favourite ? 24 : 8;
+        const int textWidth = juce::jmax(0, width - 4 - trailingWidth);
         g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
-        // Obsidian secondary metadata stays readable without competing with plugin names.
+        g.drawFittedText(description.name, 4, 3, textWidth, 17,
+                         juce::Justification::centredLeft, 1);
         g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
-        g.drawText(description.pluginFormatName + "  " + (description.isInstrument ? "INSTRUMENT" : "FX"),
-                   4, 20, width - 8, 14, juce::Justification::centredLeft, true);
+        g.drawFittedText(description.pluginFormatName + "  "
+                         + (description.isInstrument ? "INSTRUMENT" : "EFFET"),
+                         4, 20, textWidth, 14, juce::Justification::centredLeft, 1);
+        if (favourite && width >= 32)
+        {
+            g.setColour(juce::Colour(0xffffc857));
+            g.setFont(juce::Font(15.0f, juce::Font::bold));
+            g.drawText("*", width - 23, 6, 18, 22,
+                       juce::Justification::centred, false);
+        }
     }
 
     void itemClicked(const juce::MouseEvent& event) override
