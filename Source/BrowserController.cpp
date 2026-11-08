@@ -683,21 +683,34 @@ private:
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions) if (isFavouritePlugin(d)) fav->addSubItem(makePluginItem(d));
 
-        juce::String current;
-        PluginTreeItem* group = nullptr;
-        for (const auto& d : pluginDescriptions)
+        // Library-style hierarchy: instruments and audio effects are distinct.
+        // Keep manufacturers inside each family, and never classify unknown
+        // plugins as MIDI effects without reliable plugin metadata.
+        auto* instruments = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "INSTRUMENTS");
+        auto* audioEffects = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "EFFETS AUDIO");
+        pluginRoot->addSubItem(instruments);
+        pluginRoot->addSubItem(audioEffects);
+        for (int family = 0; family < 2; ++family)
         {
-            auto m = d.manufacturerName.trim(); if (m.isEmpty()) m = "Other";
-            if (m != current)
+            auto* parent = family == 0 ? instruments : audioEffects;
+            juce::String current;
+            PluginTreeItem* group = nullptr;
+            for (const auto& d : pluginDescriptions)
             {
-                current = m;
-                group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, m);
-                pluginRoot->addSubItem(group);
+                if (d.isInstrument != (family == 0)) continue;
+                auto manufacturer = d.manufacturerName.trim();
+                if (manufacturer.isEmpty()) manufacturer = "AUTRES";
+                if (manufacturer != current)
+                {
+                    current = manufacturer;
+                    group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
+                    parent->addSubItem(group);
+                }
+                if (group != nullptr) group->addSubItem(makePluginItem(d));
             }
-            if (group != nullptr) group->addSubItem(makePluginItem(d));
         }
         pluginTree.setRootItem(pluginRoot.get());
-        pluginRoot->setOpen(true); fav->setOpen(true); pluginTree.repaint();
+        pluginRoot->setOpen(true); fav->setOpen(true); instruments->setOpen(true); audioEffects->setOpen(true); pluginTree.repaint();
     }
 
     void refreshPlugins()
