@@ -54,16 +54,18 @@ public:
                    const juce::PluginDescription* descriptionIn = nullptr,
                    std::function<void(const juce::PluginDescription&)> activateIn = {},
                    std::function<bool(const juce::PluginDescription&)> isFavouriteIn = {},
-                   std::function<void(const juce::PluginDescription&)> toggleFavouriteIn = {})
+                   std::function<void(const juce::PluginDescription&)> toggleFavouriteIn = {},
+                   bool thumbnailsIn = false)
         : kind(kindIn), label(std::move(labelIn)), activate(std::move(activateIn)),
-          isFavourite(std::move(isFavouriteIn)), toggleFavourite(std::move(toggleFavouriteIn))
+          isFavourite(std::move(isFavouriteIn)), toggleFavourite(std::move(toggleFavouriteIn)),
+          thumbnails(thumbnailsIn)
     {
         if (descriptionIn != nullptr) description = *descriptionIn;
     }
 
     bool mightContainSubItems() override { return kind != Kind::plugin; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
-    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? 38 : 20); }
+    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? (thumbnails ? 88 : 38) : 20); }
     juce::String getUniqueName() const override { return kind == Kind::plugin ? description.createIdentifierString() : label; }
 
     void paintItem(juce::Graphics& g, int width, int height) override
@@ -99,19 +101,38 @@ public:
             g.fillRect(0, 0, 2, height);
         }
 
+        int textLeft = 4;
+        if (thumbnails && width >= 110)
+        {
+            const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("Liberty").getChildFile("PluginThumbnails");
+            const auto thumbnail = folder.getChildFile(juce::String::toHexString((juce::int64)description.createIdentifierString().hashCode64()) + ".png");
+            auto image = juce::ImageFileFormat::loadFrom(thumbnail);
+            const juce::Rectangle<int> imageArea(4, 5, 92, height - 10);
+            g.setColour(juce::Colour(0xff1b2833));
+            g.fillRoundedRectangle(imageArea.toFloat(), 4.0f);
+            if (image.isValid()) g.drawImageWithin(image, imageArea.getX(), imageArea.getY(), imageArea.getWidth(), imageArea.getHeight(), juce::RectanglePlacement::centred);
+            else
+            {
+                g.setColour(juce::Colour(0xff8da6b1));
+                g.setFont(10.0f);
+                g.drawFittedText("IMAGE", imageArea, juce::Justification::centred, 1);
+            }
+            textLeft = 102;
+        }
         // Obsidian soft white keeps plugin names prominent without harsh pure white.
         g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        if (width > 12)
-            g.drawFittedText(description.name, 4, 3, width - 12, 17,
+        if (width > textLeft + 8)
+            g.drawFittedText(description.name, textLeft, 3, width - textLeft - 8, 17,
                              juce::Justification::centredLeft, 1);
         // Obsidian secondary metadata stays readable without competing with plugin names.
         g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
-        if (width > 12)
+        if (width > textLeft + 8)
             g.drawFittedText(description.pluginFormatName + "  "
                              + (description.isInstrument ? "INSTRUMENT" : "EFFET"),
-                             4, 20, width - 12, 14,
+                             textLeft, 20, width - textLeft - 8, 14,
                              juce::Justification::centredLeft, 1);
     }
 
@@ -134,6 +155,7 @@ public:
 
 private:
     Kind kind;
+    bool thumbnails = false;
     juce::String label;
     juce::PluginDescription description;
     std::function<void(const juce::PluginDescription&)> activate;
@@ -262,6 +284,13 @@ public:
         // Obsidian turquoise highlights plugin drag-and-drop targets consistently.
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         addAndMakeVisible(pluginTree);
+        thumbnailModeButton.setButtonText("MINIATURES");
+        thumbnailModeButton.setClickingTogglesState(true);
+        thumbnailModeButton.onClick = [this] { rebuildPluginTree(); };
+        thumbnailModeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        thumbnailModeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
+        thumbnailModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+        addAndMakeVisible(thumbnailModeButton);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
         // Obsidian primary text keeps the Splice heading consistent with Browser tabs.
@@ -539,6 +568,7 @@ public:
         for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
         pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
+        thumbnailModeButton.setBounds(10, 343, juce::jmax(0, getWidth() - 20), 26);
         pluginTree.setBounds(10, 374, getWidth() - 20, juce::jmax(40, getHeight() - 476));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
@@ -711,6 +741,7 @@ private:
                                      : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
         }
         pluginTree.setVisible(pluginMode);
+        thumbnailModeButton.setVisible(pluginMode);
         pluginSearch.setVisible(!spliceMode);
         pluginSearch.setTextToShowWhenEmpty(pluginMode ? "Rechercher un plugin ou fabricant..."
                                                    : "Rechercher un fichier...", juce::Colour(0xff8da6b1));
@@ -798,7 +829,8 @@ private:
         return new PluginTreeItem(PluginTreeItem::Kind::plugin, d.name, &d,
             [this](const juce::PluginDescription& x) { loadPluginDescription(x); },
             [this](const juce::PluginDescription& x) { return isFavouritePlugin(x); },
-            [this](const juce::PluginDescription& x) { toggleFavourite(x); });
+            [this](const juce::PluginDescription& x) { toggleFavourite(x); },
+            thumbnailModeButton.getToggleState());
     }
 
     void rebuildPluginTree()
@@ -1301,6 +1333,7 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
+    juce::TextButton thumbnailModeButton;
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
