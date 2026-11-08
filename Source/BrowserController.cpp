@@ -213,6 +213,9 @@ public:
     {
         setAlwaysOnTop(true);
         thread.startThread();
+        previewFormats.registerBasicFormats();
+        previewPlayer.setSource(&previewTransport);
+        owner.audioEngine.getDeviceManager().addAudioCallback(&previewPlayer);
         loadFavourites();
 
         toggleButton.setButtonText("NAVIGATEUR");
@@ -345,6 +348,16 @@ public:
             if (parent.isDirectory() && parent != rootDirectory) setRoot(parent);
         };
         addAndMakeVisible(parentFolderButton);
+        previewPlay.setButtonText("ÉCOUTER");
+        previewStop.setButtonText("STOP");
+        for (auto* b : { &previewPlay, &previewStop })
+        {
+            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+            b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+            addAndMakeVisible(*b);
+        }
+        previewPlay.onClick = [this] { if (previewReader != nullptr) previewTransport.start(); };
+        previewStop.onClick = [this] { previewTransport.stop(); previewTransport.setPosition(0.0); };
 
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
@@ -436,6 +449,11 @@ public:
     {
         if (stopped.exchange(true)) return;
         stopTimer();
+        previewTransport.stop();
+        owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
+        previewPlayer.setSource(nullptr);
+        previewTransport.setSource(nullptr);
+        previewReader.reset();
         if (scanThread.joinable()) scanThread.join();
         pluginTree.setRootItem(nullptr);
         pluginRoot.reset();
@@ -488,7 +506,10 @@ public:
 
         homeButton.setBounds(12, 105, 70, 24);
         parentFolderButton.setBounds(86, 105, juce::jmax(0, getWidth() - 98), 24);
-        fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 174));
+        fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 216));
+        const int previewY = juce::jmax(136, getHeight() - 72);
+        previewPlay.setBounds(10, previewY, juce::jmax(0, (getWidth() - 24) / 2), 27);
+        previewStop.setBounds(14 + (getWidth() - 24) / 2, previewY, juce::jmax(0, (getWidth() - 24) / 2), 27);
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
@@ -555,7 +576,19 @@ private:
     void toggleSelectedFavourite() { if (const auto* d = selectedPluginDescription()) toggleFavourite(*d); }
 
     void selectionChanged() override {}
-    void fileClicked(const juce::File&, const juce::MouseEvent&) override {}
+    void fileClicked(const juce::File& file, const juce::MouseEvent&) override
+    {
+        if (category != Category::audio || !file.existsAsFile()) return;
+        previewTransport.stop();
+        previewTransport.setSource(nullptr);
+        previewReader.reset();
+        auto reader = std::unique_ptr<juce::AudioFormatReader>(previewFormats.createReaderFor(file));
+        if (reader == nullptr) return;
+        const double rate = reader->sampleRate;
+        previewReader = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
+        previewTransport.setSource(previewReader.get(), 0, nullptr, rate);
+        previewTransport.setGain(0.7f);
+    }
     void fileDoubleClicked(const juce::File& file) override { openFileOrDirectory(file); }
     void browserRootChanged(const juce::File&) override {}
 
@@ -563,6 +596,7 @@ private:
     {
         if(!shouldOpen)
         {
+            previewTransport.stop();
             targetEffectSlot=-1;
             targetEffectLane=-1;
         }
@@ -622,7 +656,10 @@ private:
             targetEffectSlot=-1;
             targetEffectLane=-1;
         }
+        if (newCategory != Category::audio) previewTransport.stop();
         category = newCategory;
+        previewPlay.setVisible(category == Category::audio);
+        previewStop.setVisible(category == Category::audio);
         filesButton.setToggleState(category == Category::files, juce::dontSendNotification);
         audioButton.setToggleState(category == Category::audio, juce::dontSendNotification);
         midiButton.setToggleState(category == Category::midi, juce::dontSendNotification);
@@ -1241,7 +1278,11 @@ private:
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::StringArray favouriteKeys;
-    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton;
+    juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton, previewPlay, previewStop;
+    juce::AudioFormatManager previewFormats;
+    std::unique_ptr<juce::AudioFormatReaderSource> previewReader;
+    juce::AudioTransportSource previewTransport;
+    juce::AudioSourcePlayer previewPlayer;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     OneKnobButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
     juce::Label pluginStatus, spliceTitle, spliceInfo;
