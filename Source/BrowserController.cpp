@@ -479,6 +479,11 @@ public:
         samplePackInfo.setFont(juce::Font(10.0f));
         samplePackInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(samplePackInfo);
+        browsePacksButton.setButtonText("PACKS");
+        browsePacksButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        browsePacksButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+        browsePacksButton.onClick = [this] { showInstalledPacks(); };
+        addAndMakeVisible(browsePacksButton);
 
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
@@ -632,7 +637,8 @@ public:
         const int folderFavWidth = juce::jmax(0, (getWidth() - 24) / 2);
         saveFolderButton.setBounds(10, 136, folderFavWidth, 25);
         openFavouriteButton.setBounds(14 + folderFavWidth, 136, folderFavWidth, 25);
-        samplePackInfo.setBounds(10, 165, juce::jmax(0, getWidth() - 20), 22);
+        samplePackInfo.setBounds(10, 165, juce::jmax(0, getWidth() - 94), 22);
+        browsePacksButton.setBounds(juce::jmax(10, getWidth() - 80), 165, 70, 22);
         fileTree.setBounds(10, category == Category::audio ? 190 : 136,
             juce::jmax(0, getWidth() - 20),
             juce::jmax(0, getHeight() - (category == Category::audio ? 302 : 248)));
@@ -797,6 +803,41 @@ private:
         return paths;
     }
 
+    void showInstalledPacks()
+    {
+        const auto library = findInstalledSampleLibrary();
+        if (!library.isDirectory()) return;
+        juce::PopupMenu menu;
+        juce::Array<juce::File> packFolders;
+        juce::Array<juce::File> manufacturers;
+        library.findChildFiles(manufacturers, juce::File::findDirectories, false);
+        manufacturers.sort();
+        for (const auto& manufacturer : manufacturers)
+        {
+            juce::Array<juce::File> packs;
+            manufacturer.findChildFiles(packs, juce::File::findDirectories, false);
+            packs.sort();
+            juce::PopupMenu submenu;
+            for (const auto& pack : packs)
+            {
+                packFolders.add(pack);
+                submenu.addItem(packFolders.size(), pack.getFileName());
+            }
+            if (!packs.isEmpty()) menu.addSubMenu(manufacturer.getFileName(), submenu);
+        }
+        if (packFolders.isEmpty())
+        {
+            menu.addItem(1, "Aucun pack trouvé dans la bibliothèque", false);
+        }
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&browsePacksButton),
+            [safe, packFolders](int result)
+            {
+                if (safe == nullptr || result < 1 || result > packFolders.size()) return;
+                if (packFolders[result - 1].isDirectory()) safe->setRoot(packFolders[result - 1]);
+            });
+    }
+
     void updateSamplePackInfo(const juce::File& selected = {})
     {
         const auto library = findInstalledSampleLibrary();
@@ -931,6 +972,7 @@ private:
         saveFolderButton.setVisible(category == Category::audio);
         openFavouriteButton.setVisible(category == Category::audio);
         samplePackInfo.setVisible(category == Category::audio);
+        browsePacksButton.setVisible(category == Category::audio);
         resized();
         if (category == Category::audio)
         {
@@ -1568,6 +1610,7 @@ private:
     juce::Slider previewVolume;
     juce::ToggleButton previewAuto;
     juce::Label previewInfo, samplePackInfo;
+    juce::TextButton browsePacksButton;
     juce::AudioFormatManager previewFormats;
     std::unique_ptr<juce::AudioFormatReaderSource> previewReader;
     juce::AudioTransportSource previewTransport;
