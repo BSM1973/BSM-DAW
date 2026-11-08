@@ -268,6 +268,12 @@ public:
         midiButton.setButtonText("MIDI");
         presetsButton.setButtonText("PRESETS");
         pluginsButton.setButtonText("PLUGINS");
+        pluginSearch.setTextToShowWhenEmpty(juce::String::fromUTF8("Rechercher un plugin ou fabricant..."), juce::Colour(0xff8da6b1));
+        pluginSearch.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101821));
+        pluginSearch.setColour(juce::TextEditor::textColourId, juce::Colour(0xffeffcfd));
+        pluginSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff40515f));
+        pluginSearch.onTextChange = [this] { rebuildPluginTree(); };
+        addAndMakeVisible(pluginSearch);
         spliceButton.setButtonText("SPLICE");
         for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
@@ -450,6 +456,7 @@ public:
             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
         for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
+        pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
         pluginTree.setBounds(10, 374, getWidth() - 20, juce::jmax(40, getHeight() - 476));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
@@ -593,7 +600,8 @@ private:
             spliceInfo.setText(found ? "Splice Sounds détecté - prêt à ouvrir."
                                      : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
         }
-        pluginTree.setVisible(pluginMode); scanPluginsButton.setVisible(pluginMode);
+        pluginTree.setVisible(pluginMode); pluginSearch.setVisible(pluginMode);
+        scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
         openPluginButton.setVisible(pluginMode); unloadPluginButton.setVisible(pluginMode);
@@ -679,9 +687,17 @@ private:
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
 
+        const auto query = pluginSearch.getText().trim();
+        const auto matches = [&query](const juce::PluginDescription& d)
+        {
+            return query.isEmpty() || d.name.containsIgnoreCase(query)
+                || d.manufacturerName.containsIgnoreCase(query)
+                || d.pluginFormatName.containsIgnoreCase(query);
+        };
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
-        for (const auto& d : pluginDescriptions) if (isFavouritePlugin(d)) fav->addSubItem(makePluginItem(d));
+        for (const auto& d : pluginDescriptions)
+            if (isFavouritePlugin(d) && matches(d)) fav->addSubItem(makePluginItem(d));
 
         // Library-style hierarchy: instruments and audio effects are distinct.
         // Keep manufacturers inside each family, and never classify unknown
@@ -697,7 +713,7 @@ private:
             PluginTreeItem* group = nullptr;
             for (const auto& d : pluginDescriptions)
             {
-                if (d.isInstrument != (family == 0)) continue;
+                if (d.isInstrument != (family == 0) || !matches(d)) continue;
                 auto manufacturer = d.manufacturerName.trim();
                 if (manufacturer.isEmpty()) manufacturer = "AUTRES";
                 if (manufacturer != current)
@@ -1151,6 +1167,7 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
+    juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
     juce::StringArray favouriteKeys;
