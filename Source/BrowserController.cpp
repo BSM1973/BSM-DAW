@@ -36,6 +36,7 @@ public:
     {
         if (query.isNotEmpty() && !file.getFileName().containsIgnoreCase(query)) return false;
         const auto ext = file.getFileExtension().toLowerCase();
+        if (category == 4) return ext == ".bsmproj";
         if (category == 1) return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
         if (category == 2) return ext == ".mid" || ext == ".midi";
         if (category == 3) return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
@@ -283,7 +284,7 @@ public:
         spliceScanButton.onClick = [this] { scanPlugins(); };
         addAndMakeVisible(spliceScanButton);
 
-        filesButton.setButtonText("PROJETS / FICHIERS");
+        filesButton.setButtonText("PROJETS");
         audioButton.setButtonText("SAMPLES");
         midiButton.setButtonText("MIDI");
         presetsButton.setButtonText("PRESETS");
@@ -650,7 +651,7 @@ private:
         pluginSearch.setTextToShowWhenEmpty(pluginMode ? "Rechercher un plugin ou fabricant..."
                                                    : "Rechercher un fichier...", juce::Colour(0xff8da6b1));
         filter.category = category == Category::audio ? 1 : category == Category::midi ? 2
-                          : category == Category::presets ? 3 : 0;
+                          : category == Category::presets ? 3 : category == Category::files ? 4 : 0;
         filter.query = pluginSearch.getText().trim();
         if (!pluginMode && !spliceMode) directoryList.refresh();
         scanPluginsButton.setVisible(pluginMode);
@@ -670,8 +671,9 @@ private:
 
     bool fileMatchesCategory(const juce::File& file) const
     {
-        if (file.isDirectory() || category == Category::files) return true;
+        if (file.isDirectory()) return true;
         const auto ext = file.getFileExtension().toLowerCase();
+        if (category == Category::files) return ext == ".bsmproj";
         if (category == Category::audio) return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
         if (category == Category::midi) return ext == ".mid" || ext == ".midi";
         if (category == Category::presets) return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
@@ -682,6 +684,7 @@ private:
     {
         switch (category)
         {
+            case Category::files: return "Projets Liberty (.bsmproj)";
             case Category::audio: return "WAV / AIFF / MP3 / FLAC";
             case Category::midi: return "Fichiers MIDI";
             case Category::presets: return "Presets";
@@ -695,6 +698,13 @@ private:
         if (file == juce::File{} || !file.exists()) return;
         if (file.isDirectory()) { setRoot(file); return; }
         if (!fileMatchesCategory(file)) return;
+        if (file.hasFileExtension("bsmproj"))
+        {
+            // Use the existing project-open workflow, which owns unsaved-change
+            // checks, rather than loading a file behind the user's back.
+            owner.openProject();
+            return;
+        }
         const auto ext = file.getFileExtension().toLowerCase();
         if (ext != ".wav" && ext != ".aif" && ext != ".aiff") return;
         const int track = selectedAudioTrack();
