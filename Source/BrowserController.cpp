@@ -348,7 +348,7 @@ public:
             if (parent.isDirectory() && parent != rootDirectory) setRoot(parent);
         };
         addAndMakeVisible(parentFolderButton);
-        previewPlay.setButtonText("ÉCOUTER");
+        previewPlay.setButtonText(juce::String::fromUTF8("ÉCOUTER"));
         previewStop.setButtonText("STOP");
         for (auto* b : { &previewPlay, &previewStop })
         {
