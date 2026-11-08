@@ -2805,13 +2805,22 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         const juce::String destinationName=i==0
             ?owner.getMixerMasterName():owner.getMixerBusName(i-1);
         int assignedTracks=0;
+        juce::String assignedNames;
         if(i>0)
             for(const auto& item:strips)
                 if((item->kind==Strip::audio&&
                      owner.audioEngine.getTrackMixerBus(item->lane)==i-1)||
                    (item->kind==Strip::instrument&&
                      owner.audioEngine.getInstrumentMixerBus(item->lane)==i-1))
+                {
                     ++assignedTracks;
+                    if(assignedTracks<=12)
+                    {
+                        if(assignedNames.isNotEmpty())assignedNames+=", ";
+                        assignedNames+=name(*item);
+                    }
+                }
+        if(assignedTracks>12)assignedNames+=", ...";
         button.setButtonText(i==0?"MASTER (direct)"
             :"BUS "+juce::String(i)+" : "+destinationName
                 +" ("+juce::String(assignedTracks)+")");
@@ -2820,7 +2829,11 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
                 +destinationName
             :juce::String::fromUTF8("Envoyer cette piste vers le bus ")+juce::String(i)
                 +" : "+destinationName
-                +juce::String::fromUTF8(". Un seul bus de destination à la fois."));
+                +juce::String::fromUTF8(". Un seul bus de destination à la fois.")
+                +(assignedTracks>0
+                    ?juce::String::fromUTF8(" Pistes affectées (")
+                        +juce::String(assignedTracks)+") : "+assignedNames
+                    :juce::String::fromUTF8(" Aucune piste affectée.")));
         button.setToggleState(destination==i-1,juce::dontSendNotification);
         button.setColour(juce::TextButton::buttonColourId,destination==i-1?
             ModernMixer::sage.darker(.4f):ModernMixer::panel);
