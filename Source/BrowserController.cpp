@@ -61,6 +61,15 @@ public:
           thumbnails(thumbnailsIn)
     {
         if (descriptionIn != nullptr) description = *descriptionIn;
+        // Decode the optional thumbnail once per tree item, never during painting.
+        if (kind == Kind::plugin && thumbnails)
+        {
+            const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("Liberty").getChildFile("PluginThumbnails");
+            const auto file = folder.getChildFile(juce::String::toHexString(
+                (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
+            if (file.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(file);
+        }
     }
 
     bool mightContainSubItems() override { return kind != Kind::plugin; }
@@ -104,14 +113,10 @@ public:
         int textLeft = 4;
         if (thumbnails && width >= 110)
         {
-            const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                .getChildFile("Liberty").getChildFile("PluginThumbnails");
-            const auto thumbnail = folder.getChildFile(juce::String::toHexString((juce::int64)description.createIdentifierString().hashCode64()) + ".png");
-            auto image = juce::ImageFileFormat::loadFrom(thumbnail);
             const juce::Rectangle<int> imageArea(4, 5, 92, height - 10);
             g.setColour(juce::Colour(0xff1b2833));
             g.fillRoundedRectangle(imageArea.toFloat(), 4.0f);
-            if (image.isValid()) g.drawImageWithin(image, imageArea.getX(), imageArea.getY(), imageArea.getWidth(), imageArea.getHeight(), juce::RectanglePlacement::centred);
+            if (thumbnailImage.isValid()) g.drawImageWithin(thumbnailImage, imageArea.getX(), imageArea.getY(), imageArea.getWidth(), imageArea.getHeight(), juce::RectanglePlacement::centred);
             else
             {
                 g.setColour(juce::Colour(0xff8da6b1));
@@ -156,6 +161,7 @@ public:
 private:
     Kind kind;
     bool thumbnails = false;
+    juce::Image thumbnailImage;
     juce::String label;
     juce::PluginDescription description;
     std::function<void(const juce::PluginDescription&)> activate;
@@ -286,7 +292,15 @@ public:
         addAndMakeVisible(pluginTree);
         thumbnailModeButton.setButtonText("MINIATURES");
         thumbnailModeButton.setClickingTogglesState(true);
-        thumbnailModeButton.onClick = [this] { rebuildPluginTree(); };
+        thumbnailModeButton.onClick = [this]
+        {
+            favouritesFile().getSiblingFile("PluginThumbnailMode.txt").replaceWithText(
+                thumbnailModeButton.getToggleState() ? "1" : "0");
+            rebuildPluginTree();
+        };
+        thumbnailModeButton.setToggleState(
+            favouritesFile().getSiblingFile("PluginThumbnailMode.txt").loadFileAsString().trim() == "1",
+            juce::dontSendNotification);
         thumbnailModeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         thumbnailModeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
         thumbnailModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
@@ -366,7 +380,15 @@ public:
         // Obsidian HOME control matches the graphite category surfaces.
         homeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         homeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
-        homeButton.onClick = [this] { setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory)); };
+        homeButton.onClick = [this]
+        {
+            if (category == Category::audio)
+            {
+                const auto library = findInstalledSampleLibrary();
+                if (library.isDirectory()) { setRoot(library); return; }
+            }
+            setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        };
         addAndMakeVisible(homeButton);
         parentFolderButton.setButtonText("DOSSIER PARENT");
         parentFolderButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
@@ -701,6 +723,21 @@ private:
         fileTree.refresh();
     }
 
+    static juce::File findInstalledSampleLibrary()
+    {
+        // Discover an already installed partner library without creating folders,
+        // downloading content, or assuming redistribution permissions.
+        const auto home = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        const juce::File candidates[] = {
+            juce::File("/Users/Shared/Liberty Music Software/Sample Libraries"),
+            home.getChildFile("Music/Liberty Music Software/Sample Libraries"),
+            home.getChildFile("Music/Liberty/Sample Libraries")
+        };
+        for (const auto& candidate : candidates)
+            if (candidate.isDirectory()) return candidate;
+        return {};
+    }
+
     void setCategory(Category newCategory)
     {
         // Changing tabs abandons the explicit FX target instead of
@@ -712,6 +749,12 @@ private:
         }
         if (newCategory != Category::audio) previewTransport.stop();
         category = newCategory;
+        homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
+        if (category == Category::audio)
+        {
+            const auto library = findInstalledSampleLibrary();
+            if (library.isDirectory()) setRoot(library);
+        }
         previewPlay.setVisible(category == Category::audio);
         previewStop.setVisible(category == Category::audio);
         previewVolume.setVisible(category == Category::audio);
