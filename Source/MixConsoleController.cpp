@@ -1754,6 +1754,21 @@ public:
         e.getPosition().y>=strip->bounds.getY()+55&&
         e.getPosition().y<strip->bounds.getY()+68)
      {
+         // Shift-click the route to jump to its actual destination.
+         // An ordinary click still opens the routing selector.
+         if(e.mods.isShiftDown())
+         {
+             const int destination=strip->kind==Strip::audio
+                 ?owner.audioEngine.getTrackMixerBus(strip->lane)
+                 :owner.audioEngine.getInstrumentMixerBus(strip->lane);
+             const auto target=std::find_if(strips.begin(),strips.end(),
+                 [destination](const auto& item){
+                     return destination<0?item->kind==Strip::master
+                         :(item->kind==Strip::bus&&item->lane==destination);
+                 });
+             if(target!=strips.end())focusMixerStrip(**target);
+             return;
+         }
          routingKind=strip->kind;
          routingLane=strip->lane;
          layout();
@@ -2665,8 +2680,17 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         button.setBounds(r.x,r.y,r.w,r.h);
         const juce::String destinationName=i==0
             ?owner.getMixerMasterName():owner.getMixerBusName(i-1);
+        int assignedTracks=0;
+        if(i>0)
+            for(const auto& item:strips)
+                if((item->kind==Strip::audio&&
+                     owner.audioEngine.getTrackMixerBus(item->lane)==i-1)||
+                   (item->kind==Strip::instrument&&
+                     owner.audioEngine.getInstrumentMixerBus(item->lane)==i-1))
+                    ++assignedTracks;
         button.setButtonText(i==0?"MASTER (direct)"
-            :"BUS "+juce::String(i)+" : "+destinationName);
+            :"BUS "+juce::String(i)+" : "+destinationName
+                +" ("+juce::String(assignedTracks)+")");
         button.setTooltip(i==0
             ?juce::String::fromUTF8("Envoyer cette piste directement vers le Master : ")
                 +destinationName
