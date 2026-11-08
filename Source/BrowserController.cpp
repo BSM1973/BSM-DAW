@@ -400,6 +400,44 @@ public:
         chooseLibraryButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         chooseLibraryButton.onClick = [this] { chooseSampleLibrary(); };
         addAndMakeVisible(chooseLibraryButton);
+        saveFolderButton.setButtonText("AJOUTER FAVORI");
+        openFavouriteButton.setButtonText("OUVRIR FAVORI");
+        for (auto* button : { &saveFolderButton, &openFavouriteButton })
+        {
+            button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+            button->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+            addAndMakeVisible(*button);
+        }
+        saveFolderButton.onClick = [this]
+        {
+            if (!rootDirectory.isDirectory()) return;
+            auto favourites = sampleFolderFavourites();
+            const auto path = rootDirectory.getFullPathName();
+            const int index = favourites.indexOf(path);
+            if (index >= 0) favourites.remove(index);
+            else favourites.add(path);
+            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("\\n"));
+            updateSampleFolderControls();
+        };
+        openFavouriteButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            const auto favourites = sampleFolderFavourites();
+            for (int i = 0; i < favourites.size(); ++i)
+            {
+                const juce::File folder(favourites[i]);
+                menu.addItem(i + 1, folder.getFileName() + (folder.isDirectory() ? "" : " (indisponible)"), folder.isDirectory());
+            }
+            if (favourites.isEmpty()) menu.addItem(1, "Aucun dossier favori", false);
+            juce::Component::SafePointer<BrowserPanel> safe(this);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&openFavouriteButton),
+                [safe, favourites](int result)
+                {
+                    if (safe == nullptr || result < 1 || result > favourites.size()) return;
+                    const juce::File folder(favourites[result - 1]);
+                    if (folder.isDirectory()) safe->setRoot(folder);
+                });
+        };
         parentFolderButton.setButtonText("DOSSIER PARENT");
         parentFolderButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         parentFolderButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
@@ -587,7 +625,12 @@ public:
         chooseLibraryButton.setBounds(86, 105, 78, 24);
         parentFolderButton.setBounds(category == Category::audio ? 168 : 86, 105,
             juce::jmax(0, getWidth() - (category == Category::audio ? 180 : 98)), 24);
-        fileTree.setBounds(10, 136, juce::jmax(0, getWidth() - 20), juce::jmax(0, getHeight() - 248));
+        const int folderFavWidth = juce::jmax(0, (getWidth() - 24) / 2);
+        saveFolderButton.setBounds(10, 136, folderFavWidth, 25);
+        openFavouriteButton.setBounds(14 + folderFavWidth, 136, folderFavWidth, 25);
+        fileTree.setBounds(10, category == Category::audio ? 165 : 136,
+            juce::jmax(0, getWidth() - 20),
+            juce::jmax(0, getHeight() - (category == Category::audio ? 277 : 248)));
         const int previewY = juce::jmax(136, getHeight() - 104);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
         previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
@@ -735,6 +778,29 @@ private:
         }
     }
 
+    static juce::File sampleFolderFavouritesFile()
+    {
+        return favouritesFile().getSiblingFile("SampleFolderFavourites.txt");
+    }
+
+    static juce::StringArray sampleFolderFavourites()
+    {
+        juce::StringArray paths;
+        sampleFolderFavouritesFile().readLines(paths);
+        paths.trim(); paths.removeEmptyStrings(); paths.removeDuplicates(false);
+        return paths;
+    }
+
+    void updateSampleFolderControls()
+    {
+        const auto path = rootDirectory.getFullPathName();
+        const bool saved = sampleFolderFavourites().contains(path);
+        saveFolderButton.setButtonText(saved ? "RETIRER FAVORI" : "AJOUTER FAVORI");
+        saveFolderButton.setTooltip(path);
+        openFavouriteButton.setTooltip("Dossiers favoris de samples");
+        parentFolderButton.setTooltip(path);
+    }
+
     static juce::File libraryPreferenceFile()
     {
         return favouritesFile().getSiblingFile("SampleLibraryPath.txt");
@@ -800,6 +866,7 @@ private:
         rootDirectory = directory;
         directoryList.setDirectory(rootDirectory, true, true);
         fileTree.refresh();
+        updateSampleFolderControls();
     }
 
     static juce::File findInstalledSampleLibrary()
@@ -832,6 +899,8 @@ private:
         category = newCategory;
         homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
         chooseLibraryButton.setVisible(category == Category::audio);
+        saveFolderButton.setVisible(category == Category::audio);
+        openFavouriteButton.setVisible(category == Category::audio);
         resized();
         if (category == Category::audio)
         {
@@ -1460,7 +1529,7 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
-    juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton;
+    juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton;
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
