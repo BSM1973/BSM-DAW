@@ -2663,10 +2663,15 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
         if(!show)continue;
         const auto r=LibertyNoOverlap::routingOptionButton(getWidth(),i);
         button.setBounds(r.x,r.y,r.w,r.h);
-        button.setButtonText(i==0?"MASTER (direct)":"BUS "+juce::String(i));
+        const juce::String destinationName=i==0
+            ?owner.getMixerMasterName():owner.getMixerBusName(i-1);
+        button.setButtonText(i==0?"MASTER (direct)"
+            :"BUS "+juce::String(i)+" : "+destinationName);
         button.setTooltip(i==0
-            ?juce::String::fromUTF8("Envoyer cette piste directement vers le Master.")
+            ?juce::String::fromUTF8("Envoyer cette piste directement vers le Master : ")
+                +destinationName
             :juce::String::fromUTF8("Envoyer cette piste vers le bus ")+juce::String(i)
+                +" : "+destinationName
                 +juce::String::fromUTF8(". Un seul bus de destination à la fois."));
         button.setToggleState(destination==i-1,juce::dontSendNotification);
         button.setColour(juce::TextButton::buttonColourId,destination==i-1?
