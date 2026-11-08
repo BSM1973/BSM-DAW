@@ -464,10 +464,12 @@ public:
      setMouseCursor(juce::MouseCursor::NormalCursor);
  }
  void paint(juce::Graphics& g)override{
-     g.fillAll(juce::Colour(0xff101b2a));
-     g.setColour(juce::Colour(0xff263e56));
+     // Match the mixer's graphite/sage palette. All rectangles and control
+     // positions remain exactly as defined by ChannelDialogLayout.
+     g.fillAll(ModernMixer::canvas);
+     g.setColour(ModernMixer::header);
      g.fillRoundedRectangle(12.f,10.f,(float)getWidth()-24.f,60.f,8.f);
-     g.setColour(juce::Colour(0xff63cfd8));
+     g.setColour(ModernMixer::sage);
      g.fillRoundedRectangle(12.f,10.f,4.f,60.f,2.f);
      g.setColour(juce::Colours::white);
      g.setFont(juce::Font(20.f,juce::Font::bold));
@@ -491,9 +493,9 @@ public:
      std::array<bool,3> differingPower{};
      for(int i=0;i<4;++i){
         const auto b=layout.sections[(size_t)i];
-        g.setColour(juce::Colour(0xff16283a));
+        g.setColour(ModernMixer::panel);
         g.fillRoundedRectangle((float)b.x,(float)b.y,(float)b.w,(float)b.h,7.f);
-        g.setColour(juce::Colour(0xff49657b));
+        g.setColour(ModernMixer::border);
         g.drawRoundedRectangle((float)b.x,(float)b.y,(float)b.w,(float)b.h,7.f,1.f);
         g.setColour(accents[i]);
         g.fillRoundedRectangle((float)b.x+11,(float)b.y+13,3.f,22.f,1.5f);
@@ -557,7 +559,7 @@ public:
          g.drawText(labels[i],b.x,b.y-18,b.w,14,juce::Justification::centred);
      }
      // Single-line footer remains above the action buttons (no overlap).
-     g.setColour(juce::Colour(0xff6ed0d7));
+     g.setColour(ModernMixer::sage);
      g.setFont(juce::Font(10.f,juce::Font::bold));
      g.drawFittedText(
          presetIndicator.description(session.variantIndex(),readControls()),
