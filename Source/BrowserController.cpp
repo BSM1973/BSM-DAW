@@ -416,7 +416,7 @@ public:
             const int index = favourites.indexOf(path);
             if (index >= 0) favourites.remove(index);
             else favourites.add(path);
-            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("\\n"));
+            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("\n"));
             updateSampleFolderControls();
         };
         openFavouriteButton.onClick = [this]
