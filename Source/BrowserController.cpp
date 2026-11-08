@@ -475,6 +475,10 @@ public:
         previewInfo.setColour(juce::Label::textColourId, juce::Colour(0xffeffcfd));
         previewInfo.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(previewInfo);
+        samplePackInfo.setColour(juce::Label::textColourId, juce::Colour(0xffb8e8ec));
+        samplePackInfo.setFont(juce::Font(10.0f));
+        samplePackInfo.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(samplePackInfo);
 
         scanPluginsButton.setButtonText("SCAN AU + VST3");
         blacklistButton.setButtonText("BLACKLIST");
@@ -628,9 +632,10 @@ public:
         const int folderFavWidth = juce::jmax(0, (getWidth() - 24) / 2);
         saveFolderButton.setBounds(10, 136, folderFavWidth, 25);
         openFavouriteButton.setBounds(14 + folderFavWidth, 136, folderFavWidth, 25);
-        fileTree.setBounds(10, category == Category::audio ? 165 : 136,
+        samplePackInfo.setBounds(10, 165, juce::jmax(0, getWidth() - 20), 22);
+        fileTree.setBounds(10, category == Category::audio ? 190 : 136,
             juce::jmax(0, getWidth() - 20),
-            juce::jmax(0, getHeight() - (category == Category::audio ? 277 : 248)));
+            juce::jmax(0, getHeight() - (category == Category::audio ? 302 : 248)));
         const int previewY = juce::jmax(136, getHeight() - 104);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
         previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
@@ -711,6 +716,7 @@ private:
     void fileClicked(const juce::File& file, const juce::MouseEvent&) override
     {
         if (category != Category::audio || !file.existsAsFile()) return;
+        updateSamplePackInfo(file);
         previewTransport.stop();
         previewTransport.setSource(nullptr);
         previewReader.reset();
@@ -791,6 +797,28 @@ private:
         return paths;
     }
 
+    void updateSamplePackInfo(const juce::File& selected = {})
+    {
+        const auto library = findInstalledSampleLibrary();
+        const auto location = selected.existsAsFile() ? selected.getParentDirectory() : rootDirectory;
+        juce::String manufacturer = "Non renseigné";
+        juce::String pack = location.getFileName();
+        juce::String categoryName = "Autres";
+        if (library.isDirectory() && (location == library || location.isAChildOf(library)))
+        {
+            const auto relative = location.getRelativePathFrom(library).replaceCharacter('\\\\', '/');
+            const auto parts = juce::StringArray::fromTokens(relative, "/", "");
+            if (parts.size() >= 1 && location != library) manufacturer = parts[0];
+            if (parts.size() >= 2) pack = parts[1];
+            if (parts.size() >= 3) categoryName = parts[2];
+            if (location == library) pack = "Racine de la bibliothèque";
+        }
+        const auto summary = "FABRICANT : " + manufacturer + "  |  PACK : " + pack
+                           + "  |  CATÉGORIE : " + categoryName;
+        samplePackInfo.setText(summary, juce::dontSendNotification);
+        samplePackInfo.setTooltip(summary + "\\nDossier : " + location.getFullPathName());
+    }
+
     void updateSampleFolderControls()
     {
         const auto path = rootDirectory.getFullPathName();
@@ -867,6 +895,7 @@ private:
         directoryList.setDirectory(rootDirectory, true, true);
         fileTree.refresh();
         updateSampleFolderControls();
+        updateSamplePackInfo();
     }
 
     static juce::File findInstalledSampleLibrary()
@@ -901,6 +930,7 @@ private:
         chooseLibraryButton.setVisible(category == Category::audio);
         saveFolderButton.setVisible(category == Category::audio);
         openFavouriteButton.setVisible(category == Category::audio);
+        samplePackInfo.setVisible(category == Category::audio);
         resized();
         if (category == Category::audio)
         {
@@ -1537,7 +1567,7 @@ private:
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton, previewPlay, previewStop;
     juce::Slider previewVolume;
     juce::ToggleButton previewAuto;
-    juce::Label previewInfo;
+    juce::Label previewInfo, samplePackInfo;
     juce::AudioFormatManager previewFormats;
     std::unique_ptr<juce::AudioFormatReaderSource> previewReader;
     juce::AudioTransportSource previewTransport;
