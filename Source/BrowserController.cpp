@@ -417,7 +417,12 @@ public:
             b->setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
             addAndMakeVisible(*b);
         }
-        previewPlay.onClick = [this] { if (previewReader != nullptr) previewTransport.start(); };
+        previewPlay.onClick = [this]
+        {
+            if (previewReader == nullptr) return;
+            if (previewTransport.hasStreamFinished()) previewTransport.setPosition(0.0);
+            previewTransport.start();
+        };
         previewStop.onClick = [this] { previewTransport.stop(); previewTransport.setPosition(0.0); };
         previewVolume.setSliderStyle(juce::Slider::LinearHorizontal);
         previewVolume.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -570,7 +575,7 @@ public:
     {
         closeButton.setBounds(getWidth() - 72, 8, 62, 26);
         const int tabGap = 3;
-        const int tabWidth = juce::jmax(42, (juce::jmax(300, getWidth() - 16) - tabGap * 5) / 6);
+        const int tabWidth = juce::jmax(0, (juce::jmax(0, getWidth() - 16) - tabGap * 5) / 6);
         int tabX = 8;
         for (auto* button : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
@@ -582,7 +587,7 @@ public:
         chooseLibraryButton.setBounds(86, 105, 78, 24);
         parentFolderButton.setBounds(category == Category::audio ? 168 : 86, 105,
             juce::jmax(0, getWidth() - (category == Category::audio ? 180 : 98)), 24);
-        fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 248));
+        fileTree.setBounds(10, 136, juce::jmax(0, getWidth() - 20), juce::jmax(0, getHeight() - 248));
         const int previewY = juce::jmax(136, getHeight() - 104);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
         previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
@@ -592,10 +597,11 @@ public:
         previewAuto.setBounds(juce::jmax(10, getWidth() - 78), previewY + 57, 68, 24);
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
-        blacklistButton.setBounds(10, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
-        clearBlacklistButton.setBounds(14 + (getWidth() - 24) / 2, 140, juce::jmax(90, (getWidth() - 24) / 2), 26);
+        const int blacklistW = juce::jmax(0, (getWidth() - 24) / 2);
+        blacklistButton.setBounds(10, 140, blacklistW, 26);
+        clearBlacklistButton.setBounds(14 + blacklistW, 140, blacklistW, 26);
         const int oneKnobY = 192;
-        const int oneKnobW = juce::jmax(54, (getWidth() - 26) / 4);
+        const int oneKnobW = juce::jmax(0, (getWidth() - 26) / 4);
         juce::TextButton* oneKnobButtons[] = { &chorusButton, &flangerButton, &phaserButton, &tremoloButton,
             &reverbButton, &delayButton, &driveButton, &compressorButton, &saturationButton, &widthButton,
             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
@@ -605,9 +611,9 @@ public:
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
         importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
-        pluginTree.setBounds(10, 374, getWidth() - 20, juce::jmax(40, getHeight() - 476));
+        pluginTree.setBounds(10, 374, juce::jmax(0, getWidth() - 20), juce::jmax(0, getHeight() - 476));
         const int controlsY = getHeight() - 94;
-        const int w = juce::jmax(48, (getWidth() - 28) / 4);
+        const int w = juce::jmax(0, (getWidth() - 28) / 4);
         favouritePluginButton.setBounds(10, controlsY, w, 28);
         loadPluginButton.setBounds(14 + w, controlsY, w, 28);
         openPluginButton.setBounds(18 + w * 2, controlsY, w, 28);
@@ -615,9 +621,9 @@ public:
         pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
         spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
         spliceInfo.setBounds(12, 128, getWidth() - 24, 52);
-        const int spliceButtonW = juce::jmax(80, (getWidth() - 28) / 2);
+        const int spliceButtonW = juce::jmax(0, (getWidth() - 28) / 2);
         spliceOpenPluginButton.setBounds(12, 188, spliceButtonW, 32);
-        spliceScanButton.setBounds(16 + spliceButtonW, 188, getWidth() - 28 - spliceButtonW, 32);
+        spliceScanButton.setBounds(16 + spliceButtonW, 188, juce::jmax(0, getWidth() - 28 - spliceButtonW), 32);
     }
 
 private:
@@ -774,7 +780,12 @@ private:
                     .getChildFile("Liberty").getChildFile("PluginThumbnails");
                 const auto destination = folder.getChildFile(juce::String::toHexString(
                     (juce::int64) identifier.hashCode64()) + ".png");
-                if (folder.createDirectory() && source.copyFileTo(destination))
+                // Stage the new image before replacing an existing thumbnail.
+                const auto staged = folder.getNonexistentChildFile("thumbnail-import", ".png", false);
+                const bool copied = folder.createDirectory() && source.copyFileTo(staged);
+                const bool saved = copied && staged.replaceFileIn(destination);
+                if (!saved) staged.deleteFile();
+                if (saved)
                 {
                     safe->rebuildPluginTree();
                     safe->pluginStatus.setText("Miniature importée.", juce::dontSendNotification);
