@@ -1948,6 +1948,11 @@ private:
      juce::PopupMenu menu;
      menu.addItem(1,juce::String::fromUTF8("EFFACER LA CRÊTE DE CETTE PISTE"));
      menu.addItem(2,juce::String::fromUTF8("EFFACER TOUTES LES CRÊTES"));
+     menu.addSeparator();
+     menu.addItem(3,"AFFICHAGE PEAK",true,
+                  meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::peak);
+     menu.addItem(4,"AFFICHAGE RMS",true,
+                  meterReadoutMode==LibertyMixConsoleMeter::ReadoutMode::rms);
      menu.showMenuAsync(
          juce::PopupMenu::Options().withTargetScreenArea(
              juce::Rectangle<int>(point.x,point.y,1,1)),
@@ -1955,6 +1960,15 @@ private:
           kind=source.kind,lane=source.lane](int action)
          {
              if(safe==nullptr||action==0)return;
+             if(action==3||action==4)
+             {
+                 safe->meterReadoutMode=action==3
+                     ?LibertyMixConsoleMeter::ReadoutMode::peak
+                     :LibertyMixConsoleMeter::ReadoutMode::rms;
+                 safe->meterModeButton.setButtonText(action==3?"PEAK":"RMS");
+                 safe->repaint();
+                 return;
+             }
              for(auto& channel:safe->strips)
                  if(action==2||(action==1&&channel->kind==kind&&
                                 channel->lane==lane))
