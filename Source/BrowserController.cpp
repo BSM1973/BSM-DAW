@@ -60,7 +60,11 @@ public:
             // Obsidian manufacturer headings use muted turquoise; favourites keep gold.
             g.setColour(fav ? juce::Colour(0xffffc857) : juce::Colour(0xffb8e8ec));
             g.setFont(juce::Font(11.0f, juce::Font::bold));
-            g.drawText(label, 4, 0, width - 8, height, juce::Justification::centredLeft, true);
+            // Keep a dedicated disclosure region and clip long group names.
+            const int headingWidth = juce::jmax(0, width - 20);
+            if (headingWidth > 0)
+                g.drawFittedText(label, 4, 0, headingWidth, height,
+                                 juce::Justification::centredLeft, 1);
             return;
         }
 
@@ -77,12 +81,17 @@ public:
         // Obsidian soft white keeps plugin names prominent without harsh pure white.
         g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(description.name, 4, 3, width - 8, 17, juce::Justification::centredLeft, true);
+        if (width > 12)
+            g.drawFittedText(description.name, 4, 3, width - 12, 17,
+                             juce::Justification::centredLeft, 1);
         // Obsidian secondary metadata stays readable without competing with plugin names.
         g.setColour(juce::Colour(0xffb9ccd6));
         g.setFont(juce::Font(9.0f));
-        g.drawText(description.pluginFormatName + "  " + (description.isInstrument ? "INSTRUMENT" : "FX"),
-                   4, 20, width - 8, 14, juce::Justification::centredLeft, true);
+        if (width > 12)
+            g.drawFittedText(description.pluginFormatName + "  "
+                             + (description.isInstrument ? "INSTRUMENT" : "EFFET"),
+                             4, 20, width - 12, 14,
+                             juce::Justification::centredLeft, 1);
     }
 
     void itemClicked(const juce::MouseEvent& event) override
