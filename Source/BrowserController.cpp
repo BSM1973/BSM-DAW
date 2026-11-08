@@ -305,6 +305,11 @@ public:
         thumbnailModeButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
         thumbnailModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         addAndMakeVisible(thumbnailModeButton);
+        importThumbnailButton.setButtonText("IMPORTER IMAGE");
+        importThumbnailButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+        importThumbnailButton.onClick = [this] { importSelectedThumbnail(); };
+        addAndMakeVisible(importThumbnailButton);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
         // Obsidian primary text keeps the Splice heading consistent with Browser tabs.
@@ -390,6 +395,11 @@ public:
             setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         };
         addAndMakeVisible(homeButton);
+        chooseLibraryButton.setButtonText("CHOISIR");
+        chooseLibraryButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
+        chooseLibraryButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+        chooseLibraryButton.onClick = [this] { chooseSampleLibrary(); };
+        addAndMakeVisible(chooseLibraryButton);
         parentFolderButton.setButtonText("DOSSIER PARENT");
         parentFolderButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         parentFolderButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
@@ -569,7 +579,9 @@ public:
         }
 
         homeButton.setBounds(12, 105, 70, 24);
-        parentFolderButton.setBounds(86, 105, juce::jmax(0, getWidth() - 98), 24);
+        chooseLibraryButton.setBounds(86, 105, 78, 24);
+        parentFolderButton.setBounds(category == Category::audio ? 168 : 86, 105,
+            juce::jmax(0, getWidth() - (category == Category::audio ? 180 : 98)), 24);
         fileTree.setBounds(10, 136, getWidth() - 20, juce::jmax(40, getHeight() - 248));
         const int previewY = juce::jmax(136, getHeight() - 104);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
@@ -590,7 +602,9 @@ public:
         for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
         pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
-        thumbnailModeButton.setBounds(10, 343, juce::jmax(0, getWidth() - 20), 26);
+        const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
+        thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
+        importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
         pluginTree.setBounds(10, 374, getWidth() - 20, juce::jmax(40, getHeight() - 476));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(48, (getWidth() - 28) / 4);
@@ -715,6 +729,60 @@ private:
         }
     }
 
+    static juce::File libraryPreferenceFile()
+    {
+        return favouritesFile().getSiblingFile("SampleLibraryPath.txt");
+    }
+
+    void chooseSampleLibrary()
+    {
+        auto chooser = std::make_shared<juce::FileChooser>("Choisir le dossier de samples", rootDirectory);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [safe, chooser](const juce::FileChooser& selected)
+            {
+                if (safe == nullptr) return;
+                const auto folder = selected.getResult();
+                if (!folder.isDirectory()) return;
+                if (libraryPreferenceFile().replaceWithText(folder.getFullPathName()))
+                    safe->setRoot(folder);
+            });
+    }
+
+    void importSelectedThumbnail()
+    {
+        const auto* selected = selectedPluginDescription();
+        if (selected == nullptr)
+        {
+            pluginStatus.setText("Sélectionnez d'abord un plugin.", juce::dontSendNotification);
+            return;
+        }
+        const auto identifier = selected->createIdentifierString();
+        auto chooser = std::make_shared<juce::FileChooser>("Importer une miniature PNG", juce::File(), "*.png");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [safe, chooser, identifier](const juce::FileChooser& selectedFile)
+            {
+                if (safe == nullptr) return;
+                const auto source = selectedFile.getResult();
+                if (!source.existsAsFile() || !juce::ImageFileFormat::loadFrom(source).isValid())
+                {
+                    safe->pluginStatus.setText("Image PNG invalide.", juce::dontSendNotification);
+                    return;
+                }
+                const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                    .getChildFile("Liberty").getChildFile("PluginThumbnails");
+                const auto destination = folder.getChildFile(juce::String::toHexString(
+                    (juce::int64) identifier.hashCode64()) + ".png");
+                if (folder.createDirectory() && source.copyFileTo(destination))
+                {
+                    safe->rebuildPluginTree();
+                    safe->pluginStatus.setText("Miniature importée.", juce::dontSendNotification);
+                }
+                else safe->pluginStatus.setText("Impossible de copier la miniature.", juce::dontSendNotification);
+            });
+    }
+
     void setRoot(const juce::File& directory)
     {
         if (!directory.isDirectory()) return;
@@ -727,6 +795,8 @@ private:
     {
         // Discover an already installed partner library without creating folders,
         // downloading content, or assuming redistribution permissions.
+        const auto configured = juce::File(libraryPreferenceFile().loadFileAsString().trim());
+        if (configured.isDirectory()) return configured;
         const auto home = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
         const juce::File candidates[] = {
             juce::File("/Users/Shared/Liberty Music Software/Sample Libraries"),
@@ -750,6 +820,8 @@ private:
         if (newCategory != Category::audio) previewTransport.stop();
         category = newCategory;
         homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
+        chooseLibraryButton.setVisible(category == Category::audio);
+        resized();
         if (category == Category::audio)
         {
             const auto library = findInstalledSampleLibrary();
@@ -785,6 +857,7 @@ private:
         }
         pluginTree.setVisible(pluginMode);
         thumbnailModeButton.setVisible(pluginMode);
+        importThumbnailButton.setVisible(pluginMode);
         pluginSearch.setVisible(!spliceMode);
         pluginSearch.setTextToShowWhenEmpty(pluginMode ? "Rechercher un plugin ou fabricant..."
                                                    : "Rechercher un fichier...", juce::Colour(0xff8da6b1));
@@ -1376,7 +1449,7 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
-    juce::TextButton thumbnailModeButton;
+    juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton;
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
