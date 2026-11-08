@@ -23,6 +23,26 @@ namespace
 {
 constexpr int topBarHeight = 76;
 
+// File filtering is performed by the directory listing itself, so category
+// changes and search results agree with the visible file tree.
+class BrowserFileFilter final : public juce::FileFilter
+{
+public:
+    BrowserFileFilter() : juce::FileFilter("Liberty browser files") {}
+    int category = 0;
+    juce::String query;
+    bool isDirectorySuitable(const juce::File&) const override { return true; }
+    bool isFileSuitable(const juce::File& file) const override
+    {
+        if (query.isNotEmpty() && !file.getFileName().containsIgnoreCase(query)) return false;
+        const auto ext = file.getFileExtension().toLowerCase();
+        if (category == 1) return ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".mp3" || ext == ".flac";
+        if (category == 2) return ext == ".mid" || ext == ".midi";
+        if (category == 3) return ext == ".xml" || ext == ".fxp" || ext == ".vstpreset" || ext == ".aupreset";
+        return true;
+    }
+};
+
 class PluginTreeItem final : public juce::TreeViewItem
 {
 public:
@@ -188,7 +208,7 @@ public:
     }
 
     explicit BrowserPanel(MainComponent& ownerIn)
-        : owner(ownerIn), filter("*", "*", "All files"), directoryList(&filter, thread), fileTree(directoryList)
+        : owner(ownerIn), directoryList(&filter, thread), fileTree(directoryList)
     {
         setAlwaysOnTop(true);
         thread.startThread();
@@ -272,7 +292,15 @@ public:
         pluginSearch.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101821));
         pluginSearch.setColour(juce::TextEditor::textColourId, juce::Colour(0xffeffcfd));
         pluginSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff40515f));
-        pluginSearch.onTextChange = [this] { rebuildPluginTree(); };
+        pluginSearch.onTextChange = [this]
+        {
+            if (category == Category::plugins) rebuildPluginTree();
+            else if (category != Category::splice)
+            {
+                filter.query = pluginSearch.getText().trim();
+                directoryList.refresh();
+            }
+        };
         pluginSearch.onEscapeKey = [this]
         {
             pluginSearch.clear();
@@ -617,7 +645,14 @@ private:
             spliceInfo.setText(found ? "Splice Sounds détecté - prêt à ouvrir."
                                      : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
         }
-        pluginTree.setVisible(pluginMode); pluginSearch.setVisible(pluginMode);
+        pluginTree.setVisible(pluginMode);
+        pluginSearch.setVisible(!spliceMode);
+        pluginSearch.setTextToShowWhenEmpty(pluginMode ? "Rechercher un plugin ou fabricant..."
+                                                   : "Rechercher un fichier...", juce::Colour(0xff8da6b1));
+        filter.category = category == Category::audio ? 1 : category == Category::midi ? 2
+                          : category == Category::presets ? 3 : 0;
+        filter.query = pluginSearch.getText().trim();
+        if (!pluginMode && !spliceMode) directoryList.refresh();
         scanPluginsButton.setVisible(pluginMode);
         blacklistButton.setVisible(pluginMode); clearBlacklistButton.setVisible(pluginMode);
         favouritePluginButton.setVisible(pluginMode); loadPluginButton.setVisible(pluginMode);
@@ -1188,7 +1223,7 @@ private:
 
     MainComponent& owner;
     juce::TimeSliceThread thread { "Liberty Browser" };
-    juce::WildcardFileFilter filter;
+    BrowserFileFilter filter;
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
