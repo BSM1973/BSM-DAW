@@ -858,7 +858,7 @@ private:
 
     void saveSampleFilterPreferences()
     {
-        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "\\n" + sampleNameQuery);
+        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "\n" + sampleNameQuery);
     }
 
     void showMusicalFilters()
@@ -941,7 +941,7 @@ private:
                         const auto file = matches.getReference(result - 1);
                         if (!file.existsAsFile()) return;
                         safe->setRoot(file.getParentDirectory());
-                        safe->fileClicked(file, {});
+                        safe->updateSamplePackInfo(file);
                     });
             });
         });
