@@ -637,7 +637,7 @@ public:
         {
             g.setColour(juce::Colour(0xff89a6b9));
             g.setFont(juce::Font(10.0f, juce::Font::bold));
-            g.drawText("BIBLIOTHÈQUE DE SAMPLES", 14, 219, juce::jmax(0, getWidth() - 28), 11, juce::Justification::centredLeft, true);
+            g.drawText(juce::String::fromUTF8("BIBLIOTHÈQUE DE SAMPLES"), 14, 219, juce::jmax(0, getWidth() - 28), 11, juce::Justification::centredLeft, true);
         }
         if (category == Category::audio)
         {
