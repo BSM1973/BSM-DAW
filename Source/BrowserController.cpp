@@ -258,7 +258,7 @@ public:
         toggleButton.onClick = [this] { setBrowserOpen(toggleButton.getToggleState()); };
         owner.addAndMakeVisible(toggleButton);
 
-        closeButton.setButtonText("CLOSE");
+        closeButton.setButtonText("FERMER");
         // Obsidian close control uses the same graphite surface and soft-white labels.
         closeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         closeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
@@ -274,7 +274,7 @@ public:
         fileTree.setColour(juce::DirectoryContentsDisplayComponent::textColourId, juce::Colour(0xffeffcfd));
         fileTree.setRootItemVisible(false);
         // Obsidian file tree uses the same deep graphite as the plugin browser.
-        fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101821));
+        fileTree.setColour(juce::TreeView::backgroundColourId, juce::Colour(0xff101d2b));
         // Match the plugin tree graphite guides and turquoise drop target.
         fileTree.setColour(juce::TreeView::linesColourId, juce::Colour(0xff40515f));
         fileTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
@@ -489,7 +489,13 @@ public:
         musicFilterButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         musicFilterButton.onClick = [this] { showMusicalFilters(); };
         addAndMakeVisible(musicFilterButton);
-        sampleNameSearch.setTextToShowWhenEmpty("Chercher un sample...", juce::Colours::grey);
+        sampleNameSearch.setTextToShowWhenEmpty("RECHERCHER UN SAMPLE...", juce::Colour(0xff8095a8));
+        sampleNameSearch.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101d2b));
+        sampleNameSearch.setColour(juce::TextEditor::textColourId, juce::Colour(0xffeff7ff));
+        sampleNameSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff38536a));
+        sampleNameSearch.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff54d6dc));
+        sampleNameSearch.setColour(juce::TextEditor::highlightColourId, juce::Colour(0xff286674));
+        sampleNameSearch.setFont(juce::Font(12.0f));
         sampleNameSearch.onTextChange = [this]
         {
             sampleNameQuery = sampleNameSearch.getText();
@@ -621,10 +627,24 @@ public:
         // Obsidian soft-white title matches primary labels across Liberty Pro.
         g.setColour(LibertyUI::Colour::textPrimary);
         g.setFont(juce::Font(15.0f, juce::Font::bold));
-        g.drawText("BROWSER", 14, 10, 150, 24, juce::Justification::centredLeft);
+        g.drawText("LIBERTY  /  NAVIGATEUR", 14, 10, juce::jmax(0, getWidth() - 96), 24, juce::Justification::centredLeft, true);
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.fillRoundedRectangle(12.0f, 35.0f, juce::jmax(0.0f, (float)getWidth() - 24.0f), 2.0f, 1.0f);
         // Obsidian separator clearly distinguishes browser controls from the plugin list.
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(0, 100, getWidth(), 1);
+        if (category == Category::audio)
+        {
+            g.setColour(juce::Colour(0xff142638));
+            g.fillRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f);
+            g.setColour(juce::Colour(0xff324d63));
+            g.drawRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f, 1.0f);
+            const int previewTop = juce::jmax(136, getHeight() - 104);
+            g.setColour(juce::Colour(0xff142638));
+            g.fillRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 94.0f, 8.0f);
+            g.setColour(juce::Colour(0xff324d63));
+            g.drawRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 94.0f, 8.0f, 1.0f);
+        }
         if (category == Category::plugins)
         {
             // Actual in-app One Knob section header, rather than a mockup-only label.
@@ -659,13 +679,13 @@ public:
         const int folderFavWidth = juce::jmax(0, (getWidth() - 24) / 2);
         saveFolderButton.setBounds(10, 136, folderFavWidth, 25);
         openFavouriteButton.setBounds(14 + folderFavWidth, 136, folderFavWidth, 25);
-        samplePackInfo.setBounds(10, 165, juce::jmax(0, getWidth() - 174), 22);
+        samplePackInfo.setBounds(14, 165, juce::jmax(0, getWidth() - 190), 22);
         browsePacksButton.setBounds(juce::jmax(10, getWidth() - 160), 165, 70, 22);
         musicFilterButton.setBounds(juce::jmax(10, getWidth() - 86), 165, 76, 22);
-        sampleNameSearch.setBounds(10, 190, juce::jmax(0, getWidth() - 20), 24);
-        fileTree.setBounds(10, category == Category::audio ? 218 : 136,
+        sampleNameSearch.setBounds(14, 190, juce::jmax(0, getWidth() - 28), 24);
+        fileTree.setBounds(10, category == Category::audio ? 224 : 136,
             juce::jmax(0, getWidth() - 20),
-            juce::jmax(0, getHeight() - (category == Category::audio ? 330 : 248)));
+            juce::jmax(0, getHeight() - (category == Category::audio ? 336 : 248)));
         const int previewY = juce::jmax(136, getHeight() - 104);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
         previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
