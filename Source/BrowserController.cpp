@@ -860,6 +860,22 @@ private:
         return paths;
     }
 
+    static juce::File sampleFavouriteFile()
+    {
+        return libraryPreferenceFile().getSiblingFile("SampleFileFavourites.txt");
+    }
+
+    void toggleSampleFavourite(const juce::File& file)
+    {
+        juce::StringArray favourites;
+        sampleFavouriteFile().readLines(favourites);
+        const auto path = file.getFullPathName();
+        if (favourites.contains(path)) favourites.removeString(path);
+        else favourites.add(path);
+        favourites.removeDuplicates(false);
+        sampleFavouriteFile().replaceWithText(favourites.joinIntoString("\n"));
+    }
+
     static juce::File sampleFilterPreferenceFile()
     {
         return libraryPreferenceFile().getSiblingFile("SampleSearchPreferences.txt");
@@ -973,11 +989,25 @@ private:
                 if (matches.size() < 80) matches.add(file);
             }
             if (stopped.load()) return;
+            juce::StringArray details;
+            juce::AudioFormatManager metadataFormats;
+            metadataFormats.registerBasicFormats();
+            for (const auto& file : matches)
+            {
+                juce::String duration = "--:--";
+                std::unique_ptr<juce::AudioFormatReader> reader(metadataFormats.createReaderFor(file));
+                if (reader != nullptr && reader->sampleRate > 0.0)
+                {
+                    const int seconds = (int)(reader->lengthInSamples / reader->sampleRate);
+                    duration = juce::String(seconds / 60) + ":" + juce::String(seconds % 60).paddedLeft('0', 2);
+                }
+                details.add(file.getFileExtension().toUpperCase().trimCharactersAtStart(".") + "  |  " + duration);
+            }
             const juce::StringArray labels = sampleFilterNames();
             juce::String summary = juce::String(matches.size()) + " resultats / " + juce::String(inspected) + " fichiers | ";
             for (int i = 0; i < 5; ++i)
                 summary += labels[i] + ": " + juce::String(counts[i]) + (i == 4 ? "" : "  ");
-            juce::MessageManager::callAsync([safe, matches, summary, mask, query, library, indexedFiles, reuseIndex, reachedLimit]
+            juce::MessageManager::callAsync([safe, matches, details, summary, mask, query, library, indexedFiles, reuseIndex, reachedLimit]
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 safe->sampleSearchRunning.store(false);
@@ -997,17 +1027,37 @@ private:
                 }
                 safe->samplePackInfo.setText(summary, juce::dontSendNotification);
                 safe->samplePackInfo.setTooltip(summary + " (12 000 fichiers maximum, 80 resultats affiches)");
+                juce::StringArray favourites;
+                sampleFavouriteFile().readLines(favourites);
                 juce::PopupMenu results;
                 for (int i = 0; i < matches.size(); ++i)
                 {
                     const auto& file = matches.getReference(i);
-                    results.addItem(i + 1, file.getFileName() + "  -  " + file.getParentDirectory().getFileName());
+                    const bool favourite = favourites.contains(file.getFullPathName());
+                    results.addItem(i + 1, (favourite ? "[FAV]  " : "") + file.getFileNameWithoutExtension()
+                        + "  |  " + details[i] + "  |  " + file.getParentDirectory().getFileName());
                 }
                 if (matches.isEmpty()) results.addItem(1, "Aucun resultat", false);
+                if (!matches.isEmpty())
+                {
+                    juce::PopupMenu favouriteMenu;
+                    for (int i = 0; i < matches.size(); ++i)
+                        favouriteMenu.addItem(1001 + i, (favourites.contains(matches.getReference(i).getFullPathName()) ? "RETIRER  " : "AJOUTER  ")
+                            + matches.getReference(i).getFileName());
+                    results.addSeparator();
+                    results.addSubMenu("GERER LES FAVORIS", favouriteMenu);
+                }
                 results.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&safe->musicFilterButton),
                     [safe, matches](int result)
                     {
-                        if (safe == nullptr || result < 1 || result > matches.size()) return;
+                        if (safe == nullptr || result < 1) return;
+                        if (result >= 1001 && result < 1001 + matches.size())
+                        {
+                            safe->toggleSampleFavourite(matches.getReference(result - 1001));
+                            safe->samplePackInfo.setTooltip("Favoris de samples mis a jour");
+                            return;
+                        }
+                        if (result > matches.size()) return;
                         const auto file = matches.getReference(result - 1);
                         if (!file.existsAsFile()) return;
                         if (safe->category != Category::audio) return;
