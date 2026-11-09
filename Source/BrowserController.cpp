@@ -336,7 +336,28 @@ public:
         importThumbnailButton.setTooltip("Importer une capture reelle du plugin selectionne. Les images sont associees a son identifiant exact.");
         importThumbnailButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
-        importThumbnailButton.onClick = [this] { importSelectedThumbnail(); };
+        importThumbnailButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
+            menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
+            menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
+            juce::Component::SafePointer<BrowserPanel> safe(this);
+            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
+                [safe](int choice)
+                {
+                    if (safe == nullptr) return;
+                    if (choice == 1) safe->importSelectedThumbnail();
+                    if (choice == 2) safe->refreshOfficialArtwork();
+                    if (choice == 3)
+                    {
+                        auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                            .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue");
+                        folder.createDirectory();
+                        folder.revealToUser();
+                    }
+                });
+        };
         addAndMakeVisible(importThumbnailButton);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
@@ -635,6 +656,7 @@ public:
         previewPlayer.setSource(nullptr);
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        if (artworkThread.joinable()) artworkThread.join();
         if (sampleSearchThread.joinable()) sampleSearchThread.join();
         if (scanThread.joinable()) scanThread.join();
         pluginTree.setRootItem(nullptr);
@@ -1216,6 +1238,73 @@ private:
                     safe->setRoot(folder);
                 }
             });
+    }
+
+    void refreshOfficialArtwork()
+    {
+        // Opt-in catalogue: each entry maps the exact JUCE plug-in identifier hash
+        // to an explicit HTTPS image URL. No guessed product URLs or web scraping.
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue");
+        folder.createDirectory();
+        const auto manifest = folder.getChildFile("OfficialArtwork.tsv");
+        if (!manifest.existsAsFile())
+        {
+            manifest.replaceWithText("# identifier-hash\\tHTTPS-image-URL\\n");
+            pluginStatus.setText("Catalogue cree : renseigner les URLs officielles autorisees.", juce::dontSendNotification);
+            return;
+        }
+        if (artworkRefreshing.exchange(true)) return;
+        if (artworkThread.joinable()) artworkThread.join();
+        const auto lines = juce::StringArray::fromLines(manifest.loadFileAsString());
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        pluginStatus.setText("Actualisation des images officielles...", juce::dontSendNotification);
+        artworkThread = std::thread([this, safe, folder, lines]
+        {
+            int saved = 0;
+            int failed = 0;
+            for (const auto& line : lines)
+            {
+                if (stopped.load()) break;
+                if (line.startsWithChar('#') || line.isEmpty()) continue;
+                const auto hash = line.upToFirstOccurrenceOf("\\t", false, false).trim();
+                const auto address = line.fromFirstOccurrenceOf("\\t", false, false).trim();
+                if (hash.isEmpty() || !hash.containsOnly("0123456789abcdefABCDEF")
+                    || !address.startsWithIgnoreCase("https://")) { ++failed; continue; }
+                const auto destination = folder.getChildFile(hash + ".png");
+                if (destination.existsAsFile()) continue;
+                const auto staged = folder.getNonexistentChildFile("artwork-download", ".png", false);
+                juce::URL url(address);
+                juce::URL::InputStreamOptions options(juce::URL::ParameterHandling::inAddress);
+                options = options.withConnectionTimeoutMs(4000).withNumRedirectsToFollow(2);
+                auto stream = url.createInputStream(options);
+                if (stream == nullptr) { ++failed; continue; }
+                juce::MemoryBlock bytes;
+                char buffer[8192];
+                while (!stopped.load() && bytes.getSize() <= 5 * 1024 * 1024)
+                {
+                    const int n = stream->read(buffer, (int)sizeof(buffer));
+                    if (n <= 0) break;
+                    bytes.append(buffer, (size_t)n);
+                }
+                if (stopped.load()) break;
+                if (bytes.getSize() > 5 * 1024 * 1024 || bytes.isEmpty()) { ++failed; continue; }
+                const auto image = juce::ImageFileFormat::loadFrom(bytes.getData(), bytes.getSize());
+                if (!image.isValid() || image.getWidth() > 4096 || image.getHeight() > 4096)
+                { ++failed; continue; }
+                if (staged.replaceWithData(bytes.getData(), bytes.getSize()) && staged.replaceFileIn(destination))
+                    ++saved;
+                else { staged.deleteFile(); ++failed; }
+            }
+            juce::MessageManager::callAsync([safe, saved, failed]
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                safe->artworkRefreshing.store(false);
+                safe->rebuildPluginTree();
+                safe->pluginStatus.setText(juce::String(saved) + " images installees, " + juce::String(failed)
+                    + " echecs.", juce::dontSendNotification);
+            });
+        });
     }
 
     void importSelectedThumbnail()
@@ -1976,7 +2065,8 @@ private:
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
-    std::thread scanThread, sampleSearchThread;
+    std::thread scanThread, sampleSearchThread, artworkThread;
+    std::atomic<bool> artworkRefreshing { false };
     std::atomic<bool> sampleSearchRunning { false };
     bool browserOpen = false, hostExpanded = false;
     bool targetIsInstrument=false;
