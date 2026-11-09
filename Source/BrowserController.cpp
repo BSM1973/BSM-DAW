@@ -878,7 +878,12 @@ private:
             if (result == 1) safe->sampleFilterMask = 0;
             else if (result >= 2 && result <= 6) safe->sampleFilterMask ^= (1 << (result - 2));
             if (result != 8) safe->saveSampleFilterPreferences();
-            safe->showMusicalFilterResults();
+            if (safe->sampleSearchRunning.load())
+            {
+                safe->sampleSearchPending = true;
+                safe->sampleSearchChangedAt = juce::Time::getMillisecondCounter();
+            }
+            else safe->showMusicalFilterResults();
         });
     }
 
@@ -890,9 +895,15 @@ private:
             samplePackInfo.setText("Aucune bibliotheque de samples disponible.", juce::dontSendNotification);
             return;
         }
-        if (sampleSearchRunning.load()) return;
+        if (sampleSearchRunning.load())
+        {
+            sampleSearchPending = true;
+            sampleSearchChangedAt = juce::Time::getMillisecondCounter();
+            return;
+        }
         if (sampleSearchThread.joinable()) sampleSearchThread.join();
         sampleSearchRunning.store(true);
+        sampleSearchPending = false;
         musicFilterButton.setEnabled(false);
         samplePackInfo.setText("Recherche de samples en cours...", juce::dontSendNotification);
         const int mask = sampleFilterMask;
@@ -920,11 +931,17 @@ private:
             juce::String summary = juce::String(matches.size()) + " resultats / " + juce::String(inspected) + " fichiers | ";
             for (int i = 0; i < 5; ++i)
                 summary += labels[i] + ": " + juce::String(counts[i]) + (i == 4 ? "" : "  ");
-            juce::MessageManager::callAsync([safe, matches, summary]
+            juce::MessageManager::callAsync([safe, matches, summary, mask, query]
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 safe->sampleSearchRunning.store(false);
                 safe->musicFilterButton.setEnabled(true);
+                if (safe->sampleSearchPending || safe->sampleFilterMask != mask || safe->sampleNameQuery.trim() != query)
+                {
+                    safe->sampleSearchPending = true;
+                    safe->sampleSearchChangedAt = juce::Time::getMillisecondCounter();
+                    return;
+                }
                 safe->samplePackInfo.setText(summary, juce::dontSendNotification);
                 safe->samplePackInfo.setTooltip(summary + " (12 000 fichiers maximum, 80 resultats affiches)");
                 juce::PopupMenu results;
