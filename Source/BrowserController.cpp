@@ -834,7 +834,7 @@ private:
     {
         if (sampleSearchRunning.load())
         {
-            samplePackInfo.setTooltip("Recherche déjà en cours.");
+            samplePackInfo.setTooltip(juce::String::fromUTF8("Recherche déjà en cours."));
             return;
         }
         if (sampleSearchThread.joinable()) sampleSearchThread.join();
