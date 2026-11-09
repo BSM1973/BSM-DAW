@@ -585,6 +585,7 @@ public:
         previewPlayer.setSource(nullptr);
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        if (sampleSearchThread.joinable()) sampleSearchThread.join();
         if (scanThread.joinable()) scanThread.join();
         pluginTree.setRootItem(nullptr);
         pluginRoot.reset();
@@ -831,43 +832,62 @@ private:
 
     void showMusicalFilterResults(const juce::File& library, int filter)
     {
-        // Filename and parent-folder heuristics; no audio content analysis.
+        if (sampleSearchRunning.load())
+        {
+            samplePackInfo.setTooltip("Recherche déjà en cours.");
+            return;
+        }
+        if (sampleSearchThread.joinable()) sampleSearchThread.join();
+        sampleSearchRunning.store(true);
+        musicFilterButton.setEnabled(false);
+        samplePackInfo.setText("Recherche de samples en cours...", juce::dontSendNotification);
         const juce::StringArray terms = filter == 1 ? juce::StringArray { "kick", "bd", "bassdrum" }
             : filter == 2 ? juce::StringArray { "snare", "snr" }
             : filter == 3 ? juce::StringArray { "hihat", "hi-hat", "hat", "hh" }
             : filter == 4 ? juce::StringArray { "loop", "groove" }
                           : juce::StringArray { "fx", "sfx", "effect", "impact", "riser" };
-        juce::Array<juce::File> matches;
-        int inspected = 0;
-        juce::RangedDirectoryIterator iterator(library, true, "*", juce::File::findFiles);
-        for (const auto& entry : iterator)
-        {
-            if (++inspected > 12000 || matches.size() >= 80) break;
-            const auto file = entry.getFile();
-            if (!file.hasFileExtension("wav;aif;aiff;mp3;flac")) continue;
-            const auto text = file.getFileNameWithoutExtension() + " " + file.getParentDirectory().getFileName();
-            for (const auto& term : terms)
-                if (text.containsIgnoreCase(term)) { matches.add(file); break; }
-        }
-        juce::PopupMenu results;
-        for (int i = 0; i < matches.size(); ++i)
-        {
-            const auto& file = matches.getReference(i);
-            results.addItem(i + 1, file.getFileName() + "  -  " + file.getParentDirectory().getFileName());
-        }
-        if (matches.isEmpty()) results.addItem(1, "Aucun résultat dans les fichiers examinés", false);
-        samplePackInfo.setTooltip(juce::String(matches.size()) + " résultats, " + juce::String(inspected)
-                                  + " fichiers examinés (limite 12 000 / 80 résultats).");
         juce::Component::SafePointer<BrowserPanel> safe(this);
-        results.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&musicFilterButton),
-            [safe, matches](int result)
+        sampleSearchThread = std::thread([this, safe, library, terms]
+        {
+            juce::Array<juce::File> matches;
+            int inspected = 0;
+            juce::RangedDirectoryIterator iterator(library, true, "*", juce::File::findFiles);
+            for (const auto& entry : iterator)
             {
-                if (safe == nullptr || result < 1 || result > matches.size()) return;
-                const auto file = matches.getReference(result - 1);
-                if (!file.existsAsFile()) return;
-                safe->setRoot(file.getParentDirectory());
-                safe->pluginSearch.setText(file.getFileNameWithoutExtension(), juce::sendNotification);
+                if (stopped.load() || ++inspected > 12000 || matches.size() >= 80) break;
+                const auto file = entry.getFile();
+                if (!file.hasFileExtension("wav;aif;aiff;mp3;flac")) continue;
+                const auto description = file.getFileNameWithoutExtension() + " " + file.getParentDirectory().getFileName();
+                for (const auto& term : terms)
+                    if (description.containsIgnoreCase(term)) { matches.add(file); break; }
+            }
+            if (stopped.load()) return;
+            juce::MessageManager::callAsync([safe, matches, inspected]
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                safe->sampleSearchRunning.store(false);
+                safe->musicFilterButton.setEnabled(true);
+                safe->updateSamplePackInfo();
+                juce::PopupMenu results;
+                for (int i = 0; i < matches.size(); ++i)
+                {
+                    const auto& file = matches.getReference(i);
+                    results.addItem(i + 1, file.getFileName() + "  -  " + file.getParentDirectory().getFileName());
+                }
+                if (matches.isEmpty()) results.addItem(1, "Aucun résultat dans les fichiers examinés", false);
+                safe->samplePackInfo.setTooltip(juce::String(matches.size()) + " résultats, "
+                    + juce::String(inspected) + " fichiers examinés (limite 12 000 / 80 résultats).");
+                results.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&safe->musicFilterButton),
+                    [safe, matches](int result)
+                    {
+                        if (safe == nullptr || result < 1 || result > matches.size()) return;
+                        const auto file = matches.getReference(result - 1);
+                        if (!file.existsAsFile()) return;
+                        safe->setRoot(file.getParentDirectory());
+                        safe->pluginSearch.setText(file.getFileNameWithoutExtension(), juce::sendNotification);
+                    });
             });
+        });
     }
 
     void showInstalledPacks()
@@ -1712,7 +1732,8 @@ private:
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
-    std::thread scanThread;
+    std::thread scanThread, sampleSearchThread;
+    std::atomic<bool> sampleSearchRunning { false };
     bool browserOpen = false, hostExpanded = false;
     bool targetIsInstrument=false;
     int targetEffectLane=-1,targetEffectSlot=-1;
