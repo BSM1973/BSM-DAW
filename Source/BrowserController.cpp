@@ -639,11 +639,22 @@ public:
             g.fillRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f);
             g.setColour(juce::Colour(0xff324d63));
             g.drawRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f, 1.0f);
-            const int previewTop = juce::jmax(136, getHeight() - 104);
+            const int previewTop = juce::jmax(136, getHeight() - 144);
             g.setColour(juce::Colour(0xff142638));
-            g.fillRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 94.0f, 8.0f);
+            g.fillRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 134.0f, 8.0f);
             g.setColour(juce::Colour(0xff324d63));
-            g.drawRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 94.0f, 8.0f, 1.0f);
+            g.drawRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 134.0f, 8.0f, 1.0f);
+            const auto wave = juce::Rectangle<int>(14, previewTop + 24, juce::jmax(0, getWidth() - 28), 36);
+            g.setColour(juce::Colour(0xff0c1723));
+            g.fillRoundedRectangle(wave.toFloat(), 4.0f);
+            if (previewThumbnail.getTotalLength() > 0.0)
+            {
+                g.setColour(juce::Colour(0xff54d6dc));
+                previewThumbnail.drawChannels(g, wave, 0.0, previewThumbnail.getTotalLength(), 0.85f);
+                const auto fraction = juce::jlimit(0.0, 1.0, previewTransport.getCurrentPosition() / previewThumbnail.getTotalLength());
+                g.setColour(juce::Colour(0xfff0c879));
+                g.drawVerticalLine(wave.getX() + (int)(fraction * wave.getWidth()), (float)wave.getY(), (float)wave.getBottom());
+            }
         }
         if (category == Category::plugins)
         {
@@ -685,14 +696,14 @@ public:
         sampleNameSearch.setBounds(14, 190, juce::jmax(0, getWidth() - 28), 24);
         fileTree.setBounds(10, category == Category::audio ? 224 : 136,
             juce::jmax(0, getWidth() - 20),
-            juce::jmax(0, getHeight() - (category == Category::audio ? 336 : 248)));
-        const int previewY = juce::jmax(136, getHeight() - 104);
+            juce::jmax(0, getHeight() - (category == Category::audio ? 376 : 248)));
+        const int previewY = juce::jmax(136, getHeight() - 144);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
         previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
-        previewPlay.setBounds(10, previewY + 25, previewW, 26);
-        previewStop.setBounds(14 + previewW, previewY + 25, previewW, 26);
-        previewVolume.setBounds(10, previewY + 57, juce::jmax(0, getWidth() - 96), 24);
-        previewAuto.setBounds(juce::jmax(10, getWidth() - 78), previewY + 57, 68, 24);
+        previewPlay.setBounds(10, previewY + 65, previewW, 26);
+        previewStop.setBounds(14 + previewW, previewY + 65, previewW, 26);
+        previewVolume.setBounds(10, previewY + 97, juce::jmax(0, getWidth() - 96), 24);
+        previewAuto.setBounds(juce::jmax(10, getWidth() - 78), previewY + 97, 68, 24);
 
         scanPluginsButton.setBounds(10, 108, getWidth() - 20, 28);
         const int blacklistW = juce::jmax(0, (getWidth() - 24) / 2);
@@ -770,13 +781,15 @@ private:
         previewTransport.stop();
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        previewThumbnail.clear();
         previewInfo.setText("Aucun sample sélectionné", juce::dontSendNotification);
         auto reader = std::unique_ptr<juce::AudioFormatReader>(previewFormats.createReaderFor(file));
         if (reader == nullptr) return;
         const double rate = reader->sampleRate;
         const double seconds = rate > 0.0 ? (double)reader->lengthInSamples / rate : 0.0;
         const int totalSeconds = juce::jmax(0, (int)seconds);
-        previewInfo.setText(file.getFileName() + "  -  " + juce::String(totalSeconds / 60)
+        previewThumbnail.setSource(new juce::FileInputSource(file));
+        previewInfo.setText(file.getFileName() + " [" + file.getFileExtension().toUpperCase() + "]  -  " + juce::String(totalSeconds / 60)
                             + ":" + juce::String(totalSeconds % 60).paddedLeft('0', 2),
                             juce::dontSendNotification);
         previewReader = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
@@ -1785,6 +1798,7 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
+        if (category == Category::audio && previewTransport.isPlaying()) repaint();
         if (category == Category::audio && sampleSearchPending && !sampleSearchRunning.load()
             && juce::Time::getMillisecondCounter() - sampleSearchChangedAt >= 350)
         {
@@ -1861,6 +1875,8 @@ private:
     bool sampleSearchPending = false;
     juce::uint32 sampleSearchChangedAt = 0;
     juce::AudioFormatManager previewFormats;
+    juce::AudioThumbnailCache previewThumbnailCache { 32 };
+    juce::AudioThumbnail previewThumbnail { 256, previewFormats, previewThumbnailCache };
     std::unique_ptr<juce::AudioFormatReaderSource> previewReader;
     juce::AudioTransportSource previewTransport;
     juce::AudioSourcePlayer previewPlayer;
