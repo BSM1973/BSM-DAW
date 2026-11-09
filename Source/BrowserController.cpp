@@ -1275,8 +1275,8 @@ private:
                 if (destination.existsAsFile()) continue;
                 const auto staged = folder.getNonexistentChildFile("artwork-download", ".png", false);
                 juce::URL url(address);
-                juce::URL::InputStreamOptions options(juce::URL::ParameterHandling::inAddress);
-                options = options.withConnectionTimeoutMs(4000).withNumRedirectsToFollow(2);
+                const auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                    .withConnectionTimeoutMs(4000).withNumRedirectsToFollow(2);
                 auto stream = url.createInputStream(options);
                 if (stream == nullptr) { ++failed; continue; }
                 juce::MemoryBlock bytes;
