@@ -2008,6 +2008,21 @@ private:
             {
                 if (scanThread.joinable()) scanThread.join();
                 refreshPlugins();
+                // Only auto-fetch from a curated catalogue. Never instantiate plugins for artwork.
+                const auto artworkManifest = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                    .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue").getChildFile("OfficialArtwork.tsv");
+                if (artworkManifest.existsAsFile())
+                {
+                    const auto entries = juce::StringArray::fromLines(artworkManifest.loadFileAsString());
+                    bool hasSources = false;
+                    for (const auto& entry : entries)
+                        if (!entry.trim().isEmpty() && !entry.startsWithChar('#') && entry.containsChar('\t'))
+                        {
+                            hasSources = true;
+                            break;
+                        }
+                    if (hasSources) refreshOfficialArtwork();
+                }
                 for (auto* b : { &scanPluginsButton, &blacklistButton, &clearBlacklistButton, &favouritePluginButton,
                                  &loadPluginButton, &openPluginButton, &unloadPluginButton }) b->setEnabled(true);
                 spliceScanButton.setEnabled(true);
