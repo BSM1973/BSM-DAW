@@ -343,6 +343,7 @@ public:
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
             menu.addItem(4, "CAPTURER UNE INTERFACE (MAC)");
+            menu.addItem(5, "CAPTURE ISOLEE AUTOMATIQUE (TEST)");
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -351,6 +352,7 @@ public:
                     if (choice == 1) safe->importSelectedThumbnail();
                     if (choice == 2) safe->refreshOfficialArtwork();
                     if (choice == 4) safe->captureSelectedPluginArtwork();
+                    if (choice == 5) safe->captureIsolatedPluginArtwork();
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -1306,6 +1308,65 @@ private:
                 safe->rebuildPluginTree();
                 safe->pluginStatus.setText(juce::String(saved) + " images installees, " + juce::String(failed)
                     + " echecs.", juce::dontSendNotification);
+            });
+        });
+    }
+
+    void captureIsolatedPluginArtwork()
+    {
+        const auto* selected = selectedPluginDescription();
+        if (selected == nullptr)
+        {
+            pluginStatus.setText("Selectionnez un plugin.", juce::dontSendNotification);
+            return;
+        }
+        if (captureRunning.exchange(true)) return;
+        const auto description = *selected;
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty").getChildFile("PluginThumbnails");
+        if (!folder.createDirectory()) { captureRunning.store(false); return; }
+        const auto destination = folder.getChildFile(juce::String::toHexString(
+            (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
+        const auto input = juce::File::createTempFile(".xml");
+        const auto output = juce::File::createTempFile(".png");
+        const auto xml = description.createXml();
+        if (xml == nullptr || !input.replaceWithText(xml->toString()))
+        {
+            captureRunning.store(false);
+            input.deleteFile();
+            output.deleteFile();
+            return;
+        }
+        if (captureThread.joinable()) captureThread.join();
+        pluginStatus.setText("Capture isolee en cours (maximum 20 s)...", juce::dontSendNotification);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        captureThread = std::thread([this, safe, input, output, destination]
+        {
+            juce::ChildProcess worker;
+            const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+            const bool started = worker.start(juce::StringArray {
+                executable.getFullPathName(), "--liberty-artwork-worker",
+                input.getFullPathName(), output.getFullPathName() });
+            const bool finished = started && worker.waitForProcessToFinish(20000);
+            if (started && !finished) worker.kill();
+            bool saved = false;
+            if (finished && worker.getExitCode() == 0 && output.existsAsFile()
+                && output.getSize() <= 5 * 1024 * 1024)
+            {
+                const auto image = juce::ImageFileFormat::loadFrom(output);
+                if (image.isValid() && image.getWidth() <= 4096 && image.getHeight() <= 4096)
+                    saved = output.replaceFileIn(destination);
+            }
+            input.deleteFile();
+            output.deleteFile();
+            captureRunning.store(false);
+            juce::MessageManager::callAsync([safe, saved]
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                if (saved) safe->rebuildPluginTree();
+                safe->pluginStatus.setText(saved ? "Interface capturee automatiquement." :
+                    "Capture impossible : plugin incompatible ou delai depasse.",
+                    juce::dontSendNotification);
             });
         });
     }
