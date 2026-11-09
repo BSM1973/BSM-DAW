@@ -908,18 +908,31 @@ private:
         samplePackInfo.setText("Recherche de samples en cours...", juce::dontSendNotification);
         const int mask = sampleFilterMask;
         const auto query = sampleNameQuery.trim();
+        const bool reuseIndex = sampleIndexLibrary == library && sampleIndexComplete;
+        const auto cachedIndex = reuseIndex ? sampleIndex : juce::Array<juce::File>();
         juce::Component::SafePointer<BrowserPanel> safe(this);
-        sampleSearchThread = std::thread([this, safe, library, mask, query]
+        sampleSearchThread = std::thread([this, safe, library, mask, query, reuseIndex, cachedIndex]
         {
             juce::Array<juce::File> matches;
+            juce::Array<juce::File> indexedFiles = reuseIndex ? cachedIndex : juce::Array<juce::File>();
             int inspected = 0;
+            bool reachedLimit = false;
             int counts[5] = { 0, 0, 0, 0, 0 };
-            juce::RangedDirectoryIterator iterator(library, true, "*", juce::File::findFiles);
-            for (const auto& entry : iterator)
+            if (!reuseIndex)
             {
-                if (stopped.load() || ++inspected > 12000) break;
-                const auto file = entry.getFile();
-                if (!file.hasFileExtension("wav;aif;aiff;mp3;flac")) continue;
+                juce::RangedDirectoryIterator iterator(library, true, "*", juce::File::findFiles);
+                for (const auto& entry : iterator)
+                {
+                    if (stopped.load()) return;
+                    if (++inspected > 12000) { reachedLimit = true; break; }
+                    const auto file = entry.getFile();
+                    if (file.hasFileExtension("wav;aif;aiff;mp3;flac")) indexedFiles.add(file);
+                }
+            }
+            else inspected = indexedFiles.size();
+            for (const auto& file : indexedFiles)
+            {
+                if (stopped.load()) return;
                 const int categories = sampleCategoryMask(file);
                 for (int i = 0; i < 5; ++i) if ((categories & (1 << i)) != 0) ++counts[i];
                 if (mask != 0 && (categories & mask) == 0) continue;
@@ -931,11 +944,17 @@ private:
             juce::String summary = juce::String(matches.size()) + " resultats / " + juce::String(inspected) + " fichiers | ";
             for (int i = 0; i < 5; ++i)
                 summary += labels[i] + ": " + juce::String(counts[i]) + (i == 4 ? "" : "  ");
-            juce::MessageManager::callAsync([safe, matches, summary, mask, query]
+            juce::MessageManager::callAsync([safe, matches, summary, mask, query, library, indexedFiles, reuseIndex, reachedLimit]
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 safe->sampleSearchRunning.store(false);
                 safe->musicFilterButton.setEnabled(true);
+                if (!reuseIndex)
+                {
+                    safe->sampleIndex = indexedFiles;
+                    safe->sampleIndexLibrary = library;
+                    safe->sampleIndexComplete = !reachedLimit;
+                }
                 if (safe->category != Category::audio) return;
                 if (safe->sampleSearchPending || safe->sampleFilterMask != mask || safe->sampleNameQuery.trim() != query)
                 {
@@ -1070,7 +1089,12 @@ private:
                 const auto folder = selected.getResult();
                 if (!folder.isDirectory()) return;
                 if (libraryPreferenceFile().replaceWithText(folder.getFullPathName()))
+                {
+                    safe->sampleIndex.clear();
+                    safe->sampleIndexComplete = false;
+                    safe->sampleIndexLibrary = {};
                     safe->setRoot(folder);
+                }
             });
     }
 
@@ -1810,6 +1834,9 @@ private:
     juce::TextButton browsePacksButton, musicFilterButton;
     juce::TextEditor sampleNameSearch;
     juce::String sampleNameQuery;
+    juce::Array<juce::File> sampleIndex;
+    juce::File sampleIndexLibrary;
+    bool sampleIndexComplete = false;
     int sampleFilterMask = 0;
     bool sampleSearchPending = false;
     juce::uint32 sampleSearchChangedAt = 0;
