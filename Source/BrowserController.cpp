@@ -1092,7 +1092,7 @@ private:
                 {
                     safe->sampleIndex.clear();
                     safe->sampleIndexComplete = false;
-                    safe->sampleIndexLibrary = {};
+                    safe->sampleIndexLibrary = juce::File();
                     safe->setRoot(folder);
                 }
             });
