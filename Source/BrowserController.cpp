@@ -2001,13 +2001,21 @@ private:
         {
             if (scanning.load())
             {
-                if (category == Category::plugins) pluginStatus.setText(getScanStatus(), juce::dontSendNotification);
-                else spliceInfo.setText(getScanStatus(), juce::dontSendNotification);
+                const auto progressText = getScanStatus();
+                if (category == Category::plugins)
+                {
+                    pluginStatus.setText(progressText, juce::dontSendNotification);
+                    scanPluginsButton.setButtonText(progressText);
+                    scanPluginsButton.setTooltip(progressText);
+                }
+                else spliceInfo.setText(progressText, juce::dontSendNotification);
             }
             else if (scanFinishedPending.exchange(false))
             {
                 if (scanThread.joinable()) scanThread.join();
                 refreshPlugins();
+                scanPluginsButton.setButtonText("SCANNER LES PLUGINS");
+                scanPluginsButton.setTooltip("Relancer le scan AU et VST3");
                 // Only auto-fetch from a curated catalogue. Never instantiate plugins for artwork.
                 const auto artworkManifest = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                     .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue").getChildFile("OfficialArtwork.tsv");
