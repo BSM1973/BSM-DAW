@@ -936,6 +936,7 @@ private:
                 if (safe == nullptr || safe->stopped.load()) return;
                 safe->sampleSearchRunning.store(false);
                 safe->musicFilterButton.setEnabled(true);
+                if (safe->category != Category::audio) return;
                 if (safe->sampleSearchPending || safe->sampleFilterMask != mask || safe->sampleNameQuery.trim() != query)
                 {
                     safe->sampleSearchPending = true;
@@ -957,7 +958,9 @@ private:
                         if (safe == nullptr || result < 1 || result > matches.size()) return;
                         const auto file = matches.getReference(result - 1);
                         if (!file.existsAsFile()) return;
+                        if (safe->category != Category::audio) return;
                         safe->setRoot(file.getParentDirectory());
+                        safe->fileTree.setSelectedFile(file);
                         safe->updateSamplePackInfo(file);
                     });
             });
@@ -1159,6 +1162,11 @@ private:
         resized();
         if (category == Category::audio)
         {
+            if (sampleNameQuery.isNotEmpty() || sampleFilterMask != 0)
+            {
+                sampleSearchPending = true;
+                sampleSearchChangedAt = juce::Time::getMillisecondCounter();
+            }
             const auto library = findInstalledSampleLibrary();
             if (library.isDirectory()) setRoot(library);
         }
@@ -1733,7 +1741,7 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
-        if (sampleSearchPending && !sampleSearchRunning.load()
+        if (category == Category::audio && sampleSearchPending && !sampleSearchRunning.load()
             && juce::Time::getMillisecondCounter() - sampleSearchChangedAt >= 350)
         {
             sampleSearchPending = false;
