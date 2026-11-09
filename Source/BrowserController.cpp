@@ -635,6 +635,12 @@ public:
         g.fillRect(0, 100, getWidth(), 1);
         if (category == Category::audio)
         {
+            g.setColour(juce::Colour(0xff89a6b9));
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+            g.drawText("BIBLIOTHÈQUE DE SAMPLES", 14, 219, juce::jmax(0, getWidth() - 28), 11, juce::Justification::centredLeft, true);
+        }
+        if (category == Category::audio)
+        {
             g.setColour(juce::Colour(0xff142638));
             g.fillRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f);
             g.setColour(juce::Colour(0xff324d63));
@@ -694,12 +700,14 @@ public:
         browsePacksButton.setBounds(juce::jmax(10, getWidth() - 160), 165, 70, 22);
         musicFilterButton.setBounds(juce::jmax(10, getWidth() - 86), 165, 76, 22);
         sampleNameSearch.setBounds(14, 190, juce::jmax(0, getWidth() - 28), 24);
-        fileTree.setBounds(10, category == Category::audio ? 224 : 136,
+        samplePackInfo.setFont(juce::Font(10.0f));
+        previewInfo.setFont(juce::Font(11.0f, juce::Font::bold));
+        fileTree.setBounds(10, category == Category::audio ? 230 : 136,
             juce::jmax(0, getWidth() - 20),
-            juce::jmax(0, getHeight() - (category == Category::audio ? 376 : 248)));
+            juce::jmax(0, getHeight() - (category == Category::audio ? 382 : 248)));
         const int previewY = juce::jmax(136, getHeight() - 144);
         const int previewW = juce::jmax(0, (getWidth() - 24) / 2);
-        previewInfo.setBounds(10, previewY, juce::jmax(0, getWidth() - 20), 22);
+        previewInfo.setBounds(14, previewY, juce::jmax(0, getWidth() - 28), 22);
         previewPlay.setBounds(10, previewY + 65, previewW, 26);
         previewStop.setBounds(14 + previewW, previewY + 65, previewW, 26);
         previewVolume.setBounds(10, previewY + 97, juce::jmax(0, getWidth() - 96), 24);
@@ -789,9 +797,10 @@ private:
         const double seconds = rate > 0.0 ? (double)reader->lengthInSamples / rate : 0.0;
         const int totalSeconds = juce::jmax(0, (int)seconds);
         previewThumbnail.setSource(new juce::FileInputSource(file));
-        previewInfo.setText(file.getFileName() + " [" + file.getFileExtension().toUpperCase() + "]  -  " + juce::String(totalSeconds / 60)
+        previewInfo.setText(file.getFileNameWithoutExtension() + "  |  " + file.getFileExtension().trimCharactersAtStart(".").toUpperCase() + "  |  " + juce::String(totalSeconds / 60)
                             + ":" + juce::String(totalSeconds % 60).paddedLeft('0', 2),
                             juce::dontSendNotification);
+        previewInfo.setTooltip(file.getFullPathName() + "  |  " + juce::String(seconds, 2) + " s");
         previewReader = std::make_unique<juce::AudioFormatReaderSource>(reader.release(), true);
         previewTransport.setSource(previewReader.get(), 0, nullptr, rate);
         previewTransport.setGain((float)previewVolume.getValue());
