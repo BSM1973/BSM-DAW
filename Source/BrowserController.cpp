@@ -119,9 +119,26 @@ public:
             if (thumbnailImage.isValid()) g.drawImageWithin(thumbnailImage, imageArea.getX(), imageArea.getY(), imageArea.getWidth(), imageArea.getHeight(), juce::RectanglePlacement::centred);
             else
             {
-                g.setColour(juce::Colour(0xff8da6b1));
-                g.setFont(10.0f);
-                g.drawFittedText("IMAGE", imageArea, juce::Justification::centred, 1);
+                // Always provide a deterministic, locally rendered cover without network requests.
+                const auto manufacturer = description.manufacturerName.trim();
+                const auto title = description.name.trim();
+                const auto seed = (juce::uint32) (manufacturer + "|" + title).hashCode();
+                const auto accent = juce::Colour::fromHSV((float)(seed % 360) / 360.0f, 0.50f, 0.83f, 1.0f);
+                g.setGradientFill(juce::ColourGradient(juce::Colour(0xff132638),
+                    (float)imageArea.getX(), (float)imageArea.getY(),
+                    juce::Colour(0xff243c51), (float)imageArea.getRight(), (float)imageArea.getBottom(), false));
+                g.fillRoundedRectangle(imageArea.toFloat(), 5.0f);
+                g.setColour(accent);
+                g.fillRoundedRectangle((float)imageArea.getX() + 5.0f, (float)imageArea.getY() + 6.0f,
+                    3.0f, (float)imageArea.getHeight() - 12.0f, 1.5f);
+                g.setColour(juce::Colour(0xffeffcfd));
+                g.setFont(juce::Font(13.0f, juce::Font::bold));
+                g.drawFittedText(title, imageArea.reduced(12, 9).removeFromTop(36),
+                    juce::Justification::centred, 2);
+                g.setColour(juce::Colour(0xffb9ccd6));
+                g.setFont(juce::Font(8.0f));
+                g.drawFittedText(manufacturer.isNotEmpty() ? manufacturer : "LIBERTY PLUGINS",
+                    imageArea.withTrimmedTop(53).reduced(7, 2), juce::Justification::centred, 1);
             }
             textLeft = 102;
         }
@@ -291,6 +308,7 @@ public:
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         addAndMakeVisible(pluginTree);
         thumbnailModeButton.setButtonText("MINIATURES");
+        thumbnailModeButton.setTooltip("Affiche les images importees ou des couvertures generees automatiquement pour tous les plugins.");
         thumbnailModeButton.setClickingTogglesState(true);
         thumbnailModeButton.onClick = [this]
         {
@@ -306,6 +324,7 @@ public:
         thumbnailModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         addAndMakeVisible(thumbnailModeButton);
         importThumbnailButton.setButtonText("IMPORTER IMAGE");
+        importThumbnailButton.setTooltip("Importer une image officielle ou personnalisee. Une couverture locale est creee automatiquement si aucune image n est disponible.");
         importThumbnailButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         importThumbnailButton.onClick = [this] { importSelectedThumbnail(); };
