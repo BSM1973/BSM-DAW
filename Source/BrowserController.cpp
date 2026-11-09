@@ -826,8 +826,22 @@ private:
             juce::PopupMenu submenu;
             for (const auto& pack : packs)
             {
+                juce::PopupMenu packMenu;
                 packFolders.add(pack);
-                submenu.addItem(packFolders.size(), pack.getFileName());
+                packMenu.addItem(packFolders.size(), "OUVRIR LE PACK");
+                juce::Array<juce::File> categories;
+                pack.findChildFiles(categories, juce::File::findDirectories, false);
+                std::sort(categories.begin(), categories.end(), [](const auto& a, const auto& b)
+                {
+                    return a.getFileName().compareNatural(b.getFileName(), false) < 0;
+                });
+                if (!categories.isEmpty()) packMenu.addSeparator();
+                for (const auto& folder : categories)
+                {
+                    packFolders.add(folder);
+                    packMenu.addItem(packFolders.size(), folder.getFileName());
+                }
+                submenu.addSubMenu(pack.getFileName(), packMenu);
             }
             if (!packs.isEmpty()) menu.addSubMenu(manufacturer.getFileName(), submenu);
         }
