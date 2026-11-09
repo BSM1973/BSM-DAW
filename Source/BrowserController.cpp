@@ -342,6 +342,7 @@ public:
             menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
+            menu.addItem(4, "CAPTURER UNE INTERFACE (MAC)");
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -349,6 +350,7 @@ public:
                     if (safe == nullptr) return;
                     if (choice == 1) safe->importSelectedThumbnail();
                     if (choice == 2) safe->refreshOfficialArtwork();
+                    if (choice == 4) safe->captureSelectedPluginArtwork();
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -657,6 +659,7 @@ public:
         previewTransport.setSource(nullptr);
         previewReader.reset();
         if (artworkThread.joinable()) artworkThread.join();
+        if (captureThread.joinable()) captureThread.join();
         if (sampleSearchThread.joinable()) sampleSearchThread.join();
         if (scanThread.joinable()) scanThread.join();
         pluginTree.setRootItem(nullptr);
@@ -1305,6 +1308,63 @@ private:
                     + " echecs.", juce::dontSendNotification);
             });
         });
+    }
+
+    void captureSelectedPluginArtwork()
+    {
+       #if JUCE_MAC
+        const auto* selected = selectedPluginDescription();
+        if (selected == nullptr)
+        {
+            pluginStatus.setText("Selectionnez un plugin avant la capture.", juce::dontSendNotification);
+            return;
+        }
+        if (captureRunning.exchange(true)) return;
+        const auto identifier = selected->createIdentifierString();
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty").getChildFile("PluginThumbnails");
+        if (!folder.createDirectory())
+        {
+            captureRunning.store(false);
+            pluginStatus.setText("Dossier des captures inaccessible.", juce::dontSendNotification);
+            return;
+        }
+        const auto destination = folder.getChildFile(juce::String::toHexString(
+            (juce::int64) identifier.hashCode64()) + ".png");
+        const auto staged = folder.getNonexistentChildFile("capture", ".png", false);
+        pluginStatus.setText("Ouvrez l'interface du plugin, puis selectionnez sa zone a capturer.", juce::dontSendNotification);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        if (captureThread.joinable()) captureThread.join();
+        captureThread = std::thread([this, safe, staged, destination]
+        {
+            // Apple's screenshot utility runs out of process. Never instantiate third-party
+            // plugin code in the browser for the purpose of taking screenshots.
+            juce::ChildProcess process;
+            const bool started = process.start(juce::StringArray {
+                "/usr/sbin/screencapture", "-i", "-x", staged.getFullPathName() });
+            const bool completed = started && process.waitForProcessToFinish(60000);
+            if (started && !completed) process.kill();
+            bool saved = false;
+            if (completed && process.getExitCode() == 0 && staged.existsAsFile()
+                && staged.getSize() <= 5 * 1024 * 1024)
+            {
+                const auto picture = juce::ImageFileFormat::loadFrom(staged);
+                if (picture.isValid() && picture.getWidth() <= 4096 && picture.getHeight() <= 4096)
+                    saved = staged.replaceFileIn(destination);
+            }
+            staged.deleteFile();
+            captureRunning.store(false);
+            juce::MessageManager::callAsync([safe, saved]
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                if (saved) safe->rebuildPluginTree();
+                safe->pluginStatus.setText(saved ? "Capture reelle enregistree." :
+                    "Capture annulee ou invalide.", juce::dontSendNotification);
+            });
+        });
+       #else
+        pluginStatus.setText("Capture disponible sur macOS uniquement.", juce::dontSendNotification);
+       #endif
     }
 
     void importSelectedThumbnail()
@@ -2088,7 +2148,8 @@ private:
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
-    std::thread scanThread, sampleSearchThread, artworkThread;
+    std::thread scanThread, sampleSearchThread, artworkThread, captureThread;
+    std::atomic<bool> captureRunning { false };
     std::atomic<bool> artworkRefreshing { false };
     std::atomic<bool> sampleSearchRunning { false };
     bool browserOpen = false, hostExpanded = false;
