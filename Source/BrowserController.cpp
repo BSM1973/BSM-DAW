@@ -69,6 +69,15 @@ public:
             const auto file = folder.getChildFile(juce::String::toHexString(
                 (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
             if (file.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(file);
+            // Recognise locally supplied authentic plugin screenshots without opening plugin code.
+            // Prefer an exact plug-in identifier; never guess a screenshot from a brand alone.
+            if (!thumbnailImage.isValid())
+            {
+                const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
+                const auto exact = catalogue.getChildFile(juce::String::toHexString(
+                    (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
+                if (exact.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(exact);
+            }
         }
     }
 
@@ -308,7 +317,7 @@ public:
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         addAndMakeVisible(pluginTree);
         thumbnailModeButton.setButtonText("MINIATURES");
-        thumbnailModeButton.setTooltip("Affiche les images importees ou des couvertures generees automatiquement pour tous les plugins.");
+        thumbnailModeButton.setTooltip("Affiche les captures authentiques du catalogue local quand elles existent; sinon une couverture provisoire.");
         thumbnailModeButton.setClickingTogglesState(true);
         thumbnailModeButton.onClick = [this]
         {
@@ -324,7 +333,7 @@ public:
         thumbnailModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         addAndMakeVisible(thumbnailModeButton);
         importThumbnailButton.setButtonText("IMPORTER IMAGE");
-        importThumbnailButton.setTooltip("Importer une image officielle ou personnalisee. Une couverture locale est creee automatiquement si aucune image n est disponible.");
+        importThumbnailButton.setTooltip("Importer une capture reelle du plugin selectionne. Les images sont associees a son identifiant exact.");
         importThumbnailButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         importThumbnailButton.onClick = [this] { importSelectedThumbnail(); };
