@@ -20,6 +20,7 @@ target_sources(BSM_DAW PRIVATE
  Source/OneKnobEffects.cpp Source/DynamicTrackController.cpp Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/PluginHost.cpp)
 if(APPLE)
   target_sources(BSM_DAW PRIVATE Source/NativePluginCapture.mm)
+  set_source_files_properties(Source/NativePluginCapture.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
   target_link_libraries(BSM_DAW PRIVATE "-framework ScreenCaptureKit" "-framework AppKit" "-framework CoreGraphics")
 endif()
 target_include_directories(BSM_DAW PRIVATE Source)
