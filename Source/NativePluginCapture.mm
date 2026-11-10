@@ -32,21 +32,49 @@ bool captureLibertyPluginWindowNative(const juce::String& pluginName,
                 return false;
             }
 
+            // Match the actual NSWindow peer rather than assuming a plugin
+            // window's title contains the plug-in name. Many AU/VST3 hosts
+            // expose only a generic title (or no title at all).
             NSString* wanted = [NSString stringWithUTF8String:pluginName.toRawUTF8()];
+            NSMutableSet<NSNumber*>* eligibleWindowIds = [NSMutableSet set];
+            NSNumber* preferredWindowId = nil;
+            for (NSWindow* nativeWindow in [NSApp orderedWindows])
+            {
+                if (![nativeWindow isVisible] || [nativeWindow isMiniaturized]) continue;
+                if (nativeWindow.frame.size.width < 80 || nativeWindow.frame.size.height < 60) continue;
+                if ([nativeWindow isKindOfClass:[NSPanel class]]) continue;
+                NSNumber* windowId = @([nativeWindow windowNumber]);
+                [eligibleWindowIds addObject:windowId];
+                if (wanted.length > 0
+                    && [nativeWindow.title localizedCaseInsensitiveContainsString:wanted])
+                    preferredWindowId = windowId;
+            }
+
             SCWindow* target = nil;
+            CGFloat bestArea = 0;
             for (SCWindow* window in shareable.windows)
             {
                 if (window.owningApplication.processID != getpid()) continue;
                 if (window.frame.size.width < 80 || window.frame.size.height < 60) continue;
-                if ([window.title localizedCaseInsensitiveContainsString:wanted]
-                    || [wanted localizedCaseInsensitiveContainsString:window.title ?: @""])
+                NSNumber* windowId = @(window.windowID);
+                if (![eligibleWindowIds containsObject:windowId]) continue;
+                if (preferredWindowId != nil && [windowId isEqualToNumber:preferredWindowId])
                 {
-                    if (window.title.length > 0) { target = window; break; }
+                    target = window;
+                    break;
+                }
+                // In the absence of a title match, prefer a smaller
+                // secondary editor window over the DAW's large main window.
+                const CGFloat area = window.frame.size.width * window.frame.size.height;
+                if (area > bestArea && area < 1800.0 * 1400.0)
+                {
+                    bestArea = area;
+                    target = window;
                 }
             }
             if (target == nil)
             {
-                error = "Fenetre du plugin introuvable. Ouvrez son interface avant la capture.";
+                error = "Aucune fenetre de plugin identifiable. La capture n'a pas ete lancee.";
                 return false;
             }
             SCContentFilter* filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:target];
