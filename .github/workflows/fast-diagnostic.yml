@@ -203,18 +203,29 @@ jobs:
                 input="build-fast/riche-fixtures/${kind}.wav"
                 output="build-fast/riche-fixtures/${kind}-${ratio}-${block}.wav"
                 echo "RICHE case: kind=$kind ratio=$ratio block=$block"
-                if "$APP" --render-riche-test "$input" "$output" "$ratio" "$block"; then
+                # Keep the diagnostic bounded: a crashed audio renderer must not
+                # trigger an unbounded LLDB replay on a hosted macOS runner.
+                # Python propagates the signal as a non-zero exit status.
+                if python3 - "$APP" "$input" "$output" "$ratio" "$block" <<'PY'
+          import subprocess
+          import sys
+          app, source, destination, ratio, block = sys.argv[1:]
+          try:
+              result = subprocess.run(
+                  [app, "--render-riche-test", source, destination, ratio, block],
+                  timeout=60, check=False)
+          except subprocess.TimeoutExpired:
+              print(f"::error::RICHE renderer timed out: ratio={ratio} block={block}", flush=True)
+              sys.exit(124)
+          if result.returncode != 0:
+              print(f"::error::RICHE renderer failed: ratio={ratio} block={block} exit={result.returncode}", flush=True)
+              sys.exit(1)
+          PY
+                then
                   echo "RICHE render OK: $kind $ratio $block"
                 else
-                  original_status=$?
-                  echo "::error::RICHE failed: kind=$kind ratio=$ratio block=$block (exit $original_status)"
-                  echo "Capturing LLDB backtrace for the exact failed fixture (diagnostic replay)."
-                  # LLDB may be restricted on hosted runners. Preserve the original failure.
-                  lldb --batch -o run -o "thread backtrace all" -- "$APP" \\
-                    --render-riche-test "$input" "$output" "$ratio" "$block" \\
-                    > build-fast/riche-fixtures/lldb-crash.txt 2>&1 || true
-                  cat build-fast/riche-fixtures/lldb-crash.txt
-                  exit "$original_status"
+                  echo "::error::RICHE failed: kind=$kind ratio=$ratio block=$block"
+                  exit 1
                 fi
                 python3 Tests/RicheAudioValidation.py --reference "$input" --render "$output" --ratio "$ratio" --boundary "$block" --json "build-fast/riche-fixtures/${kind}-${ratio}-${block}.json" > /dev/null
               done
@@ -229,7 +240,6 @@ jobs:
           path: |
             build-fast/riche-fixtures/*.json
             build-fast/riche-fixtures/*.wav
-            build-fast/riche-fixtures/lldb-crash.txt
           if-no-files-found: warn
           retention-days: 14
 
