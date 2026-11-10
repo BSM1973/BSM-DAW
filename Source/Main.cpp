@@ -30,6 +30,25 @@ static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     auto image = editor->createComponentSnapshot(editor->getLocalBounds(), false, 1.0f);
     editor->removeFromDesktop();
     if (!image.isValid()) return false;
+    // A valid PNG is not necessarily a rendered plugin UI. Native child views
+    // (Metal/OpenGL/NSView) may be absent from JUCE component snapshots.
+    // Reject near-uniform captures instead of caching a white rectangle.
+    const auto w = image.getWidth(), h = image.getHeight();
+    if (w < 80 || h < 60) return false;
+    const auto reference = image.getPixelAt(w / 2, h / 2);
+    int different = 0;
+    int sampled = 0;
+    for (int y = h / 10; y < h * 9 / 10; y += juce::jmax(1, h / 24))
+        for (int x = w / 10; x < w * 9 / 10; x += juce::jmax(1, w / 32))
+        {
+            const auto pixel = image.getPixelAt(x, y);
+            const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
+                + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
+                + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
+            if (delta > 36) ++different;
+            ++sampled;
+        }
+    if (sampled == 0 || different < sampled / 50) return false;
     juce::PNGImageFormat png;
     juce::MemoryOutputStream bytes;
     if (!png.writeImageToStream(image, bytes) || bytes.getDataSize() > 5 * 1024 * 1024) return false;
