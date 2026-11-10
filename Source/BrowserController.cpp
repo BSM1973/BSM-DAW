@@ -2,6 +2,9 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#if JUCE_MAC
+#include "NativePluginCapture.h"
+#endif
 #include "OneKnobEffects.h"
 #include "LibertyDesignSystem.h"
 #include "PageNavigationLayout.h"
@@ -342,7 +345,7 @@ public:
             menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
-            menu.addItem(4, "CAPTURER LA FENETRE DU PLUGIN (MAC)");
+            menu.addItem(4, "CAPTURE NATIVE DU PLUGIN (MAC)");
             menu.addItem(5, "CAPTURE ISOLEE AUTOMATIQUE (TEST)");
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
@@ -1407,27 +1410,21 @@ private:
         const auto destination = folder.getChildFile(juce::String::toHexString(
             (juce::int64) identifier.hashCode64()) + ".png");
         const auto staged = folder.getNonexistentChildFile("capture", ".png", false);
-        pluginStatus.setText("Laissez le plugin ouvert, puis cliquez sur sa fenetre pour la capturer.", juce::dontSendNotification);
+        pluginStatus.setText("Capture native du plugin ouvert en cours...", juce::dontSendNotification);
+        const auto pluginName = selected->name;
         juce::Component::SafePointer<BrowserPanel> safe(this);
         if (captureThread.joinable()) captureThread.join();
-        captureThread = std::thread([this, safe, staged, destination]
+        captureThread = std::thread([this, safe, staged, destination, pluginName]
         {
-            // Apple's screenshot utility runs out of process. Never instantiate third-party
-            // plugin code in the browser for the purpose of taking screenshots.
-            juce::ChildProcess process;
-            const bool started = process.start(juce::StringArray {
-                "/usr/sbin/screencapture", "-i", "-W", "-x", staged.getFullPathName() });
-            const bool completed = started && process.waitForProcessToFinish(60000);
-            if (started && !completed) process.kill();
+            juce::String detail;
+            const bool captured = captureLibertyPluginWindowNative(pluginName, staged, detail);
             bool saved = false;
-            if (completed && process.getExitCode() == 0 && staged.existsAsFile()
-                && staged.getSize() <= 5 * 1024 * 1024)
+            if (captured && staged.existsAsFile() && staged.getSize() <= 5 * 1024 * 1024)
             {
                 const auto picture = juce::ImageFileFormat::loadFrom(staged);
                 if (picture.isValid() && picture.getWidth() >= 80 && picture.getHeight() >= 60
                     && picture.getWidth() <= 4096 && picture.getHeight() <= 4096)
                 {
-                    // Reject uniform/blank screenshots instead of caching a white tile.
                     int varied = 0, sampled = 0;
                     const auto reference = picture.getPixelAt(picture.getWidth() / 2, picture.getHeight() / 2);
                     for (int y = picture.getHeight() / 10; y < picture.getHeight() * 9 / 10; y += juce::jmax(1, picture.getHeight() / 24))
@@ -1442,16 +1439,22 @@ private:
                         }
                     if (sampled > 0 && varied >= sampled / 50)
                         saved = staged.replaceFileIn(destination);
+                    else detail = "La capture native est blanche ou uniforme.";
                 }
+                else detail = "Dimensions de la capture invalides.";
             }
             staged.deleteFile();
             captureRunning.store(false);
-            juce::MessageManager::callAsync([safe, saved]
+            juce::MessageManager::callAsync([safe, saved, detail]
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 if (saved) safe->rebuildPluginTree();
-                safe->pluginStatus.setText(saved ? "Capture reelle enregistree." :
-                    "Capture annulee ou invalide.", juce::dontSendNotification);
+                safe->pluginStatus.setText(saved ? "Miniature native enregistree." : detail,
+                    juce::dontSendNotification);
+                if (!saved)
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::MessageBoxIconType::WarningIcon, "Capture native",
+                        detail.isNotEmpty() ? detail : "Capture impossible.");
             });
         });
        #else
