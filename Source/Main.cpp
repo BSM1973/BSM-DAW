@@ -25,7 +25,7 @@ static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     editor->toFront(false);
     for (int i = 0; i < 12; ++i)
     {
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+        juce::Thread::sleep(100);
     }
     auto image = editor->createComponentSnapshot(editor->getLocalBounds(), false, 1.0f);
     editor->removeFromDesktop();
