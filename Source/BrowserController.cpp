@@ -1390,76 +1390,18 @@ private:
 
     void captureSelectedPluginArtwork()
     {
-       #if JUCE_MAC
-        const auto* selected = selectedPluginDescription();
-        if (selected == nullptr)
-        {
-            pluginStatus.setText("Selectionnez un plugin avant la capture.", juce::dontSendNotification);
-            return;
-        }
-        if (captureRunning.exchange(true)) return;
-        const auto identifier = selected->createIdentifierString();
-        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-            .getChildFile("Liberty").getChildFile("PluginThumbnails");
-        if (!folder.createDirectory())
-        {
-            captureRunning.store(false);
-            pluginStatus.setText("Dossier des captures inaccessible.", juce::dontSendNotification);
-            return;
-        }
-        const auto destination = folder.getChildFile(juce::String::toHexString(
-            (juce::int64) identifier.hashCode64()) + ".png");
-        const auto staged = folder.getNonexistentChildFile("capture", ".png", false);
-        pluginStatus.setText("Capture native du plugin ouvert en cours...", juce::dontSendNotification);
-        const auto pluginName = selected->name;
-        juce::Component::SafePointer<BrowserPanel> safe(this);
-        if (captureThread.joinable()) captureThread.join();
-        captureThread = std::thread([this, safe, staged, destination, pluginName]
-        {
-            juce::String detail;
-            const bool captured = captureLibertyPluginWindowNative(pluginName, staged, detail);
-            bool saved = false;
-            if (captured && staged.existsAsFile() && staged.getSize() <= 5 * 1024 * 1024)
-            {
-                const auto picture = juce::ImageFileFormat::loadFrom(staged);
-                if (picture.isValid() && picture.getWidth() >= 80 && picture.getHeight() >= 60
-                    && picture.getWidth() <= 4096 && picture.getHeight() <= 4096)
-                {
-                    int varied = 0, sampled = 0;
-                    const auto reference = picture.getPixelAt(picture.getWidth() / 2, picture.getHeight() / 2);
-                    for (int y = picture.getHeight() / 10; y < picture.getHeight() * 9 / 10; y += juce::jmax(1, picture.getHeight() / 24))
-                        for (int x = picture.getWidth() / 10; x < picture.getWidth() * 9 / 10; x += juce::jmax(1, picture.getWidth() / 32))
-                        {
-                            const auto pixel = picture.getPixelAt(x, y);
-                            const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
-                                + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
-                                + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
-                            if (delta > 36) ++varied;
-                            ++sampled;
-                        }
-                    if (sampled > 0 && varied >= sampled / 50)
-                        saved = staged.replaceFileIn(destination);
-                    else detail = "La capture native est blanche ou uniforme.";
-                }
-                else detail = "Dimensions de la capture invalides.";
-            }
-            staged.deleteFile();
-            captureRunning.store(false);
-            juce::MessageManager::callAsync([safe, saved, detail]
-            {
-                if (safe == nullptr || safe->stopped.load()) return;
-                if (saved) safe->rebuildPluginTree();
-                safe->pluginStatus.setText(saved ? "Miniature native enregistree." : detail,
-                    juce::dontSendNotification);
-                if (!saved)
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::WarningIcon, "Capture native",
-                        detail.isNotEmpty() ? detail : "Capture impossible.");
-            });
-        });
-       #else
-        pluginStatus.setText("Capture disponible sur macOS uniquement.", juce::dontSendNotification);
-       #endif
+        // Safety stop: the native ScreenCaptureKit implementation has
+        // repeatedly crashed the host process (EXC_BAD_ACCESS) while
+        // capturing a third-party plugin. Never invoke it in-process
+        // until its asynchronous object lifetimes and thread ownership
+        // have been redesigned and tested in an isolated helper.
+        const auto message = juce::String::fromUTF8(
+            "Capture native temporairement désactivée pour protéger Liberty. "
+            "Vous pouvez continuer à utiliser les plugins normalement.");
+        pluginStatus.setText(message, juce::dontSendNotification);
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Capture native", message);
     }
 
     void importSelectedThumbnail()
