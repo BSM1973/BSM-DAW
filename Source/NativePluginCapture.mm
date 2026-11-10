@@ -32,49 +32,34 @@ bool captureLibertyPluginWindowNative(const juce::String& pluginName,
                 return false;
             }
 
-            // Match the actual NSWindow peer rather than assuming a plugin
-            // window's title contains the plug-in name. Many AU/VST3 hosts
-            // expose only a generic title (or no title at all).
+            // Never call AppKit window APIs from this capture worker.
+            // In particular, [NSApp orderedWindows] on a background thread
+            // caused an EXC_BAD_ACCESS in the macOS crash report.
+            // ScreenCaptureKit already provides process-owned window IDs.
             NSString* wanted = [NSString stringWithUTF8String:pluginName.toRawUTF8()];
-            NSMutableSet<NSNumber*>* eligibleWindowIds = [NSMutableSet set];
-            NSNumber* preferredWindowId = nil;
-            for (NSWindow* nativeWindow in [NSApp orderedWindows])
-            {
-                if (![nativeWindow isVisible] || [nativeWindow isMiniaturized]) continue;
-                if (nativeWindow.frame.size.width < 80 || nativeWindow.frame.size.height < 60) continue;
-                if ([nativeWindow isKindOfClass:[NSPanel class]]) continue;
-                NSNumber* windowId = @([nativeWindow windowNumber]);
-                [eligibleWindowIds addObject:windowId];
-                if (wanted.length > 0
-                    && [nativeWindow.title localizedCaseInsensitiveContainsString:wanted])
-                    preferredWindowId = windowId;
-            }
-
             SCWindow* target = nil;
-            CGFloat bestArea = 0;
+            CGFloat bestScore = -1.0;
             for (SCWindow* window in shareable.windows)
             {
                 if (window.owningApplication.processID != getpid()) continue;
-                if (window.frame.size.width < 80 || window.frame.size.height < 60) continue;
-                NSNumber* windowId = @(window.windowID);
-                if (![eligibleWindowIds containsObject:windowId]) continue;
-                if (preferredWindowId != nil && [windowId isEqualToNumber:preferredWindowId])
+                const CGFloat width = window.frame.size.width;
+                const CGFloat height = window.frame.size.height;
+                if (width < 80 || height < 60 || width > 4096 || height > 4096) continue;
+                const BOOL titleMatches = wanted.length > 0 && window.title.length > 0
+                    && [window.title localizedCaseInsensitiveContainsString:wanted];
+                // Avoid selecting the DAW's large main window when possible.
+                const CGFloat area = width * height;
+                const CGFloat score = (titleMatches ? 100000000.0 : 0.0)
+                    + ((area <= 1800.0 * 1400.0) ? area : -area);
+                if (score > bestScore)
                 {
-                    target = window;
-                    break;
-                }
-                // In the absence of a title match, prefer a smaller
-                // secondary editor window over the DAW's large main window.
-                const CGFloat area = window.frame.size.width * window.frame.size.height;
-                if (area > bestArea && area < 1800.0 * 1400.0)
-                {
-                    bestArea = area;
+                    bestScore = score;
                     target = window;
                 }
             }
             if (target == nil)
             {
-                error = "Aucune fenetre de plugin identifiable. La capture n'a pas ete lancee.";
+                error = "Aucune fenetre macOS du plugin disponible pour la capture.";
                 return false;
             }
             SCContentFilter* filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:target];
