@@ -5,69 +5,123 @@
 #include "PluginHost.h"
 // Isolated artwork worker: invoked only in a separate Liberty process.
 // Never load third-party plugin code inside the browser for thumbnail generation.
-static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::File& output)
+static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::File& output)
 {
     const auto logFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("Liberty").getChildFile("PluginArtworkCapture.log");
     logFile.getParentDirectory().createDirectory();
-    logFile.replaceWithText("Capture isolee : demarrage\n");
-    const auto trace = [&logFile](const juce::String& message)
+    logFile.replaceWithText("Capture isolée : démarrage\n");
+    const auto trace = [logFile](const juce::String& message)
     {
         logFile.appendText(message + "\n");
     };
-    trace("Lecture du XML");
+    const auto fail = [trace](const juce::String& message)
+    {
+        trace("ÉCHEC : " + message);
+        juce::JUCEApplicationBase::getInstance()->setApplicationReturnValue(7);
+        juce::JUCEApplicationBase::getInstance()->quit();
+    };
+
     const auto xml = juce::XmlDocument::parse(juce::File(xmlPath));
-    if (xml == nullptr) { trace("ECHEC : XML illisible"); return false; }
+    if (xml == nullptr) { fail("Description XML illisible"); return; }
     juce::PluginDescription description;
-    if (!description.loadFromXml(*xml)) { trace("ECHEC : description invalide"); return false; }
+    if (!description.loadFromXml(*xml)) { fail("Description du plugin invalide"); return; }
+
+    // The editor and its processor must remain alive while the message loop runs.
+    struct CaptureState
+    {
+        std::unique_ptr<juce::AudioPluginInstance> processor;
+        std::unique_ptr<juce::AudioProcessorEditor> editor;
+        ~CaptureState()
+        {
+            if (editor != nullptr) editor->removeFromDesktop();
+            editor.reset();
+            processor.reset();
+        }
+    };
+    auto state = std::make_shared<CaptureState>();
     juce::AudioPluginFormatManager formats;
     formats.addDefaultFormats();
-    trace("Chargement : " + description.name);
     juce::String error;
-    auto processor = formats.createPluginInstance(description, 44100.0, 512, error);
-    if (processor == nullptr) { trace("ECHEC : chargement : " + error); return false; }
-    if (!processor->hasEditor()) { trace("ECHEC : interface absente"); return false; }
-    std::unique_ptr<juce::AudioProcessorEditor> editor(processor->createEditorIfNeeded());
-    if (editor == nullptr) { trace("ECHEC : creation interface"); return false; }
-    const int width = editor->getWidth(), height = editor->getHeight();
-    if (width < 80 || height < 60 || width > 4096 || height > 4096) return false;
-    trace("Interface creee : " + juce::String(width) + "x" + juce::String(height));
-    editor->setVisible(true);
-    editor->addToDesktop(0);
-    editor->toFront(false);
-    for (int i = 0; i < 12; ++i)
+    trace("Chargement : " + description.name);
+    state->processor = formats.createPluginInstance(description, 44100.0, 512, error);
+    if (state->processor == nullptr) { fail("Chargement impossible : " + error); return; }
+    if (!state->processor->hasEditor()) { fail("Le plugin ne possède pas d'interface"); return; }
+    state->editor.reset(state->processor->createEditorIfNeeded());
+    if (state->editor == nullptr) { fail("Création de l'interface impossible"); return; }
+    const auto bounds = state->editor->getLocalBounds();
+    if (bounds.getWidth() < 80 || bounds.getHeight() < 60
+        || bounds.getWidth() > 4096 || bounds.getHeight() > 4096)
     {
-        juce::Thread::sleep(100);
+        fail("Dimensions de l'interface invalides");
+        return;
     }
-    trace("Capture JUCE...");
-    auto image = editor->createComponentSnapshot(editor->getLocalBounds(), false, 1.0f);
-    editor->removeFromDesktop();
-    if (!image.isValid()) { trace("ECHEC : image invalide"); return false; }
-    // A valid PNG is not necessarily a rendered plugin UI. Native child views
-    // (Metal/OpenGL/NSView) may be absent from JUCE component snapshots.
-    // Reject near-uniform captures instead of caching a white rectangle.
-    const auto w = image.getWidth(), h = image.getHeight();
-    if (w < 80 || h < 60) return false;
-    const auto reference = image.getPixelAt(w / 2, h / 2);
-    int different = 0;
-    int sampled = 0;
-    for (int y = h / 10; y < h * 9 / 10; y += juce::jmax(1, h / 24))
-        for (int x = w / 10; x < w * 9 / 10; x += juce::jmax(1, w / 32))
+    state->editor->addToDesktop(juce::ComponentPeer::windowIsTemporary);
+    state->editor->setVisible(true);
+    state->editor->toFront(true);
+    trace("Interface ouverte. Attente du rendu natif macOS...");
+
+    // Unlike sleeping on the UI thread, this timer lets AU/VST3 native views
+    // (including Metal/OpenGL content) process their paint events.
+    juce::Timer::callAfterDelay(1800, [state, output, trace, fail]()
+    {
+       #if JUCE_MAC
+        const auto area = state->editor->getScreenBounds();
+        if (area.getWidth() < 80 || area.getHeight() < 60)
         {
-            const auto pixel = image.getPixelAt(x, y);
-            const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
-                + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
-                + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
-            if (delta > 36) ++different;
-            ++sampled;
+            fail("Fenêtre du plugin introuvable");
+            return;
         }
-    if (sampled == 0 || different < sampled / 50) { trace("ECHEC : capture uniforme ou blanche"); return false; }
-    juce::PNGImageFormat png;
-    juce::MemoryOutputStream bytes;
-    if (!png.writeImageToStream(image, bytes) || bytes.getDataSize() > 5 * 1024 * 1024) return false;
-    const bool saved = output.replaceWithData(bytes.getData(), bytes.getDataSize());
-    trace(saved ? "SUCCES : PNG cree" : "ECHEC : ecriture PNG");
-    return saved;
+        // Capture the actual on-screen native window content, not a JUCE snapshot.
+        // macOS may require Screen Recording permission for Liberty.
+        juce::ChildProcess capture;
+        const juce::String region = "-R" + juce::String(area.getX()) + ","
+            + juce::String(area.getY()) + "," + juce::String(area.getWidth())
+            + "," + juce::String(area.getHeight());
+        const bool started = capture.start(juce::StringArray {
+            "/usr/sbin/screencapture", "-x", region, output.getFullPathName() });
+        const bool finished = started && capture.waitForProcessToFinish(6000);
+        if (started && !finished) capture.kill();
+        if (!finished || capture.getExitCode() != 0 || !output.existsAsFile())
+        {
+            fail("Capture macOS impossible. Vérifiez l'autorisation Enregistrement de l'écran pour Liberty.");
+            return;
+        }
+        const auto image = juce::ImageFileFormat::loadFrom(output);
+        if (!image.isValid()) { fail("Image macOS invalide"); return; }
+        const auto w = image.getWidth(), h = image.getHeight();
+        int different = 0, sampled = 0;
+        const auto reference = image.getPixelAt(w / 2, h / 2);
+        for (int y = h / 10; y < h * 9 / 10; y += juce::jmax(1, h / 24))
+            for (int x = w / 10; x < w * 9 / 10; x += juce::jmax(1, w / 32))
+            {
+                const auto pixel = image.getPixelAt(x, y);
+                const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
+                    + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
+                    + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
+                if (delta > 36) ++different;
+                ++sampled;
+            }
+        if (sampled == 0 || different < sampled / 50)
+        {
+            output.deleteFile();
+            fail("Image blanche ou uniforme. Vérifiez l'autorisation de capture d'écran macOS.");
+            return;
+        }
+        if (output.getSize() > 5 * 1024 * 1024)
+        {
+            output.deleteFile();
+            fail("Capture supérieure à 5 Mo");
+            return;
+        }
+        trace("SUCCÈS : interface native capturée");
+        juce::JUCEApplicationBase::getInstance()->setApplicationReturnValue(0);
+       #else
+        fail("Capture native disponible uniquement sur macOS");
+        return;
+       #endif
+        juce::JUCEApplicationBase::getInstance()->quit();
+    });
 }
 bool handleLibertyArrangementClipKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key); bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
@@ -250,7 +304,7 @@ static bool renderRicheFixture(const juce::StringArray& args)
 #include "../Tests/ChannelProcessingSmoke.h"
 void shutdownLibertyTestControllers(){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();}
 bool runLibertyArrangementToolsSmoke();
-class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>0&&a[0]=="--channel-processing-test"){const bool ok=runLibertyChannelProcessingSmoke();setApplicationReturnValue(ok?0:6);quit();return;}if(a.size()>0&&a[0]=="--arrangement-tools-test"){const bool ok=runLibertyArrangementToolsSmoke();setApplicationReturnValue(ok?0:5);quit();return;}if(a.size()>0&&a[0]=="--audio-clip-playback-test"){const bool ok=runLibertyAudioClipPlaybackSmoke();setApplicationReturnValue(ok?0:4);quit();return;}if(a.size()>0&&a[0]=="--render-riche-test"){const bool ok=renderRicheFixture(a);setApplicationReturnValue(ok?0:3);quit();return;}if(a.size()>=3&&a[0]=="--liberty-artwork-worker"){const bool ok=renderLibertyPluginArtwork(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:7);quit();return;}if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
+class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>0&&a[0]=="--channel-processing-test"){const bool ok=runLibertyChannelProcessingSmoke();setApplicationReturnValue(ok?0:6);quit();return;}if(a.size()>0&&a[0]=="--arrangement-tools-test"){const bool ok=runLibertyArrangementToolsSmoke();setApplicationReturnValue(ok?0:5);quit();return;}if(a.size()>0&&a[0]=="--audio-clip-playback-test"){const bool ok=runLibertyAudioClipPlaybackSmoke();setApplicationReturnValue(ok?0:4);quit();return;}if(a.size()>0&&a[0]=="--render-riche-test"){const bool ok=renderRicheFixture(a);setApplicationReturnValue(ok?0:3);quit();return;}if(a.size()>=3&&a[0]=="--liberty-artwork-worker"){renderLibertyPluginArtwork(a[1],juce::File(a[2]));return;}if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
 LibertyMenuLookAndFeel applicationMenuLookAndFeel;
 // First-run project chooser: custom-painted, scalable and blocking the editor
 // until the user explicitly chooses a session template.
