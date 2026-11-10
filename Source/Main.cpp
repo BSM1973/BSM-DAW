@@ -7,6 +7,9 @@
 #include "MainComponent.h"
 #include "MidiEditor.h"
 #include "PluginHost.h"
+#if JUCE_MAC
+#include "NativePluginCapture.h"
+#endif
 // Isolated artwork worker: invoked only in a separate Liberty process.
 // Never load third-party plugin code inside the browser for thumbnail generation.
 static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::File& output)
@@ -70,77 +73,15 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     juce::Timer::callAfterDelay(1800, [state, output, trace, fail]()
     {
        #if JUCE_MAC
-        // Find the actual window owned by the isolated worker, not a screen
-        // rectangle that may be covered by the main Liberty application.
+        // ScreenCaptureKit runs only inside this disposable artwork worker.
+        // A crash or permission failure must never terminate the main DAW.
         juce::Process::makeForegroundProcess();
         state->editor->toFront(true);
-        CGWindowID windowId = 0;
-        const auto editorBounds = state->editor->getScreenBounds();
-        CFArrayRef windows = CGWindowListCopyWindowInfo(
-            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-            kCGNullWindowID);
-        if (windows != nullptr)
+        juce::String captureError;
+        trace("ScreenCaptureKit : capture dans le processus isole");
+        if (!captureLibertyPluginWindowNative(state->processor->getName(), output, captureError))
         {
-            const auto count = CFArrayGetCount(windows);
-            double bestScore = 1.0e12;
-            for (CFIndex i = 0; i < count; ++i)
-            {
-                auto* info = static_cast<CFDictionaryRef>(
-                    const_cast<void*>(CFArrayGetValueAtIndex(windows, i)));
-                auto* owner = static_cast<CFNumberRef>(const_cast<void*>(
-                    CFDictionaryGetValue(info, kCGWindowOwnerPID)));
-                auto* number = static_cast<CFNumberRef>(const_cast<void*>(
-                    CFDictionaryGetValue(info, kCGWindowNumber)));
-                auto* bounds = static_cast<CFDictionaryRef>(const_cast<void*>(
-                    CFDictionaryGetValue(info, kCGWindowBounds)));
-                int pid = 0, id = 0;
-                CGRect rect = CGRectZero;
-                if (owner == nullptr || number == nullptr || bounds == nullptr
-                    || !CFNumberGetValue(owner, kCFNumberIntType, &pid)
-                    || !CFNumberGetValue(number, kCFNumberIntType, &id)
-                    || pid != static_cast<int>(getpid())
-                    || !CGRectMakeWithDictionaryRepresentation(bounds, &rect))
-                    continue;
-                if (rect.size.width < 80 || rect.size.height < 60) continue;
-                // A plugin can create multiple windows; the largest is not
-                // necessarily the editor. Prefer the editor's own geometry.
-                const double score =
-                    std::abs(rect.size.width - editorBounds.getWidth())
-                    + std::abs(rect.size.height - editorBounds.getHeight())
-                    + 0.5 * std::abs(rect.origin.x - editorBounds.getX())
-                    + 0.5 * std::abs(rect.origin.y - editorBounds.getY());
-                trace("Fenetre candidate " + juce::String(id)
-                    + " : " + juce::String(rect.size.width, 0) + "x"
-                    + juce::String(rect.size.height, 0)
-                    + " score=" + juce::String(score, 1));
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    windowId = static_cast<CGWindowID>(id);
-                }
-            }
-            CFRelease(windows);
-            if (bestScore > 250.0)
-            {
-                trace("Aucune fenetre ne correspond aux dimensions du plugin.");
-                windowId = 0;
-            }
-        }
-        if (windowId == 0)
-        {
-            fail("Fenetre native du plugin introuvable");
-            return;
-        }
-        trace("Fenetre macOS cible : " + juce::String(static_cast<int>(windowId)));
-        juce::ChildProcess capture;
-        const bool started = capture.start(juce::StringArray {
-            "/usr/sbin/screencapture", "-x", "-l",
-            juce::String(static_cast<int>(windowId)), output.getFullPathName() });
-        const bool finished = started && capture.waitForProcessToFinish(6000);
-        if (started && !finished) capture.kill();
-        if (!finished || capture.getExitCode() != 0 || !output.existsAsFile())
-        {
-            fail("Capture de la fenetre impossible. Verifiez l'autorisation macOS.");
+            fail("Capture native isolee impossible : " + captureError);
             return;
         }
         const auto image = juce::ImageFileFormat::loadFrom(output);
