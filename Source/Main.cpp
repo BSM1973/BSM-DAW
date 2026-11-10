@@ -75,13 +75,14 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
         juce::Process::makeForegroundProcess();
         state->editor->toFront(true);
         CGWindowID windowId = 0;
+        const auto editorBounds = state->editor->getScreenBounds();
         CFArrayRef windows = CGWindowListCopyWindowInfo(
             kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
             kCGNullWindowID);
         if (windows != nullptr)
         {
             const auto count = CFArrayGetCount(windows);
-            double largestArea = 0.0;
+            double bestScore = 1.0e12;
             for (CFIndex i = 0; i < count; ++i)
             {
                 auto* info = static_cast<CFDictionaryRef>(
@@ -100,14 +101,30 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
                     || pid != static_cast<int>(getpid())
                     || !CGRectMakeWithDictionaryRepresentation(bounds, &rect))
                     continue;
-                const double area = rect.size.width * rect.size.height;
-                if (area > largestArea && rect.size.width >= 80 && rect.size.height >= 60)
+                if (rect.size.width < 80 || rect.size.height < 60) continue;
+                // A plugin can create multiple windows; the largest is not
+                // necessarily the editor. Prefer the editor's own geometry.
+                const double score =
+                    std::abs(rect.size.width - editorBounds.getWidth())
+                    + std::abs(rect.size.height - editorBounds.getHeight())
+                    + 0.5 * std::abs(rect.origin.x - editorBounds.getX())
+                    + 0.5 * std::abs(rect.origin.y - editorBounds.getY());
+                trace("Fenetre candidate " + juce::String(id)
+                    + " : " + juce::String(rect.size.width, 0) + "x"
+                    + juce::String(rect.size.height, 0)
+                    + " score=" + juce::String(score, 1));
+                if (score < bestScore)
                 {
-                    largestArea = area;
+                    bestScore = score;
                     windowId = static_cast<CGWindowID>(id);
                 }
             }
             CFRelease(windows);
+            if (bestScore > 250.0)
+            {
+                trace("Aucune fenetre ne correspond aux dimensions du plugin.");
+                windowId = 0;
+            }
         }
         if (windowId == 0)
         {
@@ -144,13 +161,13 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
         if (sampled == 0 || different < sampled / 50)
         {
             output.deleteFile();
-            fail("Image blanche ou uniforme. Vérifiez l'autorisation de capture d'écran macOS.");
+            fail("Image blanche ou uniforme : la fenetre native ne rend pas son contenu dans la capture.");
             return;
         }
         if (output.getSize() > 5 * 1024 * 1024)
         {
             output.deleteFile();
-            fail("Capture supérieure à 5 Mo");
+            fail("Capture superieure a 5 Mo");
             return;
         }
         trace("SUCCES : interface native capturee");
