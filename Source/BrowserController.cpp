@@ -1317,10 +1317,10 @@ private:
         const auto* selected = selectedPluginDescription();
         if (selected == nullptr)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Capture de plugin", "Sélectionnez un plugin avant de lancer la capture.");
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Capture de plugin", juce::String::fromUTF8("Sélectionnez un plugin avant de lancer la capture."));
             return;
         }
-        if (captureRunning.exchange(true)) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Capture de plugin", "Une capture est déjà en cours."); return; }
+        if (captureRunning.exchange(true)) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Capture de plugin", juce::String::fromUTF8("Une capture est déjà en cours.")); return; }
         const auto description = *selected;
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
             .getChildFile("Liberty").getChildFile("PluginThumbnails");
@@ -1335,11 +1335,11 @@ private:
             captureRunning.store(false);
             input.deleteFile();
             output.deleteFile();
-            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Capture de plugin", "Impossible de préparer la capture du plugin.");
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Capture de plugin", juce::String::fromUTF8("Impossible de préparer la capture du plugin."));
             return;
         }
         if (captureThread.joinable()) captureThread.join();
-        pluginStatus.setText("Capture isolée en cours (maximum 20 s)...", juce::dontSendNotification);
+        pluginStatus.setText(juce::String::fromUTF8("Capture isolée en cours (maximum 20 s)..."), juce::dontSendNotification);
         juce::Component::SafePointer<BrowserPanel> safe(this);
         captureThread = std::thread([this, safe, input, output, destination]
         {
@@ -1377,10 +1377,10 @@ private:
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 if (saved) safe->rebuildPluginTree();
-                safe->pluginStatus.setText(saved ? "Interface capturée automatiquement." : detail,
+                safe->pluginStatus.setText(saved ? juce::String::fromUTF8("Interface capturée automatiquement.") : detail,
                     juce::dontSendNotification);
                 juce::AlertWindow::showMessageBoxAsync(saved ? juce::MessageBoxIconType::InfoIcon : juce::MessageBoxIconType::WarningIcon,
-                    "Capture de plugin", saved ? "La miniature du plugin a été enregistrée." : detail);
+                    "Capture de plugin", saved ? juce::String::fromUTF8("La miniature du plugin a été enregistrée.") : detail);
             });
         });
     }
