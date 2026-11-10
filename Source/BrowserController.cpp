@@ -342,7 +342,7 @@ public:
             menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
-            menu.addItem(4, "CAPTURER UNE INTERFACE (MAC)");
+            menu.addItem(4, "CAPTURER LA FENETRE DU PLUGIN (MAC)");
             menu.addItem(5, "CAPTURE ISOLEE AUTOMATIQUE (TEST)");
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
@@ -1407,7 +1407,7 @@ private:
         const auto destination = folder.getChildFile(juce::String::toHexString(
             (juce::int64) identifier.hashCode64()) + ".png");
         const auto staged = folder.getNonexistentChildFile("capture", ".png", false);
-        pluginStatus.setText("Ouvrez l'interface du plugin, puis selectionnez sa zone a capturer.", juce::dontSendNotification);
+        pluginStatus.setText("Laissez le plugin ouvert, puis cliquez sur sa fenetre pour la capturer.", juce::dontSendNotification);
         juce::Component::SafePointer<BrowserPanel> safe(this);
         if (captureThread.joinable()) captureThread.join();
         captureThread = std::thread([this, safe, staged, destination]
@@ -1416,7 +1416,7 @@ private:
             // plugin code in the browser for the purpose of taking screenshots.
             juce::ChildProcess process;
             const bool started = process.start(juce::StringArray {
-                "/usr/sbin/screencapture", "-i", "-x", staged.getFullPathName() });
+                "/usr/sbin/screencapture", "-i", "-W", "-x", staged.getFullPathName() });
             const bool completed = started && process.waitForProcessToFinish(60000);
             if (started && !completed) process.kill();
             bool saved = false;
@@ -1424,8 +1424,25 @@ private:
                 && staged.getSize() <= 5 * 1024 * 1024)
             {
                 const auto picture = juce::ImageFileFormat::loadFrom(staged);
-                if (picture.isValid() && picture.getWidth() <= 4096 && picture.getHeight() <= 4096)
-                    saved = staged.replaceFileIn(destination);
+                if (picture.isValid() && picture.getWidth() >= 80 && picture.getHeight() >= 60
+                    && picture.getWidth() <= 4096 && picture.getHeight() <= 4096)
+                {
+                    // Reject uniform/blank screenshots instead of caching a white tile.
+                    int varied = 0, sampled = 0;
+                    const auto reference = picture.getPixelAt(picture.getWidth() / 2, picture.getHeight() / 2);
+                    for (int y = picture.getHeight() / 10; y < picture.getHeight() * 9 / 10; y += juce::jmax(1, picture.getHeight() / 24))
+                        for (int x = picture.getWidth() / 10; x < picture.getWidth() * 9 / 10; x += juce::jmax(1, picture.getWidth() / 32))
+                        {
+                            const auto pixel = picture.getPixelAt(x, y);
+                            const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
+                                + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
+                                + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
+                            if (delta > 36) ++varied;
+                            ++sampled;
+                        }
+                    if (sampled > 0 && varied >= sampled / 50)
+                        saved = staged.replaceFileIn(destination);
+                }
             }
             staged.deleteFile();
             captureRunning.store(false);
