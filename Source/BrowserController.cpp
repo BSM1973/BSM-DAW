@@ -1324,7 +1324,7 @@ private:
         const auto description = *selected;
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
             .getChildFile("Liberty").getChildFile("PluginThumbnails");
-        if (!folder.createDirectory()) { captureRunning.store(false); return; }
+        if (!folder.createDirectory()) { captureRunning.store(false); pluginStatus.setText("Dossier des captures inaccessible.", juce::dontSendNotification); return; }
         const auto destination = folder.getChildFile(juce::String::toHexString(
             (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
         const auto input = juce::File::createTempFile(".xml");
@@ -1335,6 +1335,7 @@ private:
             captureRunning.store(false);
             input.deleteFile();
             output.deleteFile();
+            pluginStatus.setText("Impossible de preparer la capture du plugin.", juce::dontSendNotification);
             return;
         }
         if (captureThread.joinable()) captureThread.join();
@@ -1349,6 +1350,7 @@ private:
                 input.getFullPathName(), output.getFullPathName() });
             const bool finished = started && worker.waitForProcessToFinish(20000);
             if (started && !finished) worker.kill();
+            const int exitCode = finished ? worker.getExitCode() : -1;
             bool saved = false;
             if (finished && worker.getExitCode() == 0 && output.existsAsFile()
                 && output.getSize() <= 5 * 1024 * 1024)
@@ -1360,12 +1362,22 @@ private:
             input.deleteFile();
             output.deleteFile();
             captureRunning.store(false);
-            juce::MessageManager::callAsync([safe, saved]
+            const auto logFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                .getChildFile("Liberty").getChildFile("PluginArtworkCapture.log");
+            juce::String detail = !started ? "Le processus de capture n'a pas demarre." :
+                !finished ? "Le processus de capture a depasse 20 secondes." :
+                "Le processus de capture a echoue (code " + juce::String(exitCode) + ").";
+            if (!saved && logFile.existsAsFile())
+            {
+                const auto lines = juce::StringArray::fromLines(logFile.loadFileAsString());
+                for (int i = lines.size() - 1; i >= 0; --i)
+                    if (lines[i].isNotEmpty()) { detail += " " + lines[i].trim(); break; }
+            }
+            juce::MessageManager::callAsync([safe, saved, detail]
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 if (saved) safe->rebuildPluginTree();
-                safe->pluginStatus.setText(saved ? "Interface capturee automatiquement." :
-                    "Capture impossible : plugin incompatible ou delai depasse.",
+                safe->pluginStatus.setText(saved ? "Interface capturee automatiquement." : detail,
                     juce::dontSendNotification);
             });
         });
