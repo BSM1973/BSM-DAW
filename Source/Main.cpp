@@ -81,8 +81,21 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
         trace("ScreenCaptureKit : capture dans le processus isole");
         if (!captureLibertyPluginWindowNative(state->processor->getName(), output, captureError))
         {
-            fail("Capture native isolee impossible : " + captureError);
-            return;
+            // TCC may reject the independently launched helper even though
+            // the main Liberty application is authorized. Try JUCE's own
+            // editor snapshot, which does not require screen recording.
+            // The uniform-image check below prevents saving a white tile.
+            trace("Capture macOS indisponible : " + captureError);
+            trace("Tentative de capture JUCE sans autorisation TCC.");
+            auto snapshot = state->editor->createComponentSnapshot(
+                state->editor->getLocalBounds(), false);
+            auto stream = output.createOutputStream();
+            if (!snapshot.isValid() || stream == nullptr
+                || !juce::PNGImageFormat().writeImageToStream(snapshot, *stream))
+            {
+                fail("Capture native et capture JUCE indisponibles : " + captureError);
+                return;
+            }
         }
         const auto image = juce::ImageFileFormat::loadFrom(output);
         if (!image.isValid()) { fail("Image macOS invalide"); return; }
