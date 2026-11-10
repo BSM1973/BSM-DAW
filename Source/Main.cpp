@@ -1,5 +1,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cstdlib>
+#if JUCE_MAC
+ #include <ApplicationServices/ApplicationServices.h>
+ #include <unistd.h>
+#endif
 #include "MainComponent.h"
 #include "MidiEditor.h"
 #include "PluginHost.h"
@@ -10,14 +14,14 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     const auto logFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("Liberty").getChildFile("PluginArtworkCapture.log");
     logFile.getParentDirectory().createDirectory();
-    logFile.replaceWithText("Capture isolée : démarrage\n");
+    logFile.replaceWithText("Capture isolee : demarrage\n");
     const auto trace = [logFile](const juce::String& message)
     {
         logFile.appendText(message + "\n");
     };
     const auto fail = [trace](const juce::String& message)
     {
-        trace("ÉCHEC : " + message);
+        trace("ECHEC : " + message);
         juce::JUCEApplicationBase::getInstance()->setApplicationReturnValue(7);
         juce::JUCEApplicationBase::getInstance()->quit();
     };
@@ -46,9 +50,9 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     trace("Chargement : " + description.name);
     state->processor = formats.createPluginInstance(description, 44100.0, 512, error);
     if (state->processor == nullptr) { fail("Chargement impossible : " + error); return; }
-    if (!state->processor->hasEditor()) { fail("Le plugin ne possède pas d'interface"); return; }
+    if (!state->processor->hasEditor()) { fail("Le plugin ne possede pas d'interface"); return; }
     state->editor.reset(state->processor->createEditorIfNeeded());
-    if (state->editor == nullptr) { fail("Création de l'interface impossible"); return; }
+    if (state->editor == nullptr) { fail("Creation de l'interface impossible"); return; }
     const auto bounds = state->editor->getLocalBounds();
     if (bounds.getWidth() < 80 || bounds.getHeight() < 60
         || bounds.getWidth() > 4096 || bounds.getHeight() > 4096)
@@ -66,25 +70,60 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     juce::Timer::callAfterDelay(1800, [state, output, trace, fail]()
     {
        #if JUCE_MAC
-        const auto area = state->editor->getScreenBounds();
-        if (area.getWidth() < 80 || area.getHeight() < 60)
+        // Find the actual window owned by the isolated worker, not a screen
+        // rectangle that may be covered by the main Liberty application.
+        juce::Process::makeForegroundProcess();
+        state->editor->toFront(true);
+        CGWindowID windowId = 0;
+        CFArrayRef windows = CGWindowListCopyWindowInfo(
+            kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+            kCGNullWindowID);
+        if (windows != nullptr)
         {
-            fail("Fenêtre du plugin introuvable");
+            const auto count = CFArrayGetCount(windows);
+            double largestArea = 0.0;
+            for (CFIndex i = 0; i < count; ++i)
+            {
+                auto* info = static_cast<CFDictionaryRef>(
+                    const_cast<void*>(CFArrayGetValueAtIndex(windows, i)));
+                auto* owner = static_cast<CFNumberRef>(const_cast<void*>(
+                    CFDictionaryGetValue(info, kCGWindowOwnerPID)));
+                auto* number = static_cast<CFNumberRef>(const_cast<void*>(
+                    CFDictionaryGetValue(info, kCGWindowNumber)));
+                auto* bounds = static_cast<CFDictionaryRef>(const_cast<void*>(
+                    CFDictionaryGetValue(info, kCGWindowBounds)));
+                int pid = 0, id = 0;
+                CGRect rect = CGRectZero;
+                if (owner == nullptr || number == nullptr || bounds == nullptr
+                    || !CFNumberGetValue(owner, kCFNumberIntType, &pid)
+                    || !CFNumberGetValue(number, kCFNumberIntType, &id)
+                    || pid != static_cast<int>(getpid())
+                    || !CGRectMakeWithDictionaryRepresentation(bounds, &rect))
+                    continue;
+                const double area = rect.size.width * rect.size.height;
+                if (area > largestArea && rect.size.width >= 80 && rect.size.height >= 60)
+                {
+                    largestArea = area;
+                    windowId = static_cast<CGWindowID>(id);
+                }
+            }
+            CFRelease(windows);
+        }
+        if (windowId == 0)
+        {
+            fail("Fenetre native du plugin introuvable");
             return;
         }
-        // Capture the actual on-screen native window content, not a JUCE snapshot.
-        // macOS may require Screen Recording permission for Liberty.
+        trace("Fenetre macOS cible : " + juce::String(static_cast<int>(windowId)));
         juce::ChildProcess capture;
-        const juce::String region = "-R" + juce::String(area.getX()) + ","
-            + juce::String(area.getY()) + "," + juce::String(area.getWidth())
-            + "," + juce::String(area.getHeight());
         const bool started = capture.start(juce::StringArray {
-            "/usr/sbin/screencapture", "-x", region, output.getFullPathName() });
+            "/usr/sbin/screencapture", "-x", "-l",
+            juce::String(static_cast<int>(windowId)), output.getFullPathName() });
         const bool finished = started && capture.waitForProcessToFinish(6000);
         if (started && !finished) capture.kill();
         if (!finished || capture.getExitCode() != 0 || !output.existsAsFile())
         {
-            fail("Capture macOS impossible. Vérifiez l'autorisation Enregistrement de l'écran pour Liberty.");
+            fail("Capture de la fenetre impossible. Verifiez l'autorisation macOS.");
             return;
         }
         const auto image = juce::ImageFileFormat::loadFrom(output);
@@ -114,7 +153,7 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
             fail("Capture supérieure à 5 Mo");
             return;
         }
-        trace("SUCCÈS : interface native capturée");
+        trace("SUCCES : interface native capturee");
         juce::JUCEApplicationBase::getInstance()->setApplicationReturnValue(0);
        #else
         fail("Capture native disponible uniquement sur macOS");
