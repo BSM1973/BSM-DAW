@@ -7,19 +7,31 @@
 // Never load third-party plugin code inside the browser for thumbnail generation.
 static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::File& output)
 {
+    const auto logFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Liberty").getChildFile("PluginArtworkCapture.log");
+    logFile.getParentDirectory().createDirectory();
+    logFile.replaceWithText("Capture isolee : demarrage\n");
+    const auto trace = [&logFile](const juce::String& message)
+    {
+        logFile.appendText(message + "\n");
+    };
+    trace("Lecture du XML");
     const auto xml = juce::XmlDocument::parse(juce::File(xmlPath));
-    if (xml == nullptr) return false;
+    if (xml == nullptr) { trace("ECHEC : XML illisible"); return false; }
     juce::PluginDescription description;
-    if (!description.loadFromXml(*xml)) return false;
+    if (!description.loadFromXml(*xml)) { trace("ECHEC : description invalide"); return false; }
     juce::AudioPluginFormatManager formats;
     formats.addDefaultFormats();
+    trace("Chargement : " + description.name);
     juce::String error;
     auto processor = formats.createPluginInstance(description, 44100.0, 512, error);
-    if (processor == nullptr || !processor->hasEditor()) return false;
+    if (processor == nullptr) { trace("ECHEC : chargement : " + error); return false; }
+    if (!processor->hasEditor()) { trace("ECHEC : interface absente"); return false; }
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor->createEditorIfNeeded());
-    if (editor == nullptr) return false;
+    if (editor == nullptr) { trace("ECHEC : creation interface"); return false; }
     const int width = editor->getWidth(), height = editor->getHeight();
     if (width < 80 || height < 60 || width > 4096 || height > 4096) return false;
+    trace("Interface creee : " + juce::String(width) + "x" + juce::String(height));
     editor->setVisible(true);
     editor->addToDesktop(0);
     editor->toFront(false);
@@ -27,9 +39,10 @@ static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
     {
         juce::Thread::sleep(100);
     }
+    trace("Capture JUCE...");
     auto image = editor->createComponentSnapshot(editor->getLocalBounds(), false, 1.0f);
     editor->removeFromDesktop();
-    if (!image.isValid()) return false;
+    if (!image.isValid()) { trace("ECHEC : image invalide"); return false; }
     // A valid PNG is not necessarily a rendered plugin UI. Native child views
     // (Metal/OpenGL/NSView) may be absent from JUCE component snapshots.
     // Reject near-uniform captures instead of caching a white rectangle.
@@ -48,11 +61,13 @@ static bool renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
             if (delta > 36) ++different;
             ++sampled;
         }
-    if (sampled == 0 || different < sampled / 50) return false;
+    if (sampled == 0 || different < sampled / 50) { trace("ECHEC : capture uniforme ou blanche"); return false; }
     juce::PNGImageFormat png;
     juce::MemoryOutputStream bytes;
     if (!png.writeImageToStream(image, bytes) || bytes.getDataSize() > 5 * 1024 * 1024) return false;
-    return output.replaceWithData(bytes.getData(), bytes.getDataSize());
+    const bool saved = output.replaceWithData(bytes.getData(), bytes.getDataSize());
+    trace(saved ? "SUCCES : PNG cree" : "ECHEC : ecriture PNG");
+    return saved;
 }
 bool handleLibertyArrangementClipKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key); bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
