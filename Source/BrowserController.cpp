@@ -345,8 +345,7 @@ public:
             menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
-            menu.addItem(4, "CAPTURE NATIVE DU PLUGIN (MAC)");
-            menu.addItem(5, "CAPTURE ISOLEE AUTOMATIQUE (TEST)");
+            menu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"));
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -1342,7 +1341,7 @@ private:
             return;
         }
         if (captureThread.joinable()) captureThread.join();
-        pluginStatus.setText(juce::String::fromUTF8("Capture isolée en cours (maximum 20 s)..."), juce::dontSendNotification);
+        pluginStatus.setText(juce::String::fromUTF8("Capture isolée en cours (maximum 30 s)..."), juce::dontSendNotification);
         juce::Component::SafePointer<BrowserPanel> safe(this);
         captureThread = std::thread([this, safe, input, output, destination]
         {
@@ -1351,7 +1350,7 @@ private:
             const bool started = worker.start(juce::StringArray {
                 executable.getFullPathName(), "--liberty-artwork-worker",
                 input.getFullPathName(), output.getFullPathName() });
-            const bool finished = started && worker.waitForProcessToFinish(20000);
+            const bool finished = started && worker.waitForProcessToFinish(30000);
             if (started && !finished) worker.kill();
             const int exitCode = finished ? worker.getExitCode() : -1;
             bool saved = false;
@@ -1368,7 +1367,7 @@ private:
             const auto logFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                 .getChildFile("Liberty").getChildFile("PluginArtworkCapture.log");
             juce::String detail = !started ? "Le processus de capture n'a pas demarre." :
-                !finished ? "Le processus de capture a depasse 20 secondes." :
+                !finished ? "Le processus de capture a depasse 30 secondes." :
                 "Le processus de capture a echoue (code " + juce::String(exitCode) + ").";
             if (!saved && logFile.existsAsFile())
             {
