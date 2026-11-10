@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(BSM_DAW VERSION 0.1.0 LANGUAGES C CXX)
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -15,6 +18,10 @@ target_sources(BSM_DAW PRIVATE
  Source/MixConsoleController.cpp Source/PerformController.cpp Source/PageModeCoordinator.cpp Source/UISymbolCleaner.cpp Source/SpliceBrowserController.cpp Source/BrowserResizeController.cpp Source/UILayerCoordinator.cpp Source/AudioSettingsRelocator.cpp Source/LanguageController.cpp Source/ToolPaletteController.cpp
  Source/LibertyAIController.cpp Source/LibertyAIAdvancedController.cpp Source/AIRenderController.cpp Source/AINoveltyController.cpp Source/AIArrangerController.cpp Source/AISongIntelligenceController.cpp Source/AIComposer2Controller.cpp
  Source/OneKnobEffects.cpp Source/DynamicTrackController.cpp Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/PluginHost.cpp)
+if(APPLE)
+  target_sources(BSM_DAW PRIVATE Source/NativePluginCapture.mm)
+  target_link_libraries(BSM_DAW PRIVATE "-framework ScreenCaptureKit" "-framework AppKit" "-framework CoreGraphics")
+endif()
 target_include_directories(BSM_DAW PRIVATE Source)
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 # Keep French UI literals consistently encoded on all supported compilers.
