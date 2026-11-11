@@ -47,6 +47,74 @@ public:
     }
 };
 
+
+// Reject unreadable, oversized and visually uniform screenshots before replacing artwork.
+static bool libertyValidArtworkPNG(const juce::File& source, juce::String& reason)
+{
+    if (!source.existsAsFile() || !source.hasFileExtension("png")
+        || source.getSize() < 128 || source.getSize() > 32LL * 1024 * 1024)
+    {
+        reason = "Fichier PNG absent, invalide ou trop volumineux.";
+        return false;
+    }
+    juce::PNGImageFormat png;
+    std::unique_ptr<juce::FileInputStream> stream(source.createInputStream());
+    if (!stream || !stream->openedOk() || !png.canUnderstand(*stream))
+    {
+        reason = "Le fichier n'est pas un véritable PNG.";
+        return false;
+    }
+    stream->setPosition(0);
+    const auto image = png.decodeImage(*stream);
+    if (!image.isValid() || image.getWidth() < 80 || image.getHeight() < 60
+        || (juce::int64) image.getWidth() * image.getHeight() > 24000000)
+    {
+        reason = "Dimensions de la miniature invalides.";
+        return false;
+    }
+    const auto first = image.getPixelAt(0, 0);
+    bool varied = false;
+    for (int y = 0; y < 9 && !varied; ++y)
+        for (int x = 0; x < 9 && !varied; ++x)
+        {
+            const auto pixel = image.getPixelAt((image.getWidth() - 1) * x / 8,
+                                                 (image.getHeight() - 1) * y / 8);
+            varied = std::abs((int) pixel.getRed() - (int) first.getRed()) > 8
+                  || std::abs((int) pixel.getGreen() - (int) first.getGreen()) > 8
+                  || std::abs((int) pixel.getBlue() - (int) first.getBlue()) > 8;
+        }
+    if (!varied)
+    {
+        reason = "Image blanche ou uniforme refusée : ancienne miniature conservée.";
+        return false;
+    }
+    return true;
+}
+
+static bool libertySavePluginArtwork(const juce::File& source,
+                                    const juce::String& identifier,
+                                    juce::String& reason)
+{
+    if (!libertyValidArtworkPNG(source, reason)) return false;
+    const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Liberty").getChildFile("PluginThumbnails");
+    if (!folder.createDirectory())
+    {
+        reason = "Impossible de créer le dossier des miniatures.";
+        return false;
+    }
+    const auto destination = folder.getChildFile(juce::String::toHexString(
+        (juce::int64) identifier.hashCode64()) + ".png");
+    const auto staged = folder.getNonexistentChildFile("thumbnail-import", ".png", false);
+    if (!source.copyFileTo(staged) || !staged.replaceFileIn(destination))
+    {
+        staged.deleteFile();
+        reason = "Impossible d'enregistrer la miniature.";
+        return false;
+    }
+    return true;
+}
+
 class PluginTreeItem final : public juce::TreeViewItem
 {
 public:
@@ -239,7 +307,8 @@ public:
 
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
-                           private juce::FileBrowserListener
+                           private juce::FileBrowserListener,
+                           public juce::FileDragAndDropTarget
 {
 public:
     void ensureToggleVisible()
@@ -1403,6 +1472,39 @@ private:
             "Capture native", message);
     }
 
+
+    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    {
+        return files.size() == 1 && juce::File(files[0]).hasFileExtension("png");
+    }
+
+    void filesDropped(const juce::StringArray& files, int x, int y) override
+    {
+        if (!isInterestedInFileDrag(files)) return;
+        const auto point = pluginTree.getLocalPoint(this, juce::Point<int>(x, y));
+        if (!pluginTree.getLocalBounds().contains(point))
+        {
+            pluginStatus.setText("Déposez le PNG sur la ligne du plugin.", juce::dontSendNotification);
+            return;
+        }
+        auto* item = dynamic_cast<PluginTreeItem*>(pluginTree.getItemAt(point.y));
+        const auto* description = item != nullptr ? item->getPluginDescription() : nullptr;
+        if (description == nullptr)
+        {
+            pluginStatus.setText("Déposez le PNG sur une ligne de plugin, pas sur un fabricant.", juce::dontSendNotification);
+            return;
+        }
+        const auto name = description->name;
+        const auto identifier = description->createIdentifierString();
+        juce::String error;
+        if (libertySavePluginArtwork(juce::File(files[0]), identifier, error))
+        {
+            rebuildPluginTree();
+            pluginStatus.setText("Miniature enregistrée pour " + name + ".", juce::dontSendNotification);
+        }
+        else pluginStatus.setText(error, juce::dontSendNotification);
+    }
+
     void importSelectedThumbnail()
     {
         const auto* selected = selectedPluginDescription();
@@ -1419,26 +1521,13 @@ private:
             {
                 if (safe == nullptr) return;
                 const auto source = selectedFile.getResult();
-                if (!source.existsAsFile() || !juce::ImageFileFormat::loadFrom(source).isValid())
-                {
-                    safe->pluginStatus.setText("Image PNG invalide.", juce::dontSendNotification);
-                    return;
-                }
-                const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                    .getChildFile("Liberty").getChildFile("PluginThumbnails");
-                const auto destination = folder.getChildFile(juce::String::toHexString(
-                    (juce::int64) identifier.hashCode64()) + ".png");
-                // Stage the new image before replacing an existing thumbnail.
-                const auto staged = folder.getNonexistentChildFile("thumbnail-import", ".png", false);
-                const bool copied = folder.createDirectory() && source.copyFileTo(staged);
-                const bool saved = copied && staged.replaceFileIn(destination);
-                if (!saved) staged.deleteFile();
-                if (saved)
+                juce::String error;
+                if (libertySavePluginArtwork(source, identifier, error))
                 {
                     safe->rebuildPluginTree();
-                    safe->pluginStatus.setText("Miniature importée.", juce::dontSendNotification);
+                    safe->pluginStatus.setText("Miniature importée et enregistrée.", juce::dontSendNotification);
                 }
-                else safe->pluginStatus.setText("Impossible de copier la miniature.", juce::dontSendNotification);
+                else safe->pluginStatus.setText(error, juce::dontSendNotification);
             });
     }
 
