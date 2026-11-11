@@ -430,7 +430,14 @@ public:
             menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
             menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
             menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
-            menu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"));
+            menu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"), !batchArtworkRunning.load(), false);
+            menu.addSeparator();
+            const bool batchIdle = !batchArtworkRunning.load();
+            menu.addItem(6, juce::String::fromUTF8("CAPTURE AUTO : TESTER 10 PLUGINS MANQUANTS"), batchIdle, false);
+            menu.addItem(7, juce::String::fromUTF8("CAPTURE AUTO : 50 PLUGINS MANQUANTS"), batchIdle, false);
+            menu.addItem(8, juce::String::fromUTF8("CAPTURE AUTO : TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
+            menu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
+            menu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -440,6 +447,11 @@ public:
                     if (choice == 2) safe->refreshOfficialArtwork();
                     if (choice == 4) safe->captureSelectedPluginArtwork();
                     if (choice == 5) safe->captureIsolatedPluginArtwork();
+                    if (choice == 6) safe->startBatchArtworkCapture(10, false);
+                    if (choice == 7) safe->startBatchArtworkCapture(50, false);
+                    if (choice == 8) safe->startBatchArtworkCapture(0, false);
+                    if (choice == 9) safe->cancelBatchArtworkCapture();
+                    if (choice == 10) safe->startBatchArtworkCapture(10, true);
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -741,6 +753,7 @@ public:
     void shutdown()
     {
         if (stopped.exchange(true)) return;
+        batchArtworkCancel.store(true);
         stopTimer();
         previewTransport.stop();
         owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
@@ -748,6 +761,7 @@ public:
         previewTransport.setSource(nullptr);
         previewReader.reset();
         if (artworkThread.joinable()) artworkThread.join();
+        if (batchArtworkThread.joinable()) batchArtworkThread.join();
         if (captureThread.joinable()) captureThread.join();
         if (sampleSearchThread.joinable()) sampleSearchThread.join();
         if (scanThread.joinable()) scanThread.join();
@@ -1334,6 +1348,7 @@ private:
 
     void refreshOfficialArtwork()
     {
+        if (batchArtworkRunning.load()) return;
         // Opt-in catalogue: each entry maps the exact JUCE plug-in identifier hash
         // to an explicit HTTPS image URL. No guessed product URLs or web scraping.
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -1399,8 +1414,185 @@ private:
         });
     }
 
+
+    // Explicit opt-in bulk capture. Each AU/VST3 is loaded in the existing
+    // disposable child process; no third-party processor enters the DAW itself.
+    // Queue is a snapshot, and only the JUCE message thread touches the UI.
+    void cancelBatchArtworkCapture()
+    {
+        if (!batchArtworkRunning.load()) return;
+        batchArtworkCancel.store(true);
+        pluginStatus.setText(juce::String::fromUTF8("Arrêt demandé : fermeture du processus de capture en cours..."),
+                             juce::dontSendNotification);
+    }
+
+    void startBatchArtworkCapture(int maximum, bool retryFailuresOnly)
+    {
+       #if ! JUCE_MAC
+        pluginStatus.setText(juce::String::fromUTF8("Capture automatique disponible sur macOS uniquement."),
+                             juce::dontSendNotification);
+        return;
+       #else
+        if (batchArtworkRunning.load() || captureRunning.load()
+            || scanning.load() || artworkRefreshing.load())
+        {
+            pluginStatus.setText(juce::String::fromUTF8("Une capture, un scan ou un téléchargement est déjà en cours."),
+                                 juce::dontSendNotification);
+            return;
+        }
+        if (batchArtworkThread.joinable()) batchArtworkThread.join();
+
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty").getChildFile("PluginThumbnails");
+        if (!folder.createDirectory())
+        {
+            pluginStatus.setText(juce::String::fromUTF8("Dossier des miniatures inaccessible."),
+                                 juce::dontSendNotification);
+            return;
+        }
+        const auto failuresFile = folder.getSiblingFile("PluginArtworkBatchFailures.tsv");
+        juce::StringArray failedHashes;
+        if (failuresFile.existsAsFile())
+            for (const auto& line : juce::StringArray::fromLines(failuresFile.loadFileAsString()))
+            {
+                const auto hash = line.upToFirstOccurrenceOf("\t", false, false).trim();
+                if (hash.isNotEmpty()) failedHashes.addIfNotAlreadyThere(hash);
+            }
+
+        juce::Array<juce::PluginDescription> queue;
+        juce::StringArray visited;
+        const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
+        for (const auto& description : pluginDescriptions)
+        {
+            const auto identifier = description.createIdentifierString();
+            if (identifier.isEmpty() || visited.contains(identifier)) continue;
+            visited.add(identifier);
+            const auto hash = juce::String::toHexString((juce::int64) identifier.hashCode64());
+            if (folder.getChildFile(hash + ".png").existsAsFile()
+                || catalogue.getChildFile(hash + ".png").existsAsFile()) continue;
+            if (retryFailuresOnly != failedHashes.contains(hash)) continue;
+            queue.add(description);
+            if (maximum > 0 && queue.size() >= maximum) break;
+        }
+        if (queue.isEmpty())
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                retryFailuresOnly ? "Aucune capture en échec à réessayer."
+                                  : "Toutes les captures disponibles sont déjà présentes ou répertoriées en échec."),
+                juce::dontSendNotification);
+            return;
+        }
+
+        batchArtworkCancel.store(false);
+        batchArtworkRunning.store(true);
+        batchArtworkStatusUntilMs = 0;
+        pluginStatus.setText(juce::String::fromUTF8("Capture automatique : 0 / ")
+            + juce::String(queue.size()) + juce::String::fromUTF8(" — ne pas quitter Liberty."),
+            juce::dontSendNotification);
+
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        batchArtworkThread = std::thread([this, safe, folder, failuresFile, queue]
+        {
+            int completed = 0, succeeded = 0, failed = 0;
+            const int total = queue.size();
+            const auto executable = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+
+            for (const auto& description : queue)
+            {
+                if (stopped.load() || batchArtworkCancel.load()) break;
+                const auto identifier = description.createIdentifierString();
+                const auto hash = juce::String::toHexString((juce::int64) identifier.hashCode64());
+                const auto destination = folder.getChildFile(hash + ".png");
+                if (destination.existsAsFile()) { ++completed; ++succeeded; continue; }
+
+                auto input = juce::File::createTempFile(".xml");
+                auto output = juce::File::createTempFile(".png");
+                bool success = false;
+                juce::String reason = "Capture impossible";
+                const auto xml = description.createXml();
+                if (xml != nullptr && input.replaceWithText(xml->toString()))
+                {
+                    juce::ChildProcess worker;
+                    const bool started = worker.start(juce::StringArray {
+                        executable.getFullPathName(), "--liberty-artwork-worker",
+                        input.getFullPathName(), output.getFullPathName() });
+                    if (started)
+                    {
+                        int elapsedMs = 0;
+                        while (worker.isRunning() && elapsedMs < 30000
+                               && !stopped.load() && !batchArtworkCancel.load())
+                        {
+                            worker.waitForProcessToFinish(200);
+                            elapsedMs += 200;
+                        }
+                        const bool finished = !worker.isRunning();
+                        const int code = finished ? worker.getExitCode() : -1;
+                        if (!finished)
+                        {
+                            worker.kill();
+                            worker.waitForProcessToFinish(1000);
+                        }
+                        if (finished && code == 0 && output.existsAsFile()
+                            && libertyValidArtworkPNG(output, reason)
+                            && output.replaceFileIn(destination))
+                            success = true;
+                        if (!success && reason == "Capture impossible")
+                            reason = (finished ? "Processus terminé, code " + juce::String(code)
+                                               : "Capture interrompue ou délai de 30 secondes dépassé");
+                    }
+                    else reason = "Démarrage du processus isolé impossible";
+                }
+                else reason = "Description XML du plugin invalide";
+                input.deleteFile();
+                output.deleteFile();
+
+                if (stopped.load() || batchArtworkCancel.load()) break;
+                ++completed;
+                if (success) ++succeeded;
+                else
+                {
+                    ++failed;
+                    auto name = description.name.replaceCharacters("\t\r\n", "   ");
+                    auto detail = reason.replaceCharacters("\t\r\n", "   ");
+                    failuresFile.appendText(hash + "\t" + name + "\t" + detail + "\n");
+                }
+
+                const juce::String progress = juce::String::fromUTF8("Captures : ")
+                    + juce::String(completed) + " / " + juce::String(total)
+                    + juce::String::fromUTF8(" | Réussites : ") + juce::String(succeeded)
+                    + juce::String::fromUTF8(" | Échecs : ") + juce::String(failed);
+                juce::MessageManager::callAsync([safe, progress]
+                {
+                    if (safe != nullptr && !safe->stopped.load())
+                        safe->pluginStatus.setText(progress, juce::dontSendNotification);
+                });
+            }
+
+            const bool cancelled = stopped.load() || batchArtworkCancel.load();
+            juce::MessageManager::callAsync([safe, completed, succeeded, failed, total, cancelled]
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                safe->batchArtworkRunning.store(false);
+                safe->batchArtworkStatusUntilMs = juce::Time::getMillisecondCounter() + 30000;
+                safe->rebuildPluginTree();
+                safe->pluginStatus.setText(
+                    juce::String::fromUTF8(cancelled ? "Capture interrompue : " : "Lot terminé : ")
+                    + juce::String(completed) + " / " + juce::String(total)
+                    + juce::String::fromUTF8(" | PNG : ") + juce::String(succeeded)
+                    + juce::String::fromUTF8(" | Échecs : ") + juce::String(failed),
+                    juce::dontSendNotification);
+            });
+        });
+       #endif
+    }
+
     void captureIsolatedPluginArtwork()
     {
+        if (batchArtworkRunning.load())
+        {
+            pluginStatus.setText(juce::String::fromUTF8("Arrêtez d'abord la capture automatique."), juce::dontSendNotification);
+            return;
+        }
         const auto* selected = selectedPluginDescription();
         if (selected == nullptr)
         {
@@ -2160,6 +2352,8 @@ private:
                     text << "FX" << (slot + 1) << ": " << oneKnob.getName(oneKey) << "   ";
             }
         }
+        if (batchArtworkRunning.load()
+            || juce::Time::getMillisecondCounter() < batchArtworkStatusUntilMs) return;
         if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
         pluginStatus.setText(text, juce::dontSendNotification);
     }
@@ -2281,7 +2475,9 @@ private:
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
-    std::thread scanThread, sampleSearchThread, artworkThread, captureThread;
+    std::thread scanThread, sampleSearchThread, artworkThread, captureThread, batchArtworkThread;
+    std::atomic<bool> batchArtworkRunning { false }, batchArtworkCancel { false };
+    juce::uint32 batchArtworkStatusUntilMs = 0;
     std::atomic<bool> captureRunning { false };
     std::atomic<bool> artworkRefreshing { false };
     std::atomic<bool> sampleSearchRunning { false };
