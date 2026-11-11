@@ -26,33 +26,6 @@ namespace
 {
 constexpr int topBarHeight = 76;
 
-static bool isUsablePluginThumbnail(const juce::Image& image)
-{
-    if (!image.isValid() || image.getWidth() < 80 || image.getHeight() < 60
-        || image.getWidth() > 4096 || image.getHeight() > 4096)
-        return false;
-
-    // Reject white, black and near-uniform screenshots (including old
-    // cached captures). Sample only a small grid; never scan on paint.
-    const auto reference = image.getPixelAt(image.getWidth() / 2, image.getHeight() / 2);
-    int different = 0;
-    int samples = 0;
-    const int stepX = juce::jmax(1, image.getWidth() / 32);
-    const int stepY = juce::jmax(1, image.getHeight() / 24);
-    for (int y = stepY; y < image.getHeight() - stepY; y += stepY)
-        for (int x = stepX; x < image.getWidth() - stepX; x += stepX)
-        {
-            const auto pixel = image.getPixelAt(x, y);
-            const int delta = std::abs((int) pixel.getRed() - (int) reference.getRed())
-                + std::abs((int) pixel.getGreen() - (int) reference.getGreen())
-                + std::abs((int) pixel.getBlue() - (int) reference.getBlue());
-            if (delta > 36) ++different;
-            ++samples;
-        }
-    return samples > 0 && different >= juce::jmax(2, samples / 50);
-}
-
-
 // File filtering is performed by the directory listing itself, so category
 // changes and search results agree with the visible file tree.
 class BrowserFileFilter final : public juce::FileFilter
@@ -98,11 +71,7 @@ public:
                 .getChildFile("Liberty").getChildFile("PluginThumbnails");
             const auto file = folder.getChildFile(juce::String::toHexString(
                 (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-            if (file.existsAsFile())
-            {
-                const auto candidate = juce::ImageFileFormat::loadFrom(file);
-                if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;
-            }
+            if (file.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(file);
             // Recognise locally supplied authentic plugin screenshots without opening plugin code.
             // Prefer an exact plug-in identifier; never guess a screenshot from a brand alone.
             if (!thumbnailImage.isValid())
@@ -110,11 +79,7 @@ public:
                 const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
                 const auto exact = catalogue.getChildFile(juce::String::toHexString(
                     (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-                if (exact.existsAsFile())
-                {
-                    const auto candidate = juce::ImageFileFormat::loadFrom(exact);
-                    if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;
-                }
+                if (exact.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(exact);
             }
         }
     }
@@ -506,8 +471,7 @@ public:
             const int index = favourites.indexOf(path);
             if (index >= 0) favourites.remove(index);
             else favourites.add(path);
-            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("
-"));
+            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("\n"));
             updateSampleFolderControls();
         };
         openFavouriteButton.onClick = [this]
@@ -860,8 +824,7 @@ private:
         favouriteKeys.trim(); favouriteKeys.removeEmptyStrings(); favouriteKeys.removeDuplicates(false);
     }
 
-    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("
-")); }
+    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
 
     void toggleFavourite(const juce::PluginDescription& d)
@@ -976,8 +939,7 @@ private:
         if (favourites.contains(path)) favourites.removeString(path);
         else favourites.add(path);
         favourites.removeDuplicates(false);
-        sampleFavouriteFile().replaceWithText(favourites.joinIntoString("
-"));
+        sampleFavouriteFile().replaceWithText(favourites.joinIntoString("\n"));
     }
 
     static juce::File sampleFilterPreferenceFile()
@@ -1011,8 +973,7 @@ private:
 
     void saveSampleFilterPreferences()
     {
-        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "
-" + sampleNameQuery);
+        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "\n" + sampleNameQuery);
     }
 
     void showMusicalFilters()
@@ -1248,8 +1209,7 @@ private:
         const auto summary = "FABRICANT : " + manufacturer + "  |  PACK : " + pack
                            + "  |  CATÉGORIE : " + categoryName;
         samplePackInfo.setText(summary, juce::dontSendNotification);
-        samplePackInfo.setTooltip(summary + "
-Dossier : " + location.getFullPathName());
+        samplePackInfo.setTooltip(summary + "\nDossier : " + location.getFullPathName());
     }
 
     void updateSampleFolderControls()
@@ -1297,8 +1257,7 @@ Dossier : " + location.getFullPathName());
         const auto manifest = folder.getChildFile("OfficialArtwork.tsv");
         if (!manifest.existsAsFile())
         {
-            manifest.replaceWithText("# identifier-hash\\tHTTPS-image-URL\
-");
+            manifest.replaceWithText("# identifier-hash\\tHTTPS-image-URL\\n");
             pluginStatus.setText("Catalogue cree : renseigner les URLs officielles autorisees.", juce::dontSendNotification);
             return;
         }
@@ -1460,7 +1419,7 @@ Dossier : " + location.getFullPathName());
             {
                 if (safe == nullptr) return;
                 const auto source = selectedFile.getResult();
-                if (!source.existsAsFile() || !isUsablePluginThumbnail(juce::ImageFileFormat::loadFrom(source)))
+                if (!source.existsAsFile() || !juce::ImageFileFormat::loadFrom(source).isValid())
                 {
                     safe->pluginStatus.setText("Image PNG invalide.", juce::dontSendNotification);
                     return;
@@ -1765,8 +1724,7 @@ Dossier : " + location.getFullPathName());
     {
         auto& host = LibertyPluginHost::instance();
         auto entries = host.getBlacklistedPlugins();
-        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("
-");
+        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("\n");
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist", text, "OK");
     }
 
