@@ -438,6 +438,7 @@ public:
             menu.addItem(7, juce::String::fromUTF8("CAPTURE AUTO : 50 PLUGINS MANQUANTS"), batchIdle, false);
             menu.addItem(8, juce::String::fromUTF8("CAPTURE AUTO : TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
             menu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
+            menu.addItem(13, juce::String::fromUTF8("RÉESSAYER 1 CAPTURE EN ÉCHEC"), batchIdle, false);
             menu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
             menu.addSeparator();
             menu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
@@ -457,6 +458,7 @@ public:
                     if (choice == 8) safe->startBatchArtworkCapture(0, false);
                     if (choice == 9) safe->cancelBatchArtworkCapture();
                     if (choice == 10) safe->startBatchArtworkCapture(10, true);
+                    if (choice == 13) safe->startBatchArtworkCapture(1, true);
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -1566,13 +1568,25 @@ private:
                             worker.kill();
                             worker.waitForProcessToFinish(1000);
                         }
-                        if (finished && code == 0 && output.existsAsFile()
-                            && libertyValidArtworkPNG(output, reason)
-                            && output.replaceFileIn(destination))
-                            success = true;
-                        if (!success && reason == "Capture impossible")
-                            reason = (finished ? "Processus terminé, code " + juce::String(code)
-                                               : "Capture interrompue ou délai de 30 secondes dépassé");
+                        if (!finished)
+                        {
+                            reason = "Capture interrompue ou délai de 30 secondes dépassé";
+                        }
+                        else if (code != 0)
+                        {
+                            reason = "Le processus de capture a échoué (code " + juce::String(code) + ").";
+                        }
+                        else if (!output.existsAsFile())
+                        {
+                            reason = "Processus terminé sans produire de fichier PNG.";
+                        }
+                        else if (libertyValidArtworkPNG(output, reason))
+                        {
+                            if (output.replaceFileIn(destination))
+                                success = true;
+                            else
+                                reason = "La capture PNG est valide, mais son enregistrement a échoué.";
+                        }
                     }
                     else reason = "Démarrage du processus isolé impossible";
                 }

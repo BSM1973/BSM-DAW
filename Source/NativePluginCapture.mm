@@ -45,12 +45,29 @@ bool captureLibertyPluginWindowNative(const juce::String& pluginName,
             __block SCShareableContent* shareable = nil;
             __block NSError* discoveryError = nil;
             dispatch_semaphore_t discovery = dispatch_semaphore_create(0);
-            [SCShareableContent getShareableContentExcludingDesktopWindows:YES
-                onScreenWindowsOnly:YES completionHandler:^(SCShareableContent* content, NSError* e) {
-                    shareable = content;
-                    discoveryError = e;
-                    dispatch_semaphore_signal(discovery);
-                }];
+            // macOS 14.4+: inspect only our own worker process windows.
+            // Unlike system-wide enumeration, this API is designed for
+            // capturing self-owned windows without Screen Recording TCC consent.
+            // Plugins are rendered in this isolated process, so it owns the
+            // window we need. Keep the old path only for older macOS versions.
+            if (@available(macOS 14.4, *))
+            {
+                [SCShareableContent getCurrentProcessShareableContentWithCompletionHandler:
+                    ^(SCShareableContent* content, NSError* e) {
+                        shareable = content;
+                        discoveryError = e;
+                        dispatch_semaphore_signal(discovery);
+                    }];
+            }
+            else
+            {
+                [SCShareableContent getShareableContentExcludingDesktopWindows:YES
+                    onScreenWindowsOnly:YES completionHandler:^(SCShareableContent* content, NSError* e) {
+                        shareable = content;
+                        discoveryError = e;
+                        dispatch_semaphore_signal(discovery);
+                    }];
+            }
             if (!libertyWaitForScreenshot(discovery, 8.0))
             {
                 error = "Delai depasse lors de la recherche des fenetres macOS.";
