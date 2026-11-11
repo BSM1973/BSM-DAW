@@ -98,7 +98,11 @@ public:
                 .getChildFile("Liberty").getChildFile("PluginThumbnails");
             const auto file = folder.getChildFile(juce::String::toHexString(
                 (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-            if (file.existsAsFile())\n            {\n                const auto candidate = juce::ImageFileFormat::loadFrom(file);\n                if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;\n            }
+            if (file.existsAsFile())
+            {
+                const auto candidate = juce::ImageFileFormat::loadFrom(file);
+                if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;
+            }
             // Recognise locally supplied authentic plugin screenshots without opening plugin code.
             // Prefer an exact plug-in identifier; never guess a screenshot from a brand alone.
             if (!thumbnailImage.isValid())
@@ -106,7 +110,11 @@ public:
                 const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
                 const auto exact = catalogue.getChildFile(juce::String::toHexString(
                     (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-                if (exact.existsAsFile())\n                {\n                    const auto candidate = juce::ImageFileFormat::loadFrom(exact);\n                    if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;\n                }
+                if (exact.existsAsFile())
+                {
+                    const auto candidate = juce::ImageFileFormat::loadFrom(exact);
+                    if (isUsablePluginThumbnail(candidate)) thumbnailImage = candidate;
+                }
             }
         }
     }
@@ -498,7 +506,8 @@ public:
             const int index = favourites.indexOf(path);
             if (index >= 0) favourites.remove(index);
             else favourites.add(path);
-            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("\n"));
+            sampleFolderFavouritesFile().replaceWithText(favourites.joinIntoString("
+"));
             updateSampleFolderControls();
         };
         openFavouriteButton.onClick = [this]
@@ -851,7 +860,8 @@ private:
         favouriteKeys.trim(); favouriteKeys.removeEmptyStrings(); favouriteKeys.removeDuplicates(false);
     }
 
-    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
+    void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("
+")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
 
     void toggleFavourite(const juce::PluginDescription& d)
@@ -966,7 +976,8 @@ private:
         if (favourites.contains(path)) favourites.removeString(path);
         else favourites.add(path);
         favourites.removeDuplicates(false);
-        sampleFavouriteFile().replaceWithText(favourites.joinIntoString("\n"));
+        sampleFavouriteFile().replaceWithText(favourites.joinIntoString("
+"));
     }
 
     static juce::File sampleFilterPreferenceFile()
@@ -1000,7 +1011,8 @@ private:
 
     void saveSampleFilterPreferences()
     {
-        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "\n" + sampleNameQuery);
+        sampleFilterPreferenceFile().replaceWithText(juce::String(sampleFilterMask) + "
+" + sampleNameQuery);
     }
 
     void showMusicalFilters()
@@ -1236,7 +1248,8 @@ private:
         const auto summary = "FABRICANT : " + manufacturer + "  |  PACK : " + pack
                            + "  |  CATÉGORIE : " + categoryName;
         samplePackInfo.setText(summary, juce::dontSendNotification);
-        samplePackInfo.setTooltip(summary + "\nDossier : " + location.getFullPathName());
+        samplePackInfo.setTooltip(summary + "
+Dossier : " + location.getFullPathName());
     }
 
     void updateSampleFolderControls()
@@ -1284,7 +1297,8 @@ private:
         const auto manifest = folder.getChildFile("OfficialArtwork.tsv");
         if (!manifest.existsAsFile())
         {
-            manifest.replaceWithText("# identifier-hash\\tHTTPS-image-URL\\n");
+            manifest.replaceWithText("# identifier-hash\\tHTTPS-image-URL\
+");
             pluginStatus.setText("Catalogue cree : renseigner les URLs officielles autorisees.", juce::dontSendNotification);
             return;
         }
@@ -1751,7 +1765,8 @@ private:
     {
         auto& host = LibertyPluginHost::instance();
         auto entries = host.getBlacklistedPlugins();
-        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("\n");
+        juce::String text = entries.isEmpty() ? "Aucun plugin blacklisté." : entries.joinIntoString("
+");
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon, "Liberty - Blacklist", text, "OK");
     }
 
