@@ -1450,22 +1450,12 @@ private:
                              juce::dontSendNotification);
         return;
        #else
-        // ScreenCaptureKit cannot capture plugin windows without macOS TCC consent.
-        // Ask on a deliberate user action, not in the plugin scanner or at startup.
-        if (!libertyHasScreenCapturePermission())
-        {
-            libertyRequestScreenCapturePermission();
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::WarningIcon,
-                juce::String::fromUTF8("Autorisation de capture macOS"),
-                juce::String::fromUTF8(
-                    "Autorisez Liberty dans Réglages Système > Confidentialité et sécurité "
-                    "> Enregistrement de l'écran et de l'audio système. "
-                    "Fermez puis rouvrez Liberty avant de réessayer une capture."));
-            pluginStatus.setText(juce::String::fromUTF8("Autorisation macOS requise : aucune capture lancée."),
-                                 juce::dontSendNotification);
-            return;
-        }
+        // Do not block capture on CGPreflightScreenCaptureAccess().
+        // macOS TCC may report a stale false value immediately after the user
+        // grants permission or an updated app binary is installed. The actual
+        // ScreenCaptureKit call in the isolated worker is the definitive test.
+        // Its diagnostic will be included in the per-plugin failure report.
+        // Never invoke CGRequestScreenCaptureAccess() repeatedly from a batch.
         if (batchArtworkRunning.load() || captureRunning.load()
             || scanning.load() || artworkRefreshing.load())
         {
