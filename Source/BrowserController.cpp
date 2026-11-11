@@ -154,7 +154,7 @@ public:
 
     bool mightContainSubItems() override { return kind != Kind::plugin; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
-    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? (thumbnails ? 88 : 38) : 20); }
+    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? (thumbnails ? 138 : 38) : 20); }
     juce::String getUniqueName() const override { return kind == Kind::plugin ? description.createIdentifierString() : label; }
 
     void paintItem(juce::Graphics& g, int width, int height) override
@@ -193,7 +193,8 @@ public:
         int textLeft = 4;
         if (thumbnails && width >= 110)
         {
-            const juce::Rectangle<int> imageArea(4, 5, 92, height - 10);
+            const int imageWidth = juce::jlimit(92, 180, (width * 48) / 100);
+            const juce::Rectangle<int> imageArea(4, 5, imageWidth, height - 10);
             g.setColour(juce::Colour(0xff1b2833));
             g.fillRoundedRectangle(imageArea.toFloat(), 4.0f);
             if (thumbnailImage.isValid()) g.drawImageWithin(thumbnailImage, imageArea.getX(), imageArea.getY(), imageArea.getWidth(), imageArea.getHeight(), juce::RectanglePlacement::centred);
@@ -220,7 +221,7 @@ public:
                 g.drawFittedText(manufacturer.isNotEmpty() ? manufacturer : "LIBERTY PLUGINS",
                     imageArea.withTrimmedTop(53).reduced(7, 2), juce::Justification::centred, 1);
             }
-            textLeft = 102;
+            textLeft = imageArea.getRight() + 8;
         }
         // Obsidian soft white keeps plugin names prominent without harsh pure white.
         g.setColour(juce::Colour(0xffeffcfd));
@@ -266,6 +267,26 @@ private:
     std::function<void(const juce::PluginDescription&)> toggleFavourite;
 };
 
+// Accept Finder file drops on the TreeView itself, not its parent panel.
+// JUCE routes external file drags to the component directly beneath the cursor.
+class ArtworkPluginTree final : public juce::TreeView, public juce::FileDragAndDropTarget
+{
+public:
+    std::function<void(const juce::File&, PluginTreeItem*)> onArtworkDropped;
+
+    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    {
+        return files.size() == 1 && juce::File(files[0]).hasFileExtension("png");
+    }
+
+    void filesDropped(const juce::StringArray& files, int, int y) override
+    {
+        if (!isInterestedInFileDrag(files)) return;
+        auto* item = dynamic_cast<PluginTreeItem*>(getItemAt(y));
+        if (onArtworkDropped) onArtworkDropped(juce::File(files[0]), item);
+    }
+};
+
 // One Knob controls reserve separate rectangles for their icon and label.
 // Never paint icons over JUCE's centred default TextButton text.
 class OneKnobButton final : public juce::TextButton
@@ -307,8 +328,7 @@ public:
 
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
-                           private juce::FileBrowserListener,
-                           public juce::FileDragAndDropTarget
+                           private juce::FileBrowserListener
 {
 public:
     void ensureToggleVisible()
@@ -388,6 +408,10 @@ public:
         // Obsidian turquoise highlights plugin drag-and-drop targets consistently.
         pluginTree.setColour(juce::TreeView::dragAndDropIndicatorColourId, juce::Colour(0xff54d6dc));
         addAndMakeVisible(pluginTree);
+        pluginTree.onArtworkDropped = [this](const juce::File& file, PluginTreeItem* item)
+        {
+            acceptDroppedArtwork(file, item);
+        };
         thumbnailModeButton.setButtonText("MINIATURES");
         thumbnailModeButton.setTooltip("Affiche les captures authentiques du catalogue local quand elles existent; sinon une couverture provisoire.");
         thumbnailModeButton.setClickingTogglesState(true);
@@ -1473,21 +1497,8 @@ private:
     }
 
 
-    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    void acceptDroppedArtwork(const juce::File& file, PluginTreeItem* item)
     {
-        return files.size() == 1 && juce::File(files[0]).hasFileExtension("png");
-    }
-
-    void filesDropped(const juce::StringArray& files, int x, int y) override
-    {
-        if (!isInterestedInFileDrag(files)) return;
-        const auto point = pluginTree.getLocalPoint(this, juce::Point<int>(x, y));
-        if (!pluginTree.getLocalBounds().contains(point))
-        {
-            pluginStatus.setText("Déposez le PNG sur la ligne du plugin.", juce::dontSendNotification);
-            return;
-        }
-        auto* item = dynamic_cast<PluginTreeItem*>(pluginTree.getItemAt(point.y));
         const auto* description = item != nullptr ? item->getPluginDescription() : nullptr;
         if (description == nullptr)
         {
@@ -1497,7 +1508,7 @@ private:
         const auto name = description->name;
         const auto identifier = description->createIdentifierString();
         juce::String error;
-        if (libertySavePluginArtwork(juce::File(files[0]), identifier, error))
+        if (libertySavePluginArtwork(file, identifier, error))
         {
             rebuildPluginTree();
             pluginStatus.setText("Miniature enregistrée pour " + name + ".", juce::dontSendNotification);
@@ -2239,7 +2250,7 @@ private:
     BrowserFileFilter filter;
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
-    juce::TreeView pluginTree;
+    ArtworkPluginTree pluginTree;
     juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton;
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
