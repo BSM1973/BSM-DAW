@@ -13,9 +13,6 @@ void resizeLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
-#if JUCE_MAC
- #include <CoreGraphics/CoreGraphics.h>
-#endif
 #include <algorithm>
 #include <atomic>
 #include <map>
@@ -1455,9 +1452,9 @@ private:
        #else
         // ScreenCaptureKit cannot capture plugin windows without macOS TCC consent.
         // Ask on a deliberate user action, not in the plugin scanner or at startup.
-        if (!CGPreflightScreenCaptureAccess())
+        if (!libertyHasScreenCapturePermission())
         {
-            CGRequestScreenCaptureAccess();
+            libertyRequestScreenCapturePermission();
             juce::AlertWindow::showMessageBoxAsync(
                 juce::MessageBoxIconType::WarningIcon,
                 juce::String::fromUTF8("Autorisation de capture macOS"),

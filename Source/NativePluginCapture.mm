@@ -5,6 +5,16 @@
 #import <CoreFoundation/CoreFoundation.h>
 #include <unistd.h>
 
+bool libertyHasScreenCapturePermission()
+{
+    return CGPreflightScreenCaptureAccess();
+}
+
+bool libertyRequestScreenCapturePermission()
+{
+    return CGRequestScreenCaptureAccess();
+}
+
 // ScreenCaptureKit completion handlers may require the main run loop to turn.
 // This helper is called only inside Liberty's disposable artwork subprocess.
 // Blocking its JUCE message thread on a semaphore prevents those callbacks
