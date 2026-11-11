@@ -13,6 +13,9 @@ void resizeLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
+#if JUCE_MAC
+ #include <CoreGraphics/CoreGraphics.h>
+#endif
 #include <algorithm>
 #include <atomic>
 #include <map>
@@ -433,11 +436,14 @@ public:
             menu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"), !batchArtworkRunning.load(), false);
             menu.addSeparator();
             const bool batchIdle = !batchArtworkRunning.load();
+            menu.addItem(12, juce::String::fromUTF8("CAPTURE AUTO : TESTER 1 PLUGIN MANQUANT"), batchIdle, false);
             menu.addItem(6, juce::String::fromUTF8("CAPTURE AUTO : TESTER 10 PLUGINS MANQUANTS"), batchIdle, false);
             menu.addItem(7, juce::String::fromUTF8("CAPTURE AUTO : 50 PLUGINS MANQUANTS"), batchIdle, false);
             menu.addItem(8, juce::String::fromUTF8("CAPTURE AUTO : TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
             menu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
             menu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
+            menu.addSeparator();
+            menu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -447,6 +453,8 @@ public:
                     if (choice == 2) safe->refreshOfficialArtwork();
                     if (choice == 4) safe->captureSelectedPluginArtwork();
                     if (choice == 5) safe->captureIsolatedPluginArtwork();
+                    if (choice == 12) safe->startBatchArtworkCapture(1, false);
+                    if (choice == 11) safe->showBatchArtworkLog();
                     if (choice == 6) safe->startBatchArtworkCapture(10, false);
                     if (choice == 7) safe->startBatchArtworkCapture(50, false);
                     if (choice == 8) safe->startBatchArtworkCapture(0, false);
@@ -1418,6 +1426,18 @@ private:
     // Explicit opt-in bulk capture. Each AU/VST3 is loaded in the existing
     // disposable child process; no third-party processor enters the DAW itself.
     // Queue is a snapshot, and only the JUCE message thread touches the UI.
+    void showBatchArtworkLog()
+    {
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty");
+        const auto report = folder.getChildFile("PluginArtworkBatchFailures.tsv");
+        const auto captureLog = folder.getChildFile("PluginArtworkCapture.log");
+        if (report.existsAsFile()) report.revealToUser();
+        else if (captureLog.existsAsFile()) captureLog.revealToUser();
+        else pluginStatus.setText(juce::String::fromUTF8("Aucun journal de capture enregistré."),
+                                  juce::dontSendNotification);
+    }
+
     void cancelBatchArtworkCapture()
     {
         if (!batchArtworkRunning.load()) return;
@@ -1433,6 +1453,22 @@ private:
                              juce::dontSendNotification);
         return;
        #else
+        // ScreenCaptureKit cannot capture plugin windows without macOS TCC consent.
+        // Ask on a deliberate user action, not in the plugin scanner or at startup.
+        if (!CGPreflightScreenCaptureAccess())
+        {
+            CGRequestScreenCaptureAccess();
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                juce::String::fromUTF8("Autorisation de capture macOS"),
+                juce::String::fromUTF8(
+                    "Autorisez Liberty dans Réglages Système > Confidentialité et sécurité "
+                    "> Enregistrement de l'écran et de l'audio système. "
+                    "Fermez puis rouvrez Liberty avant de réessayer une capture."));
+            pluginStatus.setText(juce::String::fromUTF8("Autorisation macOS requise : aucune capture lancée."),
+                                 juce::dontSendNotification);
+            return;
+        }
         if (batchArtworkRunning.load() || captureRunning.load()
             || scanning.load() || artworkRefreshing.load())
         {
@@ -1505,9 +1541,19 @@ private:
                 const auto destination = folder.getChildFile(hash + ".png");
                 if (destination.existsAsFile()) { ++completed; ++succeeded; continue; }
 
+                const juce::String pending = juce::String::fromUTF8("Capture en cours (")
+                    + juce::String(completed + 1) + " / " + juce::String(total) + ") : "
+                    + description.name;
+                juce::MessageManager::callAsync([safe, pending]
+                {
+                    if (safe != nullptr && !safe->stopped.load())
+                        safe->pluginStatus.setText(pending, juce::dontSendNotification);
+                });
+
                 auto input = juce::File::createTempFile(".xml");
                 auto output = juce::File::createTempFile(".png");
                 bool success = false;
+                bool processStarted = false;
                 juce::String reason = "Capture impossible";
                 const auto xml = description.createXml();
                 if (xml != nullptr && input.replaceWithText(xml->toString()))
@@ -1518,6 +1564,7 @@ private:
                         input.getFullPathName(), output.getFullPathName() });
                     if (started)
                     {
+                        processStarted = true;
                         int elapsedMs = 0;
                         while (worker.isRunning() && elapsedMs < 30000
                                && !stopped.load() && !batchArtworkCancel.load())
@@ -1546,6 +1593,25 @@ private:
                 input.deleteFile();
                 output.deleteFile();
 
+                // Read the isolated worker's own explanation before the next
+                // process truncates its log. Do not just show an opaque exit code.
+                if (!success && processStarted)
+                {
+                    const auto captureLog = folder.getSiblingFile("PluginArtworkCapture.log");
+                    if (captureLog.existsAsFile())
+                    {
+                        const auto details = juce::StringArray::fromLines(captureLog.loadFileAsString());
+                        for (int i = details.size() - 1; i >= 0; --i)
+                        {
+                            const auto line = details[i].trim();
+                            if (line.startsWith("ECHEC : "))
+                            {
+                                reason = line.fromFirstOccurrenceOf("ECHEC : ", false, false);
+                                break;
+                            }
+                        }
+                    }
+                }
                 if (stopped.load() || batchArtworkCancel.load()) break;
                 ++completed;
                 if (success) ++succeeded;
@@ -1559,12 +1625,20 @@ private:
 
                 const juce::String progress = juce::String::fromUTF8("Captures : ")
                     + juce::String(completed) + " / " + juce::String(total)
-                    + juce::String::fromUTF8(" | Réussites : ") + juce::String(succeeded)
+                    + juce::String::fromUTF8(" | PNG : ") + juce::String(succeeded)
                     + juce::String::fromUTF8(" | Échecs : ") + juce::String(failed);
-                juce::MessageManager::callAsync([safe, progress]
+                const juce::String diagnostic = success
+                    ? description.name + juce::String::fromUTF8(" : miniature enregistrée.")
+                    : description.name + " : " + reason;
+                const bool updateImages = success && (total <= 10 || succeeded % 10 == 0);
+                juce::MessageManager::callAsync([safe, progress, diagnostic, updateImages]
                 {
                     if (safe != nullptr && !safe->stopped.load())
+                    {
+                        if (updateImages) safe->rebuildPluginTree();
                         safe->pluginStatus.setText(progress, juce::dontSendNotification);
+                        safe->pluginStatus.setTooltip(diagnostic);
+                    }
                 });
             }
 

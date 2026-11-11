@@ -10,7 +10,7 @@ include(FetchContent)
 FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 8.0.10 GIT_SHALLOW TRUE)
 FetchContent_Declare(signalsmith-stretch GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git GIT_TAG main GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(JUCE signalsmith-stretch)
-juce_add_gui_app(BSM_DAW PRODUCT_NAME "Liberty" COMPANY_NAME "BSM / Bijou Studio Music" VERSION "0.1.0" BUNDLE_ID "com.bsm.liberty" NEEDS_CURL FALSE NEEDS_WEB_BROWSER TRUE MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording.")
+juce_add_gui_app(BSM_DAW PRODUCT_NAME "Liberty" COMPANY_NAME "BSM / Bijou Studio Music" VERSION "0.1.0" BUNDLE_ID "com.bsm.liberty" NEEDS_CURL FALSE NEEDS_WEB_BROWSER TRUE MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording." PLIST_TO_MERGE "<key>NSScreenCaptureUsageDescription</key><string>Liberty captures plugin interfaces locally to display accurate thumbnails in its browser.</string>")
 target_sources(BSM_DAW PRIVATE
  Source/Main.cpp Source/MainComponent.cpp Source/AudioArrangement.cpp Source/AudioEngine.cpp Source/MidiEngine.cpp Source/StepSequencer.cpp Source/MidiQuantize.cpp Source/MidiEditor.cpp
  Source/MidiVelocityInteraction.cpp Source/MidiNoteSelectionInteraction.cpp Source/MidiGroupDragInteraction.cpp Source/MidiMarqueeOverlay.cpp Source/MidiMarqueeManager.cpp Source/MidiSelectAllInteraction.cpp Source/MidiQuantizeInteraction.cpp Source/MidiKeyboardRouter.cpp

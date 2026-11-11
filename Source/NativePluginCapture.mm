@@ -2,7 +2,27 @@
 #import <AppKit/AppKit.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreFoundation/CoreFoundation.h>
 #include <unistd.h>
+
+// ScreenCaptureKit completion handlers may require the main run loop to turn.
+// This helper is called only inside Liberty's disposable artwork subprocess.
+// Blocking its JUCE message thread on a semaphore prevents those callbacks
+// from completing on some macOS versions.
+static bool libertyWaitForScreenshot(dispatch_semaphore_t semaphore, double seconds)
+{
+    if (![NSThread isMainThread])
+        return dispatch_semaphore_wait(semaphore,
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC))) == 0;
+
+    const CFAbsoluteTime until = CFAbsoluteTimeGetCurrent() + seconds;
+    while (CFAbsoluteTimeGetCurrent() < until)
+    {
+        if (dispatch_semaphore_wait(semaphore, DISPATCH_TIME_NOW) == 0) return true;
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.03, true);
+    }
+    return dispatch_semaphore_wait(semaphore, DISPATCH_TIME_NOW) == 0;
+}
 
 bool captureLibertyPluginWindowNative(const juce::String& pluginName,
                                       const juce::File& output,
@@ -21,7 +41,7 @@ bool captureLibertyPluginWindowNative(const juce::String& pluginName,
                     discoveryError = e;
                     dispatch_semaphore_signal(discovery);
                 }];
-            if (dispatch_semaphore_wait(discovery, dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC)) != 0)
+            if (!libertyWaitForScreenshot(discovery, 8.0))
             {
                 error = "Delai depasse lors de la recherche des fenetres macOS.";
                 return false;
@@ -77,7 +97,7 @@ bool captureLibertyPluginWindowNative(const juce::String& pluginName,
                     captureError = e;
                     dispatch_semaphore_signal(done);
                 }];
-            if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0)
+            if (!libertyWaitForScreenshot(done, 10.0))
             {
                 error = "Delai depasse pendant la capture ScreenCaptureKit.";
                 return false;
