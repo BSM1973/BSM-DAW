@@ -2820,8 +2820,10 @@ private:
             if (groupByUsage)
             {
                 std::vector<PluginUsage> available;
-                const auto& predefined = family == 0 ? instrumentUsages() : effectUsages();
-                available.insert(available.end(), predefined.begin(), predefined.end());
+                if (family == 0)
+                    available.insert(available.end(), instrumentUsages().begin(), instrumentUsages().end());
+                else
+                    available.insert(available.end(), effectUsages().begin(), effectUsages().end());
                 available.push_back(PluginUsage::unclassified);
                 for (const auto usage : available)
                 {
