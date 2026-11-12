@@ -1459,7 +1459,7 @@ private:
         dialog->centreAroundComponent(&pluginFiltersButton, 420, 195);
         juce::Component::SafePointer<BrowserPanel> safe(this);
         dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-            [safe, dialog, renameFrom, pluginKey](int result)
+            [safe, dialog, renameFrom, pluginKey, rename](int result)
             {
                 if (safe == nullptr || safe->stopped.load() || result != 1) return;
                 const auto name = dialog->getTextEditorContents("collectionName").trim();
