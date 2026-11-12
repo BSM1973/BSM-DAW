@@ -135,24 +135,9 @@ public:
           toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn))
     {
         if (descriptionIn != nullptr) description = *descriptionIn;
-        // Decode the optional thumbnail once per tree item, never during painting.
-        if (kind == Kind::plugin && thumbnails)
-        {
-            const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                .getChildFile("Liberty").getChildFile("PluginThumbnails");
-            const auto file = folder.getChildFile(juce::String::toHexString(
-                (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-            if (file.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(file);
-            // Recognise locally supplied authentic plugin screenshots without opening plugin code.
-            // Prefer an exact plug-in identifier; never guess a screenshot from a brand alone.
-            if (!thumbnailImage.isValid())
-            {
-                const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
-                const auto exact = catalogue.getChildFile(juce::String::toHexString(
-                    (juce::int64) description.createIdentifierString().hashCode64()) + ".png");
-                if (exact.existsAsFile()) thumbnailImage = juce::ImageFileFormat::loadFrom(exact);
-            }
-        }
+        // Artwork is decoded lazily on first visibility, not when JUCE builds
+        // hundreds of collapsed folders or filters thousands of plugins.
+        // The thumbnail is still owned by each TreeViewItem and released with it.
     }
 
     bool mightContainSubItems() override { return kind != Kind::plugin; }
@@ -196,6 +181,25 @@ public:
         int textLeft = 4;
         if (thumbnails && width >= 110)
         {
+            if (!thumbnailReadAttempted)
+            {
+                thumbnailReadAttempted = true;
+                const auto folder = juce::File::getSpecialLocation(
+                    juce::File::userApplicationDataDirectory)
+                    .getChildFile("Liberty").getChildFile("PluginThumbnails");
+                const auto fileName = juce::String::toHexString(
+                    (juce::int64) description.createIdentifierString().hashCode64()) + ".png";
+                const auto localFile = folder.getChildFile(fileName);
+                if (localFile.existsAsFile())
+                    thumbnailImage = juce::ImageFileFormat::loadFrom(localFile);
+                if (!thumbnailImage.isValid())
+                {
+                    const auto exactCatalogue = folder.getSiblingFile("PluginArtworkCatalogue")
+                        .getChildFile(fileName);
+                    if (exactCatalogue.existsAsFile())
+                        thumbnailImage = juce::ImageFileFormat::loadFrom(exactCatalogue);
+                }
+            }
             const int imageWidth = juce::jlimit(92, 180, (width * 48) / 100);
             const juce::Rectangle<int> imageArea(4, 5, imageWidth, height - 10);
             g.setColour(juce::Colour(0xff1b2833));
@@ -276,6 +280,7 @@ public:
 private:
     Kind kind;
     bool thumbnails = false;
+    bool thumbnailReadAttempted = false;
     juce::Image thumbnailImage;
     juce::String label;
     juce::PluginDescription description;
@@ -638,6 +643,7 @@ public:
         pluginSearch.onReturnKey = [this]
         {
             if (category != Category::plugins) return;
+            if (pluginSearchPending) rebuildPluginTree();
             if (auto* selected = selectedPluginDescription())
             {
                 const juce::PluginDescription description = *selected;
@@ -660,7 +666,16 @@ public:
         pluginSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff40515f));
         pluginSearch.onTextChange = [this]
         {
-            if (category == Category::plugins) rebuildPluginTree();
+            if (category == Category::plugins)
+            {
+                // For 1,800+ plugins, avoid destroying every TreeViewItem and
+                // decoding images for each keystroke. Empty search clears at
+                // once; other queries settle briefly on the 10 Hz UI timer.
+                pluginSearchPending = true;
+                pluginSearchChangedAt = juce::Time::getMillisecondCounter();
+                if (pluginSearch.getText().trim().isEmpty())
+                    rebuildPluginTree();
+            }
             else if (category != Category::splice)
             {
                 filter.query = pluginSearch.getText().trim();
@@ -2466,7 +2481,11 @@ private:
 
     void navigatePluginResults(int step)
     {
-        if (category != Category::plugins || keyboardResults.empty()) return;
+        if (category != Category::plugins) return;
+        // Arrow navigation must use the latest typed query even when the
+        // debounce delay has not yet expired.
+        if (pluginSearchPending) rebuildPluginTree();
+        if (keyboardResults.empty()) return;
         juce::String selectedKey;
         if (const auto* old = selectedPluginDescription())
             selectedKey = old->createIdentifierString();
@@ -2492,6 +2511,9 @@ private:
 
     void rebuildPluginTree()
     {
+        // Any explicit rebuild (filter, refresh, keyboard action) supersedes a
+        // scheduled keystroke rebuild, avoiding a duplicate expensive pass.
+        pluginSearchPending = false;
         // Status and filter are based on the same exact JUCE identifiers that
         // the existing PNG importer uses. AU and VST3 variants are independent.
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -3079,6 +3101,9 @@ private:
     void timerCallback() override
     {
         if (stopped.load()) return;
+        if (category == Category::plugins && pluginSearchPending && !scanning.load()
+            && juce::Time::getMillisecondCounter() - pluginSearchChangedAt >= 200)
+            rebuildPluginTree();
         if (category == Category::audio && previewTransport.isPlaying()) repaint();
         if (category == Category::audio && sampleSearchPending && !sampleSearchRunning.load()
             && juce::Time::getMillisecondCounter() - sampleSearchChangedAt >= 350)
@@ -3179,6 +3204,8 @@ private:
     int sampleFilterMask = 0;
     bool sampleSearchPending = false;
     juce::uint32 sampleSearchChangedAt = 0;
+    bool pluginSearchPending = false;
+    juce::uint32 pluginSearchChangedAt = 0;
     juce::AudioFormatManager previewFormats;
     juce::AudioThumbnailCache previewThumbnailCache { 32 };
     juce::AudioThumbnail previewThumbnail { 256, previewFormats, previewThumbnailCache };
