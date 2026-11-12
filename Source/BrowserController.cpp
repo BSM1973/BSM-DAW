@@ -2273,7 +2273,7 @@ private:
         for (int i = 0; i < manufacturers.size(); ++i)
         {
             auto prefix = manufacturers[i].substring(0, 1).toUpperCase();
-            if (prefix.isEmpty() || !prefix[0].isLetter())
+            if (prefix.isEmpty() || !prefix.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
                 prefix = "#";
             if (prefix != letter)
             {
@@ -2282,7 +2282,7 @@ private:
                 letter = prefix;
                 letterMenu = juce::PopupMenu();
             }
-            letterMenu.addItem(301 + i, manufacturers[i], true,
+            letterMenu.addItem(1000 + i, manufacturers[i], true,
                 manufacturers[i].equalsIgnoreCase(selectedManufacturer));
         }
         if (letter.isNotEmpty())
@@ -2328,8 +2328,8 @@ private:
                 }
                 else if (chosen == 300)
                     safe->selectedManufacturer.clear();
-                else if (chosen >= 301 && chosen < 301 + manufacturers.size())
-                    safe->selectedManufacturer = manufacturers[chosen - 301];
+                else if (chosen >= 1000 && chosen < 1000 + manufacturers.size())
+                    safe->selectedManufacturer = manufacturers[chosen - 1000];
                 else if (chosen >= 400 && chosen <= 402)
                     safe->pluginFormatFilter = (PluginFormatFilter) (chosen - 400);
                 else if (chosen >= 500 && chosen <= 502)
