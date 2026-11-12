@@ -470,6 +470,29 @@ private:
     std::vector<std::unique_ptr<ArtworkMenuAction>> buttons;
 };
 
+// Search box keeps focus while Up/Down navigates the filtered plugin tree.
+// Ordinary text editing and all other keys still use JUCE's TextEditor.
+class LibertyPluginSearchEditor final : public juce::TextEditor
+{
+public:
+    std::function<void(int)> onNavigateResults;
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (!key.getModifiers().isAnyModifierKeyDown())
+        {
+            const int delta = key.isKeyCode(juce::KeyPress::downKey) ? 1
+                            : key.isKeyCode(juce::KeyPress::upKey) ? -1 : 0;
+            if (delta != 0 && onNavigateResults)
+            {
+                onNavigateResults(delta);
+                return true;
+            }
+        }
+        return juce::TextEditor::keyPressed(key);
+    }
+};
+
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
                            private juce::FileBrowserListener
@@ -606,6 +629,32 @@ public:
         presetsButton.setButtonText("PRESETS");
         pluginsButton.setButtonText("PLUGINS");
         pluginSearch.setTextToShowWhenEmpty(juce::String::fromUTF8("Rechercher un plugin ou fabricant..."), juce::Colour(0xff8da6b1));
+        pluginSearch.setTooltip(juce::String::fromUTF8(
+            "Rechercher un plugin. Flèches haut/bas : parcourir les résultats ; Entrée : charger le plugin."));
+        pluginSearch.onNavigateResults = [this](int step)
+        {
+            if (category == Category::plugins) navigatePluginResults(step);
+        };
+        pluginSearch.onReturnKey = [this]
+        {
+            if (category != Category::plugins) return;
+            if (auto* selected = selectedPluginDescription())
+            {
+                const juce::PluginDescription description = *selected;
+                loadPluginDescription(description);
+            }
+            else if (!keyboardResults.empty())
+            {
+                auto* first = keyboardResults.front();
+                first->setSelected(true, true);
+                pluginTree.scrollToKeepItemVisible(first);
+                if (const auto* description = first->getPluginDescription())
+                {
+                    const juce::PluginDescription copy = *description;
+                    loadPluginDescription(copy);
+                }
+            }
+        };
         pluginSearch.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff101821));
         pluginSearch.setColour(juce::TextEditor::textColourId, juce::Colour(0xffeffcfd));
         pluginSearch.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff40515f));
@@ -1144,7 +1193,15 @@ private:
         const auto key = favouriteKey(d);
         const int index = favouriteKeys.indexOf(key);
         if (index >= 0) favouriteKeys.remove(index); else favouriteKeys.add(key);
-        saveFavourites(); rebuildPluginTree();
+        saveFavourites();
+        // The favourite star can be toggled from TreeViewItem::itemClicked.
+        // Defer reconstruction so JUCE finishes dispatching that mouse event
+        // before the originating item is destroyed.
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::MessageManager::callAsync([safe]
+        {
+            if (safe != nullptr && !safe->stopped.load()) safe->rebuildPluginTree();
+        });
         pluginStatus.setText(index >= 0 ? "Retiré des favoris" : "Ajouté aux favoris", juce::dontSendNotification);
     }
 
@@ -2407,6 +2464,32 @@ private:
         rebuildPluginTree();
     }
 
+    void navigatePluginResults(int step)
+    {
+        if (category != Category::plugins || keyboardResults.empty()) return;
+        juce::String selectedKey;
+        if (const auto* old = selectedPluginDescription())
+            selectedKey = old->createIdentifierString();
+        int index = -1;
+        for (int i = 0; i < (int) keyboardResults.size(); ++i)
+        {
+            if (const auto* d = keyboardResults[(size_t)i]->getPluginDescription();
+                d != nullptr && d->createIdentifierString() == selectedKey)
+            {
+                index = i;
+                break;
+            }
+        }
+        index = index < 0 ? (step >= 0 ? 0 : (int) keyboardResults.size() - 1)
+                          : juce::jlimit(0, (int) keyboardResults.size() - 1, index + step);
+        auto* item = keyboardResults[(size_t)index];
+        for (auto* parent = item->getParentItem(); parent != nullptr;
+             parent = parent->getParentItem())
+            parent->setOpen(true);
+        item->setSelected(true, true);
+        pluginTree.scrollToKeepItemVisible(item);
+    }
+
     void rebuildPluginTree()
     {
         // Status and filter are based on the same exact JUCE identifiers that
@@ -2460,7 +2543,12 @@ private:
             + juce::String::fromUTF8(" | Échecs non résolus : ") + juce::String(artworkFailedCount)
             + juce::String::fromUTF8(" | À tenter : ") + juce::String(missing - artworkFailedCount));
 
+        // Preserve the exact AU/VST3 selection across a search/filter refresh.
+        juce::String previousSelection;
+        if (const auto* selected = selectedPluginDescription())
+            previousSelection = selected->createIdentifierString();
         pluginTree.setRootItem(nullptr);
+        keyboardResults.clear();
         pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
         std::sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& a, const auto& b)
         {
@@ -2495,7 +2583,13 @@ private:
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions)
-            if (isFavouritePlugin(d) && matches(d)) fav->addSubItem(makePluginItem(d));
+            if (isFavouritePlugin(d) && matches(d))
+            {
+                auto* item = makePluginItem(d);
+                fav->addSubItem(item);
+                if (quickView == QuickView::favourites)
+                    keyboardResults.push_back(item);
+            }
 
         // Most-recently loaded plugins are displayed in actual usage order.
         // This is a second view of installed descriptions, not a plugin rescan.
@@ -2510,7 +2604,10 @@ private:
                     recentGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "RÉCENTS");
                     pluginRoot->addSubItem(recentGroup);
                 }
-                recentGroup->addSubItem(makePluginItem(d));
+                auto* item = makePluginItem(d);
+                recentGroup->addSubItem(item);
+                if (quickView == QuickView::recent)
+                    keyboardResults.push_back(item);
                 break;
             }
         }
@@ -2538,7 +2635,13 @@ private:
                     group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
                     parent->addSubItem(group);
                 }
-                if (group != nullptr) group->addSubItem(makePluginItem(d));
+                if (group != nullptr)
+                {
+                    auto* item = makePluginItem(d);
+                    group->addSubItem(item);
+                    if (quickView == QuickView::all)
+                        keyboardResults.push_back(item);
+                }
             }
         }
         // During a search, reveal matching manufacturers without requiring
@@ -2557,6 +2660,30 @@ private:
         pluginRoot->setOpen(true); fav->setOpen(true);
         if (recentGroup != nullptr) recentGroup->setOpen(true);
         instruments->setOpen(true); audioEffects->setOpen(true);
+
+        PluginTreeItem* preferred = nullptr;
+        if (previousSelection.isNotEmpty())
+            for (auto* item : keyboardResults)
+            {
+                const auto* d = item->getPluginDescription();
+                if (d != nullptr && d->createIdentifierString() == previousSelection)
+                {
+                    preferred = item;
+                    break;
+                }
+            }
+        // A nonempty search presents the first result immediately without
+        // loading a plugin or moving keyboard focus away from the search.
+        if (preferred == nullptr && query.isNotEmpty() && !keyboardResults.empty())
+            preferred = keyboardResults.front();
+        if (preferred != nullptr)
+        {
+            for (auto* parent = preferred->getParentItem(); parent != nullptr;
+                 parent = parent->getParentItem())
+                parent->setOpen(true);
+            preferred->setSelected(true, true);
+            pluginTree.scrollToKeepItemVisible(preferred);
+        }
         pluginTree.repaint();
         repaint(10, 373, juce::jmax(0, getWidth() - 20), 25);
     }
@@ -3034,9 +3161,10 @@ private:
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
     juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton, pluginFiltersButton;
-    juce::TextEditor pluginSearch;
+    LibertyPluginSearchEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
+    std::vector<PluginTreeItem*> keyboardResults; // owned by pluginRoot, cleared on rebuild
     juce::StringArray favouriteKeys, recentKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton, previewPlay, previewStop;
     juce::Slider previewVolume;
