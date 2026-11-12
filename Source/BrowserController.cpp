@@ -507,6 +507,7 @@ public:
         previewPlayer.setSource(&previewTransport);
         owner.audioEngine.getDeviceManager().addAudioCallback(&previewPlayer);
         loadFavourites();
+        loadRecentPlugins();
 
         toggleButton.setButtonText("NAVIGATEUR");
         toggleButton.setAlwaysOnTop(true);
@@ -1071,6 +1072,7 @@ private:
     enum class ArtworkView { all, withImage, withoutImage, failed };
     enum class PluginFormatFilter { all, au, vst3 };
     enum class PluginTypeFilter { all, instrument, effect };
+    enum class QuickView { all, favourites, recent };
 
     static juce::File favouritesFile()
     {
@@ -1095,6 +1097,47 @@ private:
 
     void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
+
+    static juce::File recentPluginsFile()
+    {
+        return favouritesFile().getSiblingFile("PluginRecent.txt");
+    }
+
+    void loadRecentPlugins()
+    {
+        recentKeys.clear();
+        const auto file = recentPluginsFile();
+        if (!file.existsAsFile()) return;
+        for (const auto& raw : juce::StringArray::fromLines(file.loadFileAsString()))
+        {
+            const auto key = raw.trim();
+            if (key.isEmpty() || recentKeys.contains(key)) continue;
+            recentKeys.add(key);
+            if (recentKeys.size() >= 20) break;
+        }
+    }
+
+    void rememberRecentPlugin(const juce::PluginDescription& d)
+    {
+        // Call only on confirmed successful loads, never on failed attempts,
+        // scanning or artwork capture. Store the exact AU/VST3 identifier.
+        const auto key = favouriteKey(d);
+        if (key.isEmpty()) return;
+        for (int i = recentKeys.size() - 1; i >= 0; --i)
+            if (recentKeys[i] == key) recentKeys.remove(i);
+        recentKeys.insert(0, key);
+        while (recentKeys.size() > 20) recentKeys.remove(recentKeys.size() - 1);
+        recentPluginsFile().replaceWithText(recentKeys.joinIntoString("\n"));
+
+        // The load can originate from TreeViewItem::itemDoubleClicked.
+        // Rebuild later, never destroy that tree item during its callback.
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::MessageManager::callAsync([safe]
+        {
+            if (safe != nullptr && !safe->stopped.load())
+                safe->rebuildPluginTree();
+        });
+    }
 
     void toggleFavourite(const juce::PluginDescription& d)
     {
@@ -2228,7 +2271,8 @@ private:
     {
         const int active = (selectedManufacturer.isNotEmpty() ? 1 : 0)
                          + (pluginFormatFilter != PluginFormatFilter::all ? 1 : 0)
-                         + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0);
+                         + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0)
+                         + (quickView != QuickView::all ? 1 : 0);
         pluginFiltersButton.setButtonText(active == 0 ? "FILTRES"
             : "FILTRES (" + juce::String(active) + ")");
         pluginFiltersButton.setColour(juce::TextButton::buttonColourId,
@@ -2241,7 +2285,10 @@ private:
                 : pluginFormatFilter == PluginFormatFilter::vst3 ? "VST3" : "Tous")
             + juce::String::fromUTF8(" | Type : ")
             + (pluginTypeFilter == PluginTypeFilter::instrument ? "Instruments"
-                : pluginTypeFilter == PluginTypeFilter::effect ? "Effets" : "Tous");
+                : pluginTypeFilter == PluginTypeFilter::effect ? "Effets" : "Tous")
+            + juce::String::fromUTF8(" | Accès rapide : ")
+            + (quickView == QuickView::favourites ? "Favoris"
+                : quickView == QuickView::recent ? "Récents" : "Tous");
         if (visibleCount >= 0)
             detail += juce::String::fromUTF8(" | Résultats : ") + juce::String(visibleCount);
         pluginFiltersButton.setTooltip(detail);
@@ -2260,6 +2307,15 @@ private:
 
         juce::PopupMenu menu;
         menu.addSectionHeader(juce::String::fromUTF8("FILTRES DE PLUGINS"));
+
+        juce::PopupMenu accessMenu;
+        accessMenu.addItem(700, juce::String::fromUTF8("TOUS LES PLUGINS"), true,
+                           quickView == QuickView::all);
+        accessMenu.addItem(701, juce::String::fromUTF8("FAVORIS UNIQUEMENT"), true,
+                           quickView == QuickView::favourites);
+        accessMenu.addItem(702, juce::String::fromUTF8("RÉCENTS UNIQUEMENT"), true,
+                           quickView == QuickView::recent);
+        menu.addSubMenu(juce::String::fromUTF8("ACCÈS RAPIDE"), accessMenu);
 
         juce::PopupMenu manufacturerMenu;
         manufacturerMenu.addItem(300, juce::String::fromUTF8("TOUS LES FABRICANTS"),
@@ -2310,7 +2366,8 @@ private:
         menu.addSeparator();
         const bool active = selectedManufacturer.isNotEmpty()
             || pluginFormatFilter != PluginFormatFilter::all
-            || pluginTypeFilter != PluginTypeFilter::all;
+            || pluginTypeFilter != PluginTypeFilter::all
+            || quickView != QuickView::all;
         menu.addItem(600, juce::String::fromUTF8("RÉINITIALISER LES FILTRES"), active);
 
         juce::Component::SafePointer<BrowserPanel> safe(this);
@@ -2325,7 +2382,10 @@ private:
                     safe->selectedManufacturer.clear();
                     safe->pluginFormatFilter = PluginFormatFilter::all;
                     safe->pluginTypeFilter = PluginTypeFilter::all;
+                    safe->quickView = QuickView::all;
                 }
+                else if (chosen >= 700 && chosen <= 702)
+                    safe->quickView = (QuickView) (chosen - 700);
                 else if (chosen == 300)
                     safe->selectedManufacturer.clear();
                 else if (chosen >= 1000 && chosen < 1000 + manufacturers.size())
@@ -2418,6 +2478,8 @@ private:
                 || d.manufacturerName.containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
+            if (quickView == QuickView::favourites && !isFavouritePlugin(d)) return false;
+            if (quickView == QuickView::recent && !recentKeys.contains(favouriteKey(d))) return false;
             if (artworkView == ArtworkView::all) return true;
             const bool present = hasArtwork(d);
             if (artworkView == ArtworkView::withImage) return present;
@@ -2434,6 +2496,24 @@ private:
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions)
             if (isFavouritePlugin(d) && matches(d)) fav->addSubItem(makePluginItem(d));
+
+        // Most-recently loaded plugins are displayed in actual usage order.
+        // This is a second view of installed descriptions, not a plugin rescan.
+        PluginTreeItem* recentGroup = nullptr;
+        for (const auto& key : recentKeys)
+        {
+            for (const auto& d : pluginDescriptions)
+            {
+                if (favouriteKey(d) != key || !matches(d)) continue;
+                if (recentGroup == nullptr)
+                {
+                    recentGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "RÉCENTS");
+                    pluginRoot->addSubItem(recentGroup);
+                }
+                recentGroup->addSubItem(makePluginItem(d));
+                break;
+            }
+        }
 
         // Library-style hierarchy: instruments and audio effects are distinct.
         // Keep manufacturers inside each family, and never classify unknown
@@ -2466,6 +2546,7 @@ private:
         if (query.isNotEmpty() || selectedManufacturer.isNotEmpty()
             || pluginFormatFilter != PluginFormatFilter::all
             || pluginTypeFilter != PluginTypeFilter::all
+            || quickView != QuickView::all
             || artworkView != ArtworkView::all)
         {
             for (auto* family : { instruments, audioEffects })
@@ -2473,7 +2554,9 @@ private:
                     family->getSubItem(i)->setOpen(true);
         }
         pluginTree.setRootItem(pluginRoot.get());
-        pluginRoot->setOpen(true); fav->setOpen(true); instruments->setOpen(true); audioEffects->setOpen(true);
+        pluginRoot->setOpen(true); fav->setOpen(true);
+        if (recentGroup != nullptr) recentGroup->setOpen(true);
+        instruments->setOpen(true); audioEffects->setOpen(true);
         pluginTree.repaint();
         repaint(10, 373, juce::jmax(0, getWidth() - 20), 25);
     }
@@ -2565,6 +2648,7 @@ private:
                     juce::AlertWindow::WarningIcon,"Liberty - Plugin",error,"OK");
                 return;
             }
+            rememberRecentPlugin(d);
             toggleButton.setToggleState(false,juce::dontSendNotification);
             setBrowserOpen(false);
             refreshLibertyMixConsole(&owner);
@@ -2625,6 +2709,7 @@ private:
             }
         }
         if (!ok) juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Liberty - Plugin", error, "OK");
+        else rememberRecentPlugin(d);
         refreshPluginStatus();
         refreshLibertyMixConsole(&owner);
         owner.repaint();
@@ -2952,7 +3037,7 @@ private:
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
-    juce::StringArray favouriteKeys;
+    juce::StringArray favouriteKeys, recentKeys;
     juce::TextButton toggleButton, closeButton, filesButton, audioButton, midiButton, presetsButton, pluginsButton, spliceButton, homeButton, parentFolderButton, previewPlay, previewStop;
     juce::Slider previewVolume;
     juce::ToggleButton previewAuto;
@@ -2981,6 +3066,7 @@ private:
     ArtworkView artworkView = ArtworkView::all;
     PluginFormatFilter pluginFormatFilter = PluginFormatFilter::all;
     PluginTypeFilter pluginTypeFilter = PluginTypeFilter::all;
+    QuickView quickView = QuickView::all;
     juce::String selectedManufacturer;
     int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
