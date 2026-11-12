@@ -455,6 +455,13 @@ public:
             retryMenu.addItem(14, juce::String::fromUTF8("RÉESSAYER 100 CAPTURES EN ÉCHEC"), batchIdle, false);
             menu.addSubMenu(juce::String::fromUTF8("RÉESSAYER LES ÉCHECS"), retryMenu);
 
+            juce::PopupMenu viewMenu;
+            viewMenu.addItem(20, juce::String::fromUTF8("TOUS LES PLUGINS"), true, artworkView == ArtworkView::all);
+            viewMenu.addItem(21, juce::String::fromUTF8("AVEC MINIATURE"), true, artworkView == ArtworkView::withImage);
+            viewMenu.addItem(22, juce::String::fromUTF8("SANS MINIATURE"), true, artworkView == ArtworkView::withoutImage);
+            viewMenu.addItem(23, juce::String::fromUTF8("CAPTURES EN ÉCHEC"), true, artworkView == ArtworkView::failed);
+            menu.addSubMenu(juce::String::fromUTF8("FILTRER LA BIBLIOTHÈQUE"), viewMenu);
+
             menu.addSeparator();
             juce::PopupMenu toolsMenu;
             toolsMenu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
@@ -479,6 +486,10 @@ public:
                     if (choice == 10) safe->startBatchArtworkCapture(10, true);
                     if (choice == 13) safe->startBatchArtworkCapture(1, true);
                     if (choice == 14) safe->startBatchArtworkCapture(100, true);
+                    if (choice == 20) safe->setArtworkView(ArtworkView::all);
+                    if (choice == 21) safe->setArtworkView(ArtworkView::withImage);
+                    if (choice == 22) safe->setArtworkView(ArtworkView::withoutImage);
+                    if (choice == 23) safe->setArtworkView(ArtworkView::failed);
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -767,6 +778,16 @@ public:
         pluginStatus.setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(pluginStatus);
 
+        // Compact PNG coverage dashboard: separate from the capture progress
+        // label so the two messages never overwrite one another.
+        artworkStatsLabel.setColour(juce::Label::backgroundColourId, juce::Colour(0xff142638));
+        artworkStatsLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb8e8ec));
+        artworkStatsLabel.setColour(juce::Label::outlineColourId, juce::Colour(0xff40515f));
+        artworkStatsLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+        artworkStatsLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(artworkStatsLabel);
+        artworkStatsLabel.setVisible(false);
+
         setVisible(false);
         owner.addAndMakeVisible(this);
         setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
@@ -854,6 +875,20 @@ public:
             g.setFont(juce::Font(11.0f, juce::Font::bold));
             g.drawText("ONE KNOB FX", 22, 172, getWidth() - 34, 20, juce::Justification::centredLeft);
         }
+        // The readout occupies y=374..392, the bar y=394..397 and the
+        // list starts at y=400. All three surfaces remain non-overlapping.
+        if (category == Category::plugins && getHeight() >= 540)
+        {
+            const float barWidth = (float) juce::jmax(0, getWidth() - 20);
+            g.setColour(juce::Colour(0xff243d50));
+            g.fillRoundedRectangle(10.0f, 394.0f, barWidth, 3.0f, 1.5f);
+            if (artworkTotalCount > 0 && artworkPresentCount > 0)
+            {
+                const float fraction = (float) artworkPresentCount / (float) artworkTotalCount;
+                g.setColour(juce::Colour(0xff54d6dc));
+                g.fillRoundedRectangle(10.0f, 394.0f, barWidth * fraction, 3.0f, 1.5f);
+            }
+        }
         // Obsidian secondary label improves category hint legibility on deep graphite.
         g.setColour(LibertyUI::Colour::textMuted);
         g.setFont(juce::Font(9.0f));
@@ -911,7 +946,13 @@ public:
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
         importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
-        pluginTree.setBounds(10, 374, juce::jmax(0, getWidth() - 20), juce::jmax(0, getHeight() - 476));
+        const bool showArtworkDashboard = category == Category::plugins && getHeight() >= 540;
+        artworkStatsLabel.setBounds(10, 374, juce::jmax(0, getWidth() - 20), 18);
+        artworkStatsLabel.setVisible(showArtworkDashboard);
+        const int treeTop = showArtworkDashboard ? 400 : 374;
+        const int treeBottomMargin = showArtworkDashboard ? 502 : 476;
+        pluginTree.setBounds(10, treeTop, juce::jmax(0, getWidth() - 20),
+                             juce::jmax(0, getHeight() - treeBottomMargin));
         const int controlsY = getHeight() - 94;
         const int w = juce::jmax(0, (getWidth() - 28) / 4);
         favouritePluginButton.setBounds(10, controlsY, w, 28);
@@ -928,6 +969,7 @@ public:
 
 private:
     enum class Category { files, audio, midi, presets, plugins, splice };
+    enum class ArtworkView { all, withImage, withoutImage, failed };
 
     static juce::File favouritesFile()
     {
@@ -1901,6 +1943,7 @@ private:
                                      : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
         }
         pluginTree.setVisible(pluginMode);
+        artworkStatsLabel.setVisible(pluginMode && getHeight() >= 540);
         thumbnailModeButton.setVisible(pluginMode);
         importThumbnailButton.setVisible(pluginMode);
         pluginSearch.setVisible(!spliceMode);
@@ -2005,8 +2048,66 @@ private:
             });
     }
 
+    void setArtworkView(ArtworkView next)
+    {
+        if (artworkView == next) return;
+        artworkView = next;
+        rebuildPluginTree();
+    }
+
     void rebuildPluginTree()
     {
+        // Status and filter are based on the same exact JUCE identifiers that
+        // the existing PNG importer uses. AU and VST3 variants are independent.
+        const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty").getChildFile("PluginThumbnails");
+        const auto catalogue = folder.getSiblingFile("PluginArtworkCatalogue");
+        const auto failuresFile = folder.getSiblingFile("PluginArtworkBatchFailures.tsv");
+        juce::StringArray failedHashes;
+        if (failuresFile.existsAsFile())
+            for (const auto& line : juce::StringArray::fromLines(failuresFile.loadFileAsString()))
+            {
+                const auto hash = line.upToFirstOccurrenceOf("\t", false, false).trim();
+                if (hash.isNotEmpty()) failedHashes.addIfNotAlreadyThere(hash);
+            }
+
+        const auto artworkHash = [](const juce::PluginDescription& description)
+        {
+            return juce::String::toHexString(
+                (juce::int64) description.createIdentifierString().hashCode64());
+        };
+        const auto hasArtwork = [&folder, &catalogue, &artworkHash](const juce::PluginDescription& d)
+        {
+            const auto name = artworkHash(d) + ".png";
+            return folder.getChildFile(name).existsAsFile()
+                || catalogue.getChildFile(name).existsAsFile();
+        };
+        artworkTotalCount = 0;
+        artworkPresentCount = 0;
+        int artworkFailedCount = 0;
+        juce::StringArray identifiers;
+        for (const auto& d : pluginDescriptions)
+        {
+            const auto identifier = d.createIdentifierString();
+            if (identifier.isEmpty() || identifiers.contains(identifier)) continue;
+            identifiers.add(identifier);
+            ++artworkTotalCount;
+            if (hasArtwork(d)) ++artworkPresentCount;
+            else if (failedHashes.contains(artworkHash(d))) ++artworkFailedCount;
+        }
+        const int missing = artworkTotalCount - artworkPresentCount;
+        artworkStatsLabel.setText(
+            juce::String::fromUTF8("  PNG ") + juce::String(artworkPresentCount) + "/"
+                + juce::String(artworkTotalCount)
+                + juce::String::fromUTF8("  |  SANS IMAGE ") + juce::String(missing)
+                + juce::String::fromUTF8("  |  ÉCHECS ") + juce::String(artworkFailedCount),
+            juce::dontSendNotification);
+        artworkStatsLabel.setTooltip(
+            juce::String::fromUTF8("Miniatures présentes : ") + juce::String(artworkPresentCount)
+            + juce::String::fromUTF8(" | Sans image : ") + juce::String(missing)
+            + juce::String::fromUTF8(" | Échecs non résolus : ") + juce::String(artworkFailedCount)
+            + juce::String::fromUTF8(" | À tenter : ") + juce::String(missing - artworkFailedCount));
+
         pluginTree.setRootItem(nullptr);
         pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
         std::sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& a, const auto& b)
@@ -2018,11 +2119,18 @@ private:
         });
 
         const auto query = pluginSearch.getText().trim();
-        const auto matches = [&query](const juce::PluginDescription& d)
+        const auto matches = [this, &query, &hasArtwork, &failedHashes, &artworkHash]
+            (const juce::PluginDescription& d)
         {
-            return query.isEmpty() || d.name.containsIgnoreCase(query)
+            const bool searchMatches = query.isEmpty() || d.name.containsIgnoreCase(query)
                 || d.manufacturerName.containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
+            if (!searchMatches) return false;
+            if (artworkView == ArtworkView::all) return true;
+            const bool present = hasArtwork(d);
+            if (artworkView == ArtworkView::withImage) return present;
+            if (artworkView == ArtworkView::withoutImage) return !present;
+            return !present && failedHashes.contains(artworkHash(d));
         };
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
@@ -2064,7 +2172,9 @@ private:
                     family->getSubItem(i)->setOpen(true);
         }
         pluginTree.setRootItem(pluginRoot.get());
-        pluginRoot->setOpen(true); fav->setOpen(true); instruments->setOpen(true); audioEffects->setOpen(true); pluginTree.repaint();
+        pluginRoot->setOpen(true); fav->setOpen(true); instruments->setOpen(true); audioEffects->setOpen(true);
+        pluginTree.repaint();
+        repaint(10, 373, juce::jmax(0, getWidth() - 20), 25);
     }
 
     void refreshPlugins()
@@ -2563,10 +2673,12 @@ private:
     juce::AudioSourcePlayer previewPlayer;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     OneKnobButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
-    juce::Label pluginStatus, spliceTitle, spliceInfo;
+    juce::Label pluginStatus, spliceTitle, spliceInfo, artworkStatsLabel;
     juce::TextButton spliceOpenPluginButton, spliceScanButton;
     juce::File rootDirectory;
     Category category = Category::files;
+    ArtworkView artworkView = ArtworkView::all;
+    int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
     juce::String scanStatusText;
