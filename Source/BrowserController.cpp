@@ -623,6 +623,17 @@ public:
             pluginTree.grabKeyboardFocus();
         };
         addAndMakeVisible(pluginSearch);
+        // One compact control next to search; no additional toolbar rows.
+        pluginFiltersButton.setButtonText("FILTRES");
+        pluginFiltersButton.setTooltip(juce::String::fromUTF8(
+            "Combiner fabricant, format AU/VST3 et instrument/effet."));
+        pluginFiltersButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff203746));
+        pluginFiltersButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff286674));
+        pluginFiltersButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
+        pluginFiltersButton.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
+        pluginFiltersButton.onClick = [this] { showPluginFiltersMenu(); };
+        addAndMakeVisible(pluginFiltersButton);
+        pluginFiltersButton.setVisible(false);
         spliceButton.setButtonText("SPLICE");
         for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
@@ -1016,7 +1027,21 @@ public:
             &filterButton, &doublerButton, &exciterButton, &deEsserButton, &gateButton, &bassBoostButton, &airButton, &punchButton, &softClipButton, &clearOneKnobButton };
         for (int i = 0; i < 20; ++i)
             oneKnobButtons[i]->setBounds(10 + (i % 4) * (oneKnobW + 2), oneKnobY + (i / 4) * 30, oneKnobW, 28);
-        pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
+        // Plugin search and filters share the same horizontal band without
+        // reducing the thumbnail/list vertical space.
+        if (category == Category::plugins)
+        {
+            constexpr int filterWidth = 87;
+            constexpr int gap = 7;
+            pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20 - filterWidth - gap), 23);
+            pluginFiltersButton.setBounds(juce::jmax(10, getWidth() - 10 - filterWidth),
+                                          76, filterWidth, 23);
+        }
+        else
+        {
+            pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
+            pluginFiltersButton.setBounds(0, 0, 0, 0);
+        }
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
         importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
@@ -1044,6 +1069,8 @@ public:
 private:
     enum class Category { files, audio, midi, presets, plugins, splice };
     enum class ArtworkView { all, withImage, withoutImage, failed };
+    enum class PluginFormatFilter { all, au, vst3 };
+    enum class PluginTypeFilter { all, instrument, effect };
 
     static juce::File favouritesFile()
     {
@@ -2061,6 +2088,7 @@ private:
                                      : "Splice Sounds non détecté - OUVRIR lancera automatiquement un scan.", juce::dontSendNotification);
         }
         pluginTree.setVisible(pluginMode);
+        pluginFiltersButton.setVisible(pluginMode);
         artworkStatsLabel.setVisible(pluginMode && getHeight() >= 540);
         thumbnailModeButton.setVisible(pluginMode);
         importThumbnailButton.setVisible(pluginMode);
@@ -2166,6 +2194,152 @@ private:
             });
     }
 
+
+    static juce::String normalisedManufacturer(const juce::PluginDescription& d)
+    {
+        const auto name = d.manufacturerName.trim();
+        return name.isEmpty() ? "AUTRES" : name;
+    }
+
+    bool matchesPluginMetadata(const juce::PluginDescription& d) const
+    {
+        if (selectedManufacturer.isNotEmpty()
+            && !normalisedManufacturer(d).equalsIgnoreCase(selectedManufacturer))
+            return false;
+
+        const auto format = d.pluginFormatName.trim();
+        if (pluginFormatFilter == PluginFormatFilter::au
+            && !(format.equalsIgnoreCase("AudioUnit")
+                 || format.equalsIgnoreCase("Audio Unit")
+                 || format.equalsIgnoreCase("AU")))
+            return false;
+        if (pluginFormatFilter == PluginFormatFilter::vst3
+            && !format.equalsIgnoreCase("VST3"))
+            return false;
+
+        if (pluginTypeFilter == PluginTypeFilter::instrument && !d.isInstrument)
+            return false;
+        if (pluginTypeFilter == PluginTypeFilter::effect && d.isInstrument)
+            return false;
+        return true;
+    }
+
+    void refreshPluginFiltersButton(int visibleCount = -1)
+    {
+        const int active = (selectedManufacturer.isNotEmpty() ? 1 : 0)
+                         + (pluginFormatFilter != PluginFormatFilter::all ? 1 : 0)
+                         + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0);
+        pluginFiltersButton.setButtonText(active == 0 ? "FILTRES"
+            : "FILTRES (" + juce::String(active) + ")");
+        pluginFiltersButton.setColour(juce::TextButton::buttonColourId,
+            juce::Colour(active > 0 ? 0xff286674 : 0xff203746));
+
+        juce::String detail = juce::String::fromUTF8("Fabricant : ")
+            + (selectedManufacturer.isEmpty() ? juce::String("Tous") : selectedManufacturer)
+            + juce::String::fromUTF8(" | Format : ")
+            + (pluginFormatFilter == PluginFormatFilter::au ? "AU"
+                : pluginFormatFilter == PluginFormatFilter::vst3 ? "VST3" : "Tous")
+            + juce::String::fromUTF8(" | Type : ")
+            + (pluginTypeFilter == PluginTypeFilter::instrument ? "Instruments"
+                : pluginTypeFilter == PluginTypeFilter::effect ? "Effets" : "Tous");
+        if (visibleCount >= 0)
+            detail += juce::String::fromUTF8(" | Résultats : ") + juce::String(visibleCount);
+        pluginFiltersButton.setTooltip(detail);
+    }
+
+    void showPluginFiltersMenu()
+    {
+        juce::StringArray manufacturers;
+        for (const auto& d : pluginDescriptions)
+        {
+            const auto name = normalisedManufacturer(d);
+            if (!manufacturers.contains(name, true))
+                manufacturers.add(name);
+        }
+        manufacturers.sort(true);
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader(juce::String::fromUTF8("FILTRES DE PLUGINS"));
+
+        juce::PopupMenu manufacturerMenu;
+        manufacturerMenu.addItem(300, juce::String::fromUTF8("TOUS LES FABRICANTS"),
+                                 true, selectedManufacturer.isEmpty());
+        manufacturerMenu.addSeparator();
+
+        // Alphabetical submenus avoid opening a 200+-row manufacturer list.
+        // Each item ID maps to the stable manufacturers snapshot in callback.
+        juce::String letter;
+        juce::PopupMenu letterMenu;
+        for (int i = 0; i < manufacturers.size(); ++i)
+        {
+            auto prefix = manufacturers[i].substring(0, 1).toUpperCase();
+            if (prefix.isEmpty() || !prefix[0].isLetter())
+                prefix = "#";
+            if (prefix != letter)
+            {
+                if (letter.isNotEmpty())
+                    manufacturerMenu.addSubMenu(letter, letterMenu);
+                letter = prefix;
+                letterMenu = juce::PopupMenu();
+            }
+            letterMenu.addItem(301 + i, manufacturers[i], true,
+                manufacturers[i].equalsIgnoreCase(selectedManufacturer));
+        }
+        if (letter.isNotEmpty())
+            manufacturerMenu.addSubMenu(letter, letterMenu);
+        menu.addSubMenu(juce::String::fromUTF8("FABRICANT"), manufacturerMenu);
+
+        juce::PopupMenu formatMenu;
+        formatMenu.addItem(400, "TOUS LES FORMATS", true,
+                           pluginFormatFilter == PluginFormatFilter::all);
+        formatMenu.addItem(401, "AUDIO UNIT (AU)", true,
+                           pluginFormatFilter == PluginFormatFilter::au);
+        formatMenu.addItem(402, "VST3", true,
+                           pluginFormatFilter == PluginFormatFilter::vst3);
+        menu.addSubMenu("FORMAT", formatMenu);
+
+        juce::PopupMenu typeMenu;
+        typeMenu.addItem(500, "TOUS LES TYPES", true,
+                         pluginTypeFilter == PluginTypeFilter::all);
+        typeMenu.addItem(501, "INSTRUMENTS", true,
+                         pluginTypeFilter == PluginTypeFilter::instrument);
+        typeMenu.addItem(502, "EFFETS AUDIO", true,
+                         pluginTypeFilter == PluginTypeFilter::effect);
+        menu.addSubMenu("TYPE DE PLUGIN", typeMenu);
+
+        menu.addSeparator();
+        const bool active = selectedManufacturer.isNotEmpty()
+            || pluginFormatFilter != PluginFormatFilter::all
+            || pluginTypeFilter != PluginTypeFilter::all;
+        menu.addItem(600, juce::String::fromUTF8("RÉINITIALISER LES FILTRES"), active);
+
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetComponent(&pluginFiltersButton)
+            .withMaximumNumColumns(1),
+            [safe, manufacturers](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen <= 0) return;
+                if (chosen == 600)
+                {
+                    safe->selectedManufacturer.clear();
+                    safe->pluginFormatFilter = PluginFormatFilter::all;
+                    safe->pluginTypeFilter = PluginTypeFilter::all;
+                }
+                else if (chosen == 300)
+                    safe->selectedManufacturer.clear();
+                else if (chosen >= 301 && chosen < 301 + manufacturers.size())
+                    safe->selectedManufacturer = manufacturers[chosen - 301];
+                else if (chosen >= 400 && chosen <= 402)
+                    safe->pluginFormatFilter = (PluginFormatFilter) (chosen - 400);
+                else if (chosen >= 500 && chosen <= 502)
+                    safe->pluginTypeFilter = (PluginTypeFilter) (chosen - 500);
+                else return;
+
+                safe->rebuildPluginTree();
+            });
+    }
+
     void setArtworkView(ArtworkView next)
     {
         if (artworkView == next) return;
@@ -2243,13 +2417,19 @@ private:
             const bool searchMatches = query.isEmpty() || d.name.containsIgnoreCase(query)
                 || d.manufacturerName.containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
-            if (!searchMatches) return false;
+            if (!searchMatches || !matchesPluginMetadata(d)) return false;
             if (artworkView == ArtworkView::all) return true;
             const bool present = hasArtwork(d);
             if (artworkView == ArtworkView::withImage) return present;
             if (artworkView == ArtworkView::withoutImage) return !present;
             return !present && failedHashes.contains(artworkHash(d));
         };
+        // Count actual matching AU/VST3 descriptions (not manufacturer headings).
+        int visibleCount = 0;
+        for (const auto& d : pluginDescriptions)
+            if (matches(d)) ++visibleCount;
+        refreshPluginFiltersButton(visibleCount);
+
         auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
         pluginRoot->addSubItem(fav);
         for (const auto& d : pluginDescriptions)
@@ -2283,7 +2463,10 @@ private:
         }
         // During a search, reveal matching manufacturers without requiring
         // the user to expand every nested folder manually.
-        if (query.isNotEmpty())
+        if (query.isNotEmpty() || selectedManufacturer.isNotEmpty()
+            || pluginFormatFilter != PluginFormatFilter::all
+            || pluginTypeFilter != PluginTypeFilter::all
+            || artworkView != ArtworkView::all)
         {
             for (auto* family : { instruments, audioEffects })
                 for (int i = 0; i < family->getNumSubItems(); ++i)
@@ -2765,7 +2948,7 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
-    juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton;
+    juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton, pluginFiltersButton;
     juce::TextEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;
@@ -2796,6 +2979,9 @@ private:
     juce::File rootDirectory;
     Category category = Category::files;
     ArtworkView artworkView = ArtworkView::all;
+    PluginFormatFilter pluginFormatFilter = PluginFormatFilter::all;
+    PluginTypeFilter pluginTypeFilter = PluginTypeFilter::all;
+    juce::String selectedManufacturer;
     int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
     mutable juce::CriticalSection scanStatusLock;
