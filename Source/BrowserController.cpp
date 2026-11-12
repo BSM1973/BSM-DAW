@@ -17,7 +17,9 @@ void resizeLibertyMixConsole(MainComponent*);
 #include <atomic>
 #include <map>
 #include <memory>
+#include <functional>
 #include <thread>
+#include <vector>
 
 int getLibertyPreferredBrowserWidth(MainComponent* owner);
 void resizeLibertyBrowserResizeController(MainComponent* owner);
@@ -322,6 +324,152 @@ public:
     }
 };
 
+
+// Compact midnight-blue action dashboard, matching Liberty's welcome cards.
+// It is an anchored, dismissible CallOutBox (not a new full-size window).
+// The content owns all its buttons; no action touches its lifetime after close.
+class ArtworkMenuAction final : public juce::TextButton
+{
+public:
+    ArtworkMenuAction(const juce::String& label, bool highlighted, bool selectedIn = false)
+        : juce::TextButton(label), emphasis(highlighted), selected(selectedIn) {}
+
+    void paintButton(juce::Graphics& g, bool hovered, bool pressed) override
+    {
+        auto surface = getLocalBounds().toFloat().reduced(0.7f);
+        auto base = selected ? juce::Colour(0xff286674)
+                            : emphasis ? juce::Colour(0xff294d5d)
+                                       : juce::Colour(0xff203746);
+        if (hovered && isEnabled()) base = base.brighter(0.12f);
+        if (pressed && isEnabled()) base = base.brighter(0.08f);
+        const float opacity = isEnabled() ? 1.0f : 0.35f;
+        g.setColour(base.withMultipliedAlpha(opacity));
+        g.fillRoundedRectangle(surface, 5.0f);
+        g.setColour(juce::Colour(selected ? 0xff54d6dc : 0xff405a6b).withMultipliedAlpha(opacity));
+        g.drawRoundedRectangle(surface, 5.0f, 1.0f);
+        g.setColour(juce::Colour(0xffeffcfd).withMultipliedAlpha(opacity));
+        g.setFont(juce::Font(10.6f, juce::Font::bold));
+        g.drawFittedText(getButtonText(), getLocalBounds().reduced(7, 2),
+                         juce::Justification::centred, 1, 0.74f);
+    }
+
+private:
+    bool emphasis = false;
+    bool selected = false;
+};
+
+class ArtworkMenuPanel final : public juce::Component
+{
+public:
+    ArtworkMenuPanel(bool batchRunning, int pngCount, int totalCount, int view,
+                     std::function<void(int)> onAction)
+        : running(batchRunning), currentView(view), present(pngCount), total(totalCount),
+          action(std::move(onAction))
+    {
+        setSize(552, 462);
+        // Every card and button has its own fixed rectangle, including at
+        // full French label lengths; no overlay and no auto-laid-out text.
+        add(5,  "CAPTURE ISOLÉE (MAC)",       28, 116, 229, 30, !running);
+        add(12, "TESTER 1 PLUGIN",            28, 152, 229, 30, !running);
+        add(6,  "CAPTURER 10 PLUGINS",        28, 188, 229, 30, !running);
+        add(7,  "CAPTURER 50 PLUGINS",        28, 224, 229, 30, !running);
+        add(8,  "CAPTURER TOUS",              28, 260, 229, 30, !running, true);
+        add(9,  "ARRÊTER LA CAPTURE",         28, 296, 229, 30, running);
+
+        add(13, "RÉESSAYER 1 ÉCHEC",         297, 116, 227, 29, !running);
+        add(10, "RÉESSAYER 10 ÉCHECS",       297, 150, 227, 29, !running);
+        add(14, "RÉESSAYER 100 ÉCHECS",      297, 184, 227, 29, !running, true);
+
+        add(1,  "IMPORTER UN PNG",            297, 267, 227, 28, true, true);
+        add(2,  "IMAGES OFFICIELLES",         297, 302, 227, 28, !running);
+
+        add(20, "TOUS",                       28, 385, 111, 26, true,  false, currentView == 0);
+        add(21, "AVEC IMAGE",                 146, 385, 111, 26, true, false, currentView == 1);
+        add(22, "SANS IMAGE",                  28, 417, 111, 26, true, false, currentView == 2);
+        add(23, "ÉCHECS",                     146, 417, 111, 26, true, false, currentView == 3);
+
+        add(11, "JOURNAL DES CAPTURES",      297, 384, 227, 27, true);
+        add(3,  "DOSSIER DES IMAGES",        297, 416, 227, 27, true);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour(0xff101e2b));
+        g.setColour(juce::Colour(0xff405a6b));
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.7f), 12.0f, 1.2f);
+
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.fillRoundedRectangle(15.0f, 17.0f, 3.5f, 39.0f, 1.5f);
+        g.setColour(juce::Colour(0xffeffcfd));
+        g.setFont(juce::Font(18.0f, juce::Font::bold));
+        g.drawText("LIBERTY  /  MINIATURES", 29, 12, 365, 27,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff82bdc9));
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawText("CAPTURES AUTOMATIQUES ET BIBLIOTHÈQUE", 29, 40, 376, 18,
+                   juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xffb8e8ec));
+        g.setFont(juce::Font(10.0f, juce::Font::bold));
+        g.drawFittedText("PNG  " + juce::String(present) + "/" + juce::String(total),
+                         405, 22, 127, 30, juce::Justification::centredRight, 1);
+        g.setColour(juce::Colour(0xff365366));
+        g.fillRect(15, 67, 522, 1);
+
+        drawCard(g, {14, 78, 257, 262}, "CAPTURES");
+        drawCard(g, {283, 78, 255, 144}, "RÉESSAYER LES ÉCHECS");
+        drawCard(g, {283, 232, 255, 108}, "IMPORTATION");
+        drawCard(g, {14, 350, 257, 98}, "FILTRES");
+        drawCard(g, {283, 350, 255, 98}, "OUTILS");
+    }
+
+private:
+    static void drawCard(juce::Graphics& g, const juce::Rectangle<int>& area,
+                         const juce::String& title)
+    {
+        auto r = area.toFloat();
+        g.setColour(juce::Colour(0xff1a3040));
+        g.fillRoundedRectangle(r, 8.0f);
+        g.setColour(juce::Colour(0xff36566a));
+        g.drawRoundedRectangle(r.reduced(0.5f), 8.0f, 1.0f);
+        g.setColour(juce::Colour(0xff54d6dc));
+        g.fillRoundedRectangle((float)area.getX() + 12.0f, (float)area.getY() + 11.0f,
+                               23.0f, 3.0f, 1.5f);
+        g.setColour(juce::Colour(0xffeffcfd));
+        g.setFont(juce::Font(11.0f, juce::Font::bold));
+        g.drawFittedText(title, area.getX() + 12, area.getY() + 17,
+                         area.getWidth() - 24, 18,
+                         juce::Justification::centredLeft, 1);
+    }
+
+    void add(int id, const juce::String& label, int x, int y, int w, int h,
+             bool enabled, bool emphasis = false, bool selected = false)
+    {
+        auto button = std::make_unique<ArtworkMenuAction>(label, emphasis, selected);
+        button->setBounds(x, y, w, h);
+        button->setEnabled(enabled);
+        button->setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        button->onClick = [this, id]
+        {
+            // Defer browser changes (and file chooser creation) until after
+            // the callout dismisses; its children may then be safely destroyed.
+            const auto callback = action;
+            if (auto* box = findParentComponentOfClass<juce::CallOutBox>())
+                box->dismiss();
+            juce::MessageManager::callAsync([callback, id]
+            {
+                if (callback) callback(id);
+            });
+        };
+        addAndMakeVisible(*button);
+        buttons.push_back(std::move(button));
+    }
+
+    bool running = false;
+    int currentView = 0, present = 0, total = 0;
+    std::function<void(int)> action;
+    std::vector<std::unique_ptr<ArtworkMenuAction>> buttons;
+};
+
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
                            private juce::FileBrowserListener
@@ -424,81 +572,7 @@ public:
         importThumbnailButton.setTooltip("Importer une capture reelle du plugin selectionne. Les images sont associees a son identifiant exact.");
         importThumbnailButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
-        importThumbnailButton.onClick = [this]
-        {
-            // Compact four-group menu, consistent with Liberty's existing
-            // JUCE PopupMenu submenus. The native LookAndFeel retains the
-            // bleu-nuit theme without custom item geometry or text overlap.
-            const bool batchIdle = !batchArtworkRunning.load();
-            juce::PopupMenu menu;
-            menu.addSectionHeader(juce::String::fromUTF8("MINIATURES DE PLUGINS"));
-
-            juce::PopupMenu importMenu;
-            importMenu.addItem(1, juce::String::fromUTF8("IMPORTER UNE CAPTURE PNG"));
-            importMenu.addItem(2, juce::String::fromUTF8("ACTUALISER LES IMAGES OFFICIELLES"));
-            menu.addSubMenu(juce::String::fromUTF8("IMPORTATION"), importMenu);
-
-            juce::PopupMenu captureMenu;
-            captureMenu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"), batchIdle, false);
-            captureMenu.addSeparator();
-            captureMenu.addItem(12, juce::String::fromUTF8("TESTER 1 PLUGIN MANQUANT"), batchIdle, false);
-            captureMenu.addItem(6, juce::String::fromUTF8("TESTER 10 PLUGINS MANQUANTS"), batchIdle, false);
-            captureMenu.addItem(7, juce::String::fromUTF8("CAPTURER 50 PLUGINS MANQUANTS"), batchIdle, false);
-            captureMenu.addItem(8, juce::String::fromUTF8("CAPTURER TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
-            captureMenu.addSeparator();
-            captureMenu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
-            menu.addSubMenu(juce::String::fromUTF8("CAPTURES AUTOMATIQUES"), captureMenu);
-
-            juce::PopupMenu retryMenu;
-            retryMenu.addItem(13, juce::String::fromUTF8("RÉESSAYER 1 CAPTURE EN ÉCHEC"), batchIdle, false);
-            retryMenu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
-            retryMenu.addItem(14, juce::String::fromUTF8("RÉESSAYER 100 CAPTURES EN ÉCHEC"), batchIdle, false);
-            menu.addSubMenu(juce::String::fromUTF8("RÉESSAYER LES ÉCHECS"), retryMenu);
-
-            juce::PopupMenu viewMenu;
-            viewMenu.addItem(20, juce::String::fromUTF8("TOUS LES PLUGINS"), true, artworkView == ArtworkView::all);
-            viewMenu.addItem(21, juce::String::fromUTF8("AVEC MINIATURE"), true, artworkView == ArtworkView::withImage);
-            viewMenu.addItem(22, juce::String::fromUTF8("SANS MINIATURE"), true, artworkView == ArtworkView::withoutImage);
-            viewMenu.addItem(23, juce::String::fromUTF8("CAPTURES EN ÉCHEC"), true, artworkView == ArtworkView::failed);
-            menu.addSubMenu(juce::String::fromUTF8("FILTRER LA BIBLIOTHÈQUE"), viewMenu);
-
-            menu.addSeparator();
-            juce::PopupMenu toolsMenu;
-            toolsMenu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
-            toolsMenu.addItem(3, juce::String::fromUTF8("OUVRIR LE DOSSIER DES CAPTURES"));
-            menu.addSubMenu(juce::String::fromUTF8("OUTILS"), toolsMenu);
-
-            juce::Component::SafePointer<BrowserPanel> safe(this);
-            menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
-                [safe](int choice)
-                {
-                    if (safe == nullptr) return;
-                    if (choice == 1) safe->importSelectedThumbnail();
-                    if (choice == 2) safe->refreshOfficialArtwork();
-                    if (choice == 4) safe->captureSelectedPluginArtwork();
-                    if (choice == 5) safe->captureIsolatedPluginArtwork();
-                    if (choice == 12) safe->startBatchArtworkCapture(1, false);
-                    if (choice == 11) safe->showBatchArtworkLog();
-                    if (choice == 6) safe->startBatchArtworkCapture(10, false);
-                    if (choice == 7) safe->startBatchArtworkCapture(50, false);
-                    if (choice == 8) safe->startBatchArtworkCapture(0, false);
-                    if (choice == 9) safe->cancelBatchArtworkCapture();
-                    if (choice == 10) safe->startBatchArtworkCapture(10, true);
-                    if (choice == 13) safe->startBatchArtworkCapture(1, true);
-                    if (choice == 14) safe->startBatchArtworkCapture(100, true);
-                    if (choice == 20) safe->setArtworkView(ArtworkView::all);
-                    if (choice == 21) safe->setArtworkView(ArtworkView::withImage);
-                    if (choice == 22) safe->setArtworkView(ArtworkView::withoutImage);
-                    if (choice == 23) safe->setArtworkView(ArtworkView::failed);
-                    if (choice == 3)
-                    {
-                        auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
-                            .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue");
-                        folder.createDirectory();
-                        folder.revealToUser();
-                    }
-                });
-        };
+        importThumbnailButton.onClick = [this] { showArtworkMenu(); };
         addAndMakeVisible(importThumbnailButton);
 
         spliceTitle.setText("SPLICE", juce::dontSendNotification);
@@ -1487,6 +1561,50 @@ private:
     // Explicit opt-in bulk capture. Each AU/VST3 is loaded in the existing
     // disposable child process; no third-party processor enters the DAW itself.
     // Queue is a snapshot, and only the JUCE message thread touches the UI.
+
+    void showArtworkMenu()
+    {
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        const auto runAction = [safe](int choice)
+        {
+            if (safe == nullptr || safe->stopped.load()) return;
+            if (choice == 1) safe->importSelectedThumbnail();
+            if (choice == 2) safe->refreshOfficialArtwork();
+            if (choice == 5) safe->captureIsolatedPluginArtwork();
+            if (choice == 12) safe->startBatchArtworkCapture(1, false);
+            if (choice == 6) safe->startBatchArtworkCapture(10, false);
+            if (choice == 7) safe->startBatchArtworkCapture(50, false);
+            if (choice == 8) safe->startBatchArtworkCapture(0, false);
+            if (choice == 9) safe->cancelBatchArtworkCapture();
+            if (choice == 13) safe->startBatchArtworkCapture(1, true);
+            if (choice == 10) safe->startBatchArtworkCapture(10, true);
+            if (choice == 14) safe->startBatchArtworkCapture(100, true);
+            if (choice == 20) safe->setArtworkView(ArtworkView::all);
+            if (choice == 21) safe->setArtworkView(ArtworkView::withImage);
+            if (choice == 22) safe->setArtworkView(ArtworkView::withoutImage);
+            if (choice == 23) safe->setArtworkView(ArtworkView::failed);
+            if (choice == 11) safe->showBatchArtworkLog();
+            if (choice == 3)
+            {
+                const auto folder = juce::File::getSpecialLocation(
+                    juce::File::userApplicationDataDirectory)
+                    .getChildFile("Liberty").getChildFile("PluginArtworkCatalogue");
+                folder.createDirectory();
+                folder.revealToUser();
+            }
+        };
+        auto panel = std::make_unique<ArtworkMenuPanel>(
+            batchArtworkRunning.load(), artworkPresentCount, artworkTotalCount,
+            (int) artworkView, std::move(runAction));
+
+        // Anchor the compact card dashboard to the existing IMPORTER IMAGE
+        // button. JUCE manages popup placement and Escape/outside-click close.
+        auto& popup = juce::CallOutBox::launchAsynchronously(
+            std::move(panel), importThumbnailButton.getScreenBounds(), nullptr);
+        popup.setArrowSize(10.0f);
+        popup.setDismissalMouseClicksAreAlwaysConsumed(true);
+    }
+
     void showBatchArtworkLog()
     {
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
