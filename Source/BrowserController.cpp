@@ -1528,6 +1528,183 @@ private:
             }));
     }
 
+
+    void exportPluginCollections()
+    {
+        if (pluginCollections.empty())
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucune collection à exporter."), juce::dontSendNotification);
+            return;
+        }
+        // Export all known identifiers, even if those plugins are temporarily
+        // missing. They can reconnect after reinstallation on another Mac.
+        juce::XmlElement root("LibertyPluginCollections");
+        root.setAttribute("version", 1);
+        for (const auto& group : pluginCollections)
+        {
+            auto* collection = root.createNewChildElement("collection");
+            collection->setAttribute("name", group.first);
+            for (const auto& key : group.second)
+            {
+                auto* plugin = collection->createNewChildElement("plugin");
+                plugin->setAttribute("id", key);
+            }
+        }
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Exporter les collections Liberty"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                .getChildFile("Liberty-Collections-Plugins.xml"),
+            "*.xml");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode
+                | juce::FileBrowserComponent::canSelectFiles
+                | juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe, chooser, xml = root.toString()](const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                auto file = fc.getResult();
+                if (file == juce::File()) return;
+                if (!file.hasFileExtension("xml")) file = file.withFileExtension("xml");
+                if (file.replaceWithText(xml))
+                    safe->pluginStatus.setText(
+                        juce::String::fromUTF8("Collections exportées : ")
+                            + file.getFileName(), juce::dontSendNotification);
+                else
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8("Exportation impossible. Vérifie le dossier choisi."),
+                        "OK");
+            });
+    }
+
+    void importPluginCollections()
+    {
+        if (collectionsReadOnly)
+        {
+            showCollectionsSaveError();
+            return;
+        }
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Importer des collections Liberty"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.xml");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::openMode
+                | juce::FileBrowserComponent::canSelectFiles,
+            [safe, chooser](const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const auto source = fc.getResult();
+                if (!source.existsAsFile()) return;
+                if (source.getSize() <= 0 || source.getSize() > 5 * 1024 * 1024)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8("Fichier vide ou trop volumineux (5 Mo maximum)."),
+                        "OK");
+                    return;
+                }
+                auto xml = juce::XmlDocument::parse(source);
+                if (xml == nullptr || !xml->hasTagName("LibertyPluginCollections")
+                    || xml->getIntAttribute("version", 1) != 1)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8("Ce fichier n'est pas une sauvegarde de collections Liberty."),
+                        "OK");
+                    return;
+                }
+                // Validate the whole document before any mutation. A malformed
+                // or oversized backup never modifies existing collections.
+                std::map<juce::String, juce::StringArray> incoming;
+                juce::StringArray importedNames;
+                int memberships = 0;
+                bool valid = true;
+                for (auto* collection = xml->getFirstChildElement(); collection != nullptr;
+                     collection = collection->getNextElement())
+                {
+                    const auto name = collection->getStringAttribute("name").trim();
+                    if (!collection->hasTagName("collection")
+                        || !validCollectionName(name) || importedNames.contains(name, true)
+                        || incoming.size() >= 64)
+                    {
+                        valid = false;
+                        break;
+                    }
+                    importedNames.add(name);
+                    juce::StringArray members;
+                    for (auto* plugin = collection->getFirstChildElement(); plugin != nullptr;
+                         plugin = plugin->getNextElement())
+                    {
+                        const auto key = plugin->getStringAttribute("id");
+                        if (!plugin->hasTagName("plugin") || key.isEmpty()
+                            || key.length() > 2048 || ++memberships > 20000
+                            || members.contains(key))
+                        {
+                            valid = false;
+                            break;
+                        }
+                        members.add(key);
+                    }
+                    if (!valid) break;
+                    incoming.emplace(name, std::move(members));
+                }
+                if (!valid || incoming.empty())
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8("Sauvegarde XML invalide. Aucune collection modifiée."),
+                        "OK");
+                    return;
+                }
+
+                const auto before = safe->pluginCollections;
+                int created = 0, added = 0;
+                for (const auto& group : incoming)
+                {
+                    const auto existing = safe->existingCollectionName(group.first);
+                    const auto dest = existing.isEmpty() ? group.first : existing;
+                    if (existing.isEmpty())
+                    {
+                        if (safe->pluginCollections.size() >= 64)
+                        {
+                            valid = false;
+                            break;
+                        }
+                        safe->pluginCollections.emplace(dest, juce::StringArray());
+                        ++created;
+                    }
+                    auto& members = safe->pluginCollections[dest];
+                    for (const auto& key : group.second)
+                        if (!members.contains(key))
+                        {
+                            members.add(key);
+                            ++added;
+                        }
+                }
+                int total = 0;
+                for (const auto& group : safe->pluginCollections)
+                    total += group.second.size();
+                if (!valid || total > 20000)
+                {
+                    safe->pluginCollections = before;
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Import annulé : limite de 64 collections ou de 20 000 associations."),
+                        "OK");
+                    return;
+                }
+                if (!safe->commitPluginCollections(before,
+                    juce::String::fromUTF8("Import : ")
+                    + juce::String(created)
+                    + juce::String::fromUTF8(" collections créées, ")
+                    + juce::String(added)
+                    + juce::String::fromUTF8(" associations ajoutées.")))
+                    return;
+            });
+    }
+
     static juce::File pluginFamilyOverridesFile()
     {
         // Same persistent, user-specific Library directory as plugin favorites.
@@ -3233,6 +3410,11 @@ private:
         collectionsMenu.addSeparator();
         collectionsMenu.addItem(5100, juce::String::fromUTF8("NOUVELLE COLLECTION..."),
                                  !collectionsReadOnly && pluginCollections.size() < 64);
+        collectionsMenu.addSeparator();
+        collectionsMenu.addItem(5400, juce::String::fromUTF8("EXPORTER LES COLLECTIONS..."),
+                                 !pluginCollections.empty());
+        collectionsMenu.addItem(5401, juce::String::fromUTF8("IMPORTER DES COLLECTIONS..."),
+                                 !collectionsReadOnly);
         if (!collectionNames.isEmpty())
         {
             juce::PopupMenu renameMenu, deleteMenu;
@@ -3375,6 +3557,16 @@ private:
                 else if (chosen == 5100)
                 {
                     safe->promptCollectionName();
+                    return;
+                }
+                else if (chosen == 5400)
+                {
+                    safe->exportPluginCollections();
+                    return;
+                }
+                else if (chosen == 5401)
+                {
+                    safe->importPluginCollections();
                     return;
                 }
                 else if (chosen >= 5200 && chosen < 5200 + collectionNames.size())
