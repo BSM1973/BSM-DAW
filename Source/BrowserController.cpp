@@ -369,16 +369,16 @@ public:
         setSize(552, 462);
         // Every card and button has its own fixed rectangle, including at
         // full French label lengths; no overlay and no auto-laid-out text.
-        add(5,  "CAPTURE ISOLÉE (MAC)",       28, 116, 229, 30, !running);
+        add(5,  juce::String::fromUTF8("CAPTURE ISOLÉE (MAC)"),       28, 116, 229, 30, !running);
         add(12, "TESTER 1 PLUGIN",            28, 152, 229, 30, !running);
         add(6,  "CAPTURER 10 PLUGINS",        28, 188, 229, 30, !running);
         add(7,  "CAPTURER 50 PLUGINS",        28, 224, 229, 30, !running);
         add(8,  "CAPTURER TOUS",              28, 260, 229, 30, !running, true);
-        add(9,  "ARRÊTER LA CAPTURE",         28, 296, 229, 30, running);
+        add(9,  juce::String::fromUTF8("ARRÊTER LA CAPTURE"),         28, 296, 229, 30, running);
 
-        add(13, "RÉESSAYER 1 ÉCHEC",         297, 116, 227, 29, !running);
-        add(10, "RÉESSAYER 10 ÉCHECS",       297, 150, 227, 29, !running);
-        add(14, "RÉESSAYER 100 ÉCHECS",      297, 184, 227, 29, !running, true);
+        add(13, juce::String::fromUTF8("RÉESSAYER 1 ÉCHEC"),         297, 116, 227, 29, !running);
+        add(10, juce::String::fromUTF8("RÉESSAYER 10 ÉCHECS"),       297, 150, 227, 29, !running);
+        add(14, juce::String::fromUTF8("RÉESSAYER 100 ÉCHECS"),      297, 184, 227, 29, !running, true);
 
         add(1,  "IMPORTER UN PNG",            297, 267, 227, 28, true, true);
         add(2,  "IMAGES OFFICIELLES",         297, 302, 227, 28, !running);
@@ -386,7 +386,7 @@ public:
         add(20, "TOUS",                       28, 385, 111, 26, true,  false, currentView == 0);
         add(21, "AVEC IMAGE",                 146, 385, 111, 26, true, false, currentView == 1);
         add(22, "SANS IMAGE",                  28, 417, 111, 26, true, false, currentView == 2);
-        add(23, "ÉCHECS",                     146, 417, 111, 26, true, false, currentView == 3);
+        add(23, juce::String::fromUTF8("ÉCHECS"),                     146, 417, 111, 26, true, false, currentView == 3);
 
         add(11, "JOURNAL DES CAPTURES",      297, 384, 227, 27, true);
         add(3,  "DOSSIER DES IMAGES",        297, 416, 227, 27, true);
@@ -406,7 +406,7 @@ public:
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff82bdc9));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.drawText("CAPTURES AUTOMATIQUES ET BIBLIOTHÈQUE", 29, 40, 376, 18,
+        g.drawText(juce::String::fromUTF8("CAPTURES AUTOMATIQUES ET BIBLIOTHÈQUE"), 29, 40, 376, 18,
                    juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xffb8e8ec));
         g.setFont(juce::Font(10.0f, juce::Font::bold));
@@ -416,7 +416,7 @@ public:
         g.fillRect(15, 67, 522, 1);
 
         drawCard(g, {14, 78, 257, 262}, "CAPTURES");
-        drawCard(g, {283, 78, 255, 144}, "RÉESSAYER LES ÉCHECS");
+        drawCard(g, {283, 78, 255, 144}, juce::String::fromUTF8("RÉESSAYER LES ÉCHECS"));
         drawCard(g, {283, 232, 255, 108}, "IMPORTATION");
         drawCard(g, {14, 350, 257, 98}, "FILTRES");
         drawCard(g, {283, 350, 255, 98}, "OUTILS");
