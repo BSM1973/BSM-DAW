@@ -1331,9 +1331,45 @@ private:
     void showPluginFamilyEditor(const juce::PluginDescription& description,
                                 juce::Point<int> screenPosition)
     {
-        // This menu is anchored at the clicked plugin, not an extra toolbar
-        // row, preserving the existing miniature layout.
+        // Identify real AU/VST3 siblings conservatively: exact plugin name,
+        // exact manufacturer, same instrument/effect type, distinct JUCE IDs.
+        // Never apply corrections to every plugin from a manufacturer.
+        const auto formatIsAU = [](const juce::String& value)
+        {
+            return value.equalsIgnoreCase("AudioUnit")
+                || value.equalsIgnoreCase("Audio Unit")
+                || value.equalsIgnoreCase("AU");
+        };
+        const auto formatIsVST3 = [](const juce::String& value)
+        {
+            return value.equalsIgnoreCase("VST3");
+        };
         const auto key = favouriteKey(description);
+        juce::StringArray variantKeys;
+        bool hasAU = false, hasVST3 = false;
+        if (formatIsAU(description.pluginFormatName)
+            || formatIsVST3(description.pluginFormatName))
+        {
+            for (const auto& candidate : pluginDescriptions)
+            {
+                if (candidate.isInstrument != description.isInstrument
+                    || !candidate.name.trim().equalsIgnoreCase(description.name.trim())
+                    || !candidate.manufacturerName.trim().equalsIgnoreCase(
+                        description.manufacturerName.trim()))
+                    continue;
+                const bool au = formatIsAU(candidate.pluginFormatName);
+                const bool vst3 = formatIsVST3(candidate.pluginFormatName);
+                if (!au && !vst3) continue;
+                const auto variantKey = favouriteKey(candidate);
+                if (variantKey.isEmpty()) continue;
+                variantKeys.addIfNotAlreadyThere(variantKey);
+                hasAU = hasAU || au;
+                hasVST3 = hasVST3 || vst3;
+            }
+        }
+        // Cross-format changes require both types, not just multiple VST3
+        // versions with the same title.
+        const bool canApplyToVariants = hasAU && hasVST3 && variantKeys.size() >= 2;
         const auto it = pluginFamilyOverrides.find(key);
         const bool custom = it != pluginFamilyOverrides.end();
         const auto effective = effectivePluginUsage(description);
@@ -1347,25 +1383,65 @@ private:
         menu.addSeparator();
 
         juce::PopupMenu families;
-        const auto addCategory = [&](PluginUsage usage)
+        const auto addCategory = [&](juce::PopupMenu& target, int base,
+                                     PluginUsage usage, bool selected)
         {
-            families.addItem(3100 + (int)usage, usageLabel(usage), true,
-                             effective == usage);
+            target.addItem(base + (int)usage, usageLabel(usage), true, selected);
         };
-        if (description.isInstrument)
-            for (auto usage : instrumentUsages()) addCategory(usage);
-        else
-            for (auto usage : effectUsages()) addCategory(usage);
-        families.addSeparator();
-        addCategory(PluginUsage::unclassified);
+        const auto populate = [&](juce::PopupMenu& target, int base, bool grouped)
+        {
+            const auto add = [&](PluginUsage usage)
+            {
+                bool selected = effective == usage;
+                if (grouped)
+                {
+                    selected = true;
+                    for (const auto& variantKey : variantKeys)
+                    {
+                        auto found = pluginFamilyOverrides.find(variantKey);
+                        if (found == pluginFamilyOverrides.end() || found->second != usage)
+                        {
+                            selected = false;
+                            break;
+                        }
+                    }
+                }
+                addCategory(target, base, usage, selected);
+            };
+            if (description.isInstrument)
+                for (auto usage : instrumentUsages()) add(usage);
+            else
+                for (auto usage : effectUsages()) add(usage);
+            target.addSeparator();
+            add(PluginUsage::unclassified);
+        };
+        populate(families, 3100, false);
         menu.addSubMenu(juce::String::fromUTF8("CLASSER CE PLUGIN"), families);
         menu.addItem(3001, juce::String::fromUTF8("REVENIR AU CLASSEMENT AUTOMATIQUE"), custom);
+
+        if (canApplyToVariants)
+        {
+            menu.addSeparator();
+            juce::PopupMenu variants;
+            populate(variants, 3300, true);
+            menu.addSubMenu(
+                juce::String::fromUTF8("CLASSER AU + VST3 (")
+                    + juce::String(variantKeys.size()) + ")",
+                variants);
+            bool customVariant = false;
+            for (const auto& variantKey : variantKeys)
+                customVariant = customVariant
+                    || pluginFamilyOverrides.find(variantKey) != pluginFamilyOverrides.end();
+            menu.addItem(3200,
+                juce::String::fromUTF8("AUTO POUR TOUTES LES VARIANTES"),
+                customVariant);
+        }
 
         juce::Component::SafePointer<BrowserPanel> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetScreenArea(juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1))
             .withMaximumNumColumns(1),
-            [safe, description](int chosen)
+            [safe, description, variantKeys, canApplyToVariants](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen == 0) return;
                 if (chosen == 3000)
@@ -1373,19 +1449,23 @@ private:
                     safe->toggleFavourite(description);
                     return;
                 }
-                if (chosen != 3001
-                    && (chosen <= 3100 || chosen > 3100 + (int)PluginUsage::unclassified))
-                    return;
+                const bool groupAction = chosen == 3200
+                    || (chosen > 3300 && chosen <= 3300 + (int)PluginUsage::unclassified);
+                const bool singleAction = chosen == 3001
+                    || (chosen > 3100 && chosen <= 3100 + (int)PluginUsage::unclassified);
+                if ((!groupAction && !singleAction)
+                    || (groupAction && !canApplyToVariants)) return;
+                const bool reset = chosen == 3001 || chosen == 3200;
+                const auto usage = (PluginUsage)(chosen - (groupAction ? 3300 : 3100));
+                if (!reset && !pluginUsageCompatible(description, usage)) return;
                 const auto key = favouriteKey(description);
                 if (key.isEmpty()) return;
                 const auto before = safe->pluginFamilyOverrides;
-                if (chosen == 3001)
-                    safe->pluginFamilyOverrides.erase(key);
-                else
+                auto keysToModify = groupAction ? variantKeys : juce::StringArray(key);
+                for (const auto& target : keysToModify)
                 {
-                    const auto usage = (PluginUsage)(chosen - 3100);
-                    if (!pluginUsageCompatible(description, usage)) return;
-                    safe->pluginFamilyOverrides[key] = usage;
+                    if (reset) safe->pluginFamilyOverrides.erase(target);
+                    else safe->pluginFamilyOverrides[target] = usage;
                 }
                 if (!safe->savePluginFamilyOverrides())
                 {
@@ -1398,15 +1478,18 @@ private:
                     return;
                 }
 
-                // Never destroy the clicked TreeViewItem inside its event.
-                // The popup callback is asynchronous; defer the rebuild too.
-                juce::MessageManager::callAsync([safe, description]
+                // Defer the TreeView rebuild beyond the popup callback. All
+                // changes are persisted atomically in one XML file write.
+                const auto resultText = groupAction
+                    ? description.name + juce::String::fromUTF8(" : ")
+                        + juce::String(keysToModify.size())
+                        + juce::String::fromUTF8(" variantes AU/VST3 mises à jour.")
+                    : description.name + juce::String::fromUTF8(" : famille enregistrée.");
+                juce::MessageManager::callAsync([safe, resultText]
                 {
                     if (safe == nullptr || safe->stopped.load()) return;
                     safe->rebuildPluginTree();
-                    safe->pluginStatus.setText(
-                        description.name + juce::String::fromUTF8(" : famille enregistrée."),
-                        juce::dontSendNotification);
+                    safe->pluginStatus.setText(resultText, juce::dontSendNotification);
                 });
             });
     }
