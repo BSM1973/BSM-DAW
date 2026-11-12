@@ -131,10 +131,12 @@ public:
                    std::function<bool(const juce::PluginDescription&)> isFavouriteIn = {},
                    std::function<void(const juce::PluginDescription&)> toggleFavouriteIn = {},
                    bool thumbnailsIn = false,
-                   std::function<void(const juce::File&, const juce::PluginDescription&)> importArtworkIn = {})
+                   std::function<void(const juce::File&, const juce::PluginDescription&)> importArtworkIn = {},
+                   std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamilyIn = {})
         : kind(kindIn), thumbnails(thumbnailsIn), label(std::move(labelIn)),
           activate(std::move(activateIn)), isFavourite(std::move(isFavouriteIn)),
-          toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn))
+          toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn)),
+          editFamily(std::move(editFamilyIn))
     {
         if (descriptionIn != nullptr) description = *descriptionIn;
         // Artwork is decoded lazily on first visibility, not when JUCE builds
@@ -250,8 +252,11 @@ public:
 
     void itemClicked(const juce::MouseEvent& event) override
     {
-        if (kind == Kind::plugin && event.mods.isRightButtonDown() && toggleFavourite)
-            toggleFavourite(description);
+        if (kind != Kind::plugin || !event.mods.isRightButtonDown()) return;
+        // Preserve favourite management in the context menu rather than
+        // silently toggling it when the user intends to change a category.
+        if (editFamily) editFamily(description, event.getScreenPosition());
+        else if (toggleFavourite) toggleFavourite(description);
     }
 
     void itemDoubleClicked(const juce::MouseEvent&) override
@@ -290,6 +295,7 @@ private:
     std::function<bool(const juce::PluginDescription&)> isFavourite;
     std::function<void(const juce::PluginDescription&)> toggleFavourite;
     std::function<void(const juce::File&, const juce::PluginDescription&)> importArtwork;
+    std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamily;
 };
 
 // One Knob controls reserve separate rectangles for their icon and label.
@@ -538,6 +544,7 @@ public:
         owner.audioEngine.getDeviceManager().addAudioCallback(&previewPlayer);
         loadFavourites();
         loadRecentPlugins();
+        loadPluginFamilyOverrides();
 
         toggleButton.setButtonText("NAVIGATEUR");
         toggleButton.setAlwaysOnTop(true);
@@ -1251,6 +1258,157 @@ private:
             PluginUsage::dynamics, PluginUsage::utility
         };
         return values;
+    }
+
+
+    static juce::File pluginFamilyOverridesFile()
+    {
+        // Same persistent, user-specific Library directory as plugin favorites.
+        // A rescan rewrites JUCE's known-plugin cache, not this user file.
+        return favouritesFile().getSiblingFile("PluginFamilyOverrides.xml");
+    }
+
+    static bool pluginUsageCompatible(const juce::PluginDescription& description,
+                                      PluginUsage usage)
+    {
+        if (usage == PluginUsage::unclassified) return true;
+        return description.isInstrument
+            ? (usage >= PluginUsage::synthesizer && usage <= PluginUsage::sampler)
+            : (usage >= PluginUsage::reverb && usage <= PluginUsage::utility);
+    }
+
+    void loadPluginFamilyOverrides()
+    {
+        pluginFamilyOverrides.clear();
+        const auto file = pluginFamilyOverridesFile();
+        if (!file.existsAsFile()) return;
+        auto document = juce::XmlDocument::parse(file);
+        if (document == nullptr || !document->hasTagName("LibertyPluginFamilies"))
+        {
+            // Keep the bad source file intact; never silently overwrite it.
+            familyOverridesReadOnly = true;
+            return;
+        }
+        for (auto* item = document->getFirstChildElement(); item != nullptr;
+             item = item->getNextElement())
+        {
+            if (!item->hasTagName("plugin")) continue;
+            const auto id = item->getStringAttribute("id");
+            const int value = item->getIntAttribute("family", 0);
+            if (id.isNotEmpty() && value > (int)PluginUsage::all
+                && value <= (int)PluginUsage::unclassified)
+                pluginFamilyOverrides[id] = (PluginUsage)value;
+        }
+    }
+
+    bool savePluginFamilyOverrides()
+    {
+        if (familyOverridesReadOnly) return false;
+        juce::XmlElement root("LibertyPluginFamilies");
+        root.setAttribute("version", 1);
+        for (const auto& entry : pluginFamilyOverrides)
+        {
+            auto* item = root.createNewChildElement("plugin");
+            item->setAttribute("id", entry.first);
+            item->setAttribute("family", (int)entry.second);
+        }
+        const auto target = pluginFamilyOverridesFile();
+        juce::TemporaryFile staged(target);
+        return staged.getFile().replaceWithText(root.toString())
+            && staged.overwriteTargetFileWithTemporary();
+    }
+
+    PluginUsage effectivePluginUsage(const juce::PluginDescription& d) const
+    {
+        const auto key = favouriteKey(d);
+        auto found = pluginFamilyOverrides.find(key);
+        if (found != pluginFamilyOverrides.end()
+            && pluginUsageCompatible(d, found->second))
+            return found->second;
+        return classifyPluginUsage(d);
+    }
+
+    void showPluginFamilyEditor(const juce::PluginDescription& description,
+                                juce::Point<int> screenPosition)
+    {
+        // This menu is anchored at the clicked plugin, not an extra toolbar
+        // row, preserving the existing miniature layout.
+        const auto key = favouriteKey(description);
+        const auto it = pluginFamilyOverrides.find(key);
+        const bool custom = it != pluginFamilyOverrides.end();
+        const auto effective = effectivePluginUsage(description);
+
+        juce::PopupMenu menu;
+        menu.addSectionHeader(description.name);
+        menu.addItem(3000,
+            isFavouritePlugin(description)
+                ? juce::String::fromUTF8("RETIRER DES FAVORIS")
+                : juce::String::fromUTF8("AJOUTER AUX FAVORIS"));
+        menu.addSeparator();
+
+        juce::PopupMenu families;
+        const auto addCategory = [&](PluginUsage usage)
+        {
+            families.addItem(3100 + (int)usage, usageLabel(usage), true,
+                             effective == usage);
+        };
+        if (description.isInstrument)
+            for (auto usage : instrumentUsages()) addCategory(usage);
+        else
+            for (auto usage : effectUsages()) addCategory(usage);
+        families.addSeparator();
+        addCategory(PluginUsage::unclassified);
+        menu.addSubMenu(juce::String::fromUTF8("CLASSER CE PLUGIN"), families);
+        menu.addItem(3001, juce::String::fromUTF8("REVENIR AU CLASSEMENT AUTOMATIQUE"), custom);
+
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetScreenArea(juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1))
+            .withMaximumNumColumns(1),
+            [safe, description](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen == 0) return;
+                if (chosen == 3000)
+                {
+                    safe->toggleFavourite(description);
+                    return;
+                }
+                if (chosen != 3001
+                    && (chosen <= 3100 || chosen > 3100 + (int)PluginUsage::unclassified))
+                    return;
+                const auto key = favouriteKey(description);
+                if (key.isEmpty()) return;
+                const auto before = safe->pluginFamilyOverrides;
+                if (chosen == 3001)
+                    safe->pluginFamilyOverrides.erase(key);
+                else
+                {
+                    const auto usage = (PluginUsage)(chosen - 3100);
+                    if (!pluginUsageCompatible(description, usage)) return;
+                    safe->pluginFamilyOverrides[key] = usage;
+                }
+                if (!safe->savePluginFamilyOverrides())
+                {
+                    safe->pluginFamilyOverrides = before;
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8(
+                            "Enregistrement des familles impossible. Vérifie le fichier PluginFamilyOverrides.xml."),
+                        "OK");
+                    return;
+                }
+
+                // Never destroy the clicked TreeViewItem inside its event.
+                // The popup callback is asynchronous; defer the rebuild too.
+                juce::MessageManager::callAsync([safe, description]
+                {
+                    if (safe == nullptr || safe->stopped.load()) return;
+                    safe->rebuildPluginTree();
+                    safe->pluginStatus.setText(
+                        description.name + juce::String::fromUTF8(" : famille enregistrée."),
+                        juce::dontSendNotification);
+                });
+            });
     }
 
     static juce::File favouritesFile()
@@ -2421,6 +2579,10 @@ private:
                     if (safe != nullptr && !safe->stopped.load())
                         safe->acceptDroppedArtwork(file, description);
                 });
+            },
+            [this](const juce::PluginDescription& description, juce::Point<int> where)
+            {
+                showPluginFamilyEditor(description, where);
             });
     }
 
@@ -2560,7 +2722,7 @@ private:
         std::array<int, 17> categoryCounts {};
         for (const auto& d : pluginDescriptions)
         {
-            const int index = (int)classifyPluginUsage(d);
+            const int index = (int)effectivePluginUsage(d);
             if (index > 0 && index < (int)categoryCounts.size())
                 ++categoryCounts[(size_t)index];
         }
@@ -2758,7 +2920,7 @@ private:
                 || d.pluginFormatName.containsIgnoreCase(query);
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
             if (pluginUsageFilter != PluginUsage::all
-                && classifyPluginUsage(d) != pluginUsageFilter) return false;
+                && effectivePluginUsage(d) != pluginUsageFilter) return false;
             if (quickView == QuickView::favourites && !isFavouritePlugin(d)) return false;
             if (quickView == QuickView::recent && !recentKeys.contains(favouriteKey(d))) return false;
             if (artworkView == ArtworkView::all) return true;
@@ -2833,7 +2995,7 @@ private:
                     for (const auto& d : pluginDescriptions)
                     {
                         if (d.isInstrument != (family == 0) || !matches(d)
-                            || classifyPluginUsage(d) != usage) continue;
+                            || effectivePluginUsage(d) != usage) continue;
                         if (usageGroup == nullptr)
                         {
                             usageGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
@@ -3445,6 +3607,8 @@ private:
     QuickView quickView = QuickView::all;
     PluginUsage pluginUsageFilter = PluginUsage::all;
     bool groupByUsage = true;
+    std::map<juce::String, PluginUsage> pluginFamilyOverrides;
+    bool familyOverridesReadOnly = false;
     juce::String selectedManufacturer;
     int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
