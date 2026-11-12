@@ -132,8 +132,10 @@ public:
                    std::function<void(const juce::PluginDescription&)> toggleFavouriteIn = {},
                    bool thumbnailsIn = false,
                    std::function<void(const juce::File&, const juce::PluginDescription&)> importArtworkIn = {},
-                   std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamilyIn = {})
-        : kind(kindIn), thumbnails(thumbnailsIn), label(std::move(labelIn)),
+                   std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamilyIn = {},
+                   bool manuallyClassifiedIn = false)
+        : kind(kindIn), thumbnails(thumbnailsIn), manuallyClassified(manuallyClassifiedIn),
+          label(std::move(labelIn)),
           activate(std::move(activateIn)), isFavourite(std::move(isFavouriteIn)),
           toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn)),
           editFamily(std::move(editFamilyIn))
@@ -234,11 +236,33 @@ public:
             }
             textLeft = imageArea.getRight() + 8;
         }
-        // Obsidian soft white keeps plugin names prominent without harsh pure white.
+        // User-assigned families receive a small turquoise indicator.
+        // Reserve the space in the name line so there is no text overlap.
+        const bool showBadge = manuallyClassified && width > textLeft + 114;
+        const int markerWidth = showBadge ? 44 : (manuallyClassified ? 8 : 0);
+        if (manuallyClassified && width > 16)
+        {
+            if (showBadge)
+            {
+                const auto tag = juce::Rectangle<float>((float)width - 49.0f, 4.0f, 43.0f, 14.0f);
+                g.setColour(juce::Colour(0xff23515b));
+                g.fillRoundedRectangle(tag, 3.0f);
+                g.setColour(juce::Colour(0xff54d6dc));
+                g.setFont(juce::Font(8.0f, juce::Font::bold));
+                g.drawFittedText("PERSO", tag.toNearestInt(),
+                                 juce::Justification::centred, 1);
+            }
+            else
+            {
+                g.setColour(juce::Colour(0xff54d6dc));
+                g.fillEllipse((float)width - 12.0f, 7.0f, 6.0f, 6.0f);
+            }
+        }
         g.setColour(juce::Colour(0xffeffcfd));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
-        if (width > textLeft + 8)
-            g.drawFittedText(description.name, textLeft, 3, width - textLeft - 8, 17,
+        const int nameWidth = width - textLeft - 8 - (markerWidth == 44 ? 49 : (markerWidth ? 10 : 0));
+        if (nameWidth > 8)
+            g.drawFittedText(description.name, textLeft, 3, nameWidth, 17,
                              juce::Justification::centredLeft, 1);
         // Obsidian secondary metadata stays readable without competing with plugin names.
         g.setColour(juce::Colour(0xffb9ccd6));
@@ -287,6 +311,7 @@ public:
 private:
     Kind kind;
     bool thumbnails = false;
+    bool manuallyClassified = false;
     bool thumbnailReadAttempted = false;
     juce::Image thumbnailImage;
     juce::String label;
@@ -1316,6 +1341,175 @@ private:
         juce::TemporaryFile staged(target);
         return staged.getFile().replaceWithText(root.toString())
             && staged.overwriteTargetFileWithTemporary();
+    }
+
+
+    bool isPluginManuallyClassified(const juce::PluginDescription& d) const
+    {
+        const auto found = pluginFamilyOverrides.find(favouriteKey(d));
+        return found != pluginFamilyOverrides.end()
+            && pluginUsageCompatible(d, found->second);
+    }
+
+    void exportPluginFamilyOverrides()
+    {
+        if (pluginFamilyOverrides.empty())
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucune catégorie personnalisée à exporter."), juce::dontSendNotification);
+            return;
+        }
+        // Export the current in-memory classifications. Do not assume that
+        // users have installed exactly the same AU/VST3 identifiers elsewhere.
+        juce::XmlElement root("LibertyPluginFamilies");
+        root.setAttribute("version", 1);
+        for (const auto& entry : pluginFamilyOverrides)
+        {
+            auto* item = root.createNewChildElement("plugin");
+            item->setAttribute("id", entry.first);
+            item->setAttribute("family", (int)entry.second);
+        }
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Exporter les classements Liberty"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                .getChildFile("Liberty-Classements-Plugins.xml"),
+            "*.xml");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe, chooser, xml = root.toString()](const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                auto destination = fc.getResult();
+                if (destination == juce::File()) return;
+                if (!destination.hasFileExtension("xml"))
+                    destination = destination.withFileExtension("xml");
+                if (destination.replaceWithText(xml))
+                    safe->pluginStatus.setText(juce::String::fromUTF8(
+                        "Classements exportés : ") + destination.getFileName(),
+                        juce::dontSendNotification);
+                else
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8("Impossible d'exporter les classements."), "OK");
+            });
+    }
+
+    void importPluginFamilyOverrides()
+    {
+        if (familyOverridesReadOnly)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                juce::String::fromUTF8(
+                    "Les classements existants sont illisibles. Corrige d'abord PluginFamilyOverrides.xml."),
+                "OK");
+            return;
+        }
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Importer des classements Liberty"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+            "*.xml");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::openMode
+                             | juce::FileBrowserComponent::canSelectFiles,
+            [safe, chooser](const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const auto source = fc.getResult();
+                if (!source.existsAsFile()) return;
+                // Protect against unexpectedly huge or malformed external
+                // XML files before touching the user's existing categories.
+                if (source.getSize() <= 0 || source.getSize() > 5 * 1024 * 1024)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8("Fichier XML vide ou trop volumineux (maximum 5 Mo)."),
+                        "OK");
+                    return;
+                }
+                auto doc = juce::XmlDocument::parse(source);
+                if (doc == nullptr || !doc->hasTagName("LibertyPluginFamilies")
+                    || doc->getIntAttribute("version", 1) != 1)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8("Format de classements Liberty non reconnu."),
+                        "OK");
+                    return;
+                }
+                std::map<juce::String, PluginUsage> imported;
+                int elements = 0;
+                for (auto* node = doc->getFirstChildElement(); node != nullptr;
+                     node = node->getNextElement())
+                {
+                    ++elements;
+                    if (elements > 10000 || !node->hasTagName("plugin"))
+                        break;
+                    const auto identifier = node->getStringAttribute("id").trim();
+                    const int value = node->getIntAttribute("family", 0);
+                    if (identifier.isEmpty() || identifier.length() > 2048
+                        || value <= (int)PluginUsage::all
+                        || value > (int)PluginUsage::unclassified
+                        || imported.find(identifier) != imported.end())
+                        break;
+                    imported.emplace(identifier, (PluginUsage)value);
+                }
+                if (elements == 0 || elements > 10000 || elements != (int)imported.size())
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8("Fichier XML invalide : aucun classement n'a été importé."),
+                        "OK");
+                    return;
+                }
+
+                // Only merge entries for installed plugins with compatible
+                // instrument/effect kinds; unmatched entries are left out.
+                const auto old = safe->pluginFamilyOverrides;
+                int applied = 0, skipped = 0;
+                for (const auto& entry : imported)
+                {
+                    const juce::PluginDescription* match = nullptr;
+                    for (const auto& description : safe->pluginDescriptions)
+                        if (favouriteKey(description) == entry.first)
+                        {
+                            match = &description;
+                            break;
+                        }
+                    if (match == nullptr || !pluginUsageCompatible(*match, entry.second))
+                    {
+                        ++skipped;
+                        continue;
+                    }
+                    safe->pluginFamilyOverrides[entry.first] = entry.second;
+                    ++applied;
+                }
+                if (applied == 0)
+                {
+                    safe->pluginStatus.setText(juce::String::fromUTF8(
+                        "Aucun plugin correspondant dans cette installation.")
+                        , juce::dontSendNotification);
+                    return;
+                }
+                if (!safe->savePluginFamilyOverrides())
+                {
+                    safe->pluginFamilyOverrides = old;
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Navigateur",
+                        juce::String::fromUTF8("Enregistrement impossible : classements conservés."),
+                        "OK");
+                    return;
+                }
+                // Only rebuild when the data has been fully validated and saved.
+                safe->rebuildPluginTree();
+                safe->pluginStatus.setText(
+                    juce::String::fromUTF8("Classements importés : ")
+                        + juce::String(applied)
+                        + juce::String::fromUTF8(" | Ignorés : ")
+                        + juce::String(skipped), juce::dontSendNotification);
+            });
     }
 
     PluginUsage effectivePluginUsage(const juce::PluginDescription& d) const
@@ -2666,7 +2860,8 @@ private:
             [this](const juce::PluginDescription& description, juce::Point<int> where)
             {
                 showPluginFamilyEditor(description, where);
-            });
+            },
+            isPluginManuallyClassified(d));
     }
 
 
@@ -2843,6 +3038,14 @@ private:
         layoutMenu.addItem(901, "PAR FABRICANT", true, !groupByUsage);
         menu.addSubMenu("ORGANISATION", layoutMenu);
 
+        juce::PopupMenu backupMenu;
+        backupMenu.addSectionHeader(juce::String::fromUTF8("CATÉGORIES PERSONNALISÉES"));
+        backupMenu.addItem(950, juce::String::fromUTF8("EXPORTER LES CLASSEMENTS..."),
+                           !pluginFamilyOverrides.empty());
+        backupMenu.addItem(951, juce::String::fromUTF8("IMPORTER DES CLASSEMENTS..."),
+                           !familyOverridesReadOnly);
+        menu.addSubMenu(juce::String::fromUTF8("SAUVEGARDE / RESTAURATION"), backupMenu);
+
         menu.addSeparator();
         const bool active = selectedManufacturer.isNotEmpty()
             || pluginFormatFilter != PluginFormatFilter::all
@@ -2865,6 +3068,16 @@ private:
                     safe->pluginTypeFilter = PluginTypeFilter::all;
                     safe->quickView = QuickView::all;
                     safe->pluginUsageFilter = PluginUsage::all;
+                }
+                else if (chosen == 950)
+                {
+                    safe->exportPluginFamilyOverrides();
+                    return;
+                }
+                else if (chosen == 951)
+                {
+                    safe->importPluginFamilyOverrides();
+                    return;
                 }
                 else if (chosen == 900 || chosen == 901)
                     safe->groupByUsage = (chosen == 900);
