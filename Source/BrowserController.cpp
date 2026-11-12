@@ -14,10 +14,12 @@ void resizeLibertyMixConsole(MainComponent*);
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <map>
 #include <memory>
 #include <functional>
+#include <initializer_list>
 #include <thread>
 #include <vector>
 
@@ -1137,6 +1139,119 @@ private:
     enum class PluginFormatFilter { all, au, vst3 };
     enum class PluginTypeFilter { all, instrument, effect };
     enum class QuickView { all, favourites, recent };
+    enum class PluginUsage {
+        all, synthesizer, keyboards, drums, bass, guitar, orchestral, sampler,
+        reverb, delay, compressor, equalizer, distortion, modulation,
+        dynamics, utility, unclassified
+    };
+
+    static juce::String usageLabel(PluginUsage usage)
+    {
+        switch (usage)
+        {
+            case PluginUsage::synthesizer: return juce::String::fromUTF8("Synthétiseurs");
+            case PluginUsage::keyboards:   return "Pianos / Claviers";
+            case PluginUsage::drums:       return "Batteries / Percussions";
+            case PluginUsage::bass:        return "Basses";
+            case PluginUsage::guitar:      return "Guitares";
+            case PluginUsage::orchestral:  return "Orchestral / Voix";
+            case PluginUsage::sampler:     return "Samplers / ROMplers";
+            case PluginUsage::reverb:      return juce::String::fromUTF8("Réverbérations");
+            case PluginUsage::delay:       return juce::String::fromUTF8("Delays / Échos");
+            case PluginUsage::compressor:  return "Compresseurs";
+            case PluginUsage::equalizer:   return juce::String::fromUTF8("Égaliseurs");
+            case PluginUsage::distortion:  return "Distorsion / Saturation";
+            case PluginUsage::modulation:  return "Chorus / Modulation";
+            case PluginUsage::dynamics:    return "Limiteurs / Gates";
+            case PluginUsage::utility:     return "Utilitaires / Analyse";
+            case PluginUsage::unclassified:return juce::String::fromUTF8("Non classés");
+            case PluginUsage::all:         return "Toutes les familles";
+        }
+        return "Toutes les familles";
+    }
+
+    // The plugin exposes only descriptive metadata, not its audio algorithms.
+    // Classify conservatively: exact plugin type first, then verified strings
+    // supplied by the plugin (name and category). Unknowns remain available.
+    static PluginUsage classifyPluginUsage(const juce::PluginDescription& d)
+    {
+        const auto name = d.name + " " + d.category;
+        const auto containsAny = [&name](std::initializer_list<const char*> words)
+        {
+            for (auto* word : words)
+                if (name.containsIgnoreCase(word)) return true;
+            return false;
+        };
+
+        if (d.isInstrument)
+        {
+            if (containsAny({ "sampler", "sampling", "rompler", "sampletank", "kontakt" }))
+                return PluginUsage::sampler;
+            if (containsAny({ "bass", "basse" }))
+                return PluginUsage::bass;
+            if (containsAny({ "guitar", "guitare", "strum" }))
+                return PluginUsage::guitar;
+            if (containsAny({ "drum", "percussion", "drums", "battery", "batterie", "rhythm machine" }))
+                return PluginUsage::drums;
+            if (containsAny({ "piano", "rhodes", "wurl", "clavinet", "harpsichord",
+                              "keyboard", "electric keys", "organ", "hammond" }))
+                return PluginUsage::keyboards;
+            if (containsAny({ "orchestral", "string", "violin", "viola", "cello",
+                              "brass", "woodwind", "flute", "choir", "vocal", "voice" }))
+                return PluginUsage::orchestral;
+            if (containsAny({ "synth", "wavetable", "oscillator", "modular",
+                              "subtractive", "analog", "analogue", "virtual analog" }))
+                return PluginUsage::synthesizer;
+        }
+        else
+        {
+            if (containsAny({ "reverb", "reverber", "convolution", "convolver" }))
+                return PluginUsage::reverb;
+            if (containsAny({ "delay", "echo", "repeater" }))
+                return PluginUsage::delay;
+            if (containsAny({ "compress", "compressor" })
+                || name.containsWholeWordIgnoreCase("comp"))
+                return PluginUsage::compressor;
+            if (containsAny({ "equaliz", "equalis", "equaliz", "parametric eq" })
+                || name.containsWholeWordIgnoreCase("eq"))
+                return PluginUsage::equalizer;
+            if (containsAny({ "distort", "saturat", "overdrive", "fuzz",
+                              "bitcrush", "bit crush", "amp sim", "drive" }))
+                return PluginUsage::distortion;
+            if (containsAny({ "chorus", "flang", "phas", "tremolo", "vibrato",
+                              "rotary", "modulation" }))
+                return PluginUsage::modulation;
+            if (containsAny({ "limiter", "expander", "transient", "noise gate",
+                              "de-esser", "deesser", "dynamics" })
+                || name.containsWholeWordIgnoreCase("gate"))
+                return PluginUsage::dynamics;
+            if (containsAny({ "analy", "analys", "meter", "loudness", "tuner",
+                              "utility", "stereo", "correlation", "panorama" })
+                || name.containsWholeWordIgnoreCase("gain"))
+                return PluginUsage::utility;
+        }
+        return PluginUsage::unclassified;
+    }
+
+    static const std::array<PluginUsage, 7>& instrumentUsages()
+    {
+        static const std::array<PluginUsage, 7> values = {
+            PluginUsage::synthesizer, PluginUsage::keyboards, PluginUsage::drums,
+            PluginUsage::bass, PluginUsage::guitar, PluginUsage::orchestral,
+            PluginUsage::sampler
+        };
+        return values;
+    }
+
+    static const std::array<PluginUsage, 8>& effectUsages()
+    {
+        static const std::array<PluginUsage, 8> values = {
+            PluginUsage::reverb, PluginUsage::delay, PluginUsage::compressor,
+            PluginUsage::equalizer, PluginUsage::distortion, PluginUsage::modulation,
+            PluginUsage::dynamics, PluginUsage::utility
+        };
+        return values;
+    }
 
     static juce::File favouritesFile()
     {
@@ -2344,7 +2459,8 @@ private:
         const int active = (selectedManufacturer.isNotEmpty() ? 1 : 0)
                          + (pluginFormatFilter != PluginFormatFilter::all ? 1 : 0)
                          + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0)
-                         + (quickView != QuickView::all ? 1 : 0);
+                         + (quickView != QuickView::all ? 1 : 0)
+                         + (pluginUsageFilter != PluginUsage::all ? 1 : 0);
         pluginFiltersButton.setButtonText(active == 0 ? "FILTRES"
             : "FILTRES (" + juce::String(active) + ")");
         pluginFiltersButton.setColour(juce::TextButton::buttonColourId,
@@ -2360,7 +2476,11 @@ private:
                 : pluginTypeFilter == PluginTypeFilter::effect ? "Effets" : "Tous")
             + juce::String::fromUTF8(" | Accès rapide : ")
             + (quickView == QuickView::favourites ? "Favoris"
-                : quickView == QuickView::recent ? "Récents" : "Tous");
+                : quickView == QuickView::recent ? "Récents" : "Tous")
+            + juce::String::fromUTF8(" | Famille : ")
+            + usageLabel(pluginUsageFilter)
+            + juce::String::fromUTF8(" | Classement : ")
+            + (groupByUsage ? "Fonction" : "Fabricant");
         if (visibleCount >= 0)
             detail += juce::String::fromUTF8(" | Résultats : ") + juce::String(visibleCount);
         pluginFiltersButton.setTooltip(detail);
@@ -2435,11 +2555,55 @@ private:
                          pluginTypeFilter == PluginTypeFilter::effect);
         menu.addSubMenu("TYPE DE PLUGIN", typeMenu);
 
+        // Category counts come from installed plugin metadata; they never
+        // require instantiation, scanning or loading a third-party plugin.
+        std::array<int, 17> categoryCounts {};
+        for (const auto& d : pluginDescriptions)
+        {
+            const int index = (int)classifyPluginUsage(d);
+            if (index > 0 && index < (int)categoryCounts.size())
+                ++categoryCounts[(size_t)index];
+        }
+        juce::PopupMenu usageMenu;
+        usageMenu.addItem(800, juce::String::fromUTF8("TOUTES LES FAMILLES"), true,
+                          pluginUsageFilter == PluginUsage::all);
+        juce::PopupMenu instrumentMenu, effectMenu;
+        for (auto usage : instrumentUsages())
+        {
+            const auto count = categoryCounts[(size_t)(int)usage];
+            instrumentMenu.addItem(800 + (int)usage,
+                usageLabel(usage) + "  (" + juce::String(count) + ")", true,
+                pluginUsageFilter == usage);
+        }
+        // An instrument/effect can be classified as 'unclassified'; the
+        // dedicated category below includes both.
+        for (auto usage : effectUsages())
+        {
+            const auto count = categoryCounts[(size_t)(int)usage];
+            effectMenu.addItem(800 + (int)usage,
+                usageLabel(usage) + "  (" + juce::String(count) + ")", true,
+                pluginUsageFilter == usage);
+        }
+        usageMenu.addSubMenu("INSTRUMENTS", instrumentMenu);
+        usageMenu.addSubMenu("EFFETS AUDIO", effectMenu);
+        usageMenu.addSeparator();
+        usageMenu.addItem(800 + (int)PluginUsage::unclassified,
+            usageLabel(PluginUsage::unclassified) + "  ("
+            + juce::String(categoryCounts[(size_t)(int)PluginUsage::unclassified]) + ")",
+            true, pluginUsageFilter == PluginUsage::unclassified);
+        menu.addSubMenu(juce::String::fromUTF8("FAMILLE SONORE / FONCTION"), usageMenu);
+
+        juce::PopupMenu layoutMenu;
+        layoutMenu.addItem(900, "PAR FONCTION", true, groupByUsage);
+        layoutMenu.addItem(901, "PAR FABRICANT", true, !groupByUsage);
+        menu.addSubMenu("ORGANISATION", layoutMenu);
+
         menu.addSeparator();
         const bool active = selectedManufacturer.isNotEmpty()
             || pluginFormatFilter != PluginFormatFilter::all
             || pluginTypeFilter != PluginTypeFilter::all
-            || quickView != QuickView::all;
+            || quickView != QuickView::all
+            || pluginUsageFilter != PluginUsage::all;
         menu.addItem(600, juce::String::fromUTF8("RÉINITIALISER LES FILTRES"), active);
 
         juce::Component::SafePointer<BrowserPanel> safe(this);
@@ -2455,7 +2619,12 @@ private:
                     safe->pluginFormatFilter = PluginFormatFilter::all;
                     safe->pluginTypeFilter = PluginTypeFilter::all;
                     safe->quickView = QuickView::all;
+                    safe->pluginUsageFilter = PluginUsage::all;
                 }
+                else if (chosen == 900 || chosen == 901)
+                    safe->groupByUsage = (chosen == 900);
+                else if (chosen >= 800 && chosen <= 800 + (int)PluginUsage::unclassified)
+                    safe->pluginUsageFilter = (PluginUsage)(chosen - 800);
                 else if (chosen >= 700 && chosen <= 702)
                     safe->quickView = (QuickView) (chosen - 700);
                 else if (chosen == 300)
@@ -2588,6 +2757,8 @@ private:
                 || d.manufacturerName.containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
+            if (pluginUsageFilter != PluginUsage::all
+                && classifyPluginUsage(d) != pluginUsageFilter) return false;
             if (quickView == QuickView::favourites && !isFavouritePlugin(d)) return false;
             if (quickView == QuickView::recent && !recentKeys.contains(favouriteKey(d))) return false;
             if (artworkView == ArtworkView::all) return true;
@@ -2644,25 +2815,66 @@ private:
         for (int family = 0; family < 2; ++family)
         {
             auto* parent = family == 0 ? instruments : audioEffects;
-            juce::String current;
-            PluginTreeItem* group = nullptr;
-            for (const auto& d : pluginDescriptions)
+            // Keep the original manufacturer-first hierarchy available.
+            // Function-first creates category -> manufacturer -> plugin.
+            if (groupByUsage)
             {
-                if (d.isInstrument != (family == 0) || !matches(d)) continue;
-                auto manufacturer = d.manufacturerName.trim();
-                if (manufacturer.isEmpty()) manufacturer = "AUTRES";
-                if (manufacturer != current)
+                std::vector<PluginUsage> available;
+                const auto& predefined = family == 0 ? instrumentUsages() : effectUsages();
+                available.insert(available.end(), predefined.begin(), predefined.end());
+                available.push_back(PluginUsage::unclassified);
+                for (const auto usage : available)
                 {
-                    current = manufacturer;
-                    group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
-                    parent->addSubItem(group);
+                    PluginTreeItem* usageGroup = nullptr;
+                    juce::String current;
+                    PluginTreeItem* manufacturerGroup = nullptr;
+                    for (const auto& d : pluginDescriptions)
+                    {
+                        if (d.isInstrument != (family == 0) || !matches(d)
+                            || classifyPluginUsage(d) != usage) continue;
+                        if (usageGroup == nullptr)
+                        {
+                            usageGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
+                                usageLabel(usage));
+                            parent->addSubItem(usageGroup);
+                        }
+                        const auto manufacturer = normalisedManufacturer(d);
+                        if (manufacturer != current)
+                        {
+                            current = manufacturer;
+                            manufacturerGroup = new PluginTreeItem(
+                                PluginTreeItem::Kind::manufacturer, manufacturer);
+                            usageGroup->addSubItem(manufacturerGroup);
+                        }
+                        auto* item = makePluginItem(d);
+                        manufacturerGroup->addSubItem(item);
+                        if (quickView == QuickView::all)
+                            keyboardResults.push_back(item);
+                    }
                 }
-                if (group != nullptr)
+            }
+            else
+            {
+                juce::String current;
+                PluginTreeItem* group = nullptr;
+                for (const auto& d : pluginDescriptions)
                 {
-                    auto* item = makePluginItem(d);
-                    group->addSubItem(item);
-                    if (quickView == QuickView::all)
-                        keyboardResults.push_back(item);
+                    if (d.isInstrument != (family == 0) || !matches(d)) continue;
+                    const auto manufacturer = normalisedManufacturer(d);
+                    if (manufacturer != current)
+                    {
+                        current = manufacturer;
+                        group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
+                                                   manufacturer);
+                        parent->addSubItem(group);
+                    }
+                    if (group != nullptr)
+                    {
+                        auto* item = makePluginItem(d);
+                        group->addSubItem(item);
+                        if (quickView == QuickView::all)
+                            keyboardResults.push_back(item);
+                    }
                 }
             }
         }
@@ -2672,11 +2884,18 @@ private:
             || pluginFormatFilter != PluginFormatFilter::all
             || pluginTypeFilter != PluginTypeFilter::all
             || quickView != QuickView::all
+            || pluginUsageFilter != PluginUsage::all
             || artworkView != ArtworkView::all)
         {
             for (auto* family : { instruments, audioEffects })
                 for (int i = 0; i < family->getNumSubItems(); ++i)
-                    family->getSubItem(i)->setOpen(true);
+                {
+                    auto* categoryOrManufacturer = family->getSubItem(i);
+                    categoryOrManufacturer->setOpen(true);
+                    if (groupByUsage)
+                        for (int j = 0; j < categoryOrManufacturer->getNumSubItems(); ++j)
+                            categoryOrManufacturer->getSubItem(j)->setOpen(true);
+                }
         }
         pluginTree.setRootItem(pluginRoot.get());
         pluginRoot->setOpen(true); fav->setOpen(true);
@@ -3222,6 +3441,8 @@ private:
     PluginFormatFilter pluginFormatFilter = PluginFormatFilter::all;
     PluginTypeFilter pluginTypeFilter = PluginTypeFilter::all;
     QuickView quickView = QuickView::all;
+    PluginUsage pluginUsageFilter = PluginUsage::all;
+    bool groupByUsage = true;
     juce::String selectedManufacturer;
     int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
