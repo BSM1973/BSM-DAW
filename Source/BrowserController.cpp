@@ -570,6 +570,7 @@ public:
         loadFavourites();
         loadRecentPlugins();
         loadPluginFamilyOverrides();
+        loadPluginCollections();
 
         toggleButton.setButtonText("NAVIGATEUR");
         toggleButton.setAlwaysOnTop(true);
@@ -1286,6 +1287,247 @@ private:
     }
 
 
+
+    static juce::File pluginCollectionsFile()
+    {
+        // Never mix collections with the JUCE plugin scan cache, favourites,
+        // screenshot captures, or music-family corrections.
+        return favouritesFile().getSiblingFile("PluginCollections.xml");
+    }
+
+    static bool validCollectionName(const juce::String& name)
+    {
+        return name.isNotEmpty() && name.length() <= 48
+            && !name.containsAnyOf("\r\n\t");
+    }
+
+    juce::String existingCollectionName(const juce::String& candidate) const
+    {
+        for (const auto& entry : pluginCollections)
+            if (entry.first.equalsIgnoreCase(candidate))
+                return entry.first;
+        return {};
+    }
+
+    void loadPluginCollections()
+    {
+        pluginCollections.clear();
+        collectionsReadOnly = false;
+        const auto file = pluginCollectionsFile();
+        if (!file.existsAsFile()) return;
+        if (file.getSize() <= 0 || file.getSize() > 5 * 1024 * 1024)
+        {
+            collectionsReadOnly = true;
+            return;
+        }
+        auto document = juce::XmlDocument::parse(file);
+        if (document == nullptr || !document->hasTagName("LibertyPluginCollections")
+            || document->getIntAttribute("version", 1) != 1)
+        {
+            // Do not overwrite or silently discard invalid user data.
+            collectionsReadOnly = true;
+            return;
+        }
+        std::map<juce::String, juce::StringArray> recovered;
+        int entries = 0;
+        for (auto* group = document->getFirstChildElement(); group != nullptr;
+             group = group->getNextElement())
+        {
+            const auto name = group->getStringAttribute("name").trim();
+            if (!group->hasTagName("collection") || !validCollectionName(name)
+                || recovered.size() >= 64)
+            {
+                collectionsReadOnly = true;
+                return;
+            }
+            for (const auto& existing : recovered)
+                if (existing.first.equalsIgnoreCase(name))
+                {
+                    collectionsReadOnly = true;
+                    return;
+                }
+            juce::StringArray members;
+            for (auto* plugin = group->getFirstChildElement(); plugin != nullptr;
+                 plugin = plugin->getNextElement())
+            {
+                const auto key = plugin->getStringAttribute("id");
+                if (!plugin->hasTagName("plugin") || key.isEmpty()
+                    || key.length() > 2048 || ++entries > 20000)
+                {
+                    collectionsReadOnly = true;
+                    return;
+                }
+                members.addIfNotAlreadyThere(key);
+            }
+            recovered.emplace(name, std::move(members));
+        }
+        pluginCollections = std::move(recovered);
+    }
+
+    bool savePluginCollections()
+    {
+        if (collectionsReadOnly) return false;
+        juce::XmlElement root("LibertyPluginCollections");
+        root.setAttribute("version", 1);
+        for (const auto& group : pluginCollections)
+        {
+            auto* collection = root.createNewChildElement("collection");
+            collection->setAttribute("name", group.first);
+            for (const auto& key : group.second)
+            {
+                auto* item = collection->createNewChildElement("plugin");
+                item->setAttribute("id", key);
+            }
+        }
+        const auto target = pluginCollectionsFile();
+        juce::TemporaryFile staged(target);
+        return staged.getFile().replaceWithText(root.toString())
+            && staged.overwriteTargetFileWithTemporary();
+    }
+
+    void showCollectionsSaveError()
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Liberty - Collections",
+            juce::String::fromUTF8(
+                "Impossible d'enregistrer les collections. Le fichier existant est conservé."),
+            "OK");
+    }
+
+    bool commitPluginCollections(
+        const std::map<juce::String, juce::StringArray>& oldState,
+        const juce::String& message)
+    {
+        if (!savePluginCollections())
+        {
+            pluginCollections = oldState;
+            showCollectionsSaveError();
+            return false;
+        }
+        rebuildPluginTree();
+        pluginStatus.setText(message, juce::dontSendNotification);
+        return true;
+    }
+
+    void togglePluginCollection(const juce::PluginDescription& description,
+                                const juce::String& collectionName)
+    {
+        auto it = pluginCollections.find(collectionName);
+        if (it == pluginCollections.end() || collectionsReadOnly) return;
+        const auto key = favouriteKey(description);
+        if (key.isEmpty()) return;
+        const auto old = pluginCollections;
+        const int index = it->second.indexOf(key);
+        if (index >= 0) it->second.remove(index);
+        else it->second.add(key);
+        const auto message = description.name
+            + (index >= 0 ? juce::String::fromUTF8(" retiré de « ")
+                          : juce::String::fromUTF8(" ajouté à « "))
+            + collectionName + juce::String::fromUTF8(" »");
+        commitPluginCollections(old, message);
+    }
+
+    // A single dialog supports creating a collection and renaming one.
+    // Optional pluginKey allows "New collection..." from a plugin's right-click
+    // menu to immediately place that plugin in the new group.
+    void promptCollectionName(const juce::String& renameFrom = {},
+                              const juce::String& pluginKey = {})
+    {
+        if (collectionsReadOnly)
+        {
+            showCollectionsSaveError();
+            return;
+        }
+        const bool rename = renameFrom.isNotEmpty();
+        if (!rename && pluginCollections.size() >= 64)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8("Limite de 64 collections atteinte."), "OK");
+            return;
+        }
+        auto dialog = std::make_shared<juce::AlertWindow>(
+            rename ? juce::String::fromUTF8("Renommer la collection")
+                   : juce::String::fromUTF8("Nouvelle collection Liberty"),
+            juce::String::fromUTF8(
+                "Saisis un nom court pour ta collection (48 caractères maximum)."),
+            juce::AlertWindow::NoIcon);
+        dialog->addTextEditor("collectionName", renameFrom,
+                              juce::String::fromUTF8("NOM DE LA COLLECTION"));
+        dialog->addButton(rename ? "RENOMMER" : juce::String::fromUTF8("CRÉER"), 1);
+        dialog->addButton("ANNULER", 0);
+        dialog->centreAroundComponent(&pluginFiltersButton, 420, 195);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safe, dialog, renameFrom, pluginKey](int result)
+            {
+                if (safe == nullptr || safe->stopped.load() || result != 1) return;
+                const auto name = dialog->getTextEditorContents("collectionName").trim();
+                const auto duplicate = safe->existingCollectionName(name);
+                if (!validCollectionName(name)
+                    || (duplicate.isNotEmpty()
+                        && (!renameFrom.equalsIgnoreCase(duplicate) || !rename)))
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Nom invalide ou déjà utilisé. Choisis un autre nom (48 caractères max)."),
+                        "OK");
+                    return;
+                }
+
+                const auto old = safe->pluginCollections;
+                const auto oldSelection = safe->selectedCollection;
+                if (rename)
+                {
+                    auto oldGroup = safe->pluginCollections.find(renameFrom);
+                    if (oldGroup == safe->pluginCollections.end()) return;
+                    auto members = oldGroup->second;
+                    safe->pluginCollections.erase(oldGroup);
+                    safe->pluginCollections.emplace(name, std::move(members));
+                    if (safe->selectedCollection.equalsIgnoreCase(renameFrom))
+                        safe->selectedCollection = name;
+                }
+                else
+                {
+                    juce::StringArray members;
+                    if (pluginKey.isNotEmpty()) members.add(pluginKey);
+                    safe->pluginCollections.emplace(name, std::move(members));
+                }
+                if (!safe->commitPluginCollections(old,
+                    (rename ? juce::String::fromUTF8("Collection renommée : ")
+                            : juce::String::fromUTF8("Collection créée : ")) + name))
+                    safe->selectedCollection = oldSelection;
+            }), false);
+    }
+
+    void confirmDeleteCollection(const juce::String& name)
+    {
+        if (collectionsReadOnly || pluginCollections.find(name) == pluginCollections.end())
+            return;
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Supprimer la collection ?"),
+            juce::String::fromUTF8(
+                "Supprimer la collection « ") + name
+                + juce::String::fromUTF8(
+                    " » et ses associations ? Les plugins installés ne seront pas supprimés."),
+            "SUPPRIMER", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create([safe, name](int result)
+            {
+                if (safe == nullptr || safe->stopped.load() || result != 1) return;
+                const auto old = safe->pluginCollections;
+                const auto oldSelection = safe->selectedCollection;
+                safe->pluginCollections.erase(name);
+                if (safe->selectedCollection == name)
+                    safe->selectedCollection.clear();
+                if (!safe->commitPluginCollections(old,
+                    juce::String::fromUTF8("Collection supprimée : ") + name))
+                    safe->selectedCollection = oldSelection;
+            }));
+    }
+
     static juce::File pluginFamilyOverridesFile()
     {
         // Same persistent, user-specific Library directory as plugin favorites.
@@ -1613,6 +1855,20 @@ private:
         menu.addSubMenu(juce::String::fromUTF8("CLASSER CE PLUGIN"), families);
         menu.addItem(3001, juce::String::fromUTF8("REVENIR AU CLASSEMENT AUTOMATIQUE"), custom);
 
+        juce::StringArray collectionNames;
+        juce::PopupMenu memberships;
+        for (const auto& group : pluginCollections)
+        {
+            collectionNames.add(group.first);
+            memberships.addItem(6000 + collectionNames.size() - 1, group.first, true,
+                group.second.contains(key));
+        }
+        if (!collectionNames.isEmpty()) memberships.addSeparator();
+        memberships.addItem(6100, juce::String::fromUTF8("NOUVELLE COLLECTION..."),
+                            !collectionsReadOnly && pluginCollections.size() < 64);
+        menu.addSeparator();
+        menu.addSubMenu("COLLECTIONS", memberships);
+
         if (canApplyToVariants)
         {
             menu.addSeparator();
@@ -1635,9 +1891,19 @@ private:
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetScreenArea(juce::Rectangle<int>(screenPosition.x, screenPosition.y, 1, 1))
             .withMaximumNumColumns(1),
-            [safe, description, variantKeys, canApplyToVariants](int chosen)
+            [safe, description, variantKeys, canApplyToVariants, collectionNames](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen == 0) return;
+                if (chosen == 6100)
+                {
+                    safe->promptCollectionName({}, favouriteKey(description));
+                    return;
+                }
+                if (chosen >= 6000 && chosen < 6000 + collectionNames.size())
+                {
+                    safe->togglePluginCollection(description, collectionNames[chosen - 6000]);
+                    return;
+                }
                 if (chosen == 3000)
                 {
                     safe->toggleFavourite(description);
@@ -2900,7 +3166,8 @@ private:
                          + (pluginFormatFilter != PluginFormatFilter::all ? 1 : 0)
                          + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0)
                          + (quickView != QuickView::all ? 1 : 0)
-                         + (pluginUsageFilter != PluginUsage::all ? 1 : 0);
+                         + (pluginUsageFilter != PluginUsage::all ? 1 : 0)
+                         + (selectedCollection.isNotEmpty() ? 1 : 0);
         pluginFiltersButton.setButtonText(active == 0 ? "FILTRES"
             : "FILTRES (" + juce::String(active) + ")");
         pluginFiltersButton.setColour(juce::TextButton::buttonColourId,
@@ -2920,7 +3187,9 @@ private:
             + juce::String::fromUTF8(" | Famille : ")
             + usageLabel(pluginUsageFilter)
             + juce::String::fromUTF8(" | Classement : ")
-            + (groupByUsage ? "Fonction" : "Fabricant");
+            + (groupByUsage ? "Fonction" : "Fabricant")
+            + juce::String::fromUTF8(" | Collection : ")
+            + (selectedCollection.isNotEmpty() ? selectedCollection : juce::String("Toutes"));
         if (visibleCount >= 0)
             detail += juce::String::fromUTF8(" | Résultats : ") + juce::String(visibleCount);
         pluginFiltersButton.setTooltip(detail);
@@ -2948,6 +3217,34 @@ private:
         accessMenu.addItem(702, juce::String::fromUTF8("RÉCENTS UNIQUEMENT"), true,
                            quickView == QuickView::recent);
         menu.addSubMenu(juce::String::fromUTF8("ACCÈS RAPIDE"), accessMenu);
+
+        juce::StringArray collectionNames;
+        juce::PopupMenu collectionsMenu;
+        collectionsMenu.addItem(5000, juce::String::fromUTF8("TOUS LES PLUGINS"),
+                                 true, selectedCollection.isEmpty());
+        for (const auto& item : pluginCollections)
+        {
+            const int number = collectionNames.size();
+            collectionNames.add(item.first);
+            collectionsMenu.addItem(5001 + number,
+                item.first + "  (" + juce::String(item.second.size()) + ")", true,
+                selectedCollection == item.first);
+        }
+        collectionsMenu.addSeparator();
+        collectionsMenu.addItem(5100, juce::String::fromUTF8("NOUVELLE COLLECTION..."),
+                                 !collectionsReadOnly && pluginCollections.size() < 64);
+        if (!collectionNames.isEmpty())
+        {
+            juce::PopupMenu renameMenu, deleteMenu;
+            for (int i = 0; i < collectionNames.size(); ++i)
+            {
+                renameMenu.addItem(5200 + i, collectionNames[i], !collectionsReadOnly);
+                deleteMenu.addItem(5300 + i, collectionNames[i], !collectionsReadOnly);
+            }
+            collectionsMenu.addSubMenu(juce::String::fromUTF8("RENOMMER"), renameMenu);
+            collectionsMenu.addSubMenu(juce::String::fromUTF8("SUPPRIMER"), deleteMenu);
+        }
+        menu.addSubMenu("COLLECTIONS", collectionsMenu);
 
         juce::PopupMenu manufacturerMenu;
         manufacturerMenu.addItem(300, juce::String::fromUTF8("TOUS LES FABRICANTS"),
@@ -3051,14 +3348,15 @@ private:
             || pluginFormatFilter != PluginFormatFilter::all
             || pluginTypeFilter != PluginTypeFilter::all
             || quickView != QuickView::all
-            || pluginUsageFilter != PluginUsage::all;
+            || pluginUsageFilter != PluginUsage::all
+            || selectedCollection.isNotEmpty();
         menu.addItem(600, juce::String::fromUTF8("RÉINITIALISER LES FILTRES"), active);
 
         juce::Component::SafePointer<BrowserPanel> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetComponent(&pluginFiltersButton)
             .withMaximumNumColumns(1),
-            [safe, manufacturers](int chosen)
+            [safe, manufacturers, collectionNames](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen <= 0) return;
                 if (chosen == 600)
@@ -3068,6 +3366,26 @@ private:
                     safe->pluginTypeFilter = PluginTypeFilter::all;
                     safe->quickView = QuickView::all;
                     safe->pluginUsageFilter = PluginUsage::all;
+                    safe->selectedCollection.clear();
+                }
+                else if (chosen == 5000)
+                    safe->selectedCollection.clear();
+                else if (chosen > 5000 && chosen <= 5000 + collectionNames.size())
+                    safe->selectedCollection = collectionNames[chosen - 5001];
+                else if (chosen == 5100)
+                {
+                    safe->promptCollectionName();
+                    return;
+                }
+                else if (chosen >= 5200 && chosen < 5200 + collectionNames.size())
+                {
+                    safe->promptCollectionName(collectionNames[chosen - 5200]);
+                    return;
+                }
+                else if (chosen >= 5300 && chosen < 5300 + collectionNames.size())
+                {
+                    safe->confirmDeleteCollection(collectionNames[chosen - 5300]);
+                    return;
                 }
                 else if (chosen == 950)
                 {
@@ -3217,6 +3535,12 @@ private:
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
             if (pluginUsageFilter != PluginUsage::all
                 && effectivePluginUsage(d) != pluginUsageFilter) return false;
+            if (selectedCollection.isNotEmpty())
+            {
+                const auto group = pluginCollections.find(selectedCollection);
+                if (group == pluginCollections.end()
+                    || !group->second.contains(favouriteKey(d))) return false;
+            }
             if (quickView == QuickView::favourites && !isFavouritePlugin(d)) return false;
             if (quickView == QuickView::recent && !recentKeys.contains(favouriteKey(d))) return false;
             if (artworkView == ArtworkView::all) return true;
@@ -3260,6 +3584,32 @@ private:
                 if (quickView == QuickView::recent)
                     keyboardResults.push_back(item);
                 break;
+            }
+        }
+
+        // A plugin may appear in any number of independent custom collections.
+        // Collapsed groups limit UI work and do not change family classification.
+        PluginTreeItem* collectionsRoot = nullptr;
+        if (!pluginCollections.empty())
+        {
+            collectionsRoot = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "COLLECTIONS");
+            pluginRoot->addSubItem(collectionsRoot);
+            for (const auto& group : pluginCollections)
+            {
+                if (selectedCollection.isNotEmpty() && group.first != selectedCollection)
+                    continue;
+                auto* collectionItem = new PluginTreeItem(
+                    PluginTreeItem::Kind::manufacturer, group.first);
+                collectionsRoot->addSubItem(collectionItem);
+                for (const auto& d : pluginDescriptions)
+                {
+                    if (!group.second.contains(favouriteKey(d)) || !matches(d)) continue;
+                    auto* item = makePluginItem(d);
+                    collectionItem->addSubItem(item);
+                    if (selectedCollection.isNotEmpty() && quickView == QuickView::all)
+                        keyboardResults.push_back(item);
+                }
+                collectionItem->setOpen(selectedCollection.isNotEmpty());
             }
         }
 
@@ -3308,7 +3658,7 @@ private:
                         }
                         auto* item = makePluginItem(d);
                         manufacturerGroup->addSubItem(item);
-                        if (quickView == QuickView::all)
+                        if (quickView == QuickView::all && selectedCollection.isEmpty())
                             keyboardResults.push_back(item);
                     }
                 }
@@ -3332,7 +3682,7 @@ private:
                     {
                         auto* item = makePluginItem(d);
                         group->addSubItem(item);
-                        if (quickView == QuickView::all)
+                        if (quickView == QuickView::all && selectedCollection.isEmpty())
                             keyboardResults.push_back(item);
                     }
                 }
@@ -3345,6 +3695,7 @@ private:
             || pluginTypeFilter != PluginTypeFilter::all
             || quickView != QuickView::all
             || pluginUsageFilter != PluginUsage::all
+            || selectedCollection.isNotEmpty()
             || artworkView != ArtworkView::all)
         {
             for (auto* family : { instruments, audioEffects })
@@ -3360,6 +3711,7 @@ private:
         pluginTree.setRootItem(pluginRoot.get());
         pluginRoot->setOpen(true); fav->setOpen(true);
         if (recentGroup != nullptr) recentGroup->setOpen(true);
+        if (collectionsRoot != nullptr) collectionsRoot->setOpen(true);
         instruments->setOpen(true); audioEffects->setOpen(true);
 
         PluginTreeItem* preferred = nullptr;
@@ -3905,6 +4257,9 @@ private:
     bool groupByUsage = true;
     std::map<juce::String, PluginUsage> pluginFamilyOverrides;
     bool familyOverridesReadOnly = false;
+    std::map<juce::String, juce::StringArray> pluginCollections;
+    bool collectionsReadOnly = false;
+    juce::String selectedCollection;
     juce::String selectedManufacturer;
     int artworkTotalCount = 0, artworkPresentCount = 0;
     std::atomic<bool> stopped { false }, scanning { false }, scanFinishedPending { false };
