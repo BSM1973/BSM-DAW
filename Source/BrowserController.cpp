@@ -426,22 +426,41 @@ public:
         importThumbnailButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
         importThumbnailButton.onClick = [this]
         {
-            juce::PopupMenu menu;
-            menu.addItem(1, "IMPORTER UNE CAPTURE PNG");
-            menu.addItem(2, "ACTUALISER LES IMAGES OFFICIELLES");
-            menu.addItem(3, "OUVRIR LE DOSSIER DES CAPTURES");
-            menu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"), !batchArtworkRunning.load(), false);
-            menu.addSeparator();
+            // Compact four-group menu, consistent with Liberty's existing
+            // JUCE PopupMenu submenus. The native LookAndFeel retains the
+            // bleu-nuit theme without custom item geometry or text overlap.
             const bool batchIdle = !batchArtworkRunning.load();
-            menu.addItem(12, juce::String::fromUTF8("CAPTURE AUTO : TESTER 1 PLUGIN MANQUANT"), batchIdle, false);
-            menu.addItem(6, juce::String::fromUTF8("CAPTURE AUTO : TESTER 10 PLUGINS MANQUANTS"), batchIdle, false);
-            menu.addItem(7, juce::String::fromUTF8("CAPTURE AUTO : 50 PLUGINS MANQUANTS"), batchIdle, false);
-            menu.addItem(8, juce::String::fromUTF8("CAPTURE AUTO : TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
-            menu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
-            menu.addItem(13, juce::String::fromUTF8("RÉESSAYER 1 CAPTURE EN ÉCHEC"), batchIdle, false);
-            menu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
+            juce::PopupMenu menu;
+            menu.addSectionHeader(juce::String::fromUTF8("MINIATURES DE PLUGINS"));
+
+            juce::PopupMenu importMenu;
+            importMenu.addItem(1, juce::String::fromUTF8("IMPORTER UNE CAPTURE PNG"));
+            importMenu.addItem(2, juce::String::fromUTF8("ACTUALISER LES IMAGES OFFICIELLES"));
+            menu.addSubMenu(juce::String::fromUTF8("IMPORTATION"), importMenu);
+
+            juce::PopupMenu captureMenu;
+            captureMenu.addItem(5, juce::String::fromUTF8("CAPTURE ISOLÉE DU PLUGIN (MAC)"), batchIdle, false);
+            captureMenu.addSeparator();
+            captureMenu.addItem(12, juce::String::fromUTF8("TESTER 1 PLUGIN MANQUANT"), batchIdle, false);
+            captureMenu.addItem(6, juce::String::fromUTF8("TESTER 10 PLUGINS MANQUANTS"), batchIdle, false);
+            captureMenu.addItem(7, juce::String::fromUTF8("CAPTURER 50 PLUGINS MANQUANTS"), batchIdle, false);
+            captureMenu.addItem(8, juce::String::fromUTF8("CAPTURER TOUS LES PLUGINS MANQUANTS"), batchIdle, false);
+            captureMenu.addSeparator();
+            captureMenu.addItem(9, juce::String::fromUTF8("ARRÊTER LA CAPTURE AUTOMATIQUE"), !batchIdle, false);
+            menu.addSubMenu(juce::String::fromUTF8("CAPTURES AUTOMATIQUES"), captureMenu);
+
+            juce::PopupMenu retryMenu;
+            retryMenu.addItem(13, juce::String::fromUTF8("RÉESSAYER 1 CAPTURE EN ÉCHEC"), batchIdle, false);
+            retryMenu.addItem(10, juce::String::fromUTF8("RÉESSAYER 10 CAPTURES EN ÉCHEC"), batchIdle, false);
+            retryMenu.addItem(14, juce::String::fromUTF8("RÉESSAYER 100 CAPTURES EN ÉCHEC"), batchIdle, false);
+            menu.addSubMenu(juce::String::fromUTF8("RÉESSAYER LES ÉCHECS"), retryMenu);
+
             menu.addSeparator();
-            menu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
+            juce::PopupMenu toolsMenu;
+            toolsMenu.addItem(11, juce::String::fromUTF8("VOIR LE JOURNAL DES CAPTURES"));
+            toolsMenu.addItem(3, juce::String::fromUTF8("OUVRIR LE DOSSIER DES CAPTURES"));
+            menu.addSubMenu(juce::String::fromUTF8("OUTILS"), toolsMenu);
+
             juce::Component::SafePointer<BrowserPanel> safe(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&importThumbnailButton),
                 [safe](int choice)
@@ -459,6 +478,7 @@ public:
                     if (choice == 9) safe->cancelBatchArtworkCapture();
                     if (choice == 10) safe->startBatchArtworkCapture(10, true);
                     if (choice == 13) safe->startBatchArtworkCapture(1, true);
+                    if (choice == 14) safe->startBatchArtworkCapture(100, true);
                     if (choice == 3)
                     {
                         auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
