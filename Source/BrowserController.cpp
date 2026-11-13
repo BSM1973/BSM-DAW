@@ -17,6 +17,7 @@ void resizeLibertyMixConsole(MainComponent*);
 #include <array>
 #include <atomic>
 #include <map>
+#include <set>
 #include <memory>
 #include <functional>
 #include <initializer_list>
@@ -133,12 +134,14 @@ public:
                    bool thumbnailsIn = false,
                    std::function<void(const juce::File&, const juce::PluginDescription&)> importArtworkIn = {},
                    std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamilyIn = {},
-                   bool manuallyClassifiedIn = false)
+                   bool manuallyClassifiedIn = false,
+                   std::function<void(juce::Point<int>)> collectionContextIn = {})
         : kind(kindIn), thumbnails(thumbnailsIn), manuallyClassified(manuallyClassifiedIn),
           label(std::move(labelIn)),
           activate(std::move(activateIn)), isFavourite(std::move(isFavouriteIn)),
           toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn)),
-          editFamily(std::move(editFamilyIn))
+          editFamily(std::move(editFamilyIn)),
+          collectionContext(std::move(collectionContextIn))
     {
         if (descriptionIn != nullptr) description = *descriptionIn;
         // Artwork is decoded lazily on first visibility, not when JUCE builds
@@ -276,9 +279,14 @@ public:
 
     void itemClicked(const juce::MouseEvent& event) override
     {
-        if (kind != Kind::plugin || !event.mods.isRightButtonDown()) return;
-        // Preserve favourite management in the context menu rather than
-        // silently toggling it when the user intends to change a category.
+        if (!event.mods.isRightButtonDown()) return;
+        if (kind == Kind::manufacturer && collectionContext)
+        {
+            collectionContext(event.getScreenPosition());
+            return;
+        }
+        if (kind != Kind::plugin) return;
+        // Keep plugin favorites, family overrides and memberships intact.
         if (editFamily) editFamily(description, event.getScreenPosition());
         else if (toggleFavourite) toggleFavourite(description);
     }
@@ -321,6 +329,7 @@ private:
     std::function<void(const juce::PluginDescription&)> toggleFavourite;
     std::function<void(const juce::File&, const juce::PluginDescription&)> importArtwork;
     std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamily;
+    std::function<void(juce::Point<int>)> collectionContext;
 };
 
 // One Knob controls reserve separate rectangles for their icon and label.
@@ -1287,6 +1296,76 @@ private:
     }
 
 
+
+
+    std::set<juce::String> installedPluginIdentifiers() const
+    {
+        std::set<juce::String> installed;
+        for (const auto& d : pluginDescriptions)
+            installed.insert(favouriteKey(d));
+        return installed;
+    }
+
+    static int countInstalledCollectionMembers(
+        const juce::StringArray& members,
+        const std::set<juce::String>& installed)
+    {
+        int count = 0;
+        for (const auto& key : members)
+            if (installed.find(key) != installed.end())
+                ++count;
+        return count;
+    }
+
+    static juce::String collectionCountLabel(const juce::String& name,
+                                             const juce::StringArray& members,
+                                             const std::set<juce::String>& installed)
+    {
+        // Installed / saved: saved identifiers are never discarded by a scan.
+        return name + "  (" + juce::String(countInstalledCollectionMembers(members, installed))
+            + "/" + juce::String(members.size()) + ")";
+    }
+
+    void showCollectionContextMenu(const juce::String& collectionName,
+                                   juce::Point<int> where)
+    {
+        if (pluginCollections.find(collectionName) == pluginCollections.end()) return;
+        juce::PopupMenu menu;
+        menu.addSectionHeader(collectionName);
+        menu.addItem(6400, juce::String::fromUTF8("AFFICHER UNIQUEMENT CETTE COLLECTION"),
+                     true, selectedCollection == collectionName);
+        menu.addItem(6401, juce::String::fromUTF8("AFFICHER TOUTES LES COLLECTIONS"),
+                     selectedCollection.isNotEmpty());
+        menu.addSeparator();
+        menu.addItem(6402, "RENOMMER...", !collectionsReadOnly);
+        menu.addItem(6403, "SUPPRIMER...", !collectionsReadOnly);
+
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetScreenArea(juce::Rectangle<int>(where.x, where.y, 1, 1))
+            .withMaximumNumColumns(1),
+            [safe, collectionName](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen == 0) return;
+                if (chosen == 6400)
+                {
+                    if (safe->pluginCollections.find(collectionName)
+                        == safe->pluginCollections.end()) return;
+                    safe->selectedCollection = collectionName;
+                    safe->quickView = QuickView::all;
+                    safe->rebuildPluginTree();
+                }
+                else if (chosen == 6401)
+                {
+                    safe->selectedCollection.clear();
+                    safe->rebuildPluginTree();
+                }
+                else if (chosen == 6402)
+                    safe->promptCollectionName(collectionName);
+                else if (chosen == 6403)
+                    safe->confirmDeleteCollection(collectionName);
+            });
+    }
 
     static juce::File pluginCollectionsFile()
     {
@@ -3496,13 +3575,17 @@ private:
         juce::PopupMenu collectionsMenu;
         collectionsMenu.addItem(5000, juce::String::fromUTF8("TOUS LES PLUGINS"),
                                  true, selectedCollection.isEmpty());
+        const auto installedIdentifiers = installedPluginIdentifiers();
+        if (!pluginCollections.empty())
+            collectionsMenu.addSectionHeader(juce::String::fromUTF8(
+                "DISPONIBLES / ENREGISTRÉS"));
         for (const auto& item : pluginCollections)
         {
             const int number = collectionNames.size();
             collectionNames.add(item.first);
             collectionsMenu.addItem(5001 + number,
-                item.first + "  (" + juce::String(item.second.size()) + ")", true,
-                selectedCollection == item.first);
+                collectionCountLabel(item.first, item.second, installedIdentifiers),
+                true, selectedCollection == item.first);
         }
         collectionsMenu.addSeparator();
         collectionsMenu.addItem(5100, juce::String::fromUTF8("NOUVELLE COLLECTION..."),
@@ -3891,14 +3974,23 @@ private:
         PluginTreeItem* collectionsRoot = nullptr;
         if (!pluginCollections.empty())
         {
+            const auto installedIdentifiers = installedPluginIdentifiers();
             collectionsRoot = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "COLLECTIONS");
             pluginRoot->addSubItem(collectionsRoot);
             for (const auto& group : pluginCollections)
             {
                 if (selectedCollection.isNotEmpty() && group.first != selectedCollection)
                     continue;
+                // Keep header actions independent of its visible count label.
+                // Right-clicking a collection does not destroy a live tree row.
                 auto* collectionItem = new PluginTreeItem(
-                    PluginTreeItem::Kind::manufacturer, group.first);
+                    PluginTreeItem::Kind::manufacturer,
+                    collectionCountLabel(group.first, group.second, installedIdentifiers),
+                    nullptr, {}, {}, {}, false, {}, {}, false,
+                    [this, name = group.first](juce::Point<int> where)
+                    {
+                        showCollectionContextMenu(name, where);
+                    });
                 collectionsRoot->addSubItem(collectionItem);
                 for (const auto& d : pluginDescriptions)
                 {
