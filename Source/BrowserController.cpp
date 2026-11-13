@@ -135,9 +135,10 @@ public:
                    std::function<void(const juce::File&, const juce::PluginDescription&)> importArtworkIn = {},
                    std::function<void(const juce::PluginDescription&, juce::Point<int>)> editFamilyIn = {},
                    bool manuallyClassifiedIn = false,
-                   std::function<void(juce::Point<int>)> collectionContextIn = {})
+                   std::function<void(juce::Point<int>)> collectionContextIn = {},
+                   juce::String stableTreeIdIn = {})
         : kind(kindIn), thumbnails(thumbnailsIn), manuallyClassified(manuallyClassifiedIn),
-          label(std::move(labelIn)),
+          label(std::move(labelIn)), stableTreeId(std::move(stableTreeIdIn)),
           activate(std::move(activateIn)), isFavourite(std::move(isFavouriteIn)),
           toggleFavourite(std::move(toggleFavouriteIn)), importArtwork(std::move(importArtworkIn)),
           editFamily(std::move(editFamilyIn)),
@@ -152,7 +153,11 @@ public:
     bool mightContainSubItems() override { return kind != Kind::plugin; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
     int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? (thumbnails ? 138 : 38) : 20); }
-    juce::String getUniqueName() const override { return kind == Kind::plugin ? description.createIdentifierString() : label; }
+    juce::String getUniqueName() const override
+    {
+        if (stableTreeId.isNotEmpty()) return stableTreeId;
+        return kind == Kind::plugin ? description.createIdentifierString() : label;
+    }
 
     void paintItem(juce::Graphics& g, int width, int height) override
     {
@@ -323,6 +328,7 @@ private:
     bool thumbnailReadAttempted = false;
     juce::Image thumbnailImage;
     juce::String label;
+    juce::String stableTreeId;
     juce::PluginDescription description;
     std::function<void(const juce::PluginDescription&)> activate;
     std::function<bool(const juce::PluginDescription&)> isFavourite;
@@ -1326,6 +1332,62 @@ private:
             + "/" + juce::String(members.size()) + ")";
     }
 
+
+    juce::StringArray missingPluginKeysForCollection(const juce::String& collectionName) const
+    {
+        juce::StringArray missing;
+        const auto group = pluginCollections.find(collectionName);
+        if (group == pluginCollections.end()) return missing;
+        const auto installed = installedPluginIdentifiers();
+        for (const auto& key : group->second)
+            if (installed.find(key) == installed.end())
+                missing.add(key);
+        return missing;
+    }
+
+    void showMissingPluginCollectionReport(const juce::String& collectionName)
+    {
+        const auto missing = missingPluginKeysForCollection(collectionName);
+        if (missing.isEmpty())
+        {
+            pluginStatus.setText(
+                collectionName + juce::String::fromUTF8(" : tous les plugins sont présents."),
+                juce::dontSendNotification);
+            return;
+        }
+        juce::String report = juce::String(missing.size())
+            + juce::String::fromUTF8(
+                " plugins enregistrés dans cette collection ne figurent pas dans le scan actuel.\n\n")
+            + juce::String::fromUTF8("Identifiants JUCE des plugins manquants :\n");
+        const int previewCount = juce::jmin(8, missing.size());
+        for (int i = 0; i < previewCount; ++i)
+            report += juce::String(i + 1) + ". "
+                + missing[i].substring(0, 140) + "\n";
+        if (missing.size() > previewCount)
+            report += juce::String::fromUTF8("\nEt ")
+                + juce::String(missing.size() - previewCount)
+                + juce::String::fromUTF8(" autres. Clic droit : copier tous les identifiants.");
+        report += juce::String::fromUTF8(
+            "\n\nAucun plugin n'a été supprimé de la collection. "
+            "Relance un scan AU/VST3 pour tenter de les retrouver.");
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            juce::String::fromUTF8("Liberty - Plugins manquants : ") + collectionName,
+            report, "OK");
+    }
+
+    void copyMissingPluginCollectionIdentifiers(const juce::String& collectionName)
+    {
+        const auto missing = missingPluginKeysForCollection(collectionName);
+        if (missing.isEmpty()) return;
+        // These are exact identifiers needed for diagnostics and reinstallation.
+        // Nothing is deleted or changed in the on-disk collection database.
+        juce::SystemClipboard::copyTextToClipboard(missing.joinIntoString("\n"));
+        pluginStatus.setText(juce::String(missing.size())
+            + juce::String::fromUTF8(" identifiants manquants copiés."),
+            juce::dontSendNotification);
+    }
+
     void showCollectionContextMenu(const juce::String& collectionName,
                                    juce::Point<int> where)
     {
@@ -1336,6 +1398,15 @@ private:
                      true, selectedCollection == collectionName);
         menu.addItem(6401, juce::String::fromUTF8("AFFICHER TOUTES LES COLLECTIONS"),
                      selectedCollection.isNotEmpty());
+        menu.addSeparator();
+        const int missingCount = missingPluginKeysForCollection(collectionName).size();
+        menu.addItem(6404,
+            juce::String::fromUTF8("VOIR LES PLUGINS MANQUANTS (")
+                + juce::String(missingCount) + ")", missingCount > 0);
+        menu.addItem(6405,
+            juce::String::fromUTF8("COPIER LES IDENTIFIANTS MANQUANTS"), missingCount > 0);
+        menu.addItem(6406,
+            juce::String::fromUTF8("RELANCER LE SCAN AU / VST3"), !scanning.load());
         menu.addSeparator();
         menu.addItem(6402, "RENOMMER...", !collectionsReadOnly);
         menu.addItem(6403, "SUPPRIMER...", !collectionsReadOnly);
@@ -1360,6 +1431,12 @@ private:
                     safe->selectedCollection.clear();
                     safe->rebuildPluginTree();
                 }
+                else if (chosen == 6404)
+                    safe->showMissingPluginCollectionReport(collectionName);
+                else if (chosen == 6405)
+                    safe->copyMissingPluginCollectionIdentifiers(collectionName);
+                else if (chosen == 6406)
+                    safe->scanPlugins();
                 else if (chosen == 6402)
                     safe->promptCollectionName(collectionName);
                 else if (chosen == 6403)
@@ -3600,6 +3677,19 @@ private:
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(juce::String::fromUTF8(
                 "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
+        juce::StringArray missingCollectionNames;
+        juce::PopupMenu missingMenu;
+        for (const auto& group : pluginCollections)
+        {
+            const int missing = group.second.size()
+                - countInstalledCollectionMembers(group.second, installedIdentifiers);
+            if (missing <= 0) continue;
+            missingCollectionNames.add(group.first);
+            missingMenu.addItem(5700 + missingCollectionNames.size() - 1,
+                group.first + "  (" + juce::String(missing) + ")");
+        }
+        if (!missingCollectionNames.isEmpty())
+            collectionsMenu.addSubMenu(juce::String::fromUTF8("PLUGINS MANQUANTS"), missingMenu);
         if (!collectionNames.isEmpty())
         {
             juce::PopupMenu renameMenu, deleteMenu;
@@ -3723,7 +3813,7 @@ private:
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetComponent(&pluginFiltersButton)
             .withMaximumNumColumns(1),
-            [safe, manufacturers, collectionNames](int chosen)
+            [safe, manufacturers, collectionNames, missingCollectionNames](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen <= 0) return;
                 if (chosen == 600)
@@ -3757,6 +3847,12 @@ private:
                 else if (chosen == 5402)
                 {
                     safe->restorePluginCollectionsBackup();
+                    return;
+                }
+                else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
+                {
+                    safe->showMissingPluginCollectionReport(
+                        missingCollectionNames[chosen - 5700]);
                     return;
                 }
                 else if (chosen >= 5200 && chosen < 5200 + collectionNames.size())
@@ -3990,7 +4086,8 @@ private:
                     [this, name = group.first](juce::Point<int> where)
                     {
                         showCollectionContextMenu(name, where);
-                    });
+                    },
+                    "LibertyCollection:" + group.first);
                 collectionsRoot->addSubItem(collectionItem);
                 for (const auto& d : pluginDescriptions)
                 {
