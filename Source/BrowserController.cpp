@@ -1295,6 +1295,11 @@ private:
         return favouritesFile().getSiblingFile("PluginCollections.xml");
     }
 
+    static juce::File pluginCollectionsBackupFile()
+    {
+        return pluginCollectionsFile().getSiblingFile("PluginCollections.backup.xml");
+    }
+
     static bool validCollectionName(const juce::String& name)
     {
         return name.isNotEmpty() && name.length() <= 48
@@ -1309,57 +1314,66 @@ private:
         return {};
     }
 
-    void loadPluginCollections()
+    static bool readPluginCollectionsFile(
+        const juce::File& source,
+        std::map<juce::String, juce::StringArray>& recovered)
     {
-        pluginCollections.clear();
-        collectionsReadOnly = false;
-        const auto file = pluginCollectionsFile();
-        if (!file.existsAsFile()) return;
-        if (file.getSize() <= 0 || file.getSize() > 5 * 1024 * 1024)
-        {
-            collectionsReadOnly = true;
-            return;
-        }
-        auto document = juce::XmlDocument::parse(file);
+        recovered.clear();
+        if (!source.existsAsFile() || source.getSize() <= 0
+            || source.getSize() > 5 * 1024 * 1024)
+            return false;
+
+        auto document = juce::XmlDocument::parse(source);
         if (document == nullptr || !document->hasTagName("LibertyPluginCollections")
             || document->getIntAttribute("version", 1) != 1)
-        {
-            // Do not overwrite or silently discard invalid user data.
-            collectionsReadOnly = true;
-            return;
-        }
-        std::map<juce::String, juce::StringArray> recovered;
+            return false;
+
+        juce::StringArray seenNames;
         int entries = 0;
         for (auto* group = document->getFirstChildElement(); group != nullptr;
              group = group->getNextElement())
         {
             const auto name = group->getStringAttribute("name").trim();
             if (!group->hasTagName("collection") || !validCollectionName(name)
-                || recovered.size() >= 64)
-            {
-                collectionsReadOnly = true;
-                return;
-            }
-            for (const auto& existing : recovered)
-                if (existing.first.equalsIgnoreCase(name))
-                {
-                    collectionsReadOnly = true;
-                    return;
-                }
+                || seenNames.contains(name, true) || recovered.size() >= 64)
+                return false;
+
+            seenNames.add(name);
             juce::StringArray members;
             for (auto* plugin = group->getFirstChildElement(); plugin != nullptr;
                  plugin = plugin->getNextElement())
             {
                 const auto key = plugin->getStringAttribute("id");
                 if (!plugin->hasTagName("plugin") || key.isEmpty()
-                    || key.length() > 2048 || ++entries > 20000)
-                {
-                    collectionsReadOnly = true;
-                    return;
-                }
-                members.addIfNotAlreadyThere(key);
+                    || key.length() > 2048 || ++entries > 20000
+                    || members.contains(key))
+                    return false;
+                members.add(key);
             }
             recovered.emplace(name, std::move(members));
+        }
+        return true; // An empty but valid collection database is allowed.
+    }
+
+    bool hasRecoverableCollectionsBackup() const
+    {
+        std::map<juce::String, juce::StringArray> saved;
+        return readPluginCollectionsFile(pluginCollectionsBackupFile(), saved);
+    }
+
+    void loadPluginCollections()
+    {
+        pluginCollections.clear();
+        collectionsReadOnly = false;
+        const auto file = pluginCollectionsFile();
+        if (!file.existsAsFile()) return;
+
+        std::map<juce::String, juce::StringArray> recovered;
+        if (!readPluginCollectionsFile(file, recovered))
+        {
+            // Keep the damaged main file untouched until explicit recovery.
+            collectionsReadOnly = true;
+            return;
         }
         pluginCollections = std::move(recovered);
     }
@@ -1380,9 +1394,92 @@ private:
             }
         }
         const auto target = pluginCollectionsFile();
+        if (target.existsAsFile())
+        {
+            // First atomically preserve the previous *validated* version.
+            // If backup fails, abort before touching the current database.
+            std::map<juce::String, juce::StringArray> verifiedPrevious;
+            if (!readPluginCollectionsFile(target, verifiedPrevious)) return false;
+            const auto backup = pluginCollectionsBackupFile();
+            juce::TemporaryFile backupStage(backup);
+            if (!backupStage.getFile().replaceWithText(target.loadFileAsString())
+                || !backupStage.overwriteTargetFileWithTemporary())
+                return false;
+        }
         juce::TemporaryFile staged(target);
         return staged.getFile().replaceWithText(root.toString())
             && staged.overwriteTargetFileWithTemporary();
+    }
+
+    void restorePluginCollectionsBackup()
+    {
+        const auto backup = pluginCollectionsBackupFile();
+        std::map<juce::String, juce::StringArray> recovered;
+        if (!readPluginCollectionsFile(backup, recovered))
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8("Aucune sauvegarde locale valide à restaurer."),
+                "OK");
+            return;
+        }
+
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Restaurer les collections ?"),
+            juce::String::fromUTF8(
+                "Restaurer la version précédente ? Le fichier actuel sera conservé séparément avant restauration."),
+            "RESTAURER", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create([safe](int result)
+            {
+                if (safe == nullptr || safe->stopped.load() || result != 1) return;
+                const auto backupFile = pluginCollectionsBackupFile();
+                std::map<juce::String, juce::StringArray> snapshot;
+                if (!readPluginCollectionsFile(backupFile, snapshot))
+                {
+                    safe->showCollectionsSaveError();
+                    return;
+                }
+                const auto target = pluginCollectionsFile();
+                if (target.existsAsFile())
+                {
+                    // Preserve the old XML, including a damaged one, for
+                    // inspection. Never overwrite a previously preserved copy.
+                    const auto tag = juce::Time::getCurrentTime()
+                        .formatted("%Y%m%d-%H%M%S");
+                    const auto prefix = "PluginCollections-avant-restauration-" + tag;
+                    auto savedOld = target.getSiblingFile(prefix + ".xml");
+                    for (int n = 1; savedOld.exists(); ++n)
+                        savedOld = target.getSiblingFile(prefix + "-" + juce::String(n) + ".xml");
+                    if (!target.copyFileTo(savedOld))
+                    {
+                        safe->showCollectionsSaveError();
+                        return;
+                    }
+                }
+                juce::TemporaryFile stage(target);
+                if (!stage.getFile().replaceWithText(backupFile.loadFileAsString())
+                    || !stage.overwriteTargetFileWithTemporary())
+                {
+                    safe->showCollectionsSaveError();
+                    return;
+                }
+                safe->loadPluginCollections();
+                if (safe->collectionsReadOnly)
+                {
+                    safe->showCollectionsSaveError();
+                    return;
+                }
+                if (safe->selectedCollection.isNotEmpty()
+                    && safe->pluginCollections.find(safe->selectedCollection)
+                        == safe->pluginCollections.end())
+                    safe->selectedCollection.clear();
+                safe->rebuildPluginTree();
+                safe->pluginStatus.setText(juce::String::fromUTF8(
+                    "Collections restaurées depuis la sauvegarde locale."),
+                    juce::dontSendNotification);
+            }));
     }
 
     void showCollectionsSaveError()
@@ -3415,6 +3512,11 @@ private:
                                  !pluginCollections.empty());
         collectionsMenu.addItem(5401, juce::String::fromUTF8("IMPORTER DES COLLECTIONS..."),
                                  !collectionsReadOnly);
+        collectionsMenu.addItem(5402, juce::String::fromUTF8("RESTAURER LA SAUVEGARDE LOCALE..."),
+                                 hasRecoverableCollectionsBackup());
+        if (collectionsReadOnly)
+            collectionsMenu.addSectionHeader(juce::String::fromUTF8(
+                "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
         if (!collectionNames.isEmpty())
         {
             juce::PopupMenu renameMenu, deleteMenu;
@@ -3567,6 +3669,11 @@ private:
                 else if (chosen == 5401)
                 {
                     safe->importPluginCollections();
+                    return;
+                }
+                else if (chosen == 5402)
+                {
+                    safe->restorePluginCollectionsBackup();
                     return;
                 }
                 else if (chosen >= 5200 && chosen < 5200 + collectionNames.size())
