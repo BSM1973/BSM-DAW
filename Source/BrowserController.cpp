@@ -3973,8 +3973,10 @@ private:
             || name.equalsIgnoreCase("PluginMaker")
             || name.equalsIgnoreCase("PluginMaker.ai")
             || name.equalsIgnoreCase("Plmk");
-        if (supportedFormat && knownPublisher
-            && d.name.trim().equalsIgnoreCase("LIBERTY PEDAL LEGENDS"))
+        const pluginName = d.name.trim();
+        const knownProduct = pluginName.equalsIgnoreCase("LIBERTY PEDAL LEGENDS")
+            || pluginName.equalsIgnoreCase("Liberty: LIBERTY PEDAL LEGENDS");
+        if (supportedFormat && knownPublisher && knownProduct)
             return "Liberty Music Software";
         return name.isEmpty() ? "AUTRES" : name;
     }
