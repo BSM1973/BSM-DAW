@@ -24,6 +24,9 @@ jobs:
       - name: Reject corrupted French UI text (UTF-8)
         run: python3 Tests/FrenchTextRegression.py
 
+      - name: Verify plugin collections XML parser, size limits and import rollback
+        run: python3 Tests/PluginCollectionsXmlRegression.py
+
       - name: Verify global UI no-overlap zones and routing panel
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap

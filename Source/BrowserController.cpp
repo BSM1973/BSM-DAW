@@ -1940,6 +1940,8 @@ private:
         return {};
     }
 
+    static constexpr juce::int64 maxPluginCollectionsBytes = 5 * 1024 * 1024;
+
     static bool readPluginCollectionsFile(
         const juce::File& source,
         std::map<juce::String, juce::StringArray>& recovered,
@@ -1948,7 +1950,7 @@ private:
         recovered.clear();
         if (titles != nullptr) titles->clear();
         if (!source.existsAsFile() || source.getSize() <= 0
-            || source.getSize() > 5 * 1024 * 1024)
+            || source.getSize() > maxPluginCollectionsBytes)
             return false;
 
         auto document = juce::XmlDocument::parse(source);
@@ -1968,13 +1970,14 @@ private:
 
             seenNames.add(name);
             juce::StringArray members;
+            std::set<juce::String> seenMemberKeys;
             for (auto* plugin = group->getFirstChildElement(); plugin != nullptr;
                  plugin = plugin->getNextElement())
             {
                 const auto key = plugin->getStringAttribute("id");
                 if (!plugin->hasTagName("plugin") || key.isEmpty()
                     || key.length() > 2048 || ++entries > 20000
-                    || members.contains(key))
+                    || !seenMemberKeys.insert(key).second)
                     return false;
                 const auto display = plugin->getStringAttribute("display");
                 if (display.length() > 240 || display.containsAnyOf("\r\n\t"))
@@ -1997,8 +2000,6 @@ private:
 
     // Validate the same logical limits as the XML reader before serialization.
     // The rendered UTF-8 size is checked separately, including escaped fields.
-    static constexpr juce::int64 maxPluginCollectionsBytes = 5 * 1024 * 1024;
-
     bool pluginCollectionsWithinLimits() const
     {
         if (pluginCollections.size() > 64) return false;
@@ -2586,7 +2587,7 @@ private:
                 if (safe == nullptr || safe->stopped.load()) return;
                 const auto source = fc.getResult();
                 if (!source.existsAsFile()) return;
-                if (source.getSize() <= 0 || source.getSize() > 5 * 1024 * 1024)
+                if (source.getSize() <= 0 || source.getSize() > maxPluginCollectionsBytes)
                 {
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Liberty - Collections",
@@ -2594,66 +2595,25 @@ private:
                         "OK");
                     return;
                 }
-                auto xml = juce::XmlDocument::parse(source);
-                if (xml == nullptr || !xml->hasTagName("LibertyPluginCollections")
-                    || xml->getIntAttribute("version", 1) != 1)
-                {
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
-                        juce::String::fromUTF8("Ce fichier n'est pas une sauvegarde de collections Liberty."),
-                        "OK");
-                    return;
-                }
-                // Validate the whole document before any mutation. A malformed
-                // or oversized backup never modifies existing collections.
+                // Shared validator: anything imported must also be loadable
+                // at startup and by the explicit disk-reload command.
                 std::map<juce::String, juce::StringArray> incoming;
                 std::map<juce::String, juce::String> incomingTitles;
-                juce::StringArray importedNames;
-                int memberships = 0;
-                bool valid = true;
-                for (auto* collection = xml->getFirstChildElement(); collection != nullptr;
-                     collection = collection->getNextElement())
-                {
-                    const auto name = collection->getStringAttribute("name").trim();
-                    if (!collection->hasTagName("collection")
-                        || !validCollectionName(name) || importedNames.contains(name, true)
-                        || incoming.size() >= 64)
-                    {
-                        valid = false;
-                        break;
-                    }
-                    importedNames.add(name);
-                    juce::StringArray members;
-                    for (auto* plugin = collection->getFirstChildElement(); plugin != nullptr;
-                         plugin = plugin->getNextElement())
-                    {
-                        const auto key = plugin->getStringAttribute("id");
-                        const auto display = plugin->getStringAttribute("display");
-                        if (!plugin->hasTagName("plugin") || key.isEmpty()
-                            || key.length() > 2048 || ++memberships > 20000
-                            || members.contains(key) || display.length() > 240
-                            || display.containsAnyOf("\r\n\t"))
-                        {
-                            valid = false;
-                            break;
-                        }
-                        members.add(key);
-                        if (display.isNotEmpty()) incomingTitles[key] = display;
-                    }
-                    if (!valid) break;
-                    incoming.emplace(name, std::move(members));
-                }
-                if (!valid || incoming.empty())
+                if (!readPluginCollectionsFile(source, incoming, &incomingTitles)
+                    || incoming.empty())
                 {
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Liberty - Collections",
-                        juce::String::fromUTF8("Sauvegarde XML invalide. Aucune collection modifiée."),
+                        juce::String::fromUTF8(
+                            "Sauvegarde XML invalide. Aucune collection modifiée."),
                         "OK");
                     return;
                 }
-
+                bool valid = true;
                 const auto before = safe->pluginCollections;
                 const auto oldTitles = safe->pluginCollectionTitles;
+                auto stagedCollections = before;
+                auto stagedTitles = oldTitles;
                 int created = 0, added = 0;
                 for (const auto& group : incoming)
                 {
@@ -2661,15 +2621,15 @@ private:
                     const auto dest = existing.isEmpty() ? group.first : existing;
                     if (existing.isEmpty())
                     {
-                        if (safe->pluginCollections.size() >= 64)
+                        if (stagedCollections.size() >= 64)
                         {
                             valid = false;
                             break;
                         }
-                        safe->pluginCollections.emplace(dest, juce::StringArray());
+                        stagedCollections.emplace(dest, juce::StringArray());
                         ++created;
                     }
-                    auto& members = safe->pluginCollections[dest];
+                    auto& members = stagedCollections[dest];
                     for (const auto& key : group.second)
                     {
                         if (!members.contains(key))
@@ -2679,18 +2639,15 @@ private:
                         }
                         const auto title = incomingTitles.find(key);
                         if (title != incomingTitles.end()
-                            && safe->pluginCollectionTitles.find(key)
-                                == safe->pluginCollectionTitles.end())
-                            safe->pluginCollectionTitles[key] = title->second;
+                            && stagedTitles.find(key) == stagedTitles.end())
+                            stagedTitles[key] = title->second;
                     }
                 }
                 int total = 0;
-                for (const auto& group : safe->pluginCollections)
+                for (const auto& group : stagedCollections)
                     total += group.second.size();
                 if (!valid || total > 20000)
                 {
-                    safe->pluginCollections = before;
-                    safe->pluginCollectionTitles = oldTitles;
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Liberty - Collections",
                         juce::String::fromUTF8(
@@ -2698,6 +2655,8 @@ private:
                         "OK");
                     return;
                 }
+                safe->pluginCollections = std::move(stagedCollections);
+                safe->pluginCollectionTitles = std::move(stagedTitles);
                 if (!safe->commitPluginCollections(before,
                     juce::String::fromUTF8("Import : ")
                     + juce::String(created)
