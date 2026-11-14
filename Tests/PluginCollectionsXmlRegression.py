@@ -90,5 +90,26 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("[safe, chooser, xml = exportXml]", exporter)
 
 
+    def test_import_preview_requires_explicit_approval(self):
+        importer = cpp_function("void importPluginCollections()")
+        self.assertIn("Aperçu de l'importation", importer)
+        self.assertIn("showOkCancelBox(", importer)
+        self.assertIn("sourceRevision = safe->collectionsRevision", importer)
+        self.assertIn("safe->collectionsRevision != sourceRevision", importer)
+        self.assertIn("confirmed != 1", importer)
+        self.assertIn("Associations déjà présentes", importer)
+        self.assertIn("Associations ajoutées", importer)
+        self.assertLess(importer.index("showOkCancelBox("),
+                        importer.index("safe->pluginCollections = std::move(stagedCollections);"))
+
+    def test_import_preview_checks_merged_xml_before_approval(self):
+        importer = cpp_function("void importPluginCollections()")
+        self.assertIn("previewXml.toString().getNumBytesAsUTF8()", importer)
+        self.assertIn("maxPluginCollectionsBytes", importer)
+        self.assertIn("if (created == 0 && added == 0 && addedTitles == 0)", importer)
+        self.assertLess(importer.index("previewXml.toString().getNumBytesAsUTF8()"),
+                        importer.index("showOkCancelBox("))
+
+
 if __name__ == "__main__":
     unittest.main()

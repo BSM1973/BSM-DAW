@@ -2614,7 +2614,8 @@ private:
                 const auto oldTitles = safe->pluginCollectionTitles;
                 auto stagedCollections = before;
                 auto stagedTitles = oldTitles;
-                int created = 0, added = 0;
+                int created = 0, added = 0, alreadyPresent = 0, addedTitles = 0;
+                const auto sourceRevision = safe->collectionsRevision;
                 for (const auto& group : incoming)
                 {
                     const auto existing = safe->existingCollectionName(group.first);
@@ -2637,10 +2638,15 @@ private:
                             members.add(key);
                             ++added;
                         }
+                        else
+                            ++alreadyPresent;
                         const auto title = incomingTitles.find(key);
                         if (title != incomingTitles.end()
                             && stagedTitles.find(key) == stagedTitles.end())
+                        {
                             stagedTitles[key] = title->second;
+                            ++addedTitles;
+                        }
                     }
                 }
                 int total = 0;
@@ -2655,18 +2661,105 @@ private:
                         "OK");
                     return;
                 }
-                safe->pluginCollections = std::move(stagedCollections);
-                safe->pluginCollectionTitles = std::move(stagedTitles);
-                if (!safe->commitPluginCollections(before,
-                    juce::String::fromUTF8("Import : ")
-                    + juce::String(created)
-                    + juce::String::fromUTF8(" collections créées, ")
-                    + juce::String(added)
-                    + juce::String::fromUTF8(" associations ajoutées.")))
+                if (created == 0 && added == 0 && addedTitles == 0)
                 {
-                    safe->pluginCollectionTitles = oldTitles;
+                    safe->pluginStatus.setText(juce::String::fromUTF8(
+                        "Importation inutile : toutes les associations sont déjà présentes."),
+                        juce::dontSendNotification);
                     return;
                 }
+
+                // Validate the actual merged UTF-8 XML size before asking for
+                // approval. The save path repeats the same check on commit.
+                juce::XmlElement previewXml("LibertyPluginCollections");
+                previewXml.setAttribute("version", 1);
+                for (const auto& group : stagedCollections)
+                {
+                    auto* collection = previewXml.createNewChildElement("collection");
+                    collection->setAttribute("name", group.first);
+                    for (const auto& key : group.second)
+                    {
+                        auto* plugin = collection->createNewChildElement("plugin");
+                        plugin->setAttribute("id", key);
+                        const auto label = stagedTitles.find(key);
+                        if (label != stagedTitles.end() && label->second.isNotEmpty())
+                            plugin->setAttribute("display", label->second);
+                    }
+                }
+                if (previewXml.toString().getNumBytesAsUTF8()
+                    > (size_t)maxPluginCollectionsBytes)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Importation annulée : la fusion dépasserait 5 Mo. "
+                            "Les collections et leur sauvegarde restent intactes."),
+                        "OK");
+                    return;
+                }
+
+                const auto safeFileName = source.getFileName()
+                    .replaceCharacters("\r\n", "  ").substring(0, 100);
+                const auto message = juce::String::fromUTF8(
+                    "Vérifie les changements avant d'importer :\n\nFichier : ")
+                    + safeFileName
+                    + juce::String::fromUTF8("\nCollections dans le fichier : ")
+                    + juce::String((int)incoming.size())
+                    + juce::String::fromUTF8("\nNouvelles collections : ")
+                    + juce::String(created)
+                    + juce::String::fromUTF8("\nAssociations ajoutées : ")
+                    + juce::String(added)
+                    + juce::String::fromUTF8("\nAssociations déjà présentes : ")
+                    + juce::String(alreadyPresent)
+                    + juce::String::fromUTF8("\nIntitulés récupérés : ")
+                    + juce::String(addedTitles)
+                    + juce::String::fromUTF8(
+                        "\n\nAucun plugin ni aucune association existante "
+                        "ne sera supprimé. Une sauvegarde locale sera effectuée "
+                        "avant l'enregistrement.\n\nConfirmer cette fusion ?");
+
+                juce::AlertWindow::showOkCancelBox(
+                    juce::AlertWindow::QuestionIcon,
+                    juce::String::fromUTF8("Aperçu de l'importation"),
+                    message, "IMPORTER", "ANNULER", nullptr,
+                    juce::ModalCallbackFunction::create(
+                        [safe, before, oldTitles,
+                         stagedCollections = std::move(stagedCollections),
+                         stagedTitles = std::move(stagedTitles),
+                         sourceRevision, created, added, alreadyPresent]
+                        (int confirmed) mutable
+                        {
+                            if (safe == nullptr || safe->stopped.load()
+                                || confirmed != 1) return;
+                            // A scan, collection edit, import or reload may
+                            // have changed the database while preview was open.
+                            // Never commit that old snapshot over newer work.
+                            if (safe->collectionsReadOnly
+                                || safe->collectionsRevision != sourceRevision)
+                            {
+                                juce::AlertWindow::showMessageBoxAsync(
+                                    juce::AlertWindow::WarningIcon,
+                                    "Liberty - Collections",
+                                    juce::String::fromUTF8(
+                                        "Les collections ont changé depuis l'aperçu. "
+                                        "Importation annulée : relance l'opération."),
+                                    "OK");
+                                return;
+                            }
+
+                            safe->pluginCollections = std::move(stagedCollections);
+                            safe->pluginCollectionTitles = std::move(stagedTitles);
+                            if (!safe->commitPluginCollections(before,
+                                juce::String::fromUTF8("Import : ")
+                                + juce::String(created)
+                                + juce::String::fromUTF8(" collections créées, ")
+                                + juce::String(added)
+                                + juce::String::fromUTF8(" associations ajoutées (")
+                                + juce::String(alreadyPresent)
+                                + juce::String::fromUTF8(" déjà présentes).")))
+                                safe->pluginCollectionTitles = oldTitles;
+                        }));
+
             });
     }
 
