@@ -1392,7 +1392,8 @@ private:
         const int previewCount = juce::jmin(8, missing.size());
         for (int i = 0; i < previewCount; ++i)
             report += juce::String(i + 1) + ". "
-                + missing[i].substring(0, 140) + "\n";
+                + collectionMemberTitle(missing[i]).substring(0, 140)
+                + "\n   ID : " + missing[i].substring(0, 140) + "\n";
         if (missing.size() > previewCount)
             report += juce::String::fromUTF8("\nEt ")
                 + juce::String(missing.size() - previewCount)
@@ -1427,7 +1428,7 @@ private:
         if (group == pluginCollections.end() || !group->second.contains(identifier))
             return;
         juce::PopupMenu menu;
-        menu.addSectionHeader(juce::String::fromUTF8("PLUGIN ABSENT - ") + collectionName);
+        menu.addSectionHeader(collectionMemberTitle(identifier).substring(0, 60));
         menu.addItem(6500, juce::String::fromUTF8("COPIER L'IDENTIFIANT"));
         menu.addItem(6501, juce::String::fromUTF8("RELANCER LE SCAN AU / VST3"),
                      !scanning.load());
@@ -1509,6 +1510,52 @@ private:
             });
     }
 
+
+    static juce::String readableCollectionPluginName(const juce::PluginDescription& d)
+    {
+        if (d.name.trim().isEmpty()) return {};
+        auto text = d.name.trim();
+        if (d.manufacturerName.trim().isNotEmpty())
+            text += " - " + d.manufacturerName.trim();
+        if (d.pluginFormatName.trim().isNotEmpty())
+            text += " (" + d.pluginFormatName.trim() + ")";
+        return text.replaceCharacters("\r\n\t", "   ").substring(0, 240);
+    }
+
+    juce::String collectionMemberTitle(const juce::String& id) const
+    {
+        const auto it = pluginCollectionTitles.find(id);
+        return it != pluginCollectionTitles.end() && it->second.isNotEmpty()
+            ? it->second : id;
+    }
+
+    void cacheCollectionTitlesAfterScan()
+    {
+        if (collectionsReadOnly || pluginCollections.empty()) return;
+        std::set<juce::String> keys;
+        for (const auto& group : pluginCollections)
+            for (const auto& id : group.second)
+                keys.insert(id);
+        const auto before = pluginCollectionTitles;
+        bool changed = false;
+        for (const auto& d : pluginDescriptions)
+        {
+            const auto id = favouriteKey(d);
+            if (keys.find(id) == keys.end()) continue;
+            const auto title = readableCollectionPluginName(d);
+            if (title.isEmpty()) continue;
+            const auto current = pluginCollectionTitles.find(id);
+            if (current == pluginCollectionTitles.end() || current->second != title)
+            {
+                pluginCollectionTitles[id] = title;
+                changed = true;
+            }
+        }
+        // Only persist when metadata actually changed. No scan or plugin load
+        // is needed to display a title that was saved earlier.
+        if (changed && !savePluginCollections()) pluginCollectionTitles = before;
+    }
+
     static juce::File pluginCollectionsFile()
     {
         // Never mix collections with the JUCE plugin scan cache, favourites,
@@ -1537,9 +1584,11 @@ private:
 
     static bool readPluginCollectionsFile(
         const juce::File& source,
-        std::map<juce::String, juce::StringArray>& recovered)
+        std::map<juce::String, juce::StringArray>& recovered,
+        std::map<juce::String, juce::String>* titles = nullptr)
     {
         recovered.clear();
+        if (titles != nullptr) titles->clear();
         if (!source.existsAsFile() || source.getSize() <= 0
             || source.getSize() > 5 * 1024 * 1024)
             return false;
@@ -1569,7 +1618,12 @@ private:
                     || key.length() > 2048 || ++entries > 20000
                     || members.contains(key))
                     return false;
+                const auto display = plugin->getStringAttribute("display");
+                if (display.length() > 240 || display.containsAnyOf("\r\n\t"))
+                    return false;
                 members.add(key);
+                if (titles != nullptr && display.isNotEmpty())
+                    (*titles)[key] = display;
             }
             recovered.emplace(name, std::move(members));
         }
@@ -1585,18 +1639,21 @@ private:
     void loadPluginCollections()
     {
         pluginCollections.clear();
+        pluginCollectionTitles.clear();
         collectionsReadOnly = false;
         const auto file = pluginCollectionsFile();
         if (!file.existsAsFile()) return;
 
         std::map<juce::String, juce::StringArray> recovered;
-        if (!readPluginCollectionsFile(file, recovered))
+        std::map<juce::String, juce::String> titles;
+        if (!readPluginCollectionsFile(file, recovered, &titles))
         {
             // Keep the damaged main file untouched until explicit recovery.
             collectionsReadOnly = true;
             return;
         }
         pluginCollections = std::move(recovered);
+        pluginCollectionTitles = std::move(titles);
     }
 
     bool savePluginCollections()
@@ -1612,6 +1669,9 @@ private:
             {
                 auto* item = collection->createNewChildElement("plugin");
                 item->setAttribute("id", key);
+                const auto title = pluginCollectionTitles.find(key);
+                if (title != pluginCollectionTitles.end() && title->second.isNotEmpty())
+                    item->setAttribute("display", title->second);
             }
         }
         const auto target = pluginCollectionsFile();
@@ -1735,14 +1795,21 @@ private:
         const auto key = favouriteKey(description);
         if (key.isEmpty()) return;
         const auto old = pluginCollections;
+        const auto oldTitles = pluginCollectionTitles;
         const int index = it->second.indexOf(key);
         if (index >= 0) it->second.remove(index);
-        else it->second.add(key);
+        else
+        {
+            it->second.add(key);
+            const auto title = readableCollectionPluginName(description);
+            if (title.isNotEmpty()) pluginCollectionTitles[key] = title;
+        }
         const auto message = description.name
             + (index >= 0 ? juce::String::fromUTF8(" retiré de « ")
                           : juce::String::fromUTF8(" ajouté à « "))
             + collectionName + juce::String::fromUTF8(" »");
-        commitPluginCollections(old, message);
+        if (!commitPluginCollections(old, message))
+            pluginCollectionTitles = oldTitles;
     }
 
     // A single dialog supports creating a collection and renaming one.
@@ -1795,6 +1862,7 @@ private:
                 }
 
                 const auto old = safe->pluginCollections;
+                const auto oldTitles = safe->pluginCollectionTitles;
                 const auto oldSelection = safe->selectedCollection;
                 if (rename)
                 {
@@ -1809,13 +1877,27 @@ private:
                 else
                 {
                     juce::StringArray members;
-                    if (pluginKey.isNotEmpty()) members.add(pluginKey);
+                    if (pluginKey.isNotEmpty())
+                    {
+                        members.add(pluginKey);
+                        for (const auto& d : safe->pluginDescriptions)
+                            if (favouriteKey(d) == pluginKey)
+                            {
+                                const auto title = readableCollectionPluginName(d);
+                                if (title.isNotEmpty())
+                                    safe->pluginCollectionTitles[pluginKey] = title;
+                                break;
+                            }
+                    }
                     safe->pluginCollections.emplace(name, std::move(members));
                 }
                 if (!safe->commitPluginCollections(old,
                     (rename ? juce::String::fromUTF8("Collection renommée : ")
                             : juce::String::fromUTF8("Collection créée : ")) + name))
+                {
                     safe->selectedCollection = oldSelection;
+                    safe->pluginCollectionTitles = oldTitles;
+                }
             }), false);
     }
 
@@ -1867,6 +1949,9 @@ private:
             {
                 auto* plugin = collection->createNewChildElement("plugin");
                 plugin->setAttribute("id", key);
+                const auto title = pluginCollectionTitles.find(key);
+                if (title != pluginCollectionTitles.end() && title->second.isNotEmpty())
+                    plugin->setAttribute("display", title->second);
             }
         }
         auto chooser = std::make_shared<juce::FileChooser>(
@@ -1935,6 +2020,7 @@ private:
                 // Validate the whole document before any mutation. A malformed
                 // or oversized backup never modifies existing collections.
                 std::map<juce::String, juce::StringArray> incoming;
+                std::map<juce::String, juce::String> incomingTitles;
                 juce::StringArray importedNames;
                 int memberships = 0;
                 bool valid = true;
@@ -1955,14 +2041,17 @@ private:
                          plugin = plugin->getNextElement())
                     {
                         const auto key = plugin->getStringAttribute("id");
+                        const auto display = plugin->getStringAttribute("display");
                         if (!plugin->hasTagName("plugin") || key.isEmpty()
                             || key.length() > 2048 || ++memberships > 20000
-                            || members.contains(key))
+                            || members.contains(key) || display.length() > 240
+                            || display.containsAnyOf("\r\n\t"))
                         {
                             valid = false;
                             break;
                         }
                         members.add(key);
+                        if (display.isNotEmpty()) incomingTitles[key] = display;
                     }
                     if (!valid) break;
                     incoming.emplace(name, std::move(members));
@@ -1977,6 +2066,7 @@ private:
                 }
 
                 const auto before = safe->pluginCollections;
+                const auto oldTitles = safe->pluginCollectionTitles;
                 int created = 0, added = 0;
                 for (const auto& group : incoming)
                 {
@@ -1994,11 +2084,18 @@ private:
                     }
                     auto& members = safe->pluginCollections[dest];
                     for (const auto& key : group.second)
+                    {
                         if (!members.contains(key))
                         {
                             members.add(key);
                             ++added;
                         }
+                        const auto title = incomingTitles.find(key);
+                        if (title != incomingTitles.end()
+                            && safe->pluginCollectionTitles.find(key)
+                                == safe->pluginCollectionTitles.end())
+                            safe->pluginCollectionTitles[key] = title->second;
+                    }
                 }
                 int total = 0;
                 for (const auto& group : safe->pluginCollections)
@@ -2006,6 +2103,7 @@ private:
                 if (!valid || total > 20000)
                 {
                     safe->pluginCollections = before;
+                    safe->pluginCollectionTitles = oldTitles;
                     juce::AlertWindow::showMessageBoxAsync(
                         juce::AlertWindow::WarningIcon, "Liberty - Collections",
                         juce::String::fromUTF8(
@@ -2019,7 +2117,10 @@ private:
                     + juce::String::fromUTF8(" collections créées, ")
                     + juce::String(added)
                     + juce::String::fromUTF8(" associations ajoutées.")))
+                {
+                    safe->pluginCollectionTitles = oldTitles;
                     return;
+                }
             });
     }
 
@@ -4193,7 +4294,7 @@ private:
                             // Nonselectable and never sent to keyboardResults.
                             // Exact IDs are preserved, no automatic re-link.
                             auto* missingRow = new PluginTreeItem(
-                                PluginTreeItem::Kind::missing, missingKey,
+                                PluginTreeItem::Kind::missing, collectionMemberTitle(missingKey),
                                 nullptr, {}, {}, {}, false, {}, {}, false,
                                 [this, collectionName = group.first, missingKey]
                                     (juce::Point<int> where)
@@ -4342,6 +4443,7 @@ private:
     void refreshPlugins()
     {
         pluginDescriptions = LibertyPluginHost::instance().getPluginDescriptions();
+        cacheCollectionTitlesAfterScan();
         rebuildPluginTree(); refreshPluginStatus();
     }
 
@@ -4856,6 +4958,7 @@ private:
     std::map<juce::String, PluginUsage> pluginFamilyOverrides;
     bool familyOverridesReadOnly = false;
     std::map<juce::String, juce::StringArray> pluginCollections;
+    std::map<juce::String, juce::String> pluginCollectionTitles;
     bool collectionsReadOnly = false;
     juce::String selectedCollection;
     juce::String selectedManufacturer;
