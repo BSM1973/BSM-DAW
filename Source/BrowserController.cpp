@@ -3961,6 +3961,21 @@ private:
     static juce::String normalisedManufacturer(const juce::PluginDescription& d)
     {
         const auto name = d.manufacturerName.trim();
+        // The existing AU is published with a legacy PluginMaker manufacturer
+        // code. Only normalise the exact Liberty Pedal Legends name for display;
+        // never rewrite its plugin identifier, format or project recall key.
+        const auto format = d.pluginFormatName.trim();
+        const bool supportedFormat = format.equalsIgnoreCase("AudioUnit")
+            || format.equalsIgnoreCase("Audio Unit") || format.equalsIgnoreCase("AU")
+            || format.equalsIgnoreCase("VST3");
+        const bool knownPublisher = name.equalsIgnoreCase("Liberty")
+            || name.equalsIgnoreCase("Liberty Music Software")
+            || name.equalsIgnoreCase("PluginMaker")
+            || name.equalsIgnoreCase("PluginMaker.ai")
+            || name.equalsIgnoreCase("Plmk");
+        if (supportedFormat && knownPublisher
+            && d.name.trim().equalsIgnoreCase("LIBERTY PEDAL LEGENDS"))
+            return "Liberty Music Software";
         return name.isEmpty() ? "AUTRES" : name;
     }
 
@@ -4394,8 +4409,8 @@ private:
         pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
         std::sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& a, const auto& b)
         {
-            auto am = a.manufacturerName.trim(); if (am.isEmpty()) am = "Other";
-            auto bm = b.manufacturerName.trim(); if (bm.isEmpty()) bm = "Other";
+            const auto am = normalisedManufacturer(a);
+            const auto bm = normalisedManufacturer(b);
             const int c = am.compareNatural(bm, false);
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
