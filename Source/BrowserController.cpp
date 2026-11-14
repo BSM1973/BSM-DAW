@@ -123,7 +123,7 @@ static bool libertySavePluginArtwork(const juce::File& source,
 class PluginTreeItem final : public juce::TreeViewItem
 {
 public:
-    enum class Kind { root, manufacturer, plugin };
+    enum class Kind { root, manufacturer, plugin, missing };
 
     PluginTreeItem(Kind kindIn,
                    juce::String labelIn,
@@ -150,9 +150,13 @@ public:
         // The thumbnail is still owned by each TreeViewItem and released with it.
     }
 
-    bool mightContainSubItems() override { return kind != Kind::plugin; }
+    bool mightContainSubItems() override { return kind == Kind::root || kind == Kind::manufacturer; }
     bool canBeSelected() const override { return kind == Kind::plugin; }
-    int getItemHeight() const override { return kind == Kind::manufacturer ? 28 : (kind == Kind::plugin ? (thumbnails ? 138 : 38) : 20); }
+    int getItemHeight() const override
+    {
+        return kind == Kind::manufacturer || kind == Kind::missing ? 28
+            : (kind == Kind::plugin ? (thumbnails ? 138 : 38) : 20);
+    }
     juce::String getUniqueName() const override
     {
         if (stableTreeId.isNotEmpty()) return stableTreeId;
@@ -162,6 +166,32 @@ public:
     void paintItem(juce::Graphics& g, int width, int height) override
     {
         if (kind == Kind::root) return;
+        if (kind == Kind::missing)
+        {
+            // Offline placeholders are informational: never draw plugin artwork
+            // or pretend that a missing AU/VST3 can be loaded.
+            g.setColour(juce::Colour(0xff182734));
+            g.fillRect(0, 0, width, height);
+            g.setColour(juce::Colour(0xff7e929e));
+            g.setFont(juce::Font(10.0f));
+            const bool enoughSpace = width > 90;
+            const int titleWidth = juce::jmax(0, width - (enoughSpace ? 79 : 8));
+            if (titleWidth > 0)
+                g.drawFittedText(label, 8, 0, titleWidth, height,
+                                 juce::Justification::centredLeft, 1);
+            if (enoughSpace)
+            {
+                // Small muted status, right-aligned and separate from the ID.
+                const auto tag = juce::Rectangle<float>((float)width - 67.0f, 6.0f, 61.0f, 16.0f);
+                g.setColour(juce::Colour(0xff403a34));
+                g.fillRoundedRectangle(tag, 3.0f);
+                g.setColour(juce::Colour(0xffebc19a));
+                g.setFont(juce::Font(9.0f, juce::Font::bold));
+                g.drawFittedText("ABSENT", tag.toNearestInt(),
+                                 juce::Justification::centred, 1);
+            }
+            return;
+        }
         if (kind == Kind::manufacturer)
         {
             const bool fav = label == "FAVORIS";
@@ -285,7 +315,7 @@ public:
     void itemClicked(const juce::MouseEvent& event) override
     {
         if (!event.mods.isRightButtonDown()) return;
-        if (kind == Kind::manufacturer && collectionContext)
+        if ((kind == Kind::manufacturer || kind == Kind::missing) && collectionContext)
         {
             collectionContext(event.getScreenPosition());
             return;
@@ -1386,6 +1416,41 @@ private:
         pluginStatus.setText(juce::String(missing.size())
             + juce::String::fromUTF8(" identifiants manquants copiés."),
             juce::dontSendNotification);
+    }
+
+
+    void showMissingPluginItemContextMenu(const juce::String& collectionName,
+                                          const juce::String& identifier,
+                                          juce::Point<int> where)
+    {
+        const auto group = pluginCollections.find(collectionName);
+        if (group == pluginCollections.end() || !group->second.contains(identifier))
+            return;
+        juce::PopupMenu menu;
+        menu.addSectionHeader(juce::String::fromUTF8("PLUGIN ABSENT - ") + collectionName);
+        menu.addItem(6500, juce::String::fromUTF8("COPIER L'IDENTIFIANT"));
+        menu.addItem(6501, juce::String::fromUTF8("RELANCER LE SCAN AU / VST3"),
+                     !scanning.load());
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetScreenArea(juce::Rectangle<int>(where.x, where.y, 1, 1))
+            .withMaximumNumColumns(1),
+            [safe, collectionName, identifier](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const auto group = safe->pluginCollections.find(collectionName);
+                if (group == safe->pluginCollections.end()
+                    || !group->second.contains(identifier)) return;
+                if (chosen == 6500)
+                {
+                    juce::SystemClipboard::copyTextToClipboard(identifier);
+                    safe->pluginStatus.setText(juce::String::fromUTF8(
+                        "Identifiant du plugin manquant copié."),
+                        juce::dontSendNotification);
+                }
+                else if (chosen == 6501)
+                    safe->scanPlugins();
+            });
     }
 
     void showCollectionContextMenu(const juce::String& collectionName,
@@ -4096,6 +4161,51 @@ private:
                     collectionItem->addSubItem(item);
                     if (selectedCollection.isNotEmpty() && quickView == QuickView::all)
                         keyboardResults.push_back(item);
+                }
+                // Offline entries have only an exact JUCE identifier. Don't
+                // guess manufacturer, format or type from an arbitrary string.
+                // Hide informational rows under active plugin search/facets.
+                const bool showMissing = query.isEmpty()
+                    && selectedManufacturer.isEmpty()
+                    && pluginFormatFilter == PluginFormatFilter::all
+                    && pluginTypeFilter == PluginTypeFilter::all
+                    && pluginUsageFilter == PluginUsage::all
+                    && quickView == QuickView::all
+                    && artworkView == ArtworkView::all;
+                if (showMissing)
+                {
+                    juce::StringArray absentKeys;
+                    for (const auto& key : group.second)
+                        if (installedIdentifiers.find(key) == installedIdentifiers.end())
+                            absentKeys.add(key);
+
+                    if (!absentKeys.isEmpty())
+                    {
+                        auto* missingFolder = new PluginTreeItem(
+                            PluginTreeItem::Kind::manufacturer,
+                            juce::String::fromUTF8("MANQUANTS (")
+                                + juce::String(absentKeys.size()) + ")",
+                            nullptr, {}, {}, {}, false, {}, {}, false, {},
+                            "LibertyMissingGroup:" + group.first);
+                        collectionItem->addSubItem(missingFolder);
+                        for (const auto& missingKey : absentKeys)
+                        {
+                            // Nonselectable and never sent to keyboardResults.
+                            // Exact IDs are preserved, no automatic re-link.
+                            auto* missingRow = new PluginTreeItem(
+                                PluginTreeItem::Kind::missing, missingKey,
+                                nullptr, {}, {}, {}, false, {}, {}, false,
+                                [this, collectionName = group.first, missingKey]
+                                    (juce::Point<int> where)
+                                {
+                                    showMissingPluginItemContextMenu(
+                                        collectionName, missingKey, where);
+                                },
+                                "LibertyMissing:" + missingKey);
+                            missingFolder->addSubItem(missingRow);
+                        }
+                        missingFolder->setOpen(selectedCollection.isNotEmpty());
+                    }
                 }
                 collectionItem->setOpen(selectedCollection.isNotEmpty());
             }
