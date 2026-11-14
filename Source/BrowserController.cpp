@@ -1437,6 +1437,16 @@ private:
 
         const auto oldLabel = collectionMemberTitle(oldIdentifier);
         const auto newLabel = readableCollectionPluginName(candidate);
+        const auto oldAU = oldLabel.endsWithIgnoreCase("(AU)")
+            || oldLabel.endsWithIgnoreCase("(AudioUnit)")
+            || oldLabel.endsWithIgnoreCase("(Audio Unit)");
+        const auto oldVST3 = oldLabel.endsWithIgnoreCase("(VST3)");
+        const auto newFormat = candidate.pluginFormatName.trim();
+        const auto newAU = newFormat.equalsIgnoreCase("AU")
+            || newFormat.equalsIgnoreCase("AudioUnit")
+            || newFormat.equalsIgnoreCase("Audio Unit");
+        const bool changedFormat = (oldAU && !newAU)
+            || (oldVST3 && !newFormat.equalsIgnoreCase("VST3"));
         const auto question = juce::String::fromUTF8(
             "Confirmer le remplacement de l'association dans cette collection uniquement ?\n\n")
             + juce::String::fromUTF8("Collection : ") + collectionName
@@ -1444,6 +1454,13 @@ private:
             + "\nID : " + oldIdentifier
             + juce::String::fromUTF8("\n\nNouveau plugin : ") + newLabel
             + "\nID : " + nextIdentifier
+            + juce::String::fromUTF8("\nType : ")
+            + (candidate.isInstrument ? juce::String("INSTRUMENT") : juce::String("EFFET"))
+            + (changedFormat
+                ? juce::String::fromUTF8(
+                    "\n\nATTENTION : le format AU/VST3 diffère de celui enregistré. "
+                    "Vérifie que ce remplacement est volontaire.")
+                : juce::String())
             + juce::String::fromUTF8(
                 "\n\nLe plugin n'est pas chargé et aucune autre collection n'est modifiée. "
                 "Une sauvegarde locale de la version précédente sera conservée.");
@@ -1515,6 +1532,24 @@ private:
             juce::AlertWindow::NoIcon);
         dialog->addTextEditor("pluginQuery", proposed,
                               juce::String::fromUTF8("NOM DU PLUGIN"));
+        juce::StringArray formatChoices;
+        formatChoices.add("AU + VST3");
+        formatChoices.add("AU");
+        formatChoices.add("VST3");
+        dialog->addComboBox("formatChoice", formatChoices,
+                            juce::String::fromUTF8("FORMAT RECHERCHÉ"));
+        if (auto* combo = dialog->getComboBoxComponent("formatChoice"))
+        {
+            int initialFormat = 1;
+            const auto oldLabel = collectionMemberTitle(oldIdentifier);
+            if (oldLabel.endsWithIgnoreCase("(AU)")
+                || oldLabel.endsWithIgnoreCase("(AudioUnit)")
+                || oldLabel.endsWithIgnoreCase("(Audio Unit)"))
+                initialFormat = 2;
+            else if (oldLabel.endsWithIgnoreCase("(VST3)"))
+                initialFormat = 3;
+            combo->setSelectedId(initialFormat, juce::dontSendNotification);
+        }
         dialog->addButton("RECHERCHER", 1);
         dialog->addButton("ANNULER", 0);
         dialog->centreAroundComponent(&pluginFiltersButton, 450, 200);
@@ -1526,6 +1561,9 @@ private:
                     || safe->collectionsReadOnly || safe->scanning.load())
                     return;
                 const auto query = dialog->getTextEditorContents("pluginQuery").trim();
+                const auto* formatBox = dialog->getComboBoxComponent("formatChoice");
+                const int formatSelection = formatBox != nullptr
+                    ? formatBox->getSelectedId() : 1;
                 if (query.length() < 2)
                 {
                     juce::AlertWindow::showMessageBoxAsync(
@@ -1543,6 +1581,14 @@ private:
                 for (const auto& description : safe->pluginDescriptions)
                 {
                     if (favouriteKey(description) == oldIdentifier) continue;
+                    const auto fmt = description.pluginFormatName.trim();
+                    const bool isAU = fmt.equalsIgnoreCase("AU")
+                        || fmt.equalsIgnoreCase("AudioUnit")
+                        || fmt.equalsIgnoreCase("Audio Unit");
+                    const bool isVST3 = fmt.equalsIgnoreCase("VST3");
+                    if (!isAU && !isVST3) continue;
+                    if (formatSelection == 2 && !isAU) continue;
+                    if (formatSelection == 3 && !isVST3) continue;
                     if (description.name.containsIgnoreCase(query)
                         || description.manufacturerName.containsIgnoreCase(query))
                         found.push_back(description);
@@ -1569,15 +1615,21 @@ private:
                 }
 
                 juce::PopupMenu candidates;
-                const int limit = juce::jmin(40, (int)found.size());
+                const int totalMatches = (int)found.size();
+                const int limit = juce::jmin(40, totalMatches);
                 candidates.addSectionHeader(juce::String::fromUTF8(
                     "CHOISIR UNE VERSION INSTALLÉE (")
                     + juce::String(limit) + "/"
-                    + juce::String((int)found.size()) + ")");
+                    + juce::String(totalMatches) + ")");
+                // Only the 40 visible candidates are retained by the menu.
+                found.resize((size_t)limit);
                 for (int i = 0; i < limit; ++i)
                     candidates.addItem(7000 + i,
-                        readableCollectionPluginName(found[(size_t)i]));
-                if ((int)found.size() > limit)
+                        readableCollectionPluginName(found[(size_t)i])
+                        + (found[(size_t)i].isInstrument
+                            ? juce::String(" | INSTRUMENT")
+                            : juce::String(" | EFFET")));
+                if (totalMatches > limit)
                     candidates.addSectionHeader(juce::String::fromUTF8(
                         "Affiner la recherche pour voir les autres résultats."));
                 candidates.showMenuAsync(juce::PopupMenu::Options()
