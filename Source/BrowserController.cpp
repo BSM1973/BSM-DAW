@@ -1491,7 +1491,8 @@ private:
         const auto group = pluginCollections.find(collectionName);
         if (group == pluginCollections.end() || !group->second.contains(oldIdentifier))
             return;
-        if (installedPluginIdentifiers().find(oldIdentifier) != installedPluginIdentifiers().end())
+        const auto installed = installedPluginIdentifiers();
+        if (installed.find(oldIdentifier) != installed.end())
             return;
 
         // Never infer an identity mapping from AU/VST3 names: the user picks
