@@ -1482,6 +1482,20 @@ private:
                     if (installed.find(oldIdentifier) != installed.end()
                         || installed.find(nextIdentifier) == installed.end())
                         return;
+                    // Reject a stale choice if the scan replaced the descriptor
+                    // while confirmation was open. No fuzzy ID matching.
+                    bool exactCandidateStillInstalled = false;
+                    for (const auto& live : safe->pluginDescriptions)
+                        if (favouriteKey(live) == nextIdentifier
+                            && live.name == candidate.name
+                            && live.manufacturerName == candidate.manufacturerName
+                            && live.pluginFormatName == candidate.pluginFormatName
+                            && live.isInstrument == candidate.isInstrument)
+                        {
+                            exactCandidateStillInstalled = true;
+                            break;
+                        }
+                    if (!exactCandidateStillInstalled) return;
                     const int index = group->second.indexOf(oldIdentifier);
                     if (index < 0) return;
 
@@ -1550,6 +1564,14 @@ private:
                 initialFormat = 3;
             combo->setSelectedId(initialFormat, juce::dontSendNotification);
         }
+        juce::StringArray typeChoices;
+        typeChoices.add(juce::String::fromUTF8("INSTRUMENTS + EFFETS"));
+        typeChoices.add("INSTRUMENTS");
+        typeChoices.add("EFFETS");
+        dialog->addComboBox("typeChoice", typeChoices,
+                            juce::String::fromUTF8("TYPE DE PLUGIN"));
+        if (auto* typeBox = dialog->getComboBoxComponent("typeChoice"))
+            typeBox->setSelectedId(1, juce::dontSendNotification);
         dialog->addButton("RECHERCHER", 1);
         dialog->addButton("ANNULER", 0);
         dialog->centreAroundComponent(&pluginFiltersButton, 450, 200);
@@ -1564,6 +1586,9 @@ private:
                 const auto* formatBox = dialog->getComboBoxComponent("formatChoice");
                 const int formatSelection = formatBox != nullptr
                     ? formatBox->getSelectedId() : 1;
+                const auto* typeBox = dialog->getComboBoxComponent("typeChoice");
+                const int typeSelection = typeBox != nullptr
+                    ? typeBox->getSelectedId() : 1;
                 if (query.length() < 2)
                 {
                     juce::AlertWindow::showMessageBoxAsync(
@@ -1578,9 +1603,11 @@ private:
                     || !group->second.contains(oldIdentifier))
                     return;
                 std::vector<juce::PluginDescription> found;
+                std::set<juce::String> seenIdentifiers;
                 for (const auto& description : safe->pluginDescriptions)
                 {
-                    if (favouriteKey(description) == oldIdentifier) continue;
+                    const auto id = favouriteKey(description);
+                    if (id.isEmpty() || id == oldIdentifier) continue;
                     const auto fmt = description.pluginFormatName.trim();
                     const bool isAU = fmt.equalsIgnoreCase("AU")
                         || fmt.equalsIgnoreCase("AudioUnit")
@@ -1589,8 +1616,11 @@ private:
                     if (!isAU && !isVST3) continue;
                     if (formatSelection == 2 && !isAU) continue;
                     if (formatSelection == 3 && !isVST3) continue;
-                    if (description.name.containsIgnoreCase(query)
-                        || description.manufacturerName.containsIgnoreCase(query))
+                    if (typeSelection == 2 && !description.isInstrument) continue;
+                    if (typeSelection == 3 && description.isInstrument) continue;
+                    if ((description.name.containsIgnoreCase(query)
+                         || description.manufacturerName.containsIgnoreCase(query))
+                        && seenIdentifiers.insert(id).second)
                         found.push_back(description);
                 }
                 std::sort(found.begin(), found.end(),
@@ -1601,7 +1631,11 @@ private:
                         if (exactA != exactB) return exactA;
                         const int byName = a.name.compareNatural(b.name, false);
                         if (byName != 0) return byName < 0;
-                        return a.pluginFormatName.compareNatural(b.pluginFormatName, false) < 0;
+                        const int byMaker = a.manufacturerName.compareNatural(b.manufacturerName, false);
+                        if (byMaker != 0) return byMaker < 0;
+                        const int byFormat = a.pluginFormatName.compareNatural(b.pluginFormatName, false);
+                        if (byFormat != 0) return byFormat < 0;
+                        return favouriteKey(a).compare(favouriteKey(b)) < 0;
                     });
                 if (found.empty())
                 {
@@ -1624,11 +1658,15 @@ private:
                 // Only the 40 visible candidates are retained by the menu.
                 found.resize((size_t)limit);
                 for (int i = 0; i < limit; ++i)
+                {
+                    const auto& d = found[(size_t)i];
+                    const auto id = favouriteKey(d);
                     candidates.addItem(7000 + i,
-                        readableCollectionPluginName(found[(size_t)i])
-                        + (found[(size_t)i].isInstrument
-                            ? juce::String(" | INSTRUMENT")
-                            : juce::String(" | EFFET")));
+                        readableCollectionPluginName(d)
+                        + (d.isInstrument ? juce::String(" | INSTRUMENT")
+                                          : juce::String(" | EFFET"))
+                        + " | ID: " + id.substring(juce::jmax(0, id.length() - 12)));
+                }
                 if (totalMatches > limit)
                     candidates.addSectionHeader(juce::String::fromUTF8(
                         "Affiner la recherche pour voir les autres résultats."));
