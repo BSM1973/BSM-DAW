@@ -1421,6 +1421,73 @@ private:
 
 
 
+
+    static bool sameCollectionMembers(const juce::StringArray& lhs,
+                                      const juce::StringArray& rhs)
+    {
+        if (lhs.size() != rhs.size()) return false;
+        for (int i = 0; i < lhs.size(); ++i)
+            if (lhs[i] != rhs[i]) return false;
+        return true;
+    }
+
+    bool canUndoLastPluginRelink(const juce::String& collectionName) const
+    {
+        if (collectionsReadOnly || scanning.load() || collectionName.isEmpty()
+            || lastRelinkCollection != collectionName) return false;
+        const auto it = pluginCollections.find(collectionName);
+        return it != pluginCollections.end()
+            && sameCollectionMembers(it->second, lastRelinkAfterMembers);
+    }
+
+    void undoLastPluginRelink(const juce::String& collectionName)
+    {
+        if (!canUndoLastPluginRelink(collectionName)) return;
+        const auto restoredMembers = lastRelinkBeforeMembers;
+        const auto recordedAfter = lastRelinkAfterMembers;
+        const auto oldId = lastRelinkOldId;
+        const auto nextId = lastRelinkNextId;
+        const auto question = juce::String::fromUTF8(
+            "Annuler uniquement la dernière réassociation de cette collection ?\n\n")
+            + juce::String::fromUTF8("Collection : ") + collectionName
+            + juce::String::fromUTF8("\nAncien plugin : ")
+            + collectionMemberTitle(oldId)
+            + juce::String::fromUTF8("\nNouveau plugin : ")
+            + collectionMemberTitle(nextId)
+            + juce::String::fromUTF8(
+                "\n\nLes autres collections resteront inchangées. "
+                "Cette opération enregistrera aussi une sauvegarde locale.");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Annuler la réassociation ?"),
+            question, "ANNULER LA RÉASSOCIATION", "CONSERVER", nullptr,
+            juce::ModalCallbackFunction::create(
+                [safe, collectionName, restoredMembers, recordedAfter, oldId, nextId](int chosen)
+                {
+                    if (safe == nullptr || safe->stopped.load() || chosen != 1
+                        || !safe->canUndoLastPluginRelink(collectionName)
+                        || safe->lastRelinkOldId != oldId
+                        || safe->lastRelinkNextId != nextId
+                        || !sameCollectionMembers(safe->lastRelinkAfterMembers, recordedAfter))
+                        return;
+                    auto it = safe->pluginCollections.find(collectionName);
+                    if (it == safe->pluginCollections.end()) return;
+                    const auto before = safe->pluginCollections;
+                    it->second = restoredMembers;
+                    if (safe->commitPluginCollections(before,
+                        juce::String::fromUTF8("Réassociation annulée dans « ")
+                        + collectionName + juce::String::fromUTF8(" ».")))
+                    {
+                        safe->lastRelinkCollection.clear();
+                        safe->lastRelinkBeforeMembers.clear();
+                        safe->lastRelinkAfterMembers.clear();
+                        safe->lastRelinkOldId.clear();
+                        safe->lastRelinkNextId.clear();
+                    }
+                }));
+    }
+
     void confirmMissingPluginRelink(const juce::String& collectionName,
                                     const juce::String& oldIdentifier,
                                     juce::PluginDescription candidate)
@@ -1500,17 +1567,30 @@ private:
                     if (index < 0) return;
 
                     const auto before = safe->pluginCollections;
+                    const auto beforeGroup = group->second;
                     const auto titleBefore = safe->pluginCollectionTitles;
                     if (group->second.contains(nextIdentifier))
                         group->second.remove(index);
                     else
                         group->second.set(index, nextIdentifier);
+                    const auto afterGroup = group->second;
                     if (newLabel.isNotEmpty())
                         safe->pluginCollectionTitles[nextIdentifier] = newLabel;
-                    if (!safe->commitPluginCollections(before,
+                    if (safe->commitPluginCollections(before,
                         juce::String::fromUTF8("Plugin réassocié dans « ")
                         + collectionName + juce::String::fromUTF8(" » : ")
-                        + candidate.name))
+                        + candidate.name
+                        + juce::String::fromUTF8(" (annulation : clic droit collection)")))
+                    {
+                        // One level of undo, scoped to precisely this group.
+                        // A different edit to the same group disables it.
+                        safe->lastRelinkCollection = collectionName;
+                        safe->lastRelinkOldId = oldIdentifier;
+                        safe->lastRelinkNextId = nextIdentifier;
+                        safe->lastRelinkBeforeMembers = beforeGroup;
+                        safe->lastRelinkAfterMembers = afterGroup;
+                    }
+                    else
                         safe->pluginCollectionTitles = titleBefore;
                 }));
     }
@@ -1743,6 +1823,10 @@ private:
         menu.addItem(6406,
             juce::String::fromUTF8("RELANCER LE SCAN AU / VST3"), !scanning.load());
         menu.addSeparator();
+        menu.addItem(6407,
+            juce::String::fromUTF8("ANNULER LA DERNIÈRE RÉASSOCIATION"),
+            canUndoLastPluginRelink(collectionName));
+        menu.addSeparator();
         menu.addItem(6402, "RENOMMER...", !collectionsReadOnly);
         menu.addItem(6403, "SUPPRIMER...", !collectionsReadOnly);
 
@@ -1772,6 +1856,8 @@ private:
                     safe->copyMissingPluginCollectionIdentifiers(collectionName);
                 else if (chosen == 6406)
                     safe->scanPlugins();
+                else if (chosen == 6407)
+                    safe->undoLastPluginRelink(collectionName);
                 else if (chosen == 6402)
                     safe->promptCollectionName(collectionName);
                 else if (chosen == 6403)
@@ -4109,6 +4195,8 @@ private:
                                  !collectionsReadOnly);
         collectionsMenu.addItem(5402, juce::String::fromUTF8("RESTAURER LA SAUVEGARDE LOCALE..."),
                                  hasRecoverableCollectionsBackup());
+        collectionsMenu.addItem(5403, juce::String::fromUTF8("ANNULER LA DERNIÈRE RÉASSOCIATION"),
+                                 canUndoLastPluginRelink(lastRelinkCollection));
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(juce::String::fromUTF8(
                 "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
@@ -4282,6 +4370,11 @@ private:
                 else if (chosen == 5402)
                 {
                     safe->restorePluginCollectionsBackup();
+                    return;
+                }
+                else if (chosen == 5403)
+                {
+                    safe->undoLastPluginRelink(safe->lastRelinkCollection);
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
@@ -5228,6 +5321,10 @@ private:
     bool familyOverridesReadOnly = false;
     std::map<juce::String, juce::StringArray> pluginCollections;
     std::map<juce::String, juce::String> pluginCollectionTitles;
+    // A single recoverable relink, private to this browser session. The
+    // persistent XML backup independently covers restart/reinstallation.
+    juce::String lastRelinkCollection, lastRelinkOldId, lastRelinkNextId;
+    juce::StringArray lastRelinkBeforeMembers, lastRelinkAfterMembers;
     bool collectionsReadOnly = false;
     juce::String selectedCollection;
     juce::String selectedManufacturer;
