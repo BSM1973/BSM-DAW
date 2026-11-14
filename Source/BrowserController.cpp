@@ -1434,7 +1434,8 @@ private:
     bool canUndoLastPluginRelink(const juce::String& collectionName) const
     {
         if (collectionsReadOnly || scanning.load() || collectionName.isEmpty()
-            || lastRelinkCollection != collectionName) return false;
+            || lastRelinkCollection != collectionName
+            || lastRelinkRevision != collectionsRevision) return false;
         const auto it = pluginCollections.find(collectionName);
         return it != pluginCollections.end()
             && sameCollectionMembers(it->second, lastRelinkAfterMembers);
@@ -1484,6 +1485,7 @@ private:
                         safe->lastRelinkAfterMembers.clear();
                         safe->lastRelinkOldId.clear();
                         safe->lastRelinkNextId.clear();
+                        safe->lastRelinkRevision = 0;
                     }
                 }));
     }
@@ -1589,6 +1591,7 @@ private:
                         safe->lastRelinkNextId = nextIdentifier;
                         safe->lastRelinkBeforeMembers = beforeGroup;
                         safe->lastRelinkAfterMembers = afterGroup;
+                        safe->lastRelinkRevision = safe->collectionsRevision;
                     }
                     else
                         safe->pluginCollectionTitles = titleBefore;
@@ -1996,8 +1999,19 @@ private:
         pluginCollections.clear();
         pluginCollectionTitles.clear();
         collectionsReadOnly = false;
+        collectionsChangedExternally = false;
+        // A reload / explicit restoration invalidates session-only undo.
+        lastRelinkCollection.clear();
+        lastRelinkOldId.clear();
+        lastRelinkNextId.clear();
+        lastRelinkBeforeMembers.clear();
+        lastRelinkAfterMembers.clear();
+        lastRelinkRevision = 0;
+        ++collectionsRevision;
         const auto file = pluginCollectionsFile();
-        if (!file.existsAsFile()) return;
+        collectionsDiskExists = file.existsAsFile();
+        collectionsDiskContents.clear();
+        if (!collectionsDiskExists) return;
 
         std::map<juce::String, juce::StringArray> recovered;
         std::map<juce::String, juce::String> titles;
@@ -2007,6 +2021,7 @@ private:
             collectionsReadOnly = true;
             return;
         }
+        collectionsDiskContents = file.loadFileAsString();
         pluginCollections = std::move(recovered);
         pluginCollectionTitles = std::move(titles);
     }
@@ -2030,7 +2045,17 @@ private:
             }
         }
         const auto target = pluginCollectionsFile();
-        if (target.existsAsFile())
+        const bool existsNow = target.existsAsFile();
+        // A second Liberty instance or a manual XML edit must never be
+        // overwritten with stale in-memory state. Fail closed instead.
+        if (existsNow != collectionsDiskExists
+            || (existsNow && target.loadFileAsString() != collectionsDiskContents))
+        {
+            collectionsChangedExternally = true;
+            collectionsReadOnly = true;
+            return false;
+        }
+        if (existsNow)
         {
             // First atomically preserve the previous *validated* version.
             // If backup fails, abort before touching the current database.
@@ -2038,13 +2063,18 @@ private:
             if (!readPluginCollectionsFile(target, verifiedPrevious)) return false;
             const auto backup = pluginCollectionsBackupFile();
             juce::TemporaryFile backupStage(backup);
-            if (!backupStage.getFile().replaceWithText(target.loadFileAsString())
+            if (!backupStage.getFile().replaceWithText(collectionsDiskContents)
                 || !backupStage.overwriteTargetFileWithTemporary())
                 return false;
         }
         juce::TemporaryFile staged(target);
-        return staged.getFile().replaceWithText(root.toString())
-            && staged.overwriteTargetFileWithTemporary();
+        if (!staged.getFile().replaceWithText(root.toString())
+            || !staged.overwriteTargetFileWithTemporary())
+            return false;
+        collectionsDiskExists = true;
+        collectionsDiskContents = target.loadFileAsString();
+        ++collectionsRevision;
+        return true;
     }
 
     void restorePluginCollectionsBackup()
@@ -2120,11 +2150,15 @@ private:
 
     void showCollectionsSaveError()
     {
+        const auto message = collectionsChangedExternally
+            ? juce::String::fromUTF8(
+                "Le fichier PluginCollections.xml a été modifié ou déplacé hors de Liberty. "
+                "Aucune modification n'a été écrasée. Relance Liberty pour charger la nouvelle version, "
+                "ou utilise explicitement la restauration locale si nécessaire.")
+            : juce::String::fromUTF8(
+                "Impossible d'enregistrer les collections. Le fichier existant est conservé.");
         juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Liberty - Collections",
-            juce::String::fromUTF8(
-                "Impossible d'enregistrer les collections. Le fichier existant est conservé."),
-            "OK");
+            juce::AlertWindow::WarningIcon, "Liberty - Collections", message, "OK");
     }
 
     bool commitPluginCollections(
@@ -5325,6 +5359,9 @@ private:
     // persistent XML backup independently covers restart/reinstallation.
     juce::String lastRelinkCollection, lastRelinkOldId, lastRelinkNextId;
     juce::StringArray lastRelinkBeforeMembers, lastRelinkAfterMembers;
+    juce::uint64 collectionsRevision = 0, lastRelinkRevision = 0;
+    juce::String collectionsDiskContents;
+    bool collectionsDiskExists = false, collectionsChangedExternally = false;
     bool collectionsReadOnly = false;
     juce::String selectedCollection;
     juce::String selectedManufacturer;
