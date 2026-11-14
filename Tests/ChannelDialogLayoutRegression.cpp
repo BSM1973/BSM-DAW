@@ -1,0 +1,115 @@
+#include "../Source/ChannelDialogLayout.h"
+#include <cassert>
+#include <iostream>
+
+int main(){
+    for(int width:{760,800,900}){
+      for(int height:{520,560,650}){
+        const auto g=LibertyChannelDialogLayout::make(width,height);
+        using LibertyChannelDialogLayout::Rect;
+        const Rect full{0,0,width,height};
+        const Rect title{28,17,width-260,26};
+        const Rect subtitle{29,52,width-58,16};
+        const Rect header{12,10,width-24,60};
+        assert(full.contains(g.presets));
+        assert(header.contains(g.presets));
+        assert(!title.intersects(g.presets));
+        assert(!subtitle.intersects(g.presets));
+        for(const auto& card:g.sections)assert(!card.intersects(g.presets));
+        // Two compact French history buttons must be fully visible and never
+        // collide with titles, cards, presets or each other.
+        for(int i=0;i<2;++i){
+            const auto undoOrRedo=g.historyActions[(size_t)i];
+            assert(full.contains(undoOrRedo));
+            assert(header.contains(undoOrRedo));
+            assert(!title.intersects(undoOrRedo));
+            assert(!subtitle.intersects(undoOrRedo));
+            assert(!g.presets.intersects(undoOrRedo));
+            for(const auto& card:g.sections)assert(!card.intersects(undoOrRedo));
+            for(int j=i+1;j<2;++j)
+                assert(!undoOrRedo.intersects(g.historyActions[(size_t)j]));
+        }
+        for(const auto& card:g.sections)assert(full.contains(card));
+        for(int section=0;section<4;++section)
+        {
+            const auto card=g.sections[(size_t)section];
+            const auto indicator=g.abIndicators[(size_t)section];
+            const Rect drawnHeading{card.x+23,card.y+13,card.w-220,22};
+            const auto title=LibertyChannelDialogLayout::sectionTitleArea(g,section);
+            assert(card.contains(indicator));
+            assert(card.contains(drawnHeading));
+            assert(!drawnHeading.intersects(indicator));
+            assert(title.contains(indicator));
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                g,indicator.x+indicator.w/2,indicator.y+indicator.h/2)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.x,indicator.y)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.right()-1,indicator.bottom()-1)==section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.right(),indicator.y)!=section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,indicator.x,indicator.bottom())!=section);
+            assert(LibertyChannelDialogLayout::abIndicatorAt(
+                g,card.x+23,card.y+23)==-1);
+            for(const auto& knob:g.controls)assert(!indicator.intersects(knob));
+            for(const auto& toggle:g.powers)assert(!indicator.intersects(toggle));
+            for(const auto& other:g.abIndicators)
+                if(&other!=&g.abIndicators[(size_t)section])
+                    assert(!indicator.intersects(other));
+            assert(g.sections[(size_t)section].contains(title));
+            assert(title.w>0 && title.h>0);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(g,title.x,title.y)
+                   ==section);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                       g,title.right()-1,title.bottom()-1)==section);
+            assert(LibertyChannelDialogLayout::sectionTitleAt(
+                       g,title.right(),title.y)!=section);
+            for(const auto& knob:g.controls)assert(!title.intersects(knob));
+            for(const auto& power:g.powers)assert(!title.intersects(power));
+        }
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,-1,-1)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,0,0)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,width-36,32)==-1);
+        assert(LibertyChannelDialogLayout::abIndicatorAt(g,32,height-36)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,-1,-1)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,0,0)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,32,height-36)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleAt(g,width-36,32)==-1);
+        assert(LibertyChannelDialogLayout::sectionTitleArea(g,-1).w==0);
+        assert(LibertyChannelDialogLayout::sectionTitleArea(g,4).h==0);
+        for(int i=0;i<4;++i){
+            for(int j=i+1;j<4;++j)assert(!g.sections[i].intersects(g.sections[j]));
+        }
+        const int parent[]={0,0,1,2,2,3,3,3};
+        for(int i=0;i<8;++i){
+            const auto knob=g.controls[(size_t)i];
+            assert(g.sections[(size_t)parent[i]].contains(knob));
+            for(int j=i+1;j<8;++j)assert(!knob.intersects(g.controls[(size_t)j]));
+        }
+        const int toggleParents[]={1,2,3};
+        for(int i=0;i<3;++i){
+            const auto toggle=g.powers[(size_t)i];
+            assert(g.sections[(size_t)toggleParents[i]].contains(toggle));
+            for(const auto& knob:g.controls)assert(!toggle.intersects(knob));
+        }
+        for(int i=0;i<2;++i){
+            const auto button=g.clipboard[(size_t)i];
+            assert(full.contains(button));
+            for(const auto& card:g.sections)assert(!card.intersects(button));
+            for(const auto& action:g.actions)assert(!action.intersects(button));
+            for(int j=i+1;j<2;++j)assert(!button.intersects(g.clipboard[(size_t)j]));
+        }
+        assert(full.contains(g.variant));
+        for(const auto& card:g.sections)assert(!card.intersects(g.variant));
+        for(const auto& action:g.actions)assert(!action.intersects(g.variant));
+        for(const auto& button:g.clipboard)assert(!button.intersects(g.variant));
+        for(int i=0;i<3;++i){
+            assert(full.contains(g.actions[(size_t)i]));
+            for(const auto& card:g.sections)assert(!card.intersects(g.actions[(size_t)i]));
+            for(int j=i+1;j<3;++j)assert(!g.actions[(size_t)i].intersects(g.actions[(size_t)j]));
+        }
+      }
+    }
+    std::cout<<"Liberty channel inspector: no overlapping controls or actions\n";
+}

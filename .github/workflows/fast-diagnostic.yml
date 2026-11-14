@@ -1,0 +1,295 @@
+name: Liberty Fast Diagnostic
+# queue refresh 2026-09-25
+# queue refresh
+# queue refresh 2
+
+# One diagnostic per update to the active development branch.
+# Previously push + pull_request scheduled duplicate macOS jobs for the same SHA.
+# Keep manual runs available; the separate build.yml handles pushes to main.
+on:
+  push:
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab' ]
+  workflow_dispatch:
+
+jobs:
+  # Independent, fast console regressions. They run even if GitHub cannot
+  # allocate a hosted macOS ARM64 machine for the complete application.
+  mixer-unit-regressions:
+    name: MIXER C++ regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Reject corrupted French UI text (UTF-8)
+        run: python3 Tests/FrenchTextRegression.py
+
+      - name: Verify global UI no-overlap zones and routing panel
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
+          /tmp/liberty-no-overlap
+
+      - name: Verify progressively revealed FX slots
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerProgressiveFxRegression.cpp -o /tmp/liberty-progressive-fx
+          /tmp/liberty-progressive-fx
+
+      - name: Verify mixer layout and pinned faders
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
+          /tmp/liberty-mixer-layout
+      - name: Verify saved bus routes and Master fallback
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerBusRoutingRegression.cpp -o /tmp/liberty-bus-routing
+          /tmp/liberty-bus-routing
+
+      - name: Verify normal and exclusive Solo across audio and instrument tracks
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleSoloRegression.cpp -o /tmp/liberty-mixer-solo
+          /tmp/liberty-mixer-solo
+      - name: Verify real-time meter, peak hold and reset on Linux
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleMeterRegression.cpp -o /tmp/liberty-mixer-meter
+          /tmp/liberty-mixer-meter
+
+  fast-macos-arm64:
+    name: Fast macOS arm64 (macOS 26)
+    # GitHub cancelled two macos-15 attempts with zero steps and no runner.
+    # macos-26 is an official Apple Silicon/arm64 standard hosted label.
+    runs-on: macos-26
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ninja ccache
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: liberty-ccache-arm64-${{ runner.os }}-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            liberty-ccache-arm64-${{ runner.os }}-
+
+      - name: Verify macOS packaging and notarization scripts syntax
+        run: |
+          bash -n Scripts/create-macos-dmg.sh
+          bash -n Scripts/sign-macos-release.sh
+          bash -n Scripts/notarize-macos-dmg.sh
+          plutil -lint Scripts/Liberty-DAW.entitlements
+
+      - name: Validate Riche WAV analyzer
+        run: python3 Tests/RicheAudioValidation.py --self-test
+
+      - name: Guard validated track header controls
+        run: python3 Tests/TrackHeaderRegression.py
+
+      - name: Reject corrupted French UI text before macOS build
+        run: python3 Tests/FrenchTextRegression.py
+
+      - name: Verify strict non-overlapping global UI regions
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
+          /tmp/liberty-no-overlap
+
+      - name: Verify progressive FX and no-overlap geometry on macOS
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixerProgressiveFxRegression.cpp -o /tmp/liberty-progressive-fx
+          /tmp/liberty-progressive-fx
+
+      - name: Verify independent mixer panels and pinned faders
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror Tests/MixConsoleLayoutRegression.cpp -o /tmp/liberty-mixer-layout
+          /tmp/liberty-mixer-layout
+
+      - name: Verify mixer Solo exclusive and all-clear controls
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleSoloRegression.cpp -o /tmp/liberty-mixer-solo
+          /tmp/liberty-mixer-solo
+
+      - name: Verify real-time mixer sample peaks, held peaks and CLIP reset
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleMeterRegression.cpp -o /tmp/liberty-mixer-meter
+          /tmp/liberty-mixer-meter
+
+      - name: Verify channel inspector controls never overlap
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror Tests/ChannelDialogLayoutRegression.cpp -o /tmp/liberty-channel-dialog-layout
+          /tmp/liberty-channel-dialog-layout
+
+      - name: Verify isolated CANAL A/B parameter copying
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelParameterTransferRegression.cpp -o /tmp/liberty-canal-parameter-copy
+          /tmp/liberty-canal-parameter-copy
+
+      - name: Verify CANAL A/B undo and redo history
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABHistoryRegression.cpp -o /tmp/liberty-canal-ab-history
+          /tmp/liberty-canal-ab-history
+
+      - name: Verify CANAL A/B shortcut routing and numeric text protection
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABShortcutRegression.cpp -o /tmp/liberty-canal-ab-shortcuts
+          /tmp/liberty-canal-ab-shortcuts
+
+      - name: Verify CANAL A/B per-knob Undo grouping
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABGestureHistoryRegression.cpp -o /tmp/liberty-canal-gesture-history
+          /tmp/liberty-canal-gesture-history
+
+      - name: Verify CANAL A/B global overview counts and menu routing
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/ChannelABOverviewRegression.cpp -o /tmp/liberty-canal-ab-overview
+          /tmp/liberty-canal-ab-overview
+
+      - name: Configure CMake arm64
+        run: |
+          rm -rf build-fast
+          cmake -S . -B build-fast -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --zero-stats
+
+      - name: Build Liberty fast
+        env:
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_NOHASHDIR: "true"
+          CCACHE_COMPRESS: "true"
+          CCACHE_MAXSIZE: "2G"
+        run: |
+          cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
+          ccache --show-stats
+
+      - name: Test audio clip playback and fade preservation (5 independent launches)
+        shell: bash
+        run: |
+          # The #2963 run crashed intermittently with SIGSEGV during this test.
+          # Run fresh processes to expose lifetime/race defects; NEVER retry
+          # a failed attempt and NEVER hide its original nonzero exit status.
+          app="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for attempt in 1 2 3 4 5; do
+            echo "Audio clip playback smoke - independent launch ${attempt}/5"
+            if "$app" --audio-clip-playback-test; then
+              echo "Audio clip playback smoke - launch ${attempt}/5 OK"
+            else
+              exit_code=$?
+              echo "::error::Audio playback smoke failed on launch ${attempt}/5 (exit ${exit_code})"
+              exit "$exit_code"
+            fi
+          done
+
+      - name: Test CANAL settings, neutral project reset and project XML roundtrip
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test
+
+      - name: Test arrangement clip edits and fade Undo/Redo
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
+
+      - name: Run Drum Sampler regression tests
+        run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
+
+      - name: Render and measure real Riche engine fixtures
+        run: |
+          python3 Tests/GenerateRicheFixtures.py build-fast/riche-fixtures
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for kind in drums voice guitar; do
+            for ratio in 0.75 1.5; do
+              for block in 64 256 1024; do
+                input="build-fast/riche-fixtures/${kind}.wav"
+                output="build-fast/riche-fixtures/${kind}-${ratio}-${block}.wav"
+                echo "RICHE case: kind=$kind ratio=$ratio block=$block"
+                # Keep the diagnostic bounded: a crashed audio renderer must not
+                # trigger an unbounded LLDB replay on a hosted macOS runner.
+                # Python propagates the signal as a non-zero exit status.
+                if python3 - "$APP" "$input" "$output" "$ratio" "$block" <<'PY'
+          import subprocess
+          import sys
+          app, source, destination, ratio, block = sys.argv[1:]
+          try:
+              result = subprocess.run(
+                  [app, "--render-riche-test", source, destination, ratio, block],
+                  timeout=60, check=False)
+          except subprocess.TimeoutExpired:
+              print(f"::error::RICHE renderer timed out: ratio={ratio} block={block}", flush=True)
+              sys.exit(124)
+          if result.returncode != 0:
+              print(f"::error::RICHE renderer failed: ratio={ratio} block={block} exit={result.returncode}", flush=True)
+              sys.exit(1)
+          PY
+                then
+                  echo "RICHE render OK: $kind $ratio $block"
+                else
+                  echo "::error::RICHE failed: kind=$kind ratio=$ratio block=$block"
+                  exit 1
+                fi
+                python3 Tests/RicheAudioValidation.py --reference "$input" --render "$output" --ratio "$ratio" --boundary "$block" --json "build-fast/riche-fixtures/${kind}-${ratio}-${block}.json" > /dev/null
+              done
+            done
+          done
+
+      - name: Archive Riche WAV diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Riche-Audio-Diagnostics
+          path: |
+            build-fast/riche-fixtures/*.json
+            build-fast/riche-fixtures/*.wav
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Verify application bundle
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          test -d "$APP"
+          test -f "$APP/Contents/MacOS/Liberty"
+          file "$APP/Contents/MacOS/Liberty"
+
+      - name: Sign application for local macOS execution
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package fast diagnostic app
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          rm -rf dist-fast
+          mkdir -p dist-fast
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist-fast/Liberty-macOS-arm64-Diagnostic.zip"
+
+      - name: Upload diagnostic app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-macOS-arm64-Diagnostic
+          path: dist-fast/Liberty-macOS-arm64-Diagnostic.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Package and verify Liberty DMG installer
+        run: |
+          bash Scripts/create-macos-dmg.sh \
+            "build-fast/BSM_DAW_artefacts/Release/Liberty.app" \
+            "dist-fast/Liberty-macOS-arm64.dmg"
+
+      - name: Generate and verify Liberty DMG SHA-256 checksum
+        run: |
+          cd dist-fast
+          shasum -a 256 Liberty-macOS-arm64.dmg > Liberty-macOS-arm64.dmg.sha256
+          shasum -a 256 -c Liberty-macOS-arm64.dmg.sha256
+
+      - name: Upload Liberty DMG installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-macOS-arm64-DMG
+          path: |
+            dist-fast/Liberty-macOS-arm64.dmg
+            dist-fast/Liberty-macOS-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14

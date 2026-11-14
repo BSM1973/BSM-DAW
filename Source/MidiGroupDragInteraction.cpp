@@ -3,7 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <vector>
+
+std::int64_t getLibertySnapStepTicks() noexcept;
+int getLibertyActiveTool();
 
 namespace
 {
@@ -14,7 +18,6 @@ constexpr int visibleKeys = 40;
 constexpr int velocityLaneHeight = 92;
 constexpr int lowestKey = 21;
 constexpr int resizeEdgePixels = 12;
-constexpr std::int64_t gridTicks = MidiEngine::ticksPerQuarterNote / 4;
 
 class MidiGroupDragOverlay final : public juce::Component, private juce::Timer
 {
@@ -31,27 +34,36 @@ public:
 
     bool hitTest(int x, int y) override
     {
+        // The rectangular selection tool owns Shift/Alt gestures, even when
+        // they start directly over one of the selected chord notes.
+        const auto mods = juce::ModifierKeys::getCurrentModifiersRealtime();
+        if (!dragging && getLibertyActiveTool() == 7
+            && (mods.isShiftDown() || mods.isAltDown()))
+            return false;
         if (dragging || owner.getMidiEngine().getNumSelectedNotes() <= 1)
             return dragging;
         if (x < pianoKeyWidth || y < rulerHeight || y >= getHeight() - velocityLaneHeight)
             return false;
-        const auto* note = findSelectedNoteAt({ x, y });
-        return note != nullptr && !isNearResizeEdge(*note, x);
+        const auto note = findSelectedNoteAt({ x, y });
+        return note.has_value() && !isNearResizeEdge(*note, x);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
         if (!e.mods.isLeftButtonDown()) return;
-        const auto* note = findSelectedNoteAt(e.getPosition());
-        if (note == nullptr || owner.getMidiEngine().getNumSelectedNotes() <= 1)
+        if (getLibertyActiveTool() == 7 && (e.mods.isShiftDown() || e.mods.isAltDown()))
             return;
-        if (lastSelection.size() > 1)
-            owner.getMidiEngine().setSelectedNotes(lastSelection);
+        const auto note = findSelectedNoteAt(e.getPosition());
+        if (!note.has_value() || owner.getMidiEngine().getNumSelectedNotes() <= 1)
+            return;
+        // Keep the live selection as the source of truth. Restoring a timer-cached
+        // selection here could unexpectedly reselect notes the user just removed.
         selectionBeforeDrag = owner.getMidiEngine().getSelectedNotesCopy();
         dragStartTick = tickFromX(e.x);
         dragStartPitch = pitchFromY(e.y);
         appliedTickDelta = 0;
         appliedPitchDelta = 0;
+        owner.getMidiEngine().beginGroupedEdit();
         dragging = true;
         repaint();
     }
@@ -80,6 +92,7 @@ public:
     {
         if (!dragging) return;
         dragging = false;
+        owner.getMidiEngine().endGroupedEdit();
         selectionBeforeDrag.clear();
         owner.updateMidiClipTiming();
         owner.repaint();
@@ -87,36 +100,36 @@ public:
     }
 
 private:
-    void timerCallback() override
-    {
-        if (!dragging)
-            lastSelection = owner.getMidiEngine().getSelectedNotesCopy();
-    }
+    void timerCallback() override { if (dragging) repaint(); }
 
-    const MidiEngine::NoteEvent* findSelectedNoteAt(juce::Point<int> p) const
+    std::optional<MidiEngine::NoteEvent> findSelectedNoteAt(juce::Point<int> p) const
     {
         const auto selected = owner.getMidiEngine().getSelectedNotesCopy();
         const auto pixelsPerTick = getPixelsPerTick();
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        for (const auto& n : selected)
+        for (auto it = selected.rbegin(); it != selected.rend(); ++it)
         {
+            const auto& n = *it;
             if (n.pitch < lowestKey || n.pitch >= lowestKey + visibleKeys || n.startTick < 0 || n.startTick >= clipLengthTicks)
                 continue;
             const int x = pianoKeyWidth + (int)std::llround((double)n.startTick * pixelsPerTick);
             const int y = rulerHeight + (visibleKeys - 1 - ((int)n.pitch - lowestKey)) * keyHeight + 2;
             const auto visibleLengthTicks = juce::jmin(n.lengthTicks, clipLengthTicks - n.startTick);
             const int w = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick));
-            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p)) return &n;
+            if (juce::Rectangle<int>(x + 1, y, w - 2, keyHeight - 4).contains(p)) return n;
         }
-        return nullptr;
+        return std::nullopt;
     }
 
     bool isNearResizeEdge(const MidiEngine::NoteEvent& note, int x) const
     {
         const auto pixelsPerTick = getPixelsPerTick();
         const int left = pianoKeyWidth + (int)std::llround((double)note.startTick * pixelsPerTick) + 1;
-        const int width = juce::jmax(8, (int)std::llround((double)note.lengthTicks * pixelsPerTick)) - 2;
+        const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
+        const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
+        const auto visibleLengthTicks = juce::jmax<std::int64_t>(0, juce::jmin(note.lengthTicks, clipLengthTicks - note.startTick));
+        const int width = juce::jmax(8, (int)std::llround((double)visibleLengthTicks * pixelsPerTick)) - 2;
         const int right = left + width;
         return std::abs(x - left) <= resizeEdgePixels || std::abs(x - right) <= resizeEdgePixels;
     }
@@ -126,7 +139,7 @@ private:
         const auto gridWidth = juce::jmax(1, getWidth() - pianoKeyWidth);
         const auto ticksPerMeasure = MidiEngine::ticksPerMeasure(owner.getTimeSignatureNumerator(), owner.getTimeSignatureDenominator());
         const auto clipLengthTicks = juce::jmax<std::int64_t>(juce::jmax<std::int64_t>(1, ticksPerMeasure), MidiEngine::secondsToTick(owner.getMidiClipLengthSeconds(), owner.getTempoBpm()));
-        return static_cast<double>(gridWidth - 2) / static_cast<double>(clipLengthTicks);
+        return static_cast<double>(juce::jmax(1, gridWidth - 2)) / static_cast<double>(clipLengthTicks);
     }
 
     int pitchFromY(int y) const noexcept
@@ -138,7 +151,9 @@ private:
     std::int64_t tickFromX(int x) const noexcept
     {
         const auto raw = (std::int64_t)std::llround((x - pianoKeyWidth) / getPixelsPerTick());
-        return MidiEngine::quantizeTick(juce::jmax<std::int64_t>(0, raw), gridTicks);
+        const auto tick = juce::jmax<std::int64_t>(0, raw);
+        const auto snapStep = getLibertySnapStepTicks();
+        return snapStep > 0 ? MidiEngine::quantizeTick(tick, snapStep) : tick;
     }
 
     MainComponent& owner;
@@ -148,7 +163,6 @@ private:
     int dragStartPitch = 60;
     int appliedPitchDelta = 0;
     std::vector<MidiEngine::NoteEvent> selectionBeforeDrag;
-    std::vector<MidiEngine::NoteEvent> lastSelection;
 };
 
 class MidiGroupDragManager final : private juce::Timer
