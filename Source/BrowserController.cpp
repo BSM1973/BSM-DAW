@@ -2077,6 +2077,132 @@ private:
         return true;
     }
 
+
+    void promptReloadPluginCollectionsFromDisk()
+    {
+        const auto source = pluginCollectionsFile();
+        const bool fileExists = source.existsAsFile();
+        std::map<juce::String, juce::StringArray> previewCollections;
+        std::map<juce::String, juce::String> previewTitles;
+        if (fileExists
+            && !readPluginCollectionsFile(source, previewCollections, &previewTitles))
+        {
+            // Invalid data must not replace the already displayed collections.
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8(
+                    "Le fichier PluginCollections.xml est illisible ou invalide. "
+                    "Les collections affichées restent intactes. "
+                    "Corrige le fichier ou utilise la restauration locale."),
+                "OK");
+            return;
+        }
+        const auto previewBytes = fileExists ? source.loadFileAsString() : juce::String();
+        if (fileExists && (previewBytes.isEmpty() || !source.existsAsFile()))
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8("Le fichier a changé pendant sa lecture. Réessaie."),
+                "OK");
+            return;
+        }
+        if (fileExists == collectionsDiskExists
+            && previewBytes == collectionsDiskContents && !collectionsReadOnly)
+        {
+            pluginStatus.setText(
+                juce::String::fromUTF8("Collections déjà synchronisées avec le disque."),
+                juce::dontSendNotification);
+            return;
+        }
+
+        int previewCount = 0;
+        for (const auto& item : previewCollections)
+            previewCount += item.second.size();
+        const auto message = juce::String::fromUTF8(
+            "Recharger les collections enregistrées sur le disque ?\n\n")
+            + juce::String::fromUTF8("Collections : ")
+            + juce::String((int)previewCollections.size())
+            + juce::String::fromUTF8("\nAssociations : ")
+            + juce::String(previewCount)
+            + (fileExists ? juce::String()
+                : juce::String::fromUTF8(
+                    "\n\nLe fichier est absent. Le rechargement affichera des collections vides."))
+            + juce::String::fromUTF8(
+                "\n\nLes collections actuellement affichées seront remplacées. "
+                "L'annulation de la dernière réassociation sera effacée. "
+                "Aucun fichier ni aucune sauvegarde locale ne sera modifié.");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Recharger les collections du disque ?"),
+            message, "RECHARGER", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create(
+                [safe, fileExists, previewBytes](int result)
+                {
+                    if (safe == nullptr || safe->stopped.load() || result != 1) return;
+                    const auto disk = pluginCollectionsFile();
+                    // The approval applies to the version shown before the
+                    // dialog, not to a different external edit made meanwhile.
+                    if (disk.existsAsFile() != fileExists
+                        || (fileExists && disk.loadFileAsString() != previewBytes))
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                            juce::String::fromUTF8(
+                                "Le fichier a encore changé depuis la confirmation. "
+                                "Aucun rechargement effectué : recommence l'opération."),
+                            "OK");
+                        return;
+                    }
+
+                    std::map<juce::String, juce::StringArray> recovered;
+                    std::map<juce::String, juce::String> titles;
+                    if (fileExists && !readPluginCollectionsFile(disk, recovered, &titles))
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                            juce::String::fromUTF8(
+                                "Le fichier est invalide. Les collections restent intactes."),
+                            "OK");
+                        return;
+                    }
+                    if (disk.existsAsFile() != fileExists
+                        || (fileExists && disk.loadFileAsString() != previewBytes))
+                    {
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                            juce::String::fromUTF8(
+                                "Le fichier a changé pendant sa validation. "
+                                "Les collections affichées sont conservées."),
+                            "OK");
+                        return;
+                    }
+
+                    // Switch only after complete validation; no disk writes.
+                    safe->pluginCollections = std::move(recovered);
+                    safe->pluginCollectionTitles = std::move(titles);
+                    safe->collectionsDiskExists = fileExists;
+                    safe->collectionsDiskContents = previewBytes;
+                    safe->collectionsReadOnly = false;
+                    safe->collectionsChangedExternally = false;
+                    ++safe->collectionsRevision;
+                    safe->lastRelinkCollection.clear();
+                    safe->lastRelinkOldId.clear();
+                    safe->lastRelinkNextId.clear();
+                    safe->lastRelinkBeforeMembers.clear();
+                    safe->lastRelinkAfterMembers.clear();
+                    safe->lastRelinkRevision = 0;
+                    if (safe->selectedCollection.isNotEmpty()
+                        && safe->pluginCollections.find(safe->selectedCollection)
+                            == safe->pluginCollections.end())
+                        safe->selectedCollection.clear();
+                    safe->rebuildPluginTree();
+                    safe->pluginStatus.setText(
+                        juce::String::fromUTF8("Collections rechargées depuis le disque."),
+                        juce::dontSendNotification);
+                }));
+    }
+
     void restorePluginCollectionsBackup()
     {
         const auto backup = pluginCollectionsBackupFile();
@@ -2153,8 +2279,9 @@ private:
         const auto message = collectionsChangedExternally
             ? juce::String::fromUTF8(
                 "Le fichier PluginCollections.xml a été modifié ou déplacé hors de Liberty. "
-                "Aucune modification n'a été écrasée. Relance Liberty pour charger la nouvelle version, "
-                "ou utilise explicitement la restauration locale si nécessaire.")
+                "Aucune modification n'a été écrasée. Utilise FILTRES > COLLECTIONS > "
+                "RECHARGER DEPUIS LE DISQUE après avoir vérifié le fichier, "
+                "ou restaure explicitement la sauvegarde locale.")
             : juce::String::fromUTF8(
                 "Impossible d'enregistrer les collections. Le fichier existant est conservé.");
         juce::AlertWindow::showMessageBoxAsync(
@@ -4231,9 +4358,13 @@ private:
                                  hasRecoverableCollectionsBackup());
         collectionsMenu.addItem(5403, juce::String::fromUTF8("ANNULER LA DERNIÈRE RÉASSOCIATION"),
                                  canUndoLastPluginRelink(lastRelinkCollection));
+        collectionsMenu.addItem(5404,
+            juce::String::fromUTF8("RECHARGER DEPUIS LE DISQUE..."));
         if (collectionsReadOnly)
-            collectionsMenu.addSectionHeader(juce::String::fromUTF8(
-                "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
+            collectionsMenu.addSectionHeader(collectionsChangedExternally
+                ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
+                : juce::String::fromUTF8(
+                    "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
         juce::StringArray missingCollectionNames;
         juce::PopupMenu missingMenu;
         for (const auto& group : pluginCollections)
@@ -4409,6 +4540,11 @@ private:
                 else if (chosen == 5403)
                 {
                     safe->undoLastPluginRelink(safe->lastRelinkCollection);
+                    return;
+                }
+                else if (chosen == 5404)
+                {
+                    safe->promptReloadPluginCollectionsFromDisk();
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
