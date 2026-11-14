@@ -1994,12 +1994,44 @@ private:
         return readPluginCollectionsFile(pluginCollectionsBackupFile(), saved);
     }
 
+
+    // Validate the same logical limits as the XML reader before serialization.
+    // The rendered UTF-8 size is checked separately, including escaped fields.
+    static constexpr juce::int64 maxPluginCollectionsBytes = 5 * 1024 * 1024;
+
+    bool pluginCollectionsWithinLimits() const
+    {
+        if (pluginCollections.size() > 64) return false;
+        juce::StringArray seenNames;
+        int entries = 0;
+        for (const auto& group : pluginCollections)
+        {
+            if (!validCollectionName(group.first)
+                || seenNames.contains(group.first, true)) return false;
+            seenNames.add(group.first);
+            std::set<juce::String> seenKeys;
+            for (const auto& key : group.second)
+            {
+                if (key.isEmpty() || key.length() > 2048
+                    || ++entries > 20000 || !seenKeys.insert(key).second)
+                    return false;
+                const auto name = pluginCollectionTitles.find(key);
+                if (name != pluginCollectionTitles.end()
+                    && (name->second.length() > 240
+                        || name->second.containsAnyOf("\r\n\t")))
+                    return false;
+            }
+        }
+        return true;
+    }
+
     void loadPluginCollections()
     {
         pluginCollections.clear();
         pluginCollectionTitles.clear();
         collectionsReadOnly = false;
         collectionsChangedExternally = false;
+        collectionsLimitExceeded = false;
         // A reload / explicit restoration invalidates session-only undo.
         lastRelinkCollection.clear();
         lastRelinkOldId.clear();
@@ -2029,6 +2061,12 @@ private:
     bool savePluginCollections()
     {
         if (collectionsReadOnly) return false;
+        collectionsLimitExceeded = false;
+        if (!pluginCollectionsWithinLimits())
+        {
+            collectionsLimitExceeded = true;
+            return false;
+        }
         juce::XmlElement root("LibertyPluginCollections");
         root.setAttribute("version", 1);
         for (const auto& group : pluginCollections)
@@ -2043,6 +2081,13 @@ private:
                 if (title != pluginCollectionTitles.end() && title->second.isNotEmpty())
                     item->setAttribute("display", title->second);
             }
+        }
+        const auto xml = root.toString();
+        if (xml.getNumBytesAsUTF8() > (size_t)maxPluginCollectionsBytes)
+        {
+            // Preserve both the existing main file and the last local backup.
+            collectionsLimitExceeded = true;
+            return false;
         }
         const auto target = pluginCollectionsFile();
         const bool existsNow = target.existsAsFile();
@@ -2068,7 +2113,7 @@ private:
                 return false;
         }
         juce::TemporaryFile staged(target);
-        if (!staged.getFile().replaceWithText(root.toString())
+        if (!staged.getFile().replaceWithText(xml)
             || !staged.overwriteTargetFileWithTemporary())
             return false;
         collectionsDiskExists = true;
@@ -2282,8 +2327,13 @@ private:
                 "Aucune modification n'a été écrasée. Utilise FILTRES > COLLECTIONS > "
                 "RECHARGER DEPUIS LE DISQUE après avoir vérifié le fichier, "
                 "ou restaure explicitement la sauvegarde locale.")
-            : juce::String::fromUTF8(
-                "Impossible d'enregistrer les collections. Le fichier existant est conservé.");
+            : collectionsLimitExceeded
+                ? juce::String::fromUTF8(
+                    "Limite des collections atteinte : 64 collections, 20 000 associations "
+                    "et 5 Mo maximum pour le fichier XML. "
+                    "Aucun fichier ni sauvegarde n'a été modifié.")
+                : juce::String::fromUTF8(
+                    "Impossible d'enregistrer les collections. Le fichier existant est conservé.");
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon, "Liberty - Collections", message, "OK");
     }
@@ -2453,6 +2503,16 @@ private:
                 "Aucune collection à exporter."), juce::dontSendNotification);
             return;
         }
+        if (!pluginCollectionsWithinLimits())
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8(
+                    "Exportation annulée : limite de 64 collections, "
+                    "20 000 associations ou identifiants invalides."),
+                "OK");
+            return;
+        }
         // Export all known identifiers, even if those plugins are temporarily
         // missing. They can reconnect after reinstallation on another Mac.
         juce::XmlElement root("LibertyPluginCollections");
@@ -2470,6 +2530,17 @@ private:
                     plugin->setAttribute("display", title->second);
             }
         }
+        const auto exportXml = root.toString();
+        if (exportXml.getNumBytesAsUTF8() > (size_t)maxPluginCollectionsBytes)
+        {
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                juce::String::fromUTF8(
+                    "Exportation annulée : fichier XML supérieur à 5 Mo. "
+                    "Aucun fichier n'a été écrit."),
+                "OK");
+            return;
+        }
         auto chooser = std::make_shared<juce::FileChooser>(
             juce::String::fromUTF8("Exporter les collections Liberty"),
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
@@ -2479,7 +2550,7 @@ private:
         chooser->launchAsync(juce::FileBrowserComponent::saveMode
                 | juce::FileBrowserComponent::canSelectFiles
                 | juce::FileBrowserComponent::warnAboutOverwriting,
-            [safe, chooser, xml = root.toString()](const juce::FileChooser& fc)
+            [safe, chooser, xml = exportXml](const juce::FileChooser& fc)
             {
                 if (safe == nullptr || safe->stopped.load()) return;
                 auto file = fc.getResult();
@@ -5491,6 +5562,7 @@ private:
     bool familyOverridesReadOnly = false;
     std::map<juce::String, juce::StringArray> pluginCollections;
     std::map<juce::String, juce::String> pluginCollectionTitles;
+    bool collectionsLimitExceeded = false;
     // A single recoverable relink, private to this browser session. The
     // persistent XML backup independently covers restart/reinstallation.
     juce::String lastRelinkCollection, lastRelinkOldId, lastRelinkNextId;
