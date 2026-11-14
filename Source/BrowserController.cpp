@@ -1420,6 +1420,178 @@ private:
     }
 
 
+
+    void confirmMissingPluginRelink(const juce::String& collectionName,
+                                    const juce::String& oldIdentifier,
+                                    juce::PluginDescription candidate)
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        const auto group = pluginCollections.find(collectionName);
+        if (group == pluginCollections.end() || !group->second.contains(oldIdentifier))
+            return;
+        const auto installed = installedPluginIdentifiers();
+        if (installed.find(oldIdentifier) != installed.end()) return;
+        const auto nextIdentifier = favouriteKey(candidate);
+        if (nextIdentifier.isEmpty() || installed.find(nextIdentifier) == installed.end())
+            return;
+
+        const auto oldLabel = collectionMemberTitle(oldIdentifier);
+        const auto newLabel = readableCollectionPluginName(candidate);
+        const auto question = juce::String::fromUTF8(
+            "Confirmer le remplacement de l'association dans cette collection uniquement ?\n\n")
+            + juce::String::fromUTF8("Collection : ") + collectionName
+            + juce::String::fromUTF8("\n\nAncien plugin : ") + oldLabel
+            + "\nID : " + oldIdentifier
+            + juce::String::fromUTF8("\n\nNouveau plugin : ") + newLabel
+            + "\nID : " + nextIdentifier
+            + juce::String::fromUTF8(
+                "\n\nLe plugin n'est pas chargé et aucune autre collection n'est modifiée. "
+                "Une sauvegarde locale de la version précédente sera conservée.");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Réassocier un plugin manquant ?"),
+            question, "RÉASSOCIER", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create(
+                [safe, collectionName, oldIdentifier, candidate, nextIdentifier, newLabel]
+                (int chosen)
+                {
+                    if (safe == nullptr || safe->stopped.load() || chosen != 1
+                        || safe->collectionsReadOnly || safe->scanning.load())
+                        return;
+                    auto group = safe->pluginCollections.find(collectionName);
+                    if (group == safe->pluginCollections.end()) return;
+                    const auto installed = safe->installedPluginIdentifiers();
+                    if (installed.find(oldIdentifier) != installed.end()
+                        || installed.find(nextIdentifier) == installed.end())
+                        return;
+                    const int index = group->second.indexOf(oldIdentifier);
+                    if (index < 0) return;
+
+                    const auto before = safe->pluginCollections;
+                    const auto titleBefore = safe->pluginCollectionTitles;
+                    if (group->second.contains(nextIdentifier))
+                        group->second.remove(index);
+                    else
+                        group->second.set(index, nextIdentifier);
+                    if (newLabel.isNotEmpty())
+                        safe->pluginCollectionTitles[nextIdentifier] = newLabel;
+                    if (!safe->commitPluginCollections(before,
+                        juce::String::fromUTF8("Plugin réassocié dans « ")
+                        + collectionName + juce::String::fromUTF8(" » : ")
+                        + candidate.name))
+                        safe->pluginCollectionTitles = titleBefore;
+                }));
+    }
+
+    void promptMissingPluginRelink(const juce::String& collectionName,
+                                   const juce::String& oldIdentifier)
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        const auto group = pluginCollections.find(collectionName);
+        if (group == pluginCollections.end() || !group->second.contains(oldIdentifier))
+            return;
+        if (installedPluginIdentifiers().find(oldIdentifier) != installedPluginIdentifiers().end())
+            return;
+
+        // Never infer an identity mapping from AU/VST3 names: the user picks
+        // the exact installed plugin and explicitly confirms its new JUCE ID.
+        juce::String proposed;
+        auto label = pluginCollectionTitles.find(oldIdentifier);
+        if (label != pluginCollectionTitles.end())
+        {
+            proposed = label->second;
+            if (proposed.contains(" - "))
+                proposed = proposed.upToFirstOccurrenceOf(" - ", false, false);
+            else if (proposed.contains(" ("))
+                proposed = proposed.upToLastOccurrenceOf(" (", false, false);
+        }
+        auto dialog = std::make_shared<juce::AlertWindow>(
+            juce::String::fromUTF8("Rechercher le plugin de remplacement"),
+            juce::String::fromUTF8(
+                "Saisis au moins 2 caractères du nom du plugin installé, "
+                "puis sélectionne la version exacte dans la liste."),
+            juce::AlertWindow::NoIcon);
+        dialog->addTextEditor("pluginQuery", proposed,
+                              juce::String::fromUTF8("NOM DU PLUGIN"));
+        dialog->addButton("RECHERCHER", 1);
+        dialog->addButton("ANNULER", 0);
+        dialog->centreAroundComponent(&pluginFiltersButton, 450, 200);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safe, dialog, collectionName, oldIdentifier](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1
+                    || safe->collectionsReadOnly || safe->scanning.load())
+                    return;
+                const auto query = dialog->getTextEditorContents("pluginQuery").trim();
+                if (query.length() < 2)
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::InfoIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Saisis au moins 2 caractères pour rechercher un plugin."),
+                        "OK");
+                    return;
+                }
+                const auto group = safe->pluginCollections.find(collectionName);
+                if (group == safe->pluginCollections.end()
+                    || !group->second.contains(oldIdentifier))
+                    return;
+                std::vector<juce::PluginDescription> found;
+                for (const auto& description : safe->pluginDescriptions)
+                {
+                    if (favouriteKey(description) == oldIdentifier) continue;
+                    if (description.name.containsIgnoreCase(query)
+                        || description.manufacturerName.containsIgnoreCase(query))
+                        found.push_back(description);
+                }
+                std::sort(found.begin(), found.end(),
+                    [&query](const auto& a, const auto& b)
+                    {
+                        const bool exactA = a.name.trim().equalsIgnoreCase(query);
+                        const bool exactB = b.name.trim().equalsIgnoreCase(query);
+                        if (exactA != exactB) return exactA;
+                        const int byName = a.name.compareNatural(b.name, false);
+                        if (byName != 0) return byName < 0;
+                        return a.pluginFormatName.compareNatural(b.pluginFormatName, false) < 0;
+                    });
+                if (found.empty())
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::InfoIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Aucun plugin installé ne correspond à cette recherche. "
+                            "Relance un scan AU/VST3 ou essaie un autre nom."),
+                        "OK");
+                    return;
+                }
+
+                juce::PopupMenu candidates;
+                const int limit = juce::jmin(40, (int)found.size());
+                candidates.addSectionHeader(juce::String::fromUTF8(
+                    "CHOISIR UNE VERSION INSTALLÉE (")
+                    + juce::String(limit) + "/"
+                    + juce::String((int)found.size()) + ")");
+                for (int i = 0; i < limit; ++i)
+                    candidates.addItem(7000 + i,
+                        readableCollectionPluginName(found[(size_t)i]));
+                if ((int)found.size() > limit)
+                    candidates.addSectionHeader(juce::String::fromUTF8(
+                        "Affiner la recherche pour voir les autres résultats."));
+                candidates.showMenuAsync(juce::PopupMenu::Options()
+                    .withTargetComponent(&safe->pluginFiltersButton)
+                    .withMaximumNumColumns(1),
+                    [safe, collectionName, oldIdentifier, found, limit](int item)
+                    {
+                        if (safe == nullptr || safe->stopped.load()
+                            || item < 7000 || item >= 7000 + limit) return;
+                        safe->confirmMissingPluginRelink(
+                            collectionName, oldIdentifier, found[(size_t)(item - 7000)]);
+                    });
+            }), false);
+    }
+
     void showMissingPluginItemContextMenu(const juce::String& collectionName,
                                           const juce::String& identifier,
                                           juce::Point<int> where)
@@ -1432,6 +1604,10 @@ private:
         menu.addItem(6500, juce::String::fromUTF8("COPIER L'IDENTIFIANT"));
         menu.addItem(6501, juce::String::fromUTF8("RELANCER LE SCAN AU / VST3"),
                      !scanning.load());
+        menu.addSeparator();
+        menu.addItem(6502,
+            juce::String::fromUTF8("RÉASSOCIER À UN PLUGIN INSTALLÉ..."),
+            !collectionsReadOnly && !scanning.load() && !pluginDescriptions.isEmpty());
         juce::Component::SafePointer<BrowserPanel> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetScreenArea(juce::Rectangle<int>(where.x, where.y, 1, 1))
@@ -1451,6 +1627,8 @@ private:
                 }
                 else if (chosen == 6501)
                     safe->scanPlugins();
+                else if (chosen == 6502)
+                    safe->promptMissingPluginRelink(collectionName, identifier);
             });
     }
 
