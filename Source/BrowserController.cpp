@@ -1897,11 +1897,20 @@ private:
 
 
 
+
+    struct BulkRepairHistoryEntry
+    {
+        std::map<juce::String, juce::StringArray> before, after;
+        std::map<juce::String, juce::String> titlesBefore;
+        int changed = 0;
+    };
+
     bool canUndoLastBulkRepair() const
     {
         return !collectionsReadOnly && !scanning.load()
-            && bulkRepairRevision != 0 && bulkRepairRevision == collectionsRevision
-            && pluginCollections == bulkRepairAfter;
+            && !bulkRepairHistory.empty()
+            && bulkRepairRevision == collectionsRevision
+            && pluginCollections == bulkRepairHistory.back().after;
     }
 
     void rememberBulkRepair(
@@ -1909,43 +1918,53 @@ private:
         const std::map<juce::String, juce::String>& titlesBefore,
         int changed)
     {
-        bulkRepairBefore = before;
-        bulkRepairAfter = pluginCollections;
-        bulkRepairTitlesBefore = titlesBefore;
+        // A different edit breaks the previous contiguous undo chain.
+        if (bulkRepairHistory.empty() || bulkRepairRevision + 1 != collectionsRevision
+            || bulkRepairHistory.back().after != before)
+            bulkRepairHistory.clear();
+        bulkRepairHistory.push_back({ before, pluginCollections, titlesBefore, changed });
+        if (bulkRepairHistory.size() > 5)
+            bulkRepairHistory.erase(bulkRepairHistory.begin());
         bulkRepairRevision = collectionsRevision;
-        bulkRepairChanged = changed;
     }
 
     void undoLastBulkRepair()
     {
         if (!canUndoLastBulkRepair()) return;
         juce::Component::SafePointer<BrowserPanel> safe(this);
-        const auto count = bulkRepairChanged;
+        const auto count = bulkRepairHistory.back().changed;
+        const auto depth = (int)bulkRepairHistory.size();
         juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::WarningIcon,
-            juce::String::fromUTF8("Annuler la dernière réparation groupée ?"),
+            juce::String::fromUTF8("Annuler la réparation groupée ?"),
             juce::String(count)
+            + juce::String::fromUTF8(" associations à restaurer.\n")
+            + juce::String(depth)
             + juce::String::fromUTF8(
-                " associations seront restaurées dans leur état précédent.\n"
-                "Cette opération ne touche pas aux projets ni aux plugins chargés.\n"
-                "Une sauvegarde sera créée avant l'annulation."),
+                " niveau(x) dans l'historique de cette session.\n"
+                "Cette annulation ne modifie ni les projets ni les plugins chargés.\n"
+                "Une sauvegarde locale sera créée avant restauration."),
             "RESTAURER", "CONSERVER", nullptr,
             juce::ModalCallbackFunction::create([safe](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen != 1
                     || !safe->canUndoLastBulkRepair()) return;
+                const auto entry = safe->bulkRepairHistory.back();
                 const auto current = safe->pluginCollections;
                 const auto currentTitles = safe->pluginCollectionTitles;
-                safe->pluginCollections = safe->bulkRepairBefore;
-                safe->pluginCollectionTitles = safe->bulkRepairTitlesBefore;
+                safe->pluginCollections = entry.before;
+                safe->pluginCollectionTitles = entry.titlesBefore;
                 if (safe->commitPluginCollections(current,
-                    juce::String::fromUTF8("Dernière réparation groupée annulée.")))
+                    juce::String::fromUTF8("Réparation groupée annulée (")
+                    + juce::String((int)safe->bulkRepairHistory.size() - 1)
+                    + juce::String::fromUTF8(" niveau(x) restant(s)).")))
                 {
-                    safe->bulkRepairRevision = 0;
-                    safe->bulkRepairBefore.clear();
-                    safe->bulkRepairAfter.clear();
-                    safe->bulkRepairTitlesBefore.clear();
-                    safe->bulkRepairChanged = 0;
+                    safe->bulkRepairHistory.pop_back();
+                    safe->bulkRepairRevision = safe->bulkRepairHistory.empty()
+                        ? 0 : safe->collectionsRevision;
+                    // A single-collection undo can never restore a stale edit.
+                    safe->lastRelinkCollection.clear();
+                    safe->lastRelinkRevision = 0;
                 }
                 else
                     safe->pluginCollectionTitles = currentTitles;
@@ -5318,7 +5337,7 @@ private:
             juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
             globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
         collectionsMenu.addItem(5411,
-            juce::String::fromUTF8("ANNULER LA DERNIÈRE RÉPARATION GROUPÉE"),
+            juce::String::fromUTF8("ANNULER UNE RÉPARATION GROUPÉE (5 NIVEAUX MAX.)"),
             canUndoLastBulkRepair());
         collectionsMenu.addItem(5410,
             juce::String::fromUTF8("RÉPARER UNE SÉLECTION DE PLUGINS..."),
@@ -6601,10 +6620,8 @@ private:
     juce::String lastRelinkCollection, lastRelinkOldId, lastRelinkNextId;
     juce::StringArray lastRelinkBeforeMembers, lastRelinkAfterMembers;
     juce::uint64 collectionsRevision = 0, lastRelinkRevision = 0;
-    std::map<juce::String, juce::StringArray> bulkRepairBefore, bulkRepairAfter;
-    std::map<juce::String, juce::String> bulkRepairTitlesBefore;
+    std::vector<BulkRepairHistoryEntry> bulkRepairHistory;
     juce::uint64 bulkRepairRevision = 0;
-    int bulkRepairChanged = 0;
     juce::String collectionsDiskContents;
     bool collectionsDiskExists = false, collectionsChangedExternally = false;
     bool collectionsReadOnly = false;
