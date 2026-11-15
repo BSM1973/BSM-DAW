@@ -1928,6 +1928,74 @@ private:
         return result;
     }
 
+
+    void confirmSingleMissingRepair(MissingRepairProposal proposed)
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        auto fresh = missingRepairProposals();
+        const auto match = std::find_if(fresh.begin(), fresh.end(),
+            [&proposed](const MissingRepairProposal& p)
+            {
+                return p.oldId == proposed.oldId && p.newId == proposed.newId
+                    && p.occurrences == proposed.occurrences;
+            });
+        if (match == fresh.end()) return;
+        juce::String collections;
+        for (const auto& group : pluginCollections)
+            if (group.second.contains(proposed.oldId)
+                && !group.second.contains(proposed.newId))
+                collections += "\n - " + group.first;
+        const auto prompt = juce::String::fromUTF8("Plugin : ") + proposed.title
+            + juce::String::fromUTF8("\nAncien identifiant : ") + proposed.oldId
+            + juce::String::fromUTF8("\nNouvel identifiant : ") + proposed.newId
+            + juce::String::fromUTF8("\n\nCollections concernées :") + collections
+            + juce::String::fromUTF8(
+                "\n\nUne sauvegarde locale sera effectuée. "
+                "Les instances de plugins et les projets restent inchangés.");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Liberty - Réparation ciblée"),
+            prompt, "RÉASSOCIER", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create([safe, proposed](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1
+                    || safe->collectionsReadOnly || safe->scanning.load()) return;
+                const auto current = safe->missingRepairProposals();
+                const auto stillValid = std::find_if(current.begin(), current.end(),
+                    [&proposed](const MissingRepairProposal& p)
+                    {
+                        return p.oldId == proposed.oldId && p.newId == proposed.newId
+                            && p.occurrences == proposed.occurrences;
+                    });
+                if (stillValid == current.end()) return;
+                const auto before = safe->pluginCollections;
+                const auto beforeTitles = safe->pluginCollectionTitles;
+                int changed = 0;
+                for (auto& group : safe->pluginCollections)
+                {
+                    if (group.second.contains(proposed.newId)) continue;
+                    const int index = group.second.indexOf(proposed.oldId);
+                    if (index < 0) continue;
+                    group.second.set(index, proposed.newId);
+                    ++changed;
+                }
+                if (!changed) return;
+                safe->pluginCollectionTitles[proposed.newId] = proposed.title;
+                if (safe->commitPluginCollections(before, juce::String(changed)
+                    + juce::String::fromUTF8(" associations réparées pour ")
+                    + proposed.title))
+                {
+                    safe->lastRelinkCollection.clear();
+                    safe->lastRelinkBeforeMembers.clear();
+                    safe->lastRelinkAfterMembers.clear();
+                    safe->lastRelinkOldId.clear();
+                    safe->lastRelinkNextId.clear();
+                    safe->lastRelinkRevision = 0;
+                }
+                else safe->pluginCollectionTitles = beforeTitles;
+            }));
+    }
+
     void showMissingPluginRepairCentre()
     {
         if (collectionsReadOnly || scanning.load()) return;
@@ -4925,6 +4993,23 @@ private:
         collectionsMenu.addItem(5409,
             juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
             globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
+        const auto targetedRepairs = missingRepairProposals();
+        juce::PopupMenu targetedRepairMenu;
+        const int targetedLimit = juce::jmin(40, (int)targetedRepairs.size());
+        for (int i = 0; i < targetedLimit; ++i)
+        {
+            const auto& p = targetedRepairs[(size_t)i];
+            targetedRepairMenu.addItem(5800 + i,
+                p.title.substring(0, 62) + " (" + juce::String(p.occurrences)
+                + juce::String::fromUTF8(" collections)"));
+        }
+        if ((int)targetedRepairs.size() > targetedLimit)
+            targetedRepairMenu.addSectionHeader(juce::String::fromUTF8(
+                "40 premiers résultats : affiner la liste des plugins manquants."));
+        if (targetedLimit > 0 && !collectionsReadOnly && !scanning.load())
+            collectionsMenu.addSubMenu(juce::String::fromUTF8(
+                "RÉPARER UN PLUGIN DANS TOUTES SES COLLECTIONS"),
+                targetedRepairMenu);
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(collectionsChangedExternally
                 ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
@@ -5067,7 +5152,7 @@ private:
         menu.showMenuAsync(juce::PopupMenu::Options()
             .withTargetComponent(&pluginFiltersButton)
             .withMaximumNumColumns(1),
-            [safe, manufacturers, collectionNames, missingCollectionNames](int chosen)
+            [safe, manufacturers, collectionNames, missingCollectionNames, targetedRepairs, targetedLimit](int chosen)
             {
                 if (safe == nullptr || safe->stopped.load() || chosen <= 0) return;
                 if (chosen == 600)
@@ -5137,6 +5222,12 @@ private:
                 else if (chosen == 5409)
                 {
                     safe->showMissingPluginRepairCentre();
+                    return;
+                }
+                else if (chosen >= 5800 && chosen < 5800 + targetedLimit)
+                {
+                    safe->confirmSingleMissingRepair(
+                        targetedRepairs[(size_t)(chosen - 5800)]);
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
