@@ -120,8 +120,10 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("++result.associations", calculator)
         self.assertIn("summary.uniqueIdentifiers.size()", summary)
         self.assertIn("summary.byCollection", summary)
-        self.assertIn("quotedReportField(id)", copy)
-        self.assertIn("copyTextToClipboard(tsv)", copy)
+        builder = cpp_function("juce::String makeGlobalMissingPluginTsv(")
+        self.assertIn("quotedReportField(id)", builder)
+        self.assertIn("makeGlobalMissingPluginTsv(summary)", copy)
+        self.assertIn("copyTextToClipboard(makeGlobalMissingPluginTsv(summary))", copy)
         self.assertNotIn("savePluginCollections(", summary)
         self.assertNotIn("commitPluginCollections(", copy)
 
