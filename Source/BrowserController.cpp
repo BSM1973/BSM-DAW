@@ -1511,6 +1511,17 @@ private:
         return "\"" + field.replace("\"", "\"\"") + "\"";
     }
 
+    juce::String makeGlobalMissingPluginTsv(const GlobalMissingPluginSummary& summary) const
+    {
+        juce::String tsv = "Collection\tPlugin\tIdentifiant JUCE\n";
+        for (const auto& group : summary.byCollection)
+            for (const auto& id : group.second)
+                tsv += quotedReportField(group.first) + "\t"
+                    + quotedReportField(collectionMemberTitle(id)) + "\t"
+                    + quotedReportField(id) + "\n";
+        return tsv;
+    }
+
     void copyGlobalMissingPluginReport()
     {
         const auto summary = globalMissingPluginSummary();
@@ -1520,19 +1531,68 @@ private:
                 "Aucun plugin manquant à copier."), juce::dontSendNotification);
             return;
         }
-        juce::String tsv = "Collection\tPlugin\tIdentifiant JUCE\n";
-        for (const auto& group : summary.byCollection)
-            for (const auto& id : group.second)
-                tsv += quotedReportField(group.first) + "\t"
-                    + quotedReportField(collectionMemberTitle(id)) + "\t"
-                    + quotedReportField(id) + "\n";
-        juce::SystemClipboard::copyTextToClipboard(tsv);
+        juce::SystemClipboard::copyTextToClipboard(makeGlobalMissingPluginTsv(summary));
         pluginStatus.setText(
             juce::String(summary.associations)
             + juce::String::fromUTF8(" associations manquantes copiées (")
             + juce::String((int)summary.uniqueIdentifiers.size())
             + juce::String::fromUTF8(" plugins distincts)."),
             juce::dontSendNotification);
+    }
+
+    void exportGlobalMissingPluginReport()
+    {
+        const auto summary = globalMissingPluginSummary();
+        if (summary.associations == 0)
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucun plugin manquant à exporter."), juce::dontSendNotification);
+            return;
+        }
+
+        // Snapshot the entire report before the asynchronous file chooser.
+        // A subsequent AU/VST3 scan does not change the saved report midway.
+        const auto tsv = makeGlobalMissingPluginTsv(summary);
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Exporter le bilan des plugins manquants"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                .getChildFile("Liberty-Plugins-Manquants.tsv"),
+            "*.tsv");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode
+                | juce::FileBrowserComponent::canSelectFiles
+                | juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe, chooser, tsv, count = summary.associations]
+            (const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                auto file = fc.getResult();
+                if (file == juce::File()) return;
+                if (!file.hasFileExtension("tsv"))
+                    file = file.withFileExtension("tsv");
+
+                // UTF-8 BOM makes accented plugin and manufacturer names
+                // recognizable by common spreadsheet imports on Windows.
+                // A staged write preserves an existing report if writing fails.
+                const auto unicodeTsv = juce::String::charToString(0xfeff)
+                    + tsv.replace("\n", "\r\n");
+                juce::TemporaryFile staged(file);
+                if (staged.getFile().replaceWithText(unicodeTsv)
+                    && staged.overwriteTargetFileWithTemporary())
+                    safe->pluginStatus.setText(
+                        juce::String(count)
+                        + juce::String::fromUTF8(
+                            " associations manquantes exportées : ")
+                        + file.getFileName(),
+                        juce::dontSendNotification);
+                else
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon, "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "Impossible d'enregistrer le bilan TSV. "
+                            "Le fichier précédent est conservé."),
+                        "OK");
+            });
     }
 
     static bool sameCollectionMembers(const juce::StringArray& lhs,
@@ -4608,6 +4668,9 @@ private:
         collectionsMenu.addItem(5406,
             juce::String::fromUTF8("COPIER LE BILAN GLOBAL (TSV)"),
             globalMissing.associations > 0);
+        collectionsMenu.addItem(5407,
+            juce::String::fromUTF8("EXPORTER LE BILAN DES MANQUANTS (TSV)..."),
+            globalMissing.associations > 0);
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(collectionsChangedExternally
                 ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
@@ -4803,6 +4866,11 @@ private:
                 else if (chosen == 5406)
                 {
                     safe->copyGlobalMissingPluginReport();
+                    return;
+                }
+                else if (chosen == 5407)
+                {
+                    safe->exportGlobalMissingPluginReport();
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())

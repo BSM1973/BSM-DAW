@@ -146,5 +146,29 @@ class PluginCollectionsRegression(unittest.TestCase):
 
 
 
+    def test_global_missing_tsv_file_export_preserves_exact_identifiers(self):
+        builder = cpp_function(
+            "juce::String makeGlobalMissingPluginTsv(")
+        copier = cpp_function("void copyGlobalMissingPluginReport()")
+        exporter = cpp_function("void exportGlobalMissingPluginReport()")
+        self.assertIn('quotedReportField(id)', builder)
+        self.assertIn('quotedReportField(group.first)', builder)
+        self.assertIn('makeGlobalMissingPluginTsv(summary)', copier)
+        self.assertIn('makeGlobalMissingPluginTsv(summary)', exporter)
+        self.assertIn("Liberty-Plugins-Manquants.tsv", exporter)
+        self.assertIn("warnAboutOverwriting", exporter)
+        self.assertIn("juce::String::charToString(0xfeff)", exporter)
+        self.assertIn('tsv.replace("\\n", "\\r\\n")', exporter)
+        self.assertIn("juce::TemporaryFile staged(file);", exporter)
+        self.assertIn("staged.overwriteTargetFileWithTemporary()", exporter)
+        self.assertNotIn("savePluginCollections(", exporter)
+        self.assertNotIn("commitPluginCollections(", exporter)
+
+    def test_global_missing_tsv_export_is_available_from_filters(self):
+        filters = cpp_function("void showPluginFiltersMenu(")
+        self.assertIn("collectionsMenu.addItem(5407,", filters)
+        self.assertIn("safe->exportGlobalMissingPluginReport();", filters)
+
+
 if __name__ == "__main__":
     unittest.main()
