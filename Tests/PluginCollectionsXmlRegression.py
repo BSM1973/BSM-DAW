@@ -221,5 +221,86 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("Manquants uniquement", tooltip)
 
 
+    def test_exact_match_repair_requires_unique_installed_identity(self):
+        builder = cpp_function(
+            "std::vector<MissingRepairProposal> missingRepairProposals() const")
+        self.assertIn("candidates", builder)
+        self.assertIn("collectionMemberTitle(oldId)", builder)
+        self.assertIn("installedPluginIdentifiers()", builder)
+        self.assertIn("result.push_back(", builder)
+        self.assertIn("size() != 1", builder)
+
+    def test_manual_relink_checks_live_descriptor_before_commit(self):
+        confirm = cpp_function("void confirmMissingPluginRelink(")
+        self.assertIn("installed.find(oldIdentifier)", confirm)
+        self.assertIn("installed.find(nextIdentifier)", confirm)
+        self.assertIn("exactCandidateStillInstalled", confirm)
+        self.assertIn("live.manufacturerName == candidate.manufacturerName", confirm)
+        self.assertIn("live.pluginFormatName == candidate.pluginFormatName", confirm)
+        self.assertIn("live.isInstrument == candidate.isInstrument", confirm)
+        self.assertIn("if (!exactCandidateStillInstalled) return;", confirm)
+        self.assertIn("commitPluginCollections(before,", confirm)
+        self.assertIn("safe->pluginCollectionTitles = titleBefore;", confirm)
+
+    def test_bulk_repair_only_after_explicit_selection_and_recheck(self):
+        table = cpp_function("void showSelectiveMissingRepair()")
+        self.assertIn("table->chosen()", table)
+        self.assertIn("selected.empty()", table)
+        self.assertIn("showOkCancelBox(", table)
+        self.assertIn("accepted != 1", table)
+        self.assertIn("safe->missingRepairProposals()", table)
+        self.assertIn("current.oldId == p.oldId", table)
+        self.assertIn("current.newId == p.newId", table)
+        self.assertIn("current.occurrences == p.occurrences", table)
+        self.assertIn("commitPluginCollections(before,", table)
+        self.assertIn("safe->pluginCollectionTitles = beforeTitles;", table)
+        self.assertLess(table.index("accepted != 1"),
+                        table.index("safe->pluginCollections;"))
+
+    def test_five_level_undo_guards_and_rollback(self):
+        can_undo = cpp_function("bool canUndoLastBulkRepair() const")
+        record = cpp_function("void rememberBulkRepair(")
+        undo = cpp_function("void undoLastBulkRepair()")
+        self.assertIn("bulkRepairRevision == collectionsRevision", can_undo)
+        self.assertIn("pluginCollections == bulkRepairHistory.back().after", can_undo)
+        self.assertIn("bulkRepairHistory.back().after != before", record)
+        self.assertIn("bulkRepairHistory.size() > 5", record)
+        self.assertIn("bulkRepairHistory.erase(bulkRepairHistory.begin())", record)
+        self.assertIn("!safe->canUndoLastBulkRepair()", undo)
+        self.assertIn("safe->pluginCollections = entry.before;", undo)
+        self.assertIn("safe->pluginCollectionTitles = entry.titlesBefore;", undo)
+        self.assertIn("safe->commitPluginCollections(current,", undo)
+        self.assertIn("safe->bulkRepairHistory.pop_back()", undo)
+        self.assertIn("safe->pluginCollectionTitles = currentTitles;", undo)
+
+    def test_persistence_guards_against_external_changes(self):
+        writer = cpp_function("bool savePluginCollections()")
+        transaction = cpp_function("bool commitPluginCollections(")
+        self.assertIn("target.loadFileAsString() != collectionsDiskContents", writer)
+        self.assertIn("collectionsReadOnly = true;", writer)
+        self.assertIn("juce::TemporaryFile backupStage(backup);", writer)
+        self.assertIn("backupStage.overwriteTargetFileWithTemporary()", writer)
+        self.assertIn("juce::TemporaryFile staged(target);", writer)
+        self.assertIn("staged.overwriteTargetFileWithTemporary()", writer)
+        self.assertIn("++collectionsRevision;", writer)
+        self.assertIn("pluginCollections = before;", transaction)
+
+    def test_diagnostic_remains_read_only_without_confirmed_candidate(self):
+        display = cpp_function("void showMissingSuggestionTable()")
+        picker = cpp_function("void chooseDiagnosticMissingReplacement(")
+        self.assertNotIn("commitPluginCollections(", display)
+        self.assertIn("selectedOldId", display)
+        self.assertIn("confirmMissingPluginRelink(", picker)
+        self.assertNotIn("commitPluginCollections(", picker)
+        self.assertIn("getNumItems()", picker)
+
+    def test_comparison_copy_controls_do_not_mutate_collections(self):
+        comparison = cpp_function("struct MissingRelinkComparison final")
+        self.assertIn("copyTextToClipboard(previousId)", comparison)
+        self.assertIn("copyTextToClipboard(replacementId)", comparison)
+        self.assertIn("getWidth() < 610", comparison)
+        self.assertNotIn("commitPluginCollections(", comparison)
+
+
 if __name__ == "__main__":
     unittest.main()
