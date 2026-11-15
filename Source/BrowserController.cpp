@@ -1794,8 +1794,41 @@ private:
         juce::String collection, previousName, previousFormat, previousMaker, previousId;
         juce::String replacementName, replacementFormat, replacementMaker, replacementId, replacementType;
         bool formatMatches = false, makerMatches = false;
+        juce::TextButton copyPrevious { juce::String::fromUTF8("COPIER L'ANCIEN ID") };
+        juce::TextButton copyReplacement { juce::String::fromUTF8("COPIER LE NOUVEL ID") };
 
-        MissingRelinkComparison() { setSize(740, 320); }
+        MissingRelinkComparison()
+        {
+            setSize(740, 382);
+            copyPrevious.onClick = [this]
+            {
+                juce::SystemClipboard::copyTextToClipboard(previousId);
+            };
+            copyReplacement.onClick = [this]
+            {
+                juce::SystemClipboard::copyTextToClipboard(replacementId);
+            };
+            for (auto* button : { &copyPrevious, &copyReplacement })
+            {
+                button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff254e65));
+                button->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+                addAndMakeVisible(*button);
+            }
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced(12);
+            area.removeFromTop(34);
+            area.removeFromBottom(82);
+            const int gap = 14;
+            const int half = (area.getWidth() - gap) / 2;
+            auto left = area.removeFromLeft(half);
+            area.removeFromLeft(gap);
+            auto right = area;
+            copyPrevious.setBounds(left.removeFromBottom(33).reduced(12, 3));
+            copyReplacement.setBounds(right.removeFromBottom(33).reduced(12, 3));
+        }
 
         void paint(juce::Graphics& g) override
         {
@@ -1806,7 +1839,7 @@ private:
             g.drawFittedText(juce::String::fromUTF8("COLLECTION : ") + collection,
                 area.removeFromTop(28), juce::Justification::centredLeft, 1);
             area.removeFromTop(6);
-            auto footer = area.removeFromBottom(70);
+            auto footer = area.removeFromBottom(82);
             area.removeFromBottom(8);
             const int gutter = 14;
             const int panelWidth = (area.getWidth() - gutter) / 2;
@@ -1840,6 +1873,9 @@ private:
                 g.drawFittedText(juce::String::fromUTF8("TYPE : ") + type,
                     r.removeFromTop(20), juce::Justification::centredLeft, 1);
                 g.setColour(juce::Colour(0xff94b6d2));
+                // The full ID is available through the dedicated copy control.
+                // The display is bounded to avoid painting over that button.
+                r.removeFromBottom(33);
                 g.drawFittedText(juce::String::fromUTF8("ID JUCE : ") + id,
                     r, juce::Justification::topLeft, 3);
             };
