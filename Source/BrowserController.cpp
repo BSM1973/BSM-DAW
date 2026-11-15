@@ -1895,6 +1895,123 @@ private:
                 }));
     }
 
+
+    struct MissingRepairProposal
+    {
+        juce::String oldId, newId, title;
+        int occurrences = 0;
+    };
+
+    std::vector<MissingRepairProposal> missingRepairProposals() const
+    {
+        std::map<juce::String, juce::StringArray> candidates;
+        for (const auto& d : pluginDescriptions)
+            candidates[readableCollectionPluginName(d).trim().toLowerCase()].add(favouriteKey(d));
+        const auto missing = globalMissingPluginSummary();
+        std::vector<MissingRepairProposal> result;
+        for (const auto& oldId : missing.uniqueIdentifiers)
+        {
+            const auto title = collectionMemberTitle(oldId).trim();
+            if (title.isEmpty() || title == oldId) continue;
+            const auto it = candidates.find(title.toLowerCase());
+            // Do not infer AU/VST3, manufacturer or instrument identity.
+            // Exact full title and one unique scanned descriptor are required.
+            if (it == candidates.end() || it->second.size() != 1) continue;
+            const auto newId = it->second[0];
+            if (newId.isEmpty() || newId == oldId) continue;
+            MissingRepairProposal proposal { oldId, newId, title, 0 };
+            for (const auto& group : pluginCollections)
+                if (group.second.contains(oldId) && !group.second.contains(newId))
+                    ++proposal.occurrences;
+            if (proposal.occurrences > 0) result.push_back(std::move(proposal));
+        }
+        return result;
+    }
+
+    void showMissingPluginRepairCentre()
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        const auto summary = globalMissingPluginSummary();
+        const auto proposals = missingRepairProposals();
+        int associations = 0;
+        for (const auto& p : proposals) associations += p.occurrences;
+        juce::String report = juce::String((int)summary.uniqueIdentifiers.size())
+            + juce::String::fromUTF8(" plugins manquants dans ")
+            + juce::String((int)summary.byCollection.size())
+            + juce::String::fromUTF8(" collections.\n\n")
+            + juce::String((int)proposals.size())
+            + juce::String::fromUTF8(" correspondances exactes proposées, soit ")
+            + juce::String(associations)
+            + juce::String::fromUTF8(" associations à réparer.\n\n");
+        const int preview = juce::jmin(12, (int)proposals.size());
+        for (int i = 0; i < preview; ++i)
+        {
+            const auto& p = proposals[(size_t)i];
+            report += juce::String(i + 1) + ". " + p.title.substring(0, 80)
+                + juce::String::fromUTF8("\n   Collections : ")
+                + juce::String(p.occurrences)
+                + juce::String::fromUTF8("\n   Ancien ID : ") + p.oldId.substring(0, 100)
+                + juce::String::fromUTF8("\n   Nouveau ID : ") + p.newId.substring(0, 100)
+                + "\n";
+        }
+        if ((int)proposals.size() > preview)
+            report += juce::String::fromUTF8("\n... et ")
+                + juce::String((int)proposals.size() - preview)
+                + juce::String::fromUTF8(" autres.\n");
+        report += juce::String::fromUTF8(
+            "\nCorrespondances ambiguës ou de formats différents exclues. "
+            "Vérifie les identifiants avant confirmation. "
+            "Seules les collections sont modifiées, avec sauvegarde locale.");
+        if (proposals.empty())
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
+                juce::String::fromUTF8("Liberty - Centre de réparation"), report, "FERMER");
+            return;
+        }
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        juce::AlertWindow::showOkCancelBox(juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Liberty - Centre de réparation"),
+            report, "RÉASSOCIER LE LOT", "ANNULER", nullptr,
+            juce::ModalCallbackFunction::create([safe, proposals](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1
+                    || safe->collectionsReadOnly || safe->scanning.load()) return;
+                const auto fresh = safe->missingRepairProposals();
+                if (fresh.size() != proposals.size()) return;
+                for (size_t i = 0; i < proposals.size(); ++i)
+                    if (fresh[i].oldId != proposals[i].oldId
+                        || fresh[i].newId != proposals[i].newId
+                        || fresh[i].occurrences != proposals[i].occurrences) return;
+                const auto before = safe->pluginCollections;
+                const auto beforeTitles = safe->pluginCollectionTitles;
+                int changed = 0;
+                for (const auto& p : proposals)
+                {
+                    for (auto& group : safe->pluginCollections)
+                    {
+                        if (group.second.contains(p.newId)) continue;
+                        const int index = group.second.indexOf(p.oldId);
+                        if (index < 0) continue;
+                        group.second.set(index, p.newId);
+                        ++changed;
+                    }
+                    safe->pluginCollectionTitles[p.newId] = p.title;
+                }
+                if (!changed) return;
+                if (safe->commitPluginCollections(before, juce::String(changed)
+                    + juce::String::fromUTF8(" associations réassociées par lot.")))
+                {
+                    safe->lastRelinkCollection.clear();
+                    safe->lastRelinkBeforeMembers.clear();
+                    safe->lastRelinkAfterMembers.clear();
+                    safe->lastRelinkOldId.clear();
+                    safe->lastRelinkNextId.clear();
+                    safe->lastRelinkRevision = 0;
+                }
+                else safe->pluginCollectionTitles = beforeTitles;
+            }));
+    }
+
     void promptMissingPluginRelink(const juce::String& collectionName,
                                    const juce::String& oldIdentifier)
     {
@@ -4805,6 +4922,9 @@ private:
         collectionsMenu.addItem(5408,
             juce::String::fromUTF8("EXPORTER L'INVENTAIRE COMPLET (TSV)..."),
             !pluginCollections.empty() && !scanning.load());
+        collectionsMenu.addItem(5409,
+            juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
+            globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(collectionsChangedExternally
                 ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
@@ -5012,6 +5132,11 @@ private:
                 else if (chosen == 5408)
                 {
                     safe->exportCollectionInventoryTsv();
+                    return;
+                }
+                else if (chosen == 5409)
+                {
+                    safe->showMissingPluginRepairCentre();
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
