@@ -1595,6 +1595,130 @@ private:
             });
     }
 
+
+    struct CollectionInventorySnapshot
+    {
+        juce::String tsv;
+        int associations = 0;
+        int present = 0;
+        int absentFromScan = 0;
+    };
+
+    CollectionInventorySnapshot makeCollectionInventoryTsv() const
+    {
+        CollectionInventorySnapshot result;
+        result.tsv = juce::String::fromUTF8(
+            "Collection\tPlugin\tStatut du scan\tFormat détecté\tType détecté\tIdentifiant JUCE\n");
+
+        // Build this index only once. The snapshot and all of its rows are
+        // materialized before opening any asynchronous save dialog.
+        std::map<juce::String, const juce::PluginDescription*> knownById;
+        for (const auto& description : pluginDescriptions)
+        {
+            const auto id = favouriteKey(description);
+            if (id.isNotEmpty())
+                knownById.emplace(id, &description);
+        }
+        for (const auto& group : pluginCollections)
+        {
+            for (const auto& id : group.second)
+            {
+                ++result.associations;
+                const auto found = knownById.find(id);
+                const auto* description = found != knownById.end()
+                    ? found->second : nullptr;
+                if (description == nullptr)
+                    ++result.absentFromScan;
+                else
+                    ++result.present;
+
+                auto title = collectionMemberTitle(id);
+                if (title == id && description != nullptr)
+                    title = readableCollectionPluginName(*description);
+                const auto status = description != nullptr
+                    ? juce::String::fromUTF8("PRÉSENT")
+                    : juce::String::fromUTF8("ABSENT DU SCAN");
+                const auto format = description != nullptr
+                    ? description->pluginFormatName.trim()
+                    : juce::String::fromUTF8("NON DÉTERMINÉ");
+                const auto type = description != nullptr
+                    ? (description->isInstrument
+                        ? juce::String("INSTRUMENT") : juce::String("EFFET"))
+                    : juce::String::fromUTF8("NON DÉTERMINÉ");
+
+                // Exact ID, never shortened, guessed or fuzzy-matched.
+                result.tsv += quotedReportField(group.first) + "\t"
+                    + quotedReportField(title) + "\t"
+                    + quotedReportField(status) + "\t"
+                    + quotedReportField(format) + "\t"
+                    + quotedReportField(type) + "\t"
+                    + quotedReportField(id) + "\n";
+            }
+        }
+        return result;
+    }
+
+    void exportCollectionInventoryTsv()
+    {
+        if (scanning.load())
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Termine le scan AU/VST3 avant d'exporter l'inventaire."),
+                juce::dontSendNotification);
+            return;
+        }
+        const auto snapshot = makeCollectionInventoryTsv();
+        if (snapshot.associations == 0)
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucune association de collection à exporter."),
+                juce::dontSendNotification);
+            return;
+        }
+
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Exporter l'inventaire des collections"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                .getChildFile("Liberty-Inventaire-Collections.tsv"),
+            "*.tsv");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode
+                | juce::FileBrowserComponent::canSelectFiles
+                | juce::FileBrowserComponent::warnAboutOverwriting,
+            [safe, chooser, snapshot](const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                auto destination = fc.getResult();
+                if (destination == juce::File()) return;
+                if (!destination.hasFileExtension("tsv"))
+                    destination = destination.withFileExtension("tsv");
+                const auto utf8Text = juce::String::charToString(0xfeff)
+                    + snapshot.tsv.replace("\n", "\r\n");
+                juce::TemporaryFile staged(destination);
+                if (staged.getFile().replaceWithText(utf8Text)
+                    && staged.overwriteTargetFileWithTemporary())
+                {
+                    safe->pluginStatus.setText(
+                        juce::String(snapshot.associations)
+                        + juce::String::fromUTF8(" associations exportées (")
+                        + juce::String(snapshot.present)
+                        + juce::String::fromUTF8(" présentes, ")
+                        + juce::String(snapshot.absentFromScan)
+                        + juce::String::fromUTF8(" absentes du scan) : ")
+                        + destination.getFileName(),
+                        juce::dontSendNotification);
+                }
+                else
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon,
+                        "Liberty - Collections",
+                        juce::String::fromUTF8(
+                            "L'inventaire TSV n'a pas pu être enregistré. "
+                            "Le fichier précédent est conservé."),
+                        "OK");
+            });
+    }
+
     static bool sameCollectionMembers(const juce::StringArray& lhs,
                                       const juce::StringArray& rhs)
     {
@@ -4671,6 +4795,9 @@ private:
         collectionsMenu.addItem(5407,
             juce::String::fromUTF8("EXPORTER LE BILAN DES MANQUANTS (TSV)..."),
             globalMissing.associations > 0);
+        collectionsMenu.addItem(5408,
+            juce::String::fromUTF8("EXPORTER L'INVENTAIRE COMPLET (TSV)..."),
+            !pluginCollections.empty() && !scanning.load());
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(collectionsChangedExternally
                 ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
@@ -4871,6 +4998,11 @@ private:
                 else if (chosen == 5407)
                 {
                     safe->exportGlobalMissingPluginReport();
+                    return;
+                }
+                else if (chosen == 5408)
+                {
+                    safe->exportCollectionInventoryTsv();
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())

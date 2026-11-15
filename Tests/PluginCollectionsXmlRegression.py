@@ -172,5 +172,32 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("safe->exportGlobalMissingPluginReport();", filters)
 
 
+    def test_complete_inventory_reports_scanned_and_missing_statuses(self):
+        generator = cpp_function("CollectionInventorySnapshot makeCollectionInventoryTsv() const")
+        self.assertIn("knownById.emplace(id, &description)", generator)
+        self.assertIn("result.absentFromScan", generator)
+        self.assertIn("result.present", generator)
+        self.assertIn("ABSENT DU SCAN", generator)
+        self.assertIn("PRÉSENT", generator)
+        self.assertIn("NON DÉTERMINÉ", generator)
+        self.assertIn("description->pluginFormatName.trim()", generator)
+        self.assertIn("description->isInstrument", generator)
+        self.assertIn("quotedReportField(id)", generator)
+        self.assertNotIn("savePluginCollections(", generator)
+
+    def test_complete_inventory_export_is_atomic_and_preserves_accents(self):
+        exporter = cpp_function("void exportCollectionInventoryTsv()")
+        filters = cpp_function("void showPluginFiltersMenu(")
+        self.assertIn("makeCollectionInventoryTsv()", exporter)
+        self.assertIn("Liberty-Inventaire-Collections.tsv", exporter)
+        self.assertIn("juce::String::charToString(0xfeff)", exporter)
+        self.assertIn("snapshot.tsv.replace", exporter)
+        self.assertIn("juce::TemporaryFile staged(destination);", exporter)
+        self.assertIn("staged.overwriteTargetFileWithTemporary()", exporter)
+        self.assertIn("scanning.load()", exporter)
+        self.assertIn("collectionsMenu.addItem(5408,", filters)
+        self.assertIn("safe->exportCollectionInventoryTsv();", filters)
+
+
 if __name__ == "__main__":
     unittest.main()
