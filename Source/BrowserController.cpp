@@ -2359,6 +2359,71 @@ private:
         int matches = 0;
     };
 
+
+    void chooseDiagnosticMissingReplacement(const juce::String& oldId)
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        const auto summary = globalMissingPluginSummary();
+        if (summary.uniqueIdentifiers.find(oldId) == summary.uniqueIdentifiers.end()) return;
+        const auto oldTitle = collectionMemberTitle(oldId);
+        const auto name = comparablePluginName(oldTitle);
+        if (name.length() < 3 || oldTitle == oldId)
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Nom enregistré indisponible : utilise la réassociation manuelle."),
+                juce::dontSendNotification);
+            return;
+        }
+        std::vector<juce::PluginDescription> candidates;
+        for (const auto& d : pluginDescriptions)
+            if (d.name.trim().toLowerCase() == name)
+                candidates.push_back(d);
+        if (candidates.empty())
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucun candidat détecté : relance le scan ou réassocie manuellement."),
+                juce::dontSendNotification);
+            return;
+        }
+        // The menu is never an automatic match: each item names the
+        // exact installed descriptor and its target collection.
+        juce::PopupMenu menu;
+        std::vector<std::pair<juce::String, juce::PluginDescription>> choices;
+        for (const auto& group : summary.byCollection)
+        {
+            if (!group.second.contains(oldId)) continue;
+            juce::PopupMenu versions;
+            const int maxCandidates = juce::jmin(40, (int)candidates.size());
+            for (int i = 0; i < maxCandidates; ++i)
+            {
+                const auto& d = candidates[(size_t)i];
+                const auto id = favouriteKey(d);
+                if (id.isEmpty() || group.second.contains(id)) continue;
+                const int action = 10000 + (int)choices.size();
+                choices.emplace_back(group.first, d);
+                versions.addItem(action, readableCollectionPluginName(d)
+                    + (d.isInstrument ? juce::String::fromUTF8(" | INSTRUMENT")
+                                      : juce::String::fromUTF8(" | EFFET"))
+                    + " | ID: " + id.substring(juce::jmax(0, id.length() - 16)));
+            }
+            if (versions.getNumItems() > 0)
+                menu.addSubMenu(group.first, versions);
+        }
+        if (choices.empty()) return;
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options()
+            .withTargetComponent(&pluginFiltersButton)
+            .withMaximumNumColumns(1),
+            [safe, oldId, choices](int action)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const int index = action - 10000;
+                if (index < 0 || index >= (int)choices.size()) return;
+                const auto& chosen = choices[(size_t)index];
+                safe->confirmMissingPluginRelink(chosen.first, oldId, chosen.second);
+            });
+    }
+
     struct MissingSuggestionTable final : juce::Component, juce::ListBoxModel
     {
         std::vector<MissingSuggestionRow> entries;
@@ -2367,6 +2432,7 @@ private:
         juce::ComboBox level;
         juce::Label summary;
         juce::ListBox rows;
+        juce::String selectedOldId;
 
         explicit MissingSuggestionTable(std::vector<MissingSuggestionRow> items)
             : entries(std::move(items))
@@ -2428,12 +2494,19 @@ private:
                 juce::dontSendNotification);
         }
         int getNumRows() override { return (int)visible.size(); }
+        void listBoxItemClicked(int row, const juce::MouseEvent&) override
+        {
+            if (row < 0 || row >= (int)visible.size()) return;
+            selectedOldId = entries[(size_t)visible[(size_t)row]].oldId;
+            rows.repaint();
+        }
         void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
                               bool highlighted) override
         {
             if (row < 0 || row >= (int)visible.size()) return;
             const auto& item = entries[(size_t)visible[(size_t)row]];
-            g.fillAll(highlighted ? juce::Colour(0xff263f60)
+            const bool chosen = item.oldId == selectedOldId;
+            g.fillAll((highlighted || chosen) ? juce::Colour(0xff263f60)
                                   : (row % 2 ? juce::Colour(0xff172b43)
                                              : juce::Colour(0xff112239)));
             g.setColour(juce::Colours::white);
@@ -2494,15 +2567,27 @@ private:
             juce::String::fromUTF8("Liberty - Diagnostic des plugins manquants"),
             juce::String::fromUTF8(
                 "Probable = même nom ; ambigu = plusieurs versions. "
-                "Vérifie toujours le format et la compatibilité avant réassociation."),
+                "Sélectionne une ligne, puis choisis explicitement le plugin et la collection."),
             juce::AlertWindow::NoIcon);
         dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff101e30));
         dialog->setColour(juce::AlertWindow::textColourId, juce::Colours::white);
         dialog->addCustomComponent(table.get());
+        dialog->addButton("CHOISIR CE REMPLACEMENT", 1);
         dialog->addButton("FERMER", 0);
         dialog->centreAroundComponent(&pluginFiltersButton, 790, 575);
         dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-            [dialog, table](int) {}), false);
+            [safe = juce::Component::SafePointer<BrowserPanel>(this), dialog, table](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1) return;
+                if (table->selectedOldId.isEmpty())
+                {
+                    safe->pluginStatus.setText(juce::String::fromUTF8(
+                        "Sélectionne une ligne avant de choisir un remplacement."),
+                        juce::dontSendNotification);
+                    return;
+                }
+                safe->chooseDiagnosticMissingReplacement(table->selectedOldId);
+            }), false);
     }
 
     void showProbableMissingPluginMatches()
