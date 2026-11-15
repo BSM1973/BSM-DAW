@@ -1787,6 +1787,89 @@ private:
                 }));
     }
 
+
+    // Read-only comparison. No plugin instantiation, no audio-thread access.
+    struct MissingRelinkComparison final : juce::Component
+    {
+        juce::String collection, previousName, previousFormat, previousMaker, previousId;
+        juce::String replacementName, replacementFormat, replacementMaker, replacementId, replacementType;
+        bool formatMatches = false, makerMatches = false;
+
+        MissingRelinkComparison() { setSize(740, 320); }
+
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour(0xff111e30));
+            auto area = getLocalBounds().reduced(12);
+            g.setFont(juce::Font(13.0f, juce::Font::bold));
+            g.setColour(juce::Colours::white);
+            g.drawFittedText(juce::String::fromUTF8("COLLECTION : ") + collection,
+                area.removeFromTop(28), juce::Justification::centredLeft, 1);
+            area.removeFromTop(6);
+            auto footer = area.removeFromBottom(70);
+            area.removeFromBottom(8);
+            const int gutter = 14;
+            const int panelWidth = (area.getWidth() - gutter) / 2;
+            const auto before = area.removeFromLeft(panelWidth);
+            area.removeFromLeft(gutter);
+            const auto after = area;
+
+            const auto drawPanel = [&g](juce::Rectangle<int> r,
+                const juce::String& heading, const juce::String& name,
+                const juce::String& format, const juce::String& maker,
+                const juce::String& type, const juce::String& id)
+            {
+                g.setColour(juce::Colour(0xff1a3049));
+                g.fillRoundedRectangle(r.toFloat(), 7.0f);
+                g.setColour(juce::Colour(0xff3e5a75));
+                g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 7.0f, 1.0f);
+                r.reduce(12, 8);
+                g.setFont(juce::Font(12.0f, juce::Font::bold));
+                g.setColour(juce::Colour(0xff74d7d5));
+                g.drawFittedText(heading, r.removeFromTop(22),
+                    juce::Justification::centredLeft, 1);
+                g.setColour(juce::Colours::white);
+                g.drawFittedText(name, r.removeFromTop(38),
+                    juce::Justification::centredLeft, 2);
+                g.setFont(juce::Font(11.0f));
+                g.setColour(juce::Colour(0xffc8dae8));
+                g.drawFittedText(juce::String::fromUTF8("FORMAT : ") + format,
+                    r.removeFromTop(20), juce::Justification::centredLeft, 1);
+                g.drawFittedText(juce::String::fromUTF8("FABRICANT : ") + maker,
+                    r.removeFromTop(27), juce::Justification::centredLeft, 2);
+                g.drawFittedText(juce::String::fromUTF8("TYPE : ") + type,
+                    r.removeFromTop(20), juce::Justification::centredLeft, 1);
+                g.setColour(juce::Colour(0xff94b6d2));
+                g.drawFittedText(juce::String::fromUTF8("ID JUCE : ") + id,
+                    r, juce::Justification::topLeft, 3);
+            };
+            drawPanel(before, juce::String::fromUTF8("AVANT — MANQUANT"),
+                previousName, previousFormat, previousMaker,
+                juce::String::fromUTF8("NON DÉTERMINÉ"), previousId);
+            drawPanel(after, juce::String::fromUTF8("APRÈS — INSTALLÉ"),
+                replacementName, replacementFormat, replacementMaker,
+                replacementType, replacementId);
+
+            const auto warning = juce::String::fromUTF8("FORMAT : ")
+                + (formatMatches ? juce::String("IDENTIQUE")
+                                 : juce::String("DIFFÉRENT OU INCONNU"))
+                + juce::String::fromUTF8("   |   FABRICANT : ")
+                + (makerMatches ? juce::String("IDENTIQUE")
+                                : juce::String("DIFFÉRENT OU INCONNU"));
+            g.setColour((formatMatches && makerMatches)
+                ? juce::Colour(0xff77dacf) : juce::Colour(0xfff0c879));
+            g.setFont(juce::Font(12.0f, juce::Font::bold));
+            g.drawFittedText(warning, footer.removeFromTop(24),
+                juce::Justification::centredLeft, 1);
+            g.setColour(juce::Colour(0xffcfdae6));
+            g.setFont(juce::Font(11.0f));
+            g.drawFittedText(juce::String::fromUTF8(
+                "Compatibilité des presets non garantie. Seule cette collection est modifiée ; "
+                "les projets et instances audio restent inchangés. Sauvegarde XML préalable."),
+                footer, juce::Justification::topLeft, 2);
+        }
+    };
+
     void confirmMissingPluginRelink(const juce::String& collectionName,
                                     const juce::String& oldIdentifier,
                                     juce::PluginDescription candidate)
@@ -1819,38 +1902,33 @@ private:
                 || (oldFormat.equalsIgnoreCase("AudioUnit") && newFormat.equalsIgnoreCase("AU")));
         const bool sameManufacturer = oldManufacturer.isNotEmpty()
             && oldManufacturer.equalsIgnoreCase(candidate.manufacturerName.trim());
-        const auto question = juce::String::fromUTF8(
-            "COMPARAISON DU REMPLACEMENT\n\n")
-            + juce::String::fromUTF8("COLLECTION : ") + collectionName
-            + juce::String::fromUTF8("\n\nAVANT — PLUGIN MANQUANT\nNom : ") + oldLabel
-            + juce::String::fromUTF8("\nFormat enregistré : ")
-            + (oldFormat.isEmpty() ? juce::String("INCONNU") : oldFormat)
-            + juce::String::fromUTF8("\nFabricant enregistré : ")
-            + (oldManufacturer.isEmpty() ? juce::String("INCONNU") : oldManufacturer)
-            + juce::String::fromUTF8("\nIdentifiant JUCE : ") + oldIdentifier
-            + juce::String::fromUTF8("\n\nAPRÈS — PLUGIN INSTALLÉ\nNom : ") + newLabel
-            + juce::String::fromUTF8("\nFormat détecté : ") + newFormat
-            + juce::String::fromUTF8("\nFabricant détecté : ")
-            + candidate.manufacturerName.trim()
-            + juce::String::fromUTF8("\nType détecté : ")
-            + (candidate.isInstrument ? juce::String("INSTRUMENT") : juce::String("EFFET"))
-            + juce::String::fromUTF8("\nIdentifiant JUCE : ") + nextIdentifier
-            + juce::String::fromUTF8("\n\nVÉRIFICATIONS\nFormat : ")
-            + (sameFormat ? juce::String("IDENTIQUE") : juce::String("DIFFÉRENT OU INCONNU"))
-            + juce::String::fromUTF8("\nFabricant : ")
-            + (sameManufacturer ? juce::String("IDENTIQUE") : juce::String("DIFFÉRENT OU INCONNU"))
-            + juce::String::fromUTF8(
-                "\n\nATTENTION : la compatibilité des presets ne peut pas être garantie. "
-                "Seule la référence de cette collection sera modifiée. "
-                "Le projet audio et les instances chargées resteront inchangés. "
-                "Une sauvegarde XML sera conservée.");
+        auto comparison = std::make_shared<MissingRelinkComparison>();
+        comparison->collection = collectionName;
+        comparison->previousName = oldLabel;
+        comparison->previousFormat = oldFormat.isEmpty() ? juce::String("INCONNU") : oldFormat;
+        comparison->previousMaker = oldManufacturer.isEmpty()
+            ? juce::String("INCONNU") : oldManufacturer;
+        comparison->previousId = oldIdentifier;
+        comparison->replacementName = newLabel;
+        comparison->replacementFormat = newFormat;
+        comparison->replacementMaker = candidate.manufacturerName.trim();
+        comparison->replacementType = candidate.isInstrument ? "INSTRUMENT" : "EFFET";
+        comparison->replacementId = nextIdentifier;
+        comparison->formatMatches = sameFormat;
+        comparison->makerMatches = sameManufacturer;
+        auto dialog = std::make_shared<juce::AlertWindow>(
+            juce::String::fromUTF8("Liberty - Vérifier la réassociation"),
+            juce::String::fromUTF8("Compare les identifiants avant de confirmer le remplacement."),
+            juce::AlertWindow::WarningIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff101e30));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colours::white);
+        dialog->addCustomComponent(comparison.get());
+        dialog->addButton("RÉASSOCIER", 1);
+        dialog->addButton("ANNULER", 0);
+        dialog->centreAroundComponent(&pluginFiltersButton, 790, 440);
         juce::Component::SafePointer<BrowserPanel> safe(this);
-        juce::AlertWindow::showOkCancelBox(
-            juce::AlertWindow::WarningIcon,
-            juce::String::fromUTF8("Réassocier un plugin manquant ?"),
-            question, "RÉASSOCIER", "ANNULER", nullptr,
-            juce::ModalCallbackFunction::create(
-                [safe, collectionName, oldIdentifier, candidate, nextIdentifier, newLabel]
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+                [safe, dialog, comparison, collectionName, oldIdentifier, candidate, nextIdentifier, newLabel]
                 (int chosen)
                 {
                     if (safe == nullptr || safe->stopped.load() || chosen != 1
@@ -1906,7 +1984,7 @@ private:
                     }
                     else
                         safe->pluginCollectionTitles = titleBefore;
-                }));
+                }), false);
     }
 
 
