@@ -199,5 +199,27 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("safe->exportCollectionInventoryTsv();", filters)
 
 
+    def test_missing_only_mode_searches_saved_names_and_exact_ids(self):
+        tree = cpp_function("void rebuildPluginTree()")
+        self.assertIn("if (missingPluginsOnly) return false;", tree)
+        self.assertIn("collectionMemberTitle(key).containsIgnoreCase(query)", tree)
+        self.assertIn("key.containsIgnoreCase(query)", tree)
+        self.assertIn("const bool showMissing = missingPluginsOnly ||", tree)
+        self.assertIn("showMissingPluginItemContextMenu(", tree)
+        self.assertIn("visibleCount = 0;", tree)
+        self.assertIn("if (fav != nullptr)", tree)
+        self.assertIn("if (instruments != nullptr)", tree)
+
+    def test_missing_only_filter_mode_can_reset_and_switch_facets(self):
+        filters = cpp_function("void showPluginFiltersMenu()")
+        tooltip = cpp_function("void refreshPluginFiltersButton(")
+        self.assertIn("accessMenu.addItem(703,", filters)
+        self.assertIn("safe->missingPluginsOnly = true;", filters)
+        self.assertIn("safe->missingPluginsOnly = false;", filters)
+        self.assertIn("safe->artworkView = ArtworkView::all;", filters)
+        self.assertIn("missingPluginsOnly ? 1 : 0", tooltip)
+        self.assertIn("Manquants uniquement", tooltip)
+
+
 if __name__ == "__main__":
     unittest.main()

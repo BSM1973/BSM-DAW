@@ -4694,7 +4694,8 @@ private:
 
     void refreshPluginFiltersButton(int visibleCount = -1)
     {
-        const int active = (selectedManufacturer.isNotEmpty() ? 1 : 0)
+        const int active = (missingPluginsOnly ? 1 : 0)
+                         + (selectedManufacturer.isNotEmpty() ? 1 : 0)
                          + (pluginFormatFilter != PluginFormatFilter::all ? 1 : 0)
                          + (pluginTypeFilter != PluginTypeFilter::all ? 1 : 0)
                          + (quickView != QuickView::all ? 1 : 0)
@@ -4721,7 +4722,10 @@ private:
             + juce::String::fromUTF8(" | Classement : ")
             + (groupByUsage ? "Fonction" : "Fabricant")
             + juce::String::fromUTF8(" | Collection : ")
-            + (selectedCollection.isNotEmpty() ? selectedCollection : juce::String("Toutes"));
+            + (selectedCollection.isNotEmpty() ? selectedCollection : juce::String("Toutes"))
+            + juce::String::fromUTF8(" | Visibilité : ")
+            + (missingPluginsOnly ? juce::String::fromUTF8("Manquants uniquement")
+                                  : juce::String::fromUTF8("Plugins installés"));
         if (visibleCount >= 0)
             detail += juce::String::fromUTF8(" | Résultats : ") + juce::String(visibleCount);
         pluginFiltersButton.setTooltip(detail);
@@ -4743,11 +4747,14 @@ private:
 
         juce::PopupMenu accessMenu;
         accessMenu.addItem(700, juce::String::fromUTF8("TOUS LES PLUGINS"), true,
-                           quickView == QuickView::all);
+                           quickView == QuickView::all && !missingPluginsOnly);
         accessMenu.addItem(701, juce::String::fromUTF8("FAVORIS UNIQUEMENT"), true,
-                           quickView == QuickView::favourites);
+                           quickView == QuickView::favourites && !missingPluginsOnly);
         accessMenu.addItem(702, juce::String::fromUTF8("RÉCENTS UNIQUEMENT"), true,
-                           quickView == QuickView::recent);
+                           quickView == QuickView::recent && !missingPluginsOnly);
+        accessMenu.addSeparator();
+        accessMenu.addItem(703, juce::String::fromUTF8("MANQUANTS DES COLLECTIONS UNIQUEMENT"),
+                           !pluginCollections.empty(), missingPluginsOnly);
         menu.addSubMenu(juce::String::fromUTF8("ACCÈS RAPIDE"), accessMenu);
 
         juce::StringArray collectionNames;
@@ -4927,7 +4934,8 @@ private:
         menu.addSubMenu(juce::String::fromUTF8("SAUVEGARDE / RESTAURATION"), backupMenu);
 
         menu.addSeparator();
-        const bool active = selectedManufacturer.isNotEmpty()
+        const bool active = missingPluginsOnly
+            || selectedManufacturer.isNotEmpty()
             || pluginFormatFilter != PluginFormatFilter::all
             || pluginTypeFilter != PluginTypeFilter::all
             || quickView != QuickView::all
@@ -4949,6 +4957,7 @@ private:
                     safe->pluginTypeFilter = PluginTypeFilter::all;
                     safe->quickView = QuickView::all;
                     safe->pluginUsageFilter = PluginUsage::all;
+                    safe->missingPluginsOnly = false;
                     safe->selectedCollection.clear();
                 }
                 else if (chosen == 5000)
@@ -5034,17 +5043,47 @@ private:
                 else if (chosen == 900 || chosen == 901)
                     safe->groupByUsage = (chosen == 900);
                 else if (chosen >= 800 && chosen <= 800 + (int)PluginUsage::unclassified)
+                {
+                    safe->missingPluginsOnly = false;
                     safe->pluginUsageFilter = (PluginUsage)(chosen - 800);
-                else if (chosen >= 700 && chosen <= 702)
-                    safe->quickView = (QuickView) (chosen - 700);
-                else if (chosen == 300)
+                }
+                else if (chosen == 703)
+                {
+                    // Missing plugins have no trustworthy scanned AU/VST3 or
+                    // instrument/effect metadata, only saved names and IDs.
+                    safe->missingPluginsOnly = true;
+                    safe->quickView = QuickView::all;
                     safe->selectedManufacturer.clear();
+                    safe->pluginFormatFilter = PluginFormatFilter::all;
+                    safe->pluginTypeFilter = PluginTypeFilter::all;
+                    safe->pluginUsageFilter = PluginUsage::all;
+                    safe->artworkView = ArtworkView::all;
+                }
+                else if (chosen >= 700 && chosen <= 702)
+                {
+                    safe->missingPluginsOnly = false;
+                    safe->quickView = (QuickView) (chosen - 700);
+                }
+                else if (chosen == 300)
+                {
+                    safe->missingPluginsOnly = false;
+                    safe->selectedManufacturer.clear();
+                }
                 else if (chosen >= 1000 && chosen < 1000 + manufacturers.size())
+                {
+                    safe->missingPluginsOnly = false;
                     safe->selectedManufacturer = manufacturers[chosen - 1000];
+                }
                 else if (chosen >= 400 && chosen <= 402)
+                {
+                    safe->missingPluginsOnly = false;
                     safe->pluginFormatFilter = (PluginFormatFilter) (chosen - 400);
+                }
                 else if (chosen >= 500 && chosen <= 502)
+                {
+                    safe->missingPluginsOnly = false;
                     safe->pluginTypeFilter = (PluginTypeFilter) (chosen - 500);
+                }
                 else return;
 
                 safe->rebuildPluginTree();
@@ -5053,7 +5092,8 @@ private:
 
     void setArtworkView(ArtworkView next)
     {
-        if (artworkView == next) return;
+        if (artworkView == next && !missingPluginsOnly) return;
+        missingPluginsOnly = false;
         artworkView = next;
         rebuildPluginTree();
     }
@@ -5163,6 +5203,7 @@ private:
         const auto matches = [this, &query, &hasArtwork, &failedHashes, &artworkHash]
             (const juce::PluginDescription& d)
         {
+            if (missingPluginsOnly) return false;
             const bool searchMatches = query.isEmpty() || d.name.containsIgnoreCase(query)
                 || d.manufacturerName.containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
@@ -5187,18 +5228,35 @@ private:
         int visibleCount = 0;
         for (const auto& d : pluginDescriptions)
             if (matches(d)) ++visibleCount;
+        if (missingPluginsOnly)
+        {
+            visibleCount = 0;
+            const auto installedIds = installedPluginIdentifiers();
+            for (const auto& group : pluginCollections)
+                if (selectedCollection.isEmpty() || selectedCollection == group.first)
+                    for (const auto& key : group.second)
+                        if (installedIds.find(key) == installedIds.end()
+                            && (query.isEmpty()
+                                || collectionMemberTitle(key).containsIgnoreCase(query)
+                                || key.containsIgnoreCase(query)))
+                            ++visibleCount;
+        }
         refreshPluginFiltersButton(visibleCount);
 
-        auto* fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
-        pluginRoot->addSubItem(fav);
-        for (const auto& d : pluginDescriptions)
-            if (isFavouritePlugin(d) && matches(d))
-            {
-                auto* item = makePluginItem(d);
-                fav->addSubItem(item);
-                if (quickView == QuickView::favourites)
-                    keyboardResults.push_back(item);
-            }
+        PluginTreeItem* fav = nullptr;
+        if (!missingPluginsOnly)
+        {
+            fav = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "FAVORIS");
+            pluginRoot->addSubItem(fav);
+            for (const auto& d : pluginDescriptions)
+                if (isFavouritePlugin(d) && matches(d))
+                {
+                    auto* item = makePluginItem(d);
+                    fav->addSubItem(item);
+                    if (quickView == QuickView::favourites)
+                        keyboardResults.push_back(item);
+                }
+        }
 
         // Most-recently loaded plugins are displayed in actual usage order.
         // This is a second view of installed descriptions, not a plugin rescan.
@@ -5233,6 +5291,22 @@ private:
             {
                 if (selectedCollection.isNotEmpty() && group.first != selectedCollection)
                     continue;
+                if (missingPluginsOnly)
+                {
+                    // Keep the tree compact when a query matches only a few
+                    // missing rows among many saved collections.
+                    bool containsMatchingMissing = false;
+                    for (const auto& key : group.second)
+                        if (installedIdentifiers.find(key) == installedIdentifiers.end()
+                            && (query.isEmpty()
+                                || collectionMemberTitle(key).containsIgnoreCase(query)
+                                || key.containsIgnoreCase(query)))
+                        {
+                            containsMatchingMissing = true;
+                            break;
+                        }
+                    if (!containsMatchingMissing) continue;
+                }
                 // Keep header actions independent of its visible count label.
                 // Right-clicking a collection does not destroy a live tree row.
                 auto* collectionItem = new PluginTreeItem(
@@ -5256,18 +5330,21 @@ private:
                 // Offline entries have only an exact JUCE identifier. Don't
                 // guess manufacturer, format or type from an arbitrary string.
                 // Hide informational rows under active plugin search/facets.
-                const bool showMissing = query.isEmpty()
+                const bool showMissing = missingPluginsOnly || (query.isEmpty()
                     && selectedManufacturer.isEmpty()
                     && pluginFormatFilter == PluginFormatFilter::all
                     && pluginTypeFilter == PluginTypeFilter::all
                     && pluginUsageFilter == PluginUsage::all
                     && quickView == QuickView::all
-                    && artworkView == ArtworkView::all;
+                    && artworkView == ArtworkView::all);
                 if (showMissing)
                 {
                     juce::StringArray absentKeys;
                     for (const auto& key : group.second)
-                        if (installedIdentifiers.find(key) == installedIdentifiers.end())
+                        if (installedIdentifiers.find(key) == installedIdentifiers.end()
+                            && (!missingPluginsOnly || query.isEmpty()
+                                || collectionMemberTitle(key).containsIgnoreCase(query)
+                                || key.containsIgnoreCase(query)))
                             absentKeys.add(key);
 
                     if (!absentKeys.isEmpty())
@@ -5295,21 +5372,28 @@ private:
                                 "LibertyMissing:" + missingKey);
                             missingFolder->addSubItem(missingRow);
                         }
-                        missingFolder->setOpen(selectedCollection.isNotEmpty());
+                        missingFolder->setOpen(selectedCollection.isNotEmpty()
+                            || missingPluginsOnly);
                     }
                 }
-                collectionItem->setOpen(selectedCollection.isNotEmpty());
+                collectionItem->setOpen(selectedCollection.isNotEmpty()
+                    || missingPluginsOnly);
             }
         }
 
         // Library-style hierarchy: instruments and audio effects are distinct.
         // Keep manufacturers inside each family, and never classify unknown
         // plugins as MIDI effects without reliable plugin metadata.
-        auto* instruments = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "INSTRUMENTS");
-        auto* audioEffects = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "EFFETS AUDIO");
-        pluginRoot->addSubItem(instruments);
-        pluginRoot->addSubItem(audioEffects);
-        for (int family = 0; family < 2; ++family)
+        PluginTreeItem* instruments = nullptr;
+        PluginTreeItem* audioEffects = nullptr;
+        if (!missingPluginsOnly)
+        {
+            instruments = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "INSTRUMENTS");
+            audioEffects = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "EFFETS AUDIO");
+            pluginRoot->addSubItem(instruments);
+            pluginRoot->addSubItem(audioEffects);
+        }
+        for (int family = 0; family < (missingPluginsOnly ? 0 : 2); ++family)
         {
             auto* parent = family == 0 ? instruments : audioEffects;
             // Keep the original manufacturer-first hierarchy available.
@@ -5388,6 +5472,8 @@ private:
             || artworkView != ArtworkView::all)
         {
             for (auto* family : { instruments, audioEffects })
+            {
+                if (family == nullptr) continue;
                 for (int i = 0; i < family->getNumSubItems(); ++i)
                 {
                     auto* categoryOrManufacturer = family->getSubItem(i);
@@ -5396,12 +5482,15 @@ private:
                         for (int j = 0; j < categoryOrManufacturer->getNumSubItems(); ++j)
                             categoryOrManufacturer->getSubItem(j)->setOpen(true);
                 }
+            }
         }
         pluginTree.setRootItem(pluginRoot.get());
-        pluginRoot->setOpen(true); fav->setOpen(true);
+        pluginRoot->setOpen(true);
+        if (fav != nullptr) fav->setOpen(true);
         if (recentGroup != nullptr) recentGroup->setOpen(true);
         if (collectionsRoot != nullptr) collectionsRoot->setOpen(true);
-        instruments->setOpen(true); audioEffects->setOpen(true);
+        if (instruments != nullptr) instruments->setOpen(true);
+        if (audioEffects != nullptr) audioEffects->setOpen(true);
 
         PluginTreeItem* preferred = nullptr;
         if (previousSelection.isNotEmpty())
@@ -5943,6 +6032,7 @@ private:
     PluginFormatFilter pluginFormatFilter = PluginFormatFilter::all;
     PluginTypeFilter pluginTypeFilter = PluginTypeFilter::all;
     QuickView quickView = QuickView::all;
+    bool missingPluginsOnly = false;
     PluginUsage pluginUsageFilter = PluginUsage::all;
     bool groupByUsage = true;
     std::map<juce::String, PluginUsage> pluginFamilyOverrides;
