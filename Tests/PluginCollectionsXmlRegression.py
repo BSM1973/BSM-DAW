@@ -111,5 +111,40 @@ class PluginCollectionsRegression(unittest.TestCase):
                         importer.index("showOkCancelBox("))
 
 
+    def test_missing_plugins_global_report_is_read_only_and_deduplicates(self):
+        calculator = cpp_function("GlobalMissingPluginSummary globalMissingPluginSummary() const")
+        summary = cpp_function("void showGlobalMissingPluginReport()")
+        copy = cpp_function("void copyGlobalMissingPluginReport()")
+        self.assertIn("installedPluginIdentifiers()", calculator)
+        self.assertIn("result.uniqueIdentifiers.insert(key)", calculator)
+        self.assertIn("++result.associations", calculator)
+        self.assertIn("summary.uniqueIdentifiers.size()", summary)
+        self.assertIn("summary.byCollection", summary)
+        self.assertIn("quotedReportField(id)", copy)
+        self.assertIn("copyTextToClipboard(tsv)", copy)
+        self.assertNotIn("savePluginCollections(", summary)
+        self.assertNotIn("commitPluginCollections(", copy)
+
+    def test_missing_report_is_available_in_collection_filters(self):
+        filters = cpp_function("void showPluginFiltersMenu(")
+        self.assertIn("collectionsMenu.addItem(5405,", filters)
+        self.assertIn("collectionsMenu.addItem(5406,", filters)
+        self.assertIn("safe->showGlobalMissingPluginReport();", filters)
+        self.assertIn("safe->copyGlobalMissingPluginReport();", filters)
+
+    def test_global_missing_counts_distinguish_repeated_associations(self):
+        installed = {"VST3|Synth|Stable"}
+        saved = {
+            "Pads": ["VST3|Synth|Stable", "AU|Synth|Missing", "VST3|FX|Missing"],
+            "FX": ["VST3|FX|Missing"],
+        }
+        missing = [(group, plugin) for group, members in saved.items()
+                   for plugin in members if plugin not in installed]
+        self.assertEqual(len(missing), 3)
+        self.assertEqual(len({plugin for _, plugin in missing}), 2)
+        self.assertEqual({group for group, _ in missing}, {"Pads", "FX"})
+
+
+
 if __name__ == "__main__":
     unittest.main()

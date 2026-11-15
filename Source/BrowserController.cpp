@@ -1422,6 +1422,119 @@ private:
 
 
 
+
+    struct GlobalMissingPluginSummary
+    {
+        // Associations (including a plugin saved in more than one collection)
+        // are distinct from the number of unique missing JUCE identifiers.
+        std::map<juce::String, juce::StringArray> byCollection;
+        std::set<juce::String> uniqueIdentifiers;
+        int associations = 0;
+    };
+
+    GlobalMissingPluginSummary globalMissingPluginSummary() const
+    {
+        GlobalMissingPluginSummary result;
+        const auto installed = installedPluginIdentifiers();
+        // One installed-ID snapshot for the whole report; no plugin is loaded.
+        for (const auto& group : pluginCollections)
+        {
+            for (const auto& key : group.second)
+            {
+                if (installed.find(key) != installed.end()) continue;
+                result.byCollection[group.first].add(key);
+                result.uniqueIdentifiers.insert(key);
+                ++result.associations;
+            }
+        }
+        return result;
+    }
+
+    void showGlobalMissingPluginReport()
+    {
+        const auto summary = globalMissingPluginSummary();
+        if (summary.associations == 0)
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Toutes les associations des collections correspondent au dernier scan."),
+                juce::dontSendNotification);
+            return;
+        }
+
+        juce::String report =
+            juce::String((int)summary.uniqueIdentifiers.size())
+            + juce::String::fromUTF8(" plugins distincts manquants\n")
+            + juce::String(summary.associations)
+            + juce::String::fromUTF8(" associations absentes dans ")
+            + juce::String((int)summary.byCollection.size())
+            + juce::String::fromUTF8(" collections.\n\nPAR COLLECTION :\n");
+        int displayedGroups = 0;
+        for (const auto& group : summary.byCollection)
+        {
+            if (displayedGroups++ >= 12) break;
+            report += group.first.substring(0, 46)
+                + " : " + juce::String(group.second.size()) + "\n";
+        }
+        if ((int)summary.byCollection.size() > 12)
+            report += juce::String::fromUTF8("... et ")
+                + juce::String((int)summary.byCollection.size() - 12)
+                + juce::String::fromUTF8(" autres collections.\n");
+
+        report += juce::String::fromUTF8("\nEXEMPLES :\n");
+        int shown = 0;
+        std::set<juce::String> shownIdentifiers;
+        for (const auto& group : summary.byCollection)
+        {
+            for (const auto& key : group.second)
+            {
+                if (!shownIdentifiers.insert(key).second) continue;
+                report += collectionMemberTitle(key).substring(0, 85)
+                    + "\n ID : " + key.substring(0, 95) + "\n";
+                if (++shown >= 5) break;
+            }
+            if (shown >= 5) break;
+        }
+        report += juce::String::fromUTF8(
+            "\nLe bilan complet peut être copié en TSV "
+            "(collection, nom, identifiant JUCE exact).\n"
+            "Aucune collection ni aucun plugin n'a été modifié.");
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            juce::String::fromUTF8("Liberty - Bilan global des plugins manquants"),
+            report, "OK");
+    }
+
+    static juce::String quotedReportField(const juce::String& field)
+    {
+        // RFC-style quoted TSV preserves embedded tabs, line breaks and
+        // quotation marks while keeping the original JUCE ID recoverable.
+        return "\"" + field.replace("\"", "\"\"") + "\"";
+    }
+
+    void copyGlobalMissingPluginReport()
+    {
+        const auto summary = globalMissingPluginSummary();
+        if (summary.associations == 0)
+        {
+            pluginStatus.setText(juce::String::fromUTF8(
+                "Aucun plugin manquant à copier."), juce::dontSendNotification);
+            return;
+        }
+        juce::String tsv = "Collection\tPlugin\tIdentifiant JUCE\n";
+        for (const auto& group : summary.byCollection)
+            for (const auto& id : group.second)
+                tsv += quotedReportField(group.first) + "\t"
+                    + quotedReportField(collectionMemberTitle(id)) + "\t"
+                    + quotedReportField(id) + "\n";
+        juce::SystemClipboard::copyTextToClipboard(tsv);
+        pluginStatus.setText(
+            juce::String(summary.associations)
+            + juce::String::fromUTF8(" associations manquantes copiées (")
+            + juce::String((int)summary.uniqueIdentifiers.size())
+            + juce::String::fromUTF8(" plugins distincts)."),
+            juce::dontSendNotification);
+    }
+
     static bool sameCollectionMembers(const juce::StringArray& lhs,
                                       const juce::StringArray& rhs)
     {
@@ -4483,6 +4596,18 @@ private:
                                  canUndoLastPluginRelink(lastRelinkCollection));
         collectionsMenu.addItem(5404,
             juce::String::fromUTF8("RECHARGER DEPUIS LE DISQUE..."));
+        const auto globalMissing = globalMissingPluginSummary();
+        collectionsMenu.addSeparator();
+        collectionsMenu.addItem(5405,
+            juce::String::fromUTF8("BILAN GLOBAL DES MANQUANTS (")
+            + juce::String((int)globalMissing.uniqueIdentifiers.size())
+            + juce::String::fromUTF8(" plugins / ")
+            + juce::String(globalMissing.associations)
+            + juce::String::fromUTF8(" associations)"),
+            globalMissing.associations > 0);
+        collectionsMenu.addItem(5406,
+            juce::String::fromUTF8("COPIER LE BILAN GLOBAL (TSV)"),
+            globalMissing.associations > 0);
         if (collectionsReadOnly)
             collectionsMenu.addSectionHeader(collectionsChangedExternally
                 ? juce::String::fromUTF8("FICHIER MODIFIÉ À L'EXTÉRIEUR")
@@ -4668,6 +4793,16 @@ private:
                 else if (chosen == 5404)
                 {
                     safe->promptReloadPluginCollectionsFromDisk();
+                    return;
+                }
+                else if (chosen == 5405)
+                {
+                    safe->showGlobalMissingPluginReport();
+                    return;
+                }
+                else if (chosen == 5406)
+                {
+                    safe->copyGlobalMissingPluginReport();
                     return;
                 }
                 else if (chosen >= 5700 && chosen < 5700 + missingCollectionNames.size())
