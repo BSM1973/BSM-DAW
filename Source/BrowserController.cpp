@@ -1996,6 +1996,143 @@ private:
             }));
     }
 
+
+    void showSelectiveMissingRepair()
+    {
+        if (collectionsReadOnly || scanning.load()) return;
+        const auto proposals = missingRepairProposals();
+        if (proposals.empty()) return;
+        const int limit = juce::jmin(20, (int)proposals.size());
+        juce::String report = juce::String::fromUTF8(
+            "Sélectionne les numéros à réparer (séparés par des virgules).\n"
+            "Seules les correspondances exactes sont proposées.\n\n");
+        juce::String defaults;
+        for (int i = 0; i < limit; ++i)
+        {
+            if (i > 0) defaults += ",";
+            defaults += juce::String(i + 1);
+            report += juce::String(i + 1) + ". "
+                + proposals[(size_t)i].title.substring(0, 70)
+                + " (" + juce::String(proposals[(size_t)i].occurrences)
+                + juce::String::fromUTF8(" collections)\n");
+        }
+        if ((int)proposals.size() > limit)
+            report += juce::String::fromUTF8("\n20 premiers affichés sur ")
+                + juce::String((int)proposals.size())
+                + juce::String::fromUTF8(". Utilise la réparation ciblée pour les autres.");
+        auto dialog = std::make_shared<juce::AlertWindow>(
+            juce::String::fromUTF8("Liberty - Sélection multiple"),
+            report, juce::AlertWindow::NoIcon);
+        dialog->addTextEditor("selection", defaults,
+            juce::String::fromUTF8("NUMÉROS À RÉPARER"));
+        dialog->addButton("VÉRIFIER LA SÉLECTION", 1);
+        dialog->addButton("ANNULER", 0);
+        dialog->centreAroundComponent(&pluginFiltersButton, 550, 380);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [safe, dialog, proposals, limit](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1
+                    || safe->collectionsReadOnly || safe->scanning.load()) return;
+                const auto input = dialog->getTextEditorContents("selection").trim();
+                if (input.isEmpty()) return;
+                juce::StringArray tokens;
+                tokens.addTokens(input, ",;", "");
+                std::set<int> picked;
+                for (auto token : tokens)
+                {
+                    token = token.trim();
+                    if (token.isEmpty() || !token.containsOnly("0123456789"))
+                        return;
+                    const int number = token.getIntValue();
+                    if (number < 1 || number > limit) return;
+                    picked.insert(number - 1);
+                }
+                if (picked.empty()) return;
+                std::vector<MissingRepairProposal> selected;
+                int affected = 0;
+                juce::String reportText;
+                for (const auto index : picked)
+                {
+                    const auto& p = proposals[(size_t)index];
+                    selected.push_back(p);
+                    affected += p.occurrences;
+                    reportText += p.title.substring(0, 100)
+                        + juce::String::fromUTF8("\n  ")
+                        + p.oldId.substring(0, 70)
+                        + juce::String::fromUTF8("\n  -> ")
+                        + p.newId.substring(0, 70) + "\n";
+                }
+                const auto confirm = juce::String((int)selected.size())
+                    + juce::String::fromUTF8(" plugins sélectionnés, ")
+                    + juce::String(affected)
+                    + juce::String::fromUTF8(
+                        " associations prévues.\n\n")
+                    + reportText
+                    + juce::String::fromUTF8(
+                        "\nSauvegarde avant modification. "
+                        "Aucun projet ni instance audio ne sera modifié.");
+                juce::AlertWindow::showOkCancelBox(
+                    juce::AlertWindow::WarningIcon,
+                    juce::String::fromUTF8("Confirmer la réparation sélectionnée"),
+                    confirm, "RÉASSOCIER LA SÉLECTION", "ANNULER", nullptr,
+                    juce::ModalCallbackFunction::create(
+                        [safe, selected](int accepted)
+                        {
+                            if (safe == nullptr || safe->stopped.load() || accepted != 1
+                                || safe->collectionsReadOnly || safe->scanning.load()) return;
+                            const auto fresh = safe->missingRepairProposals();
+                            for (const auto& p : selected)
+                            {
+                                const auto found = std::find_if(fresh.begin(), fresh.end(),
+                                    [&p](const MissingRepairProposal& current)
+                                    {
+                                        return current.oldId == p.oldId
+                                            && current.newId == p.newId
+                                            && current.occurrences == p.occurrences;
+                                    });
+                                if (found == fresh.end())
+                                {
+                                    safe->pluginStatus.setText(
+                                        juce::String::fromUTF8(
+                                            "Les correspondances ont changé : recommence la sélection."),
+                                        juce::dontSendNotification);
+                                    return;
+                                }
+                            }
+                            const auto before = safe->pluginCollections;
+                            const auto beforeTitles = safe->pluginCollectionTitles;
+                            int changed = 0;
+                            for (const auto& p : selected)
+                            {
+                                for (auto& group : safe->pluginCollections)
+                                {
+                                    if (group.second.contains(p.newId)) continue;
+                                    const int index = group.second.indexOf(p.oldId);
+                                    if (index < 0) continue;
+                                    group.second.set(index, p.newId);
+                                    ++changed;
+                                }
+                                safe->pluginCollectionTitles[p.newId] = p.title;
+                            }
+                            if (!changed) return;
+                            if (safe->commitPluginCollections(before,
+                                juce::String(changed)
+                                + juce::String::fromUTF8(
+                                    " associations réparées (sélection multiple).")))
+                            {
+                                safe->lastRelinkCollection.clear();
+                                safe->lastRelinkBeforeMembers.clear();
+                                safe->lastRelinkAfterMembers.clear();
+                                safe->lastRelinkOldId.clear();
+                                safe->lastRelinkNextId.clear();
+                                safe->lastRelinkRevision = 0;
+                            }
+                            else safe->pluginCollectionTitles = beforeTitles;
+                        }));
+            }), false);
+    }
+
     void showMissingPluginRepairCentre()
     {
         if (collectionsReadOnly || scanning.load()) return;
@@ -4993,6 +5130,9 @@ private:
         collectionsMenu.addItem(5409,
             juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
             globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
+        collectionsMenu.addItem(5410,
+            juce::String::fromUTF8("RÉPARER UNE SÉLECTION DE PLUGINS..."),
+            !missingRepairProposals().empty() && !collectionsReadOnly && !scanning.load());
         const auto targetedRepairs = missingRepairProposals();
         juce::PopupMenu targetedRepairMenu;
         const int targetedLimit = juce::jmin(40, (int)targetedRepairs.size());
@@ -5222,6 +5362,11 @@ private:
                 else if (chosen == 5409)
                 {
                     safe->showMissingPluginRepairCentre();
+                    return;
+                }
+                else if (chosen == 5410)
+                {
+                    safe->showSelectiveMissingRepair();
                     return;
                 }
                 else if (chosen >= 5800 && chosen < 5800 + targetedLimit)
