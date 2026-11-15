@@ -2114,7 +2114,7 @@ private:
             }
             g.setColour(juce::Colours::white);
             g.setFont(juce::Font(13.0f, juce::Font::bold));
-            g.drawFittedText(p.title, 44, 4, width - 185, 20,
+            g.drawFittedText(p.title, 44, 4, width - 285, 20,
                              juce::Justification::centredLeft, 1);
             g.setColour(juce::Colour(0xff77d4cf));
             g.setFont(juce::Font(11.0f));
@@ -2184,11 +2184,12 @@ private:
                     for (const auto& p : selected)
                     {
                         affected += p.occurrences;
-                        report += p.title.substring(0, 90)
-                            + juce::String::fromUTF8("\n  ")
-                            + p.oldId.substring(0, 85)
-                            + juce::String::fromUTF8("\n  → ")
-                            + p.newId.substring(0, 85) + "\n";
+                        if (report.length() < 4500)
+                            report += p.title.substring(0, 90)
+                                + juce::String::fromUTF8("\n  ")
+                                + p.oldId.substring(0, 85)
+                                + juce::String::fromUTF8("\n  → ")
+                                + p.newId.substring(0, 85) + "\n";
                     }
                     const auto confirmation = juce::String((int)selected.size())
                         + juce::String::fromUTF8(" plugins et ")
