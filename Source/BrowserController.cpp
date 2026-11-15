@@ -1997,140 +1997,267 @@ private:
     }
 
 
+
+    struct MissingRepairTable final : juce::Component, juce::ListBoxModel
+    {
+        std::vector<MissingRepairProposal> proposals;
+        std::vector<juce::String> collectionsText;
+        std::vector<int> visible;
+        std::set<juce::String> selectedIds;
+        juce::TextEditor search;
+        juce::Label summary;
+        juce::TextButton selectVisible { juce::String::fromUTF8("TOUT SÉLECTIONNER") };
+        juce::TextButton deselect { juce::String::fromUTF8("TOUT DÉSÉLECTIONNER") };
+        juce::ListBox rows;
+
+        MissingRepairTable(std::vector<MissingRepairProposal> items,
+                           const std::map<juce::String, juce::StringArray>& groups)
+            : proposals(std::move(items))
+        {
+            collectionsText.reserve(proposals.size());
+            for (const auto& p : proposals)
+            {
+                juce::StringArray names;
+                for (const auto& group : groups)
+                    if (group.second.contains(p.oldId) && !group.second.contains(p.newId))
+                        names.add(group.first);
+                collectionsText.push_back(names.joinIntoString(", "));
+            }
+            setSize(730, 430);
+            search.setTextToShowWhenEmpty(
+                juce::String::fromUTF8("Rechercher un nom, un ID ou une collection..."),
+                juce::Colours::lightgrey);
+            search.onTextChange = [this] { filterRows(); };
+            addAndMakeVisible(search);
+            summary.setColour(juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible(summary);
+            selectVisible.onClick = [this]
+            {
+                for (const auto index : visible)
+                    selectedIds.insert(proposals[(size_t)index].oldId);
+                rows.repaint();
+                updateSummary();
+            };
+            deselect.onClick = [this]
+            {
+                selectedIds.clear();
+                rows.repaint();
+                updateSummary();
+            };
+            addAndMakeVisible(selectVisible);
+            addAndMakeVisible(deselect);
+            rows.setModel(this);
+            rows.setRowHeight(68);
+            rows.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff101e30));
+            rows.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff425775));
+            rows.setOutlineThickness(1);
+            addAndMakeVisible(rows);
+            filterRows();
+        }
+
+        ~MissingRepairTable() override { rows.setModel(nullptr); }
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced(8);
+            search.setBounds(area.removeFromTop(32));
+            area.removeFromTop(6);
+            auto toolbar = area.removeFromTop(30);
+            selectVisible.setBounds(toolbar.removeFromLeft(174));
+            toolbar.removeFromLeft(8);
+            deselect.setBounds(toolbar.removeFromLeft(190));
+            summary.setBounds(toolbar);
+            area.removeFromTop(8);
+            rows.setBounds(area);
+        }
+        void filterRows()
+        {
+            const auto query = search.getText().trim();
+            visible.clear();
+            for (int i = 0; i < (int)proposals.size(); ++i)
+            {
+                const auto& p = proposals[(size_t)i];
+                if (query.isEmpty() || p.title.containsIgnoreCase(query)
+                    || p.oldId.containsIgnoreCase(query)
+                    || p.newId.containsIgnoreCase(query)
+                    || collectionsText[(size_t)i].containsIgnoreCase(query))
+                    visible.push_back(i);
+            }
+            rows.updateContent();
+            rows.repaint();
+            updateSummary();
+        }
+        void updateSummary()
+        {
+            summary.setText(juce::String((int)selectedIds.size())
+                + juce::String::fromUTF8(" sélectionnés / ")
+                + juce::String((int)visible.size())
+                + juce::String::fromUTF8(" affichés"),
+                juce::dontSendNotification);
+        }
+        int getNumRows() override { return (int)visible.size(); }
+        void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
+                              bool highlighted) override
+        {
+            if (row < 0 || row >= (int)visible.size()) return;
+            const auto i = (size_t)visible[(size_t)row];
+            const auto& p = proposals[i];
+            const bool checked = selectedIds.find(p.oldId) != selectedIds.end();
+            g.fillAll(highlighted ? juce::Colour(0xff263f60)
+                                  : (row % 2 ? juce::Colour(0xff172b43)
+                                             : juce::Colour(0xff112239)));
+            g.setColour(checked ? juce::Colour(0xff64e6e1) : juce::Colours::lightgrey);
+            g.drawRect(12, 19, 20, 20, 2);
+            if (checked)
+            {
+                g.drawLine(16.0f, 28.0f, 21.0f, 34.0f, 2.0f);
+                g.drawLine(21.0f, 34.0f, 29.0f, 23.0f, 2.0f);
+            }
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(13.0f, juce::Font::bold));
+            g.drawFittedText(p.title, 44, 4, width - 185, 20,
+                             juce::Justification::centredLeft, 1);
+            g.setColour(juce::Colour(0xff77d4cf));
+            g.setFont(juce::Font(11.0f));
+            g.drawText(juce::String::fromUTF8("CONFIANCE ÉLEVÉE · NOM COMPLET EXACT"),
+                       width - 230, 5, 222, 18, juce::Justification::centredRight, true);
+            g.setColour(juce::Colour(0xffc8d6e5));
+            g.drawFittedText(juce::String::fromUTF8("Collections : ")
+                + collectionsText[i], 44, 26, width - 55, 17,
+                juce::Justification::centredLeft, 1);
+            g.setColour(juce::Colour(0xff98b1c8));
+            g.drawFittedText(p.oldId + juce::String::fromUTF8("  →  ") + p.newId,
+                44, 46, width - 55, 16, juce::Justification::centredLeft, 1);
+        }
+        void listBoxItemClicked(int row, const juce::MouseEvent&) override
+        {
+            if (row < 0 || row >= (int)visible.size()) return;
+            const auto& id = proposals[(size_t)visible[(size_t)row]].oldId;
+            const auto it = selectedIds.find(id);
+            if (it == selectedIds.end()) selectedIds.insert(id);
+            else selectedIds.erase(it);
+            rows.repaintRow(row);
+            updateSummary();
+        }
+        std::vector<MissingRepairProposal> chosen() const
+        {
+            std::vector<MissingRepairProposal> result;
+            for (const auto& p : proposals)
+                if (selectedIds.find(p.oldId) != selectedIds.end()) result.push_back(p);
+            return result;
+        }
+    };
+
     void showSelectiveMissingRepair()
     {
         if (collectionsReadOnly || scanning.load()) return;
-        const auto proposals = missingRepairProposals();
+        auto proposals = missingRepairProposals();
         if (proposals.empty()) return;
-        const int limit = juce::jmin(20, (int)proposals.size());
-        juce::String report = juce::String::fromUTF8(
-            "Sélectionne les numéros à réparer (séparés par des virgules).\n"
-            "Seules les correspondances exactes sont proposées.\n\n");
-        juce::String defaults;
-        for (int i = 0; i < limit; ++i)
-        {
-            if (i > 0) defaults += ",";
-            defaults += juce::String(i + 1);
-            report += juce::String(i + 1) + ". "
-                + proposals[(size_t)i].title.substring(0, 70)
-                + " (" + juce::String(proposals[(size_t)i].occurrences)
-                + juce::String::fromUTF8(" collections)\n");
-        }
-        if ((int)proposals.size() > limit)
-            report += juce::String::fromUTF8("\n20 premiers affichés sur ")
-                + juce::String((int)proposals.size())
-                + juce::String::fromUTF8(". Utilise la réparation ciblée pour les autres.");
+        auto table = std::make_shared<MissingRepairTable>(proposals, pluginCollections);
         auto dialog = std::make_shared<juce::AlertWindow>(
-            juce::String::fromUTF8("Liberty - Sélection multiple"),
-            report, juce::AlertWindow::NoIcon);
-        dialog->addTextEditor("selection", defaults,
-            juce::String::fromUTF8("NUMÉROS À RÉPARER"));
+            juce::String::fromUTF8("Liberty - Centre de réparation"),
+            juce::String::fromUTF8(
+                "Coche les correspondances à réassocier. Aucun changement sans confirmation."),
+            juce::AlertWindow::NoIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff101e30));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colours::white);
+        dialog->addCustomComponent(table.get());
         dialog->addButton("VÉRIFIER LA SÉLECTION", 1);
         dialog->addButton("ANNULER", 0);
-        dialog->centreAroundComponent(&pluginFiltersButton, 550, 380);
+        dialog->centreAroundComponent(&pluginFiltersButton, 780, 565);
         juce::Component::SafePointer<BrowserPanel> safe(this);
-        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-            [safe, dialog, proposals, limit](int chosen)
-            {
-                if (safe == nullptr || safe->stopped.load() || chosen != 1
-                    || safe->collectionsReadOnly || safe->scanning.load()) return;
-                const auto input = dialog->getTextEditorContents("selection").trim();
-                if (input.isEmpty()) return;
-                juce::StringArray tokens;
-                tokens.addTokens(input, ",;", "");
-                std::set<int> picked;
-                for (auto token : tokens)
+        dialog->enterModalState(true,
+            juce::ModalCallbackFunction::create(
+                [safe, dialog, table](int chosen)
                 {
-                    token = token.trim();
-                    if (token.isEmpty() || !token.containsOnly("0123456789"))
+                    if (safe == nullptr || safe->stopped.load() || chosen != 1
+                        || safe->collectionsReadOnly || safe->scanning.load()) return;
+                    const auto selected = table->chosen();
+                    if (selected.empty())
+                    {
+                        safe->pluginStatus.setText(juce::String::fromUTF8(
+                            "Aucun plugin sélectionné : aucune modification."),
+                            juce::dontSendNotification);
                         return;
-                    const int number = token.getIntValue();
-                    if (number < 1 || number > limit) return;
-                    picked.insert(number - 1);
-                }
-                if (picked.empty()) return;
-                std::vector<MissingRepairProposal> selected;
-                int affected = 0;
-                juce::String reportText;
-                for (const auto index : picked)
-                {
-                    const auto& p = proposals[(size_t)index];
-                    selected.push_back(p);
-                    affected += p.occurrences;
-                    reportText += p.title.substring(0, 100)
-                        + juce::String::fromUTF8("\n  ")
-                        + p.oldId.substring(0, 70)
-                        + juce::String::fromUTF8("\n  -> ")
-                        + p.newId.substring(0, 70) + "\n";
-                }
-                const auto confirm = juce::String((int)selected.size())
-                    + juce::String::fromUTF8(" plugins sélectionnés, ")
-                    + juce::String(affected)
-                    + juce::String::fromUTF8(
-                        " associations prévues.\n\n")
-                    + reportText
-                    + juce::String::fromUTF8(
-                        "\nSauvegarde avant modification. "
-                        "Aucun projet ni instance audio ne sera modifié.");
-                juce::AlertWindow::showOkCancelBox(
-                    juce::AlertWindow::WarningIcon,
-                    juce::String::fromUTF8("Confirmer la réparation sélectionnée"),
-                    confirm, "RÉASSOCIER LA SÉLECTION", "ANNULER", nullptr,
-                    juce::ModalCallbackFunction::create(
-                        [safe, selected](int accepted)
-                        {
-                            if (safe == nullptr || safe->stopped.load() || accepted != 1
-                                || safe->collectionsReadOnly || safe->scanning.load()) return;
-                            const auto fresh = safe->missingRepairProposals();
-                            for (const auto& p : selected)
+                    }
+                    int affected = 0;
+                    juce::String report;
+                    for (const auto& p : selected)
+                    {
+                        affected += p.occurrences;
+                        report += p.title.substring(0, 90)
+                            + juce::String::fromUTF8("\n  ")
+                            + p.oldId.substring(0, 85)
+                            + juce::String::fromUTF8("\n  → ")
+                            + p.newId.substring(0, 85) + "\n";
+                    }
+                    const auto confirmation = juce::String((int)selected.size())
+                        + juce::String::fromUTF8(" plugins et ")
+                        + juce::String(affected)
+                        + juce::String::fromUTF8(
+                            " associations à réassocier.\n\n")
+                        + report
+                        + juce::String::fromUTF8(
+                            "\nSauvegarde des collections avant modification. "
+                            "Aucun projet ni plugin audio chargé ne sera modifié.");
+                    juce::AlertWindow::showOkCancelBox(
+                        juce::AlertWindow::WarningIcon,
+                        juce::String::fromUTF8("Confirmer la sélection"),
+                        confirmation, "RÉASSOCIER LA SÉLECTION", "ANNULER",
+                        nullptr, juce::ModalCallbackFunction::create(
+                            [safe, selected](int accepted)
                             {
-                                const auto found = std::find_if(fresh.begin(), fresh.end(),
-                                    [&p](const MissingRepairProposal& current)
+                                if (safe == nullptr || safe->stopped.load() || accepted != 1
+                                    || safe->collectionsReadOnly || safe->scanning.load()) return;
+                                const auto fresh = safe->missingRepairProposals();
+                                for (const auto& p : selected)
+                                {
+                                    const auto found = std::find_if(fresh.begin(), fresh.end(),
+                                        [&p](const MissingRepairProposal& current)
+                                        {
+                                            return current.oldId == p.oldId
+                                                && current.newId == p.newId
+                                                && current.occurrences == p.occurrences;
+                                        });
+                                    if (found == fresh.end())
                                     {
-                                        return current.oldId == p.oldId
-                                            && current.newId == p.newId
-                                            && current.occurrences == p.occurrences;
-                                    });
-                                if (found == fresh.end())
-                                {
-                                    safe->pluginStatus.setText(
-                                        juce::String::fromUTF8(
-                                            "Les correspondances ont changé : recommence la sélection."),
-                                        juce::dontSendNotification);
-                                    return;
+                                        safe->pluginStatus.setText(
+                                            juce::String::fromUTF8(
+                                                "Scan ou collections modifiés : recommence la sélection."),
+                                            juce::dontSendNotification);
+                                        return;
+                                    }
                                 }
-                            }
-                            const auto before = safe->pluginCollections;
-                            const auto beforeTitles = safe->pluginCollectionTitles;
-                            int changed = 0;
-                            for (const auto& p : selected)
-                            {
-                                for (auto& group : safe->pluginCollections)
+                                const auto before = safe->pluginCollections;
+                                const auto beforeTitles = safe->pluginCollectionTitles;
+                                int changed = 0;
+                                for (const auto& p : selected)
                                 {
-                                    if (group.second.contains(p.newId)) continue;
-                                    const int index = group.second.indexOf(p.oldId);
-                                    if (index < 0) continue;
-                                    group.second.set(index, p.newId);
-                                    ++changed;
+                                    for (auto& group : safe->pluginCollections)
+                                    {
+                                        if (group.second.contains(p.newId)) continue;
+                                        const int index = group.second.indexOf(p.oldId);
+                                        if (index < 0) continue;
+                                        group.second.set(index, p.newId);
+                                        ++changed;
+                                    }
+                                    safe->pluginCollectionTitles[p.newId] = p.title;
                                 }
-                                safe->pluginCollectionTitles[p.newId] = p.title;
-                            }
-                            if (!changed) return;
-                            if (safe->commitPluginCollections(before,
-                                juce::String(changed)
-                                + juce::String::fromUTF8(
-                                    " associations réparées (sélection multiple).")))
-                            {
-                                safe->lastRelinkCollection.clear();
-                                safe->lastRelinkBeforeMembers.clear();
-                                safe->lastRelinkAfterMembers.clear();
-                                safe->lastRelinkOldId.clear();
-                                safe->lastRelinkNextId.clear();
-                                safe->lastRelinkRevision = 0;
-                            }
-                            else safe->pluginCollectionTitles = beforeTitles;
-                        }));
-            }), false);
+                                if (changed == 0) return;
+                                if (safe->commitPluginCollections(before,
+                                    juce::String(changed)
+                                    + juce::String::fromUTF8(
+                                        " associations réparées (tableau de sélection).")))
+                                {
+                                    safe->lastRelinkCollection.clear();
+                                    safe->lastRelinkBeforeMembers.clear();
+                                    safe->lastRelinkAfterMembers.clear();
+                                    safe->lastRelinkOldId.clear();
+                                    safe->lastRelinkNextId.clear();
+                                    safe->lastRelinkRevision = 0;
+                                }
+                                else safe->pluginCollectionTitles = beforeTitles;
+                            }));
+                }), false);
     }
 
     void showMissingPluginRepairCentre()
