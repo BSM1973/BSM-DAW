@@ -2338,6 +2338,79 @@ private:
                 }), false);
     }
 
+
+    static juce::String comparablePluginName(juce::String label)
+    {
+        label = label.trim();
+        // Saved collection display labels use "Name - Manufacturer (Format)".
+        if (label.contains(" - "))
+            label = label.upToFirstOccurrenceOf(" - ", false, false);
+        else if (label.endsWithIgnoreCase(" (AU)") ||
+                 label.endsWithIgnoreCase(" (VST3)") ||
+                 label.endsWithIgnoreCase(" (AudioUnit)"))
+            label = label.upToLastOccurrenceOf(" (", false, false);
+        return label.trim().toLowerCase();
+    }
+
+    void showProbableMissingPluginMatches()
+    {
+        if (scanning.load()) return;
+        const auto missing = globalMissingPluginSummary();
+        if (missing.uniqueIdentifiers.empty()) return;
+
+        juce::String report = juce::String::fromUTF8(
+            "Suggestions basées sur les noms enregistrés et le scan actuel.\n"
+            "Une suggestion ne prouve PAS la compatibilité des presets.\n\n");
+        int suggested = 0, ambiguous = 0, unmatched = 0;
+        for (const auto& oldId : missing.uniqueIdentifiers)
+        {
+            const auto oldLabel = collectionMemberTitle(oldId).trim();
+            if (oldLabel.isEmpty() || oldLabel == oldId)
+            {
+                ++unmatched;
+                continue;
+            }
+            const auto name = comparablePluginName(oldLabel);
+            if (name.length() < 3) { ++unmatched; continue; }
+            std::vector<const juce::PluginDescription*> exactName;
+            for (const auto& d : pluginDescriptions)
+                if (d.name.trim().toLowerCase() == name)
+                    exactName.push_back(&d);
+            if (exactName.empty()) { ++unmatched; continue; }
+            if (exactName.size() > 1) ++ambiguous;
+            else ++suggested;
+            if (report.length() > 5500) continue;
+            report += oldLabel.substring(0, 100) + "\n";
+            report += (exactName.size() == 1
+                ? juce::String::fromUTF8("  PROBABLE - NOM IDENTIQUE")
+                : juce::String::fromUTF8("  AMBIGU - PLUSIEURS VERSIONS"))
+                + juce::String::fromUTF8(" (")
+                + juce::String((int)exactName.size()) + ")\n";
+            const int limit = juce::jmin(3, (int)exactName.size());
+            for (int i = 0; i < limit; ++i)
+                report += "  " + readableCollectionPluginName(*exactName[(size_t)i])
+                    + juce::String::fromUTF8("\n  ID : ")
+                    + favouriteKey(*exactName[(size_t)i]).substring(0, 100) + "\n";
+            if ((int)exactName.size() > limit)
+                report += juce::String::fromUTF8("  ... autres versions masquées\n");
+            report += "\n";
+        }
+        report = juce::String::fromUTF8("Correspondances probables : ")
+            + juce::String(suggested)
+            + juce::String::fromUTF8("\nCorrespondances ambiguës : ")
+            + juce::String(ambiguous)
+            + juce::String::fromUTF8("\nSans correspondance : ")
+            + juce::String(unmatched) + "\n\n" + report
+            + juce::String::fromUTF8(
+                "\nAUCUNE RÉASSOCIATION AUTOMATIQUE.\n"
+                "Pour choisir la version exacte, utilise le clic droit sur un plugin manquant "
+                "puis « RÉASSOCIER À UN PLUGIN INSTALLÉ... ».");
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            juce::String::fromUTF8("Liberty - Suggestions AU / VST3"),
+            report, "FERMER");
+    }
+
     void showMissingPluginRepairCentre()
     {
         if (collectionsReadOnly || scanning.load()) return;
@@ -5336,6 +5409,9 @@ private:
         collectionsMenu.addItem(5409,
             juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
             globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
+        collectionsMenu.addItem(5412,
+            juce::String::fromUTF8("SUGGESTIONS DE PLUGINS RÉINSTALLÉS (AU / VST3)..."),
+            globalMissing.associations > 0 && !scanning.load());
         collectionsMenu.addItem(5411,
             juce::String::fromUTF8("ANNULER UNE RÉPARATION GROUPÉE (5 NIVEAUX MAX.)"),
             canUndoLastBulkRepair());
@@ -5581,6 +5657,11 @@ private:
                 else if (chosen == 5411)
                 {
                     safe->undoLastBulkRepair();
+                    return;
+                }
+                else if (chosen == 5412)
+                {
+                    safe->showProbableMissingPluginMatches();
                     return;
                 }
                 else if (chosen >= 5800 && chosen < 5800 + targetedLimit)
