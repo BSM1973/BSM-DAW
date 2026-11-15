@@ -1896,6 +1896,62 @@ private:
     }
 
 
+
+    bool canUndoLastBulkRepair() const
+    {
+        return !collectionsReadOnly && !scanning.load()
+            && bulkRepairRevision != 0 && bulkRepairRevision == collectionsRevision
+            && pluginCollections == bulkRepairAfter;
+    }
+
+    void rememberBulkRepair(
+        const std::map<juce::String, juce::StringArray>& before,
+        const std::map<juce::String, juce::String>& titlesBefore,
+        int changed)
+    {
+        bulkRepairBefore = before;
+        bulkRepairAfter = pluginCollections;
+        bulkRepairTitlesBefore = titlesBefore;
+        bulkRepairRevision = collectionsRevision;
+        bulkRepairChanged = changed;
+    }
+
+    void undoLastBulkRepair()
+    {
+        if (!canUndoLastBulkRepair()) return;
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        const auto count = bulkRepairChanged;
+        juce::AlertWindow::showOkCancelBox(
+            juce::AlertWindow::WarningIcon,
+            juce::String::fromUTF8("Annuler la dernière réparation groupée ?"),
+            juce::String(count)
+            + juce::String::fromUTF8(
+                " associations seront restaurées dans leur état précédent.\n"
+                "Cette opération ne touche pas aux projets ni aux plugins chargés.\n"
+                "Une sauvegarde sera créée avant l'annulation."),
+            "RESTAURER", "CONSERVER", nullptr,
+            juce::ModalCallbackFunction::create([safe](int chosen)
+            {
+                if (safe == nullptr || safe->stopped.load() || chosen != 1
+                    || !safe->canUndoLastBulkRepair()) return;
+                const auto current = safe->pluginCollections;
+                const auto currentTitles = safe->pluginCollectionTitles;
+                safe->pluginCollections = safe->bulkRepairBefore;
+                safe->pluginCollectionTitles = safe->bulkRepairTitlesBefore;
+                if (safe->commitPluginCollections(current,
+                    juce::String::fromUTF8("Dernière réparation groupée annulée.")))
+                {
+                    safe->bulkRepairRevision = 0;
+                    safe->bulkRepairBefore.clear();
+                    safe->bulkRepairAfter.clear();
+                    safe->bulkRepairTitlesBefore.clear();
+                    safe->bulkRepairChanged = 0;
+                }
+                else
+                    safe->pluginCollectionTitles = currentTitles;
+            }));
+    }
+
     struct MissingRepairProposal
     {
         juce::String oldId, newId, title;
@@ -1991,6 +2047,7 @@ private:
                     safe->lastRelinkOldId.clear();
                     safe->lastRelinkNextId.clear();
                     safe->lastRelinkRevision = 0;
+                    safe->rememberBulkRepair(before, beforeTitles, changed);
                 }
                 else safe->pluginCollectionTitles = beforeTitles;
             }));
@@ -2255,6 +2312,7 @@ private:
                                     safe->lastRelinkOldId.clear();
                                     safe->lastRelinkNextId.clear();
                                     safe->lastRelinkRevision = 0;
+                    safe->rememberBulkRepair(before, beforeTitles, changed);
                                 }
                                 else safe->pluginCollectionTitles = beforeTitles;
                             }));
@@ -2340,6 +2398,7 @@ private:
                     safe->lastRelinkOldId.clear();
                     safe->lastRelinkNextId.clear();
                     safe->lastRelinkRevision = 0;
+                    safe->rememberBulkRepair(before, beforeTitles, changed);
                 }
                 else safe->pluginCollectionTitles = beforeTitles;
             }));
@@ -5258,6 +5317,9 @@ private:
         collectionsMenu.addItem(5409,
             juce::String::fromUTF8("CENTRE DE RÉPARATION DES PLUGINS MANQUANTS..."),
             globalMissing.associations > 0 && !collectionsReadOnly && !scanning.load());
+        collectionsMenu.addItem(5411,
+            juce::String::fromUTF8("ANNULER LA DERNIÈRE RÉPARATION GROUPÉE"),
+            canUndoLastBulkRepair());
         collectionsMenu.addItem(5410,
             juce::String::fromUTF8("RÉPARER UNE SÉLECTION DE PLUGINS..."),
             !missingRepairProposals().empty() && !collectionsReadOnly && !scanning.load());
@@ -5495,6 +5557,11 @@ private:
                 else if (chosen == 5410)
                 {
                     safe->showSelectiveMissingRepair();
+                    return;
+                }
+                else if (chosen == 5411)
+                {
+                    safe->undoLastBulkRepair();
                     return;
                 }
                 else if (chosen >= 5800 && chosen < 5800 + targetedLimit)
@@ -6534,6 +6601,10 @@ private:
     juce::String lastRelinkCollection, lastRelinkOldId, lastRelinkNextId;
     juce::StringArray lastRelinkBeforeMembers, lastRelinkAfterMembers;
     juce::uint64 collectionsRevision = 0, lastRelinkRevision = 0;
+    std::map<juce::String, juce::StringArray> bulkRepairBefore, bulkRepairAfter;
+    std::map<juce::String, juce::String> bulkRepairTitlesBefore;
+    juce::uint64 bulkRepairRevision = 0;
+    int bulkRepairChanged = 0;
     juce::String collectionsDiskContents;
     bool collectionsDiskExists = false, collectionsChangedExternally = false;
     bool collectionsReadOnly = false;
