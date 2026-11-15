@@ -1801,35 +1801,49 @@ private:
         if (nextIdentifier.isEmpty() || installed.find(nextIdentifier) == installed.end())
             return;
 
+
         const auto oldLabel = collectionMemberTitle(oldIdentifier);
         const auto newLabel = readableCollectionPluginName(candidate);
-        const auto oldAU = oldLabel.endsWithIgnoreCase("(AU)")
-            || oldLabel.endsWithIgnoreCase("(AudioUnit)")
-            || oldLabel.endsWithIgnoreCase("(Audio Unit)");
-        const auto oldVST3 = oldLabel.endsWithIgnoreCase("(VST3)");
+        const auto oldFormat = oldLabel.endsWithChar(')')
+            ? oldLabel.fromLastOccurrenceOf(" (", false, false).dropLastCharacters(1)
+            : juce::String();
+        const auto oldWithoutFormat = oldFormat.isNotEmpty()
+            ? oldLabel.upToLastOccurrenceOf(" (", false, false) : oldLabel;
+        const auto oldManufacturer = oldWithoutFormat.contains(" - ")
+            ? oldWithoutFormat.fromLastOccurrenceOf(" - ", false, false)
+            : juce::String();
         const auto newFormat = candidate.pluginFormatName.trim();
-        const auto newAU = newFormat.equalsIgnoreCase("AU")
-            || newFormat.equalsIgnoreCase("AudioUnit")
-            || newFormat.equalsIgnoreCase("Audio Unit");
-        const bool changedFormat = (oldAU && !newAU)
-            || (oldVST3 && !newFormat.equalsIgnoreCase("VST3"));
+        const bool sameFormat = oldFormat.isNotEmpty()
+            && (oldFormat.equalsIgnoreCase(newFormat)
+                || (oldFormat.equalsIgnoreCase("AU") && newFormat.equalsIgnoreCase("AudioUnit"))
+                || (oldFormat.equalsIgnoreCase("AudioUnit") && newFormat.equalsIgnoreCase("AU")));
+        const bool sameManufacturer = oldManufacturer.isNotEmpty()
+            && oldManufacturer.equalsIgnoreCase(candidate.manufacturerName.trim());
         const auto question = juce::String::fromUTF8(
-            "Confirmer le remplacement de l'association dans cette collection uniquement ?\n\n")
-            + juce::String::fromUTF8("Collection : ") + collectionName
-            + juce::String::fromUTF8("\n\nAncien plugin : ") + oldLabel
-            + "\nID : " + oldIdentifier
-            + juce::String::fromUTF8("\n\nNouveau plugin : ") + newLabel
-            + "\nID : " + nextIdentifier
-            + juce::String::fromUTF8("\nType : ")
+            "COMPARAISON DU REMPLACEMENT\n\n")
+            + juce::String::fromUTF8("COLLECTION : ") + collectionName
+            + juce::String::fromUTF8("\n\nAVANT — PLUGIN MANQUANT\nNom : ") + oldLabel
+            + juce::String::fromUTF8("\nFormat enregistré : ")
+            + (oldFormat.isEmpty() ? juce::String("INCONNU") : oldFormat)
+            + juce::String::fromUTF8("\nFabricant enregistré : ")
+            + (oldManufacturer.isEmpty() ? juce::String("INCONNU") : oldManufacturer)
+            + juce::String::fromUTF8("\nIdentifiant JUCE : ") + oldIdentifier
+            + juce::String::fromUTF8("\n\nAPRÈS — PLUGIN INSTALLÉ\nNom : ") + newLabel
+            + juce::String::fromUTF8("\nFormat détecté : ") + newFormat
+            + juce::String::fromUTF8("\nFabricant détecté : ")
+            + candidate.manufacturerName.trim()
+            + juce::String::fromUTF8("\nType détecté : ")
             + (candidate.isInstrument ? juce::String("INSTRUMENT") : juce::String("EFFET"))
-            + (changedFormat
-                ? juce::String::fromUTF8(
-                    "\n\nATTENTION : le format AU/VST3 diffère de celui enregistré. "
-                    "Vérifie que ce remplacement est volontaire.")
-                : juce::String())
+            + juce::String::fromUTF8("\nIdentifiant JUCE : ") + nextIdentifier
+            + juce::String::fromUTF8("\n\nVÉRIFICATIONS\nFormat : ")
+            + (sameFormat ? juce::String("IDENTIQUE") : juce::String("DIFFÉRENT OU INCONNU"))
+            + juce::String::fromUTF8("\nFabricant : ")
+            + (sameManufacturer ? juce::String("IDENTIQUE") : juce::String("DIFFÉRENT OU INCONNU"))
             + juce::String::fromUTF8(
-                "\n\nLe plugin n'est pas chargé et aucune autre collection n'est modifiée. "
-                "Une sauvegarde locale de la version précédente sera conservée.");
+                "\n\nATTENTION : la compatibilité des presets ne peut pas être garantie. "
+                "Seule la référence de cette collection sera modifiée. "
+                "Le projet audio et les instances chargées resteront inchangés. "
+                "Une sauvegarde XML sera conservée.");
         juce::Component::SafePointer<BrowserPanel> safe(this);
         juce::AlertWindow::showOkCancelBox(
             juce::AlertWindow::WarningIcon,
