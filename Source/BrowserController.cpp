@@ -1821,11 +1821,22 @@ private:
             auto area = getLocalBounds().reduced(12);
             area.removeFromTop(34);
             area.removeFromBottom(82);
-            const int gap = 14;
-            const int half = (area.getWidth() - gap) / 2;
-            auto left = area.removeFromLeft(half);
-            area.removeFromLeft(gap);
-            auto right = area;
+            const int gap = 12;
+            juce::Rectangle<int> left, right;
+            if (getWidth() < 610)
+            {
+                const int half = (area.getHeight() - gap) / 2;
+                left = area.removeFromTop(half);
+                area.removeFromTop(gap);
+                right = area;
+            }
+            else
+            {
+                const int half = (area.getWidth() - gap) / 2;
+                left = area.removeFromLeft(half);
+                area.removeFromLeft(gap);
+                right = area;
+            }
             copyPrevious.setBounds(left.removeFromBottom(33).reduced(12, 3));
             copyReplacement.setBounds(right.removeFromBottom(33).reduced(12, 3));
         }
@@ -1841,11 +1852,22 @@ private:
             area.removeFromTop(6);
             auto footer = area.removeFromBottom(82);
             area.removeFromBottom(8);
-            const int gutter = 14;
-            const int panelWidth = (area.getWidth() - gutter) / 2;
-            const auto before = area.removeFromLeft(panelWidth);
-            area.removeFromLeft(gutter);
-            const auto after = area;
+            const int gutter = 12;
+            juce::Rectangle<int> before, after;
+            if (getWidth() < 610)
+            {
+                const int half = (area.getHeight() - gutter) / 2;
+                before = area.removeFromTop(half);
+                area.removeFromTop(gutter);
+                after = area;
+            }
+            else
+            {
+                const int half = (area.getWidth() - gutter) / 2;
+                before = area.removeFromLeft(half);
+                area.removeFromLeft(gutter);
+                after = area;
+            }
 
             const auto drawPanel = [&g](juce::Rectangle<int> r,
                 const juce::String& heading, const juce::String& name,
@@ -1952,6 +1974,12 @@ private:
         comparison->replacementId = nextIdentifier;
         comparison->formatMatches = sameFormat;
         comparison->makerMatches = sameManufacturer;
+        const auto* screen = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+        const auto available = screen != nullptr ? screen->userArea
+                                                 : juce::Rectangle<int>(0, 0, 1280, 800);
+        const int comparisonWidth = juce::jlimit(340, 740, available.getWidth() - 120);
+        const int comparisonHeight = comparisonWidth < 610 ? 572 : 382;
+        comparison->setSize(comparisonWidth, comparisonHeight);
         auto dialog = std::make_shared<juce::AlertWindow>(
             juce::String::fromUTF8("Liberty - Vérifier la réassociation"),
             juce::String::fromUTF8("Compare les identifiants avant de confirmer le remplacement."),
@@ -1961,7 +1989,9 @@ private:
         dialog->addCustomComponent(comparison.get());
         dialog->addButton("RÉASSOCIER", 1);
         dialog->addButton("ANNULER", 0);
-        dialog->centreAroundComponent(&pluginFiltersButton, 790, 440);
+        dialog->centreAroundComponent(&pluginFiltersButton,
+            juce::jmin(available.getWidth() - 40, comparisonWidth + 60),
+            juce::jmin(available.getHeight() - 40, comparisonHeight + 95));
         juce::Component::SafePointer<BrowserPanel> safe(this);
         dialog->enterModalState(true, juce::ModalCallbackFunction::create(
                 [safe, dialog, comparison, collectionName, oldIdentifier, candidate, nextIdentifier, newLabel]
