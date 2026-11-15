@@ -2352,6 +2352,159 @@ private:
         return label.trim().toLowerCase();
     }
 
+
+    struct MissingSuggestionRow
+    {
+        juce::String oldId, savedName, suggested, collections;
+        int matches = 0;
+    };
+
+    struct MissingSuggestionTable final : juce::Component, juce::ListBoxModel
+    {
+        std::vector<MissingSuggestionRow> entries;
+        std::vector<int> visible;
+        juce::TextEditor search;
+        juce::ComboBox level;
+        juce::Label summary;
+        juce::ListBox rows;
+
+        explicit MissingSuggestionTable(std::vector<MissingSuggestionRow> items)
+            : entries(std::move(items))
+        {
+            setSize(730, 440);
+            search.setTextToShowWhenEmpty(
+                juce::String::fromUTF8("Rechercher un plugin, un ID, une collection..."),
+                juce::Colours::lightgrey);
+            search.onTextChange = [this] { refresh(); };
+            addAndMakeVisible(search);
+            level.addItem("TOUS LES NIVEAUX", 1);
+            level.addItem("PROBABLE", 2);
+            level.addItem("AMBIGU", 3);
+            level.addItem("SANS CORRESPONDANCE", 4);
+            level.setSelectedId(1, juce::dontSendNotification);
+            level.onChange = [this] { refresh(); };
+            addAndMakeVisible(level);
+            summary.setColour(juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible(summary);
+            rows.setModel(this);
+            rows.setRowHeight(72);
+            rows.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff101e30));
+            addAndMakeVisible(rows);
+            refresh();
+        }
+
+        ~MissingSuggestionTable() override { rows.setModel(nullptr); }
+        void resized() override
+        {
+            auto area = getLocalBounds().reduced(8);
+            auto top = area.removeFromTop(32);
+            search.setBounds(top.removeFromLeft(440));
+            top.removeFromLeft(8);
+            level.setBounds(top);
+            area.removeFromTop(4);
+            summary.setBounds(area.removeFromTop(26));
+            area.removeFromTop(4);
+            rows.setBounds(area);
+        }
+        void refresh()
+        {
+            const auto query = search.getText().trim();
+            visible.clear();
+            for (int i = 0; i < (int)entries.size(); ++i)
+            {
+                const auto& item = entries[(size_t)i];
+                const int category = item.matches == 0 ? 4 : (item.matches == 1 ? 2 : 3);
+                if (level.getSelectedId() != 1 && level.getSelectedId() != category) continue;
+                if (query.isNotEmpty() && !item.savedName.containsIgnoreCase(query)
+                    && !item.suggested.containsIgnoreCase(query)
+                    && !item.oldId.containsIgnoreCase(query)
+                    && !item.collections.containsIgnoreCase(query)) continue;
+                visible.push_back(i);
+            }
+            rows.updateContent();
+            rows.repaint();
+            summary.setText(juce::String((int)visible.size())
+                + juce::String::fromUTF8(" résultats — diagnostic en lecture seule"),
+                juce::dontSendNotification);
+        }
+        int getNumRows() override { return (int)visible.size(); }
+        void paintListBoxItem(int row, juce::Graphics& g, int width, int height,
+                              bool highlighted) override
+        {
+            if (row < 0 || row >= (int)visible.size()) return;
+            const auto& item = entries[(size_t)visible[(size_t)row]];
+            g.fillAll(highlighted ? juce::Colour(0xff263f60)
+                                  : (row % 2 ? juce::Colour(0xff172b43)
+                                             : juce::Colour(0xff112239)));
+            g.setColour(juce::Colours::white);
+            g.setFont(juce::Font(13.0f, juce::Font::bold));
+            g.drawFittedText(item.savedName, 10, 3, width - 205, 21,
+                juce::Justification::centredLeft, 1);
+            g.setColour(item.matches == 1 ? juce::Colour(0xff70ddce)
+                : (item.matches > 1 ? juce::Colour(0xfff0c879)
+                                     : juce::Colour(0xffa1afc1)));
+            const auto status = item.matches == 1 ? juce::String("PROBABLE")
+                : (item.matches > 1 ? juce::String("AMBIGU")
+                                    : juce::String("SANS RÉSULTAT"));
+            g.drawFittedText(status, width - 190, 4, 180, 20,
+                juce::Justification::centredRight, 1);
+            g.setColour(juce::Colour(0xffc8d6e5));
+            g.setFont(juce::Font(11.0f));
+            g.drawFittedText(juce::String::fromUTF8("Collections : ") + item.collections,
+                10, 27, width - 20, 17, juce::Justification::centredLeft, 1);
+            g.setColour(juce::Colour(0xff9fb7ce));
+            const auto detail = item.matches == 0
+                ? juce::String::fromUTF8("Aucune version trouvée")
+                : item.suggested
+                    + (item.matches > 1 ? " (+" + juce::String(item.matches - 1)
+                        + juce::String::fromUTF8(" autres versions)") : "");
+            g.drawFittedText(detail, 10, 47, width - 20, 17,
+                juce::Justification::centredLeft, 1);
+        }
+    };
+
+    void showMissingSuggestionTable()
+    {
+        if (scanning.load()) return;
+        const auto missing = globalMissingPluginSummary();
+        std::vector<MissingSuggestionRow> items;
+        items.reserve(missing.uniqueIdentifiers.size());
+        for (const auto& oldId : missing.uniqueIdentifiers)
+        {
+            MissingSuggestionRow row;
+            row.oldId = oldId;
+            row.savedName = collectionMemberTitle(oldId);
+            juce::StringArray names;
+            for (const auto& group : missing.byCollection)
+                if (group.second.contains(oldId)) names.add(group.first);
+            row.collections = names.joinIntoString(", ");
+            const auto targetName = comparablePluginName(row.savedName);
+            if (row.savedName != oldId && targetName.length() >= 3)
+                for (const auto& d : pluginDescriptions)
+                    if (d.name.trim().toLowerCase() == targetName)
+                    {
+                        ++row.matches;
+                        if (row.suggested.isEmpty())
+                            row.suggested = readableCollectionPluginName(d);
+                    }
+            items.push_back(std::move(row));
+        }
+        auto table = std::make_shared<MissingSuggestionTable>(std::move(items));
+        auto dialog = std::make_shared<juce::AlertWindow>(
+            juce::String::fromUTF8("Liberty - Diagnostic des plugins manquants"),
+            juce::String::fromUTF8(
+                "Probable = même nom ; ambigu = plusieurs versions. "
+                "Vérifie toujours le format et la compatibilité avant réassociation."),
+            juce::AlertWindow::NoIcon);
+        dialog->setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff101e30));
+        dialog->setColour(juce::AlertWindow::textColourId, juce::Colours::white);
+        dialog->addCustomComponent(table.get());
+        dialog->addButton("FERMER", 0);
+        dialog->centreAroundComponent(&pluginFiltersButton, 790, 575);
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [dialog, table](int) {}), false);
+    }
+
     void showProbableMissingPluginMatches()
     {
         if (scanning.load()) return;
@@ -5412,6 +5565,9 @@ private:
         collectionsMenu.addItem(5412,
             juce::String::fromUTF8("SUGGESTIONS DE PLUGINS RÉINSTALLÉS (AU / VST3)..."),
             globalMissing.associations > 0 && !scanning.load());
+        collectionsMenu.addItem(5413,
+            juce::String::fromUTF8("TABLEAU DES CORRESPONDANCES PROBABLES..."),
+            globalMissing.associations > 0 && !scanning.load());
         collectionsMenu.addItem(5411,
             juce::String::fromUTF8("ANNULER UNE RÉPARATION GROUPÉE (5 NIVEAUX MAX.)"),
             canUndoLastBulkRepair());
@@ -5662,6 +5818,11 @@ private:
                 else if (chosen == 5412)
                 {
                     safe->showProbableMissingPluginMatches();
+                    return;
+                }
+                else if (chosen == 5413)
+                {
+                    safe->showMissingSuggestionTable();
                     return;
                 }
                 else if (chosen >= 5800 && chosen < 5800 + targetedLimit)
