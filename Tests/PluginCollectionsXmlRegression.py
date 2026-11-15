@@ -226,7 +226,7 @@ class PluginCollectionsRegression(unittest.TestCase):
             "std::vector<MissingRepairProposal> missingRepairProposals() const")
         self.assertIn("candidates", builder)
         self.assertIn("collectionMemberTitle(oldId)", builder)
-        self.assertIn("installedPluginIdentifiers()", builder)
+        self.assertIn("globalMissingPluginSummary()", builder)
         self.assertIn("result.push_back(", builder)
         self.assertIn("size() != 1", builder)
 
@@ -283,7 +283,7 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("juce::TemporaryFile staged(target);", writer)
         self.assertIn("staged.overwriteTargetFileWithTemporary()", writer)
         self.assertIn("++collectionsRevision;", writer)
-        self.assertIn("pluginCollections = before;", transaction)
+        self.assertIn("pluginCollections = oldState;", transaction)
 
     def test_diagnostic_remains_read_only_without_confirmed_candidate(self):
         display = cpp_function("void showMissingSuggestionTable()")
