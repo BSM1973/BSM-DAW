@@ -554,6 +554,8 @@ private:
     // Protect the spectral worker's iteration against vector reallocation and
     // track destruction. The real-time audio callback never acquires this lock.
     juce::CriticalSection spectralTrackListLock;
+    // Updated under spectralTrackListLock to reject stale FFT publications.
+    std::uint64_t spectralTrackListRevision = 0;
     std::atomic<bool> spectralWorkerStop { false };
     // Only true while a dedicated offline test requests deterministic fallback.
     std::atomic<bool> skipSpectralCacheForOfflineTest { false };
