@@ -354,12 +354,18 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
         std::fprintf(stderr, "SPECTRAL_TRACK_ERROR cache_not_published\n");
         return false;
     }
+    const auto fftStartsBefore = engine.getSpectralFftStartsForTesting();
+    // Repeated formant changes invalidate the FFT cache during track edits.
+    // This makes the measurement exercise cache regeneration, not just an
+    // already warmed-up idle worker.
     std::vector<double> addDurationsMs, removeDurationsMs;
     addDurationsMs.reserve(120);
     removeDurationsMs.reserve(120);
     using TestClock = std::chrono::steady_clock;
     for (int iteration = 0; iteration < 120; ++iteration)
     {
+        if ((iteration % 12) == 0)
+            engine.setTrackWarpFormant(0, (iteration % 24) == 0 ? 1.5 : -1.5);
         const auto addStart = TestClock::now();
         const int newTrack = engine.addAudioTrack();
         const auto addEnd = TestClock::now();
@@ -374,7 +380,26 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
         if ((iteration % 8) == 0)
             juce::Thread::sleep(2);
     }
-    juce::Thread::sleep(80);
+    bool cacheRecovered = false;
+    for (int wait = 0; wait < 300; ++wait)
+    {
+        if (engine.isSpectralCacheReadyForTesting(0))
+        {
+            cacheRecovered = true;
+            break;
+        }
+        juce::Thread::sleep(10);
+    }
+    const auto fftStartsAfter = engine.getSpectralFftStartsForTesting();
+    if (!cacheRecovered || fftStartsAfter <= fftStartsBefore)
+    {
+        std::fprintf(stderr,
+            "SPECTRAL_TRACK_ERROR fft_not_regenerated starts_before=%llu starts_after=%llu recovered=%d\n",
+            static_cast<unsigned long long>(fftStartsBefore),
+            static_cast<unsigned long long>(fftStartsAfter),
+            cacheRecovered ? 1 : 0);
+        return false;
+    }
     const auto summarise = [](std::vector<double> values)
     {
         std::sort(values.begin(), values.end());
@@ -386,8 +411,9 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     // Stable machine-readable output for CI. Measure only; latency limits
     // will be calibrated from multiple runners rather than guessed.
     std::printf("SPECTRAL_TRACK_LATENCY add_p95_ms=%.3f add_max_ms=%.3f "
-                "remove_p95_ms=%.3f remove_max_ms=%.3f operations=120\n",
-                addStats.first, addStats.second, removeStats.first, removeStats.second);
+                "remove_p95_ms=%.3f remove_max_ms=%.3f operations=120 fft_starts=%llu\n",
+                addStats.first, addStats.second, removeStats.first, removeStats.second,
+                static_cast<unsigned long long>(fftStartsAfter - fftStartsBefore));
     std::fflush(stdout);
     return true;
 }
