@@ -196,28 +196,51 @@ jobs:
       - name: Run Drum Sampler regression tests
         run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
 
-      - name: Stress spectral worker during track add/remove (5 fresh launches)
+      - name: Measure spectral track edit latency (5 fresh launches)
         run: |
           python3 Tests/GenerateRicheFixtures.py build-fast/riche-fixtures
           python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import re
           import subprocess
           import sys
+
           app = "build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
           sample = "build-fast/riche-fixtures/guitar.wav"
+          pattern = re.compile(
+              r"SPECTRAL_TRACK_LATENCY add_p95_ms=([0-9.]+) "
+              r"add_max_ms=([0-9.]+) remove_p95_ms=([0-9.]+) "
+              r"remove_max_ms=([0-9.]+) operations=120")
+          records = []
           for attempt in range(1, 6):
-              print(f"Spectral worker track-lifetime run {attempt}/5", flush=True)
+              print(f"Spectral track latency test {attempt}/5", flush=True)
               try:
                   result = subprocess.run(
                       [app, "--spectral-track-lifetime-test", sample],
-                      timeout=90, check=False)
+                      timeout=90, check=False, capture_output=True, text=True)
               except subprocess.TimeoutExpired:
-                  print(f"::error::Spectral track-lifetime timeout on launch {attempt}", flush=True)
+                  print(f"::error::Spectral lifetime test timed out on launch {attempt}", flush=True)
                   sys.exit(124)
               if result.returncode != 0:
-                  print(f"::error::Spectral track-lifetime crash on launch {attempt}: "
+                  print(result.stdout, result.stderr, flush=True)
+                  print(f"::error::Spectral lifetime test failed on launch {attempt}: "
                         f"exit={result.returncode}", flush=True)
                   sys.exit(1)
-          print("Spectral track-lifetime tests: 5/5 passed", flush=True)
+              match = pattern.search(result.stdout)
+              if match is None:
+                  print(result.stdout, result.stderr, flush=True)
+                  print(f"::error::Missing spectral latency metrics on launch {attempt}", flush=True)
+                  sys.exit(1)
+              record = dict(attempt=attempt,
+                            add_p95_ms=float(match[1]), add_max_ms=float(match[2]),
+                            remove_p95_ms=float(match[3]), remove_max_ms=float(match[4]))
+              records.append(record)
+              print("  " + json.dumps(record), flush=True)
+          output = Path("build-fast/riche-fixtures/spectral-track-latency.json")
+          output.write_text(json.dumps(records, indent=2) + "\n")
+          print(f"Spectral 5/5 passed; worst add={max(r['add_max_ms'] for r in records):.3f} ms; "
+                f"worst remove={max(r['remove_max_ms'] for r in records):.3f} ms", flush=True)
           PY
 
       - name: Render and measure real Riche engine fixtures
