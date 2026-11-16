@@ -310,11 +310,46 @@ static bool renderRicheFixture(const juce::StringArray& args)
     stream.release();
     return writer->writeFromAudioSampleBuffer(rendered, 0, rendered.getNumSamples());
 }
+// Test-only stress path: the spectral worker renders a real imported WAV
+// while the UI-equivalent thread repeatedly changes track ownership.
+// No hardware callback, third-party plugin or saved project is involved.
+static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
+{
+    if (args.size() != 2) return false;
+    const juce::File source(args[1]);
+    if (!source.existsAsFile()) return false;
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source));
+    if (!reader || reader->sampleRate <= 0.0 || reader->lengthInSamples < 4096)
+        return false;
+    const double seconds = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+    AudioEngine engine;
+    juce::AudioBuffer<float> empty(2, 0);
+    if (!engine.renderOfflineForTesting(empty, reader->sampleRate, 64))
+        return false;
+    juce::String error;
+    if (!engine.loadAudioFileIntoTrack(0, source, error))
+        return false;
+    if (!engine.restoreTrackWarpState(0, true, 2,
+        { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
+        return false;
+    for (int iteration = 0; iteration < 120; ++iteration)
+    {
+        const int newTrack = engine.addAudioTrack();
+        if (newTrack < 0 || !engine.removeAudioTrack(newTrack))
+            return false;
+        if ((iteration % 8) == 0)
+            juce::Thread::sleep(2);
+    }
+    juce::Thread::sleep(80);
+    return true;
+}
 #include "../Tests/AudioClipPlaybackSmoke.h"
 #include "../Tests/ChannelProcessingSmoke.h"
 void shutdownLibertyTestControllers(){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();}
 bool runLibertyArrangementToolsSmoke();
-class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>0&&a[0]=="--channel-processing-test"){const bool ok=runLibertyChannelProcessingSmoke();setApplicationReturnValue(ok?0:6);quit();return;}if(a.size()>0&&a[0]=="--arrangement-tools-test"){const bool ok=runLibertyArrangementToolsSmoke();setApplicationReturnValue(ok?0:5);quit();return;}if(a.size()>0&&a[0]=="--audio-clip-playback-test"){const bool ok=runLibertyAudioClipPlaybackSmoke();setApplicationReturnValue(ok?0:4);quit();return;}if(a.size()>0&&a[0]=="--render-riche-test"){const bool ok=renderRicheFixture(a);setApplicationReturnValue(ok?0:3);quit();return;}if(a.size()>=3&&a[0]=="--liberty-artwork-worker"){renderLibertyPluginArtwork(a[1],juce::File(a[2]));return;}if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
+class LibertyApplication final:public juce::JUCEApplication{public:const juce::String getApplicationName()override{return"Liberty";}const juce::String getApplicationVersion()override{return"0.1.0";}bool moreThanOneInstanceAllowed()override{return true;}void initialise(const juce::String&cmd)override{juce::StringArray a;a.addTokens(cmd,true);a.removeEmptyStrings();if(a.size()>0&&a[0]=="--channel-processing-test"){const bool ok=runLibertyChannelProcessingSmoke();setApplicationReturnValue(ok?0:6);quit();return;}if(a.size()>0&&a[0]=="--arrangement-tools-test"){const bool ok=runLibertyArrangementToolsSmoke();setApplicationReturnValue(ok?0:5);quit();return;}if(a.size()>0&&a[0]=="--audio-clip-playback-test"){const bool ok=runLibertyAudioClipPlaybackSmoke();setApplicationReturnValue(ok?0:4);quit();return;}if(a.size()>0&&a[0]=="--render-riche-test"){const bool ok=renderRicheFixture(a);setApplicationReturnValue(ok?0:3);quit();return;}if(a.size()>0&&a[0]=="--spectral-track-lifetime-test"){const bool ok=runSpectralTrackLifetimeSmoke(a);setApplicationReturnValue(ok?0:8);quit();return;}if(a.size()>=3&&a[0]=="--liberty-artwork-worker"){renderLibertyPluginArtwork(a[1],juce::File(a[2]));return;}if(a.size()>=3&&a[0]=="--liberty-scan-vst3"){bool ok=LibertyPluginHost::runSingleVST3ScanHelper(a[1],juce::File(a[2]));setApplicationReturnValue(ok?0:2);quit();return;}juce::LookAndFeel::setDefaultLookAndFeel(&applicationMenuLookAndFeel);mainWindow=std::make_unique<MainWindow>(getApplicationName());}void shutdown()override{if(mainWindow){shutdownLibertySpliceBrowserController();shutdownLibertyToolPaletteController();shutdownLibertyLanguageController();shutdownLibertyAudioSettingsRelocator();shutdownLibertyAIComposer2Controller();shutdownLibertyAISongIntelligenceController();shutdownLibertyAIArrangerController();shutdownLibertyAINoveltyController();shutdownLibertyAIAdvancedController();shutdownLibertyAIController();shutdownLibertyUILayerCoordinator();shutdownLibertyBrowserResizeController();shutdownLibertyUISymbolCleaner();shutdownLibertyPageModeCoordinator();shutdownLibertyPluginDragDropController();shutdownLibertyBrowserController();shutdownLibertyPerformController();shutdownLibertyMixConsoleController();shutdownLibertyTrackPluginInsertControls();shutdownLibertyMetronomeController();shutdownLibertyAudioClipWarpView();shutdownLibertyZoomController();shutdownLibertyTrackHeaderMixControls();shutdownLibertyGridSnapController();shutdownLibertyMultiMidiClipController();shutdownLibertyTrackColourInteraction();shutdownLibertyAudioRecordingController();shutdownLibertyMidiKeyboardRouter();shutdownLibertyMidiGroupDragInteraction();shutdownLibertyMidiNoteSelectionInteraction();shutdownLibertyMidiEditor();mainWindow.reset();juce::LookAndFeel::setDefaultLookAndFeel(nullptr);LibertyPluginHost::instance().shutdown();std::_Exit(0);}}void systemRequestedQuit()override{if(mainWindow)mainWindow->requestClose();else quit();}void anotherInstanceStarted(const juce::String&)override{}private:
 LibertyMenuLookAndFeel applicationMenuLookAndFeel;
 // First-run project chooser: custom-painted, scalable and blocking the editor
 // until the user explicitly chooses a session template.
