@@ -596,7 +596,12 @@ int AudioEngine::addAudioTrack()
     int index = -1;
     {
         const juce::ScopedLock lock(stateLock);
+        const auto spectralLockStart = std::chrono::steady_clock::now();
         const juce::ScopedLock spectralGuard(spectralTrackListLock);
+        spectralAddLockAcquisitionNs.store(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - spectralLockStart).count(),
+            std::memory_order_relaxed);
         for (auto& track : tracks)
             replacement.push_back(std::move(track));
         replacement.push_back(std::move(newTrack));
@@ -634,7 +639,12 @@ bool AudioEngine::removeAudioTrack(int trackIndex)
     bool removed = false;
     {
         const juce::ScopedLock lock(stateLock);
+        const auto spectralLockStart = std::chrono::steady_clock::now();
         const juce::ScopedLock spectralGuard(spectralTrackListLock);
+        spectralRemoveLockAcquisitionNs.store(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - spectralLockStart).count(),
+            std::memory_order_relaxed);
         if (trackIndex >= 0 && trackIndex < (int) tracks.size())
         {
             tracks.erase(tracks.begin() + trackIndex);
