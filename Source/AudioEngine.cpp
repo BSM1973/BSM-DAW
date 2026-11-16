@@ -1773,6 +1773,18 @@ std::uint64_t AudioEngine::getAudioContentRevision(int trackIndex) const noexcep
     return isValidTrackIndex(trackIndex) ? tracks[(size_t)trackIndex]->contentRevision.load(std::memory_order_relaxed) : 0;
 }
 
+bool AudioEngine::isSpectralCacheReadyForTesting(int trackIndex)
+{
+    const juce::ScopedLock guard(spectralTrackListLock);
+    if (trackIndex < 0 || trackIndex >= static_cast<int>(tracks.size()))
+        return false;
+    const auto& track = *tracks[static_cast<std::size_t>(trackIndex)];
+    const auto generation = track.spectralGeneration.load(std::memory_order_acquire);
+    return generation != 0
+        && generation == track.spectralReadyGeneration.load(std::memory_order_acquire)
+        && std::atomic_load(&track.spectralCache) != nullptr;
+}
+
 bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                           double renderSampleRate, int blockSamples,
                                           bool allowSpectralCache)
