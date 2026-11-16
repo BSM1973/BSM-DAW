@@ -338,6 +338,22 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     if (!engine.restoreTrackWarpState(0, true, 2,
         { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
         return false;
+    // Do not report near-zero lock latency if the FFT worker never ran.
+    bool cacheWasPublished = false;
+    for (int wait = 0; wait < 200; ++wait)
+    {
+        if (engine.isSpectralCacheReadyForTesting(0))
+        {
+            cacheWasPublished = true;
+            break;
+        }
+        juce::Thread::sleep(10);
+    }
+    if (!cacheWasPublished)
+    {
+        std::fprintf(stderr, "SPECTRAL_TRACK_ERROR cache_not_published\n");
+        return false;
+    }
     std::vector<double> addDurationsMs, removeDurationsMs;
     addDurationsMs.reserve(120);
     removeDurationsMs.reserve(120);
