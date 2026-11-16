@@ -75,6 +75,7 @@ void AudioEngine::runSpectralWorker()
             if (ratio < 0.25 || ratio > 4.0) continue;
             try
             {
+                spectralFftStarts.fetch_add(1, std::memory_order_release);
                 auto result = std::make_shared<juce::AudioBuffer<float>>(
                     LibertySpectralWarp::render(*source, ratio, pitch, formant));
                 const juce::ScopedLock guard(spectralTrackListLock);
