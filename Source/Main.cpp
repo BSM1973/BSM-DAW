@@ -1,5 +1,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cstdlib>
+#include <chrono>
+#include <algorithm>
+#include <vector>
+#include <cstdio>
 #if JUCE_MAC
  #include <ApplicationServices/ApplicationServices.h>
  #include <unistd.h>
@@ -334,15 +338,41 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     if (!engine.restoreTrackWarpState(0, true, 2,
         { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
         return false;
+    std::vector<double> addDurationsMs, removeDurationsMs;
+    addDurationsMs.reserve(120);
+    removeDurationsMs.reserve(120);
+    using TestClock = std::chrono::steady_clock;
     for (int iteration = 0; iteration < 120; ++iteration)
     {
+        const auto addStart = TestClock::now();
         const int newTrack = engine.addAudioTrack();
-        if (newTrack < 0 || !engine.removeAudioTrack(newTrack))
-            return false;
+        const auto addEnd = TestClock::now();
+        if (newTrack < 0) return false;
+        const bool removed = engine.removeAudioTrack(newTrack);
+        const auto removeEnd = TestClock::now();
+        if (!removed) return false;
+        addDurationsMs.push_back(
+            std::chrono::duration<double, std::milli>(addEnd - addStart).count());
+        removeDurationsMs.push_back(
+            std::chrono::duration<double, std::milli>(removeEnd - addEnd).count());
         if ((iteration % 8) == 0)
             juce::Thread::sleep(2);
     }
     juce::Thread::sleep(80);
+    const auto summarise = [](std::vector<double> values)
+    {
+        std::sort(values.begin(), values.end());
+        const auto p95Index = static_cast<std::size_t>(0.95 * (values.size() - 1));
+        return std::pair<double, double> { values[p95Index], values.back() };
+    };
+    const auto addStats = summarise(addDurationsMs);
+    const auto removeStats = summarise(removeDurationsMs);
+    // Stable machine-readable output for CI. Measure only; latency limits
+    // will be calibrated from multiple runners rather than guessed.
+    std::printf("SPECTRAL_TRACK_LATENCY add_p95_ms=%.3f add_max_ms=%.3f "
+                "remove_p95_ms=%.3f remove_max_ms=%.3f operations=120\n",
+                addStats.first, addStats.second, removeStats.first, removeStats.second);
+    std::fflush(stdout);
     return true;
 }
 #include "../Tests/AudioClipPlaybackSmoke.h"
