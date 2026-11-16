@@ -55,6 +55,16 @@ public:
     {
         return spectralFftStarts.load(std::memory_order_acquire);
     }
+    // Duration of the most recent spectral-track mutex acquisition; diagnostics
+    // only. Includes OS scheduling around the lock, so not a pure wait metric.
+    std::int64_t getLastSpectralAddLockAcquisitionNsForTesting() const noexcept
+    {
+        return spectralAddLockAcquisitionNs.load(std::memory_order_relaxed);
+    }
+    std::int64_t getLastSpectralRemoveLockAcquisitionNsForTesting() const noexcept
+    {
+        return spectralRemoveLockAcquisitionNs.load(std::memory_order_relaxed);
+    }
 
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
@@ -565,6 +575,8 @@ private:
     // Updated under spectralTrackListLock to reject stale FFT publications.
     std::uint64_t spectralTrackListRevision = 0;
     std::atomic<std::uint64_t> spectralFftStarts { 0 };
+    std::atomic<std::int64_t> spectralAddLockAcquisitionNs { 0 };
+    std::atomic<std::int64_t> spectralRemoveLockAcquisitionNs { 0 };
     std::atomic<bool> spectralWorkerStop { false };
     // Only true while a dedicated offline test requests deterministic fallback.
     std::atomic<bool> skipSpectralCacheForOfflineTest { false };
