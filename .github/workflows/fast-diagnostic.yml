@@ -211,7 +211,8 @@ jobs:
           pattern = re.compile(
               r"SPECTRAL_TRACK_LATENCY add_p95_ms=([0-9.]+) "
               r"add_max_ms=([0-9.]+) remove_p95_ms=([0-9.]+) "
-              r"remove_max_ms=([0-9.]+) operations=120 fft_starts=([0-9]+)")
+              r"remove_max_ms=([0-9.]+) operations=120 fft_starts=([0-9]+) "
+              r"add_lock_max_ms=([0-9.]+) remove_lock_max_ms=([0-9.]+)")
           records = []
           for attempt in range(1, 6):
               print(f"Spectral track latency test {attempt}/5", flush=True)
@@ -239,7 +240,9 @@ jobs:
               record = dict(attempt=attempt,
                             add_p95_ms=float(match[1]), add_max_ms=float(match[2]),
                             remove_p95_ms=float(match[3]), remove_max_ms=float(match[4]),
-                            fft_starts=fft_starts)
+                            fft_starts=fft_starts,
+                            add_lock_max_ms=float(match[6]),
+                            remove_lock_max_ms=float(match[7]))
               records.append(record)
               print("  " + json.dumps(record), flush=True)
           output = Path("build-fast/riche-fixtures/spectral-track-latency.json")
