@@ -551,6 +551,9 @@ private:
     std::atomic<int> drumSamplerTrack { -1 };
     juce::AudioDeviceManager deviceManager;
     std::vector<std::unique_ptr<AudioTrackState>> tracks;
+    // Protect the spectral worker's iteration against vector reallocation and
+    // track destruction. The real-time audio callback never acquires this lock.
+    juce::CriticalSection spectralTrackListLock;
     std::atomic<bool> spectralWorkerStop { false };
     // Only true while a dedicated offline test requests deterministic fallback.
     std::atomic<bool> skipSpectralCacheForOfflineTest { false };
