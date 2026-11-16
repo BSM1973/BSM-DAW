@@ -50,6 +50,11 @@ public:
     // Headless diagnostic only: confirms that the worker published an FFT
     // result for this track's current generation (never used in audio callback).
     bool isSpectralCacheReadyForTesting(int trackIndex);
+    // Monotonic diagnostic count; no audio-thread reads or locks.
+    std::uint64_t getSpectralFftStartsForTesting() const noexcept
+    {
+        return spectralFftStarts.load(std::memory_order_acquire);
+    }
 
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
@@ -559,6 +564,7 @@ private:
     juce::CriticalSection spectralTrackListLock;
     // Updated under spectralTrackListLock to reject stale FFT publications.
     std::uint64_t spectralTrackListRevision = 0;
+    std::atomic<std::uint64_t> spectralFftStarts { 0 };
     std::atomic<bool> spectralWorkerStop { false };
     // Only true while a dedicated offline test requests deterministic fallback.
     std::atomic<bool> skipSpectralCacheForOfflineTest { false };
