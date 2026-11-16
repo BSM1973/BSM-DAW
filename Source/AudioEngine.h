@@ -47,6 +47,9 @@ public:
     bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                  double renderSampleRate, int blockSamples,
                                  bool allowSpectralCache = true);
+    // Headless diagnostic only: confirms that the worker published an FFT
+    // result for this track's current generation (never used in audio callback).
+    bool isSpectralCacheReadyForTesting(int trackIndex);
 
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
