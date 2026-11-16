@@ -235,6 +235,40 @@ jobs:
             done
           done
 
+      - name: Stress-test RICHE guitar short blocks in fresh processes (12 launches)
+        run: |
+          # Exercise the exact intermittent SIGSEGV scenario using fresh
+          # application processes. Every run must pass; never retry failures.
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          app = Path("build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty")
+          source = Path("build-fast/riche-fixtures/guitar.wav")
+          output_dir = Path("build-fast/riche-fixtures/stress")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          if not app.is_file() or not source.is_file():
+              print("::error::RICHE stress setup missing binary or guitar fixture", flush=True)
+              sys.exit(1)
+          for attempt in range(1, 13):
+              output = output_dir / f"guitar-075-64-{attempt:02d}.wav"
+              print(f"RICHE fresh-process guitar 0.75 / 64: launch {attempt}/12", flush=True)
+              try:
+                  result = subprocess.run(
+                      [str(app), "--render-riche-test", str(source),
+                       str(output), "0.75", "64"],
+                      timeout=60, check=False)
+              except subprocess.TimeoutExpired:
+                  print(f"::error::RICHE guitar stress timed out on launch {attempt}", flush=True)
+                  sys.exit(124)
+              if result.returncode != 0 or not output.is_file() or output.stat().st_size < 44:
+                  print(f"::error::RICHE guitar stress failed on launch {attempt}: "
+                        f"exit={result.returncode}", flush=True)
+                  sys.exit(1)
+          print("RICHE guitar short-block stress: 12/12 launches passed", flush=True)
+          PY
+
       - name: Archive Riche WAV diagnostics
         if: always()
         uses: actions/upload-artifact@v4
