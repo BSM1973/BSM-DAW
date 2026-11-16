@@ -35,7 +35,11 @@ void AudioEngine::runSpectralWorker()
     // The callback only loads immutable published cache snapshots.
     while (!spectralWorkerStop.load(std::memory_order_acquire))
     {
-        for (auto& trackPointer : tracks)
+        // A removed AudioTrackState must stay alive through spectral rendering.
+        // This mutex is never taken by audioDeviceIOCallbackWithContext.
+        {
+            const juce::ScopedLock trackListGuard(spectralTrackListLock);
+            for (auto& trackPointer : tracks)
         {
             auto& track = *trackPointer;
             const auto markers = std::atomic_load(&track.warpMarkerSnapshot);
@@ -64,6 +68,7 @@ void AudioEngine::runSpectralWorker()
                 track.spectralReadyGeneration.store(generation, std::memory_order_release);
             }
             catch (...) { /* Keep the existing granular playback fallback. */ }
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(40));
     }
@@ -570,6 +575,7 @@ int AudioEngine::addAudioTrack()
     int index = -1;
     {
         const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock spectralGuard(spectralTrackListLock);
         for (auto& track : tracks)
             replacement.push_back(std::move(track));
         replacement.push_back(std::move(newTrack));
@@ -606,6 +612,7 @@ bool AudioEngine::removeAudioTrack(int trackIndex)
     bool removed = false;
     {
         const juce::ScopedLock lock(stateLock);
+        const juce::ScopedLock spectralGuard(spectralTrackListLock);
         if (trackIndex >= 0 && trackIndex < (int) tracks.size())
         {
             tracks.erase(tracks.begin() + trackIndex);
