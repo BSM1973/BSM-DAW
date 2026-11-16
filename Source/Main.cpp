@@ -358,6 +358,9 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     // Repeated formant changes invalidate the FFT cache during track edits.
     // This makes the measurement exercise cache regeneration, not just an
     // already warmed-up idle worker.
+    std::vector<double> addLockAcquisitionMs, removeLockAcquisitionMs;
+    addLockAcquisitionMs.reserve(120);
+    removeLockAcquisitionMs.reserve(120);
     std::vector<double> addDurationsMs, removeDurationsMs;
     addDurationsMs.reserve(120);
     removeDurationsMs.reserve(120);
@@ -373,6 +376,10 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
         const bool removed = engine.removeAudioTrack(newTrack);
         const auto removeEnd = TestClock::now();
         if (!removed) return false;
+        addLockAcquisitionMs.push_back(
+            engine.getLastSpectralAddLockAcquisitionNsForTesting() / 1000000.0);
+        removeLockAcquisitionMs.push_back(
+            engine.getLastSpectralRemoveLockAcquisitionNsForTesting() / 1000000.0);
         addDurationsMs.push_back(
             std::chrono::duration<double, std::milli>(addEnd - addStart).count());
         removeDurationsMs.push_back(
@@ -408,12 +415,16 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     };
     const auto addStats = summarise(addDurationsMs);
     const auto removeStats = summarise(removeDurationsMs);
+    const auto addLockStats = summarise(addLockAcquisitionMs);
+    const auto removeLockStats = summarise(removeLockAcquisitionMs);
     // Stable machine-readable output for CI. Measure only; latency limits
     // will be calibrated from multiple runners rather than guessed.
     std::printf("SPECTRAL_TRACK_LATENCY add_p95_ms=%.3f add_max_ms=%.3f "
-                "remove_p95_ms=%.3f remove_max_ms=%.3f operations=120 fft_starts=%llu\n",
+                "remove_p95_ms=%.3f remove_max_ms=%.3f operations=120 fft_starts=%llu "
+                "add_lock_max_ms=%.3f remove_lock_max_ms=%.3f\n",
                 addStats.first, addStats.second, removeStats.first, removeStats.second,
-                static_cast<unsigned long long>(fftStartsAfter - fftStartsBefore));
+                static_cast<unsigned long long>(fftStartsAfter - fftStartsBefore),
+                addLockStats.second, removeLockStats.second);
     std::fflush(stdout);
     return true;
 }
