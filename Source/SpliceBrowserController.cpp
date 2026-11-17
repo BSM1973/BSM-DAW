@@ -396,12 +396,28 @@ private:
         const auto safeThis = juce::Component::SafePointer<SplicePanel>(this);
         scanThread = std::thread([safeThis, root]
         {
+            // Limit pathological trees or inaccessible mounts, and keep all
+            // directory work off the JUCE message thread.
+            constexpr int maxEntries = 100000;
+            constexpr std::size_t maxSamples = 20000;
+            constexpr double maxDurationMs = 30000.0;
+            const auto started = juce::Time::getMillisecondCounterHiRes();
+            int entries = 0;
+            bool incomplete = false;
             std::vector<juce::File> found;
             if (root.isDirectory())
             {
-                for (const auto entry : juce::RangedDirectoryIterator(root, true, "*", juce::File::findFiles))
+                for (const auto entry : juce::RangedDirectoryIterator(
+                         root, true, "*", juce::File::findFiles | juce::File::ignoreHiddenFiles))
                 {
                     if (safeThis == nullptr || safeThis->stopped.load()) return;
+                    if (++entries > maxEntries
+                        || found.size() >= maxSamples
+                        || juce::Time::getMillisecondCounterHiRes() - started > maxDurationMs)
+                    {
+                        incomplete = true;
+                        break;
+                    }
                     const auto file = entry.getFile();
                     if (isAudioSample(file)) found.push_back(file);
                 }
@@ -412,12 +428,18 @@ private:
                 return a.getFileName().compareNatural(b.getFileName(), false) < 0;
             });
 
-            juce::MessageManager::callAsync([safeThis, found = std::move(found)]() mutable
+            juce::MessageManager::callAsync([safeThis, found = std::move(found), incomplete]() mutable
             {
                 if (safeThis == nullptr) return;
                 safeThis->samples = std::move(found);
                 safeThis->scanning.store(false);
                 safeThis->rebuildFilter();
+                if (incomplete)
+                    safeThis->statusLabel.setText(
+                        juce::String::fromUTF8("Analyse limitée (30 s / 20 000 samples / 100 000 fichiers). ")
+                        + juce::String(static_cast<int>(safeThis->samples.size()))
+                        + juce::String::fromUTF8(" samples trouvés. Choisis un sous-dossier pour affiner."),
+                        juce::dontSendNotification);
             });
         });
     }
