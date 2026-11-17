@@ -1095,10 +1095,17 @@ bool AudioEngine::restoreTrackWarpState(int trackIndex, bool enabled, int mode,
         track.warpSourceSeconds[(size_t)i].store(snapshot->source[(size_t)i], std::memory_order_relaxed);
         track.warpTargetSeconds[(size_t)i].store(snapshot->target[(size_t)i], std::memory_order_relaxed);
     }
-    track.warpMarkerCount.store(snapshot->count, std::memory_order_release);
-    track.warpMode.store(snapshot->mode, std::memory_order_relaxed);
-    track.warpEnabled.store(enabled, std::memory_order_relaxed);
-    std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+    // Synchronise with the worker's snapshot/commit phases: a previously
+    // rendered FFT must never be published against restored warp markers.
+    {
+        const juce::ScopedLock guard(spectralTrackListLock);
+        track.spectralGeneration.fetch_add(1, std::memory_order_release);
+        std::atomic_store(&track.spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
+        track.warpMarkerCount.store(snapshot->count, std::memory_order_release);
+        track.warpMode.store(snapshot->mode, std::memory_order_relaxed);
+        track.warpEnabled.store(enabled, std::memory_order_relaxed);
+        std::atomic_store(&track.warpMarkerSnapshot, std::move(snapshot));
+    }
     return true;
 }
 
