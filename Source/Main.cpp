@@ -404,6 +404,35 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
         if (cacheRecovered) break;
         juce::Thread::sleep(10);
     }
+    // Confirm the cache is not just marked ready: the real headless callback
+    // must still render finite, audible audio from all four spectral tracks.
+    juce::AudioBuffer<float> postEditAudio(2, 16384);
+    postEditAudio.clear();
+    if (!engine.renderOfflineForTesting(postEditAudio, reader->sampleRate, 64, true))
+    {
+        std::fprintf(stderr, "SPECTRAL_TRACK_ERROR post_edit_render_failed\n");
+        return false;
+    }
+    double renderedEnergy = 0.0;
+    for (int channel = 0; channel < postEditAudio.getNumChannels(); ++channel)
+    {
+        const float* samples = postEditAudio.getReadPointer(channel);
+        for (int sample = 0; sample < postEditAudio.getNumSamples(); ++sample)
+        {
+            const double value = samples[sample];
+            if (!std::isfinite(value))
+            {
+                std::fprintf(stderr, "SPECTRAL_TRACK_ERROR non_finite_post_edit_audio\n");
+                return false;
+            }
+            renderedEnergy += value * value;
+        }
+    }
+    if (renderedEnergy < 1.0e-9)
+    {
+        std::fprintf(stderr, "SPECTRAL_TRACK_ERROR silent_post_edit_audio\n");
+        return false;
+    }
     const auto fftStartsAfter = engine.getSpectralFftStartsForTesting();
     if (!cacheRecovered || fftStartsAfter <= fftStartsBefore)
     {
