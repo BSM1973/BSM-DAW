@@ -360,6 +360,34 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
         std::fprintf(stderr, "SPECTRAL_TRACK_ERROR cache_not_published\n");
         return false;
     }
+    // Regression: restoring a different warp mode must invalidate the
+    // previously published spectral cache. Mode 4 cannot regenerate FFT.
+    if (!engine.restoreTrackWarpState(0, true, 4,
+        { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
+        return false;
+    if (engine.isSpectralCacheReadyForTesting(0))
+    {
+        std::fprintf(stderr, "SPECTRAL_TRACK_ERROR stale_cache_after_restore\n");
+        return false;
+    }
+    if (!engine.restoreTrackWarpState(0, true, 2,
+        { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
+        return false;
+    bool restoredCacheReady = false;
+    for (int wait = 0; wait < 500; ++wait)
+    {
+        if (engine.isSpectralCacheReadyForTesting(0))
+        {
+            restoredCacheReady = true;
+            break;
+        }
+        juce::Thread::sleep(10);
+    }
+    if (!restoredCacheReady)
+    {
+        std::fprintf(stderr, "SPECTRAL_TRACK_ERROR cache_not_rebuilt_after_restore\n");
+        return false;
+    }
     const auto fftStartsBefore = engine.getSpectralFftStartsForTesting();
     // Repeated formant changes invalidate the FFT cache during track edits.
     // This makes the measurement exercise cache regeneration, not just an
