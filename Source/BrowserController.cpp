@@ -9,6 +9,7 @@
 #include "LibertyDesignSystem.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
+void requestLibertySpliceSampleScan(MainComponent* owner);
 void resizeLibertyMixConsole(MainComponent*);
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -705,7 +706,9 @@ public:
         spliceScanButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         spliceScanButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffb9ccd6));
         spliceScanButton.setButtonText("SCAN SPLICE");
-        spliceScanButton.onClick = [this] { scanPlugins(); };
+        spliceScanButton.setTooltip(juce::String::fromUTF8("Analyser les samples Splice téléchargés sans lancer le scan AU/VST3."));
+        // Scan Splice's downloaded audio samples, NEVER all AU/VST3 plugins.
+        spliceScanButton.onClick = [this] { requestLibertySpliceSampleScan(&owner); };
         addAndMakeVisible(spliceScanButton);
 
         filesButton.setButtonText("PROJETS");
@@ -6850,8 +6853,15 @@ private:
 
         if (splice == nullptr)
         {
-            spliceInfo.setText("Splice Sounds non détecté - lancement du scan AU + VST3...", juce::dontSendNotification);
-            scanPlugins();
+            spliceInfo.setText(juce::String::fromUTF8("Splice Sounds non détecté dans les plugins installés."), juce::dontSendNotification);
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::InfoIcon,
+                juce::String::fromUTF8("Liberty - Splice Sounds"),
+                juce::String::fromUTF8(
+                    "Splice Sounds n'est pas présent dans le dernier inventaire AU/VST3. "
+                    "Pour le détecter, utilise SCAN AU/VST3 dans l'onglet PLUGINS. "
+                    "Pour tes fichiers audio Splice, utilise SCAN SPLICE."),
+                "FERMER");
             return;
         }
 
