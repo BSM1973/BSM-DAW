@@ -447,6 +447,15 @@ public:
     }
 
     ~SpliceBrowserController() override { shutdown(); }
+    void requestSampleScan()
+    {
+        attachIfPossible();
+        if (splicePanel == nullptr || stopped.load()) return;
+        splicePanel->showLibrary();
+        showSplice(true);
+        splicePanel->startScan();
+    }
+
 
     void shutdown()
     {
@@ -626,6 +635,14 @@ private:
 };
 
 Bootstrap bootstrap;
+}
+
+void requestLibertySpliceSampleScan(MainComponent* owner)
+{
+    if (owner == nullptr) return;
+    const auto it = controllers.find(owner);
+    if (it != controllers.end() && it->second)
+        it->second->requestSampleScan();
 }
 
 void shutdownLibertySpliceBrowserController()
