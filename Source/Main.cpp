@@ -332,21 +332,27 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     juce::AudioBuffer<float> empty(2, 0);
     if (!engine.renderOfflineForTesting(empty, reader->sampleRate, 64))
         return false;
+    // Four persistent spectral tracks make the worker process multiple
+    // independent caches while the fifth track is repeatedly inserted/removed.
     juce::String error;
-    if (!engine.loadAudioFileIntoTrack(0, source, error))
-        return false;
-    if (!engine.restoreTrackWarpState(0, true, 2,
-        { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
-        return false;
-    // Do not report near-zero lock latency if the FFT worker never ran.
-    bool cacheWasPublished = false;
-    for (int wait = 0; wait < 200; ++wait)
+    for (int track = 0; track < 4; ++track)
     {
-        if (engine.isSpectralCacheReadyForTesting(0))
-        {
-            cacheWasPublished = true;
-            break;
-        }
+        if (!engine.loadAudioFileIntoTrack(track, source, error))
+            return false;
+        if (!engine.restoreTrackWarpState(track, true, 2,
+            { { 0.0, 0.0 }, { seconds, seconds * 1.5 } }))
+            return false;
+    }
+    // Reject a false pass if any of the four spectral workers' track
+    // generations failed to produce a ready cache.
+    bool cacheWasPublished = false;
+    for (int wait = 0; wait < 500; ++wait)
+    {
+        cacheWasPublished = true;
+        for (int track = 0; track < 4; ++track)
+            cacheWasPublished = engine.isSpectralCacheReadyForTesting(track)
+                && cacheWasPublished;
+        if (cacheWasPublished) break;
         juce::Thread::sleep(10);
     }
     if (!cacheWasPublished)
@@ -368,7 +374,8 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
     for (int iteration = 0; iteration < 120; ++iteration)
     {
         if ((iteration % 12) == 0)
-            engine.setTrackWarpFormant(0, (iteration % 24) == 0 ? 1.5 : -1.5);
+            for (int track = 0; track < 4; ++track)
+                engine.setTrackWarpFormant(track, ((iteration / 12 + track) % 2) == 0 ? 1.5 : -1.5);
         const auto addStart = TestClock::now();
         const int newTrack = engine.addAudioTrack();
         const auto addEnd = TestClock::now();
@@ -388,13 +395,13 @@ static bool runSpectralTrackLifetimeSmoke(const juce::StringArray& args)
             juce::Thread::sleep(2);
     }
     bool cacheRecovered = false;
-    for (int wait = 0; wait < 300; ++wait)
+    for (int wait = 0; wait < 500; ++wait)
     {
-        if (engine.isSpectralCacheReadyForTesting(0))
-        {
-            cacheRecovered = true;
-            break;
-        }
+        cacheRecovered = true;
+        for (int track = 0; track < 4; ++track)
+            cacheRecovered = engine.isSpectralCacheReadyForTesting(track)
+                && cacheRecovered;
+        if (cacheRecovered) break;
         juce::Thread::sleep(10);
     }
     const auto fftStartsAfter = engine.getSpectralFftStartsForTesting();
