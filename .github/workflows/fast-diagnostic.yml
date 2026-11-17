@@ -27,6 +27,9 @@ jobs:
       - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
 
+      - name: Verify Splice scan routes to sample library, never full plugin inventory
+        run: python3 Tests/SpliceScanRoutingRegression.py
+
       - name: Verify global UI no-overlap zones and routing panel
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/NoOverlapLayoutRegression.cpp -o /tmp/liberty-no-overlap
