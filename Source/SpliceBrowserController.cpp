@@ -640,8 +640,10 @@ Bootstrap bootstrap;
 void requestLibertySpliceSampleScan(MainComponent* owner)
 {
     if (owner == nullptr) return;
-    const auto it = controllers.find(owner);
-    if (it != controllers.end() && it->second)
+    auto it = controllers.find(owner);
+    if (it == controllers.end())
+        it = controllers.emplace(owner, std::make_unique<SpliceBrowserController>(*owner)).first;
+    if (it->second)
         it->second->requestSampleScan();
 }
 
