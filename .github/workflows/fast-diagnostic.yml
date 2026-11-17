@@ -234,8 +234,11 @@ jobs:
                   print(f"::error::Missing spectral latency metrics on launch {attempt}", flush=True)
                   sys.exit(1)
               fft_starts = int(match[5])
-              if fft_starts < 1:
-                  print(f"::error::No new FFT render during latency test on launch {attempt}", flush=True)
+              # Four persistent spectral tracks are invalidated together
+              # during editing; all must resume spectral rendering.
+              if fft_starts < 4:
+                  print(f"::error::Insufficient multi-track FFT activity on launch {attempt}: "
+                        f"{fft_starts} starts, expected at least 4", flush=True)
                   sys.exit(1)
               record = dict(attempt=attempt,
                             add_p95_ms=float(match[1]), add_max_ms=float(match[2]),
