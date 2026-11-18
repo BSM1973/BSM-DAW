@@ -29,7 +29,16 @@ juce::Component* findBrowserPanel(MainComponent& owner)
     findRecursive = [&findRecursive](juce::Component* parent) -> juce::Component*
     {
         if (parent == nullptr) return nullptr;
-        if (findDirectButton(parent, "PLUGINS") != nullptr && findDirectButton(parent, "FILES") != nullptr)
+        // Match the current French browser tabs; legacy English labels
+        // remain accepted for older workspaces. Require SPLICE to avoid
+        // accidentally finding a nested panel with only a PLUGINS button.
+        const bool hasProjects = findDirectButton(parent, "PROJETS") != nullptr
+            || findDirectButton(parent, "FILES") != nullptr;
+        const bool hasSamples = findDirectButton(parent, "SAMPLES") != nullptr
+            || findDirectButton(parent, "AUDIO") != nullptr;
+        if (hasProjects && hasSamples
+            && findDirectButton(parent, "PLUGINS") != nullptr
+            && findDirectButton(parent, "SPLICE") != nullptr)
             return parent;
         for (int i = 0; i < parent->getNumChildComponents(); ++i)
             if (auto* found = findRecursive(parent->getChildComponent(i)))
@@ -550,7 +559,8 @@ private:
         auto* button = dynamic_cast<juce::TextButton*>(event.eventComponent);
         if (button == nullptr || button == spliceButton) return;
         const auto text = button->getButtonText();
-        if (text == "FILES" || text == "AUDIO" || text == "MIDI" || text == "PRESETS" || text == "PLUGINS")
+        if (text == "PROJETS" || text == "FILES" || text == "SAMPLES" || text == "AUDIO"
+            || text == "MIDI" || text == "PRESETS" || text == "PLUGINS")
             showSplice(false);
     }
 
@@ -560,8 +570,10 @@ private:
         attachIfPossible();
         if (browserPanel == nullptr || spliceButton == nullptr || splicePanel == nullptr) return;
 
-        auto* files = findDirectButton(browserPanel, "FILES");
-        auto* audio = findDirectButton(browserPanel, "AUDIO");
+        auto* files = findDirectButton(browserPanel, "PROJETS");
+        if (files == nullptr) files = findDirectButton(browserPanel, "FILES");
+        auto* audio = findDirectButton(browserPanel, "SAMPLES");
+        if (audio == nullptr) audio = findDirectButton(browserPanel, "AUDIO");
         auto* midi = findDirectButton(browserPanel, "MIDI");
         auto* presets = findDirectButton(browserPanel, "PRESETS");
         auto* plugins = findDirectButton(browserPanel, "PLUGINS");
