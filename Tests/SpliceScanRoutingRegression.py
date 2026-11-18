@@ -40,6 +40,16 @@ class SpliceRoutingTests(unittest.TestCase):
         self.assertIn("saveRootFolder();", SPLICE)
         self.assertIn("spliceRoot.getFullPathName(), juce::dontSendNotification", SPLICE)
 
+    def test_native_french_splice_tab_exposes_folder_choice(self):
+        self.assertIn('spliceChooseFolderButton.setButtonText(', BROWSER)
+        self.assertIn('spliceChooseFolderButton.onClick = [this] { chooseSpliceSampleFolder(); };', BROWSER)
+        self.assertIn('spliceChooseFolderButton.setVisible(spliceMode);', BROWSER)
+        self.assertIn('spliceChooseFolderButton.setBounds(', BROWSER)
+        self.assertIn('SpliceLibraryPath.txt', BROWSER)
+        self.assertIn('requestLibertySpliceSampleScan(&safe->owner);', BROWSER)
+        request = SPLICE[SPLICE.index("void requestLocalSampleScan()"):SPLICE.index("    void paint(", SPLICE.index("void requestLocalSampleScan()"))]
+        self.assertIn("loadRootFolder();", request)
+
     def test_splice_local_scan_uses_worker_thread(self):
         self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
         self.assertIn("it->second->requestSampleScan();", SPLICE)
