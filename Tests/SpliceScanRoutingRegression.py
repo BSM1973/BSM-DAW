@@ -20,6 +20,16 @@ class SpliceRoutingTests(unittest.TestCase):
         end = BROWSER.index("\n    void ", start + 5)
         self.assertNotIn("scanPlugins();", BROWSER[start:end])
 
+    def test_splice_panel_attaches_to_current_french_browser_tabs(self):
+        start = SPLICE.index("juce::Component* findBrowserPanel(")
+        end = SPLICE.index("bool isAudioSample(", start)
+        lookup = SPLICE[start:end]
+        self.assertIn('findDirectButton(parent, "PROJETS")', lookup)
+        self.assertIn('findDirectButton(parent, "SAMPLES")', lookup)
+        self.assertIn('findDirectButton(parent, "SPLICE")', lookup)
+        self.assertIn('findDirectButton(browserPanel, "PROJETS")', SPLICE)
+        self.assertIn('findDirectButton(browserPanel, "SAMPLES")', SPLICE)
+
     def test_splice_local_scan_uses_worker_thread(self):
         self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
         self.assertIn("it->second->requestSampleScan();", SPLICE)
