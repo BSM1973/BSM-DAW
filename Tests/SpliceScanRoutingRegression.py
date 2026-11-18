@@ -23,7 +23,11 @@ class SpliceRoutingTests(unittest.TestCase):
     def test_splice_local_scan_uses_worker_thread(self):
         self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
         self.assertIn("it->second->requestSampleScan();", SPLICE)
-        self.assertIn("splicePanel->startScan();", SPLICE)
+        self.assertIn("splicePanel->requestLocalSampleScan();", SPLICE)
+        self.assertIn("void requestLocalSampleScan()", SPLICE)
+        self.assertIn("        showLibrary();\n        startScan();", SPLICE)
+        self.assertNotIn("splicePanel->showLibrary();", SPLICE)
+        self.assertNotIn("splicePanel->startScan();", SPLICE)
         start = SPLICE.index("void startScan()")
         end = SPLICE.index("\n    juce::TextButton ", start)
         self.assertIn("scanThread = std::thread(", SPLICE[start:end])
