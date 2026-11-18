@@ -188,7 +188,9 @@ jobs:
               echo "::error::Audio playback smoke failed on launch ${attempt}/5 (exit ${exit_code})"
               echo "::group::macOS Liberty crash reports"
               sleep 2
-              find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f \\( -name 'Liberty*.ips' -o -name 'Liberty*.crash' \\) -mmin -15 -print -exec sh -c 'head -n 140 "$1"' sh {} \\; 2>/dev/null || true
+              for ext in ips crash; do
+                find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -name "Liberty*.${ext}" -mmin -15 -print -exec head -n 140 {} \; 2>/dev/null || true
+              done
               echo "::endgroup::"
               exit "$exit_code"
             fi
