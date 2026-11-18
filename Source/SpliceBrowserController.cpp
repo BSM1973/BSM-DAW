@@ -200,6 +200,14 @@ public:
         if (scanThread.joinable()) scanThread.join();
     }
 
+    // Public entry point for the integrated browser's SCAN SPLICE action.
+    // Internal visibility and scan implementation remain private.
+    void requestLocalSampleScan()
+    {
+        showLibrary();
+        startScan();
+    }
+
     void paint(juce::Graphics& g) override
     {
         g.fillAll(juce::Colour(0xff101318));
@@ -473,9 +481,8 @@ public:
     {
         attachIfPossible();
         if (splicePanel == nullptr || stopped.load()) return;
-        splicePanel->showLibrary();
         showSplice(true);
-        splicePanel->startScan();
+        splicePanel->requestLocalSampleScan();
     }
 
 
