@@ -214,6 +214,14 @@ public:
     void requestLocalSampleScan()
     {
         showLibrary();
+        if (!spliceRoot.isDirectory())
+        {
+            statusLabel.setText(
+                juce::String::fromUTF8("Dossier Splice absent : sélectionne son emplacement."),
+                juce::dontSendNotification);
+            chooseSpliceFolder();
+            return;
+        }
         startScan();
     }
 
@@ -327,7 +335,13 @@ private:
 
     void chooseSpliceFolder()
     {
-        chooser = std::make_unique<juce::FileChooser>("Choisir le dossier de samples Splice", spliceRoot, "*");
+        // Never open a file chooser rooted at a missing or stale path.
+        const auto initialFolder = spliceRoot.isDirectory()
+            ? spliceRoot
+            : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        chooser = std::make_unique<juce::FileChooser>(
+            juce::String::fromUTF8("Choisir le dossier des samples Splice"),
+            initialFolder, "*");
         chooser->launchAsync(juce::FileBrowserComponent::openMode
                              | juce::FileBrowserComponent::canSelectDirectories,
                              [this](const juce::FileChooser& fc)
@@ -399,8 +413,9 @@ private:
             return;
         }
 
-        statusLabel.setText(juce::String(filteredIndices.size()) + " sample(s) - glisser vers ARRANGE / PERFORM",
-                            juce::dontSendNotification);
+        statusLabel.setText(
+            juce::String(filteredIndices.size()) + juce::String::fromUTF8(" sample(s) — ")
+            + spliceRoot.getFullPathName(), juce::dontSendNotification);
     }
 
     void startScan()
