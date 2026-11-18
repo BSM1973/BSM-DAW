@@ -710,6 +710,17 @@ public:
         // Scan Splice's downloaded audio samples, NEVER all AU/VST3 plugins.
         spliceScanButton.onClick = [this] { requestLibertySpliceSampleScan(&owner); };
         addAndMakeVisible(spliceScanButton);
+        spliceChooseFolderButton.setButtonText(juce::String::fromUTF8("CHOISIR DOSSIER"));
+        spliceChooseFolderButton.setTooltip(juce::String::fromUTF8(
+            "Choisir sur ce Mac le dossier contenant les samples Splice téléchargés."));
+        spliceChooseFolderButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff254e65));
+        spliceChooseFolderButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        spliceChooseFolderButton.onClick = [this] { chooseSpliceSampleFolder(); };
+        addAndMakeVisible(spliceChooseFolderButton);
+        spliceFolderPathLabel.setColour(juce::Label::textColourId, juce::Colour(0xffb9ccd6));
+        spliceFolderPathLabel.setFont(juce::Font(10.0f));
+        spliceFolderPathLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(spliceFolderPathLabel);
 
         filesButton.setButtonText("PROJETS");
         audioButton.setButtonText("SAMPLES");
@@ -1212,6 +1223,8 @@ public:
         const int spliceButtonW = juce::jmax(0, (getWidth() - 28) / 2);
         spliceOpenPluginButton.setBounds(12, 188, spliceButtonW, 32);
         spliceScanButton.setBounds(16 + spliceButtonW, 188, juce::jmax(0, getWidth() - 28 - spliceButtonW), 32);
+        spliceChooseFolderButton.setBounds(12, 232, getWidth() - 24, 32);
+        spliceFolderPathLabel.setBounds(12, 272, getWidth() - 24, 42);
     }
 
 private:
@@ -5539,6 +5552,9 @@ private:
         homeButton.setVisible(!pluginMode && !spliceMode);
         parentFolderButton.setVisible(!pluginMode && !spliceMode);
         spliceTitle.setVisible(spliceMode); spliceInfo.setVisible(spliceMode); spliceOpenPluginButton.setVisible(spliceMode); spliceScanButton.setVisible(spliceMode);
+        spliceChooseFolderButton.setVisible(spliceMode);
+        spliceFolderPathLabel.setVisible(spliceMode);
+        if (spliceMode) refreshSpliceFolderPathLabel();
         if (spliceMode && !scanning.load())
         {
             refreshPlugins();
@@ -6836,6 +6852,59 @@ private:
                                                    "Sélectionne une piste Audio ou Instrument pour retirer le One Knob.", "OK");
     }
 
+    juce::File spliceFolderConfigFile() const
+    {
+        return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("BSM").getChildFile("Liberty")
+            .getChildFile("SpliceLibraryPath.txt");
+    }
+
+    void refreshSpliceFolderPathLabel()
+    {
+        const auto config = spliceFolderConfigFile();
+        const juce::String saved = config.existsAsFile()
+            ? config.loadFileAsString().trim() : juce::String();
+        spliceFolderPathLabel.setText(
+            saved.isNotEmpty()
+                ? juce::String::fromUTF8("Samples : ") + saved
+                : juce::String::fromUTF8("Aucun dossier de samples Splice choisi."),
+            juce::dontSendNotification);
+        spliceFolderPathLabel.setTooltip(saved);
+    }
+
+    void chooseSpliceSampleFolder()
+    {
+        const auto config = spliceFolderConfigFile();
+        const juce::File saved(config.existsAsFile()
+            ? config.loadFileAsString().trim() : juce::String());
+        const auto initial = saved.isDirectory()
+            ? saved : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Emplacement des samples Splice"),
+            initial, "*");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(
+            juce::FileBrowserComponent::openMode
+                | juce::FileBrowserComponent::canSelectDirectories,
+            [safe, chooser](const juce::FileChooser& selection)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const auto folder = selection.getResult();
+                if (!folder.isDirectory()) return;
+                const auto target = safe->spliceFolderConfigFile();
+                if (!target.getParentDirectory().createDirectory()
+                    || !target.replaceWithText(folder.getFullPathName()))
+                {
+                    safe->spliceFolderPathLabel.setText(
+                        juce::String::fromUTF8("Impossible d'enregistrer le dossier Splice."),
+                        juce::dontSendNotification);
+                    return;
+                }
+                safe->refreshSpliceFolderPathLabel();
+                requestLibertySpliceSampleScan(&safe->owner);
+            });
+    }
+
     void openSpliceSounds()
     {
         refreshPlugins();
@@ -7094,8 +7163,8 @@ private:
     juce::AudioSourcePlayer previewPlayer;
     juce::TextButton scanPluginsButton, blacklistButton, clearBlacklistButton, favouritePluginButton, loadPluginButton, openPluginButton, unloadPluginButton;
     OneKnobButton chorusButton, flangerButton, phaserButton, tremoloButton, reverbButton, delayButton, driveButton, compressorButton, saturationButton, widthButton, filterButton, doublerButton, exciterButton, deEsserButton, gateButton, bassBoostButton, airButton, punchButton, softClipButton, clearOneKnobButton;
-    juce::Label pluginStatus, spliceTitle, spliceInfo, artworkStatsLabel;
-    juce::TextButton spliceOpenPluginButton, spliceScanButton;
+    juce::Label pluginStatus, spliceTitle, spliceInfo, spliceFolderPathLabel, artworkStatsLabel;
+    juce::TextButton spliceOpenPluginButton, spliceScanButton, spliceChooseFolderButton;
     juce::File rootDirectory;
     Category category = Category::files;
     ArtworkView artworkView = ArtworkView::all;
