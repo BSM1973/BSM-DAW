@@ -32,7 +32,7 @@ class SpliceRoutingTests(unittest.TestCase):
 
     def test_missing_sample_folder_prompts_user_and_displays_path(self):
         start = SPLICE.index("void requestLocalSampleScan()")
-        end = SPLICE.index("\\n    void paint(", start)
+        end = SPLICE.index("    void paint(", start)
         request = SPLICE[start:end]
         self.assertIn("if (!spliceRoot.isDirectory())", request)
         self.assertIn("chooseSpliceFolder();", request)
