@@ -213,6 +213,9 @@ public:
     // Internal visibility and scan implementation remain private.
     void requestLocalSampleScan()
     {
+        // The native Browser panel may change the folder after this overlay
+        // was created; always reload the shared persisted path before scanning.
+        loadRootFolder();
         showLibrary();
         if (!spliceRoot.isDirectory())
         {
