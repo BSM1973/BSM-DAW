@@ -30,6 +30,16 @@ class SpliceRoutingTests(unittest.TestCase):
         self.assertIn('findDirectButton(browserPanel, "PROJETS")', SPLICE)
         self.assertIn('findDirectButton(browserPanel, "SAMPLES")', SPLICE)
 
+    def test_missing_sample_folder_prompts_user_and_displays_path(self):
+        start = SPLICE.index("void requestLocalSampleScan()")
+        end = SPLICE.index("\\n    void paint(", start)
+        request = SPLICE[start:end]
+        self.assertIn("if (!spliceRoot.isDirectory())", request)
+        self.assertIn("chooseSpliceFolder();", request)
+        self.assertIn("startScan();", request)
+        self.assertIn("saveRootFolder();", SPLICE)
+        self.assertIn("spliceRoot.getFullPathName(), juce::dontSendNotification", SPLICE)
+
     def test_splice_local_scan_uses_worker_thread(self):
         self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
         self.assertIn("it->second->requestSampleScan();", SPLICE)
