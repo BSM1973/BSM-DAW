@@ -26,6 +26,9 @@ public:
         std::uint8_t channel = 1;
         std::uint8_t probability = 100;
         bool muted = false;
+        std::int64_t offsetTicks = 0; // Signed musical ticks within +/- half a step.
+        std::uint8_t repeats = 1; // 1..8 note retriggers within the event.
+        std::int8_t pitchOffset = 0; // Chromatic semitones, -24..24.
     };
     struct Lane
     {
@@ -148,7 +151,11 @@ public:
             e.startStep < 0 || e.startStep >= stepCount ||
             e.lengthTicks < 1 || e.lengthTicks > cycle - (std::int64_t)e.startStep * stepTicks ||
             e.velocity < 1 || e.channel < 1 || e.channel > 16 ||
-            e.probability > 100 || (int)lane->events.size() >= maxNotesPerLane ||
+            e.probability > 100 || e.offsetTicks < -stepTicks / 2 ||
+            e.offsetTicks > stepTicks / 2 ||
+            e.repeats < 1 || e.repeats > 8 ||
+            e.pitchOffset < -24 || e.pitchOffset > 24 ||
+            (int)lane->events.size() >= maxNotesPerLane ||
             noteAt(row, e.startStep) != nullptr || containsId(e.id))
             return false;
         lane->events.push_back(e);
@@ -181,12 +188,22 @@ public:
                 const int playedStep = lane.reverse ? rowSteps - 1 - e.startStep : e.startStep;
                 const auto swingTicks = (playedStep & 1)
                     ? (laneStepTicks * std::min<int>(100, lane.swing)) / 200 : 0;
-                const auto relativeStart = (std::int64_t)playedStep * laneStepTicks + swingTicks;
-                const auto remaining = cycle - relativeStart;
-                if (remaining < 1) continue;
-                result.push_back({ e.id, startTick + relativeStart,
-                                   std::min(e.lengthTicks, remaining), lane.pitch,
-                                   e.velocity, e.channel, e.probability });
+                const auto nominal = (std::int64_t)playedStep * laneStepTicks + swingTicks;
+                const auto firstStart = std::clamp<std::int64_t>(nominal + e.offsetTicks, 0, cycle - 1);
+                const auto window = std::min(e.lengthTicks, cycle - firstStart);
+                if (window <= 0) continue;
+                const int repeats = std::clamp((int)e.repeats, 1, 8);
+                for (int r = 0; r < repeats; ++r)
+                {
+                    const auto spanBegin = window * r / repeats;
+                    const auto spanEnd = window * (r + 1) / repeats;
+                    if (spanEnd <= spanBegin) continue;
+                    const auto relativeStart = firstStart + spanBegin;
+                    result.push_back({ e.id, startTick + relativeStart,
+                                       spanEnd - spanBegin,
+                                       (std::uint8_t)std::clamp((int)lane.pitch + (int)e.pitchOffset, 0, 127),
+                                       e.velocity, e.channel, e.probability });
+                }
             }
         }
         std::stable_sort(result.begin(), result.end(), [](const auto& a, const auto& b)

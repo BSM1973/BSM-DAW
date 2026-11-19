@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 class LibertyPolyGridEditing final
 {
@@ -39,6 +40,7 @@ public:
                          int row1, int step1, bool additive = false)
     {
         if (!additive) selection_.clear();
+        if (grid.stepTicks <= 0) return;
         const int loRow = std::max(0, std::min(row0, row1));
         const int hiRow = std::min(LibertyPolyphonicGrid::laneCount - 1, std::max(row0, row1));
         const int loStep = std::min(step0, step1);
@@ -188,7 +190,7 @@ public:
             auto* e = find(candidate, key);
             if (!e) return false;
             const auto limit = candidate.cycleTicks() - (std::int64_t)e->startStep * candidate.stepTicks;
-            e->lengthTicks = std::clamp(e->lengthTicks + stepDelta * candidate.stepTicks,
+            e->lengthTicks = std::clamp(e->lengthTicks + (std::int64_t)stepDelta * candidate.stepTicks,
                                         (std::int64_t)1, limit);
         }
         current = std::move(candidate);

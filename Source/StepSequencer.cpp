@@ -40,6 +40,9 @@ void savePolyphonicGrid(juce::XmlElement& patternElement, const LibertyPolyphoni
             note->setAttribute("channel", (int)event.channel);
             note->setAttribute("probability", (int)event.probability);
             note->setAttribute("muted", event.muted);
+            note->setAttribute("offsetTicks", (double)event.offsetTicks);
+            note->setAttribute("repeats", (int)event.repeats);
+            note->setAttribute("pitchOffset", (int)event.pitchOffset);
         }
     }
 }
@@ -95,6 +98,13 @@ void loadPolyphonicGrid(const juce::XmlElement& patternElement, LibertyPolyphoni
             event.channel = (std::uint8_t)juce::jlimit(1, 16, eventXml->getIntAttribute("channel", 1));
             event.probability = (std::uint8_t)juce::jlimit(0, 100, eventXml->getIntAttribute("probability", 100));
             event.muted = eventXml->getBoolAttribute("muted", false);
+            const double offset = eventXml->getDoubleAttribute("offsetTicks", 0.0);
+            if (!std::isfinite(offset) || std::floor(offset) != offset ||
+                offset < -(double)candidate.stepTicks / 2.0 ||
+                offset > (double)candidate.stepTicks / 2.0) continue;
+            event.offsetTicks = (std::int64_t)offset;
+            event.repeats = (std::uint8_t)juce::jlimit(1, 8, eventXml->getIntAttribute("repeats", 1));
+            event.pitchOffset = (std::int8_t)juce::jlimit(-24, 24, eventXml->getIntAttribute("pitchOffset", 0));
             candidate.importNote(row, event);
         }
     }
