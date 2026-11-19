@@ -7219,7 +7219,7 @@ private:
                 + " positionChanged=" + juce::String((int) (panelBounds != previousPanelBounds
                                                              || labelBounds != previousStatusBounds))
                 + " textChanged=" + juce::String((int) (currentText != previousStatusText))
-                + "\\n";
+                + "\n";
             file.appendText(line);
             ++statusTraceEvents;
         }
