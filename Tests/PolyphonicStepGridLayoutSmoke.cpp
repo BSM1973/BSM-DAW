@@ -15,6 +15,10 @@ int main()
             assert(!l.clipPanel.intersects(l.parameterHeader));
             assert(!l.clipPanel.intersects(l.gridHeader));
             assert(!l.editorArea.intersects(l.cells[7][15]));
+            assert(!l.classicMode.intersects(l.createClip));
+            assert(l.classicMode.y + l.classicMode.h <= l.createClip.y);
+            if (l.compact)
+                assert(l.classicMode.y >= 83 + 18);
             for (int row = 0; row < 8; ++row)
             {
                 assert(l.pitchLabels[row].w > 0);

@@ -85,12 +85,13 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     polyText(g, juce::String(grid.stepCount) + " PAS",
              {panelX+6, 61, l.clipPanel.w-12, 20}, l.compact ? 10.0f : 12.0f,
              juce::Colour(white), juce::Justification::centredLeft, true);
-    const int statsY = l.compact ? 84 : 93;
+    const int statsY = l.compact ? 83 : 93;
     polyText(g, "BOUCLE : OUI", {panelX+6, statsY, l.clipPanel.w-12, 18},
              l.compact ? 9.0f : 11.0f, juce::Colour(dim), juce::Justification::centredLeft);
-    polyText(g, "PAGE " + juce::String(stepSequencerPage+1) + " / 4",
-             {panelX+6, statsY+21, l.clipPanel.w-12, 18},
-             l.compact ? 9.0f : 11.0f, juce::Colour(white), juce::Justification::centredLeft);
+    if (!l.compact)
+        polyText(g, "PAGE " + juce::String(stepSequencerPage+1) + " / 4",
+                 {panelX+6, statsY+21, l.clipPanel.w-12, 18},
+                 11.0f, juce::Colour(white), juce::Justification::centredLeft);
     int count = 0;
     for (const auto& row : grid.lanes) count += (int)row.events.size();
     if (!l.compact)
@@ -103,7 +104,10 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
                  juce::Justification::centredLeft);
     }
     const bool hasNotes = grid.hasNotes();
-    polyChip(g, l.classicMode, "PAGE SUIV.", false, l.compact ? 8.3f : 10.0f);
+    polyChip(g, l.classicMode,
+             l.compact ? "PAGE " + juce::String(stepSequencerPage+1) + " / 4"
+                       : juce::String("PAGE SUIV."),
+             false, l.compact ? 8.3f : 10.0f);
     polyChip(g, l.createClip, hasNotes ? "CRÉER CLIP" : "CLIP VIDE",
              hasNotes, l.compact ? 8.3f : 10.0f);
 
