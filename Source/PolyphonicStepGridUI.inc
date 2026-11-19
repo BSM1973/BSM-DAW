@@ -256,8 +256,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     {
         const int startX = polyGesture.down.x - area.getX();
         const int startY = polyGesture.down.y - area.getY();
-        const auto now = getMouseXYRelative();
-        const auto relative = now - area.getPosition();
+        const auto relative = polyGesture.current - polyGesture.area.getPosition();
         const auto r = juce::Rectangle<int>(
             juce::jmin(startX, relative.x), juce::jmin(startY, relative.y),
             juce::jmax(1, std::abs(startX - relative.x)),

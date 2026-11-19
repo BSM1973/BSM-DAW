@@ -87,6 +87,7 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
     polyGesture.track = track;
     polyGesture.bank = bank;
     polyGesture.down = p;
+    polyGesture.current = p;
     polyGesture.original = grid;
     polyGesture.additive = mods.isShiftDown() || mods.isCommandDown() || mods.isCtrlDown();
     grabKeyboardFocus();
@@ -297,6 +298,7 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
 bool MainComponent::dragPolyGridPointer(juce::Point<int> p)
 {
     if (!polyGesture.active) return false;
+    polyGesture.current = p;
     const auto gesture = polyGesture;
     auto* pattern = gesture.midi ? getMidiStepSequencer(gesture.track)
                                   : getInstrumentStepSequencer(gesture.track);

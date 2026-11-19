@@ -486,7 +486,11 @@ bool MainComponent::resetProjectState()
         audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
     dynamicMidiTrackCount = 1;
     dynamicInstrumentTrackCount = 1;
-    // A new project must not inherit Step Sequencer banks from the old one.
+    // A new project cannot inherit MIDI notes or Undo history from the old one.
+    polyGridEditors.clear();
+    polyGesture = {};
+    polyGridSelectedLane = -1;
+    polyGridSelectedEvent = 0;
     midiStepSequencers.clear();
     midiStepSequencers.resize(1);
     instrumentStepSequencers.clear();

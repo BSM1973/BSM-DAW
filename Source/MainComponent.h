@@ -138,7 +138,7 @@ public:
         int parameterSign = 0, parameterTab = 0;
         std::uint32_t noteId = 0;
         juce::Rectangle<int> area;
-        juce::Point<int> down;
+        juce::Point<int> down, current;
         LibertyPolyphonicGrid original;
         std::vector<LibertyPolyGridEditing::Key> originalSelection;
     };
