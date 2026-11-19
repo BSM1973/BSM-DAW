@@ -1196,6 +1196,8 @@ void MainComponent::showFloatingStepSequencer()
     repaint();
 }
 
+#include "PolyphonicStepGridUI.inc"
+
 void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
 {
     const int audioTrackCount = getAudioTrackCount();
@@ -1379,8 +1381,6 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
     }
 
 }
-
-#include "PolyphonicStepGridUI.inc"
 
 void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
 {
