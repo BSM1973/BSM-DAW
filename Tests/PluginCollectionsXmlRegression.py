@@ -26,6 +26,18 @@ def cpp_function(marker):
 
 
 class PluginCollectionsRegression(unittest.TestCase):
+    def test_plugin_family_disclosure_icons_use_vectors_not_font_glyphs(self):
+        item = SOURCE[SOURCE.index("class PluginTreeItem final"):
+                      SOURCE.index("class BrowserPanel final")]
+        self.assertIn("void paintOpenCloseButton(", item)
+        self.assertIn('label == "INSTRUMENTS"', item)
+        self.assertIn('label == "EFFETS AUDIO"', item)
+        self.assertIn('juce::String::fromUTF8("RÉCENTS")', item)
+        self.assertIn("g.drawRoundedRectangle(", item)
+        self.assertIn("g.drawEllipse(", item)
+        self.assertIn("g.drawLine(", item)
+        self.assertNotIn("TreeViewItem::paintOpenCloseButton(", item)
+
     def test_one_parser_for_startup_and_import(self):
         reader = cpp_function("static bool readPluginCollectionsFile(")
         importer = cpp_function("void importPluginCollections()")
