@@ -7,7 +7,7 @@ main = (root / "Source/MainComponent.cpp").read_text(encoding="utf-8")
 header = (root / "Source/MainComponent.h").read_text(encoding="utf-8")
 for text in ('"CLIP MIDI"', '"CRÉER CLIP"', '"VÉLOCITÉ"', '"DÉCALAGE"',
              '"DURÉE"', '"RÉPÉTITION"', '"HAUTEUR"', '"CHANCE"',
-             '"PAS", "RATE", "DIR", "SWING"', 'juce::Colour(orange)',
+             '"PAS", "RATE", "DIR", "SWING"', 'constexpr juce::uint32 orange = 0xffed963c',
              'juce::Colour(cyan)', 'polyChip(g, l.muteButtons',
              'polyChip(g, l.soloButtons', 'clickPolyphonicStepSequencer'):
     assert text in ui, text
