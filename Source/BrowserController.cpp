@@ -7180,9 +7180,18 @@ private:
         refreshPluginStatus(); owner.repaint();
     }
 
+    void updatePluginStatusIfChanged(const juce::String& next)
+    {
+        // A static readout must not be invalidated on every 10 Hz timer tick.
+        // Repeated Label::setText requests caused the bottom favourites count
+        // to repaint continuously even when the information was unchanged.
+        if (pluginStatus.getText() != next)
+            pluginStatus.setText(next, juce::dontSendNotification);
+    }
+
     void refreshPluginStatus()
     {
-        if (scanning.load()) { pluginStatus.setText(getScanStatus(), juce::dontSendNotification); return; }
+        if (scanning.load()) { updatePluginStatusIfChanged(getScanStatus()); return; }
         auto& host = LibertyPluginHost::instance();
         const int logical = owner.selectedTrack;
         const int audioCount = owner.getAudioTrackCount();
@@ -7216,8 +7225,13 @@ private:
         }
         if (batchArtworkRunning.load()
             || juce::Time::getMillisecondCounter() < batchArtworkStatusUntilMs) return;
-        if (text.isEmpty()) text = juce::String(pluginDescriptions.size()) + " plugins  " + juce::String(favouriteKeys.size()) + " favoris";
-        pluginStatus.setText(text, juce::dontSendNotification);
+        if (text.isEmpty())
+        {
+            const int favouriteCount = favouriteKeys.size();
+            text = juce::String(pluginDescriptions.size()) + " plugins  "
+                + juce::String(favouriteCount) + (favouriteCount == 1 ? " favori" : " favoris");
+        }
+        updatePluginStatusIfChanged(text);
     }
 
     void timerCallback() override
@@ -7256,7 +7270,7 @@ private:
                 const auto progressText = getScanStatus();
                 if (category == Category::plugins)
                 {
-                    pluginStatus.setText(progressText, juce::dontSendNotification);
+                    updatePluginStatusIfChanged(progressText);
                     scanPluginsButton.setButtonText(progressText);
                     scanPluginsButton.setTooltip(progressText);
                 }
