@@ -43,7 +43,7 @@ struct Layout
         l.rowHeight = (rowsBottom - rowsTop) / 8;
         l.gridLeft = margin + clipWidth + paramWidth + 6;
         l.gridWidth = width - margin - l.gridLeft;
-        if (l.gridWidth < 238 || l.rowHeight < 12) return l;
+        if (l.gridWidth < 220 || l.rowHeight < 12) return l;
         l.firstStep = std::clamp(page, 0, 3) * 16;
         l.clipPanel = { margin, 35, clipWidth - 5, rowsBottom - 35 };
         l.createClip = { margin + 6, std::max(76, rowsBottom - 29), clipWidth - 17, 23 };

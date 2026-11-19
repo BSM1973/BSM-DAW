@@ -72,6 +72,21 @@ int main()
     assert(!restored.importNote(0, {125, 17, 480, 110, 1, 72, false}));
     const auto next = restored.addNote(1, 3, 960);
     assert(next > 123 && restored.render().size() == 2);
+    // Live row controls affect actual exported MIDI timing, not just labels.
+    restored.laneAt(1)->rate = 1; // Eighth-note row.
+    restored.laneAt(1)->reverse = true;
+    restored.laneAt(1)->steps = 8;
+    restored.laneAt(1)->swing = 50;
+    auto reversed = restored.render();
+    assert(reversed.size() == 2);
+    assert(reversed[1].pitch == 71);
+    assert(reversed[1].startTick == 4 * 480);
+    restored.laneAt(1)->reverse = false;
+    reversed = restored.render();
+    assert(reversed[1].startTick == 3 * 480 + 120);
+    restored.laneAt(1)->muted = true;
+    assert(restored.render().size() == 1);
+    restored.laneAt(1)->muted = false;
     restored.stepTicks = -1;
     assert(restored.cycleTicks() == 0 && restored.render().empty());
     restored.stepTicks = 240;

@@ -26,6 +26,10 @@ void savePolyphonicGrid(juce::XmlElement& patternElement, const LibertyPolyphoni
         laneXml->setAttribute("enabled", lane.enabled);
         laneXml->setAttribute("muted", lane.muted);
         laneXml->setAttribute("solo", lane.solo);
+        laneXml->setAttribute("steps", (int)lane.steps);
+        laneXml->setAttribute("rate", (int)lane.rate);
+        laneXml->setAttribute("reverse", lane.reverse);
+        laneXml->setAttribute("swing", (int)lane.swing);
         for (const auto& event : lane.events)
         {
             auto* note = laneXml->createNewChildElement("Event");
@@ -68,6 +72,11 @@ void loadPolyphonicGrid(const juce::XmlElement& patternElement, LibertyPolyphoni
         lane->enabled = laneXml->getBoolAttribute("enabled", true);
         lane->muted = laneXml->getBoolAttribute("muted", false);
         lane->solo = laneXml->getBoolAttribute("solo", false);
+        lane->steps = (std::uint8_t) juce::jlimit(1, candidate.stepCount,
+            laneXml->getIntAttribute("steps", candidate.stepCount));
+        lane->rate = (std::uint8_t) juce::jlimit(0, 2, laneXml->getIntAttribute("rate", 0));
+        lane->reverse = laneXml->getBoolAttribute("reverse", false);
+        lane->swing = (std::uint8_t) juce::jlimit(0, 100, laneXml->getIntAttribute("swing", 0));
         int processedNotes = 0;
         for (auto* eventXml = laneXml->getFirstChildElement(); eventXml; eventXml = eventXml->getNextElement())
         {

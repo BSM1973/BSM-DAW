@@ -33,6 +33,10 @@ public:
         bool enabled = true;
         bool muted = false;
         bool solo = false;
+        std::uint8_t steps = 16; // Visible notes in this row (1..64).
+        std::uint8_t rate = 0; // 0=1/16, 1=1/8, 2=1/32.
+        bool reverse = false;
+        std::uint8_t swing = 0; // 0..100%; odd-step delay up to half a step.
         std::vector<Event> events;
     };
     struct RenderedNote
@@ -49,10 +53,14 @@ public:
     std::int64_t stepTicks = 240; // 1/16 note at 960 PPQ.
     // C4, B3, A3, G3, F3, E3, D3, C3 as in the supplied video.
     std::array<Lane, laneCount> lanes {{
-        Lane {72, true, false, false, {}}, Lane {71, true, false, false, {}},
-        Lane {69, true, false, false, {}}, Lane {67, true, false, false, {}},
-        Lane {65, true, false, false, {}}, Lane {64, true, false, false, {}},
-        Lane {62, true, false, false, {}}, Lane {60, true, false, false, {}}
+        Lane {72, true, false, false, 16, 0, false, 0, {}},
+        Lane {71, true, false, false, 16, 0, false, 0, {}},
+        Lane {69, true, false, false, 16, 0, false, 0, {}},
+        Lane {67, true, false, false, 16, 0, false, 0, {}},
+        Lane {65, true, false, false, 16, 0, false, 0, {}},
+        Lane {64, true, false, false, 16, 0, false, 0, {}},
+        Lane {62, true, false, false, 16, 0, false, 0, {}},
+        Lane {60, true, false, false, 16, 0, false, 0, {}}
     }};
 
     std::int64_t cycleTicks() const noexcept
@@ -164,10 +172,16 @@ public:
             if (!lane.enabled || lane.muted || (anySolo && !lane.solo)) continue;
             for (const auto& e : lane.events)
             {
+                const int rowSteps = std::clamp((int)lane.steps, 1, stepCount);
                 if (e.muted || e.probability == 0 || e.id == 0 ||
-                    e.startStep < 0 || e.startStep >= stepCount || e.lengthTicks < 1)
+                    e.startStep < 0 || e.startStep >= rowSteps || e.lengthTicks < 1)
                     continue;
-                const auto relativeStart = (std::int64_t)e.startStep * stepTicks;
+                const auto laneStepTicks = lane.rate == 1 ? stepTicks * 2
+                    : lane.rate == 2 ? std::max<std::int64_t>(1, stepTicks / 2) : stepTicks;
+                const int playedStep = lane.reverse ? rowSteps - 1 - e.startStep : e.startStep;
+                const auto swingTicks = (playedStep & 1)
+                    ? (laneStepTicks * std::min<int>(100, lane.swing)) / 200 : 0;
+                const auto relativeStart = (std::int64_t)playedStep * laneStepTicks + swingTicks;
                 const auto remaining = cycle - relativeStart;
                 if (remaining < 1) continue;
                 result.push_back({ e.id, startTick + relativeStart,
