@@ -38,6 +38,31 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("g.drawLine(", item)
         self.assertNotIn("TreeViewItem::paintOpenCloseButton(", item)
 
+    def test_plugin_groups_collapsed_until_explicit_filter(self):
+        build = cpp_function("void rebuildPluginTree()")
+        self.assertIn("pluginRoot->setOpen(true);", build)
+        self.assertIn("fav->setOpen(revealMatches)", build)
+        self.assertIn("recentGroup->setOpen(revealMatches)", build)
+        self.assertIn("instruments->setOpen(revealMatches)", build)
+        self.assertIn("audioEffects->setOpen(revealMatches)", build)
+        self.assertIn("collectionsRoot->setOpen(revealMatches)", build)
+        self.assertNotIn("instruments->setOpen(true);", build)
+        self.assertNotIn("audioEffects->setOpen(true);", build)
+
+    def test_independent_browser_roots_on_external_volumes(self):
+        chooser = cpp_function("void chooseCategoryFolder()")
+        self.assertIn("ProjectsBrowserPath.txt", SOURCE)
+        self.assertIn("MidiBrowserPath.txt", SOURCE)
+        self.assertIn("PresetsBrowserPath.txt", SOURCE)
+        self.assertIn("canSelectDirectories", chooser)
+        self.assertIn("chosenCategory", chooser)
+        self.assertIn("replaceWithText(folder.getFullPathName())", chooser)
+        category = cpp_function("void setCategory(Category newCategory)")
+        self.assertIn("selectSavedCategoryFolder(category);", category)
+        self.assertIn("chooseLibraryButton.setVisible(category == Category::audio", category)
+        self.assertIn("category == Category::midi", category)
+        self.assertIn("category == Category::presets", category)
+
     def test_one_parser_for_startup_and_import(self):
         reader = cpp_function("static bool readPluginCollectionsFile(")
         importer = cpp_function("void importPluginCollections()")
