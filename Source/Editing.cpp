@@ -52,6 +52,8 @@ bool handleLibertyMidiUndoRedoKeyPress(const juce::KeyPress& key)
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    if (dockStepSequencerMode && !dockMixerMode && !dockCollapsed &&
+        polyGridKeyAction(key, false)) return true;
     const auto modifiers = key.getModifiers();
 
    #if JUCE_MAC

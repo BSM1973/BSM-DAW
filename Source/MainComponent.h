@@ -9,6 +9,7 @@ void refreshLibertyMixConsole(MainComponent*);
 #include "NoOverlapLayout.h"
 #include "MidiEngine.h"
 #include "StepSequencer.h"
+#include "PolyphonicStepGridEditing.h"
 #include <array>
 #include <vector>
 #include <functional>
@@ -128,6 +129,29 @@ public:
         const LibertyStepSequencer::Pattern&, int activeBank, bool midi);
     bool clickPolyphonicStepSequencer(juce::Point<int>, juce::Rectangle<int>,
         LibertyStepSequencer::Pattern&, bool midi, int trackIndex);
+    struct PolyGridGesture
+    {
+        enum class Mode { None, Paint, Move, Resize, Marquee, Parameter };
+        Mode mode = Mode::None;
+        bool active = false, midi = false, additive = false;
+        int track = -1, bank = -1, startRow = -1, startStep = -1;
+        int parameterSign = 0, parameterTab = 0;
+        std::uint32_t noteId = 0;
+        juce::Rectangle<int> area;
+        juce::Point<int> down;
+        LibertyPolyphonicGrid original;
+        std::vector<LibertyPolyGridEditing::Key> originalSelection;
+    };
+    juce::Rectangle<int> polyGridDockArea() const noexcept;
+    LibertyStepSequencer::Pattern* polyGridPattern(bool& midi, int& track, int& bank) noexcept;
+    LibertyPolyGridEditing& polyGridEditor(bool midi, int track, int bank);
+    void publishPolyGrid(bool midi, int track, LibertyStepSequencer::Pattern&);
+    bool beginPolyGridPointer(juce::Point<int>, juce::Rectangle<int>,
+                              juce::ModifierKeys, int clicks);
+    bool dragPolyGridPointer(juce::Point<int>);
+    bool endPolyGridPointer();
+    bool polyGridKeyAction(const juce::KeyPress&, bool detached);
+    bool beginFloatingPolyGrid(const juce::MouseEvent&, juce::Rectangle<int>);
     void clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void showFloatingStepSequencer();
     void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
@@ -1285,6 +1309,9 @@ private:
     std::vector<InstrumentStepSequencerBank> instrumentStepSequencers; bool dockStepSequencerMode = false; bool dockMixerMode = true; bool dockFxMode = false; bool drumSamplerDockSelected = false; int stepSequencerPage = 0; int stepSequencerSelectedStep = 0;
     int polyGridSelectedLane = -1;
     std::uint32_t polyGridSelectedEvent = 0;
-    int polyGridEditorTab = 0; int stepSequencerMidiTarget = 0; bool draggingStepSequencerPattern = false; int draggedStepSequencerInstrument = -1; std::map<int, juce::String> customTrackNames; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int armedInstrumentTrack = -1; int monitoredInstrumentTrack = -1; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; int draggedPatternInstrument = -1; int draggedPatternClip = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
+    int polyGridEditorTab = 0;
+    PolyGridGesture polyGesture;
+    std::map<std::pair<int, int>, LibertyPolyGridEditing> polyGridEditors;
+    int stepSequencerMidiTarget = 0; bool draggingStepSequencerPattern = false; int draggedStepSequencerInstrument = -1; std::map<int, juce::String> customTrackNames; std::unique_ptr<AudioSettingsWindow> audioSettingsWindow; std::unique_ptr<juce::FileChooser> projectFileChooser; std::vector<std::vector<float>> waveformMin; std::vector<std::vector<float>> waveformMax; std::vector<juce::File> trackSourceFiles; std::vector<juce::String> pendingAudioFileNames; std::vector<double> pendingAudioLengths; std::vector<double> pendingAudioStartSeconds; std::vector<PendingAudioWarpState> pendingAudioWarpStates; juce::File currentProjectFile; juce::String savedProjectStateSignature; std::function<void()> pendingProjectAction; int selectedTrack = 0; int armedInstrumentTrack = -1; int monitoredInstrumentTrack = -1; int dynamicMidiTrackCount = 1; int dynamicInstrumentTrackCount = 1; int trackScrollRows = 0; bool isPlaying = false; double playheadSeconds = 0.0; double tempoBpm = 120.0; int timeSignatureNumerator = 4; int timeSignatureDenominator = 4; double midiClipStartSeconds = 0.0; double midiClipLengthSeconds = 2.0; bool midiClipLengthUserDefined = false; TempoControls tempoControls { this }; std::unique_ptr<ProjectButton> projectButton; MidiClipOverlay midiClipOverlay { this }; bool draggingClip = false; int draggedTrack = -1; int draggedPatternInstrument = -1; int draggedPatternClip = -1; float dragStartMouseX = 0.0f; double dragStartSeconds = 0.0; int mixerDragMode = 0;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

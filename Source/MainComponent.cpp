@@ -1082,6 +1082,7 @@ class FloatingStepSequencerContent final : public juce::Component, private juce:
 public:
     explicit FloatingStepSequencerContent(MainComponent& main) : owner(main)
     {
+        setWantsKeyboardFocus(true);
         startTimerHz(15);
     }
     void paint(juce::Graphics& g) override
@@ -1090,8 +1091,29 @@ public:
     }
     void mouseDown(const juce::MouseEvent& event) override
     {
-        owner.clickFloatingStepSequencer(event.getPosition(), getLocalBounds());
+        if (!owner.beginFloatingPolyGrid(event, getLocalBounds()))
+            owner.clickFloatingStepSequencer(event.getPosition(), getLocalBounds());
+        grabKeyboardFocus();
         repaint();
+    }
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if (owner.dragPolyGridPointer(e.getPosition())) repaint();
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        if (owner.endPolyGridPointer()) repaint();
+    }
+    void mouseDoubleClick(const juce::MouseEvent& e) override
+    {
+        if (!owner.beginFloatingPolyGrid(e, getLocalBounds()))
+            owner.clickFloatingStepSequencer(e.getPosition(), getLocalBounds());
+        owner.endPolyGridPointer();
+        repaint();
+    }
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        return owner.polyGridKeyAction(key, true);
     }
 private:
     void timerCallback() override { repaint(); }
@@ -1197,6 +1219,7 @@ void MainComponent::showFloatingStepSequencer()
 }
 
 #include "PolyphonicStepGridUI.inc"
+#include "PolyphonicStepGridGestures.inc"
 
 void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
 {
@@ -3516,7 +3539,13 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
-    const auto click = event.getPosition();
+    const auto click = event.getEventRelativeTo(this).getPosition();
+    if (dockStepSequencerMode && !dockMixerMode && !dockCollapsed
+        && beginPolyGridPointer(click, polyGridDockArea(), event.mods, 2))
+    {
+        endPolyGridPointer();
+        return;
+    }
     if(handleLibertyClipNameDoubleClick(*this,click))return;
     // The real audio dock is painted by MainComponent, not AudioClipWarpView.
     // Insert markers here so double-clicks reach the waveform users actually see.
@@ -3692,6 +3721,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     // A listener attached recursively receives the original child event.
     // Always convert to MainComponent coordinates before dock hit-testing.
     const auto p = event.getEventRelativeTo(this).getPosition();
+    if (dockStepSequencerMode && !dockMixerMode && !dockCollapsed
+        && beginPolyGridPointer(p, polyGridDockArea(), event.mods, event.getNumberOfClicks()))
+        return;
     // Route a second left mouse press on the instrument arrangement grid
     // directly to the clip manager, even when the event originates in a child.
     if (event.getNumberOfClicks() >= 2 && event.mods.isLeftButtonDown()
@@ -4812,6 +4844,8 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 void MainComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (dragPolyGridPointer(event.getEventRelativeTo(this).getPosition()))
+        return;
     if (draggingArrangeTrack >= 0)
     {
         const auto p = event.getEventRelativeTo(this).getPosition();
@@ -4987,6 +5021,7 @@ void MainComponent::mouseDrag(const juce::MouseEvent& event)
 
 void MainComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (endPolyGridPointer()) return;
     if (draggingArrangeTrack >= 0)
     {
         const int movedTrack = draggingArrangeTrack;

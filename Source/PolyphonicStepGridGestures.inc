@@ -2,7 +2,6 @@
 // All state mutations happen on JUCE's message thread, never in processBlock().
 namespace
 {
-int polyAbsoluteTrack(MainComponent& owner, bool midi, int index);
 LibertyPolyGridEditing::Property polyProperty(int tab) noexcept
 {
     return (LibertyPolyGridEditing::Property)juce::jlimit(0, 5, tab);

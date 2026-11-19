@@ -381,6 +381,11 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
 
 void MainComponent::loadStepSequencers(const juce::XmlElement& root)
 {
+    // Undo snapshots must never escape a project boundary.
+    polyGridEditors.clear();
+    polyGesture = {};
+    polyGridSelectedLane = -1;
+    polyGridSelectedEvent = 0;
     const auto* all = root.getChildByName("StepSequencers");
     // Clear the entire previous bank, not only its arrangement clips.
     // Older projects and tracks missing from the XML must not inherit the
