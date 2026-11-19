@@ -49,7 +49,8 @@ struct Layout
         l.clipPanel = { margin, 35, clipWidth - 5, rowsBottom - 35 };
         l.createClip = { margin + 6, std::max(76, rowsBottom - 29), clipWidth - 17, 23 };
         l.classicMode = { margin + 6, rowsBottom - 55, clipWidth - 17, 21 };
-        const int exchangeY = l.compact ? 88 : 189;
+        // Avoid one-pixel overlap with page navigation on low-height docks.
+        const int exchangeY = l.compact ? std::min(88, l.classicMode.y - 24) : 189;
         const int exchangeW = (clipWidth - 20) / 2;
         l.pianoExport = {margin + 6, exchangeY, exchangeW, 20};
         l.pianoImport = {margin + 8 + exchangeW, exchangeY,
