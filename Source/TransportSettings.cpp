@@ -70,6 +70,10 @@ void MainComponent::applyTempoBpm(double value)
                 }
                 else
                     syncLibertyMultiMidiPlayback(*this);
+    // Retiming the shared transport must also retime all Step Sequencer previews.
+    // This work is performed on JUCE's message thread, never in audio callback.
+    for (int lane = 0; lane < getInstrumentTrackCount(); ++lane)
+        publishInstrumentStepSequencer(lane);
     tempoControls.refresh();
     repaint();
 }

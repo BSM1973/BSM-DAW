@@ -274,7 +274,8 @@ public:
             if (lengthTicks <= 0) return false;
             const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
             // Editing the step grid only updates audition notes, not previously placed clips.
-            audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);
+            audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm,
+                                                 pattern->polyGrid.active);
             return true;
         }
         catch (...) { return false; }

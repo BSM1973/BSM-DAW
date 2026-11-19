@@ -1,5 +1,6 @@
 #include <set>
 #include "AudioEngine.h"
+#include "PolyphonicStepGridTransport.h"
 #include "AudioCrossfadeCurve.h"
 #include "MixConsoleMeter.h"
 
@@ -337,7 +338,8 @@ void AudioEngine::setInstrumentTrackControllers(int instrumentTrack,
 }
 
 void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
-                                          double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept
+                                          double clipStartSeconds, double clipLengthSeconds, double tempoBpm,
+                                          bool repeatStepPattern) noexcept
 {
     if (instrumentTrack < 0) return;
     const auto rate = juce::jmax(1.0, tempoBpm);
@@ -370,6 +372,7 @@ void AudioEngine::setInstrumentTrackNotes(int instrumentTrack, const std::vector
     auto& state = *instrumentPlayback[(size_t)instrumentTrack];
     state.clipStartSeconds.store(juce::jmax(0.0, clipStartSeconds));
     state.clipLengthSeconds.store(juce::jmax(0.0, clipLengthSeconds));
+    state.repeatStepPattern.store(repeatStepPattern, std::memory_order_release);
     state.tempoBpm.store(rate);
     std::atomic_store(&state.noteSnapshot, std::move(snapshot));
     if (playing.load(std::memory_order_relaxed))
@@ -2624,16 +2627,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
             const double blockStart=static_cast<double>(position)/rate;
             const double blockEnd=static_cast<double>(position+numSamples)/rate;
+            const bool repeatPreview = !usingArrangementNotes
+                && state.repeatStepPattern.load(std::memory_order_acquire);
+            const auto previewCycle = state.clipLengthSeconds.load(std::memory_order_relaxed);
             if (noteSnapshot != nullptr)
             for (const auto& note : noteSnapshot->notes)
             {
-                const auto absoluteStart=clipStart+note.startSeconds;
-                const auto absoluteEnd=clipStart+note.endSeconds;
                 const auto frequency=note.frequency;
                 const auto amplitude=note.amplitude;
                 const int channel=juce::jlimit(1,16,note.channel);
                 const int pitch=juce::jlimit(0,127,(int)std::llround(69.0+12.0*std::log2(juce::jmax(0.0001,frequency/440.0))));
                 const float velocity=juce::jlimit(0.0f,1.0f,amplitude/0.045f);
+                const auto emitScheduledNote = [&](double absoluteStart, double absoluteEnd)
+                {
                 // Deterministic per-note draw: identical for Note On and Note Off,
                 // independent of callback buffer size and audio-thread allocations.
                 const auto startKey = static_cast<std::uint64_t>(std::llround(absoluteStart * 1000000.0));
@@ -2645,7 +2651,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 randomKey *= UINT64_C(0x94d049bb133111eb);
                 randomKey ^= randomKey >> 31;
                 if (note.probability <= 0 || (note.probability < 100
-                    && (randomKey % 100) >= static_cast<std::uint64_t>(note.probability))) continue;
+                    && (randomKey % 100) >= static_cast<std::uint64_t>(note.probability))) return;
                 const bool noteStartsInBlock = absoluteStart >= blockStart && absoluteStart < blockEnd;
                 const bool noteSpansResume = resumeInstruments && absoluteStart < blockStart && absoluteEnd > blockStart;
                 if (noteSpansResume)
@@ -2653,6 +2659,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 else if (noteStartsInBlock)
                     midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteStart-blockStart)*rate)));
                 if(absoluteEnd>=blockStart&&absoluteEnd<blockEnd)midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),juce::jlimit(0,numSamples-1,(int)std::llround((absoluteEnd-blockStart)*rate)));
+                };
+                if (repeatPreview && previewCycle > 0.0)
+                    LibertyStepTransport::eachLoopOccurrence(blockStart, blockEnd,
+                        clipStart, previewCycle, note.startSeconds, note.endSeconds,
+                        emitScheduledNote);
+                else
+                    emitScheduledNote(clipStart + note.startSeconds, clipStart + note.endSeconds);
             }
             // Controllers share the instrument MIDI buffer with note events.
             // Snapshots are prepared outside the audio callback; no allocations on the audio thread.

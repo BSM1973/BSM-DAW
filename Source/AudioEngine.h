@@ -176,7 +176,8 @@ public:
     void setInstrumentTrackControllers(int instrumentTrack, const std::vector<MidiEngine::ControllerEvent>& events,
                                        double tempoBpm) noexcept;
     void setInstrumentTrackNotes(int instrumentTrack, const std::vector<MidiEngine::NoteEvent>& notes,
-                                 double clipStartSeconds, double clipLengthSeconds, double tempoBpm) noexcept;
+                                 double clipStartSeconds, double clipLengthSeconds, double tempoBpm,
+                                 bool repeatStepPattern = false) noexcept;
 
     struct InstrumentArrangementClip
     {
@@ -526,6 +527,7 @@ private:
         std::shared_ptr<InstrumentNoteSnapshot> arrangementSnapshot;
         std::atomic<double> clipStartSeconds { 0.0 };
         std::atomic<double> clipLengthSeconds { 0.0 };
+        std::atomic<bool> repeatStepPattern { false };
         std::atomic<double> tempoBpm { 120.0 };
         std::atomic<float> gain { 1.0f };
         std::atomic<int> mixerBusRoute{-1};
