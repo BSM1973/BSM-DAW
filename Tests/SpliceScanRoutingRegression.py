@@ -50,6 +50,20 @@ class SpliceRoutingTests(unittest.TestCase):
         request = SPLICE[SPLICE.index("void requestLocalSampleScan()"):SPLICE.index("    void paint(", SPLICE.index("void requestLocalSampleScan()"))]
         self.assertIn("loadRootFolder();", request)
 
+    def test_splice_overlay_never_covers_unselected_tabs(self):
+        self.assertIn("browserPanel->addChildComponent(*splicePanel);", SPLICE)
+        self.assertNotIn("browserPanel->addAndMakeVisible(*splicePanel);", SPLICE)
+        self.assertIn("splicePanel->setVisible(requestedVisible);", SPLICE)
+        self.assertIn("sampleLibraryRequested", SPLICE)
+        self.assertIn("if (!spliceButton->getToggleState())", SPLICE)
+        self.assertIn("sampleLibraryRequested = false;", SPLICE)
+
+    def test_splice_login_is_only_via_sounds(self):
+        self.assertNotIn('loginButton.setButtonText("CONNEXION")', SPLICE)
+        self.assertNotIn("loginButton.onClick", SPLICE)
+        self.assertIn('soundsButton.setButtonText("SONS")', SPLICE)
+        self.assertIn('browser.goToURL("https://splice.com/sounds");', SPLICE)
+
     def test_splice_local_scan_uses_worker_thread(self):
         self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
         self.assertIn("it->second->requestSampleScan();", SPLICE)
