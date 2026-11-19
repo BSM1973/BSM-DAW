@@ -18,6 +18,11 @@ assert 'drawPolyphonicStepSequencer(g, area, *pattern' in main
 assert 'clickPolyphonicStepSequencer(point, area, *pattern' in main
 assert 'clickPolyphonicStepSequencer(p, area, *pattern' in main
 assert 'polyGridSelectedEvent' in header
-assert 'createInstrumentPatternClip(trackIndex)' in ui
-assert 'commitLibertySequencerMidiClip(*this, notes, trackIndex' in ui
+# Phase 4 routes new clips into the shared Piano Roll arrangement instead
+# of creating a second, uneditable instrument Pattern clip.
+assert 'exportPolyGridToPianoRoll(isMidi, trackIndex)' in ui
+assert 'importPianoRollToPolyGrid(isMidi, trackIndex)' in ui
+integration = (root / "Source/PolyphonicStepGridMidiIntegration.inc").read_text(encoding="utf-8")
+assert 'commitLibertySequencerInstrumentClip(*this, notes, track' in integration
+assert 'commitLibertySequencerMidiClip(*this, notes, track' in integration
 print("Liberty Step Sequencer: 8-line interactive UI / multi-bank wiring OK")
