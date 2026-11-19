@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <utility>
 #include <limits>
 #include <vector>
 
@@ -138,7 +139,14 @@ static void verifyGesturesAndUndo()
     assert(e.undo(grid) && Edit::same(grid,saved));
     e.clearHistory();
     assert(!e.canUndo() && !e.canRedo());
+    // Near the end of a cycle, moving a long note must be rejected rather
+    // than silently shortening its independent musical duration.
+    e.select({2,a});
+    const auto edgeBaseline=grid;
+    assert(!e.moveFrom(edgeBaseline,grid,0,12));
+    assert(Edit::same(edgeBaseline,grid));
     // A rejected drag may not corrupt the existing notes or their lengths.
+    e.clearSelection();
     e.select({7,c});
     const auto unchanged=grid;
     assert(!e.moveFrom(unchanged,grid,1,0));
