@@ -1133,10 +1133,26 @@ public:
         setContentOwned(editor, true);
         setResizable(true, true);
         setResizeLimits(760, 300, 2200, 850);
-        if (lastFloatingStepSequencerBounds.isEmpty())
-            centreWithSize(1150, 500);
-        else
-            setBounds(lastFloatingStepSequencerBounds);
+        // Keep a restored detached window visible after monitor changes.
+        auto target = lastFloatingStepSequencerBounds.isEmpty()
+            ? juce::Rectangle<int>(0, 0, 1150, 500)
+            : lastFloatingStepSequencerBounds;
+        if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
+        {
+            const auto usable = display->userArea.reduced(12);
+            target.setSize(juce::jmin(target.getWidth(), juce::jmax(760, usable.getWidth())),
+                           juce::jmin(target.getHeight(), juce::jmax(300, usable.getHeight())));
+            if (lastFloatingStepSequencerBounds.isEmpty())
+                target.setCentre(usable.getCentre());
+            target.setPosition(juce::jlimit(usable.getX(),
+                                          juce::jmax(usable.getX(), usable.getRight()-target.getWidth()),
+                                          target.getX()),
+                               juce::jlimit(usable.getY(),
+                                          juce::jmax(usable.getY(), usable.getBottom()-target.getHeight()),
+                                          target.getY()));
+        }
+        setBounds(target);
+        boundsReady = true;
         setVisible(true);
     }
     void closeButtonPressed() override { setVisible(false); }
@@ -1147,9 +1163,10 @@ public:
         rememberBounds();
     }
 private:
+    bool boundsReady = false;
     void rememberBounds()
     {
-        if (getWidth() >= 760 && getHeight() >= 220)
+        if (boundsReady && getWidth() >= 760 && getHeight() >= 300)
             lastFloatingStepSequencerBounds = getBounds();
     }
 public:
