@@ -686,6 +686,9 @@ public:
     explicit BrowserPanel(MainComponent& ownerIn)
         : owner(ownerIn), directoryList(&filter, thread), fileTree(directoryList)
     {
+        // Stable identity for the resize controller; never discover panels by
+        // translated tab captions (FILES became PROJETS).
+        setComponentID("liberty.browser.panel");
         setAlwaysOnTop(true);
         thread.startThread();
         previewFormats.registerBasicFormats();

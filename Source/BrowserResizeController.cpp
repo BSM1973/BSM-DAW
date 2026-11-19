@@ -18,21 +18,11 @@ constexpr int defaultBrowserWidth = 320;
 
 juce::Component* findBrowserPanel(MainComponent& owner)
 {
+    // Tab captions are localised, so identify the panel itself instead.
     for (int i = 0; i < owner.getNumChildComponents(); ++i)
-    {
-        auto* child = owner.getChildComponent(i);
-        if (child == nullptr) continue;
-        bool hasFiles = false, hasPlugins = false;
-        for (int j = 0; j < child->getNumChildComponents(); ++j)
-        {
-            if (auto* b = dynamic_cast<juce::TextButton*>(child->getChildComponent(j)))
-            {
-                hasFiles = hasFiles || b->getButtonText() == "FILES";
-                hasPlugins = hasPlugins || b->getButtonText() == "PLUGINS";
-            }
-        }
-        if (hasFiles && hasPlugins) return child;
-    }
+        if (auto* child = owner.getChildComponent(i))
+            if (child->getComponentID() == "liberty.browser.panel")
+                return child;
     return nullptr;
 }
 
