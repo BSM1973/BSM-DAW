@@ -339,6 +339,8 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
                 ne->setAttribute("pitch", (int) note.pitch);
                 ne->setAttribute("velocity", (int) note.velocity);
                 ne->setAttribute("channel", (int) note.channel);
+                ne->setAttribute("probability", (int) note.probability);
+                ne->setAttribute("muted", note.muted);
             }
         }
     }
@@ -575,6 +577,8 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 note.pitch = (std::uint8_t) juce::jlimit(0, 127, ne->getIntAttribute("pitch", 60));
                 note.velocity = (std::uint8_t) juce::jlimit(1, 127, ne->getIntAttribute("velocity", 100));
                 note.channel = (std::uint8_t) juce::jlimit(1, 16, ne->getIntAttribute("channel", 1));
+                note.probability = (std::uint8_t) juce::jlimit(0, 100, ne->getIntAttribute("probability", 100));
+                note.muted = ne->getBoolAttribute("muted", false);
                 clip.notes.push_back(note);
             }
             // A Pattern clip with no valid MIDI notes cannot play. Skip
@@ -586,4 +590,68 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
         publishInstrumentStepSequencer(lane);
         publishInstrumentArrangementClips(lane);
     }
+}
+
+
+// Phase 5 app-level regression: run the real JUCE XML save/load used by projects.
+bool runLibertyPolyGridProjectRoundTripSmoke()
+{
+    LibertyPolyphonicGrid expected;
+    expected.active = true;
+    expected.stepCount = 32;
+    expected.stepTicks = 240;
+    const auto idA = expected.addNote(0, 0, 720, 118, 2, 100);
+    const auto idB = expected.addNote(1, 0, 360, 84, 1, 0);
+    const auto idC = expected.addNote(7, 31, 240, 52, 3, 35);
+    if (!idA || !idB || !idC) return false;
+    expected.lanes[0].swing = 25;
+    expected.lanes[1].reverse = true;
+    expected.lanes[2].rate = 2;
+    expected.lanes[3].steps = 12;
+    expected.lanes[4].solo = true;
+    expected.lanes[5].muted = true;
+    expected.lanes[6].enabled = false;
+    for (auto& event : expected.lanes[0].events)
+    {
+        event.offsetTicks = -40;
+        event.repeats = 4;
+        event.pitchOffset = 3;
+    }
+    for (auto& event : expected.lanes[1].events) event.muted = true;
+    juce::XmlElement patternXml("Pattern");
+    savePolyphonicGrid(patternXml, expected);
+    const auto parsed = juce::parseXML(patternXml.toString());
+    if (!parsed || !parsed->getChildByName("PolyGrid"))
+    {
+        std::puts("PHASE5_PROJECT_XML: failed to serialize and parse");
+        return false;
+    }
+    LibertyPolyphonicGrid loaded;
+    loadPolyphonicGrid(*parsed, loaded);
+    if (!LibertyPolyGridEditing::same(expected, loaded))
+    {
+        std::puts("PHASE5_PROJECT_XML: row or event mismatch");
+        return false;
+    }
+    if (loaded.lanes[1].events.empty() ||
+        !loaded.lanes[1].events.front().muted ||
+        loaded.lanes[1].events.front().probability != 0 ||
+        loaded.lanes[0].events.front().repeats != 4 ||
+        loaded.lanes[0].events.front().offsetTicks != -40)
+        return false;
+    // Old projects lacking PolyGrid must preserve the existing pattern.
+    juce::XmlElement legacy("Pattern");
+    auto snapshot=loaded;
+    loadPolyphonicGrid(legacy, loaded);
+    if (!LibertyPolyGridEditing::same(snapshot, loaded)) return false;
+    // Reject malformed dimensions rather than trashing a valid pattern.
+    juce::XmlElement damaged("Pattern");
+    auto* invalid=damaged.createNewChildElement("PolyGrid");
+    invalid->setAttribute("version", 1);
+    invalid->setAttribute("stepCount", 20000);
+    invalid->setAttribute("stepTicks", -1);
+    loadPolyphonicGrid(damaged, loaded);
+    if (!LibertyPolyGridEditing::same(snapshot, loaded)) return false;
+    std::puts("PHASE5_PROJECT_XML: eight rows, MIDI notes, mute, chance and timing saved/loaded");
+    return true;
 }
