@@ -1109,6 +1109,9 @@ public:
         pluginStatus.setColour(juce::Label::textColourId, juce::Colour(0xffb9ccd6));
         pluginStatus.setFont(juce::Font(10.0f));
         pluginStatus.setJustificationType(juce::Justification::centredLeft);
+        // Cache the text as an image: redraws of the owner/timeline must not
+        // continuously re-rasterise the unchanged bottom favourites counter.
+        pluginStatus.setBufferedToImage(true);
         addAndMakeVisible(pluginStatus);
 
         // Compact PNG coverage dashboard: separate from the capture progress
@@ -7191,6 +7194,41 @@ private:
         refreshPluginStatus(); owner.repaint();
     }
 
+    // Read-only geometry/text-change probe. At most 32 lines are written,
+    // and never from the audio thread. This distinguishes a genuine position
+    // change from a paint/compositing issue if the display still appears shaky.
+    void recordBrowserStatusDiagnostics()
+    {
+        if (!browserOpen || !isVisible())
+        {
+            statusTraceInitialized = false;
+            return;
+        }
+        const auto panelBounds = getBounds();
+        const auto labelBounds = pluginStatus.getBounds();
+        const auto currentText = pluginStatus.getText();
+        if (statusTraceInitialized && statusTraceEvents < 32
+            && (panelBounds != previousPanelBounds
+                || labelBounds != previousStatusBounds
+                || currentText != previousStatusText))
+        {
+            const auto file = favouritesFile().getSiblingFile("BrowserStatusDiagnostics.log");
+            const auto line = juce::Time::getCurrentTime().toISO8601(true)
+                + " panel=" + panelBounds.toString()
+                + " label=" + labelBounds.toString()
+                + " positionChanged=" + juce::String((int) (panelBounds != previousPanelBounds
+                                                             || labelBounds != previousStatusBounds))
+                + " textChanged=" + juce::String((int) (currentText != previousStatusText))
+                + "\\n";
+            file.appendText(line);
+            ++statusTraceEvents;
+        }
+        previousPanelBounds = panelBounds;
+        previousStatusBounds = labelBounds;
+        previousStatusText = currentText;
+        statusTraceInitialized = true;
+    }
+
     void updatePluginStatusIfChanged(const juce::String& next)
     {
         // A static readout must not be invalidated on every 10 Hz timer tick.
@@ -7268,6 +7306,9 @@ private:
                                                      LibertyPageNavigation::browserWidth,
                                                      LibertyPageNavigation::height);
         if (toggleButton.getBounds() != buttonBounds) toggleButton.setBounds(buttonBounds);
+
+        if (category == Category::plugins)
+            recordBrowserStatusDiagnostics();
 
         if (category == Category::plugins || category == Category::splice)
         {
@@ -7395,6 +7436,10 @@ private:
     std::atomic<bool> artworkRefreshing { false };
     std::atomic<bool> sampleSearchRunning { false };
     bool browserOpen = false, hostExpanded = false;
+    bool statusTraceInitialized = false;
+    int statusTraceEvents = 0;
+    juce::Rectangle<int> previousPanelBounds, previousStatusBounds;
+    juce::String previousStatusText;
     bool targetIsInstrument=false;
     int targetEffectLane=-1,targetEffectSlot=-1;
     juce::Rectangle<int> originalWindowBounds;
