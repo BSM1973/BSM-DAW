@@ -72,7 +72,13 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     }
 
     const auto& grid = pattern.polyGrid;
-    const int textSize = l.compact ? 9 : 11;
+    const int trackIndex = isMidi ? selectedTrack - getAudioTrackCount()
+                                  : selectedTrack - getAudioTrackCount() - getMidiTrackCount();
+    const int logical = isMidi ? getAudioTrackCount() + trackIndex
+                               : getAudioTrackCount() + getMidiTrackCount() + trackIndex;
+    const auto foundEditor = polyGridEditors.find(std::make_pair(logical, activeBank));
+    const LibertyPolyGridEditing* editor =
+        foundEditor != polyGridEditors.end() ? &foundEditor->second : nullptr;
     const int panelX = l.clipPanel.x;
     const auto panelR = polyRect(l.clipPanel);
     g.setColour(juce::Colour(0xff172636));
@@ -110,6 +116,12 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
              false, l.compact ? 8.3f : 10.0f);
     polyChip(g, l.createClip, hasNotes ? "CRÉER CLIP" : "CLIP VIDE",
              hasNotes, l.compact ? 8.3f : 10.0f);
+
+    // Undo/Redo controls occupy the top of the parameter panel, not the grid.
+    polyChip(g, l.undoButton, "ANNULER", editor && editor->canUndo(),
+             l.compact ? 8.2f : 10.0f);
+    polyChip(g, l.redoButton, "RÉTABLIR", editor && editor->canRedo(),
+             l.compact ? 8.2f : 10.0f);
 
     // Eight retained pattern banks, shared with the legacy Step Sequencer.
     for (int b = 0; b < 8; ++b)
@@ -194,7 +206,10 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
                                                       (float)juce::jmax(2,x1-x0-3), (float)h);
             g.setColour(juce::Colour(note.muted || silent ? 0xff6f6c63 : orange));
             g.fillRoundedRectangle(noteR, 3.0f);
-            if (row == polyGridSelectedLane && note.id == polyGridSelectedEvent)
+            const bool isSelected = editor
+                ? editor->contains({row, note.id})
+                : (row == polyGridSelectedLane && note.id == polyGridSelectedEvent);
+            if (isSelected)
             {
                 g.setColour(juce::Colour(cyan));
                 g.drawRoundedRectangle(noteR.reduced(0.5f), 3.0f, 2.0f);
@@ -206,25 +221,51 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     for (int i = 0; i < 6; ++i)
         polyChip(g, l.editorTabs[(size_t)i], juce::String::fromUTF8(editors[i]),
                  polyGridEditorTab == i, l.compact ? 8.0f : 10.0f);
+    // All six editors are live. +/- applies relative changes to every selected
+    // note, while horizontal dragging continues the same Undo transaction.
     const LibertyPolyphonicGrid::Event* selected = nullptr;
-    if (const auto* selectedRow = grid.laneAt(polyGridSelectedLane))
-        for (const auto& e : selectedRow->events)
-            if (e.id == polyGridSelectedEvent) { selected = &e; break; }
-    juce::String detail = "Cliquez sur une note orange pour la sélectionner.";
+    int selectedCount = 0;
+    if (editor)
+    {
+        selectedCount = (int)editor->selection().size();
+        if (!editor->selection().empty())
+            selected = LibertyPolyGridEditing::find(grid, editor->selection().front());
+    }
+    juce::String detail = "SÉLECTIONNER UNE NOTE";
     if (selected)
     {
         switch (polyGridEditorTab)
         {
-            case 0: detail = "Vélocité : " + juce::String(selected->velocity); break;
-            case 2: detail = "Durée : " + juce::String(selected->lengthTicks) + " ticks MIDI"; break;
-            case 5: detail = "Chance : " + juce::String(selected->probability) + "%"; break;
-            default: detail = "Édition avancée prévue en phase 3"; break;
+            case 0: detail = juce::String(selected->velocity) + " / 127"; break;
+            case 1: detail = juce::String(selected->offsetTicks) + " TICKS"; break;
+            case 2: detail = juce::String(selected->lengthTicks) + " TICKS"; break;
+            case 3: detail = juce::String(selected->repeats) + " FOIS"; break;
+            case 4: detail = (selected->pitchOffset >= 0 ? "+" : "")
+                            + juce::String(selected->pitchOffset) + " DEMI-TONS"; break;
+            case 5: detail = juce::String(selected->probability) + " %"; break;
         }
+        if (selectedCount > 1)
+            detail = juce::String(selectedCount) + " NOTES  |  " + detail;
     }
-    polyText(g, detail, { l.editorArea.x+4, l.editorTabs[0].y + l.editorTabs[0].h+3,
-                           l.editorArea.w-8, juce::jmax(12, l.editorArea.h-l.editorTabs[0].h-6) },
-             l.compact ? 9.0f : 11.0f, juce::Colour(dim),
-             juce::Justification::centredLeft);
+    polyChip(g, l.editMinus, "-", false, l.compact ? 11.0f : 16.0f);
+    polyChip(g, l.editPlus, "+", false, l.compact ? 11.0f : 16.0f);
+    polyText(g, detail, polyRect(l.editValue), l.compact ? 9.0f : 11.0f,
+             juce::Colour(selected ? white : dim), juce::Justification::centred, true);
+    if (polyGesture.active && polyGesture.mode == PolyGridGesture::Mode::Marquee &&
+        polyGesture.area.getSize() == area.getSize())
+    {
+        const int startX = polyGesture.down.x - area.getX();
+        const int startY = polyGesture.down.y - area.getY();
+        const auto now = getMouseXYRelative();
+        const auto relative = now - area.getPosition();
+        auto r = juce::Rectangle<int>::leftTopRightBottom(
+            juce::jmin(startX, relative.x), juce::jmin(startY, relative.y),
+            juce::jmax(startX, relative.x), juce::jmax(startY, relative.y));
+        g.setColour(juce::Colour(cyan).withAlpha(0.12f));
+        g.fillRect(r);
+        g.setColour(juce::Colour(cyan).withAlpha(0.75f));
+        g.drawRect(r, 1);
+    }
 }
 
 bool MainComponent::clickPolyphonicStepSequencer(juce::Point<int> point, juce::Rectangle<int> area,
