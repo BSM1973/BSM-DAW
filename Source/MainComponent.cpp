@@ -1220,6 +1220,7 @@ void MainComponent::showFloatingStepSequencer()
 
 #include "PolyphonicStepGridUI.inc"
 #include "PolyphonicStepGridGestures.inc"
+#include "PolyphonicStepGridMidiIntegration.inc"
 
 void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle<int> area)
 {
