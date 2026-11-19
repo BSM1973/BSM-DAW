@@ -176,10 +176,10 @@ public:
             if (row < 0 || row >= LibertyPolyphonicGrid::laneCount ||
                 start < 0 || start >= original.stepCount) return false;
             const auto remaining = candidate.cycleTicks() - (std::int64_t)start * candidate.stepTicks;
-            if (candidate.noteAt(row, start) || remaining < 1) return false;
+            // A drag must not silently shorten an independently sized note.
+            if (candidate.noteAt(row, start) || remaining < source->lengthTicks) return false;
             auto moved = *source;
             moved.startStep = start;
-            moved.lengthTicks = std::min(moved.lengthTicks, remaining);
             if (!candidate.importNote(row, moved)) return false;
         }
         current = std::move(candidate);
