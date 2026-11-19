@@ -252,7 +252,8 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     polyText(g, detail, polyRect(l.editValue), l.compact ? 9.0f : 11.0f,
              juce::Colour(selected ? white : dim), juce::Justification::centred, true);
     if (polyGesture.active && polyGesture.mode == PolyGridGesture::Mode::Marquee &&
-        polyGesture.area.getSize() == area.getSize())
+        polyGesture.area.getWidth() == area.getWidth() &&
+        polyGesture.area.getHeight() == area.getHeight())
     {
         const int startX = polyGesture.down.x - area.getX();
         const int startY = polyGesture.down.y - area.getY();
