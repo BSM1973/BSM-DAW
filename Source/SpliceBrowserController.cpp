@@ -498,6 +498,9 @@ public:
     {
         attachIfPossible();
         if (splicePanel == nullptr || stopped.load()) return;
+        // Keep the native Splice controls (including CHOISIR DOSSIER)
+        // visible until the user explicitly requests the sample library.
+        sampleLibraryRequested = true;
         showSplice(true);
         splicePanel->requestLocalSampleScan();
     }
@@ -608,8 +611,10 @@ private:
 
         // BrowserController owns the native tab click. Mirror its toggle state here
         // so this controller cannot overwrite or race the Browser callback.
-        const bool requestedVisible = spliceButton->getToggleState()
-            && browserPanel->isVisible();
+        if (!spliceButton->getToggleState())
+            sampleLibraryRequested = false;
+        const bool requestedVisible = sampleLibraryRequested
+            && spliceButton->getToggleState() && browserPanel->isVisible();
         if (requestedVisible != spliceVisible)
             showSplice(requestedVisible);
         // Always enforce visibility, including after opening a browser whose
@@ -628,6 +633,7 @@ private:
     std::unique_ptr<SplicePanel> splicePanelOwned;
     SplicePanel* splicePanel = nullptr;
     bool spliceVisible = false;
+    bool sampleLibraryRequested = false;
     std::atomic<bool> stopped { false };
 };
 
