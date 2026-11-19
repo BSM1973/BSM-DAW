@@ -70,7 +70,7 @@ int main()
     assert(first->offsetTicks==60 && second->offsetTicks==60);
     assert(first->repeats==3 && first->pitchOffset==3 && first->probability==75);
     assert(grid.render().size() == 7); // 3 repeats * 2 notes + original C3.
-    assert(grid.render()[0].pitch == 75); // C4 + three semitones
+    assert(grid.render()[0].pitch == 72); // A3 + three semitones
     for (int i=0;i<6;++i) assert(edit.undo(grid));
     assert(Editing::same(start,grid));
     for (int i=0;i<6;++i) assert(edit.redo(grid));

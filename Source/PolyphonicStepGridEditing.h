@@ -55,6 +55,12 @@ public:
     }
     void pruneSelection(const LibertyPolyphonicGrid& grid)
     {
+        // IDs survive vertical drags. Follow the ID across rows on Undo/Redo
+        // instead of dropping the user's multiselection after an undo.
+        for (auto& key : selection_)
+            if (!find(grid, key))
+                for (int row = 0; row < LibertyPolyphonicGrid::laneCount; ++row)
+                    if (find(grid, {row, key.id})) { key.row = row; break; }
         selection_.erase(std::remove_if(selection_.begin(), selection_.end(),
             [&](const Key& k) { return find(grid, k) == nullptr; }), selection_.end());
     }
