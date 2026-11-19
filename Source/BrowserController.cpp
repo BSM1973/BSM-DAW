@@ -904,7 +904,11 @@ public:
                 const auto library = findInstalledSampleLibrary();
                 if (library.isDirectory()) { setRoot(library); return; }
             }
-            setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+            if (category == Category::files || category == Category::midi
+                || category == Category::presets)
+                selectSavedCategoryFolder(category);
+            else
+                setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
         };
         addAndMakeVisible(homeButton);
         chooseLibraryButton.setButtonText("CHOISIR");
@@ -6741,7 +6745,7 @@ private:
         if (audioEffects != nullptr) audioEffects->setOpen(revealMatches);
 
         PluginTreeItem* preferred = nullptr;
-        if (previousSelection.isNotEmpty())
+        if (revealMatches && previousSelection.isNotEmpty())
             for (auto* item : keyboardResults)
             {
                 const auto* d = item->getPluginDescription();
