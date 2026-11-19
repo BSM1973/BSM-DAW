@@ -63,6 +63,15 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn("category == Category::midi", category)
         self.assertIn("category == Category::presets", category)
 
+    def test_bottom_favourites_status_is_not_repainted_each_timer_tick(self):
+        status = cpp_function("void refreshPluginStatus()")
+        guarded = cpp_function("void updatePluginStatusIfChanged(")
+        self.assertIn("pluginStatus.getText() != next", guarded)
+        self.assertIn("updatePluginStatusIfChanged(text);", status)
+        self.assertIn('favouriteCount == 1 ? " favori" : " favoris"', status)
+        timer = cpp_function("void timerCallback() override")
+        self.assertIn("updatePluginStatusIfChanged(progressText);", timer)
+
     def test_one_parser_for_startup_and_import(self):
         reader = cpp_function("static bool readPluginCollectionsFile(")
         importer = cpp_function("void importPluginCollections()")
