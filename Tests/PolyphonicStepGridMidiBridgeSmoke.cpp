@@ -22,6 +22,14 @@ int main()
     assert(grid.active && grid.hasNotes());
     assert(grid.render().size() == source.size());
     assert(matchesPianoRoll(grid, source));
+    // Muted and zero-probability notes remain editable and survive export.
+    auto silent = source;
+    silent[1].muted = true;
+    silent[3].probability = 0;
+    LibertyPolyphonicGrid silentGrid;
+    assert(importPianoRoll(silent, silentGrid, 16, 240));
+    assert(silentGrid.render().size() == silent.size());
+    assert(matchesPianoRoll(silentGrid, silent));
     const auto backup = grid;
     // Notes on the same pitch/step, too many pitches and micro-timing cannot
     // be represented exactly: the original grid must survive import failure.

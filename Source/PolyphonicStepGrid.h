@@ -48,6 +48,7 @@ public:
         std::int64_t startTick = 0;
         std::int64_t lengthTicks = 1;
         std::uint8_t pitch = 60, velocity = 100, channel = 1, probability = 100;
+        bool muted = false;
     };
 
     // The legacy single-note Pattern remains active unless explicitly switched.
@@ -180,7 +181,7 @@ public:
             for (const auto& e : lane.events)
             {
                 const int rowSteps = std::clamp((int)lane.steps, 1, stepCount);
-                if (e.muted || e.probability == 0 || e.id == 0 ||
+                if (e.id == 0 ||
                     e.startStep < 0 || e.startStep >= rowSteps || e.lengthTicks < 1)
                     continue;
                 const auto laneStepTicks = lane.rate == 1 ? stepTicks * 2
@@ -202,7 +203,7 @@ public:
                     result.push_back({ e.id, startTick + relativeStart,
                                        spanEnd - spanBegin,
                                        (std::uint8_t)std::clamp((int)lane.pitch + (int)e.pitchOffset, 0, 127),
-                                       e.velocity, e.channel, e.probability });
+                                       e.velocity, e.channel, e.probability, e.muted });
                 }
             }
         }

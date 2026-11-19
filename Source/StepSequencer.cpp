@@ -147,6 +147,7 @@ std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& p
             note.velocity = e.velocity;
             note.channel = e.channel;
             note.probability = e.probability;
+            note.muted = e.muted;
             notes.push_back(note);
         }
         return notes;

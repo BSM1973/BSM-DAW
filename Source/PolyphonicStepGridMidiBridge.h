@@ -75,7 +75,7 @@ bool matchesPianoRoll(const LibertyPolyphonicGrid& grid, const std::vector<MidiN
                 return e.startTick == n.startTick &&
                     e.lengthTicks == n.lengthTicks && e.pitch == n.pitch &&
                     e.velocity == n.velocity && e.channel == n.channel &&
-                    e.probability == n.probability;
+                    e.probability == n.probability && e.muted == n.muted;
             });
         if (it == rendered.end()) return false;
         rendered.erase(it);
