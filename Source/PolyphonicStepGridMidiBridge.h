@@ -4,6 +4,7 @@
 #include "PolyphonicStepGrid.h"
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <vector>
 

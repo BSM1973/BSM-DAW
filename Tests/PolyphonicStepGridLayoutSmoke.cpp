@@ -16,6 +16,11 @@ int main()
             assert(!l.clipPanel.intersects(l.gridHeader));
             assert(!l.editorArea.intersects(l.cells[7][15]));
             assert(!l.classicMode.intersects(l.createClip));
+            assert(!l.pianoExport.intersects(l.pianoImport));
+            assert(!l.pianoExport.intersects(l.createClip));
+            assert(!l.pianoImport.intersects(l.classicMode));
+            assert(l.clipPanel.contains(l.pianoExport.x, l.pianoExport.y));
+            assert(l.clipPanel.contains(l.pianoImport.x, l.pianoImport.y));
             assert(!l.undoButton.intersects(l.redoButton));
             assert(!l.undoButton.intersects(l.banks[0]));
             assert(!l.editMinus.intersects(l.editValue));
