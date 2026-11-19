@@ -21,7 +21,8 @@ struct Layout
     bool valid = false;
     bool compact = false;
     Rect clipPanel, patternHeader, gridHeader, parameterHeader, editorArea;
-    Rect createClip, classicMode;
+    Rect createClip, classicMode, undoButton, redoButton;
+    Rect editMinus, editPlus, editValue;
     std::array<Rect, 8> banks {}, pitchLabels {}, muteButtons {}, soloButtons {};
     std::array<std::array<Rect, 4>, 8> rowControls {};
     std::array<std::array<Rect, 16>, 8> cells {};
@@ -49,6 +50,10 @@ struct Layout
         l.createClip = { margin + 6, std::max(76, rowsBottom - 29), clipWidth - 17, 23 };
         l.classicMode = { margin + 6, rowsBottom - 55, clipWidth - 17, 21 };
         const int paramX = margin + clipWidth;
+        const int undoW = (paramWidth - 12) / 2;
+        l.undoButton = {paramX, margin, undoW, 24};
+        l.redoButton = {paramX + undoW + 4, margin,
+                        paramWidth - undoW - 12, 24};
         l.patternHeader = { l.gridLeft, margin, l.gridWidth, 26 };
         l.gridHeader = { l.gridLeft, 36, l.gridWidth, 26 };
         l.parameterHeader = { paramX, 36, paramWidth - 6, 26 };
@@ -94,6 +99,14 @@ struct Layout
             l.editorTabs[(size_t)i] = { paramX + i * (each + tabGap), footerY,
                                            i == 5 ? l.editorArea.w - i * (each + tabGap)
                                                   : each, l.compact ? 19 : 24 };
+        const int toolY = footerY + (l.compact ? 19 : 24) + 3;
+        const int toolH = std::max(0, height - margin - toolY - 1);
+        const int buttonWidth = l.compact ? 25 : 38;
+        l.editMinus = {paramX + 2, toolY, buttonWidth, toolH};
+        l.editPlus = {paramX + l.editorArea.w - buttonWidth - 2,
+                      toolY, buttonWidth, toolH};
+        l.editValue = {l.editMinus.x + buttonWidth + 5, toolY,
+                       std::max(0, l.editPlus.x - l.editMinus.x - buttonWidth - 10), toolH};
         l.valid = true;
         return l;
     }
