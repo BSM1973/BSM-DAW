@@ -910,7 +910,11 @@ public:
         chooseLibraryButton.setButtonText("CHOISIR");
         chooseLibraryButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1b2833));
         chooseLibraryButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffeffcfd));
-        chooseLibraryButton.onClick = [this] { chooseSampleLibrary(); };
+        chooseLibraryButton.onClick = [this]
+        {
+            if (category == Category::audio) chooseSampleLibrary();
+            else chooseCategoryFolder();
+        };
         addAndMakeVisible(chooseLibraryButton);
         saveFolderButton.setButtonText("AJOUTER FAVORI");
         openFavouriteButton.setButtonText("OUVRIR FAVORI");
@@ -1231,8 +1235,8 @@ public:
 
         homeButton.setBounds(12, 105, 70, 24);
         chooseLibraryButton.setBounds(86, 105, 78, 24);
-        parentFolderButton.setBounds(category == Category::audio ? 168 : 86, 105,
-            juce::jmax(0, getWidth() - (category == Category::audio ? 180 : 98)), 24);
+        parentFolderButton.setBounds(168, 105,
+            juce::jmax(0, getWidth() - 180), 24);
         const int folderFavWidth = juce::jmax(0, (getWidth() - 24) / 2);
         saveFolderButton.setBounds(10, 136, folderFavWidth, 25);
         openFavouriteButton.setBounds(14 + folderFavWidth, 136, folderFavWidth, 25);
@@ -5050,6 +5054,76 @@ private:
         return favouritesFile().getSiblingFile("SampleLibraryPath.txt");
     }
 
+    // Each browser tab retains an independent root; offline external drives
+    // never overwrite the saved path or silently fall back to another tab.
+    static juce::File categoryFolderPreferenceFile(Category selected)
+    {
+        const char* fileName = selected == Category::files ? "ProjectsBrowserPath.txt"
+            : selected == Category::midi ? "MidiBrowserPath.txt"
+            : "PresetsBrowserPath.txt";
+        return favouritesFile().getSiblingFile(fileName);
+    }
+
+    void selectSavedCategoryFolder(Category selected)
+    {
+        const auto config = categoryFolderPreferenceFile(selected);
+        const auto savedPath = config.loadFileAsString().trim();
+        if (savedPath.isNotEmpty())
+        {
+            const juce::File saved(savedPath);
+            if (saved.isDirectory())
+            {
+                setRoot(saved);
+                return;
+            }
+            // A disconnected volume must remain configured; reconnecting it
+            // makes the same path available on the next tab selection.
+            parentFolderButton.setTooltip(
+                juce::String::fromUTF8("Disque indisponible : ") + savedPath);
+        }
+        setRoot(juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+        if (savedPath.isNotEmpty())
+            parentFolderButton.setTooltip(
+                juce::String::fromUTF8("Disque indisponible : ") + savedPath);
+    }
+
+    void chooseCategoryFolder()
+    {
+        if (category != Category::files && category != Category::midi
+            && category != Category::presets) return;
+        const auto chosenCategory = category;
+        const auto config = categoryFolderPreferenceFile(chosenCategory);
+        const juce::File saved(config.loadFileAsString().trim());
+        const auto initial = saved.isDirectory() ? saved
+            : rootDirectory.isDirectory() ? rootDirectory
+            : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+        auto chooser = std::make_shared<juce::FileChooser>(
+            juce::String::fromUTF8("Choisir le dossier pour ")
+                + (chosenCategory == Category::files ? "PROJETS"
+                   : chosenCategory == Category::midi ? "MIDI" : "PRESETS"),
+            initial, "*");
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        chooser->launchAsync(juce::FileBrowserComponent::openMode
+                | juce::FileBrowserComponent::canSelectDirectories,
+            [safe, chooser, chosenCategory](const juce::FileChooser& selection)
+            {
+                if (safe == nullptr || safe->stopped.load()) return;
+                const auto folder = selection.getResult();
+                if (!folder.isDirectory()) return;
+                if (!categoryFolderPreferenceFile(chosenCategory)
+                    .replaceWithText(folder.getFullPathName()))
+                {
+                    juce::AlertWindow::showMessageBoxAsync(
+                        juce::AlertWindow::WarningIcon,
+                        juce::String::fromUTF8("Liberty — Dossier"),
+                        juce::String::fromUTF8("Impossible d'enregistrer ce chemin."),
+                        "FERMER");
+                    return;
+                }
+                if (safe->category == chosenCategory) safe->setRoot(folder);
+            });
+    }
+
     void chooseSampleLibrary()
     {
         auto chooser = std::make_shared<juce::FileChooser>("Choisir le dossier de samples", rootDirectory);
@@ -5595,7 +5669,10 @@ private:
         if (newCategory != Category::audio) previewTransport.stop();
         category = newCategory;
         homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
-        chooseLibraryButton.setVisible(category == Category::audio);
+        chooseLibraryButton.setVisible(category == Category::audio
+            || category == Category::files || category == Category::midi
+            || category == Category::presets);
+        chooseLibraryButton.setButtonText(category == Category::audio ? "CHOISIR" : "DOSSIER");
         saveFolderButton.setVisible(category == Category::audio);
         openFavouriteButton.setVisible(category == Category::audio);
         samplePackInfo.setVisible(category == Category::audio);
@@ -5603,6 +5680,9 @@ private:
         musicFilterButton.setVisible(category == Category::audio);
         sampleNameSearch.setVisible(category == Category::audio);
         resized();
+        if (category == Category::files || category == Category::midi
+            || category == Category::presets)
+            selectSavedCategoryFolder(category);
         if (category == Category::audio)
         {
             if (sampleNameQuery.isNotEmpty() || sampleFilterMask != 0)
@@ -6644,11 +6724,21 @@ private:
         }
         pluginTree.setRootItem(pluginRoot.get());
         pluginRoot->setOpen(true);
-        if (fav != nullptr) fav->setOpen(true);
-        if (recentGroup != nullptr) recentGroup->setOpen(true);
-        if (collectionsRoot != nullptr) collectionsRoot->setOpen(true);
-        if (instruments != nullptr) instruments->setOpen(true);
-        if (audioEffects != nullptr) audioEffects->setOpen(true);
+        // Only the invisible root is open by default. Explicit searches and
+        // keyboard navigation may reveal matching branches below.
+        const bool revealMatches = query.isNotEmpty()
+            || selectedManufacturer.isNotEmpty()
+            || pluginFormatFilter != PluginFormatFilter::all
+            || pluginTypeFilter != PluginTypeFilter::all
+            || quickView != QuickView::all
+            || pluginUsageFilter != PluginUsage::all
+            || selectedCollection.isNotEmpty()
+            || artworkView != ArtworkView::all;
+        if (fav != nullptr) fav->setOpen(revealMatches);
+        if (recentGroup != nullptr) recentGroup->setOpen(revealMatches);
+        if (collectionsRoot != nullptr) collectionsRoot->setOpen(revealMatches);
+        if (instruments != nullptr) instruments->setOpen(revealMatches);
+        if (audioEffects != nullptr) audioEffects->setOpen(revealMatches);
 
         PluginTreeItem* preferred = nullptr;
         if (previousSelection.isNotEmpty())
