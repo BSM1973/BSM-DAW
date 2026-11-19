@@ -1,5 +1,6 @@
 #pragma once
 #include "MidiEngine.h"
+#include "PolyphonicStepGrid.h"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -47,6 +48,8 @@ public:
         int probabilityLaneSteps = 16;
         int ratchetLaneSteps = 16;
         std::array<Step, maxSteps> steps {};
+        // Opt-in grid: older single-note patterns and projects are unchanged.
+        LibertyPolyphonicGrid polyGrid {};
     };
 
     static std::int64_t getCycleLengthTicks(const Pattern&) noexcept;

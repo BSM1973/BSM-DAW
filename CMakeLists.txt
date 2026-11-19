@@ -57,6 +57,17 @@ else()
 endif()
 add_test(NAME MidiClipEditingSmoke COMMAND LibertyMidiClipEditingSmoke)
 
+# Phase 1 polyphonic Step Sequencer: JUCE-free deterministic eight-lane model.
+add_executable(LibertyPolyphonicGridSmoke Tests/PolyphonicStepGridSmoke.cpp)
+target_include_directories(LibertyPolyphonicGridSmoke PRIVATE Source)
+target_compile_features(LibertyPolyphonicGridSmoke PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(LibertyPolyphonicGridSmoke PRIVATE /UNDEBUG)
+else()
+  target_compile_options(LibertyPolyphonicGridSmoke PRIVATE -UNDEBUG)
+endif()
+add_test(NAME PolyphonicGridSmoke COMMAND LibertyPolyphonicGridSmoke)
+
 add_test(NAME AudioClipPlaybackSmoke COMMAND BSM_DAW --audio-clip-playback-test)
 
 add_test(NAME ArrangementToolsSmoke COMMAND BSM_DAW --arrangement-tools-test)

@@ -240,7 +240,10 @@ public:
             const auto effectiveStepTicks = pattern->rateModifier == 1 ? juce::jmax<std::int64_t>(1, baseStepTicks * 2 / 3)
                                           : pattern->rateModifier == 2 ? juce::jmax<std::int64_t>(1, baseStepTicks * 3 / 2)
                                           : baseStepTicks;
-            const auto lengthTicks = (std::int64_t)juce::jlimit(1, juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount), pattern->cycleSteps) * effectiveStepTicks;
+            const auto lengthTicks = pattern->polyGrid.active
+                ? LibertyStepSequencer::getCycleLengthTicks(*pattern)
+                : (std::int64_t)juce::jlimit(1, juce::jlimit(1, LibertyStepSequencer::maxSteps, pattern->stepCount), pattern->cycleSteps) * effectiveStepTicks;
+            if (lengthTicks <= 0) return false;
             const auto lengthSeconds = MidiEngine::tickToSeconds(lengthTicks, tempoBpm);
             // Editing the step grid only updates audition notes, not previously placed clips.
             audioEngine.setInstrumentTrackNotes(track, notes, 0.0, lengthSeconds, tempoBpm);

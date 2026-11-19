@@ -4,8 +4,100 @@
 #include <cmath>
 #include <limits>
 
+namespace
+{
+// Versioned, optional XML child. Legacy Step elements remain untouched and
+// projects without PolyGrid continue to use the original monophonic renderer.
+void savePolyphonicGrid(juce::XmlElement& patternElement, const LibertyPolyphonicGrid& grid)
+{
+    if (!grid.active && !grid.hasNotes()) return;
+    if (grid.cycleTicks() == 0) return;
+    auto* root = patternElement.createNewChildElement("PolyGrid");
+    root->setAttribute("version", 1);
+    root->setAttribute("active", grid.active);
+    root->setAttribute("stepCount", grid.stepCount);
+    root->setAttribute("stepTicks", (double)grid.stepTicks);
+    for (int row = 0; row < LibertyPolyphonicGrid::laneCount; ++row)
+    {
+        const auto& lane = grid.lanes[(size_t)row];
+        auto* laneXml = root->createNewChildElement("Lane");
+        laneXml->setAttribute("index", row);
+        laneXml->setAttribute("pitch", (int)lane.pitch);
+        laneXml->setAttribute("enabled", lane.enabled);
+        laneXml->setAttribute("muted", lane.muted);
+        laneXml->setAttribute("solo", lane.solo);
+        for (const auto& event : lane.events)
+        {
+            auto* note = laneXml->createNewChildElement("Event");
+            note->setAttribute("id", (int)event.id);
+            note->setAttribute("startStep", event.startStep);
+            note->setAttribute("lengthTicks", (double)event.lengthTicks);
+            note->setAttribute("velocity", (int)event.velocity);
+            note->setAttribute("channel", (int)event.channel);
+            note->setAttribute("probability", (int)event.probability);
+            note->setAttribute("muted", event.muted);
+        }
+    }
+}
+
+void loadPolyphonicGrid(const juce::XmlElement& patternElement, LibertyPolyphonicGrid& destination)
+{
+    const auto* root = patternElement.getChildByName("PolyGrid");
+    if (!root || root->getIntAttribute("version", -1) != 1) return;
+    LibertyPolyphonicGrid candidate;
+    const auto steps = root->getIntAttribute("stepCount", candidate.stepCount);
+    const auto ticks = root->getDoubleAttribute("stepTicks", (double)candidate.stepTicks);
+    if (steps < 1 || steps > LibertyPolyphonicGrid::maxSteps ||
+        !std::isfinite(ticks) || ticks < 1.0 ||
+        ticks > (double)LibertyPolyphonicGrid::maxStepTicks ||
+        std::floor(ticks) != ticks)
+        return;
+    candidate.stepCount = steps;
+    candidate.stepTicks = (std::int64_t)ticks;
+    int processedLanes = 0;
+    for (auto* laneXml = root->getFirstChildElement(); laneXml; laneXml = laneXml->getNextElement())
+    {
+        if (laneXml->getTagName() != "Lane") continue;
+        if (++processedLanes > LibertyPolyphonicGrid::laneCount) break;
+        const int row = laneXml->getIntAttribute("index", -1);
+        auto* lane = candidate.laneAt(row);
+        if (!lane) continue;
+        const int pitch = laneXml->getIntAttribute("pitch", (int)lane->pitch);
+        if (pitch < 0 || pitch > 127) continue;
+        lane->pitch = (std::uint8_t)pitch;
+        lane->enabled = laneXml->getBoolAttribute("enabled", true);
+        lane->muted = laneXml->getBoolAttribute("muted", false);
+        lane->solo = laneXml->getBoolAttribute("solo", false);
+        int processedNotes = 0;
+        for (auto* eventXml = laneXml->getFirstChildElement(); eventXml; eventXml = eventXml->getNextElement())
+        {
+            if (eventXml->getTagName() != "Event") continue;
+            if (++processedNotes > LibertyPolyphonicGrid::maxNotesPerLane) break;
+            const int id = eventXml->getIntAttribute("id", 0);
+            const double duration = eventXml->getDoubleAttribute("lengthTicks", -1.0);
+            if (id <= 0 || !std::isfinite(duration) || duration < 1.0 ||
+                duration > (double)candidate.cycleTicks() || std::floor(duration) != duration)
+                continue;
+            LibertyPolyphonicGrid::Event event;
+            event.id = (std::uint32_t)id;
+            event.startStep = eventXml->getIntAttribute("startStep", -1);
+            event.lengthTicks = (std::int64_t)duration;
+            event.velocity = (std::uint8_t)juce::jlimit(1, 127, eventXml->getIntAttribute("velocity", 100));
+            event.channel = (std::uint8_t)juce::jlimit(1, 16, eventXml->getIntAttribute("channel", 1));
+            event.probability = (std::uint8_t)juce::jlimit(0, 100, eventXml->getIntAttribute("probability", 100));
+            event.muted = eventXml->getBoolAttribute("muted", false);
+            candidate.importNote(row, event);
+        }
+    }
+    candidate.active = root->getBoolAttribute("active", false);
+    destination = std::move(candidate);
+}
+} // namespace
+
+
 std::int64_t LibertyStepSequencer::getCycleLengthTicks(const Pattern& pattern) noexcept
 {
+    if (pattern.polyGrid.active) return pattern.polyGrid.cycleTicks();
     if (pattern.stepTicks <= 0) return 0;
     const int count = std::clamp(pattern.cycleSteps, 1, std::clamp(pattern.stepCount, 1, maxSteps));
     const auto base = std::max<std::int64_t>(1, pattern.stepTicks);
@@ -20,7 +112,27 @@ std::int64_t LibertyStepSequencer::getCycleLengthTicks(const Pattern& pattern) n
 std::vector<MidiEngine::NoteEvent> LibertyStepSequencer::render(const Pattern& pattern, std::int64_t startTick)
 {
     std::vector<MidiEngine::NoteEvent> notes;
-    if (!pattern.enabled || pattern.stepTicks <= 0) return notes;
+    if (!pattern.enabled) return notes;
+    if (pattern.polyGrid.active)
+    {
+        // Legacy output contract: materialise MIDI notes on the UI/project
+        // thread; existing instrument and arrangement playback stay unchanged.
+        const auto events = pattern.polyGrid.render(startTick);
+        notes.reserve(events.size());
+        for (const auto& e : events)
+        {
+            MidiEngine::NoteEvent note;
+            note.startTick = e.startTick;
+            note.lengthTicks = e.lengthTicks;
+            note.pitch = e.pitch;
+            note.velocity = e.velocity;
+            note.channel = e.channel;
+            note.probability = e.probability;
+            notes.push_back(note);
+        }
+        return notes;
+    }
+    if (pattern.stepTicks <= 0) return notes;
     const int count = std::clamp(pattern.cycleSteps, 1, std::clamp(pattern.stepCount, 1, maxSteps));
     const auto baseStepTicks = std::max<std::int64_t>(1, pattern.stepTicks);
     const auto effectiveStepTicks = pattern.rateModifier == 1 ? std::max<std::int64_t>(1, baseStepTicks * 2 / 3)
@@ -166,6 +278,7 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
             const auto& p = bank.patterns[(size_t) pi];
             auto* pe = track->createNewChildElement("Pattern");
             pe->setAttribute("index", pi); pe->setAttribute("enabled", p.enabled);
+            savePolyphonicGrid(*pe, p.polyGrid);
             pe->setAttribute("stepCount", p.stepCount); pe->setAttribute("cycleSteps", p.cycleSteps);
             pe->setAttribute("stepTicks", (double) p.stepTicks); pe->setAttribute("rateModifier", (int) p.rateModifier);
             pe->setAttribute("direction", (int) p.direction); pe->setAttribute("swing", (double) p.swing);
@@ -221,6 +334,7 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
             const auto& p = bank.patterns[(size_t) pi];
             auto* pe = track->createNewChildElement("Pattern");
             pe->setAttribute("index", pi); pe->setAttribute("enabled", p.enabled);
+            savePolyphonicGrid(*pe, p.polyGrid);
             pe->setAttribute("stepCount", p.stepCount); pe->setAttribute("cycleSteps", p.cycleSteps);
             pe->setAttribute("stepTicks", (double) p.stepTicks); pe->setAttribute("rateModifier", (int) p.rateModifier);
             pe->setAttribute("direction", (int) p.direction); pe->setAttribute("swing", (double) p.swing);
@@ -319,6 +433,7 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 st.chord = (LibertyStepSequencer::Chord) juce::jlimit(0, 4, se->getIntAttribute("chord", (int)st.chord));
                 p.steps[(size_t) si] = st;
             }
+            loadPolyphonicGrid(*pe, p.polyGrid);
             restored.patterns[(size_t) pi] = p;
         }
             midiStepSequencers[(size_t) lane] = restored;
@@ -382,6 +497,7 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
                 st.chord = (LibertyStepSequencer::Chord) juce::jlimit(0, 4, se->getIntAttribute("chord", (int)st.chord));
                 p.steps[(size_t) si] = st;
             }
+            loadPolyphonicGrid(*pe, p.polyGrid);
             restored.patterns[(size_t) pi] = p;
         }
         restored.timelineClips.clear();

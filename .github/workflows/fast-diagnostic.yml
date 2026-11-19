@@ -27,6 +27,12 @@ jobs:
       - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
 
+      - name: Verify polyphonic Step Sequencer notes and per-note lengths
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PolyphonicStepGridSmoke.cpp -o /tmp/liberty-polyphonic-grid
+          /tmp/liberty-polyphonic-grid
+          python3 Tests/PolyphonicStepGridSourceRegression.py
+
       - name: Verify Splice scan routes to sample library, never full plugin inventory
         run: python3 Tests/SpliceScanRoutingRegression.py
 
@@ -203,7 +209,7 @@ jobs:
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
 
       - name: Run Drum Sampler regression tests
-        run: ctest --test-dir build-fast --output-on-failure -R DrumSamplerSmoke
+        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke'
 
       - name: Measure spectral track edit latency (5 fresh launches)
         run: |
