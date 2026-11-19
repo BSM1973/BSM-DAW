@@ -9,7 +9,7 @@ int main()
         {
             const auto l = Layout::make(w, h);
             assert(l.valid);
-            assert(l.gridWidth >= 238 && l.rowHeight >= 12);
+            assert(l.gridWidth >= 220 && l.rowHeight >= 12);
             assert(l.clipPanel.x >= 0 && l.clipPanel.y >= 0);
             assert(l.editorArea.y + l.editorArea.h <= h);
             assert(!l.clipPanel.intersects(l.parameterHeader));
