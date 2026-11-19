@@ -164,6 +164,84 @@ public:
         return kind == Kind::plugin ? description.createIdentifierString() : label;
     }
 
+    // Native JUCE disclosure triangles are replaced by vector glyphs. They
+    // stay clickable because TreeView still owns the disclosure hit area.
+    void paintOpenCloseButton(juce::Graphics& g,
+                              const juce::Rectangle<float>& area,
+                              juce::Colour, bool isMouseOver) override
+    {
+        if (kind != Kind::manufacturer) return;
+        const auto icon = area.withSizeKeepingCentre(
+            juce::jmin(18.0f, area.getWidth() - 2.0f),
+            juce::jmin(18.0f, area.getHeight() - 2.0f));
+        const float x = icon.getX(), y = icon.getY();
+        const auto turquoise = juce::Colour(0xff80cbd4);
+        const bool favourites = label == "FAVORIS";
+        g.setColour(favourites ? juce::Colour(0xffffc857)
+                              : (isMouseOver ? juce::Colours::white : turquoise));
+        if (label == "INSTRUMENTS")
+        {
+            // Mini keyboard, including two raised black keys.
+            g.drawRoundedRectangle(x + 1.0f, y + 4.0f, 16.0f, 11.0f, 1.8f, 1.3f);
+            g.drawLine(x + 5.0f, y + 9.0f, x + 5.0f, y + 14.0f, 1.0f);
+            g.drawLine(x + 10.0f, y + 9.0f, x + 10.0f, y + 14.0f, 1.0f);
+            g.fillRect(x + 3.8f, y + 4.1f, 2.1f, 5.1f);
+            g.fillRect(x + 8.8f, y + 4.1f, 2.1f, 5.1f);
+        }
+        else if (label == "EFFETS AUDIO")
+        {
+            // Three fader lanes: an instantly identifiable effect/mixer glyph.
+            for (int i = 0; i < 3; ++i)
+            {
+                const float laneX = x + 4.0f + i * 5.0f;
+                g.drawLine(laneX, y + 2.0f, laneX, y + 16.0f, 1.2f);
+                const float faderY = y + (i == 1 ? 7.0f : i == 0 ? 11.0f : 5.0f);
+                g.fillRoundedRectangle(laneX - 2.0f, faderY, 4.0f, 3.0f, 1.0f);
+            }
+        }
+        else if (label == juce::String::fromUTF8("RÉCENTS"))
+        {
+            // Clock: no font-dependent Unicode symbol in the recent group.
+            g.drawEllipse(x + 2.0f, y + 2.0f, 14.0f, 14.0f, 1.5f);
+            g.drawLine(x + 9.0f, y + 5.0f, x + 9.0f, y + 9.0f, 1.4f);
+            g.drawLine(x + 9.0f, y + 9.0f, x + 12.0f, y + 11.0f, 1.4f);
+        }
+        else if (favourites)
+        {
+            // Five-point star for favourites, fully vector rendered.
+            juce::Path star;
+            for (int i = 0; i < 10; ++i)
+            {
+                const float radius = (i % 2 == 0) ? 7.5f : 3.5f;
+                const float angle = -juce::MathConstants<float>::halfPi
+                    + i * juce::MathConstants<float>::pi / 5.0f;
+                const float px = x + 9.0f + radius * std::cos(angle);
+                const float py = y + 9.0f + radius * std::sin(angle);
+                if (i == 0) star.startNewSubPath(px, py);
+                else star.lineTo(px, py);
+            }
+            star.closeSubPath();
+            g.strokePath(star, juce::PathStrokeType(1.4f));
+        }
+        else
+        {
+            // Neutral folder for manufacturer/category/collection headings.
+            juce::Path folder;
+            folder.startNewSubPath(x + 2.0f, y + 6.0f);
+            folder.lineTo(x + 2.0f, y + 4.0f);
+            folder.lineTo(x + 7.0f, y + 4.0f);
+            folder.lineTo(x + 9.0f, y + 6.0f);
+            folder.lineTo(x + 16.0f, y + 6.0f);
+            folder.lineTo(x + 16.0f, y + 15.0f);
+            folder.lineTo(x + 2.0f, y + 15.0f);
+            folder.closeSubPath();
+            g.strokePath(folder, juce::PathStrokeType(1.3f));
+        }
+        // Subtle expansion-state dot, without restoring an arrow.
+        g.setColour(isOpen() ? juce::Colour(0xff54d6dc) : juce::Colour(0xff596a75));
+        g.fillEllipse(x + 14.0f, y + 1.0f, 3.0f, 3.0f);
+    }
+
     void paintItem(juce::Graphics& g, int width, int height) override
     {
         if (kind == Kind::root) return;
@@ -6347,7 +6425,8 @@ private:
                 if (favouriteKey(d) != key || !matches(d)) continue;
                 if (recentGroup == nullptr)
                 {
-                    recentGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "RÉCENTS");
+                    recentGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
+                                                     juce::String::fromUTF8("RÉCENTS"));
                     pluginRoot->addSubItem(recentGroup);
                 }
                 auto* item = makePluginItem(d);
