@@ -27,8 +27,12 @@ assert 'setResizeLimits(1280, 600, 10000, 10000);' in maincpp
 assert '--step-sequencer-phase5-test' in maincpp
 seq=(root/"Source/StepSequencer.cpp").read_text(encoding="utf-8")
 assert 'bool runLibertyPolyGridProjectRoundTripSmoke()' in seq
-for key in ("probability","muted","offsetTicks","repeats","pitchOffset"):
+for key in ("probability","muted"):
+    # Both PolyGrid events and legacy Pattern clip notes carry these fields.
     assert seq.count(f'setAttribute("{key}"')>=2,key
+for key in ("offsetTicks","repeats","pitchOffset"):
+    # Fine editing is attached to PolyGrid events, not flat MIDI clips.
+    assert seq.count(f'setAttribute("{key}"')>=1,key
 assert 'ne->getBoolAttribute("muted", false)' in seq
 assert 'ne->getIntAttribute("probability", 100)' in seq
 assert 'LibertyPolyGridEditing::same(expected, loaded)' in seq
