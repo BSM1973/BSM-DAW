@@ -21,7 +21,7 @@ struct Layout
     bool valid = false;
     bool compact = false;
     Rect clipPanel, patternHeader, gridHeader, parameterHeader, editorArea;
-    Rect createClip, classicMode, undoButton, redoButton;
+    Rect createClip, classicMode, pianoExport, pianoImport, undoButton, redoButton;
     Rect editMinus, editPlus, editValue;
     std::array<Rect, 8> banks {}, pitchLabels {}, muteButtons {}, soloButtons {};
     std::array<std::array<Rect, 4>, 8> rowControls {};
@@ -49,6 +49,11 @@ struct Layout
         l.clipPanel = { margin, 35, clipWidth - 5, rowsBottom - 35 };
         l.createClip = { margin + 6, std::max(76, rowsBottom - 29), clipWidth - 17, 23 };
         l.classicMode = { margin + 6, rowsBottom - 55, clipWidth - 17, 21 };
+        const int exchangeY = l.compact ? 88 : 189;
+        const int exchangeW = (clipWidth - 20) / 2;
+        l.pianoExport = {margin + 6, exchangeY, exchangeW, 20};
+        l.pianoImport = {margin + 8 + exchangeW, exchangeY,
+                         clipWidth - 19 - exchangeW, 20};
         const int paramX = margin + clipWidth;
         const int undoW = (paramWidth - 12) / 2;
         l.undoButton = {paramX, margin, undoW, 24};

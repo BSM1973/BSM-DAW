@@ -92,8 +92,9 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
              {panelX+6, 61, l.clipPanel.w-12, 20}, l.compact ? 10.0f : 12.0f,
              juce::Colour(white), juce::Justification::centredLeft, true);
     const int statsY = l.compact ? 83 : 93;
-    polyText(g, "BOUCLE : OUI", {panelX+6, statsY, l.clipPanel.w-12, 18},
-             l.compact ? 9.0f : 11.0f, juce::Colour(dim), juce::Justification::centredLeft);
+    if (!l.compact)
+        polyText(g, "BOUCLE : OUI", {panelX+6, statsY, l.clipPanel.w-12, 18},
+                 11.0f, juce::Colour(dim), juce::Justification::centredLeft);
     if (!l.compact)
         polyText(g, "PAGE " + juce::String(stepSequencerPage+1) + " / 4",
                  {panelX+6, statsY+21, l.clipPanel.w-12, 18},
@@ -110,6 +111,10 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
                  juce::Justification::centredLeft);
     }
     const bool hasNotes = grid.hasNotes();
+    polyChip(g, l.pianoExport, l.compact ? "VERS" : "VERS PIANO", hasNotes,
+             l.compact ? 8.0f : 9.5f);
+    polyChip(g, l.pianoImport, l.compact ? "DEPUIS" : "DEPUIS PIANO", false,
+             l.compact ? 8.0f : 9.5f);
     polyChip(g, l.classicMode,
              l.compact ? "PAGE " + juce::String(stepSequencerPage+1) + " / 4"
                        : juce::String("PAGE SUIV."),
@@ -286,21 +291,15 @@ bool MainComponent::clickPolyphonicStepSequencer(juce::Point<int> point, juce::R
         if (!isMidi) publishInstrumentStepSequencer(trackIndex);
         repaint();
     };
-    if (hit(l.createClip))
+    if (hit(l.createClip) || hit(l.pianoExport))
     {
-        if (grid.hasNotes())
-        {
-            if (isMidi)
-            {
-                const auto notes = LibertyStepSequencer::render(pattern);
-                const auto length = LibertyStepSequencer::getCycleLengthTicks(pattern);
-                if (!notes.empty() && length > 0)
-                    commitLibertySequencerMidiClip(*this, notes, trackIndex, playheadSeconds,
-                       juce::jmax(0.01, MidiEngine::tickToSeconds(length, tempoBpm)));
-            }
-            else
-                createInstrumentPatternClip(trackIndex);
-        }
+        exportPolyGridToPianoRoll(isMidi, trackIndex);
+        repaint();
+        return true;
+    }
+    if (hit(l.pianoImport))
+    {
+        importPianoRollToPolyGrid(isMidi, trackIndex);
         repaint();
         return true;
     }

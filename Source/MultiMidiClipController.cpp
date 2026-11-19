@@ -550,6 +550,16 @@ private:bool addTicks(std::int64_t a,std::int64_t b,std::int64_t&result)const no
     // Publishing only setInstrumentTrackNotes can therefore leave playback
     // silent whenever an (even empty) arrangement snapshot exists.
     std::vector<AudioEngine::InstrumentArrangementClip> clips;
+    // Keep legacy STEP SEQ arrangement clips audible beside Piano Roll clips.
+    if((size_t)lane < owner.instrumentStepSequencers.size())
+        for(const auto& legacy:owner.instrumentStepSequencers[(size_t)lane].timelineClips)
+        {
+            AudioEngine::InstrumentArrangementClip clip;
+            clip.startSeconds=legacy.startSeconds;
+            clip.lengthSeconds=legacy.lengthSeconds;
+            clip.notes=legacy.notes;
+            clips.push_back(std::move(clip));
+        }
     for(const auto& c:instrumentClips)
         if(c.trackLane==lane && !c.muted)
         {

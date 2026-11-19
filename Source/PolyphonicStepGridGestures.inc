@@ -99,20 +99,15 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
         else repaint();
         return true;
     }
-    if (hit(l.createClip))
+    if (hit(l.createClip) || hit(l.pianoExport))
     {
-        if (grid.hasNotes())
-        {
-            if (midi)
-            {
-                auto rendered = LibertyStepSequencer::render(*pattern);
-                const auto length = LibertyStepSequencer::getCycleLengthTicks(*pattern);
-                if (!rendered.empty() && length > 0)
-                    commitLibertySequencerMidiClip(*this, rendered, track, playheadSeconds,
-                        juce::jmax(0.01, MidiEngine::tickToSeconds(length, tempoBpm)));
-            }
-            else createInstrumentPatternClip(track);
-        }
+        exportPolyGridToPianoRoll(midi, track);
+        repaint();
+        return true;
+    }
+    if (hit(l.pianoImport))
+    {
+        importPianoRollToPolyGrid(midi, track);
         repaint();
         return true;
     }

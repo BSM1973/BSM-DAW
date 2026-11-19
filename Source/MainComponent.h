@@ -21,6 +21,10 @@ class MainComponent;
 void refreshLibertyRecordingTrackLayout(MainComponent* owner);
 void refreshLibertyTrackHeaderMixLayout(MainComponent* owner);
 bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
+bool commitLibertySequencerInstrumentClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
+bool copyLibertyActiveMidiClipNotes(MainComponent&, bool instrument, int lane,
+                                   std::vector<MidiEngine::NoteEvent>&, std::int64_t& lengthTicks);
+void syncLibertyMultiMidiPlayback(MainComponent&);
 
 class MainComponent final : public juce::Component,
                             public juce::FileDragAndDropTarget,
@@ -152,6 +156,8 @@ public:
     bool endPolyGridPointer();
     bool polyGridKeyAction(const juce::KeyPress&, bool detached);
     bool beginFloatingPolyGrid(const juce::MouseEvent&, juce::Rectangle<int>);
+    bool exportPolyGridToPianoRoll(bool midi, int track);
+    bool importPianoRollToPolyGrid(bool midi, int track);
     void clickMidiStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
     void showFloatingStepSequencer();
     void clickFloatingStepSequencer(juce::Point<int> point, juce::Rectangle<int> area);
@@ -293,6 +299,9 @@ public:
             clips.push_back(std::move(clip));
         }
         audioEngine.setInstrumentArrangementClips(instrumentIndex, clips, tempoBpm);
+        // The Piano Roll controller merges its own clips with these legacy
+        // Pattern clips; otherwise one publisher would hide the other.
+        syncLibertyMultiMidiPlayback(*this);
     }
     bool createInstrumentPatternClip(int instrumentIndex) noexcept
     {
