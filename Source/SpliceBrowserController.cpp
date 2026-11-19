@@ -138,12 +138,11 @@ public:
 
         libraryButton.setButtonText("MES SAMPLES");
         soundsButton.setButtonText("SONS");
-        loginButton.setButtonText("CONNEXION");
         rescanButton.setButtonText(juce::String::fromUTF8("RÉANALYSER"));
         folderButton.setButtonText("DOSSIER");
         desktopButton.setButtonText("DESKTOP");
 
-        for (auto* button : { &libraryButton, &soundsButton, &loginButton,
+        for (auto* button : { &libraryButton, &soundsButton,
                               &rescanButton, &folderButton, &desktopButton })
         {
             button->setMouseClickGrabsKeyboardFocus(false);
@@ -157,11 +156,6 @@ public:
         {
             showWeb();
             browser.goToURL("https://splice.com/sounds");
-        };
-        loginButton.onClick = [this]
-        {
-            showWeb();
-            browser.goToURL("https://splice.com/login");
         };
         rescanButton.onClick = [this] { startScan(); };
         folderButton.onClick = [this] { chooseSpliceFolder(); };
@@ -254,20 +248,17 @@ public:
         const int remainingActions = usable - rescanWidth - gap * 2;
         const int folderWidth = remainingActions / 2;
 
-        const int loginWidth = juce::jmin(juce::jmax(w1, 86), usable - gap * 2 - 120);
-        const int remainingModes = usable - loginWidth - gap * 2;
-        const int libraryWidth = remainingModes / 2;
-
+        const int libraryWidth = (usable - gap) / 2;
         libraryButton.setBounds(margin, 30, libraryWidth, 26);
-        soundsButton.setBounds(margin + libraryWidth + gap, 30, remainingModes - libraryWidth, 26);
-        loginButton.setBounds(margin + remainingModes + gap * 2, 30, loginWidth, 26);
+        soundsButton.setBounds(margin + libraryWidth + gap, 30,
+                              usable - libraryWidth - gap, 26);
 
         rescanButton.setBounds(margin, 60, rescanWidth, 24);
         folderButton.setBounds(margin + rescanWidth + gap, 60, folderWidth, 24);
         desktopButton.setBounds(margin + rescanWidth + gap + folderWidth + gap, 60,
                                 remainingActions - folderWidth, 24);
 
-        for (auto* button : { &libraryButton, &soundsButton, &loginButton,
+        for (auto* button : { &libraryButton, &soundsButton,
                               &rescanButton, &folderButton, &desktopButton })
             button->setTooltip(button->getButtonText());
 
@@ -370,7 +361,6 @@ private:
         folderButton.setEnabled(true);
         libraryButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff315f7a));
         soundsButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
-        loginButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252a31));
         repaint();
     }
 
@@ -479,7 +469,7 @@ private:
         });
     }
 
-    juce::TextButton libraryButton, soundsButton, loginButton, rescanButton, folderButton, desktopButton;
+    juce::TextButton libraryButton, soundsButton, rescanButton, folderButton, desktopButton;
     juce::TextEditor searchBox;
     juce::Label statusLabel;
     juce::ListBox sampleList;
@@ -545,8 +535,10 @@ private:
 
         splicePanelOwned = std::make_unique<SplicePanel>();
         splicePanel = splicePanelOwned.get();
+        // addAndMakeVisible would expose the overlay over PROJETS/PLUGINS
+        // before the native SPLICE tab has ever been selected.
+        browserPanel->addChildComponent(*splicePanel);
         splicePanel->setVisible(false);
-        browserPanel->addAndMakeVisible(*splicePanel);
     }
 
     void showSplice(bool shouldShow)
@@ -567,8 +559,7 @@ private:
                 splicePanel->repaint();
             }
         }
-        if (spliceButton != nullptr)
-            spliceButton->setToggleState(shouldShow, juce::dontSendNotification);
+        // BrowserPanel::setCategory owns the tab state; do not change it here.
     }
 
     void mouseDown(const juce::MouseEvent& event) override
@@ -617,13 +608,16 @@ private:
 
         // BrowserController owns the native tab click. Mirror its toggle state here
         // so this controller cannot overwrite or race the Browser callback.
-        const bool requestedVisible = spliceButton->getToggleState();
+        const bool requestedVisible = spliceButton->getToggleState()
+            && browserPanel->isVisible();
         if (requestedVisible != spliceVisible)
             showSplice(requestedVisible);
-        if (spliceVisible)
+        // Always enforce visibility, including after opening a browser whose
+        // previous tab was PLUGINS. Never allow a stale overlay to cover it.
+        splicePanel->setVisible(requestedVisible);
+        if (requestedVisible)
         {
-            splicePanel->setVisible(browserPanel->isVisible());
-            if (browserPanel->isVisible()) splicePanel->toFront(false);
+            splicePanel->toFront(false);
             spliceButton->toFront(false);
         }
     }
