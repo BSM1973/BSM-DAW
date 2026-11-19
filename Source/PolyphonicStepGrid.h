@@ -3,6 +3,7 @@
 // Version 1: eight note lanes, independent event lengths and simultaneous starts.
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -48,8 +49,10 @@ public:
     std::int64_t stepTicks = 240; // 1/16 note at 960 PPQ.
     // C4, B3, A3, G3, F3, E3, D3, C3 as in the supplied video.
     std::array<Lane, laneCount> lanes {{
-        Lane {72}, Lane {71}, Lane {69}, Lane {67},
-        Lane {65}, Lane {64}, Lane {62}, Lane {60}
+        Lane {72, true, false, false, {}}, Lane {71, true, false, false, {}},
+        Lane {69, true, false, false, {}}, Lane {67, true, false, false, {}},
+        Lane {65, true, false, false, {}}, Lane {64, true, false, false, {}},
+        Lane {62, true, false, false, {}}, Lane {60, true, false, false, {}}
     }};
 
     std::int64_t cycleTicks() const noexcept
