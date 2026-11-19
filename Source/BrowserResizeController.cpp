@@ -262,8 +262,12 @@ int getLibertyPreferredBrowserWidth(MainComponent* owner)
 void resizeLibertyBrowserResizeController(MainComponent* owner)
 {
     if (owner == nullptr) return;
-    const auto it = controllers.find(owner);
-    if (it != controllers.end() && it->second)
+    // Initialize the sole geometry owner immediately on first use. Do not
+    // rely on a bootstrap timer racing with the browser's first opening.
+    auto it = controllers.find(owner);
+    if (it == controllers.end())
+        it = controllers.emplace(owner, std::make_unique<BrowserResizeController>(*owner)).first;
+    if (it->second)
         it->second->resizeToOwner();
 }
 

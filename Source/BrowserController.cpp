@@ -1303,7 +1303,12 @@ public:
         loadPluginButton.setBounds(14 + w, controlsY, w, 28);
         openPluginButton.setBounds(18 + w * 2, controlsY, w, 28);
         unloadPluginButton.setBounds(22 + w * 3, controlsY, w, 28);
-        pluginStatus.setBounds(10, controlsY + 31, getWidth() - 20, 28);
+        // Keep the bottom status at a stable integer pixel position. Other
+        // component layout changes must not invalidate its geometry.
+        const auto statusBounds = juce::Rectangle<int>(10, controlsY + 31,
+                                                        juce::jmax(0, getWidth() - 20), 28);
+        if (pluginStatus.getBounds() != statusBounds)
+            pluginStatus.setBounds(statusBounds);
         spliceTitle.setBounds(12, 100, getWidth() - 24, 28);
         spliceInfo.setBounds(12, 128, getWidth() - 24, 52);
         const int spliceButtonW = juce::jmax(0, (getWidth() - 28) / 2);
@@ -4707,6 +4712,9 @@ private:
         }
         browserOpen = shouldOpen;
         setVisible(browserOpen);
+        // The resize controller alone owns the browser's geometry. It also
+        // installs its resize grip if this is the first browser opening.
+        resizeLibertyBrowserResizeController(&owner);
         if (browserOpen) toFront(false);
         adjustHostWindow(browserOpen);
         // The mixer claims only the left viewport, so the right plugin
@@ -7247,14 +7255,9 @@ private:
             sampleSearchPending = false;
             showMusicalFilterResults();
         }
-        const int width = juce::jlimit(260, juce::jmax(260, owner.getWidth() - 220), getLibertyPreferredBrowserWidth(&owner));
-        const int panelX = juce::jmax(0, owner.getWidth() - width);
-        if (browserOpen)
-        {
-            const auto wanted = juce::Rectangle<int>(panelX, topBarHeight, juce::jmin(width, owner.getWidth()), juce::jmax(1, owner.getHeight() - topBarHeight));
-            if (getBounds() != wanted) setBounds(wanted);
-            if (!isVisible()) setVisible(true);
-        }
+        // No periodic browser setBounds here: a second 10 Hz layout writer
+        // could fight the resize grip/controller and make bottom labels jump.
+        // Geometry is updated on open, window resize, or grip drag instead.
 
         // The browser starts after PERFORMANCE, never on top of it.
         const auto buttonBounds = juce::Rectangle<int>(LibertyPageNavigation::browserX,

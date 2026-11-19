@@ -8,6 +8,7 @@ import unittest
 from xml.etree import ElementTree as ET
 
 SOURCE = (Path(__file__).resolve().parents[1] / "Source" / "BrowserController.cpp").read_text(encoding="utf-8")
+RESIZE_SOURCE = (Path(__file__).resolve().parents[1] / "Source" / "BrowserResizeController.cpp").read_text(encoding="utf-8")
 MAX_BYTES = 5 * 1024 * 1024
 
 
@@ -71,6 +72,18 @@ class PluginCollectionsRegression(unittest.TestCase):
         self.assertIn('favouriteCount == 1 ? " favori" : " favoris"', status)
         timer = cpp_function("void timerCallback() override")
         self.assertIn("updatePluginStatusIfChanged(progressText);", timer)
+
+    def test_browser_geometry_has_only_one_event_driven_controller(self):
+        panel_timer = cpp_function("void timerCallback() override")
+        browser_open = cpp_function("void setBrowserOpen(bool shouldOpen)")
+        browser_layout = cpp_function("void resized() override")
+        self.assertNotIn("setBounds(wanted)", panel_timer)
+        self.assertNotIn("getLibertyPreferredBrowserWidth(&owner)", panel_timer)
+        self.assertIn("resizeLibertyBrowserResizeController(&owner);", browser_open)
+        self.assertIn("pluginStatus.getBounds() != statusBounds", browser_layout)
+        self.assertIn("if (browserPanel->getBounds() != wanted)", RESIZE_SOURCE)
+        self.assertIn("controllers.emplace(owner, std::make_unique<BrowserResizeController>(*owner))", RESIZE_SOURCE)
+        self.assertIn("void componentVisibilityChanged(", RESIZE_SOURCE)
 
     def test_one_parser_for_startup_and_import(self):
         reader = cpp_function("static bool readPluginCollectionsFile(")
