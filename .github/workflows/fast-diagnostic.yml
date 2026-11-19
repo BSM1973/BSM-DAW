@@ -8,7 +8,7 @@ name: Liberty Fast Diagnostic
 # Keep manual runs available; the separate build.yml handles pushes to main.
 on:
   push:
-    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1' ]
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2' ]
   workflow_dispatch:
 
 jobs:
@@ -32,6 +32,9 @@ jobs:
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PolyphonicStepGridSmoke.cpp -o /tmp/liberty-polyphonic-grid
           /tmp/liberty-polyphonic-grid
           python3 Tests/PolyphonicStepGridSourceRegression.py
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PolyphonicStepGridLayoutSmoke.cpp -o /tmp/liberty-polyphonic-layout
+          /tmp/liberty-polyphonic-layout
+          python3 Tests/PolyphonicStepGridUIRegression.py
 
       - name: Verify Splice scan routes to sample library, never full plugin inventory
         run: python3 Tests/SpliceScanRoutingRegression.py
@@ -209,7 +212,7 @@ jobs:
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
 
       - name: Run Drum Sampler regression tests
-        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke'
+        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke'
 
       - name: Measure spectral track edit latency (5 fresh launches)
         run: |

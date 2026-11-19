@@ -1107,12 +1107,12 @@ public:
     {
         setUsingNativeTitleBar(true);
         auto* editor = new FloatingStepSequencerContent(main);
-        editor->setSize(1200, 320);
+        editor->setSize(1150, 500);
         setContentOwned(editor, true);
         setResizable(true, true);
-        setResizeLimits(760, 220, 2200, 700);
+        setResizeLimits(760, 300, 2200, 850);
         if (lastFloatingStepSequencerBounds.isEmpty())
-            centreWithSize(1200, 320);
+            centreWithSize(1150, 500);
         else
             setBounds(lastFloatingStepSequencerBounds);
         setVisible(true);
@@ -1212,6 +1212,11 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
                 const int instrumentIndex = logicalRow - instrumentFirst;
                 if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
                 {
+                    if (polyShowNewGrid(*pattern))
+                    {
+                        clickPolyphonicStepSequencer(p, area, *pattern, false, instrumentIndex);
+                        return;
+                    }
                     auto panel = area;
                     const int dockInset = 8;
                     panel = panel.reduced(dockInset, 6);
@@ -1375,6 +1380,8 @@ void MainComponent::handleStepSequencerClick(juce::Point<int> p, juce::Rectangle
 
 }
 
+#include "PolyphonicStepGridUI.inc"
+
 void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int> area)
 {
     // Obsidian editor surface matches the graphite hierarchy of the floating dock.
@@ -1394,6 +1401,12 @@ void MainComponent::drawMidiStepSequencer(juce::Graphics& g, juce::Rectangle<int
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
+    if (polyShowNewGrid(*pattern))
+    {
+        drawPolyphonicStepSequencer(g, area, *pattern,
+            midiStepSequencers[(size_t)midiIndex].activePattern, true);
+        return;
+    }
     const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
     // Obsidian dock title echoes the selected-pattern turquoise hierarchy.
     g.setColour(juce::Colour(0xffb8e8ec));
@@ -1541,6 +1554,11 @@ void MainComponent::clickMidiStepSequencer(juce::Point<int> point, juce::Rectang
     const int midiIndex = selectedTrack - getAudioTrackCount();
     auto* pattern = getMidiStepSequencer(midiIndex);
     if (!pattern) return;
+    if (polyShowNewGrid(*pattern))
+    {
+        clickPolyphonicStepSequencer(point, area, *pattern, true, midiIndex);
+        return;
+    }
     const int left = area.getX() + 12, width = juce::jmax(1, area.getWidth() - 24);
     const auto exportButton = juce::Rectangle<int>(left, area.getY() + 161, juce::jmin(180, width), 29);
     if (exportButton.contains(point))
@@ -2209,6 +2227,12 @@ void MainComponent::drawStepSequencerDock(juce::Graphics& g, juce::Rectangle<int
     if (instrumentIndex < 0 || instrumentIndex >= getInstrumentTrackCount()) return;
     if (auto* pattern = getInstrumentStepSequencer(instrumentIndex))
     {
+                    if (polyShowNewGrid(*pattern))
+                    {
+                        drawPolyphonicStepSequencer(g, area, *pattern,
+                            instrumentStepSequencers[(size_t)instrumentIndex].activePattern, false);
+                        return;
+                    }
                     auto panel = area;
                     const int dockInset = 8;
                     panel = panel.reduced(dockInset, 6);
