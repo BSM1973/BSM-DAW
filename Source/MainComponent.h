@@ -20,8 +20,10 @@ juce::String getLibertyTrackName(int);
 class MainComponent;
 void refreshLibertyRecordingTrackLayout(MainComponent* owner);
 void refreshLibertyTrackHeaderMixLayout(MainComponent* owner);
-bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
-bool commitLibertySequencerInstrumentClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
+bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&,
+                                    int, double, double, bool revealEditor = true);
+bool commitLibertySequencerInstrumentClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&,
+                                          int, double, double, bool revealEditor = true);
 bool copyLibertyActiveMidiClipNotes(MainComponent&, bool instrument, int lane,
                                    std::vector<MidiEngine::NoteEvent>&, std::int64_t& lengthTicks);
 void syncLibertyMultiMidiPlayback(MainComponent&);
