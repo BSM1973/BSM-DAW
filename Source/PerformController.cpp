@@ -1052,7 +1052,7 @@ public:
         }
         else if(velocity.contains(point))
         {
-            const auto* clip=selectedMidiData();
+            auto* clip=selectedMidiData();
             if(clip==nullptr)return;
             int nearest=-1;
             int bestDistance=14;
