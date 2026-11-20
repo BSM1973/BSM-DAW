@@ -12,6 +12,10 @@ void resetLibertyTrackNames();
 void saveLibertyMultiMidiClips(MainComponent&, juce::XmlElement&);
 juce::String getLibertyMultiMidiStateSignature(const MainComponent&);
 void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
+void saveLibertyPerformSession(MainComponent*,juce::XmlElement&,const juce::File&);
+void loadLibertyPerformSession(MainComponent*,const juce::XmlElement&,const juce::File&);
+void clearLibertyPerformSession(MainComponent*);
+std::uint64_t getLibertyPerformSessionRevision(MainComponent*);
 void resetLibertyMultiMidiProject(MainComponent&);
 void refreshLibertyMixConsole(MainComponent*);
 void prepareLibertyAudioRecordingForProjectReset(MainComponent*);
@@ -134,6 +138,7 @@ juce::String MainComponent::getProjectStateSignature() const
               << ";instrumentTracks=" << getInstrumentTrackCount()
               << ";midiClipStart=" << juce::String(midiClipStartSeconds, 6)
               << ";midiClipLength=" << juce::String(midiClipLengthSeconds, 6)
+              << ";performSession=" << juce::String((juce::int64)getLibertyPerformSessionRevision(this))
               << ";midiColour=" << getLibertyTrackColourId(getAudioTrackCount())
               << ";midiName=" << getLibertyTrackName(getAudioTrackCount())
               << ";midiMute=" << (audioEngine.isMidiTrackMuted() ? 1 : 0)
@@ -445,6 +450,7 @@ bool MainComponent::resetProjectState()
     if (!audioEngine.resetInstrumentPlayback(1))
         return false;
 
+    clearLibertyPerformSession(this);
     prepareLibertyAudioRecordingForProjectReset(this);
     resetLibertyMultiMidiProject(*this);
     audioEngine.setPlaying(false);
@@ -967,6 +973,7 @@ bool MainComponent::saveProjectToFile(const juce::File& file)
 
     saveLibertyMultiMidiClips(*this, project);
     saveStepSequencers(project);
+    saveLibertyPerformSession(this,project,file);
 
     const auto tempFile = file.getSiblingFile(
         file.getFileName() + ".saving-" + juce::Uuid().toString());
@@ -1689,6 +1696,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     importAudioDockClipBounds(restoredMarkers);
     loadLibertyMultiMidiClips(*this, *project);
     loadStepSequencers(*project);
+    loadLibertyPerformSession(this,*project,file);
     updateMidiClipTiming();
     audioEngine.setCurrentTimeSeconds(playheadSeconds);
     playheadSeconds = audioEngine.getCurrentTimeSeconds();
