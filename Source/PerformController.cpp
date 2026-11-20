@@ -537,6 +537,7 @@ public:
         activeTrackScene.assign((size_t)trackCount(), -1);
         performAudioFiles.resize((size_t)audioTrackCount());
         performMidiClips.resize((size_t)trackCount());
+        clipMetadata.resize((size_t)trackCount());
 
         for (int track = 0; track < trackCount(); ++track)
         {
@@ -611,6 +612,7 @@ public:
             ++sessionRevision;
         };
         addAndMakeVisible(loopButton);
+        initialiseInspector();
         std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
         setVisible(false);
         owner.addAndMakeVisible(this);
@@ -669,6 +671,9 @@ public:
         player.resetSession();
         for(auto& bank:performAudioFiles)bank={};
         for(auto& bank:performMidiClips)bank={};
+        for(auto& bank:clipMetadata)bank={};
+        selectedClipTrack=selectedClipScene=-1;
+        refreshInspector();
         quantizeSelector.setSelectedId(3,juce::dontSendNotification);
         loopButton.setToggleState(true,juce::dontSendNotification);
         loopButton.setButtonText("BOUCLE : ON");
@@ -930,6 +935,8 @@ private:
         if (activeTrackScene.size() != wantedTracks) activeTrackScene.resize(wantedTracks, -1);
         if (performAudioFiles.size() != wantedAudio) performAudioFiles.resize(wantedAudio);
         if (performMidiClips.size() != wantedTracks) performMidiClips.resize(wantedTracks);
+        if (clipMetadata.size() != wantedTracks) clipMetadata.resize(wantedTracks);
+        if (selectedClipTrack >= (int)wantedTracks) selectedClipTrack=selectedClipScene=-1;
         player.syncTrackCount();
         for (size_t t = oldTracks; t < wantedTracks; ++t)
         {
@@ -983,6 +990,13 @@ private:
     {
         return trackColour(getLibertyTrackColourId(track));
     }
+
+    struct ClipMetadata
+    {
+        juce::String name;
+        int colourId=-1;
+        LibertyPerformClip::Settings settings;
+    };
 
     struct SessionMidiData {
         bool valid=false;
@@ -1228,6 +1242,14 @@ private:
     std::vector<int> activeTrackScene;
     std::vector<std::array<juce::File, sceneCount>> performAudioFiles;
     std::vector<std::array<SessionMidiData, sceneCount>> performMidiClips;
+    std::vector<std::array<ClipMetadata, sceneCount>> clipMetadata;
+    int selectedClipTrack=-1,selectedClipScene=-1,inspectorTab=0;
+    bool updatingInspector=false;
+    juce::TextEditor inspectorName;
+    juce::ComboBox inspectorColour,inspectorMidiBars,inspectorQuantize,inspectorMode;
+    juce::ToggleButton inspectorLoop;
+    juce::Slider inspectorGain,inspectorTranspose,inspectorIn,inspectorOut;
+    juce::TextButton inspectorClipTab,inspectorLaunchTab,inspectorClose;
     juce::ComboBox quantizeSelector;
     juce::TextButton loopButton;
     std::uint64_t sessionRevision=0;
