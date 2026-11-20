@@ -523,11 +523,11 @@ public:
         recordArrangeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         recordArrangeButton.onClick = [this] { toggleCaptureToArrange(); };
         addAndMakeVisible(recordArrangeButton);
-        quantizeSelector.addItem("IMMÉDIAT",1);
+        quantizeSelector.addItem(juce::String::fromUTF8("IMMÉDIAT"),1);
         quantizeSelector.addItem("1 TEMPS",2);
         quantizeSelector.addItem("1 MESURE",3);
         quantizeSelector.setSelectedId(3,juce::dontSendNotification);
-        quantizeSelector.setTooltip("Quantification du lancement des clips et des scènes.");
+        quantizeSelector.setTooltip(juce::String::fromUTF8("Quantification du lancement des clips et des scènes."));
         addAndMakeVisible(quantizeSelector);
         loopButton.setButtonText("BOUCLE : ON");
         loopButton.setClickingTogglesState(true);
@@ -762,7 +762,7 @@ public:
         g.drawText("PERFORM", 22, 10, 150, 28, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(10.0f));
-        g.drawFittedText("SESSION   CLIPS   SCÈNES   LIVE",170,16,
+        g.drawFittedText(juce::String::fromUTF8("SESSION   CLIPS   SCÈNES   LIVE"),170,16,
             juce::jmax(1,quantizeSelector.getX()-176),18,
             juce::Justification::centredLeft,1);
 
