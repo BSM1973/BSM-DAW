@@ -77,8 +77,12 @@ std::vector<Note> render(const std::vector<Note>& source,
     auto seed=p.seed;
     const auto step=stepTicks(p.division);
 
+    const auto maxIterations=std::min<std::int64_t>(
+        (clipTicks-1)/step+1,(std::int64_t)maxNotes*16);
+
     if(p.kind==0)
     {
+        if(p.density==0)return result;
         // Arpeggiate the distinct played pitches, not an arbitrary fixed key.
         std::vector<Note> chord;
         for(const auto& note:source)
@@ -90,10 +94,17 @@ std::vector<Note> render(const std::vector<Note>& source,
         if(chord.empty())return result;
         const int pool=(int)chord.size()*p.octaves;
         if(pool<=0)return result;
-        for(std::int64_t i=0;i*step<clipTicks && result.size()<maxNotes;++i)
+        for(std::int64_t i=0;i<maxIterations && result.size()<maxNotes;++i)
         {
-            const auto start=swung(i*step,(int)i,step,p.swing);
+            auto start=swung(i*step,(int)i,step,p.swing);
             if(start>=clipTicks)continue;
+            if(p.variation>0)
+            {
+                const auto deviation=std::max<std::int64_t>(1,step*p.variation/600);
+                const auto jitter=(std::int64_t)(next(seed)%
+                    (std::uint32_t)(deviation*2+1))-deviation;
+                start=std::clamp<std::int64_t>(start+jitter,0,clipTicks-1);
+            }
             // Density is a true probability of emitting each step.
             if(!chance(seed,p.density))continue;
             const int row=(int)(i%std::max<std::int64_t>(1,p.steps));
@@ -112,8 +123,11 @@ std::vector<Note> render(const std::vector<Note>& source,
             note.startTick=start;
             note.lengthTicks=std::min<std::int64_t>(
                 clipTicks-start,std::max<std::int64_t>(1,step*85/100));
+            const int humanVelocity=p.variation>0?
+                (int)(next(seed)%(std::uint32_t)(1+p.variation/4))-
+                p.variation/8:0;
             note.velocity=(std::uint8_t)std::clamp(
-                ((int)note.velocity*p.velocity)/100,1,127);
+                ((int)note.velocity*p.velocity)/100+humanVelocity,1,127);
             note.muted=false;
             append(result,note,clipTicks);
         }
@@ -134,16 +148,19 @@ std::vector<Note> render(const std::vector<Note>& source,
         {
             if(result.size()>=maxNotes)break;
             if(original.muted){append(result,original,clipTicks);continue;}
-            if(chance(seed,skipProbability))continue;
+            if(chance(seed,skipProbability) || !chance(seed,p.density))continue;
             Note note=original;
             const int shiftRange=(int)std::max<std::int64_t>(0,maxShift);
             const int timeDelta=shiftRange>0?
                 (int)(next(seed)%(std::uint32_t)(2*shiftRange+1))-shiftRange:0;
             note.startTick=std::clamp<std::int64_t>(
-                original.startTick+timeDelta,0,clipTicks-1);
+                original.startTick+timeDelta+
+                (((original.startTick/step)&1)!=0?
+                    step*p.swing/200:0),0,clipTicks-1);
             const int dv=velocityShift>0?
                 (int)(next(seed)%(std::uint32_t)(2*velocityShift+1))-velocityShift:0;
-            note.velocity=(std::uint8_t)std::clamp((int)original.velocity+dv,1,127);
+            note.velocity=(std::uint8_t)std::clamp(
+                ((int)original.velocity*p.velocity)/100+dv,1,127);
             const int lengthDelta=shiftRange>0?
                 (int)(next(seed)%(std::uint32_t)(2*shiftRange+1))-shiftRange:0;
             note.lengthTicks=std::clamp<std::int64_t>(
@@ -167,7 +184,7 @@ std::vector<Note> render(const std::vector<Note>& source,
         // Style changes the anchored pattern, density adds/subtracts hits.
         if(p.density==0)return result;
         const std::int64_t pattern=std::max<std::int64_t>(1,p.steps);
-        for(std::int64_t i=0;i*step<clipTicks && result.size()<maxNotes;++i)
+        for(std::int64_t i=0;i<maxIterations && result.size()<maxNotes;++i)
         {
             const int pos=(int)(i%pattern)%16;
             const auto start=swung(i*step,(int)i,step,p.swing);
