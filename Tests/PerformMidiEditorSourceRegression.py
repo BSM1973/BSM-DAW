@@ -42,7 +42,7 @@ for method in (
     "clip->history.undoStep(",
     "clip->history.redoStep(",
     "player.replaceMidiNotes(selectedClipTrack,selectedClipScene,",
-    "clip->setAttribute(\"probability\",(int)n.probability)",
+    "e->setAttribute(\"probability\",(int)n.probability)",
     'e->getIntAttribute("probability",100)',
 ):
     assert method in source, "Missing MIDI piano-roll implementation: "+method
