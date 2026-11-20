@@ -2,8 +2,10 @@
 // Transfers are explicit: editing an existing Piano Roll clip never silently
 // overwrites a Step Sequencer pattern, and vice versa.
 #include "PolyphonicStepGridMidiBridge.h"
+#include "PolyphonicStepGridPages.h"
+#include "PolyphonicStepGridFrench.h"
 
-bool MainComponent::exportPolyGridToPianoRoll(bool midi, int track)
+bool MainComponent::exportPolyGridToPianoRoll(bool midi, int track, bool openPianoRoll)
 {
     auto* pattern = midi ? getMidiStepSequencer(track)
                          : getInstrumentStepSequencer(track);
@@ -24,15 +26,17 @@ bool MainComponent::exportPolyGridToPianoRoll(bool midi, int track)
         : commitLibertySequencerInstrumentClip(*this, notes, track, startSeconds, lengthSeconds);
     if (created)
     {
-        // commitGeneratedNotes loads the new authoritative clip into midiEngine.
-        // Opening the existing Piano Roll never creates a second copy.
-        openLibertyMidiEditorInDock(*this);
+        // The clip is already inserted into the real ARRANGE timeline.
+        // Only VERS PIANO opens the Piano Roll; INSÉRER ARR. keeps the
+        // Step Sequencer visible so the user can continue composing.
+        if (openPianoRoll)
+            openLibertyMidiEditorInDock(*this);
         repaint();
         return true;
     }
     juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
         "Liberty — Step Sequencer",
-        juce::String::fromUTF8("Impossible de créer le clip MIDI ici. Vérifiez qu'aucun autre clip n'occupe cette position."),
+        LibertyPolyGridFrench::clipError(),
         "OK");
     return false;
 }
@@ -86,5 +90,119 @@ bool MainComponent::importPianoRollToPolyGrid(bool midi, int track)
     polyGridSelectedEvent = 0;
     stepSequencerPage = 0;
     publishPolyGrid(midi, track, *pattern);
+    return true;
+}
+
+
+// Stop restores the original instrument bank if a MIDI-track audition
+// temporarily fed it a pattern. Neither the song playhead nor arrangement
+// clips are changed by audition.
+void MainComponent::stopPolyGridPreview()
+{
+    const int target = polyPreviewTargetTrack;
+    const bool wasMidi = polyPreviewMidiSource;
+    audioEngine.setStepPreview(-1, false);
+    polyPreviewLogicalTrack = -1;
+    polyPreviewTargetTrack = -1;
+    polyPreviewMidiSource = false;
+    if (wasMidi && target >= 0 && target < getInstrumentTrackCount())
+        publishInstrumentStepSequencer(target);
+    repaint();
+}
+
+bool MainComponent::togglePolyGridPreview(bool midi, int track)
+{
+    const int sourceLogicalTrack = getAudioTrackCount()
+        + (midi ? track : getMidiTrackCount() + track);
+
+    // The button is an honest on/off control, not a decorative icon.
+    if (audioEngine.isStepPreviewPlaying()
+        && polyPreviewLogicalTrack == sourceLogicalTrack)
+    {
+        stopPolyGridPreview();
+        return true;
+    }
+    if (audioEngine.isStepPreviewPlaying() || polyPreviewLogicalTrack >= 0)
+        stopPolyGridPreview();
+
+    const auto* pattern = midi ? getMidiStepSequencer(track)
+                               : getInstrumentStepSequencer(track);
+    if (pattern == nullptr || !pattern->polyGrid.hasNotes())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon, "Liberty - Step Sequencer",
+            LibertyPolyGridFrench::emptyPattern(), "OK");
+        return false;
+    }
+
+    const auto notes = LibertyStepSequencer::render(*pattern);
+    const auto ticks = LibertyStepSequencer::getCycleLengthTicks(*pattern);
+    const double duration = MidiEngine::tickToSeconds(ticks, tempoBpm);
+    if (notes.empty() || ticks <= 0 || !std::isfinite(duration) || duration <= 0.0)
+        return false;
+
+    // MIDI tracks produce events, not audio. Route their audition to a loaded
+    // instrument on an instrument track, preserving MIDI channel and velocity.
+    int target = midi ? juce::jlimit(0, juce::jmax(0, getInstrumentTrackCount()-1),
+                                     stepSequencerMidiTarget) : track;
+    const auto playable = [this](int lane)
+    {
+        return lane >= 0 && lane < getInstrumentTrackCount()
+            && (LibertyPluginHost::instance().hasInstrumentForTrack(lane)
+                || audioEngine.hasNativeDrumSamplerForTrack(lane));
+    };
+    if (midi && !playable(target))
+        for (int lane = 0; lane < getInstrumentTrackCount(); ++lane)
+            if (playable(lane)) { target = lane; break; }
+    if (!playable(target))
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::WarningIcon, "Liberty - Step Sequencer",
+            LibertyPolyGridFrench::noInstrument(), "OK");
+        return false;
+    }
+    if (midi) stepSequencerMidiTarget = target;
+
+    // The audition engine uses its own sample counter. It never moves the
+    // ARRANGE playhead and loops one cycle independently from song playback.
+    if (audioEngine.isPlaying())
+    {
+        audioEngine.setPlaying(false);
+        isPlaying = false;
+    }
+    if (midi)
+        audioEngine.setInstrumentTrackNotes(target, notes, 0.0, duration,
+                                           tempoBpm, true);
+    else
+        publishInstrumentStepSequencer(track);
+    polyPreviewLogicalTrack = sourceLogicalTrack;
+    polyPreviewTargetTrack = target;
+    polyPreviewMidiSource = midi;
+    audioEngine.setStepPreview(target, true);
+    repaint();
+    return true;
+}
+
+bool MainComponent::advancePolyGridPage(bool midi, int track)
+{
+    auto* pattern = midi ? getMidiStepSequencer(track)
+                         : getInstrumentStepSequencer(track);
+    if (!pattern) return false;
+    const int bank = midi ? midiStepSequencers[(size_t)track].activePattern
+                          : instrumentStepSequencers[(size_t)track].activePattern;
+    auto& editor = polyGridEditor(midi, track, bank);
+    const bool growing = LibertyPolyGridPages::willExtend(pattern->polyGrid,
+                                                          stepSequencerPage);
+    if (growing) editor.begin(pattern->polyGrid);
+    const bool changed = LibertyPolyGridPages::advance(pattern->polyGrid,
+                                                       stepSequencerPage);
+    if (changed)
+    {
+        editor.commit(pattern->polyGrid);
+        publishPolyGrid(midi, track, *pattern);
+        if (audioEngine.isStepPreviewPlaying() && polyPreviewTargetTrack >= 0)
+            audioEngine.setStepPreview(polyPreviewTargetTrack, true);
+    }
+    else repaint();
     return true;
 }
