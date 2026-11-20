@@ -2,6 +2,7 @@ double snapLibertyTimelineTime(double seconds, double bpm) noexcept;
 double getLibertySnapStepSeconds(double bpm) noexcept;
 #include "MainComponent.h"
 #include "PluginHost.h"
+#include "DockMixerDbScale.h"
 void ensureLibertyTrackHeaderMixControls(MainComponent* owner);
 void showLibertyTrackHeaderColourMenu(MainComponent&, juce::Point<int>, int);
 int getLibertyTrackColourId(int);
@@ -2673,18 +2674,46 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
         }
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
-        auto fader = juce::Rectangle<float>((float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f, (float)(faderBottom - faderTop));
-        // Deep graphite fader rail complements the Obsidian mixer strips.
-        g.setColour(juce::Colour(0xff0c1720)); g.fillRoundedRectangle(fader, 3.0f);
-
-        const float gain = master ? audioEngine.getMasterGain() : (isAudio ? audioEngine.getTrackGain(sourceIndex) : audioEngine.getInstrumentTrackGain(sourceIndex));
-        const auto normalized = juce::jlimit(0.0f, 1.0f, gain * 0.5f);
-        const auto knobY = fader.getBottom() - normalized * fader.getHeight();
-        // Metallic Obsidian fader cap; preserve the existing handle geometry.
-        g.setColour(master ? juce::Colour(0xffc6e7ed) : juce::Colour(0xffb8c9d3));
-        g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f, fader.getWidth() + 4.0f, 12.0f, 3.0f);
-        g.setColour(master ? juce::Colour(0xfff0fbfd) : juce::Colour(0xffe2edf2));
-        g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f), fader.getX() + 1.0f, fader.getRight() - 1.0f);
+        const auto fader = juce::Rectangle<float>(
+            (float)c.getCentreX() - 7.0f, (float)faderTop, 14.0f,
+            (float)juce::jmax(0, faderBottom - faderTop));
+        const float gain = master ? audioEngine.getMasterGain()
+            : (isAudio ? audioEngine.getTrackGain(sourceIndex)
+                       : audioEngine.getInstrumentTrackGain(sourceIndex));
+        if (fader.getHeight() > 0.0f)
+        {
+            // All mini-mixer channels (audio, instruments, master) display a
+            // real signed dB gain scale; the 0 dB marker is unity gain.
+            g.setColour(juce::Colour(0xff0c1720));
+            g.fillRoundedRectangle(fader, 3.0f);
+            const auto graduations = LibertyDockMixerDbScale::atPixels(faderTop, faderBottom);
+            for (const auto& mark : graduations)
+            {
+                const bool unity = mark.db == 0.0f;
+                g.setColour(unity ? juce::Colour(0xff65dbe1)
+                                  : juce::Colour(master ? 0xffb9dce1 : 0xff92abb9)
+                                        .withAlpha(mark.major ? 0.82f : 0.48f));
+                g.drawHorizontalLine(mark.y, fader.getRight() + 3.0f,
+                                     fader.getRight() + (mark.major ? 9.0f : 6.0f));
+                if (mark.showLabel)
+                {
+                    // 37px of dedicated space to the right of each fader:
+                    // outside the thumb, strip title, M/S and numeric readout.
+                    g.setFont(juce::Font(9.0f));
+                    g.drawFittedText(mark.label,
+                        c.getX() + 76, mark.y - 6, c.getWidth() - 79, 12,
+                        juce::Justification::centredLeft, 1, 0.8f);
+                }
+            }
+            const float normalized = LibertyDockMixerDbScale::gainToPosition(gain);
+            const float knobY = fader.getBottom() - normalized * fader.getHeight();
+            g.setColour(master ? juce::Colour(0xffc6e7ed) : juce::Colour(0xffb8c9d3));
+            g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f,
+                                   fader.getWidth() + 4.0f, 12.0f, 3.0f);
+            g.setColour(master ? juce::Colour(0xfff0fbfd) : juce::Colour(0xffe2edf2));
+            g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f),
+                                 fader.getX() + 1.0f, fader.getRight() - 1.0f);
+        }
 
         const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
         // Obsidian mixer readouts: prioritize gain, keep pan as secondary metadata.
@@ -3018,10 +3047,14 @@ bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
         }
 
         const int faderTop = c.getY() + 58, faderBottom = c.getBottom() - 45;
-        if (event.position.y >= faderTop && event.position.y <= faderBottom)
+        if (faderBottom > faderTop &&
+            event.position.y >= faderTop && event.position.y <= faderBottom)
         {
-            const float n = juce::jlimit(0.0f, 1.0f, (float)(faderBottom - event.position.y) / (float)juce::jmax(1, faderBottom - faderTop));
-            const float gain = n * 2.0f;
+            const float n = juce::jlimit(0.0f, 1.0f,
+                (float)(faderBottom - event.position.y) /
+                (float)(faderBottom - faderTop));
+            // The click and the visible ticks use the same logarithmic dB law.
+            const float gain = LibertyDockMixerDbScale::positionToGain(n);
             if (master) audioEngine.setMasterGain(gain); else if (isAudio) audioEngine.setTrackGain(sourceIndex, gain); else audioEngine.setInstrumentTrackGain(sourceIndex, gain);
             repaint();
             return true;
