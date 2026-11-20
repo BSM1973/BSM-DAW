@@ -2706,6 +2706,13 @@ void MainComponent::resized() { resizeLibertyMixConsole(this); resizeLibertyDyna
 
 void MainComponent::timerCallback()
 {
+    if (polyPreviewLogicalTrack >= 0 && !audioEngine.isStepPreviewPlaying())
+        stopPolyGridPreview();
+    // Repaint the selected preview cursor while the independent sample clock
+    // advances; never modify ARRANGE's playback position.
+    if (audioEngine.isStepPreviewPlaying() && dockStepSequencerMode &&
+        !dockCollapsed && !dockMixerMode)
+        repaint(polyGridDockArea());
     // A 30 Hz series of toFront() calls previously competed with the floating
     // duration palette, causing the dock layers to repeatedly cover it.
     // Preserve the dock's current z-order while that short-lived palette is open.
