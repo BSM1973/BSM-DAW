@@ -162,6 +162,7 @@ public:
         if(scene>=0 && !state.slots[(size_t)scene].valid)return;
         const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
         const auto q=LibertyPerformTiming::quantumSamples(quantize,bpm,numerator,denominator,rate);
+        sessionTempo.store(juce::jmax(1.0,bpm),std::memory_order_release);
         state.queuedAt=LibertyPerformTiming::nextBoundary(sessionSamples,q);
         state.queuedScene=scene;
     }
@@ -197,6 +198,8 @@ public:
             && tracks[(size_t)track].queuedScene==scene;
     }
     void setLoopEnabled(bool value) noexcept { loopEnabled.store(value,std::memory_order_release); }
+    void setTempoBpm(double bpm) noexcept
+    {sessionTempo.store(juce::jmax(1.0,bpm),std::memory_order_release);}
 
     void appendMidiForInstrument(int instrument,juce::MidiBuffer& midi,int numSamples)
     {
@@ -205,7 +208,7 @@ public:
         const int audioTracks=owner.getAudioTrackCount();
         const int midiTracks=owner.getMidiTrackCount();
         const int instrumentTracks=owner.getInstrumentTrackCount();
-        const double bpm=juce::jmax(1.0,owner.getTempoBpm());
+        const double bpm=sessionTempo.load(std::memory_order_acquire);
         const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
         const std::int64_t blockStart=lastBlockStart;
         const std::int64_t blockEnd=blockStart+numSamples;
@@ -329,6 +332,9 @@ private:
         int queuedScene=-2; // -2 means no pending action, -1 means stop.
         std::int64_t queuedAt=0;
         std::int64_t startedAt=0;
+        int previousScene=-1;
+        std::int64_t previousStartedAt=0;
+        int transitionOffset=-1;
         int panicOffset=-1;
         bool panicNext=false;
     };
@@ -368,7 +374,7 @@ private:
         const auto blockStart=sessionSamples;
         lastBlockStart=blockStart;
         const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
-        const double bpm=juce::jmax(1.0,owner.getTempoBpm());
+        const double bpm=sessionTempo.load(std::memory_order_acquire);
         const bool repeat=loopEnabled.load(std::memory_order_acquire);
         const int captureSamples=juce::jmin(samples,captureMix.getNumSamples());
         if(captureSamples>0)captureMix.clear(0,captureSamples);
@@ -378,6 +384,9 @@ private:
             auto& state=tracks[(size_t)logical];
             state.panicOffset=state.panicNext?0:-1;
             state.panicNext=false;
+            state.previousScene=state.activeScene;
+            state.previousStartedAt=state.startedAt;
+            state.transitionOffset=-1;
             const bool isAudio=logical<owner.getAudioTrackCount();
             const bool muted=isAudio?owner.audioEngine.isTrackMuted(logical):false;
             const bool soloed=isAudio?owner.audioEngine.isTrackSolo(logical):false;
@@ -394,6 +403,7 @@ private:
                 {
                     state.activeScene=state.queuedScene;
                     state.startedAt=state.queuedAt;
+                    state.transitionOffset=i;
                     state.queuedScene=-2;
                     state.panicOffset=i;
                 }
@@ -404,9 +414,10 @@ private:
                 const auto length=slot.audio?
                     (std::int64_t)slot.audio->getNumSamples():
                     LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate);
-                if(length<=0){state.activeScene=-1;state.panicOffset=i;continue;}
+                if(length<=0)
+                {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
                 if(!repeat && relative>=length)
-                {state.activeScene=-1;state.panicOffset=i;continue;}
+                {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
                 if(!isAudio || slot.audio==nullptr || !audible)continue;
                 const int index=(int)(relative%length);
                 const int sourceChannels=slot.audio->getNumChannels();
@@ -436,6 +447,7 @@ private:
     std::vector<TrackState> tracks;
     std::int64_t sessionSamples=0,lastBlockStart=0;
     std::atomic<bool> loopEnabled { true };
+    std::atomic<double> sessionTempo { 120.0 };
     mutable juce::CriticalSection lock;
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
@@ -565,7 +577,9 @@ public:
             syncTrackContainers();
             // ARRANGE transport is deliberately stopped. PERFORM owns independent audio.
             owner.audioEngine.setPlaying(false);
+            owner.audioEngine.setStepPreview(-1,false);
             owner.isPlaying = false;
+            player.setTempoBpm(owner.getTempoBpm());
             setBounds(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
             resized();
             refreshClipLabels();
@@ -806,7 +820,7 @@ public:
     {
         syncTrackContainers();
         const int visibleTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
-        const int controlsX=juce::jmax(500,getWidth()-330);
+        const int controlsX=juce::jmin(500,juce::jmax(180,getWidth()-330));
         quantizeSelector.setBounds(controlsX,13,172,28);
         loopButton.setBounds(controlsX+180,13,135,28);
         const int leftMargin = 18;
@@ -1136,6 +1150,7 @@ private:
         if (!performVisible) return;
         const auto wanted = juce::Rectangle<int>(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
         if (getBounds() != wanted) setBounds(wanted);
+        player.setTempoBpm(owner.getTempoBpm());
         // Keep z-order stable while PERFORM is running. Repeated toFront()
         // competes with the Browser's always-on-top layer and causes flicker.
         refreshClipLabels();
