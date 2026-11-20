@@ -27,6 +27,6 @@ assert 'dragPolyGridPointer(' in source and 'endPolyGridPointer(' in source
 assert 'polyGridKeyAction(key, false)' in editing
 assert 'polyGridKeyAction(key, true)' in source
 assert 'editor->contains({row, note.id})' in ui
-assert '"ANNULER"' in ui and '"RÉTABLIR"' in ui
+assert '"ANNULER"' in ui and 'LibertyPolyGridFrench::redo()' in ui
 assert 'Édition avancée prévue en phase 3' not in ui
 print("Liberty Step Sequencer: six properties + pointer/keyboard history OK")
