@@ -8,7 +8,7 @@ name: Liberty Fast Diagnostic
 # Keep manual runs available; the separate build.yml handles pushes to main.
 on:
   push:
-    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3' ]
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3', 'feature/perform-transform-generate-phase4' ]
   workflow_dispatch:
 
 jobs:
@@ -38,6 +38,9 @@ jobs:
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformMidiEditorOpsSmoke.cpp -o /tmp/liberty-midi-editor
           /tmp/liberty-midi-editor
           python3 Tests/PerformMidiEditorSourceRegression.py
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformMidiGeneratorSmoke.cpp -o /tmp/liberty-perform-generator
+          /tmp/liberty-perform-generator
+          python3 Tests/PerformMidiGeneratorSourceRegression.py
 
       - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
@@ -152,6 +155,9 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformMidiEditorOpsSmoke.cpp -o /tmp/liberty-midi-editor
           /tmp/liberty-midi-editor
           python3 Tests/PerformMidiEditorSourceRegression.py
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformMidiGeneratorSmoke.cpp -o /tmp/liberty-perform-generator
+          /tmp/liberty-perform-generator
+          python3 Tests/PerformMidiGeneratorSourceRegression.py
 
       - name: Verify strict non-overlapping global UI regions
         run: |
