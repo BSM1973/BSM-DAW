@@ -24,6 +24,9 @@ jobs:
       - name: Reject corrupted French UI text (UTF-8)
         run: python3 Tests/FrenchTextRegression.py
 
+      - name: Guard ARRANGEMENT playhead from leaking into PERFORMANCE
+        run: python3 Tests/PerformPlayheadOverlayRegression.py
+
       - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
 
@@ -122,6 +125,9 @@ jobs:
 
       - name: Reject corrupted French UI text before macOS build
         run: python3 Tests/FrenchTextRegression.py
+
+      - name: Guard ARRANGEMENT playhead from leaking into PERFORMANCE
+        run: python3 Tests/PerformPlayheadOverlayRegression.py
 
       - name: Verify strict non-overlapping global UI regions
         run: |

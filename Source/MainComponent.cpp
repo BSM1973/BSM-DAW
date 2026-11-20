@@ -219,7 +219,10 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept;
 
 void MainComponent::paintOverChildren(juce::Graphics& g)
 {
-    if (isLibertyMixConsoleVisible(this)) return;
+    // Only ARRANGEMENT owns this playhead. paintOverChildren runs after all
+    // child pages are painted, so without both guards the orange timeline
+    // cursor bleeds through the independent PERFORMANCE clip/scene grid.
+    if (isLibertyMixConsoleVisible(this) || isLibertyPerformVisible(this)) return;
     // Paint only the playhead above child clip components. The original
     // playhead/ruler and dock navigation remain in paint(); no MIDI state,
     // clip ownership, hit testing, or audio routing is changed here.
