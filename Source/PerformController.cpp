@@ -4,12 +4,18 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_devices/juce_audio_devices.h>
+#include "PerformSessionTiming.h"
+#include "StepSequencer.h"
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <atomic>
 #include <deque>
 #include <map>
 #include <memory>
+#include <algorithm>
+#include <cstdint>
+#include <cmath>
 
 bool isLibertyMixConsoleVisible(MainComponent* owner);
 void setLibertyMixConsoleVisible(MainComponent* owner, bool shouldShow);
@@ -42,7 +48,7 @@ public:
     explicit PerformAudioPlayer(MainComponent& ownerIn) : owner(ownerIn)
     {
         formats.registerBasicFormats();
-        tracks.resize((size_t)owner.getAudioTrackCount());
+        tracks.resize((size_t)owner.getTotalArrangeTrackCount());
         // AudioEngine is the sole owner of the hardware output callback.
         callbackAttached = false;
     }
@@ -61,113 +67,193 @@ public:
     void syncTrackCount()
     {
         const juce::ScopedLock sl(lock);
-        const auto wanted = (size_t)juce::jmax(0, owner.getAudioTrackCount());
-        if (tracks.size() != wanted) tracks.resize(wanted);
+        tracks.resize((size_t)juce::jmax(0,owner.getTotalArrangeTrackCount()));
     }
 
     void setEnabled(bool shouldEnable)
     {
         syncTrackCount();
         const juce::ScopedLock sl(lock);
-        enabled = shouldEnable;
-        if (!enabled)
-            for (auto& track : tracks) { track.playing = false; track.position = 0; }
+        enabled.store(shouldEnable,std::memory_order_release);
+        if(!shouldEnable)
+        {
+            for(auto& track:tracks)
+            {
+                track.activeScene=-1;
+                track.queuedScene=-2;
+                track.panicNext=true;
+            }
+            sessionSamples=0;
+            owner.audioEngine.notifyInstrumentChanged();
+        }
     }
 
-    bool loadAndLaunch(int trackIndex, const juce::File& file, juce::String& error)
+    bool prepareAudioClip(int track, int scene, const juce::File& file, juce::String& error)
     {
-        syncTrackCount();
-        if (trackIndex < 0 || trackIndex >= owner.getAudioTrackCount() || !file.existsAsFile())
-        {
-            error = "Invalid PERFORM clip.";
-            return false;
-        }
-
+        if(track<0 || track>=owner.getAudioTrackCount() || scene<0 || scene>=sceneCount
+            || !file.existsAsFile()) {error="Fichier audio introuvable.";return false;}
         std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
-        if (reader == nullptr)
-        {
-            error = "This audio file cannot be opened.";
-            return false;
-        }
-
-        const int sourceChannels = juce::jlimit(1, 2, (int)reader->numChannels);
-        const int sourceSamples = (int)juce::jmin<juce::int64>(reader->lengthInSamples, (juce::int64)0x7fffffff);
-        if (sourceSamples <= 0)
-        {
-            error = "The audio file is empty.";
-            return false;
-        }
-
-        juce::AudioBuffer<float> source(sourceChannels, sourceSamples);
+        if(!reader || reader->lengthInSamples<=0 || reader->lengthInSamples>0x7fffffff)
+        {error="Fichier audio non pris en charge.";return false;}
+        const int channels=juce::jlimit(1,2,(int)reader->numChannels);
+        const int n=(int)reader->lengthInSamples;
+        juce::AudioBuffer<float> source(channels,n);
         source.clear();
-        if (!reader->read(&source, 0, sourceSamples, 0, true, true))
-        {
-            error = "The audio file could not be decoded.";
-            return false;
-        }
-
-        const double deviceRate = juce::jmax(1.0, owner.audioEngine.getSampleRate());
-        const double sourceRate = juce::jmax(1.0, reader->sampleRate);
-        std::unique_ptr<juce::AudioBuffer<float>> finalBuffer;
-
-        if (std::abs(deviceRate - sourceRate) < 0.5)
-        {
-            finalBuffer = std::make_unique<juce::AudioBuffer<float>>(sourceChannels, sourceSamples);
-            for (int ch = 0; ch < sourceChannels; ++ch)
-                finalBuffer->copyFrom(ch, 0, source, ch, 0, sourceSamples);
-        }
+        if(!reader->read(&source,0,n,0,true,true))
+        {error="Lecture audio impossible.";return false;}
+        const double deviceRate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        const double sourceRate=juce::jmax(1.0,reader->sampleRate);
+        const int target=(int)juce::jlimit(1.0,(double)0x7fffffff,
+            std::round((double)n*deviceRate/sourceRate));
+        auto buffer=std::make_shared<juce::AudioBuffer<float>>(channels,target);
+        buffer->clear();
+        if(std::abs(sourceRate-deviceRate)<0.5)
+            for(int ch=0;ch<channels;++ch)buffer->copyFrom(ch,0,source,ch,0,target);
         else
-        {
-            const int targetSamples = juce::jmax(1, (int)std::llround((double)sourceSamples * deviceRate / sourceRate));
-            finalBuffer = std::make_unique<juce::AudioBuffer<float>>(sourceChannels, targetSamples);
-            finalBuffer->clear();
-            const double speedRatio = sourceRate / deviceRate;
-            for (int ch = 0; ch < sourceChannels; ++ch)
+            for(int ch=0;ch<channels;++ch)
             {
-                juce::LagrangeInterpolator interpolator;
-                interpolator.process(speedRatio,
-                                     source.getReadPointer(ch),
-                                     finalBuffer->getWritePointer(ch),
-                                     targetSamples);
+                juce::LagrangeInterpolator converter;
+                converter.process(sourceRate/deviceRate,source.getReadPointer(ch),
+                                  buffer->getWritePointer(ch),target);
             }
-        }
-
-        {
-            const juce::ScopedLock sl(lock);
-            if (trackIndex < 0 || trackIndex >= (int)tracks.size())
-            {
-                error = "The PERFORM track changed while loading the clip.";
-                return false;
-            }
-            auto& track = tracks[(size_t)trackIndex];
-            track.buffer = std::move(finalBuffer);
-            track.file = file;
-            track.position = 0;
-            track.playing = true;
-            enabled = true;
-        }
+        syncTrackCount();
+        const juce::ScopedLock sl(lock);
+        if(track>=(int)tracks.size())return false;
+        auto& state=tracks[(size_t)track];
+        state.slots[(size_t)scene].audio=std::move(buffer);
+        state.slots[(size_t)scene].notes.clear();
+        state.slots[(size_t)scene].midiLengthTicks=0;
+        state.slots[(size_t)scene].valid=true;
+        if(state.activeScene==scene) {state.activeScene=-1;state.panicNext=true;}
         return true;
     }
 
-    void stopTrack(int trackIndex)
+    bool prepareMidiClip(int track, int scene,
+                         const std::vector<MidiEngine::NoteEvent>& notes,
+                         std::int64_t lengthTicks)
     {
+        if(track<owner.getAudioTrackCount() || track>=owner.getTotalArrangeTrackCount()
+            || scene<0 || scene>=sceneCount || lengthTicks<=0)return false;
+        syncTrackCount();
         const juce::ScopedLock sl(lock);
-        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return;
-        tracks[(size_t)trackIndex].playing = false;
-        tracks[(size_t)trackIndex].position = 0;
+        if(track>=(int)tracks.size())return false;
+        auto& state=tracks[(size_t)track];
+        auto& slot=state.slots[(size_t)scene];
+        slot.audio.reset();
+        slot.notes=notes;
+        slot.midiLengthTicks=lengthTicks;
+        slot.valid=true;
+        if(state.activeScene==scene){state.activeScene=-1;state.panicNext=true;}
+        return true;
     }
 
+    bool hasClip(int track,int scene) const
+    {
+        const juce::ScopedLock sl(lock);
+        return track>=0 && track<(int)tracks.size() && scene>=0 && scene<sceneCount
+            && tracks[(size_t)track].slots[(size_t)scene].valid;
+    }
+
+    void queueScene(int track,int scene,int quantize,double bpm,int numerator,int denominator)
+    {
+        const juce::ScopedLock sl(lock);
+        if(track<0 || track>=(int)tracks.size() || scene>=sceneCount || scene< -1)return;
+        auto& state=tracks[(size_t)track];
+        if(scene>=0 && !state.slots[(size_t)scene].valid)return;
+        const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        const auto q=LibertyPerformTiming::quantumSamples(quantize,bpm,numerator,denominator,rate);
+        state.queuedAt=LibertyPerformTiming::nextBoundary(sessionSamples,q);
+        state.queuedScene=scene;
+    }
+
+    void stopTrack(int track)
+    {
+        const juce::ScopedLock sl(lock);
+        if(track<0 || track>=(int)tracks.size())return;
+        auto& s=tracks[(size_t)track];s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;
+    }
     void stopAll()
     {
         const juce::ScopedLock sl(lock);
-        for (auto& track : tracks) { track.playing = false; track.position = 0; }
+        for(auto& s:tracks){s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;}
     }
-
-    bool isTrackPlaying(int trackIndex) const
+    void resetSession()
     {
         const juce::ScopedLock sl(lock);
-        if (trackIndex < 0 || trackIndex >= (int)tracks.size()) return false;
-        return tracks[(size_t)trackIndex].playing;
+        for(auto& s:tracks){s=TrackState{};}
+        sessionSamples=lastBlockStart=0;
+    }
+    bool isTrackPlaying(int track,int scene=-1) const
+    {
+        const juce::ScopedLock sl(lock);
+        return track>=0 && track<(int)tracks.size()
+            && tracks[(size_t)track].activeScene>=0
+            && (scene<0 || tracks[(size_t)track].activeScene==scene);
+    }
+    bool isTrackQueued(int track,int scene) const
+    {
+        const juce::ScopedLock sl(lock);
+        return track>=0 && track<(int)tracks.size()
+            && tracks[(size_t)track].queuedScene==scene;
+    }
+    void setLoopEnabled(bool value) noexcept { loopEnabled.store(value,std::memory_order_release); }
+
+    void appendMidiForInstrument(int instrument,juce::MidiBuffer& midi,int numSamples)
+    {
+        if(!enabled.load(std::memory_order_acquire) || numSamples<=0)return;
+        if(!lock.tryEnter())return;
+        const int audioTracks=owner.getAudioTrackCount();
+        const int midiTracks=owner.getMidiTrackCount();
+        const int instrumentTracks=owner.getInstrumentTrackCount();
+        const double bpm=juce::jmax(1.0,owner.getTempoBpm());
+        const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        const std::int64_t blockStart=lastBlockStart;
+        const std::int64_t blockEnd=blockStart+numSamples;
+        const bool repeat=loopEnabled.load(std::memory_order_acquire);
+
+        for(int logical=audioTracks;logical<(int)tracks.size();++logical)
+        {
+            if(LibertyPerformTiming::instrumentForLogicalTrack(
+                logical,audioTracks,midiTracks,instrumentTracks)!=instrument)continue;
+            const auto& state=tracks[(size_t)logical];
+            if(state.panicOffset>=0)
+                for(int channel=1;channel<=16;++channel)
+                {
+                    midi.addEvent(juce::MidiMessage::allNotesOff(channel),state.panicOffset);
+                    midi.addEvent(juce::MidiMessage::allSoundOff(channel),state.panicOffset);
+                }
+            if(state.activeScene<0)continue;
+            const auto& slot=state.slots[(size_t)state.activeScene];
+            if(!slot.valid || slot.midiLengthTicks<=0)continue;
+            const auto cycle=juce::jmax<std::int64_t>(1,
+                LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate));
+            const auto relative=blockStart-state.startedAt;
+            const auto first=juce::jmax<std::int64_t>(0,relative>0?relative/cycle-1:0);
+            const auto last=repeat?juce::jmax<std::int64_t>(0,(blockEnd-state.startedAt)/cycle+1):0;
+            for(std::int64_t iteration=first;iteration<=last;++iteration)
+            {
+                const std::int64_t base=state.startedAt+iteration*cycle;
+                if(base>=blockEnd)break;
+                for(const auto& note:slot.notes)
+                {
+                    if(note.muted || note.lengthTicks<=0 || note.startTick<0)continue;
+                    const auto start=base+LibertyPerformTiming::ticksToSamples(note.startTick,bpm,rate);
+                    const auto end=juce::jmin(base+cycle,
+                        base+LibertyPerformTiming::ticksToSamples(note.startTick+note.lengthTicks,bpm,rate));
+                    const int channel=juce::jlimit(1,16,(int)note.channel);
+                    const int pitch=juce::jlimit(0,127,(int)note.pitch);
+                    const float velocity=juce::jlimit(0.f,1.f,(float)note.velocity/127.f);
+                    if(start>=blockStart && start<blockEnd)
+                        midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),
+                            juce::jlimit(0,numSamples-1,(int)(start-blockStart)));
+                    if(end>=blockStart && end<blockEnd && end>start)
+                        midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),
+                            juce::jlimit(0,numSamples-1,(int)(end-blockStart)));
+                }
+                if(!repeat)break;
+            }
+        }
+        lock.exit();
     }
 
     bool startCapture(juce::String& error)
@@ -229,12 +315,22 @@ public:
     }
 
 private:
+    struct Slot
+    {
+        std::shared_ptr<juce::AudioBuffer<float>> audio;
+        std::vector<MidiEngine::NoteEvent> notes;
+        std::int64_t midiLengthTicks=0;
+        bool valid=false;
+    };
     struct TrackState
     {
-        std::unique_ptr<juce::AudioBuffer<float>> buffer;
-        juce::File file;
-        juce::int64 position = 0;
-        bool playing = false;
+        std::array<Slot,sceneCount> slots;
+        int activeScene=-1;
+        int queuedScene=-2; // -2 means no pending action, -1 means stop.
+        std::int64_t queuedAt=0;
+        std::int64_t startedAt=0;
+        int panicOffset=-1;
+        bool panicNext=false;
     };
 
     juce::File stopCaptureInternal()
@@ -258,92 +354,88 @@ private:
     void audioDeviceStopped() override
     {
         const juce::ScopedLock sl(lock);
-        for (auto& track : tracks) { track.playing = false; track.position = 0; }
+        for (auto& track : tracks) { track.activeScene = -1; track.queuedScene = -2; track.panicNext = true; }
+        sessionSamples = lastBlockStart = 0;
         if (captureActive.load(std::memory_order_relaxed))
             stopCaptureInternal();
     }
 
     void audioDeviceIOCallbackWithContext(const float* const*, int,
-                                          float* const* outputChannelData, int numOutputChannels,
-                                          int numSamples,
+                                          float* const* outputs,int channels,int samples,
                                           const juce::AudioIODeviceCallbackContext&) override
     {
-        if (!enabled.load(std::memory_order_relaxed)) return;
-        if (!lock.tryEnter()) return;
+        if(!enabled.load(std::memory_order_acquire) || samples<=0 || !lock.tryEnter())return;
+        const auto blockStart=sessionSamples;
+        lastBlockStart=blockStart;
+        const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        const double bpm=juce::jmax(1.0,owner.getTempoBpm());
+        const bool repeat=loopEnabled.load(std::memory_order_acquire);
+        const int captureSamples=juce::jmin(samples,captureMix.getNumSamples());
+        if(captureSamples>0)captureMix.clear(0,captureSamples);
 
-        const int captureSamples = juce::jmin(numSamples, captureMix.getNumSamples());
-        if (captureSamples > 0) captureMix.clear(0, captureSamples);
-
-        for (int trackIndex = 0; trackIndex < (int)tracks.size(); ++trackIndex)
+        for(int logical=0;logical<(int)tracks.size();++logical)
         {
-            auto& state = tracks[(size_t)trackIndex];
-            if (!state.playing || state.buffer == nullptr || state.position >= state.buffer->getNumSamples())
-                continue;
+            auto& state=tracks[(size_t)logical];
+            state.panicOffset=state.panicNext?0:-1;
+            state.panicNext=false;
+            const bool isAudio=logical<owner.getAudioTrackCount();
+            const bool muted=isAudio?owner.audioEngine.isTrackMuted(logical):false;
+            const bool soloed=isAudio?owner.audioEngine.isTrackSolo(logical):false;
+            const bool audible=!muted && (!isAudio || !owner.audioEngine.isAnyTrackSolo() || soloed);
+            const float gain=isAudio?owner.audioEngine.getTrackGain(logical):1.0f;
+            const float pan=isAudio?owner.audioEngine.getTrackPan(logical):0.0f;
+            const float left=gain*(pan>0.0f?1.0f-pan:1.0f);
+            const float right=gain*(pan<0.0f?1.0f+pan:1.0f);
 
-            const int remaining = (int)juce::jmin<juce::int64>((juce::int64)numSamples,
-                                                                (juce::int64)state.buffer->getNumSamples() - state.position);
-            if (remaining <= 0)
+            for(int i=0;i<samples;++i)
             {
-                state.playing = false;
-                continue;
-            }
-
-            const bool muted = owner.audioEngine.isTrackMuted(trackIndex);
-            const bool soloed = owner.audioEngine.isTrackSolo(trackIndex);
-            if (muted || (owner.audioEngine.isAnyTrackSolo() && !soloed))
-            {
-                state.position += remaining;
-                if (state.position >= state.buffer->getNumSamples())
+                const auto absolute=blockStart+i;
+                if(state.queuedScene!=-2 && absolute>=state.queuedAt)
                 {
-                    state.playing = false;
-                    state.position = 0;
+                    state.activeScene=state.queuedScene;
+                    state.startedAt=state.queuedAt;
+                    state.queuedScene=-2;
+                    state.panicOffset=i;
                 }
-                continue;
-            }
-
-            const float gain = owner.audioEngine.getTrackGain(trackIndex);
-            const float pan = owner.audioEngine.getTrackPan(trackIndex);
-            const float leftGain = gain * (pan > 0.0f ? 1.0f - pan : 1.0f);
-            const float rightGain = gain * (pan < 0.0f ? 1.0f + pan : 1.0f);
-            const int sourceChannels = state.buffer->getNumChannels();
-
-            if (numOutputChannels > 0 && outputChannelData[0] != nullptr)
-                juce::FloatVectorOperations::addWithMultiply(outputChannelData[0],
-                    state.buffer->getReadPointer(0) + state.position, leftGain, remaining);
-            if (numOutputChannels > 1 && outputChannelData[1] != nullptr)
-                juce::FloatVectorOperations::addWithMultiply(outputChannelData[1],
-                    state.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + state.position, rightGain, remaining);
-
-            if (captureActive.load(std::memory_order_relaxed) && captureSamples > 0)
-            {
-                const int n = juce::jmin(remaining, captureSamples);
-                juce::FloatVectorOperations::addWithMultiply(captureMix.getWritePointer(0),
-                    state.buffer->getReadPointer(0) + state.position, leftGain, n);
-                juce::FloatVectorOperations::addWithMultiply(captureMix.getWritePointer(1),
-                    state.buffer->getReadPointer(sourceChannels > 1 ? 1 : 0) + state.position, rightGain, n);
-            }
-
-            state.position += remaining;
-            if (state.position >= state.buffer->getNumSamples())
-            {
-                state.playing = false;
-                state.position = 0;
+                if(state.activeScene<0)continue;
+                auto& slot=state.slots[(size_t)state.activeScene];
+                const auto relative=absolute-state.startedAt;
+                if(relative<0)continue;
+                const auto length=slot.audio?
+                    (std::int64_t)slot.audio->getNumSamples():
+                    LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate);
+                if(length<=0){state.activeScene=-1;state.panicOffset=i;continue;}
+                if(!repeat && relative>=length)
+                {state.activeScene=-1;state.panicOffset=i;continue;}
+                if(!isAudio || slot.audio==nullptr || !audible)continue;
+                const int index=(int)(relative%length);
+                const int sourceChannels=slot.audio->getNumChannels();
+                const float l=slot.audio->getSample(0,index)*left;
+                const float r=slot.audio->getSample(sourceChannels>1?1:0,index)*right;
+                if(channels>0 && outputs[0])outputs[0][i]+=l;
+                if(channels>1 && outputs[1])outputs[1][i]+=r;
+                if(captureActive.load(std::memory_order_relaxed) && i<captureSamples)
+                {
+                    captureMix.addSample(0,i,l);
+                    captureMix.addSample(1,i,r);
+                }
             }
         }
-
-        if (captureActive.load(std::memory_order_relaxed) && captureWriter != nullptr && captureSamples > 0)
+        sessionSamples+=samples;
+        if(captureActive.load(std::memory_order_relaxed)
+           && captureWriter!=nullptr && captureSamples>0)
         {
-            const float master = owner.audioEngine.getMasterGain();
-            captureMix.applyGain(0, captureSamples, master);
-            captureWriter->write(captureMix.getArrayOfReadPointers(), captureSamples);
+            captureMix.applyGain(0,captureSamples,owner.audioEngine.getMasterGain());
+            captureWriter->write(captureMix.getArrayOfReadPointers(),captureSamples);
         }
-
         lock.exit();
     }
 
     MainComponent& owner;
     juce::AudioFormatManager formats;
     std::vector<TrackState> tracks;
+    std::int64_t sessionSamples=0,lastBlockStart=0;
+    std::atomic<bool> loopEnabled { true };
     mutable juce::CriticalSection lock;
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
