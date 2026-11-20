@@ -3143,8 +3143,10 @@ private:
         if(targetTrack<=(int)performMidiClips.size())
         {
             player.insertNewAudioTrackAt(targetTrack);
-            performMidiClips.insert(performMidiClips.begin()+targetTrack,{});
-            clipMetadata.insert(clipMetadata.begin()+targetTrack,{});
+            performMidiClips.insert(performMidiClips.begin()+targetTrack,
+                std::array<SessionMidiData,sceneCount>{});
+            clipMetadata.insert(clipMetadata.begin()+targetTrack,
+                std::array<ClipMetadata,sceneCount>{});
             activeTrackScene.insert(activeTrackScene.begin()+targetTrack,-1);
             performAudioFiles.resize((size_t)owner.getAudioTrackCount());
             if(selectedClipTrack>=targetTrack)++selectedClipTrack;
