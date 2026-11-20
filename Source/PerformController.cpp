@@ -931,7 +931,7 @@ public:
                 {
                     g.drawText("GAIN",x,top+104,bodyWidth/3,15,
                                juce::Justification::centredLeft);
-                    g.drawText("DÉBUT",x+bodyWidth/3+5,top+104,
+                    g.drawText(juce::String::fromUTF8("DÉBUT"),x+bodyWidth/3+5,top+104,
                                bodyWidth/3-5,15,juce::Justification::centredLeft);
                     g.drawText("FIN",x+2*bodyWidth/3+5,top+104,
                                bodyWidth/3-5,15,juce::Justification::centredLeft);
@@ -963,7 +963,7 @@ public:
             g.setColour(juce::Colour(0xff69d4ff));
             g.drawRoundedRectangle(r.toFloat(), 5.0f, 3.0f);
             g.setFont(juce::Font(9.0f, juce::Font::bold));
-            g.drawText(dragTrack<audioTrackCount()?"DÉPOSER AUDIO":"DÉPOSER MIDI",
+            g.drawText(juce::String::fromUTF8(dragTrack<audioTrackCount()?"DÉPOSER AUDIO":"DÉPOSER MIDI"),
                        r, juce::Justification::centred);
         }
     }
