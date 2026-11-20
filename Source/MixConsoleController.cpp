@@ -4,6 +4,7 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include "MixConsoleLayout.h"
+#include "DockMixerDbScale.h"
 #include "MixerProgressiveFx.h"
 #include "NoOverlapLayout.h"
 #include "MixerSearchFilter.h"
@@ -3113,21 +3114,53 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     if(s.kind!=Strip::midi){
       panel(geom.faderY-3,h-geom.faderY+1,ModernMixer::amber);
       drawMeter(g,s);
+      drawGainGraduations(g,s);
       const int meterTop=y+geom.faderY,meterBottom=s.bounds.getBottom()-36;
       if(meterBottom-meterTop>=40){
-        g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(8.f));
-        // Correct dBFS graduation, not evenly spaced amplitude labels.
+        g.setColour(juce::Colour(0xffb5c3d1));g.setFont(juce::Font(7.f));
+        // Meter dBFS labels remain separate in the narrow gap between
+        // stereo meters and faders. The gain dB labels sit to the right.
         // Keep sparse labels when a collapsed mixer provides less height.
         const int ticks[]={0,-18,-36,-60};
         for(int i=0;i<4;++i){
           if(meterBottom-meterTop<110 && (i==1||i==2))continue;
           const float fraction=(ticks[i]+60.f)/66.f;
           const int yy=meterBottom-(int)std::round((meterBottom-meterTop)*fraction);
-          g.drawText(juce::String(ticks[i]),s.bounds.getRight()-30,
-                     yy-6,22,12,juce::Justification::right);
+          g.drawFittedText(juce::String(ticks[i]),x+30,
+                     yy-6,15,12,juce::Justification::centredRight,1,0.75f);
         }
       }
     }
+ }
+ // Same signed gain graduations as the compact dock mixer. Coordinates come
+ // from JUCE's actual slider area, excluding the numeric value box.
+ void drawGainGraduations(juce::Graphics&g,const Strip&s)
+ {
+     if(s.kind==Strip::midi || s.fader==nullptr || !s.fader->isVisible())return;
+     const auto sliderArea=lookAndFeel.getSliderLayout(*s.fader).sliderBounds;
+     const int top=s.fader->getY()+sliderArea.getY()+6;
+     const int bottom=s.fader->getY()+sliderArea.getBottom()-6;
+     if(bottom<=top)return;
+     const int labelLeft=s.fader->getRight()+8;
+     const int labelWidth=juce::jmax(0,s.bounds.getRight()-labelLeft-3);
+     if(labelWidth<18)return;
+
+     const auto graduations=LibertyDockMixerDbScale::atPixels(top,bottom);
+     for(const auto& mark:graduations)
+     {
+         const bool zero=mark.db==0.0f;
+         g.setColour(zero?ModernMixer::sage:
+             ModernMixer::secondary.withAlpha(mark.major?0.85f:0.50f));
+         g.drawHorizontalLine(mark.y,
+             (float)s.fader->getRight()+2.f,
+             (float)s.fader->getRight()+(mark.major?7.f:5.f));
+         if(mark.showLabel)
+         {
+             g.setFont(juce::Font(9.0f));
+             g.drawFittedText(mark.label,labelLeft,mark.y-6,labelWidth,12,
+                              juce::Justification::centredLeft,1,0.8f);
+         }
+     }
  }
  void drawMeter(juce::Graphics&g,const Strip&s)
  {

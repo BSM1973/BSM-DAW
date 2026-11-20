@@ -31,3 +31,24 @@ assert 'std::clamp' in scale and 'std::log10' in scale
 # No typographic minus U+2212; legible ASCII "-" with fonts available on Mac/Windows.
 assert "\u2212" not in scale and "\ufffd" not in scale
 print("Dock Mixer: signed dB tick labels match gain law, stay inside strip and preserve ALL channels")
+
+# Console and dock share readable signed gain labels without replacing PEAK/RMS dBFS.
+console=(root/"Source/MixConsoleController.cpp").read_text(encoding="utf-8")
+header=(root/"Source/MainComponent.h").read_text(encoding="utf-8")
+assert '#include "DockMixerDbScale.h"' in console
+assert "drawGainGraduations(g,s)" in console
+assert "LibertyDockMixerDbScale::atPixels(top,bottom)" in console
+assert "lookAndFeel.getSliderLayout(*s.fader)" in console
+assert "s.kind==Strip::midi" in console
+assert "yy-6,15,12,juce::Justification::centredRight" in console
+assert "setDoubleClickReturnValue(true,0.0)" in console  # console audio/instrument/bus/master
+assert "bool MainComponent::resetDockMixerFaderOnDoubleClick" in main
+assert "event.getNumberOfClicks() >= 2" in main
+assert "resetDockMixerFaderOnDoubleClick(event)" in main
+assert "void mouseDoubleClick(const juce::MouseEvent& e) override" in header
+assert "owner.resetDockMixerFaderOnDoubleClick" in header
+assert "for (int i = 0; i <= count; ++i)" in header  # includes master hit target
+assert "audioEngine.setMasterGain(1.0f)" in main
+assert "audioEngine.setTrackGain(logical, 1.0f)" in main
+assert "audioEngine.setInstrumentTrackGain(" in main
+print("Console dB scale and both fader double-click resets: source regression OK")

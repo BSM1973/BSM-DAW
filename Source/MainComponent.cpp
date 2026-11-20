@@ -3014,6 +3014,50 @@ bool MainComponent::isPointInsideAudioClip(int trackIndex, juce::Point<int> posi
     return juce::Rectangle<int>(x, rowY + 4, width, juce::jmax(1,rowH - 8)).contains(position);
 }
 
+bool MainComponent::resetDockMixerFaderOnDoubleClick(const juce::MouseEvent& event)
+{
+    if (dockCollapsed || !dockMixerMode || isLibertyMixConsoleVisible(this)
+        || event.mods.isPopupMenu()) return false;
+
+    const auto click = event.getEventRelativeTo(this).getPosition();
+    const int mixerTop = getMixerTop();
+    if (click.y < mixerTop || click.y >= getHeight()) return false;
+
+    const int audioTracks = getAudioTrackCount();
+    const int channelCount = audioTracks + getInstrumentTrackCount();
+    for (int channel = 0; channel <= channelCount; ++channel)
+    {
+        const auto c = juce::Rectangle<int>(
+            220 + channel * 125 - mixerHorizontalOffset, mixerTop + 12,
+            116, juce::jmax(1, getHeight() - mixerTop - 22));
+        if (!c.contains(click)) continue;
+
+        const int faderTop = c.getY() + 58;
+        const int faderBottom = c.getBottom() - 45;
+        // Reset only the actual fader rail, thumb and its dB scale.
+        // Never reset mute, solo, track selection or pan by accident.
+        if (faderBottom <= faderTop || click.y < faderTop
+            || click.y > faderBottom || click.x < c.getCentreX() - 13
+            || click.x > c.getRight() - 4) return false;
+
+        if (channel == channelCount)
+            audioEngine.setMasterGain(1.0f); // 0 dB, unity gain
+        else
+        {
+            const int logical = getArrangeMixerLogicalTrack(channel);
+            if (logical < 0) return false;
+            if (logical < audioTracks)
+                audioEngine.setTrackGain(logical, 1.0f);
+            else
+                audioEngine.setInstrumentTrackGain(
+                    logical - audioTracks - getMidiTrackCount(), 1.0f);
+        }
+        repaint();
+        return true;
+    }
+    return false;
+}
+
 bool MainComponent::handleMixerMouse(const juce::MouseEvent& event)
 {
     const int mixerTop = getMixerTop();
@@ -3598,6 +3642,7 @@ bool MainComponent::openAudioClipInDockAt(juce::Point<int> p)
 void MainComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
     const auto click = event.getEventRelativeTo(this).getPosition();
+    if (resetDockMixerFaderOnDoubleClick(event)) return;
     if (dockStepSequencerMode && !dockMixerMode && !dockCollapsed
         && beginPolyGridPointer(click, polyGridDockArea(), event.mods, 2))
     {
@@ -4645,6 +4690,9 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
     // Mixer strips take their own mouse events regardless of the selected track.
     // In particular, never let an audio strip click fall through to an editor.
+    if (p.y >= getMixerTop() && dockMixerMode
+        && event.getNumberOfClicks() >= 2
+        && resetDockMixerFaderOnDoubleClick(event)) return;
     if (p.y >= getMixerTop() && dockMixerMode
         && handleMixerMouse(event)) return;
 

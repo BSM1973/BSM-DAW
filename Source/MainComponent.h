@@ -506,22 +506,37 @@ public:
             if (!owner.dockMixerMode)
                 return false;
             const int count = owner.getAudioTrackCount() + owner.getInstrumentTrackCount();
-            for (int i = 0; i < count; ++i)
+            for (int i = 0; i <= count; ++i)
                 if (juce::Rectangle<int>(220 + i * 125 - owner.mixerHorizontalOffset, 12, 116, juce::jmax(1, getHeight() - 22)).contains(x, y))
                     return true;
             return false;
         }
-        void mouseDown(const juce::MouseEvent& e) override { owner.handleMixerMouse(e.getEventRelativeTo(&owner)); }
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            // The second press of a double-click must not first move the fader.
+            resettingFader = e.getNumberOfClicks() >= 2
+                && owner.resetDockMixerFaderOnDoubleClick(e.getEventRelativeTo(&owner));
+            if (!resettingFader) owner.handleMixerMouse(e.getEventRelativeTo(&owner));
+        }
+        void mouseDoubleClick(const juce::MouseEvent& e) override
+        {
+            if (!resettingFader)
+                resettingFader = owner.resetDockMixerFaderOnDoubleClick(
+                    e.getEventRelativeTo(&owner));
+        }
         void mouseDrag(const juce::MouseEvent& e) override
         {
+            if (resettingFader) return;
             // Mute/Solo are click actions, not continuous drag actions.
             const auto down = e.getMouseDownPosition();
             const int localY = down.y;
             if (localY >= 44 && localY < 64) return;
             owner.handleMixerMouse(e.getEventRelativeTo(&owner));
         }
+        void mouseUp(const juce::MouseEvent&) override { resettingFader = false; }
     private:
         MainComponent& owner;
+        bool resettingFader = false;
     };
     // One dock navigation hit layer: same 32px-spaced geometry as paint().
     // A single owner receives the clicks instead of separate painted and
@@ -1282,7 +1297,7 @@ private:
         double dragStartSeconds = 0.0;
         double dragStartLengthSeconds = 0.0;
     };
-    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&);  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
+    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool resetDockMixerFaderOnDoubleClick(const juce::MouseEvent&); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&);  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
     struct PendingAudioWarpState
     {
         bool enabled = false;
