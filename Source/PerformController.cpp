@@ -406,6 +406,7 @@ public:
     bool startCapture(juce::String& error)
     {
         const juce::ScopedLock sl(lock);
+        const juce::ScopedLock captureGuard(captureLock);
         if (captureActive) return true;
 
         const double rate = owner.audioEngine.getSampleRate();
@@ -483,13 +484,20 @@ public:
     float captureFinalMix(float* const* output,int channels,int samples)
     {
         const float gain=masterMacroGain.load(std::memory_order_acquire);
-        // Apply performance master macro on the actual final stereo bus.
-        if(output!=nullptr)
+        // 1-buffer smoothing prevents controller jumps from producing clicks.
+        if(output!=nullptr && samples>0)
+        {
+            const float from=lastMasterMacroGain;
+            const float delta=(gain-from)/(float)samples;
             for(int ch=0;ch<juce::jmin(channels,2);++ch)
                 if(output[ch]!=nullptr)
-                    juce::FloatVectorOperations::multiply(output[ch],gain,samples);
+                    for(int i=0;i<samples;++i)
+                        output[ch][i]*=from+delta*(i+1);
+            lastMasterMacroGain=gain;
+        }
+        // GUI clip editing must not make us drop recorded output blocks.
         if(!captureActive.load(std::memory_order_acquire) || samples<=0 ||
-           output==nullptr || !lock.tryEnter())return gain;
+           output==nullptr || !captureLock.tryEnter())return gain;
         if(captureWriter!=nullptr)
         {
             int offset=0;
@@ -508,7 +516,7 @@ public:
                 offset+=count;
             }
         }
-        lock.exit();
+        captureLock.exit();
         return gain;
     }
 
@@ -546,6 +554,7 @@ private:
 
     juce::File stopCaptureInternal()
     {
+        const juce::ScopedLock captureGuard(captureLock);
         captureEndSample=sessionSamples;
         captureActive.store(false, std::memory_order_relaxed);
         captureWriter.reset();
@@ -686,6 +695,8 @@ private:
     std::atomic<float> instrumentMacroGain { 1.0f };
     std::atomic<float> masterMacroGain { 1.0f };
     mutable juce::CriticalSection lock;
+    mutable juce::CriticalSection captureLock;
+    float lastMasterMacroGain=1.f; // audio thread only
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
     juce::AudioBuffer<float> captureMix;
