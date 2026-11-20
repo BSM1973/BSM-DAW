@@ -1162,6 +1162,7 @@ private:
         bool valid=false;
         std::int64_t lengthTicks=3840;
         std::vector<MidiEngine::NoteEvent> notes;
+        LibertyPerformMidiEdit::History<MidiEngine::NoteEvent> history;
         juce::File source;
     };
     static bool isSupportedMidiFile(const juce::File& file) {
@@ -1240,14 +1241,16 @@ private:
     {
         inspectorClipTab.setButtonText("CLIP");
         inspectorLaunchTab.setButtonText("LANCEMENT");
+        inspectorMidiTab.setButtonText("PIANO ROLL");
         inspectorClose.setButtonText("FERMER");
         inspectorClipTab.onClick=[this]{inspectorTab=0;refreshInspector();};
         inspectorLaunchTab.onClick=[this]{inspectorTab=1;refreshInspector();};
+        inspectorMidiTab.onClick=[this]{inspectorTab=2;refreshInspector();};
         inspectorClose.onClick=[this]{
             selectedClipTrack=selectedClipScene=-1;
             refreshInspector();
         };
-        for(auto* button:{&inspectorClipTab,&inspectorLaunchTab,&inspectorClose})
+        for(auto* button:{&inspectorClipTab,&inspectorLaunchTab,&inspectorMidiTab,&inspectorClose})
         {
             button->setMouseClickGrabsKeyboardFocus(false);
             addAndMakeVisible(*button);
@@ -1298,6 +1301,42 @@ private:
         inspectorMode.addItem("BASCULE",2);
         inspectorMode.onChange=[this]{commitInspector();};
         addAndMakeVisible(inspectorMode);
+        midiAddButton.setButtonText(juce::String::fromUTF8("INSÉRER"));
+        midiDeleteButton.setButtonText("SUPPRIMER");
+        midiHumanizeButton.setButtonText("HUMANISER");
+        midiUndoButton.setButtonText("ANNULER");
+        midiRedoButton.setButtonText(juce::String::fromUTF8("RÉTABLIR"));
+        midiAddButton.onClick=[this]{insertMidiNote();};
+        midiDeleteButton.onClick=[this]{deleteMidiNote();};
+        midiHumanizeButton.onClick=[this]{humanizeMidiNotes();};
+        midiUndoButton.onClick=[this]{undoMidiNotes();};
+        midiRedoButton.onClick=[this]{redoMidiNotes();};
+        for(auto* button:{&midiAddButton,&midiDeleteButton,&midiHumanizeButton,
+                           &midiUndoButton,&midiRedoButton})
+        {
+            button->setMouseClickGrabsKeyboardFocus(false);
+            addAndMakeVisible(*button);
+        }
+        const auto setupMidi=[this](juce::Slider& slider,double min,double max,
+                                    double step,const juce::String& suffix)
+        {
+            slider.setRange(min,max,step);
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,56,24);
+            slider.setTextValueSuffix(suffix);
+            slider.onDragStart=[this]{midiSliderGesture=false;};
+            slider.onDragEnd=[this]{midiSliderGesture=false;};
+            slider.onValueChange=[this,&slider]
+            {
+                if(&slider!=&midiHumanizeAmount)commitMidiSlider();
+            };
+            addAndMakeVisible(slider);
+        };
+        setupMidi(midiPitchSlider,0,127,1,"");
+        setupMidi(midiVelocitySlider,1,127,1,"");
+        setupMidi(midiLengthSlider,1,15360,1," tk");
+        setupMidi(midiHumanizeAmount,0,100,1," %");
+        midiHumanizeAmount.setValue(25,juce::dontSendNotification);
         refreshInspector();
     }
 
@@ -1305,6 +1344,13 @@ private:
     {
         if(track<0 || track>=(int)clipMetadata.size() ||
             scene<0 || scene>=sceneCount || !slotHasClip(track,scene))return;
+        if(selectedClipTrack!=track || selectedClipScene!=scene)
+        {
+            selectedMidiNote=-1;
+            midiSliderGesture=false;
+            gestureNote=-1;
+            pianoBasePitch=48;
+        }
         selectedClipTrack=track;
         selectedClipScene=scene;
         refreshInspector();
@@ -1319,6 +1365,7 @@ private:
         const bool midi=visible && !audio;
         inspectorClipTab.setVisible(visible);
         inspectorLaunchTab.setVisible(visible);
+        inspectorMidiTab.setVisible(midi);
         inspectorClose.setVisible(visible);
         inspectorName.setVisible(clipPage);
         inspectorColour.setVisible(clipPage);
@@ -1330,6 +1377,13 @@ private:
         inspectorMidiBars.setVisible(clipPage&&midi);
         inspectorQuantize.setVisible(visible&&inspectorTab==1);
         inspectorMode.setVisible(visible&&inspectorTab==1);
+        const bool piano=midi&&inspectorTab==2;
+        for(auto* button:{&midiAddButton,&midiDeleteButton,&midiHumanizeButton,
+                           &midiUndoButton,&midiRedoButton})
+            button->setVisible(piano);
+        for(auto* slider:{&midiPitchSlider,&midiVelocitySlider,
+                          &midiLengthSlider,&midiHumanizeAmount})
+            slider->setVisible(piano);
         if(visible)
         {
             const auto& data=clipMetadata[(size_t)selectedClipTrack][(size_t)selectedClipScene];
@@ -1349,6 +1403,7 @@ private:
             inspectorMode.setSelectedId(p.launchMode+1,juce::dontSendNotification);
         }
         updatingInspector=false;
+        refreshMidiNoteControls();
         resized();
         repaint();
     }
@@ -1581,12 +1636,21 @@ private:
     std::vector<std::array<SessionMidiData, sceneCount>> performMidiClips;
     std::vector<std::array<ClipMetadata, sceneCount>> clipMetadata;
     int selectedClipTrack=-1,selectedClipScene=-1,inspectorTab=0;
-    bool updatingInspector=false;
+    bool updatingInspector=false,updatingMidiSliders=false,midiSliderGesture=false;
+    int selectedMidiNote=-1,pianoBasePitch=48;
+    int gestureNote=-1;
+    bool gestureResizing=false,gestureVelocity=false,gestureHistorySaved=false;
+    juce::Point<int> gestureStart;
+    std::vector<MidiEngine::NoteEvent> gestureOriginal;
+    std::int64_t midiLastClickTick=0;
+    std::uint32_t humanizeSeed=0x2da13bc1u;
     juce::TextEditor inspectorName;
     juce::ComboBox inspectorColour,inspectorMidiBars,inspectorQuantize,inspectorMode;
     juce::ToggleButton inspectorLoop;
     juce::Slider inspectorGain,inspectorTranspose,inspectorIn,inspectorOut;
-    juce::TextButton inspectorClipTab,inspectorLaunchTab,inspectorClose;
+    juce::TextButton inspectorClipTab,inspectorLaunchTab,inspectorMidiTab,inspectorClose;
+    juce::TextButton midiAddButton,midiDeleteButton,midiHumanizeButton,midiUndoButton,midiRedoButton;
+    juce::Slider midiPitchSlider,midiVelocitySlider,midiLengthSlider,midiHumanizeAmount;
     juce::ComboBox quantizeSelector;
     juce::TextButton loopButton;
     std::uint64_t sessionRevision=0;
