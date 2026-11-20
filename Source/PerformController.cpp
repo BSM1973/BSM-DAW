@@ -1339,9 +1339,9 @@ void clearLibertyPerformSession(MainComponent* owner)
     if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
         it->second->clearSession();
 }
-std::uint64_t getLibertyPerformSessionRevision(MainComponent* owner)
+std::uint64_t getLibertyPerformSessionRevision(const MainComponent* owner)
 {
-    if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
+    if(auto it=controllers.find(const_cast<MainComponent*>(owner));it!=controllers.end() && it->second)
         return it->second->getSessionRevision();
     return 0;
 }
