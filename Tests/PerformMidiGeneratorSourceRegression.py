@@ -23,7 +23,7 @@ required=(
     "void cancelTemporaryGeneratorPreview()",
     "void paintMidiPiano(juce::Graphics& g)",
     "const auto& visibleNotes=midiGeneratorVisible()?",
-    "generatorKind.onChange",
+    "combo->onChange=[this]{commitGenerator();};",
     "generatorDensity",
     "generatorSwing",
     "generatorVariation",
