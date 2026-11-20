@@ -5,6 +5,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "PerformSessionTiming.h"
+#include "PerformClipSettings.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -120,10 +121,16 @@ public:
         const juce::ScopedLock sl(lock);
         if(track>=(int)tracks.size())return false;
         auto& state=tracks[(size_t)track];
-        state.slots[(size_t)scene].audio=std::move(buffer);
-        state.slots[(size_t)scene].notes.clear();
-        state.slots[(size_t)scene].midiLengthTicks=0;
-        state.slots[(size_t)scene].valid=true;
+        auto& slot=state.slots[(size_t)scene];
+        slot.audio=std::move(buffer);
+        slot.notes.clear();
+        slot.midiLengthTicks=0;
+        slot.sourceMidiLengthTicks=0;
+        slot.settings={};
+        slot.audioFirst=0;
+        slot.audioLength=slot.audio->getNumSamples();
+        slot.linearGain=1.0f;
+        slot.valid=true;
         if(state.activeScene==scene) {state.activeScene=-1;state.panicNext=true;}
         return true;
     }
@@ -142,8 +149,42 @@ public:
         slot.audio.reset();
         slot.notes=notes;
         slot.midiLengthTicks=lengthTicks;
+        slot.sourceMidiLengthTicks=lengthTicks;
+        slot.settings={};
+        slot.audioFirst=slot.audioLength=0;
+        slot.linearGain=1.0f;
         slot.valid=true;
         if(state.activeScene==scene){state.activeScene=-1;state.panicNext=true;}
+        return true;
+    }
+
+    bool updateClipSettings(int track,int scene,LibertyPerformClip::Settings parameters,
+                            int numerator,int denominator)
+    {
+        parameters=LibertyPerformClip::validated(parameters);
+        const juce::ScopedLock sl(lock);
+        if(track<0 || track>=(int)tracks.size() || scene<0 || scene>=sceneCount)return false;
+        auto& state=tracks[(size_t)track];
+        auto& slot=state.slots[(size_t)scene];
+        if(!slot.valid)return false;
+        const auto previous=slot.settings;
+        slot.settings=parameters;
+        slot.linearGain=LibertyPerformClip::linearGain(parameters.gainDb);
+        if(slot.audio)
+        {
+            const auto range=LibertyPerformClip::audioSlice(
+                slot.audio->getNumSamples(),parameters);
+            slot.audioFirst=range.first;
+            slot.audioLength=range.length;
+        }
+        else
+            slot.midiLengthTicks=LibertyPerformClip::midiLengthTicks(
+                slot.sourceMidiLengthTicks,parameters.midiBars,numerator,denominator);
+        if(state.activeScene==scene &&
+           (parameters.transpose!=previous.transpose ||
+            parameters.midiBars!=previous.midiBars ||
+            parameters.loop!=previous.loop))
+            state.panicNext=true;
         return true;
     }
 
@@ -231,11 +272,12 @@ public:
                 if(!slot.valid || slot.midiLengthTicks<=0)return;
                 const auto cycle=juce::jmax<std::int64_t>(1,
                     LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate));
+                const bool clipRepeats=repeat && slot.settings.loop;
                 const auto phaseStart=blockStart+from;
                 const auto phaseEnd=blockStart+to;
                 const auto relative=phaseStart-startedAt;
                 const auto first=juce::jmax<std::int64_t>(0,relative>0?relative/cycle-1:0);
-                const auto last=repeat?
+                const auto last=clipRepeats?
                     juce::jmax<std::int64_t>(0,(phaseEnd-startedAt)/cycle+1):0;
                 for(std::int64_t iteration=first;iteration<=last;++iteration)
                 {
@@ -249,7 +291,8 @@ public:
                             base+LibertyPerformTiming::ticksToSamples(
                                 note.startTick+note.lengthTicks,bpm,rate));
                         const int channel=juce::jlimit(1,16,(int)note.channel);
-                        const int pitch=juce::jlimit(0,127,(int)note.pitch);
+                        const int pitch=LibertyPerformClip::notePitch((int)note.pitch,
+                                                                      slot.settings.transpose);
                         const float velocity=juce::jlimit(0.f,1.f,(float)note.velocity/127.f);
                         if(start>=phaseStart && start<phaseEnd)
                             midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),
@@ -258,7 +301,7 @@ public:
                             midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),
                                 juce::jlimit(0,numSamples-1,(int)(end-blockStart)));
                     }
-                    if(!repeat)break;
+                    if(!clipRepeats)break;
                 }
             };
             if(state.transitionOffset>=0)
@@ -335,7 +378,10 @@ private:
     {
         std::shared_ptr<juce::AudioBuffer<float>> audio;
         std::vector<MidiEngine::NoteEvent> notes;
-        std::int64_t midiLengthTicks=0;
+        std::int64_t midiLengthTicks=0,sourceMidiLengthTicks=0;
+        LibertyPerformClip::Settings settings;
+        int audioFirst=0,audioLength=0;
+        float linearGain=1.0f;
         bool valid=false;
     };
     struct TrackState
@@ -425,17 +471,17 @@ private:
                 const auto relative=absolute-state.startedAt;
                 if(relative<0)continue;
                 const auto length=slot.audio?
-                    (std::int64_t)slot.audio->getNumSamples():
+                    (std::int64_t)slot.audioLength:
                     LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate);
                 if(length<=0)
                 {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
-                if(!repeat && relative>=length)
+                if(!(repeat && slot.settings.loop) && relative>=length)
                 {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
                 if(!isAudio || slot.audio==nullptr || !audible)continue;
-                const int index=(int)(relative%length);
+                const int index=slot.audioFirst+(int)(relative%length);
                 const int sourceChannels=slot.audio->getNumChannels();
-                const float l=slot.audio->getSample(0,index)*left;
-                const float r=slot.audio->getSample(sourceChannels>1?1:0,index)*right;
+                const float l=slot.audio->getSample(0,index)*left*slot.linearGain;
+                const float r=slot.audio->getSample(sourceChannels>1?1:0,index)*right*slot.linearGain;
                 if(channels>0 && outputs[0])outputs[0][i]+=l;
                 if(channels>1 && outputs[1])outputs[1][i]+=r;
                 if(captureActive.load(std::memory_order_relaxed) && i<captureSamples)
