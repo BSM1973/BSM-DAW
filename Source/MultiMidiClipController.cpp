@@ -627,6 +627,19 @@ void synchronizeLibertyPianoRollPlayback(MainComponent& o)
 }
 void prepareLibertyAIGeneration(MainComponent&o){if(activeController&&activeController->owns(o))activeController->prepareExternalGeneration();}bool commitLibertyAIGeneratedClip(MainComponent&o,bool i){return activeController&&activeController->owns(o)?activeController->commitGeneratedClip(i):false;}bool commitLibertyAIGeneratedNotes(MainComponent&o,const std::vector<MidiEngine::NoteEvent>&n,bool i,double s,double l){return activeController&&activeController->owns(o)?activeController->commitGeneratedNotes(n,i,s,l):false;}bool commitLibertyRecordedInstrumentMidiClip(MainComponent&o,const std::vector<MidiEngine::NoteEvent>&n,int lane,double start,double length){auto it=controllers.find(&o);if(it==controllers.end())it=controllers.emplace(&o,std::make_unique<MultiMidiClipController>(o)).first;auto*controller=it->second.get();return controller&&controller->commitRecordedInstrumentNotes(n,lane,juce::jmax(0.0,start),length);}
 bool commitLibertySequencerMidiClip(MainComponent&o,const std::vector<MidiEngine::NoteEvent>&n,int lane,double s,double l,bool revealEditor){return activeController&&activeController->owns(o)?activeController->commitGeneratedMidiNotesToLane(n,lane,s,l,revealEditor):false;}
+bool commitLibertyPerformCapturedInstrumentClip(MainComponent& owner,
+    const std::vector<MidiEngine::NoteEvent>& notes,int lane,double start,double duration)
+{
+    // The performance take keeps its own recording lane and must not raise
+    // the arrangement controller over PERFORMANCE while capturing.
+    auto it=controllers.find(&owner);
+    if(it==controllers.end())
+        it=controllers.emplace(&owner,
+            std::make_unique<MultiMidiClipController>(owner)).first;
+    if(!it->second || notes.empty())return false;
+    return it->second->commitGeneratedInstrumentNotesToLane(
+        notes,lane,start,duration,false);
+}
 bool commitLibertySequencerInstrumentClip(MainComponent& o,const std::vector<MidiEngine::NoteEvent>& n,int lane,double s,double l,bool revealEditor)
 {
     return activeController&&activeController->owns(o)
