@@ -260,7 +260,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         if (!editor->selection().empty())
             selected = LibertyPolyGridEditing::find(grid, editor->selection().front());
     }
-    juce::String detail = juce::String::fromUTF8("GLISSER SUR UNE NOTE POUR RÉGLER LE PARAMÈTRE");
+    juce::String detail = juce::String::fromUTF8("SÉLECTIONNER UNE NOTE, PUIS GLISSER HAUT / BAS");
     if (selected)
     {
         switch (polyGridEditorTab)
