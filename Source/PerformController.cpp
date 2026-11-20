@@ -589,46 +589,56 @@ public:
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override
     {
-        if (!performVisible || files.isEmpty()) return false;
-        for (const auto& path : files)
-            if (isSupportedAudioFile(juce::File(path))) return true;
+        if(!performVisible)return false;
+        for(const auto& path:files)
+            if(isSupportedAudioFile(juce::File(path)) || isSupportedMidiFile(juce::File(path)))return true;
         return false;
     }
-
-    void fileDragEnter(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
-    void fileDragMove(const juce::StringArray&, int x, int y) override { updateDropTarget({ x, y }); }
+    void fileDragEnter(const juce::StringArray& files,int x,int y) override
+    {updateDropTarget({x,y},files);}
+    void fileDragMove(const juce::StringArray& files,int x,int y) override
+    {updateDropTarget({x,y},files);}
     void fileDragExit(const juce::StringArray&) override
+    {dragTrack=dragScene=-1;refreshClipLabels();repaint();}
+    void filesDropped(const juce::StringArray& files,int x,int y) override
     {
-        dragTrack = dragScene = -1;
-        refreshClipLabels();
-        repaint();
-    }
-
-    void filesDropped(const juce::StringArray& files, int x, int y) override
-    {
-        updateDropTarget({ x, y });
-        if (dragTrack < 0 || dragTrack >= audioTrackCount() || dragTrack >= (int)performAudioFiles.size() || dragScene < 0 || dragScene >= sceneCount)
+        updateDropTarget({x,y},files);
+        if(dragTrack<0 || dragScene<0)return;
+        const bool audioTarget=dragTrack<audioTrackCount();
+        juce::File chosen;
+        for(const auto& path:files)
         {
-            dragTrack = dragScene = -1;
-            refreshClipLabels();
-            repaint();
-            return;
+            const juce::File file(path);
+            if(audioTarget?isSupportedAudioFile(file):isSupportedMidiFile(file))
+            {chosen=file;break;}
         }
-
-        juce::File selected;
-        for (const auto& path : files)
+        if(!chosen.existsAsFile())return;
+        if(audioTarget)
         {
-            const juce::File candidate(path);
-            if (isSupportedAudioFile(candidate)) { selected = candidate; break; }
+            juce::String error;
+            if(!player.prepareAudioClip(dragTrack,dragScene,chosen,error))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Liberty - PERFORMANCE",error,"OK");
+                dragTrack=dragScene=-1;return;
+            }
+            performAudioFiles[(size_t)dragTrack][(size_t)dragScene]=chosen;
         }
-        if (!selected.existsAsFile()) return;
-
-        performAudioFiles[(size_t)dragTrack][(size_t)dragScene] = selected;
-        if (dragTrack < (int)activeTrackScene.size())
-            activeTrackScene[(size_t)dragTrack] = -1;
-        dragTrack = dragScene = -1;
-        refreshClipLabels();
-        repaint();
+        else
+        {
+            SessionMidiData data;
+            juce::String error;
+            if(!parseMidiFile(chosen,data,error)
+                || !assignMidiClip(dragTrack,dragScene,data))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                    "Liberty - PERFORMANCE",error.isNotEmpty()?error:
+                    "Impossible de charger ce clip MIDI.","OK");
+                dragTrack=dragScene=-1;return;
+            }
+        }
+        ++sessionRevision;
+        dragTrack=dragScene=-1;refreshClipLabels();repaint();
     }
 
     void paint(juce::Graphics& g) override
@@ -888,90 +898,77 @@ private:
     void refreshClipLabels()
     {
         syncTrackContainers();
-        const int visibleTracks = juce::jmin(trackCount(), (int)clipButtons.size());
-        for (int track = 0; track < visibleTracks; ++track)
+        const int count=juce::jmin(trackCount(),(int)clipButtons.size());
+        for(int track=0;track<count;++track)
         {
-            const auto colour = colourForTrack(track);
-            for (int scene = 0; scene < sceneCount; ++scene)
+            const auto colour=colourForTrack(track);
+            for(int scene=0;scene<sceneCount;++scene)
             {
-                auto& button = clipButtons[(size_t)track][(size_t)scene];
-                const bool hasClip = slotHasClip(track, scene);
-                const bool active = track < (int)activeTrackScene.size()
-                                 && activeTrackScene[(size_t)track] == scene
-                                 && track < audioTrackCount() && player.isTrackPlaying(track);
-                const bool target = dragTrack == track && dragScene == scene;
-                button.setButtonText(target ? "DROP AUDIO" : slotName(track, scene));
-                button.setEnabled(track < audioTrackCount());
+                auto& button=clipButtons[(size_t)track][(size_t)scene];
+                const bool valid=slotHasClip(track,scene);
+                const bool active=player.isTrackPlaying(track,scene);
+                const bool queued=player.isTrackQueued(track,scene);
+                const bool target=dragTrack==track && dragScene==scene;
+                button.setButtonText(target?(track<audioTrackCount()?"DÉPOSER AUDIO":"DÉPOSER MIDI"):
+                    (queued?"EN ATTENTE":slotName(track,scene)));
+                button.setEnabled(true);
                 button.setColour(juce::TextButton::buttonColourId,
-                                 target ? juce::Colour(0xff245b70)
-                                        : (active ? colour.brighter(0.25f)
-                                                  : (hasClip ? colour.withAlpha(0.70f) : juce::Colour(0xff181d22))));
+                    target?juce::Colour(0xff245b70):
+                    active?colour.brighter(0.25f):
+                    valid?colour.withAlpha(0.70f):juce::Colour(0xff181d22));
                 button.setColour(juce::TextButton::textColourOffId,
-                                 (hasClip || target) ? juce::Colours::white : juce::Colour(0xff68717b));
-            }
-        }
-    }
-
-    void updateDropTarget(juce::Point<int> point)
-    {
-        int nextTrack = -1;
-        int nextScene = -1;
-        const int droppableTracks = juce::jmin(audioTrackCount(), (int)clipButtons.size(), (int)performAudioFiles.size());
-        for (int track = 0; track < droppableTracks; ++track)
-        {
-            for (int scene = 0; scene < sceneCount; ++scene)
-            {
-                if (clipButtons[(size_t)track][(size_t)scene].getBounds().contains(point))
+                    valid||target?juce::Colours::white:juce::Colour(0xff9ba6af));
+                if(track>=firstMidiTrack())
                 {
-                    nextTrack = track;
-                    nextScene = scene;
-                    break;
+                    const int lane=LibertyPerformTiming::instrumentForLogicalTrack(
+                        track,audioTrackCount(),owner.getMidiTrackCount(),owner.getInstrumentTrackCount());
+                    button.setTooltip(lane>=0?
+                        "MIDI vers instrument "+juce::String(lane+1)+
+                        ". Cliquez sur une cellule vide pour créer un clip.":
+                        "Chargez une piste instrument pour entendre ce clip MIDI.");
                 }
             }
-            if (nextTrack >= 0) break;
-        }
-        if (nextTrack != dragTrack || nextScene != dragScene)
-        {
-            dragTrack = nextTrack;
-            dragScene = nextScene;
-            refreshClipLabels();
-            repaint();
         }
     }
 
-    void launchClip(int track, int scene)
+    void updateDropTarget(juce::Point<int> point,const juce::StringArray& files)
     {
-        if (track < 0 || track >= audioTrackCount() || track >= (int)performAudioFiles.size()
-            || track >= (int)activeTrackScene.size()
-            || scene < 0 || scene >= sceneCount || !slotHasClip(track, scene)) return;
-        juce::String error;
-        if (!player.loadAndLaunch(track, performAudioFiles[(size_t)track][(size_t)scene], error))
+        int newTrack=-1,newScene=-1;
+        for(int track=0;track<juce::jmin(trackCount(),(int)clipButtons.size());++track)
         {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "Liberty - PERFORM", error, "OK");
-            return;
+            bool supportsFile=false;
+            for(const auto& path:files)
+                if(track<audioTrackCount()?isSupportedAudioFile(juce::File(path)):
+                    isSupportedMidiFile(juce::File(path))){supportsFile=true;break;}
+            if(!supportsFile)continue;
+            for(int scene=0;scene<sceneCount;++scene)
+                if(clipButtons[(size_t)track][(size_t)scene].getBounds().contains(point))
+                {newTrack=track;newScene=scene;break;}
+            if(newTrack>=0)break;
         }
-        activeTrackScene[(size_t)track] = scene;
+        if(newTrack!=dragTrack || newScene!=dragScene)
+        {dragTrack=newTrack;dragScene=newScene;refreshClipLabels();repaint();}
+    }
+
+    void launchClip(int track,int scene)
+    {
+        if(track<0 || track>=trackCount() || scene<0 || scene>=sceneCount)return;
+        if(!slotHasClip(track,scene) && (track<audioTrackCount() ||
+            !createMidiFromTrack(track,scene)))return;
+        player.queueScene(track,scene,launchQuantization(),
+            owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
+            owner.getTimeSignatureDenominator());
         refreshClipLabels();
-        repaint();
     }
 
     void launchScene(int scene)
     {
-        if (scene < 0 || scene >= sceneCount) return;
-        const int tracks = juce::jmin(audioTrackCount(), (int)performAudioFiles.size(), (int)activeTrackScene.size());
-        for (int track = 0; track < tracks; ++track)
-        {
-            if (slotHasClip(track, scene))
-                launchClip(track, scene);
-            else
-            {
-                player.stopTrack(track);
-                if (track < (int)activeTrackScene.size()) activeTrackScene[(size_t)track] = -1;
-            }
-        }
+        if(scene<0 || scene>=sceneCount)return;
+        for(int track=0;track<trackCount();++track)
+            player.queueScene(track,slotHasClip(track,scene)?scene:-1,launchQuantization(),
+                owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
+                owner.getTimeSignatureDenominator());
         refreshClipLabels();
-        repaint();
     }
 
     void toggleCaptureToArrange()
