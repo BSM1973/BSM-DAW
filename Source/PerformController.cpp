@@ -1600,6 +1600,9 @@ private:
         setupMidi(midiVelocitySlider,1,127,1,"");
         setupMidi(midiLengthSlider,1,15360,1," tk");
         setupMidi(midiHumanizeAmount,0,100,1," %");
+        midiPitchSlider.setValue(60,juce::dontSendNotification);
+        midiVelocitySlider.setValue(100,juce::dontSendNotification);
+        midiLengthSlider.setValue(240,juce::dontSendNotification);
         midiHumanizeAmount.setValue(25,juce::dontSendNotification);
         refreshInspector();
     }
@@ -1927,11 +1930,15 @@ private:
             }
             g.setColour(juce::Colour(0xff263542));
             g.drawHorizontalLine(bottom,(float)area.getX(),(float)area.getRight());
-            g.setColour(pitch%12==0?juce::Colour(0xffe4edf5):
-                        juce::Colour(0xff6d8395));
-            g.setFont(juce::Font(9.0f));
-            g.drawText(juce::String(pitch),area.getX()-39,y,33,
-                       juce::jmax(1,bottom-y),juce::Justification::centredRight);
+            if(pitch%12==0)
+            {
+                g.setColour(juce::Colour(0xffe4edf5));
+                g.setFont(juce::Font(9.0f));
+                const auto name="C"+juce::String(pitch/12-1);
+                g.drawText(name,area.getX()-39,y-2,33,
+                           juce::jmax(10,bottom-y+4),
+                           juce::Justification::centredRight);
+            }
         }
         if(clip->lengthTicks>0)
         {
