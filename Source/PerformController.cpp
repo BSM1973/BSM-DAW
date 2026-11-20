@@ -6,6 +6,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "PerformSessionTiming.h"
 #include "PerformClipSettings.h"
+#include "PerformMidiEditorOps.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -155,6 +156,25 @@ public:
         slot.linearGain=1.0f;
         slot.valid=true;
         if(state.activeScene==scene){state.activeScene=-1;state.panicNext=true;}
+        return true;
+    }
+
+    bool replaceMidiNotes(int track,int scene,
+                          const std::vector<MidiEngine::NoteEvent>& edited,
+                          std::int64_t lengthTicks,int numerator,int denominator)
+    {
+        if(lengthTicks<=0 || edited.size()>8192)return false;
+        const juce::ScopedLock sl(lock);
+        if(track<0 || track>=(int)tracks.size() ||
+           scene<0 || scene>=sceneCount)return false;
+        auto& state=tracks[(size_t)track];
+        auto& slot=state.slots[(size_t)scene];
+        if(!slot.valid || slot.audio)return false;
+        slot.notes=edited;
+        slot.sourceMidiLengthTicks=lengthTicks;
+        slot.midiLengthTicks=LibertyPerformClip::midiLengthTicks(
+            lengthTicks,slot.settings.midiBars,numerator,denominator);
+        if(state.activeScene==scene)state.panicNext=true;
         return true;
     }
 
