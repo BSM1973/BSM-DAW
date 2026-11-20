@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "Source"
 FILES = sorted(
     path
-    for ext in ("*.cpp", "*.h", "*.hpp", "*.mm")
+    for ext in ("*.cpp", "*.h", "*.hpp", "*.mm", "*.inc", "*.inl")
     for path in SOURCE.rglob(ext)
 )
 ISSUES = []
@@ -45,6 +45,20 @@ for path in FILES:
                 ISSUES.append(
                     f"{path.relative_to(ROOT)}:{line_no} : libellé français direct sans fromUTF8"
                 )
+
+# All JUCE custom-drawn Step Sequencer UI files are .inc, not .cpp.
+# Reject raw source-label conversion and guarantee a Unicode system font.
+poly_ui = (SOURCE / "PolyphonicStepGridUI.inc").read_text(encoding="utf-8")
+poly_french = (SOURCE / "PolyphonicStepGridFrench.h").read_text(encoding="utf-8")
+for reference in ("LibertyPolyGridFrench::velocity()", "LibertyPolyGridFrench::offset()",
+                  "LibertyPolyGridFrench::duration()", "LibertyPolyGridFrench::repeat()",
+                  "LibertyPolyGridFrench::redo()", "LibertyPolyGridFrench::insert()",
+                  'juce::Font("Helvetica Neue"', 'juce::Font("Segoe UI"'):
+    if reference not in poly_ui:
+        ISSUES.append(f"Glyph French/Step Sequencer missing: {reference}")
+for codepoint in ("0x00C9", "0x00CA", "0x00EA", "0x00E9"):
+    if codepoint not in poly_french:
+        ISSUES.append(f"Step Sequencer Unicode codepoint missing: {codepoint}")
 
 mixer_path = SOURCE / "MixConsoleController.cpp"
 labels_path = SOURCE / "LibertyFrenchLabels.h"
