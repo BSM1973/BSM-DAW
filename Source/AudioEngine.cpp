@@ -2451,7 +2451,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     for (int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
                     {
                         host.processInstrumentEffectSlot(previewTrack, slot, bus);
-                        oneKnob.process(100000 + previewTrack*8 + slot, bus);
                     }
                     meterBus(state.meterPeak,state.meterPeakRight,
                              state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
