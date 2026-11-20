@@ -546,6 +546,7 @@ public:
         : owner(ownerIn), player(ownerIn)
     {
         setOpaque(true);
+        setWantsKeyboardFocus(true);
         setInterceptsMouseClicks(true, true);
         // PERFORM is a normal page, not a floating overlay. The Browser
         // and its resize handle own the always-on-top layer.
@@ -746,6 +747,7 @@ public:
                         e->setAttribute("velocity",(int)n.velocity);
                         e->setAttribute("channel",(int)n.channel);
                         e->setAttribute("muted",n.muted);
+                        e->setAttribute("probability",(int)n.probability);
                     }
                 }
             }
@@ -796,6 +798,8 @@ public:
                     note.velocity=(std::uint8_t)juce::jlimit(1,127,e->getIntAttribute("velocity",100));
                     note.channel=(std::uint8_t)juce::jlimit(1,16,e->getIntAttribute("channel",1));
                     note.muted=e->getBoolAttribute("muted",false);
+                    note.probability=(std::uint8_t)juce::jlimit(0,100,
+                        e->getIntAttribute("probability",100));
                     data.notes.push_back(note);
                 }
                 assignMidiClip(track,scene,data);
@@ -1022,6 +1026,7 @@ public:
         gestureVelocity=false;
         if(roll.contains(point))
         {
+            grabKeyboardFocus();
             const int index=midiNoteAt(point);
             if(event.mods.isPopupMenu())
             {
@@ -1176,6 +1181,30 @@ public:
             }
         }
     }
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if(!midiEditorVisible())return false;
+        if(key.getModifiers().isCommandDown() &&
+           (key.getKeyCode()=='z' || key.getKeyCode()=='Z'))
+        {
+            if(key.getModifiers().isShiftDown())redoMidiNotes();
+            else undoMidiNotes();
+            return true;
+        }
+        if(key.getKeyCode()==juce::KeyPress::deleteKey ||
+           key.getKeyCode()==juce::KeyPress::backspaceKey)
+        {
+            deleteMidiNote();
+            return true;
+        }
+        if(key.getKeyCode()==juce::KeyPress::escapeKey)
+        {
+            inspectorTab=0;
+            refreshInspector();
+            return true;
+        }
+        return false;
+    }
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override
     {
@@ -1293,12 +1322,24 @@ public:
         inspectorMode.setBounds(x+third+12,panel.getY()+74,
                                 juce::jmax(1,third-6),30);
         const int actionY=panel.getY()+43;
-        midiAddButton.setBounds(x,actionY,84,27);
-        midiDeleteButton.setBounds(x+91,actionY,101,27);
-        midiHumanizeButton.setBounds(x+199,actionY,102,27);
-        midiHumanizeAmount.setBounds(x+307,actionY,juce::jmax(100,width/5),27);
-        midiUndoButton.setBounds(x+318+juce::jmax(100,width/5),actionY,91,27);
-        midiRedoButton.setBounds(x+416+juce::jmax(100,width/5),actionY,96,27);
+        const int gapButton=6;
+        const int usable=juce::jmax(6,width-5*gapButton);
+        const int wAdd=usable*12/100,wDelete=usable*15/100;
+        const int wHuman=usable*17/100,wAmount=usable*22/100;
+        const int wUndo=usable*15/100;
+        const int wRedo=juce::jmax(1,usable-wAdd-wDelete-wHuman-wAmount-wUndo);
+        int actionX=x;
+        midiAddButton.setBounds(actionX,actionY,juce::jmax(1,wAdd),27);
+        actionX+=wAdd+gapButton;
+        midiDeleteButton.setBounds(actionX,actionY,juce::jmax(1,wDelete),27);
+        actionX+=wDelete+gapButton;
+        midiHumanizeButton.setBounds(actionX,actionY,juce::jmax(1,wHuman),27);
+        actionX+=wHuman+gapButton;
+        midiHumanizeAmount.setBounds(actionX,actionY,juce::jmax(1,wAmount),27);
+        actionX+=wAmount+gapButton;
+        midiUndoButton.setBounds(actionX,actionY,juce::jmax(1,wUndo),27);
+        actionX+=wUndo+gapButton;
+        midiRedoButton.setBounds(actionX,actionY,wRedo,27);
         const int editY=panel.getY()+92;
         midiPitchSlider.setBounds(x,editY,juce::jmax(1,third-8),27);
         midiVelocitySlider.setBounds(x+third+5,editY,juce::jmax(1,third-10),27);
@@ -1894,7 +1935,9 @@ private:
         }
         if(clip->lengthTicks>0)
         {
-            for(std::int64_t tick=0;tick<=clip->lengthTicks;tick+=240)
+            const auto step=juce::jmax<std::int64_t>(240,
+                ((clip->lengthTicks/512+239)/240)*240);
+            for(std::int64_t tick=0;tick<=clip->lengthTicks;tick+=step)
             {
                 const int x=area.getX()+(int)std::llround((double)tick*
                     area.getWidth()/(double)clip->lengthTicks);
