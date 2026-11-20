@@ -2,6 +2,7 @@
 // All coordinates come from PolyphonicStepGridLayout.h, so paint and hit tests
 // cannot drift apart when the dock or floating window changes size.
 #include "PolyphonicStepGridLayout.h"
+#include "PolyphonicStepGridDirectEdit.h"
 
 namespace
 {
@@ -214,6 +215,29 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
             const bool isSelected = editor
                 ? editor->contains({row, note.id})
                 : (row == polyGridSelectedLane && note.id == polyGridSelectedEvent);
+
+            // The active bottom tab is reflected directly on EVERY MIDI note.
+            // For short cells, the coloured indicator stays inside the bar;
+            // longer notes also show their real, editable parameter value.
+            const auto activeProperty = (LibertyPolyGridEditing::Property)
+                                       juce::jlimit(0, 5, polyGridEditorTab);
+            const float amount = LibertyPolyGridDirect::normalizedValue(grid, note, activeProperty);
+            const auto indicatorWidth = juce::jmax(0.0f, noteR.getWidth() - 4.0f) * amount;
+            if (indicatorWidth >= 1.0f && noteR.getHeight() >= 7.0f)
+            {
+                g.setColour(juce::Colour(isSelected ? cyan : 0xff182838).withAlpha(0.70f));
+                g.fillRect(noteR.getX() + 2.0f, noteR.getBottom() - 3.0f,
+                           indicatorWidth, 1.8f);
+            }
+            if (noteR.getWidth() >= 27.0f && noteR.getHeight() >= 13.0f)
+            {
+                const auto label = LibertyPolyGridDirect::noteValue(note, activeProperty,
+                                                                    grid.stepTicks);
+                polyText(g, juce::String::fromUTF8(label.c_str()),
+                         noteR.toNearestInt().reduced(1, 1), l.compact ? 8.2f : 9.3f,
+                         juce::Colour(note.muted || silent ? white : 0xff162535),
+                         juce::Justification::centred, true);
+            }
             if (isSelected)
             {
                 g.setColour(juce::Colour(cyan));
@@ -236,7 +260,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         if (!editor->selection().empty())
             selected = LibertyPolyGridEditing::find(grid, editor->selection().front());
     }
-    juce::String detail = "SÉLECTIONNER UNE NOTE";
+    juce::String detail = juce::String::fromUTF8("GLISSER SUR UNE NOTE POUR RÉGLER LE PARAMÈTRE");
     if (selected)
     {
         switch (polyGridEditorTab)
@@ -251,6 +275,8 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         }
         if (selectedCount > 1)
             detail = juce::String(selectedCount) + " NOTES  |  " + detail;
+        if (!l.compact)
+            detail += juce::String::fromUTF8("  -  GLISSER HAUT / BAS");
     }
     polyChip(g, l.editMinus, "-", false, l.compact ? 11.0f : 16.0f);
     polyChip(g, l.editPlus, "+", false, l.compact ? 11.0f : 16.0f);
