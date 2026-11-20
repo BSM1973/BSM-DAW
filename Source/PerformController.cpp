@@ -1790,6 +1790,178 @@ private:
         repaint();
     }
 
+    void initialiseGenerator()
+    {
+        generatorKind.addItem(juce::String::fromUTF8("ARPÉGIATEUR"),1);
+        generatorKind.addItem("VARIATIONS",2);
+        generatorStyle.addItem("HOUSE",1);
+        generatorStyle.addItem("TECHNO",2);
+        generatorStyle.addItem("HIP-HOP",3);
+        generatorStyle.addItem("BREAKBEAT",4);
+        generatorDivision.addItem("1/8",1);
+        generatorDivision.addItem("1/16",2);
+        generatorDivision.addItem("1/32",3);
+        generatorDirection.addItem("MONTANT",1);
+        generatorDirection.addItem("DESCENDANT",2);
+        generatorDirection.addItem("ALLER-RETOUR",3);
+        generatorDirection.addItem(juce::String::fromUTF8("ALÉATOIRE"),4);
+        for(int i=1;i<=4;++i)
+            generatorOctaves.addItem(juce::String(i)+" OCT.",i);
+        for(const int steps:{8,16,32,64})
+            generatorSteps.addItem(juce::String(steps)+" PAS",
+                                   generatorSteps.getNumItems()+1);
+        for(auto* combo:{&generatorKind,&generatorStyle,&generatorDivision,
+                         &generatorDirection,&generatorOctaves,&generatorSteps})
+        {
+            combo->onChange=[this]{commitGenerator();};
+            addAndMakeVisible(*combo);
+        }
+        const auto setup=[this](juce::Slider& slider,int min,int max,
+                                 int initial,const juce::String& suffix)
+        {
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,58,24);
+            slider.setRange(min,max,1);
+            slider.setTextValueSuffix(suffix);
+            slider.setValue(initial,juce::dontSendNotification);
+            slider.onValueChange=[this]{commitGenerator();};
+            addAndMakeVisible(slider);
+        };
+        setup(generatorDensity,0,100,75," %");
+        setup(generatorSwing,0,75,0," %");
+        setup(generatorVariation,0,100,30," %");
+        setup(generatorVelocity,1,127,100,"");
+        generatorPreviewButton.setButtonText(juce::String::fromUTF8("PRÉÉCOUTER"));
+        generatorApplyButton.setButtonText("ACTIVER");
+        generatorOriginalButton.setButtonText("ORIGINAL");
+        generatorNewVariantButton.setButtonText("AUTRE VARIATION");
+        generatorPreviewButton.onClick=[this]{
+            auto* clip=selectedMidiData();
+            if(clip!=nullptr)setGeneratorState(clip->generatorState==1?0:1);
+        };
+        generatorApplyButton.onClick=[this]{setGeneratorState(2);};
+        generatorOriginalButton.onClick=[this]{setGeneratorState(0);};
+        generatorNewVariantButton.onClick=[this]{nextGeneratorVariation();};
+        for(auto* button:{&generatorPreviewButton,&generatorApplyButton,
+                          &generatorOriginalButton,&generatorNewVariantButton})
+        {
+            button->setMouseClickGrabsKeyboardFocus(false);
+            addAndMakeVisible(*button);
+        }
+    }
+    LibertyPerformGenerator::Parameters readGeneratorParams() const
+    {
+        auto p=selectedMidiData()!=nullptr?selectedMidiData()->generator:
+            LibertyPerformGenerator::Parameters{};
+        if(inspectorTab==4)p.kind=2;
+        else p.kind=generatorKind.getSelectedId()==2?1:0;
+        p.rhythmStyle=juce::jlimit(0,3,generatorStyle.getSelectedId()-1);
+        p.division=juce::jlimit(0,2,generatorDivision.getSelectedId()-1);
+        p.direction=juce::jlimit(0,3,generatorDirection.getSelectedId()-1);
+        p.octaves=juce::jlimit(1,4,generatorOctaves.getSelectedId());
+        const int counts[]={8,16,32,64};
+        p.steps=counts[juce::jlimit(0,3,generatorSteps.getSelectedId()-1)];
+        p.density=(int)generatorDensity.getValue();
+        p.swing=(int)generatorSwing.getValue();
+        p.variation=(int)generatorVariation.getValue();
+        p.velocity=(int)generatorVelocity.getValue();
+        return LibertyPerformGenerator::validated(p);
+    }
+    void refreshGeneratorControls()
+    {
+        const auto* clip=selectedMidiData();
+        updatingGenerator=true;
+        if(clip!=nullptr)
+        {
+            const auto& p=clip->generator;
+            generatorKind.setSelectedId(p.kind==1?2:1,juce::dontSendNotification);
+            generatorStyle.setSelectedId(p.rhythmStyle+1,juce::dontSendNotification);
+            generatorDivision.setSelectedId(p.division+1,juce::dontSendNotification);
+            generatorDirection.setSelectedId(p.direction+1,juce::dontSendNotification);
+            generatorOctaves.setSelectedId(p.octaves,juce::dontSendNotification);
+            const int counts[]={8,16,32,64};
+            for(int i=0;i<4;++i)
+                if(counts[i]==p.steps)
+                    generatorSteps.setSelectedId(i+1,juce::dontSendNotification);
+            generatorDensity.setValue(p.density,juce::dontSendNotification);
+            generatorSwing.setValue(p.swing,juce::dontSendNotification);
+            generatorVariation.setValue(p.variation,juce::dontSendNotification);
+            generatorVelocity.setValue(p.velocity,juce::dontSendNotification);
+            generatorPreviewButton.setButtonText(
+                clip->generatorState==1?juce::String("FIN PRÉÉCOUTE"):
+                juce::String::fromUTF8("PRÉÉCOUTER"));
+            generatorApplyButton.setButtonText(
+                clip->generatorState==2?"ACTIF":"ACTIVER");
+            const bool hasSource=!clip->notes.empty();
+            const bool canGenerate=inspectorTab==4 || hasSource;
+            generatorPreviewButton.setEnabled(canGenerate);
+            generatorApplyButton.setEnabled(canGenerate);
+            generatorNewVariantButton.setEnabled(canGenerate);
+            generatorOriginalButton.setEnabled(clip->generatorState!=0);
+        }
+        updatingGenerator=false;
+    }
+    bool publishGeneratorLayer()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr)return false;
+        clip->generatedNotes=LibertyPerformGenerator::render(
+            clip->notes,clip->lengthTicks,clip->generator);
+        const auto& audible=clip->generatorState==0?
+            clip->notes:clip->generatedNotes;
+        const bool ok=player.replaceMidiNotes(selectedClipTrack,selectedClipScene,
+            audible,clip->lengthTicks,owner.getTimeSignatureNumerator(),
+            owner.getTimeSignatureDenominator());
+        if(ok)
+        {
+            ++sessionRevision;
+            refreshGeneratorControls();
+            repaint();
+        }
+        return ok;
+    }
+    void commitGenerator()
+    {
+        if(updatingGenerator || !midiGeneratorVisible())return;
+        auto* clip=selectedMidiData();
+        if(clip==nullptr)return;
+        clip->generator=readGeneratorParams();
+        publishGeneratorLayer();
+    }
+    void setGeneratorState(int state)
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr)return;
+        if(state!=0)
+        {
+            clip->generator=readGeneratorParams();
+            if(clip->generator.kind!=2 && clip->notes.empty())return;
+        }
+        clip->generatorState=juce::jlimit(0,2,state);
+        publishGeneratorLayer();
+    }
+    void nextGeneratorVariation()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr)return;
+        clip->generator=readGeneratorParams();
+        if(clip->generator.kind!=2 && clip->notes.empty())return;
+        clip->generator.seed=LibertyPerformGenerator::next(clip->generator.seed);
+        if(clip->generatorState==0)clip->generatorState=1;
+        publishGeneratorLayer();
+    }
+    void cancelTemporaryGeneratorPreview()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || clip->generatorState!=1)return;
+        clip->generatorState=0;
+        clip->generatedNotes.clear();
+        player.replaceMidiNotes(selectedClipTrack,selectedClipScene,clip->notes,
+            clip->lengthTicks,owner.getTimeSignatureNumerator(),
+            owner.getTimeSignatureDenominator());
+        refreshGeneratorControls();
+    }
+
     bool midiEditorVisible() const
     {
         return hasSelectedClip() && selectedClipTrack>=audioTrackCount() &&
