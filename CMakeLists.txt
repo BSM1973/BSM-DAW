@@ -128,6 +128,17 @@ else()
 endif()
 add_test(NAME PolyphonicGridPagesSmoke COMMAND LibertyPolyphonicGridPagesSmoke)
 
+# Compact dock Mixer: the fader and every signed dB mark share one gain law.
+add_executable(LibertyDockMixerDbScaleSmoke Tests/DockMixerDbScaleSmoke.cpp)
+target_include_directories(LibertyDockMixerDbScaleSmoke PRIVATE Source)
+target_compile_features(LibertyDockMixerDbScaleSmoke PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(LibertyDockMixerDbScaleSmoke PRIVATE /UNDEBUG)
+else()
+  target_compile_options(LibertyDockMixerDbScaleSmoke PRIVATE -UNDEBUG)
+endif()
+add_test(NAME DockMixerDbScaleSmoke COMMAND LibertyDockMixerDbScaleSmoke)
+
 add_test(NAME AudioClipPlaybackSmoke COMMAND BSM_DAW --audio-clip-playback-test)
 
 add_test(NAME ArrangementToolsSmoke COMMAND BSM_DAW --arrangement-tools-test)
