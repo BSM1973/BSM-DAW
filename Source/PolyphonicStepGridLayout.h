@@ -21,7 +21,7 @@ struct Layout
     bool valid = false;
     bool compact = false;
     Rect clipPanel, patternHeader, gridHeader, parameterHeader, editorArea;
-    Rect createClip, classicMode, pianoExport, pianoImport, undoButton, redoButton;
+    Rect createClip, previewButton, classicMode, pianoExport, pianoImport, undoButton, redoButton;
     Rect editMinus, editPlus, editValue;
     std::array<Rect, 8> banks {}, pitchLabels {}, muteButtons {}, soloButtons {};
     std::array<std::array<Rect, 4>, 8> rowControls {};
@@ -47,6 +47,9 @@ struct Layout
         if (l.gridWidth < 220 || l.rowHeight < 12) return l;
         l.firstStep = std::clamp(page, 0, 3) * 16;
         l.clipPanel = { margin, 35, clipWidth - 5, rowsBottom - 35 };
+        // Dedicated audition transport lives above the clip panel; its hitbox
+        // never overlaps the 13-inch compact controls or any pattern bank.
+        l.previewButton = { margin, margin, clipWidth - 5, 24 };
         l.createClip = { margin + 6, std::max(76, rowsBottom - 29), clipWidth - 17, 23 };
         l.classicMode = { margin + 6, rowsBottom - 55, clipWidth - 17, 21 };
         // Avoid one-pixel overlap with page navigation on low-height docks.
