@@ -127,8 +127,9 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         polyText(g, juce::String(count) + (count == 1 ? " NOTE" : " NOTES"),
                  {panelX+6, statsY+45, l.clipPanel.w-12, 20}, 11.0f, juce::Colour(dim),
                  juce::Justification::centredLeft);
-        polyText(g, isMidi ? "PISTE MIDI" : "PISTE INSTRUMENT",
-                 {panelX+6, statsY+68, l.clipPanel.w-12, 18}, 10.0f, juce::Colour(dim),
+        polyText(g, isMidi ? "MIDI > INSTR. " + juce::String(stepSequencerMidiTarget + 1)
+                            : juce::String("PISTE INSTRUMENT"),
+                 {panelX+6, statsY+68, l.clipPanel.w-12, 18}, 9.4f, juce::Colour(dim),
                  juce::Justification::centredLeft);
     }
     const bool hasNotes = grid.hasNotes();
@@ -270,6 +271,31 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     }
     // VÉLOCITÉ / DÉCALAGE / DURÉE / RÉPÉTITION:
     // Unicode codepoints guarantee legible French, independent of source charset.
+    if (auditioning && grid.stepCount > 0 && grid.stepTicks > 0)
+    {
+        // Visual playhead follows the independent sample-accurate audition
+        // clock without affecting the global ARRANGE playhead.
+        const double stepSeconds = MidiEngine::tickToSeconds(grid.stepTicks, tempoBpm);
+        const double cycleSeconds = stepSeconds * grid.stepCount;
+        if (stepSeconds > 0.0 && cycleSeconds > 0.0)
+        {
+            const double position = std::fmod(
+                juce::jmax(0.0, audioEngine.getStepPreviewPositionSeconds()), cycleSeconds);
+            const int runningStep = juce::jlimit(0, grid.stepCount - 1,
+                (int)std::floor(position / stepSeconds));
+            if (runningStep >= l.firstStep && runningStep < l.firstStep + 16)
+            {
+                const auto cell = l.cells[0][(size_t)(runningStep - l.firstStep)];
+                const int top = l.cells[0][0].y;
+                const int bottom = l.cells[7][0].y + l.rowHeight;
+                g.setColour(juce::Colour(cyan).withAlpha(0.11f));
+                g.fillRect(cell.x, top, cell.w, bottom - top);
+                g.setColour(juce::Colour(cyan).withAlpha(0.65f));
+                g.drawVerticalLine(cell.x, (float)top, (float)bottom);
+            }
+        }
+    }
+
     const juce::String editors[6] = {
         LibertyPolyGridFrench::velocity(), LibertyPolyGridFrench::offset(),
         LibertyPolyGridFrench::duration(), LibertyPolyGridFrench::repeat(),
@@ -344,9 +370,21 @@ bool MainComponent::clickPolyphonicStepSequencer(juce::Point<int> point, juce::R
         if (!isMidi) publishInstrumentStepSequencer(trackIndex);
         repaint();
     };
-    if (hit(l.createClip) || hit(l.pianoExport))
+    if (hit(l.previewButton))
     {
-        exportPolyGridToPianoRoll(isMidi, trackIndex);
+        togglePolyGridPreview(isMidi, trackIndex);
+        repaint();
+        return true;
+    }
+    if (hit(l.createClip))
+    {
+        exportPolyGridToPianoRoll(isMidi, trackIndex, false);
+        repaint();
+        return true;
+    }
+    if (hit(l.pianoExport))
+    {
+        exportPolyGridToPianoRoll(isMidi, trackIndex, true);
         repaint();
         return true;
     }
@@ -358,13 +396,13 @@ bool MainComponent::clickPolyphonicStepSequencer(juce::Point<int> point, juce::R
     }
     if (hit(l.classicMode))
     {
-        stepSequencerPage = (stepSequencerPage + 1) % 4;
-        repaint();
+        advancePolyGridPage(isMidi, trackIndex);
         return true;
     }
     for (int i = 0; i < 8; ++i)
         if (hit(l.banks[(size_t)i]))
         {
+            if (audioEngine.isStepPreviewPlaying()) stopPolyGridPreview();
             activePattern = i;
             stepSequencerPage = 0;
             polyGridSelectedLane = -1;
