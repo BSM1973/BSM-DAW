@@ -1067,7 +1067,7 @@ public:
                 label(rhythms?"STYLE":"MOTEUR",0,top+48,five);
                 label("DIVISION",1,top+48,five);
                 label("PAS",2,top+48,five);
-                if(!rhythms)
+                if(!rhythms && generatorKind.getSelectedId()==1)
                 {
                     label("DIRECTION",3,top+48,five);
                     label("OCTAVES",4,top+48,five);
@@ -1791,10 +1791,12 @@ private:
         const bool generate=midi && (inspectorTab==3 || inspectorTab==4);
         generatorKind.setVisible(generate && inspectorTab==3);
         generatorStyle.setVisible(generate && inspectorTab==4);
-        generatorDirection.setVisible(generate && inspectorTab==3);
-        generatorOctaves.setVisible(generate && inspectorTab==3);
+        const bool arpeggiator=generate && inspectorTab==3 &&
+            generatorKind.getSelectedId()!=2;
+        generatorDirection.setVisible(arpeggiator);
+        generatorOctaves.setVisible(arpeggiator);
         generatorDivision.setVisible(generate);
-        generatorSteps.setVisible(generate);
+        generatorSteps.setVisible(arpeggiator || (generate && inspectorTab==4));
         for(auto* slider:{&generatorDensity,&generatorSwing,
                           &generatorVariation,&generatorVelocity})
             slider->setVisible(generate);
@@ -1952,7 +1954,7 @@ private:
     }
     void refreshGeneratorControls()
     {
-        const auto* clip=selectedMidiData();
+        auto* clip=selectedMidiData();
         updatingGenerator=true;
         if(clip!=nullptr)
         {
@@ -1983,10 +1985,16 @@ private:
             generatorOriginalButton.setEnabled(clip->generatorState!=0);
         }
         updatingGenerator=false;
-        if(midiGeneratorVisible() && clip!=nullptr && clip->generatorState==0)
-            const_cast<SessionMidiData*>(clip)->generatedNotes=
-                LibertyPerformGenerator::render(
+        if(midiGeneratorVisible())
+        {
+            const bool arp=inspectorTab==3 && generatorKind.getSelectedId()==1;
+            generatorDirection.setVisible(arp);
+            generatorOctaves.setVisible(arp);
+            generatorSteps.setVisible(arp || inspectorTab==4);
+            if(clip!=nullptr && clip->generatorState==0)
+                clip->generatedNotes=LibertyPerformGenerator::render(
                     clip->notes,clip->lengthTicks,readGeneratorParams());
+        }
     }
     bool publishGeneratorLayer()
     {
