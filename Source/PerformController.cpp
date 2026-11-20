@@ -739,6 +739,21 @@ public:
                     clip->setAttribute("kind","midi");
                     const auto& data=performMidiClips[(size_t)track][(size_t)scene];
                     clip->setAttribute("lengthTicks",juce::String(data.lengthTicks));
+                    const auto& p=data.generator;
+                    clip->setAttribute("generatorKind",p.kind);
+                    clip->setAttribute("generatorDivision",p.division);
+                    clip->setAttribute("generatorSteps",p.steps);
+                    clip->setAttribute("generatorDirection",p.direction);
+                    clip->setAttribute("generatorOctaves",p.octaves);
+                    clip->setAttribute("generatorDensity",p.density);
+                    clip->setAttribute("generatorSwing",p.swing);
+                    clip->setAttribute("generatorVariation",p.variation);
+                    clip->setAttribute("generatorVelocity",p.velocity);
+                    clip->setAttribute("generatorRhythmStyle",p.rhythmStyle);
+                    clip->setAttribute("generatorSeed",juce::String((juce::int64)p.seed));
+                    clip->setAttribute("generatorEnabled",data.generatorState==2);
+                    // The XML holds the original notes. Derived notes are
+                    // regenerated at load time, never baked into the source.
                     for(const auto& n:data.notes)
                     {
                         auto* e=clip->createNewChildElement("Note");
@@ -803,7 +818,33 @@ public:
                         e->getIntAttribute("probability",100));
                     data.notes.push_back(note);
                 }
-                assignMidiClip(track,scene,data);
+                if(assignMidiClip(track,scene,data))
+                {
+                    auto& stored=performMidiClips[(size_t)track][(size_t)scene];
+                    auto p=LibertyPerformGenerator::Parameters{};
+                    p.kind=clip->getIntAttribute("generatorKind",0);
+                    p.division=clip->getIntAttribute("generatorDivision",1);
+                    p.steps=clip->getIntAttribute("generatorSteps",16);
+                    p.direction=clip->getIntAttribute("generatorDirection",0);
+                    p.octaves=clip->getIntAttribute("generatorOctaves",1);
+                    p.density=clip->getIntAttribute("generatorDensity",75);
+                    p.swing=clip->getIntAttribute("generatorSwing",0);
+                    p.variation=clip->getIntAttribute("generatorVariation",30);
+                    p.velocity=clip->getIntAttribute("generatorVelocity",100);
+                    p.rhythmStyle=clip->getIntAttribute("generatorRhythmStyle",0);
+                    p.seed=(std::uint32_t)clip->getStringAttribute(
+                        "generatorSeed","950923611").getLargeIntValue();
+                    stored.generator=LibertyPerformGenerator::validated(p);
+                    if(clip->getBoolAttribute("generatorEnabled",false))
+                    {
+                        stored.generatedNotes=LibertyPerformGenerator::render(
+                            stored.notes,stored.lengthTicks,stored.generator);
+                        stored.generatorState=2;
+                        player.replaceMidiNotes(track,scene,stored.generatedNotes,
+                            stored.lengthTicks,owner.getTimeSignatureNumerator(),
+                            owner.getTimeSignatureDenominator());
+                    }
+                }
             }
             if(!slotHasClip(track,scene))continue;
             ClipMetadata metadata;
