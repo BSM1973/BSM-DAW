@@ -23,6 +23,8 @@
 
 bool isLibertyMixConsoleVisible(MainComponent* owner);
 void setLibertyMixConsoleVisible(MainComponent* owner, bool shouldShow);
+bool commitLibertyPerformCapturedInstrumentClip(MainComponent&,
+    const std::vector<MidiEngine::NoteEvent>&,int,double,double);
 int getLibertyTrackColourId(int track);
 juce::String getLibertyTrackName(int track);
 
@@ -2974,6 +2976,96 @@ private:
     int livePanelHeight() const noexcept
     {return midiWorkspaceVisible()?0:102;}
 
+    int importCapturedMidiIntoArrangement(const std::vector<PerformAudioPlayer::CaptureEvent>& events,
+                                          std::int64_t takeSamples,double rate,double bpm)
+    {
+        const int audioTracks=audioTrackCount();
+        const int midiTracks=owner.getMidiTrackCount();
+        const int instrumentTracks=owner.getInstrumentTrackCount();
+        if(instrumentTracks<=0 || rate<=0 || takeSamples<=0)return 0;
+        std::vector<std::vector<MidiEngine::NoteEvent>> byInstrument((size_t)instrumentTracks);
+        const auto sampleToTicks=[&](std::int64_t samples)->std::int64_t
+        {
+            return (std::int64_t)std::llround(
+                (double)juce::jmax<std::int64_t>(0,samples) *
+                juce::jmax(1.0,bpm)*960.0/(60.0*rate));
+        };
+        for(int logical=audioTracks;logical<trackCount();++logical)
+        {
+            const int lane=LibertyPerformTiming::instrumentForLogicalTrack(
+                logical,audioTracks,midiTracks,instrumentTracks);
+            if(lane<0)continue;
+            auto& output=byInstrument[(size_t)lane];
+            std::vector<PerformAudioPlayer::CaptureEvent> actions;
+            for(const auto& event:events)
+                if(event.track==logical)actions.push_back(event);
+            std::stable_sort(actions.begin(),actions.end(),
+                [](const auto& a,const auto& b){return a.atSample<b.atSample;});
+            for(size_t i=0;i<actions.size() && output.size()<8192;++i)
+            {
+                const auto scene=actions[i].scene;
+                if(scene<0 || scene>=sceneCount)continue;
+                const auto first=juce::jlimit<std::int64_t>(
+                    0,takeSamples,actions[i].atSample);
+                const auto last=juce::jlimit<std::int64_t>(
+                    first,takeSamples,i+1<actions.size()?
+                        actions[i+1].atSample:takeSamples);
+                if(last<=first)continue;
+                const auto& clip=performMidiClips[(size_t)logical][(size_t)scene];
+                if(!clip.valid || clip.lengthTicks<=0)continue;
+                const auto& settings=clipMetadata[(size_t)logical][(size_t)scene].settings;
+                const auto lengthTicks=LibertyPerformClip::midiLengthTicks(
+                    clip.lengthTicks,settings.midiBars,
+                    owner.getTimeSignatureNumerator(),
+                    owner.getTimeSignatureDenominator());
+                const auto cycle=juce::jmax<std::int64_t>(1,
+                    LibertyPerformTiming::ticksToSamples(lengthTicks,bpm,rate));
+                const auto& notes=clip.generatorState==2?clip.generatedNotes:clip.notes;
+                const bool repeat=loopButton.getToggleState() && settings.loop;
+                const auto iterations=repeat?
+                    juce::jmin<std::int64_t>(8192,(last-first+cycle-1)/cycle):1;
+                for(std::int64_t iteration=0;
+                    iteration<iterations && output.size()<8192;++iteration)
+                {
+                    const auto origin=first+iteration*cycle;
+                    if(origin>=last)break;
+                    for(const auto& original:notes)
+                    {
+                        if(output.size()>=8192)break;
+                        if(original.muted || original.lengthTicks<=0 ||
+                           original.startTick<0)continue;
+                        const auto onset=origin+LibertyPerformTiming::ticksToSamples(
+                            original.startTick,bpm,rate);
+                        if(onset>=last || onset>=origin+cycle)continue;
+                        const auto end=juce::jmin(last,juce::jmin(origin+cycle,
+                            origin+LibertyPerformTiming::ticksToSamples(
+                                original.startTick+original.lengthTicks,bpm,rate)));
+                        if(end<=onset)continue;
+                        auto note=original;
+                        note.pitch=(std::uint8_t)LibertyPerformClip::notePitch(
+                            (int)original.pitch,settings.transpose);
+                        note.startTick=sampleToTicks(onset);
+                        note.lengthTicks=juce::jmax<std::int64_t>(
+                            1,sampleToTicks(end)-note.startTick);
+                        output.push_back(note);
+                    }
+                }
+            }
+        }
+        int committed=0;
+        const double lengthSeconds=(double)takeSamples/rate;
+        for(int lane=0;lane<instrumentTracks;++lane)
+        {
+            auto& notes=byInstrument[(size_t)lane];
+            if(notes.empty())continue;
+            std::stable_sort(notes.begin(),notes.end(),[](const auto& a,const auto& b)
+                {return a.startTick<b.startTick;});
+            if(commitLibertyPerformCapturedInstrumentClip(
+                owner,notes,lane,0.0,lengthSeconds))++committed;
+        }
+        return committed;
+    }
+
     void toggleCaptureToArrange()
     {
         if (!player.isCapturing())
@@ -2985,6 +3077,7 @@ private:
                                                        "Liberty - PERFORM", error, "OK");
                 return;
             }
+            captureTempoBpm=owner.getTempoBpm();
             recordArrangeButton.setButtonText("STOP RECORDING");
             recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff9b4545));
         }
@@ -2997,6 +3090,13 @@ private:
     void finishCaptureToArrange()
     {
         const auto capture = player.stopCapture();
+        const auto events=player.getCaptureEvents();
+        const auto takeSamples=player.getCapturedSamples();
+        const auto takeRate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        // Import MIDI while original PERFORMANCE logical track indices still
+        // match, before adding an audio arrangement track.
+        const int midiTracksImported=importCapturedMidiIntoArrangement(
+            events,takeSamples,takeRate,captureTempoBpm);
         recordArrangeButton.setButtonText("RECORD TO ARRANGE");
         recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff31404d));
         if (!capture.existsAsFile()) return;
@@ -3023,6 +3123,11 @@ private:
         owner.trackSourceFiles[(size_t)targetTrack] = capture;
         owner.rebuildWaveformCache(targetTrack);
         owner.selectedTrack = targetTrack;
+        if(midiTracksImported>0)
+            recordArrangeButton.setTooltip(
+                juce::String(midiTracksImported)+
+                " piste(s) MIDI enregistrée(s) avec le mix audio.");
+        toFront(false);
         owner.repaint();
     }
 
@@ -3057,6 +3162,7 @@ private:
     std::int64_t followNextAt=0;
     std::uint32_t followRandomSeed=0x8f31c05u,lastMidiSerial=0;
     int selectedFollowScene=0;
+    double captureTempoBpm=120.0;
     std::vector<juce::Rectangle<int>> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::vector<int> activeTrackScene;
