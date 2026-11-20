@@ -7,6 +7,7 @@
 #include "PerformSessionTiming.h"
 #include "PerformClipSettings.h"
 #include "PerformMidiEditorOps.h"
+#include "PerformMidiGenerator.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -1427,6 +1428,9 @@ private:
         std::int64_t lengthTicks=3840;
         std::vector<MidiEngine::NoteEvent> notes;
         LibertyPerformMidiEdit::History<MidiEngine::NoteEvent> history;
+        LibertyPerformGenerator::Parameters generator;
+        std::vector<MidiEngine::NoteEvent> generatedNotes;
+        int generatorState=0; // 0: original, 1: temporary preview, 2: active and saved
         juce::File source;
     };
     static bool isSupportedMidiFile(const juce::File& file) {
@@ -1764,8 +1768,13 @@ private:
     {
         auto* clip=selectedMidiData();
         if(clip==nullptr || !clip->valid)return false;
+        if(clip->generatorState!=0)
+            clip->generatedNotes=LibertyPerformGenerator::render(
+                clip->notes,clip->lengthTicks,clip->generator);
+        const auto& rendered=clip->generatorState==0?
+            clip->notes:clip->generatedNotes;
         if(!player.replaceMidiNotes(selectedClipTrack,selectedClipScene,
-                                    clip->notes,clip->lengthTicks,
+                                    rendered,clip->lengthTicks,
                                     owner.getTimeSignatureNumerator(),
                                     owner.getTimeSignatureDenominator()))return false;
         ++sessionRevision;
@@ -2172,6 +2181,7 @@ private:
     std::vector<std::array<ClipMetadata, sceneCount>> clipMetadata;
     int selectedClipTrack=-1,selectedClipScene=-1,inspectorTab=0;
     bool updatingInspector=false,updatingMidiSliders=false,midiSliderGesture=false;
+    bool updatingGenerator=false;
     int selectedMidiNote=-1,pianoBasePitch=48;
     int gestureNote=-1;
     bool gestureResizing=false,gestureVelocity=false,gestureHistorySaved=false;
@@ -2184,6 +2194,12 @@ private:
     juce::ToggleButton inspectorLoop;
     juce::Slider inspectorGain,inspectorTranspose,inspectorIn,inspectorOut;
     juce::TextButton inspectorClipTab,inspectorLaunchTab,inspectorMidiTab,inspectorClose;
+    juce::TextButton inspectorTransformTab,inspectorGenerateTab;
+    juce::TextButton generatorPreviewButton,generatorApplyButton,
+                     generatorOriginalButton,generatorNewVariantButton;
+    juce::ComboBox generatorKind,generatorStyle,generatorDivision,
+                   generatorDirection,generatorOctaves,generatorSteps;
+    juce::Slider generatorDensity,generatorSwing,generatorVariation,generatorVelocity;
     juce::TextButton midiAddButton,midiDeleteButton,midiHumanizeButton,midiUndoButton,midiRedoButton;
     juce::Slider midiPitchSlider,midiVelocitySlider,midiLengthSlider,midiHumanizeAmount;
     juce::ComboBox quantizeSelector;
