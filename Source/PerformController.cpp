@@ -870,14 +870,89 @@ public:
             g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom() - 1, 0.0f, (float)getWidth());
         }
 
+        if(hasSelectedClip())
+        {
+            const auto area=inspectorArea();
+            g.setColour(juce::Colour(0xff151f2b));
+            g.fillRoundedRectangle(area.toFloat(),8.0f);
+            g.setColour(juce::Colour(0xff365a71));
+            g.drawRoundedRectangle(area.toFloat(),8.0f,1.0f);
+            const auto title=slotName(selectedClipTrack,selectedClipScene);
+            g.setColour(juce::Colour(0xffbfccd8));
+            g.setFont(juce::Font(11.5f,juce::Font::bold));
+            g.drawFittedText(juce::String::fromUTF8("INSPECTEUR — ")+title,
+                area.getX()+264,area.getY()+9,juce::jmax(1,area.getWidth()-378),24,
+                juce::Justification::centredLeft,1);
+            const int x=area.getX()+16;
+            const int bodyWidth=juce::jmax(1,area.getWidth()-32);
+            const int top=area.getY();
+            g.setFont(juce::Font(10.0f));
+            g.setColour(juce::Colour(0xff9eb0c1));
+            if(inspectorTab==0)
+            {
+                g.drawText("NOM DU CLIP",x,top+37,bodyWidth*45/100,16,
+                           juce::Justification::centredLeft);
+                g.drawText("COULEUR",x+bodyWidth*46/100,top+37,
+                           bodyWidth*24/100,16,juce::Justification::centredLeft);
+                if(selectedClipTrack<audioTrackCount())
+                {
+                    g.drawText("GAIN",x,top+104,bodyWidth/3,15,
+                               juce::Justification::centredLeft);
+                    g.drawText("DÉBUT",x+bodyWidth/3+5,top+104,
+                               bodyWidth/3-5,15,juce::Justification::centredLeft);
+                    g.drawText("FIN",x+2*bodyWidth/3+5,top+104,
+                               bodyWidth/3-5,15,juce::Justification::centredLeft);
+                }
+                else
+                {
+                    g.drawText("TRANSPOSITION",x,top+104,bodyWidth/3,15,
+                               juce::Justification::centredLeft);
+                    g.drawText("LONGUEUR MIDI",x+bodyWidth/3+5,top+104,
+                               bodyWidth/3,15,juce::Justification::centredLeft);
+                }
+            }
+            else
+            {
+                g.drawText("QUANTIFICATION",x,top+48,bodyWidth/3,16,
+                           juce::Justification::centredLeft);
+                g.drawText("MODE DE LANCEMENT",x+bodyWidth/3+12,top+48,
+                           bodyWidth/3,16,juce::Justification::centredLeft);
+                g.setFont(juce::Font(10.5f));
+                g.drawText(juce::String::fromUTF8(
+                    "RELANCER : redémarre le clip. BASCULE : un second clic arrête le clip."),
+                    x,top+119,bodyWidth-12,25,juce::Justification::centredLeft);
+            }
+        }
+
         if (dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
         {
             const auto r = clipButtons[(size_t)dragTrack][(size_t)dragScene].getBounds().expanded(2);
             g.setColour(juce::Colour(0xff69d4ff));
             g.drawRoundedRectangle(r.toFloat(), 5.0f, 3.0f);
             g.setFont(juce::Font(9.0f, juce::Font::bold));
-            g.drawText("DROP AUDIO HERE", r, juce::Justification::centred);
+            g.drawText(dragTrack<audioTrackCount()?"DÉPOSER AUDIO":"DÉPOSER MIDI",
+                       r, juce::Justification::centred);
         }
+    }
+
+    void paintOverChildren(juce::Graphics& g) override
+    {
+        if(hasSelectedClip() && selectedClipTrack<(int)clipButtons.size())
+        {
+            g.setColour(juce::Colour(0xffe7c879));
+            g.drawRoundedRectangle(clipButtons[(size_t)selectedClipTrack]
+                [(size_t)selectedClipScene].getBounds().expanded(2).toFloat(),5.0f,2.0f);
+        }
+    }
+
+    int inspectorHeight() const noexcept
+    {
+        return hasSelectedClip()?juce::jmin(184,juce::jmax(125,getHeight()/4)):0;
+    }
+    juce::Rectangle<int> inspectorArea() const noexcept
+    {
+        const int h=inspectorHeight();
+        return {18,getHeight()-54-h-6,juce::jmax(0,getWidth()-36),h};
     }
 
     void resized() override
@@ -898,8 +973,9 @@ public:
         const int headerH = 62;
         const int rowsTop = 142;
         const int footerH = 54;
-        const int rowsAvailable = juce::jmax(320, getHeight() - rowsTop - footerH - 16);
-        const int rowH = juce::jlimit(44, 86, rowsAvailable / sceneCount);
+        const int rowsAvailable=juce::jmax(0,
+            getHeight()-rowsTop-footerH-inspectorHeight()-22);
+        const int rowH=juce::jlimit(9,86,rowsAvailable/sceneCount);
 
         for (int track = 0; track < visibleTracks; ++track)
         {
@@ -909,7 +985,8 @@ public:
             for (int scene = 0; scene < sceneCount; ++scene)
             {
                 const int y = rowsTop + scene * rowH;
-                clipButtons[(size_t)track][(size_t)scene].setBounds(x + 2, y + 4, columnW - 4, rowH - 8);
+                clipButtons[(size_t)track][(size_t)scene].setBounds(
+                    x+2,y+2,columnW-4,juce::jmax(1,rowH-4));
             }
         }
 
@@ -917,10 +994,40 @@ public:
         {
             const int y = rowsTop + scene * rowH;
             sceneRows[(size_t)scene] = { 0, y, getWidth(), rowH };
-            sceneButtons[(size_t)scene].setBounds(getWidth() - sceneLaunchW - 18, y + 4, sceneLaunchW, rowH - 8);
+            sceneButtons[(size_t)scene].setBounds(
+                getWidth()-sceneLaunchW-18,y+2,sceneLaunchW,juce::jmax(1,rowH-4));
         }
         recordArrangeButton.setBounds(18, getHeight() - 44, 170, 30);
         stopAllButton.setBounds(getWidth() - 140, getHeight() - 44, 122, 30);
+
+        const auto panel=inspectorArea();
+        const int x=panel.getX()+16;
+        const int width=juce::jmax(1,panel.getWidth()-32);
+        const int tabY=panel.getY()+8;
+        inspectorClipTab.setBounds(x,tabY,100,26);
+        inspectorLaunchTab.setBounds(x+108,tabY,122,26);
+        inspectorClose.setBounds(panel.getRight()-94,tabY,76,26);
+        const int firstY=panel.getY()+56;
+        const int secondY=panel.getY()+123;
+        const int nameWidth=width*45/100;
+        const int colourWidth=width*24/100;
+        inspectorName.setBounds(x,firstY,juce::jmax(1,nameWidth-8),27);
+        inspectorColour.setBounds(x+width*46/100,firstY,
+                                  juce::jmax(1,colourWidth-8),27);
+        inspectorLoop.setBounds(x+width*72/100,firstY,
+                                juce::jmax(1,width*28/100),27);
+        const int third=juce::jmax(1,width/3);
+        inspectorGain.setBounds(x,secondY,juce::jmax(1,third-6),26);
+        inspectorIn.setBounds(x+third+5,secondY,juce::jmax(1,third-10),26);
+        inspectorOut.setBounds(x+2*third+5,secondY,
+                               juce::jmax(1,width-2*third-7),26);
+        inspectorTranspose.setBounds(x,secondY,juce::jmax(1,third-6),26);
+        inspectorMidiBars.setBounds(x+third+5,secondY,
+                                    juce::jmax(1,third-10),26);
+        inspectorQuantize.setBounds(x,panel.getY()+74,
+                                    juce::jmax(1,third-6),30);
+        inspectorMode.setBounds(x+third+12,panel.getY()+74,
+                                juce::jmax(1,third-6),30);
     }
 
 private:
