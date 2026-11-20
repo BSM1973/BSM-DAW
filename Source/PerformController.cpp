@@ -897,6 +897,8 @@ public:
             juce::jmax(1,quantizeSelector.getX()-176),18,
             juce::Justification::centredLeft,1);
 
+        if(!midiEditorVisible())
+        {
         const int paintedTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
         for (int track = 0; track < paintedTracks; ++track)
         {
@@ -922,6 +924,7 @@ public:
             g.setColour(juce::Colour(0xff29313a));
             g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom() - 1, 0.0f, (float)getWidth());
         }
+        }
 
         if(hasSelectedClip())
         {
@@ -933,8 +936,10 @@ public:
             const auto title=slotName(selectedClipTrack,selectedClipScene);
             g.setColour(juce::Colour(0xffbfccd8));
             g.setFont(juce::Font(11.5f,juce::Font::bold));
+            const int titleOffset=midiEditorVisible()?391:264;
             g.drawFittedText(juce::String::fromUTF8("INSPECTEUR — ")+title,
-                area.getX()+264,area.getY()+9,juce::jmax(1,area.getWidth()-378),24,
+                area.getX()+titleOffset,area.getY()+9,
+                juce::jmax(1,area.getWidth()-titleOffset-113),24,
                 juce::Justification::centredLeft,1);
             const int x=area.getX()+16;
             const int bodyWidth=juce::jmax(1,area.getWidth()-32);
@@ -964,7 +969,7 @@ public:
                                bodyWidth/3,15,juce::Justification::centredLeft);
                 }
             }
-            else
+            else if(inspectorTab==1)
             {
                 g.drawText("QUANTIFICATION",x,top+48,bodyWidth/3,16,
                            juce::Justification::centredLeft);
@@ -975,9 +980,25 @@ public:
                     "RELANCER : redémarre le clip. BASCULE : un second clic arrête le clip."),
                     x,top+119,bodyWidth-12,25,juce::Justification::centredLeft);
             }
+            else if(midiEditorVisible())
+            {
+                g.setColour(juce::Colour(0xffa9bfce));
+                g.setFont(juce::Font(10.0f));
+                const int controlY=top+73;
+                const int third=juce::jmax(1,bodyWidth/3);
+                g.drawText("HAUTEUR",x,controlY,third-6,16,
+                    juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("VÉLOCITÉ"),
+                    x+third+5,controlY,third-6,16,
+                    juce::Justification::centredLeft);
+                g.drawText(juce::String::fromUTF8("DURÉE"),
+                    x+2*third+5,controlY,third-6,16,
+                    juce::Justification::centredLeft);
+                paintMidiPiano(g);
+            }
         }
 
-        if (dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
+        if (!midiEditorVisible() && dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
         {
             const auto r = clipButtons[(size_t)dragTrack][(size_t)dragScene].getBounds().expanded(2);
             g.setColour(juce::Colour(0xff69d4ff));
@@ -1170,7 +1191,8 @@ public:
 
     void paintOverChildren(juce::Graphics& g) override
     {
-        if(hasSelectedClip() && selectedClipTrack<(int)clipButtons.size())
+        if(!midiEditorVisible() && hasSelectedClip() &&
+           selectedClipTrack<(int)clipButtons.size())
         {
             g.setColour(juce::Colour(0xffe7c879));
             g.drawRoundedRectangle(clipButtons[(size_t)selectedClipTrack]
@@ -1180,10 +1202,14 @@ public:
 
     int inspectorHeight() const noexcept
     {
+        if(midiEditorVisible())return 0;
         return hasSelectedClip()?juce::jmin(184,juce::jmax(125,getHeight()/4)):0;
     }
     juce::Rectangle<int> inspectorArea() const noexcept
     {
+        if(midiEditorVisible())
+            return {18,72,juce::jmax(0,getWidth()-36),
+                    juce::jmax(1,getHeight()-134)};
         const int h=inspectorHeight();
         return {18,getHeight()-54-h-6,juce::jmax(0,getWidth()-36),h};
     }
@@ -1209,17 +1235,20 @@ public:
         const int rowsAvailable=juce::jmax(0,
             getHeight()-rowsTop-footerH-inspectorHeight()-22);
         const int rowH=juce::jlimit(9,86,rowsAvailable/sceneCount);
+        const bool showGrid=!midiEditorVisible();
 
         for (int track = 0; track < visibleTracks; ++track)
         {
             const int x = gridLeft + track * (columnW + gap);
             trackHeaders[(size_t)track] = { x, headerTop, columnW, headerH };
             stopTrackButtons[(size_t)track].setBounds(x + 8, headerTop + 40, columnW - 16, 18);
+            stopTrackButtons[(size_t)track].setVisible(showGrid);
             for (int scene = 0; scene < sceneCount; ++scene)
             {
                 const int y = rowsTop + scene * rowH;
                 clipButtons[(size_t)track][(size_t)scene].setBounds(
                     x+2,y+2,columnW-4,juce::jmax(1,rowH-4));
+                clipButtons[(size_t)track][(size_t)scene].setVisible(showGrid);
             }
         }
 
@@ -1229,6 +1258,7 @@ public:
             sceneRows[(size_t)scene] = { 0, y, getWidth(), rowH };
             sceneButtons[(size_t)scene].setBounds(
                 getWidth()-sceneLaunchW-18,y+2,sceneLaunchW,juce::jmax(1,rowH-4));
+            sceneButtons[(size_t)scene].setVisible(showGrid);
         }
         recordArrangeButton.setBounds(18, getHeight() - 44, 170, 30);
         stopAllButton.setBounds(getWidth() - 140, getHeight() - 44, 122, 30);
@@ -1239,6 +1269,7 @@ public:
         const int tabY=panel.getY()+8;
         inspectorClipTab.setBounds(x,tabY,100,26);
         inspectorLaunchTab.setBounds(x+108,tabY,122,26);
+        inspectorMidiTab.setBounds(x+238,tabY,130,26);
         inspectorClose.setBounds(panel.getRight()-94,tabY,76,26);
         const int firstY=panel.getY()+56;
         const int secondY=panel.getY()+123;
@@ -1261,6 +1292,18 @@ public:
                                     juce::jmax(1,third-6),30);
         inspectorMode.setBounds(x+third+12,panel.getY()+74,
                                 juce::jmax(1,third-6),30);
+        const int actionY=panel.getY()+43;
+        midiAddButton.setBounds(x,actionY,84,27);
+        midiDeleteButton.setBounds(x+91,actionY,101,27);
+        midiHumanizeButton.setBounds(x+199,actionY,102,27);
+        midiHumanizeAmount.setBounds(x+307,actionY,juce::jmax(100,width/5),27);
+        midiUndoButton.setBounds(x+318+juce::jmax(100,width/5),actionY,91,27);
+        midiRedoButton.setBounds(x+416+juce::jmax(100,width/5),actionY,96,27);
+        const int editY=panel.getY()+92;
+        midiPitchSlider.setBounds(x,editY,juce::jmax(1,third-8),27);
+        midiVelocitySlider.setBounds(x+third+5,editY,juce::jmax(1,third-10),27);
+        midiLengthSlider.setBounds(x+2*third+5,editY,
+                                  juce::jmax(1,width-2*third-7),27);
     }
 
 private:
