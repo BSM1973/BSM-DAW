@@ -22,8 +22,8 @@ bool MainComponent::exportPolyGridToPianoRoll(bool midi, int track, bool openPia
     const auto lengthSeconds = MidiEngine::tickToSeconds(cycle, tempoBpm);
     if (!(lengthSeconds > 0.0) || !std::isfinite(lengthSeconds)) return false;
     const bool created = midi
-        ? commitLibertySequencerMidiClip(*this, notes, track, startSeconds, lengthSeconds)
-        : commitLibertySequencerInstrumentClip(*this, notes, track, startSeconds, lengthSeconds);
+        ? commitLibertySequencerMidiClip(*this, notes, track, startSeconds, lengthSeconds, openPianoRoll)
+        : commitLibertySequencerInstrumentClip(*this, notes, track, startSeconds, lengthSeconds, openPianoRoll);
     if (created)
     {
         // The clip is already inserted into the real ARRANGE timeline.
