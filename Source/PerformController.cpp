@@ -223,6 +223,7 @@ public:
     {
         int track=-1,scene=-1;
         std::int64_t atSample=0; // session clock, relative to startCapture()
+        std::int64_t sourceOffsetSamples=0; // clip playhead at capture start
     };
     std::int64_t getSessionSamples() const
     {
@@ -443,7 +444,10 @@ public:
         captureCount=0;
         for(int t=0;t<(int)tracks.size() && captureCount<(int)captureEvents.size();++t)
             if(tracks[(size_t)t].activeScene>=0)
-                captureEvents[(size_t)captureCount++]={t,tracks[(size_t)t].activeScene,0};
+                captureEvents[(size_t)captureCount++]={t,
+                    tracks[(size_t)t].activeScene,0,
+                    juce::jmax<std::int64_t>(0,
+                        sessionSamples-tracks[(size_t)t].startedAt)};
         captureThread = std::make_unique<juce::TimeSliceThread>("Liberty PERFORM Capture");
         captureThread->startThread();
         captureWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(writer.release(), *captureThread, 65536);
@@ -3022,12 +3026,16 @@ private:
                     LibertyPerformTiming::ticksToSamples(lengthTicks,bpm,rate));
                 const auto& notes=clip.generatorState==2?clip.generatedNotes:clip.notes;
                 const bool repeat=loopButton.getToggleState() && settings.loop;
+                const auto offset=juce::jmax<std::int64_t>(
+                    0,actions[i].sourceOffsetSamples);
+                const auto startOfCycle=first-(offset%cycle);
                 const auto iterations=repeat?
-                    juce::jmin<std::int64_t>(8192,(last-first+cycle-1)/cycle):1;
+                    juce::jmin<std::int64_t>(8192,
+                        (last-startOfCycle+cycle-1)/cycle):1;
                 for(std::int64_t iteration=0;
                     iteration<iterations && output.size()<8192;++iteration)
                 {
-                    const auto origin=first+iteration*cycle;
+                    const auto origin=startOfCycle+iteration*cycle;
                     if(origin>=last)break;
                     for(const auto& original:notes)
                     {
@@ -3040,11 +3048,12 @@ private:
                         const auto end=juce::jmin(last,juce::jmin(origin+cycle,
                             origin+LibertyPerformTiming::ticksToSamples(
                                 original.startTick+original.lengthTicks,bpm,rate)));
-                        if(end<=onset)continue;
+                        if(end<=onset || end<=first)continue;
+                        const auto recordedOnset=juce::jmax(first,onset);
                         auto note=original;
                         note.pitch=(std::uint8_t)LibertyPerformClip::notePitch(
                             (int)original.pitch,settings.transpose);
-                        note.startTick=sampleToTicks(onset);
+                        note.startTick=sampleToTicks(recordedOnset);
                         note.lengthTicks=juce::jmax<std::int64_t>(
                             1,sampleToTicks(end)-note.startTick);
                         output.push_back(note);
