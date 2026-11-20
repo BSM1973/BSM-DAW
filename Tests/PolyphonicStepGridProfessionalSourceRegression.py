@@ -13,10 +13,16 @@ for file in source_paths:
     for broken in ("\ufffd","Ã©","Ã¨","Ãª","Ã ","Â ","â€™","â€“"):
         assert broken not in text,(file,broken)
 ui=(root/"Source/PolyphonicStepGridUI.inc").read_text(encoding="utf-8")
-for label in ("VÉLOCITÉ","DÉCALAGE","DURÉE","RÉPÉTITION","HAUTEUR","CHANCE",
-              "SÉLECTIONNER UNE NOTE","RÉTABLIR","CRÉER CLIP"):
+for label in ("HAUTEUR","CHANCE","GLISSER HAUT / BAS",
+              "LibertyPolyGridFrench::velocity()",
+              "LibertyPolyGridFrench::offset()",
+              "LibertyPolyGridFrench::duration()",
+              "LibertyPolyGridFrench::repeat()",
+              "LibertyPolyGridFrench::selectNote()",
+              "LibertyPolyGridFrench::redo()",
+              "LibertyPolyGridFrench::insert()"):
     assert label in ui,label
-assert 'juce::String::fromUTF8(editors[i])' in ui
+assert 'polyChip(g, l.editorTabs[(size_t)i], editors[i]' in ui
 layout=(root/"Source/PolyphonicStepGridLayout.h").read_text(encoding="utf-8")
 assert 'std::min(88, l.classicMode.y - 24)' in layout
 main=(root/"Source/MainComponent.cpp").read_text(encoding="utf-8")
