@@ -983,11 +983,19 @@ public:
             const auto title=slotName(selectedClipTrack,selectedClipScene);
             g.setColour(juce::Colour(0xffbfccd8));
             g.setFont(juce::Font(11.5f,juce::Font::bold));
-            const int titleOffset=midiEditorVisible()?391:264;
-            g.drawFittedText(juce::String::fromUTF8("INSPECTEUR — ")+title,
-                area.getX()+titleOffset,area.getY()+9,
-                juce::jmax(1,area.getWidth()-titleOffset-113),24,
-                juce::Justification::centredLeft,1);
+            if(!midiWorkspaceVisible())
+            {
+                // Compact CLIP / LANCEMENT inspector; tabs own the header row.
+                if(selectedClipTrack<audioTrackCount())
+                    g.drawFittedText(juce::String::fromUTF8("INSPECTEUR — ")+title,
+                        area.getX()+264,area.getY()+9,
+                        juce::jmax(1,area.getWidth()-378),24,
+                        juce::Justification::centredLeft,1);
+            }
+            else if(area.getWidth()>1150)
+                g.drawFittedText(title,area.getX()+670,area.getY()+11,
+                    juce::jmax(1,area.getWidth()-780),20,
+                    juce::Justification::centredLeft,1);
             const int x=area.getX()+16;
             const int bodyWidth=juce::jmax(1,area.getWidth()-32);
             const int top=area.getY();
@@ -1041,6 +1049,46 @@ public:
                 g.drawText(juce::String::fromUTF8("DURÉE"),
                     x+2*third+5,controlY,third-6,16,
                     juce::Justification::centredLeft);
+                paintMidiPiano(g);
+            }
+            else if(midiGeneratorVisible())
+            {
+                const bool rhythms=inspectorTab==4;
+                const int gap=8;
+                const int five=juce::jmax(1,(bodyWidth-4*gap)/5);
+                const int quarter=juce::jmax(1,(bodyWidth-3*gap)/4);
+                g.setFont(juce::Font(10.0f));
+                g.setColour(juce::Colour(0xffafc0d0));
+                const auto label=[&](const juce::String& text,int col,int y,int w)
+                {
+                    g.drawFittedText(text,x+col*(w+gap),y,w,15,
+                        juce::Justification::centredLeft,1);
+                };
+                label(rhythms?"STYLE":"MOTEUR",0,top+48,five);
+                label("DIVISION",1,top+48,five);
+                label("PAS",2,top+48,five);
+                if(!rhythms)
+                {
+                    label("DIRECTION",3,top+48,five);
+                    label("OCTAVES",4,top+48,five);
+                }
+                label(juce::String::fromUTF8("DENSITÉ"),0,top+114,quarter);
+                label("SWING",1,top+114,quarter);
+                label("VARIATION",2,top+114,quarter);
+                label(juce::String::fromUTF8("VÉLOCITÉ"),3,top+114,quarter);
+                const auto* data=selectedMidiData();
+                if(data!=nullptr)
+                {
+                    const auto status=data->generatorState==2?
+                        juce::String::fromUTF8("ACTIF — source MIDI conservée"):
+                        data->generatorState==1?
+                        juce::String::fromUTF8("PRÉÉCOUTE — non enregistrée"):
+                        juce::String::fromUTF8("APERÇU VISUEL — appuyer sur PRÉÉCOUTER pour entendre");
+                    g.setColour(data->generatorState==2?
+                        juce::Colour(0xff79d7b6):juce::Colour(0xffa7bbc9));
+                    g.drawFittedText(status,x,top+224,bodyWidth,22,
+                        juce::Justification::centredLeft,1);
+                }
                 paintMidiPiano(g);
             }
         }
@@ -1339,9 +1387,15 @@ public:
         const int x=panel.getX()+16;
         const int width=juce::jmax(1,panel.getWidth()-32);
         const int tabY=panel.getY()+8;
-        inspectorClipTab.setBounds(x,tabY,100,26);
-        inspectorLaunchTab.setBounds(x+108,tabY,122,26);
-        inspectorMidiTab.setBounds(x+238,tabY,130,26);
+        const int tabGap=5;
+        const int tabWidth=juce::jmax(1,(panel.getWidth()-130-4*tabGap)/5);
+        int tabX=x;
+        for(auto* tab:{&inspectorClipTab,&inspectorLaunchTab,&inspectorMidiTab,
+                       &inspectorTransformTab,&inspectorGenerateTab})
+        {
+            tab->setBounds(tabX,tabY,tabWidth,26);
+            tabX+=tabWidth+tabGap;
+        }
         inspectorClose.setBounds(panel.getRight()-94,tabY,76,26);
         const int firstY=panel.getY()+56;
         const int secondY=panel.getY()+123;
@@ -1388,6 +1442,35 @@ public:
         midiVelocitySlider.setBounds(x+third+5,editY,juce::jmax(1,third-10),27);
         midiLengthSlider.setBounds(x+2*third+5,editY,
                                   juce::jmax(1,width-2*third-7),27);
+
+        const int processorGap=8;
+        const int five=juce::jmax(1,(width-4*processorGap)/5);
+        const int quarter=juce::jmax(1,(width-3*processorGap)/4);
+        const int comboY=panel.getY()+69;
+        generatorKind.setBounds(x,comboY,five,29);
+        generatorStyle.setBounds(x,comboY,five,29);
+        generatorDivision.setBounds(x+five+processorGap,comboY,five,29);
+        generatorSteps.setBounds(x+2*(five+processorGap),comboY,five,29);
+        generatorDirection.setBounds(x+3*(five+processorGap),comboY,five,29);
+        generatorOctaves.setBounds(x+4*(five+processorGap),comboY,five,29);
+        const int slidersY=panel.getY()+137;
+        for(auto* slider:{&generatorDensity,&generatorSwing,
+                          &generatorVariation,&generatorVelocity})
+        {
+            const auto i=slider==&generatorDensity?0:
+                         slider==&generatorSwing?1:
+                         slider==&generatorVariation?2:3;
+            slider->setBounds(x+i*(quarter+processorGap),slidersY,quarter,29);
+        }
+        const int buttonsY=panel.getY()+182;
+        const int actionW=juce::jmax(1,(width-3*processorGap)/4);
+        int buttonsX=x;
+        for(auto* button:{&generatorPreviewButton,&generatorApplyButton,
+                          &generatorOriginalButton,&generatorNewVariantButton})
+        {
+            button->setBounds(buttonsX,buttonsY,actionW,30);
+            buttonsX+=actionW+processorGap;
+        }
     }
 
 private:
