@@ -385,7 +385,8 @@ void MainComponent::saveStepSequencers(juce::XmlElement& root) const
 
 void MainComponent::loadStepSequencers(const juce::XmlElement& root)
 {
-    // Undo snapshots must never escape a project boundary.
+    // Preview and Undo snapshots must never escape a project boundary.
+    stopPolyGridPreview();
     polyGridEditors.clear();
     polyGesture = {};
     polyGridSelectedLane = -1;
