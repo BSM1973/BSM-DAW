@@ -85,6 +85,9 @@ public:
         const auto rate = sampleRate.load(std::memory_order_relaxed);
         if (shouldPlay)
         {
+            // Starting ARRANGE takes over from the independent Step Sequencer audition.
+            if (stepPreviewTrack.load(std::memory_order_acquire) >= 0)
+                setStepPreview(-1, false);
             instrumentResumePending.store(true, std::memory_order_release);
             const auto current = rate > 0.0
                 ? static_cast<double>(transportSamples.load(std::memory_order_relaxed)) / rate
@@ -112,6 +115,16 @@ public:
     }
     bool isStepPreviewPlaying() const noexcept { return stepPreviewTrack.load(std::memory_order_acquire) >= 0; }
     int getStepPreviewTrack() const noexcept { return stepPreviewTrack.load(std::memory_order_acquire); }
+    double getStepPreviewPositionSeconds() const noexcept
+    {
+        const auto rate = sampleRate.load(std::memory_order_relaxed);
+        return rate > 0.0 ? (double)stepPreviewSamples.load(std::memory_order_relaxed) / rate : 0.0;
+    }
+    bool hasNativeDrumSamplerForTrack(int track) const noexcept
+    {
+        return track >= 0 && track == drumSamplerTrack.load(std::memory_order_acquire)
+            && std::atomic_load(&drumSampler) != nullptr;
+    }
 
     void notifyInstrumentChanged() noexcept
     {
