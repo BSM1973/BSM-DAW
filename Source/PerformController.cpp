@@ -988,6 +988,186 @@ public:
         }
     }
 
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if(!midiEditorVisible())return;
+        const auto point=event.getPosition();
+        const auto roll=midiPianoBounds();
+        const auto velocity=midiVelocityBounds();
+        gestureNote=-1;
+        gestureOriginal.clear();
+        gestureHistorySaved=false;
+        gestureResizing=false;
+        gestureVelocity=false;
+        if(roll.contains(point))
+        {
+            const int index=midiNoteAt(point);
+            if(event.mods.isPopupMenu())
+            {
+                if(index>=0){selectedMidiNote=index;deleteMidiNote();}
+                return;
+            }
+            selectedMidiNote=index;
+            midiLastClickTick=midiTickAt(point.x);
+            if(index>=0)
+            {
+                gestureNote=index;
+                gestureStart=point;
+                if(const auto* clip=selectedMidiData())
+                {
+                    gestureOriginal=clip->notes;
+                    const auto noteBounds=midiNoteBounds(clip->notes[(size_t)index]);
+                    gestureResizing=point.x>=noteBounds.getRight()-juce::jmin(7,
+                                            juce::jmax(2,noteBounds.getWidth()/3));
+                }
+            }
+            refreshMidiNoteControls();
+            repaint();
+        }
+        else if(velocity.contains(point))
+        {
+            const auto* clip=selectedMidiData();
+            if(clip==nullptr)return;
+            int nearest=-1;
+            int bestDistance=14;
+            for(int i=0;i<(int)clip->notes.size();++i)
+            {
+                const int startX=roll.getX()+(int)std::llround(
+                    (double)clip->notes[(size_t)i].startTick*roll.getWidth()/
+                    (double)juce::jmax<std::int64_t>(1,clip->lengthTicks));
+                const int distance=std::abs(startX-point.x);
+                if(distance<bestDistance){nearest=i;bestDistance=distance;}
+            }
+            selectedMidiNote=nearest;
+            if(nearest>=0)
+            {
+                gestureNote=nearest;
+                gestureStart=point;
+                gestureVelocity=true;
+                gestureOriginal=clip->notes;
+                const int v=juce::jlimit(1,127,
+                    (velocity.getBottom()-point.y)*127/
+                    juce::jmax(1,velocity.getHeight()));
+                if(v!=(int)clip->notes[(size_t)nearest].velocity)
+                {
+                    clip->history.checkpoint(clip->notes);
+                    gestureHistorySaved=true;
+                    clip->notes[(size_t)nearest].velocity=(std::uint8_t)v;
+                    publishMidiNotes();
+                }
+            }
+            refreshMidiNoteControls();
+            repaint();
+        }
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if(!midiEditorVisible() || gestureNote<0 ||
+           gestureNote>=(int)gestureOriginal.size())return;
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || clip->lengthTicks<=0)return;
+        const auto roll=midiPianoBounds();
+        if(roll.isEmpty())return;
+        const auto source=gestureOriginal[(size_t)gestureNote];
+        auto start=source.startTick;
+        auto length=source.lengthTicks;
+        int pitch=(int)source.pitch;
+        int velocity=(int)source.velocity;
+        if(gestureVelocity)
+        {
+            const auto region=midiVelocityBounds();
+            velocity=juce::jlimit(1,127,
+                (region.getBottom()-event.y)*127/juce::jmax(1,region.getHeight()));
+        }
+        else
+        {
+            const auto delta=(std::int64_t)std::llround(
+                (double)(event.x-gestureStart.x)*clip->lengthTicks/
+                (double)roll.getWidth());
+            const auto deltaTicks=LibertyPerformMidiEdit::snap(
+                std::abs(delta))* (delta<0?-1:1);
+            if(gestureResizing)
+                length=juce::jlimit<std::int64_t>(1,
+                    clip->lengthTicks-start,source.lengthTicks+deltaTicks);
+            else
+            {
+                start=juce::jlimit<std::int64_t>(0,
+                    juce::jmax<std::int64_t>(0,clip->lengthTicks-length),
+                    source.startTick+deltaTicks);
+                pitch=juce::jlimit(0,127,(int)source.pitch+
+                    midiPitchAt(event.y)-midiPitchAt(gestureStart.y));
+            }
+        }
+        if(start==source.startTick && length==source.lengthTicks &&
+           pitch==(int)source.pitch && velocity==(int)source.velocity)
+        {
+            if(gestureHistorySaved)
+            {
+                clip->notes=gestureOriginal;
+                publishMidiNotes();
+            }
+            return;
+        }
+        if(!gestureHistorySaved)
+        {
+            clip->history.checkpoint(gestureOriginal);
+            gestureHistorySaved=true;
+        }
+        clip->notes=gestureOriginal;
+        LibertyPerformMidiEdit::edit(clip->notes,gestureNote,start,
+            length,pitch,velocity,clip->lengthTicks);
+        publishMidiNotes();
+    }
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        gestureNote=-1;
+        gestureOriginal.clear();
+        gestureHistorySaved=false;
+        gestureVelocity=false;
+        gestureResizing=false;
+    }
+    void mouseDoubleClick(const juce::MouseEvent& event) override
+    {
+        if(!midiEditorVisible() || event.mods.isPopupMenu())return;
+        const auto point=event.getPosition();
+        if(!midiPianoBounds().contains(point))return;
+        const int hit=midiNoteAt(point);
+        if(hit>=0)
+        {
+            selectedMidiNote=hit;
+            refreshMidiNoteControls();
+            repaint();
+            return;
+        }
+        const auto* clip=selectedMidiData();
+        if(clip==nullptr || clip->notes.size()>=8192)return;
+        midiLastClickTick=midiTickAt(point.x);
+        const int pitch=midiPitchAt(point.y);
+        insertMidiNote();
+        if(auto* updated=selectedMidiData())
+        {
+            if(selectedMidiNote>=0 &&
+               selectedMidiNote<(int)updated->notes.size())
+            {
+                updated->notes[(size_t)selectedMidiNote].pitch=(std::uint8_t)pitch;
+                publishMidiNotes();
+            }
+        }
+    }
+    void mouseWheelMove(const juce::MouseEvent& event,
+                        const juce::MouseWheelDetails& wheel) override
+    {
+        if(midiEditorVisible() && midiPianoBounds().contains(event.getPosition()))
+        {
+            pianoBasePitch=juce::jlimit(0,92,pianoBasePitch+
+                (wheel.deltaY>0.0f?3:-3));
+            repaint();
+            return;
+        }
+        juce::Component::mouseWheelMove(event,wheel);
+    }
+
     void paintOverChildren(juce::Graphics& g) override
     {
         if(hasSelectedClip() && selectedClipTrack<(int)clipButtons.size())
