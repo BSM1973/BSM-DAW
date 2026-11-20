@@ -272,7 +272,8 @@ public:
             s.fadeLength=LibertyPerformLive::transitionSamples(
                 transitionMs.load(),juce::jmax(1.0,owner.audioEngine.getSampleRate()));
             if(captureActive.load() && captureCount<(int)captureEvents.size())
-                captureEvents[(size_t)captureCount++]={track,-1,sessionSamples};
+                captureEvents[(size_t)captureCount++]={track,-1,
+                    juce::jmax<std::int64_t>(0,sessionSamples-captureStartSample)};
         }
         s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;
     }
@@ -284,7 +285,8 @@ public:
             auto& s=tracks[(size_t)i];
             if(captureActive.load() && s.activeScene>=0 &&
                captureCount<(int)captureEvents.size())
-                captureEvents[(size_t)captureCount++]={i,-1,sessionSamples};
+                captureEvents[(size_t)captureCount++]={i,-1,
+                    juce::jmax<std::int64_t>(0,sessionSamples-captureStartSample)};
             if(s.activeScene>=0)
             {
                 s.fadeFromScene=s.activeScene;
@@ -436,6 +438,9 @@ public:
         captureMix.clear();
         captureStartSample=sessionSamples;
         captureCount=0;
+        for(int t=0;t<(int)tracks.size() && captureCount<(int)captureEvents.size();++t)
+            if(tracks[(size_t)t].activeScene>=0)
+                captureEvents[(size_t)captureCount++]={t,tracks[(size_t)t].activeScene,0};
         captureThread = std::make_unique<juce::TimeSliceThread>("Liberty PERFORM Capture");
         captureThread->startThread();
         captureWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(writer.release(), *captureThread, 65536);
@@ -827,6 +832,10 @@ public:
     bool isPerformVisible() const noexcept { return performVisible; }
     void appendMidiForInstrument(int lane,juce::MidiBuffer& midi,int samples)
     {if(performVisible)player.appendMidiForInstrument(lane,midi,samples);}
+    float instrumentMacro() const noexcept
+    {return performVisible?player.getLiveInstrumentGain():1.f;}
+    void finalMix(float* const* data,int channels,int count)
+    {if(performVisible)player.captureFinalMix(data,channels,count);}
     std::uint64_t getSessionRevision() const noexcept{return sessionRevision;}
 
     void clearSession()
@@ -2803,6 +2812,10 @@ public:
     }
     void appendMidi(int track,juce::MidiBuffer& midi,int samples)
     {if(performVisible)view.appendMidiForInstrument(track,midi,samples);}
+    float instrumentMacro() const noexcept
+    {return view.instrumentMacro();}
+    void finalMix(float* const* data,int channels,int samples)
+    {view.finalMix(data,channels,samples);}
     void clearSession(){view.clearSession();}
     void saveSession(juce::XmlElement& xml,const juce::File& file) const
     {view.saveSession(xml,file);}
@@ -2885,6 +2898,24 @@ void appendLibertyPerformMidi(AudioEngine* engine,int instrument,juce::MidiBuffe
         {entry.second->appendMidi(instrument,midi,samples);return;}
 }
 
+float getLibertyPerformInstrumentMacro(AudioEngine* engine) noexcept
+{
+    if(engine==nullptr)return 1.f;
+    for(auto& entry:controllers)
+        if(entry.first!=nullptr && &entry.first->audioEngine==engine && entry.second)
+            return entry.second->instrumentMacro();
+    return 1.f;
+}
+void processLibertyPerformFinalMix(AudioEngine* engine,float* const* data,int channels,int samples)
+{
+    if(engine==nullptr)return;
+    for(auto& entry:controllers)
+        if(entry.first!=nullptr && &entry.first->audioEngine==engine && entry.second)
+        {
+            entry.second->finalMix(data,channels,samples);
+            return;
+        }
+}
 void ensureLibertyPerformController(MainComponent* owner);
 void saveLibertyPerformSession(MainComponent* owner,juce::XmlElement& xml,const juce::File& file)
 {
