@@ -8,6 +8,8 @@
 // registers its own AudioIODeviceCallback.
 void renderLibertyPerformAudio(AudioEngine*, float* const*, int, int);
 void appendLibertyPerformMidi(AudioEngine*,int,juce::MidiBuffer&,int);
+float getLibertyPerformInstrumentMacro(AudioEngine*) noexcept;
+void processLibertyPerformFinalMix(AudioEngine*,float* const*,int,int);
 void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 #include "PluginHost.h"
 #include "LibertySpectralWarp.h"
@@ -2480,6 +2482,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             stepPreviewSamples.fetch_add(numSamples, std::memory_order_relaxed);
         }
         flushBuses();
+        processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
         meterIdleOutput();
         return;
     }
@@ -2545,6 +2548,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             {
                 for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
                     host.processInstrumentEffectSlot(instrumentTrack,slot,bus);
+                bus.applyGain(getLibertyPerformInstrumentMacro(this));
                 meterBus(state.meterPeak,state.meterPeakRight,
                          state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
                 if(!routeToBus(state.mixerBusRoute.load(),bus)&&!anyBusSolo)
@@ -2555,6 +2559,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             }
         }
         flushBuses();
+        processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
         meterIdleOutput();
         return;
     }
@@ -2770,6 +2775,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     oneKnob.process(100000 + instrumentTrack * 8 + slot, instrumentBus);
                 }
                 // Instrument strips must show audio after instruments and FX.
+                instrumentBus.applyGain(getLibertyPerformInstrumentMacro(this));
                 meterBus(state.meterPeak,state.meterPeakRight,
                          state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,instrumentBus);
                 const int channels = juce::jmin(2, numOutputChannels);
@@ -2849,6 +2855,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         playing.store(false, std::memory_order_relaxed);
         return;
     }
+    processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
     if (!hasBoundedAudioProject)
     {
         transportSamples.fetch_add(numSamples);
