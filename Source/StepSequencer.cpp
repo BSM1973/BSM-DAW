@@ -1,5 +1,6 @@
 #include "StepSequencer.h"
 #include "MainComponent.h"
+#include "PolyphonicStepGridFrench.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -598,6 +599,14 @@ void MainComponent::loadStepSequencers(const juce::XmlElement& root)
 // Phase 5 app-level regression: run the real JUCE XML save/load used by projects.
 bool runLibertyPolyGridProjectRoundTripSmoke()
 {
+    // The integration smoke runs in a real macOS JUCE process, not only
+    // against source text. Fail on any replacement of French letters by
+    // broken bytes or ASCII approximations in the Step Sequencer labels.
+    if (!LibertyPolyGridFrench::correctUnicode())
+    {
+        std::puts("STEP SEQ UI : French glyph codepoints are corrupted");
+        return false;
+    }
     LibertyPolyphonicGrid expected;
     expected.active = true;
     expected.stepCount = 32;
