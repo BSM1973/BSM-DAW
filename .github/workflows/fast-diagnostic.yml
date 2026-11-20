@@ -29,12 +29,6 @@ jobs:
 
       - name: Test PERFORMANCE session timing and MIDI integration
         run: |
-          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformSessionTimingSmoke.cpp -o /tmp/liberty-perform-session
-          /tmp/liberty-perform-session
-          python3 Tests/PerformSessionSourceRegression.py
-
-      - name: Test PERFORMANCE session timing and MIDI integration
-        run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformSessionTimingSmoke.cpp -o /tmp/liberty-perform-session
           /tmp/liberty-perform-session
           python3 Tests/PerformSessionSourceRegression.py
@@ -140,6 +134,12 @@ jobs:
 
       - name: Guard ARRANGEMENT playhead from leaking into PERFORMANCE
         run: python3 Tests/PerformPlayheadOverlayRegression.py
+
+      - name: Test PERFORMANCE session timing and MIDI integration
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/PerformSessionTimingSmoke.cpp -o /tmp/liberty-perform-session
+          /tmp/liberty-perform-session
+          python3 Tests/PerformSessionSourceRegression.py
 
       - name: Verify strict non-overlapping global UI regions
         run: |
