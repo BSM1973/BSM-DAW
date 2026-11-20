@@ -586,6 +586,114 @@ public:
     }
 
     bool isPerformVisible() const noexcept { return performVisible; }
+    void appendMidiForInstrument(int lane,juce::MidiBuffer& midi,int samples)
+    {if(performVisible)player.appendMidiForInstrument(lane,midi,samples);}
+    std::uint64_t getSessionRevision() const noexcept{return sessionRevision;}
+
+    void clearSession()
+    {
+        player.stopAll();
+        player.resetSession();
+        for(auto& bank:performAudioFiles)bank={};
+        for(auto& bank:performMidiClips)bank={};
+        quantizeSelector.setSelectedId(3,juce::dontSendNotification);
+        loopButton.setToggleState(true,juce::dontSendNotification);
+        loopButton.setButtonText("BOUCLE : ON");
+        player.setLoopEnabled(true);
+        ++sessionRevision;
+        refreshClipLabels();
+    }
+
+    void saveSession(juce::XmlElement& project,const juce::File& projectFile) const
+    {
+        auto* session=project.createNewChildElement("PerformanceSession");
+        session->setAttribute("quantization",quantizeSelector.getSelectedId());
+        session->setAttribute("loop",loopButton.getToggleState());
+        for(int track=0;track<trackCount();++track)
+            for(int scene=0;scene<sceneCount;++scene)
+            {
+                if(!slotHasClip(track,scene))continue;
+                auto* clip=session->createNewChildElement("Clip");
+                clip->setAttribute("track",track);
+                clip->setAttribute("scene",scene);
+                if(track<audioTrackCount())
+                {
+                    clip->setAttribute("kind","audio");
+                    clip->setAttribute("source",performAudioFiles[(size_t)track][(size_t)scene]
+                        .getRelativePathFrom(projectFile.getParentDirectory()));
+                }
+                else
+                {
+                    clip->setAttribute("kind","midi");
+                    const auto& data=performMidiClips[(size_t)track][(size_t)scene];
+                    clip->setAttribute("lengthTicks",juce::String(data.lengthTicks));
+                    for(const auto& n:data.notes)
+                    {
+                        auto* e=clip->createNewChildElement("Note");
+                        e->setAttribute("start",juce::String(n.startTick));
+                        e->setAttribute("length",juce::String(n.lengthTicks));
+                        e->setAttribute("pitch",(int)n.pitch);
+                        e->setAttribute("velocity",(int)n.velocity);
+                        e->setAttribute("channel",(int)n.channel);
+                        e->setAttribute("muted",n.muted);
+                    }
+                }
+            }
+    }
+
+    void loadSession(const juce::XmlElement& project,const juce::File& file)
+    {
+        clearSession();
+        const auto* session=project.getChildByName("PerformanceSession");
+        if(!session)return;
+        quantizeSelector.setSelectedId(juce::jlimit(1,3,
+            session->getIntAttribute("quantization",3)),juce::dontSendNotification);
+        const bool repeat=session->getBoolAttribute("loop",true);
+        loopButton.setToggleState(repeat,juce::dontSendNotification);
+        loopButton.setButtonText(repeat?"BOUCLE : ON":"BOUCLE : OFF");
+        player.setLoopEnabled(repeat);
+        for(const auto* clip:session->getChildIterator())
+        {
+            if(!clip->hasTagName("Clip"))continue;
+            const int track=clip->getIntAttribute("track",-1);
+            const int scene=clip->getIntAttribute("scene",-1);
+            if(track<0 || track>=trackCount() || scene<0 || scene>=sceneCount)continue;
+            if(clip->getStringAttribute("kind")=="audio" && track<audioTrackCount())
+            {
+                const auto source=clip->getStringAttribute("source");
+                const auto path=juce::File::isAbsolutePath(source)?juce::File(source)
+                    :file.getParentDirectory().getChildFile(source);
+                juce::String error;
+                if(path.existsAsFile() && player.prepareAudioClip(track,scene,path,error))
+                    performAudioFiles[(size_t)track][(size_t)scene]=path;
+            }
+            else if(clip->getStringAttribute("kind")=="midi" && track>=audioTrackCount())
+            {
+                SessionMidiData data;
+                data.valid=true;
+                data.lengthTicks=juce::jmax<std::int64_t>(1,
+                    clip->getStringAttribute("lengthTicks","3840").getLargeIntValue());
+                for(const auto* e:clip->getChildIterator())
+                {
+                    if(!e->hasTagName("Note") || data.notes.size()>=8192)continue;
+                    MidiEngine::NoteEvent note;
+                    note.startTick=e->getStringAttribute("start").getLargeIntValue();
+                    note.lengthTicks=e->getStringAttribute("length").getLargeIntValue();
+                    if(note.startTick<0 || note.lengthTicks<=0 ||
+                        note.lengthTicks>data.lengthTicks ||
+                        note.startTick>data.lengthTicks-note.lengthTicks)continue;
+                    note.pitch=(std::uint8_t)juce::jlimit(0,127,e->getIntAttribute("pitch",60));
+                    note.velocity=(std::uint8_t)juce::jlimit(1,127,e->getIntAttribute("velocity",100));
+                    note.channel=(std::uint8_t)juce::jlimit(1,16,e->getIntAttribute("channel",1));
+                    note.muted=e->getBoolAttribute("muted",false);
+                    data.notes.push_back(note);
+                }
+                assignMidiClip(track,scene,data);
+            }
+        }
+        ++sessionRevision;
+        refreshClipLabels();
+    }
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override
     {
@@ -1127,6 +1235,14 @@ public:
     {
         if (performVisible) view.renderAudioBlock(outputs, numOutputs, numSamples);
     }
+    void appendMidi(int track,juce::MidiBuffer& midi,int samples)
+    {if(performVisible)view.appendMidiForInstrument(track,midi,samples);}
+    void clearSession(){view.clearSession();}
+    void saveSession(juce::XmlElement& xml,const juce::File& file) const
+    {view.saveSession(xml,file);}
+    void loadSession(const juce::XmlElement& xml,const juce::File& file)
+    {view.loadSession(xml,file);}
+    std::uint64_t getSessionRevision() const noexcept {return view.getSessionRevision();}
 
     bool isVisible() const noexcept { return performVisible; }
 
@@ -1193,6 +1309,41 @@ void renderLibertyPerformAudio(AudioEngine* engine, float* const* outputs, int n
             entry.second->renderAudioBlock(outputs, numOutputs, numSamples);
             return;
         }
+}
+
+void appendLibertyPerformMidi(AudioEngine* engine,int instrument,juce::MidiBuffer& midi,int samples)
+{
+    if(engine==nullptr)return;
+    for(auto& entry:controllers)
+        if(entry.first!=nullptr && &entry.first->audioEngine==engine && entry.second)
+        {entry.second->appendMidi(instrument,midi,samples);return;}
+}
+
+void ensureLibertyPerformController(MainComponent* owner);
+void saveLibertyPerformSession(MainComponent* owner,juce::XmlElement& xml,const juce::File& file)
+{
+    if(owner==nullptr)return;
+    ensureLibertyPerformController(owner);
+    if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
+        it->second->saveSession(xml,file);
+}
+void loadLibertyPerformSession(MainComponent* owner,const juce::XmlElement& xml,const juce::File& file)
+{
+    if(owner==nullptr)return;
+    ensureLibertyPerformController(owner);
+    if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
+        it->second->loadSession(xml,file);
+}
+void clearLibertyPerformSession(MainComponent* owner)
+{
+    if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
+        it->second->clearSession();
+}
+std::uint64_t getLibertyPerformSessionRevision(MainComponent* owner)
+{
+    if(auto it=controllers.find(owner);it!=controllers.end() && it->second)
+        return it->second->getSessionRevision();
+    return 0;
 }
 
 void ensureLibertyPerformController(MainComponent* owner)
