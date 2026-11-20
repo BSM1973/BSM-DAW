@@ -8,6 +8,7 @@
 #include "PerformClipSettings.h"
 #include "PerformMidiEditorOps.h"
 #include "PerformMidiGenerator.h"
+#include "PerformLivePro.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -216,6 +217,35 @@ public:
             && tracks[(size_t)track].slots[(size_t)scene].valid;
     }
 
+    struct CaptureEvent
+    {
+        int track=-1,scene=-1;
+        std::int64_t atSample=0; // session clock, relative to startCapture()
+    };
+    std::int64_t getSessionSamples() const
+    {
+        const juce::ScopedLock sl(lock);
+        return sessionSamples;
+    }
+    std::int64_t nextQuantizedSample(int quantize,double bpm,int numerator,int denominator)
+    {
+        const juce::ScopedLock sl(lock);
+        const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
+        const auto quantum=LibertyPerformTiming::quantumSamples(
+            quantize,bpm,numerator,denominator,rate);
+        return LibertyPerformTiming::nextBoundary(sessionSamples,quantum);
+    }
+    void setTransitionMilliseconds(int ms) noexcept
+    {transitionMs.store(juce::jlimit(0,1000,ms),std::memory_order_release);}
+    void setLiveAudioGain(float gain) noexcept
+    {audioMacroGain.store(juce::jlimit(0.f,2.f,gain),std::memory_order_release);}
+    void setLiveInstrumentGain(float gain) noexcept
+    {instrumentMacroGain.store(juce::jlimit(0.f,2.f,gain),std::memory_order_release);}
+    float getLiveInstrumentGain() const noexcept
+    {return instrumentMacroGain.load(std::memory_order_acquire);}
+    void setLiveMasterGain(float gain) noexcept
+    {masterMacroGain.store(juce::jlimit(0.f,2.f,gain),std::memory_order_release);}
+
     void queueScene(int track,int scene,int quantize,double bpm,int numerator,int denominator)
     {
         const juce::ScopedLock sl(lock);
@@ -233,12 +263,38 @@ public:
     {
         const juce::ScopedLock sl(lock);
         if(track<0 || track>=(int)tracks.size())return;
-        auto& s=tracks[(size_t)track];s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;
+        auto& s=tracks[(size_t)track];
+        if(s.activeScene>=0)
+        {
+            s.fadeFromScene=s.activeScene;
+            s.fadeFromStarted=s.startedAt;
+            s.fadeStart=sessionSamples;
+            s.fadeLength=LibertyPerformLive::transitionSamples(
+                transitionMs.load(),juce::jmax(1.0,owner.audioEngine.getSampleRate()));
+            if(captureActive.load() && captureCount<(int)captureEvents.size())
+                captureEvents[(size_t)captureCount++]={track,-1,sessionSamples};
+        }
+        s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;
     }
     void stopAll()
     {
         const juce::ScopedLock sl(lock);
-        for(auto& s:tracks){s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;}
+        for(int i=0;i<(int)tracks.size();++i)
+        {
+            auto& s=tracks[(size_t)i];
+            if(captureActive.load() && s.activeScene>=0 &&
+               captureCount<(int)captureEvents.size())
+                captureEvents[(size_t)captureCount++]={i,-1,sessionSamples};
+            if(s.activeScene>=0)
+            {
+                s.fadeFromScene=s.activeScene;
+                s.fadeFromStarted=s.startedAt;
+                s.fadeStart=sessionSamples;
+                s.fadeLength=LibertyPerformLive::transitionSamples(
+                    transitionMs.load(),juce::jmax(1.0,owner.audioEngine.getSampleRate()));
+            }
+            s.activeScene=-1;s.queuedScene=-2;s.panicNext=true;
+        }
     }
     void resetSession()
     {
@@ -415,6 +471,8 @@ private:
         int previousScene=-1;
         std::int64_t previousStartedAt=0;
         int transitionOffset=-1;
+        int fadeFromScene=-1;
+        std::int64_t fadeFromStarted=0,fadeStart=0,fadeLength=0;
         int panicOffset=-1;
         bool panicNext=false;
     };
@@ -528,6 +586,10 @@ private:
     std::int64_t sessionSamples=0,lastBlockStart=0;
     std::atomic<bool> loopEnabled { true };
     std::atomic<double> sessionTempo { 120.0 };
+    std::atomic<int> transitionMs { 150 };
+    std::atomic<float> audioMacroGain { 1.0f };
+    std::atomic<float> instrumentMacroGain { 1.0f };
+    std::atomic<float> masterMacroGain { 1.0f };
     mutable juce::CriticalSection lock;
     std::atomic<bool> enabled { false };
     bool callbackAttached = false;
