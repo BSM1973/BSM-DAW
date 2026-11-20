@@ -1181,14 +1181,17 @@ public:
         g.setColour(juce::Colour(0xff303944));
         g.drawHorizontalLine(63, 0.0f, (float)getWidth());
 
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::Font(21.0f, juce::Font::bold));
-        g.drawText("PERFORM", 22, 10, 150, 28, juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff8f98a3));
-        g.setFont(juce::Font(10.0f));
-        g.drawFittedText(juce::String::fromUTF8("SESSION   CLIPS   SCÈNES   LIVE"),170,16,
-            juce::jmax(1,quantizeSelector.getX()-176),18,
-            juce::Justification::centredLeft,1);
+        // The MainComponent track-creation toolbar occupies x=0..330
+        // in this same header. Keep this region text-free so that
+        // + AUDIO / + MIDI / + INSTRUMENT / + BUS never cover another label.
+        const int titleX=loopButton.getRight()+18;
+        if(titleX+160<getWidth()-16)
+        {
+            g.setColour(juce::Colour(0xffb6d2e1));
+            g.setFont(juce::Font(13.0f,juce::Font::bold));
+            g.drawFittedText("PERFORMANCE",titleX,16,160,24,
+                juce::Justification::centredLeft,1);
+        }
 
         if(!midiWorkspaceVisible())
         {
@@ -1230,7 +1233,7 @@ public:
             g.drawRoundedRectangle(live.toFloat(),6.f,1.f);
             g.setColour(juce::Colour(0xffb1c6d7));
             g.setFont(juce::Font(9.f,juce::Font::bold));
-            g.drawText("FOLLOW ACTIONS / MIDI LEARN",live.getX()+12,
+            g.drawText(juce::String::fromUTF8("SCÈNES ET MIDI"),live.getX()+12,
                 live.getY()+2,juce::jmax(1,live.getWidth()-20),13,
                 juce::Justification::centredLeft);
             const char* labels[]={"MASTER","AUDIO","INSTR.","FADE"};
@@ -1867,7 +1870,9 @@ private:
         auto input=file.createInputStream();
         juce::MidiFile midi;
         if(input==nullptr || !midi.readFrom(*input) || midi.getTimeFormat()<=0) {
-            error="Le fichier MIDI doit utiliser une résolution PPQ valide.";return false;
+            error=juce::String::fromUTF8(
+                "Le fichier MIDI doit utiliser une résolution PPQ valide.");
+            return false;
         }
         const double ppq=(double)midi.getTimeFormat();
         data={};
@@ -2712,7 +2717,9 @@ private:
                 const bool active=player.isTrackPlaying(track,scene);
                 const bool queued=player.isTrackQueued(track,scene);
                 const bool target=dragTrack==track && dragScene==scene;
-                button.setButtonText(target?(track<audioTrackCount()?"DÉPOSER AUDIO":"DÉPOSER MIDI"):
+                button.setButtonText(target?
+                    juce::String::fromUTF8(track<audioTrackCount()?
+                        "DÉPOSER AUDIO":"DÉPOSER MIDI"):
                     (queued?"EN ATTENTE":slotName(track,scene)));
                 button.setEnabled(true);
                 button.setColour(juce::TextButton::buttonColourId,
@@ -2727,7 +2734,7 @@ private:
                         track,audioTrackCount(),owner.getMidiTrackCount(),owner.getInstrumentTrackCount());
                     button.setTooltip(lane>=0?
                         "MIDI vers instrument "+juce::String(lane+1)+
-                        ". Cliquez sur une cellule vide pour créer un clip.":
+                        juce::String::fromUTF8(". Cliquez sur une cellule vide pour créer un clip."):
                         "Chargez une piste instrument pour entendre ce clip MIDI.");
                 }
             }
@@ -2944,7 +2951,8 @@ private:
         const int target=midiLearnTargetSelector.getSelectedId()-1;
         if(target<0 || target>=LibertyPerformLive::targets)return;
         const auto& binding=midiBindings[(size_t)target];
-        const auto description=binding.kind==0?juce::String("NON ASSIGNÉ"):
+        const auto description=binding.kind==0?
+            juce::String::fromUTF8("NON ASSIGNÉ"):
             juce::String(binding.kind==1?"CC ":"NOTE ")+
             juce::String(binding.number)+" / CH "+juce::String(binding.channel);
         midiLearnButton.setButtonText(midiLearnArmed?
@@ -3178,7 +3186,8 @@ private:
         if(midiTracksImported>0)
             recordArrangeButton.setTooltip(
                 juce::String(midiTracksImported)+
-                " piste(s) MIDI enregistrée(s) avec le mix audio.");
+                juce::String::fromUTF8(
+                    " piste(s) MIDI enregistrée(s) avec le mix audio."));
         toFront(false);
         owner.repaint();
     }
