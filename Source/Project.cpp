@@ -15,7 +15,7 @@ void loadLibertyMultiMidiClips(MainComponent&, const juce::XmlElement&);
 void saveLibertyPerformSession(MainComponent*,juce::XmlElement&,const juce::File&);
 void loadLibertyPerformSession(MainComponent*,const juce::XmlElement&,const juce::File&);
 void clearLibertyPerformSession(MainComponent*);
-std::uint64_t getLibertyPerformSessionRevision(MainComponent*);
+std::uint64_t getLibertyPerformSessionRevision(const MainComponent*);
 void resetLibertyMultiMidiProject(MainComponent&);
 void refreshLibertyMixConsole(MainComponent*);
 void prepareLibertyAudioRecordingForProjectReset(MainComponent*);
