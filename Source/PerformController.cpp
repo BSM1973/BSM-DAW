@@ -1640,8 +1640,16 @@ private:
         inspectorClose.setButtonText("FERMER");
         inspectorClipTab.onClick=[this]{inspectorTab=0;refreshInspector();};
         inspectorLaunchTab.onClick=[this]{inspectorTab=1;refreshInspector();};
-        inspectorMidiTab.onClick=[this]{inspectorTab=2;refreshInspector();};
-        inspectorTransformTab.onClick=[this]{inspectorTab=3;refreshInspector();};
+        inspectorMidiTab.onClick=[this]{
+            inspectorTab=2;
+            focusPianoOnSource();
+            refreshInspector();
+        };
+        inspectorTransformTab.onClick=[this]{
+            inspectorTab=3;
+            focusPianoOnSource();
+            refreshInspector();
+        };
         inspectorGenerateTab.onClick=[this]{
             inspectorTab=4;
             pianoBasePitch=24;
@@ -2055,6 +2063,17 @@ private:
             clip->lengthTicks,owner.getTimeSignatureNumerator(),
             owner.getTimeSignatureDenominator());
         refreshGeneratorControls();
+    }
+
+    void focusPianoOnSource()
+    {
+        if(const auto* clip=selectedMidiData())
+        {
+            int lowest=128;
+            for(const auto& note:clip->notes)
+                lowest=juce::jmin(lowest,(int)note.pitch);
+            pianoBasePitch=lowest<128?juce::jlimit(0,92,lowest-5):48;
+        }
     }
 
     bool midiEditorVisible() const
