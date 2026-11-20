@@ -486,7 +486,8 @@ bool MainComponent::resetProjectState()
         audioEngine.removeAudioTrack(audioEngine.getAudioTrackCount() - 1);
     dynamicMidiTrackCount = 1;
     dynamicInstrumentTrackCount = 1;
-    // A new project cannot inherit MIDI notes or Undo history from the old one.
+    // A new project cannot keep a Step audition or notes from the old one.
+    stopPolyGridPreview();
     polyGridEditors.clear();
     polyGesture = {};
     polyGridSelectedLane = -1;
