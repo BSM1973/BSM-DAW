@@ -5,8 +5,10 @@ root = Path(__file__).resolve().parents[1]
 ui = (root / "Source/PolyphonicStepGridUI.inc").read_text(encoding="utf-8")
 main = (root / "Source/MainComponent.cpp").read_text(encoding="utf-8")
 header = (root / "Source/MainComponent.h").read_text(encoding="utf-8")
-for text in ('"CLIP MIDI"', '"CRÉER CLIP"', '"VÉLOCITÉ"', '"DÉCALAGE"',
-             '"DURÉE"', '"RÉPÉTITION"', '"HAUTEUR"', '"CHANCE"',
+for text in ('"CLIP MIDI"', 'LibertyPolyGridFrench::insert()',
+             'LibertyPolyGridFrench::velocity()', 'LibertyPolyGridFrench::offset()',
+             'LibertyPolyGridFrench::duration()', 'LibertyPolyGridFrench::repeat()',
+             '"HAUTEUR"', '"CHANCE"',
              '"PAS", "RATE", "DIR", "SWING"', 'constexpr juce::uint32 orange = 0xffed963c',
              'juce::Colour(cyan)', 'polyChip(g, l.muteButtons',
              'polyChip(g, l.soloButtons', 'clickPolyphonicStepSequencer'):
@@ -20,7 +22,10 @@ assert 'clickPolyphonicStepSequencer(p, area, *pattern' in main
 assert 'polyGridSelectedEvent' in header
 # Phase 4 routes new clips into the shared Piano Roll arrangement instead
 # of creating a second, uneditable instrument Pattern clip.
-assert 'exportPolyGridToPianoRoll(isMidi, trackIndex)' in ui
+assert 'exportPolyGridToPianoRoll(isMidi, trackIndex, false)' in ui
+assert 'exportPolyGridToPianoRoll(isMidi, trackIndex, true)' in ui
+assert 'togglePolyGridPreview(isMidi, trackIndex)' in ui
+assert 'advancePolyGridPage(isMidi, trackIndex)' in ui
 assert 'importPianoRollToPolyGrid(isMidi, trackIndex)' in ui
 integration = (root / "Source/PolyphonicStepGridMidiIntegration.inc").read_text(encoding="utf-8")
 assert 'commitLibertySequencerInstrumentClip(*this, notes, track' in integration
