@@ -1068,6 +1068,171 @@ private:
         return juce::jlimit(0,2,quantizeSelector.getSelectedId()-1);
     }
 
+    bool hasSelectedClip() const
+    {
+        return selectedClipTrack>=0 && selectedClipScene>=0 &&
+            selectedClipTrack<(int)clipMetadata.size() &&
+            slotHasClip(selectedClipTrack,selectedClipScene);
+    }
+
+    void initialiseInspector()
+    {
+        inspectorClipTab.setButtonText("CLIP");
+        inspectorLaunchTab.setButtonText("LANCEMENT");
+        inspectorClose.setButtonText("FERMER");
+        inspectorClipTab.onClick=[this]{inspectorTab=0;refreshInspector();};
+        inspectorLaunchTab.onClick=[this]{inspectorTab=1;refreshInspector();};
+        inspectorClose.onClick=[this]{
+            selectedClipTrack=selectedClipScene=-1;
+            refreshInspector();
+        };
+        for(auto* button:{&inspectorClipTab,&inspectorLaunchTab,&inspectorClose})
+        {
+            button->setMouseClickGrabsKeyboardFocus(false);
+            addAndMakeVisible(*button);
+        }
+        inspectorName.setTextToShowWhenEmpty("Nom du clip",juce::Colour(0xff8896a5));
+        inspectorName.onTextChange=[this]{commitInspector();};
+        addAndMakeVisible(inspectorName);
+        inspectorColour.addItem("COULEUR PISTE",1);
+        const juce::StringArray colours{
+            "BLEU NUIT","BLEU","VERT","JAUNE","ORANGE","ROUGE",
+            "VIOLET","ROSE","TURQUOISE"
+        };
+        for(int i=0;i<colours.size();++i)
+            inspectorColour.addItem(colours[i],i+2);
+        inspectorColour.onChange=[this]{commitInspector();};
+        addAndMakeVisible(inspectorColour);
+        inspectorLoop.setButtonText("BOUCLE DU CLIP");
+        inspectorLoop.onClick=[this]{commitInspector();};
+        addAndMakeVisible(inspectorLoop);
+
+        const auto sliderSetup=[this](juce::Slider& slider,double lo,double hi,
+                                       double step,const juce::String& suffix)
+        {
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,62,24);
+            slider.setRange(lo,hi,step);
+            slider.setTextValueSuffix(suffix);
+            slider.onValueChange=[this]{commitInspector();};
+            addAndMakeVisible(slider);
+        };
+        sliderSetup(inspectorGain,-24.0,12.0,0.1," dB");
+        sliderSetup(inspectorTranspose,-24.0,24.0,1.0," st");
+        sliderSetup(inspectorIn,0.0,99.0,1.0," %");
+        sliderSetup(inspectorOut,1.0,100.0,1.0," %");
+
+        for(const auto& label:{"AUTO","1 MESURE","2 MESURES","4 MESURES",
+                               "8 MESURES","16 MESURES"})
+            inspectorMidiBars.addItem(label,inspectorMidiBars.getNumItems()+1);
+        inspectorMidiBars.onChange=[this]{commitInspector();};
+        addAndMakeVisible(inspectorMidiBars);
+        inspectorQuantize.addItem("GLOBAL",1);
+        inspectorQuantize.addItem(juce::String::fromUTF8("IMMÉDIAT"),2);
+        inspectorQuantize.addItem("1 TEMPS",3);
+        inspectorQuantize.addItem("1 MESURE",4);
+        inspectorQuantize.onChange=[this]{commitInspector();};
+        addAndMakeVisible(inspectorQuantize);
+        inspectorMode.addItem("RELANCER",1);
+        inspectorMode.addItem("BASCULE",2);
+        inspectorMode.onChange=[this]{commitInspector();};
+        addAndMakeVisible(inspectorMode);
+        refreshInspector();
+    }
+
+    void selectClip(int track,int scene)
+    {
+        if(track<0 || track>=(int)clipMetadata.size() ||
+            scene<0 || scene>=sceneCount || !slotHasClip(track,scene))return;
+        selectedClipTrack=track;
+        selectedClipScene=scene;
+        refreshInspector();
+    }
+
+    void refreshInspector()
+    {
+        const bool visible=hasSelectedClip();
+        updatingInspector=true;
+        const bool clipPage=visible && inspectorTab==0;
+        const bool audio=visible && selectedClipTrack<audioTrackCount();
+        const bool midi=visible && !audio;
+        inspectorClipTab.setVisible(visible);
+        inspectorLaunchTab.setVisible(visible);
+        inspectorClose.setVisible(visible);
+        inspectorName.setVisible(clipPage);
+        inspectorColour.setVisible(clipPage);
+        inspectorLoop.setVisible(clipPage);
+        inspectorGain.setVisible(clipPage&&audio);
+        inspectorIn.setVisible(clipPage&&audio);
+        inspectorOut.setVisible(clipPage&&audio);
+        inspectorTranspose.setVisible(clipPage&&midi);
+        inspectorMidiBars.setVisible(clipPage&&midi);
+        inspectorQuantize.setVisible(visible&&inspectorTab==1);
+        inspectorMode.setVisible(visible&&inspectorTab==1);
+        if(visible)
+        {
+            const auto& data=clipMetadata[(size_t)selectedClipTrack][(size_t)selectedClipScene];
+            const auto& p=data.settings;
+            inspectorName.setText(data.name,false);
+            inspectorColour.setSelectedId(data.colourId+2,juce::dontSendNotification);
+            inspectorLoop.setToggleState(p.loop,juce::dontSendNotification);
+            inspectorGain.setValue(p.gainDb,juce::dontSendNotification);
+            inspectorTranspose.setValue(p.transpose,juce::dontSendNotification);
+            inspectorIn.setValue(p.inFraction*100.f,juce::dontSendNotification);
+            inspectorOut.setValue(p.outFraction*100.f,juce::dontSendNotification);
+            const int lengths[]={0,1,2,4,8,16};
+            int selectedLength=1;
+            for(int i=0;i<6;++i)if(lengths[i]==p.midiBars)selectedLength=i+1;
+            inspectorMidiBars.setSelectedId(selectedLength,juce::dontSendNotification);
+            inspectorQuantize.setSelectedId(p.quantization+2,juce::dontSendNotification);
+            inspectorMode.setSelectedId(p.launchMode+1,juce::dontSendNotification);
+        }
+        updatingInspector=false;
+        resized();
+        repaint();
+    }
+
+    void commitInspector()
+    {
+        if(updatingInspector || !hasSelectedClip())return;
+        auto& data=clipMetadata[(size_t)selectedClipTrack][(size_t)selectedClipScene];
+        auto p=data.settings;
+        if(inspectorTab==0)
+        {
+            data.name=inspectorName.getText().trim().substring(0,80);
+            data.colourId=juce::jlimit(-1,8,inspectorColour.getSelectedId()-2);
+            p.loop=inspectorLoop.getToggleState();
+            if(selectedClipTrack<audioTrackCount())
+            {
+                p.gainDb=(float)inspectorGain.getValue();
+                p.inFraction=(float)(inspectorIn.getValue()/100.0);
+                p.outFraction=(float)(inspectorOut.getValue()/100.0);
+                if(p.outFraction-p.inFraction<0.01f)
+                {
+                    if(p.outFraction>=1.0f)p.inFraction=0.99f;
+                    else p.outFraction=p.inFraction+0.01f;
+                }
+            }
+            else
+            {
+                p.transpose=(int)inspectorTranspose.getValue();
+                const int lengths[]={0,1,2,4,8,16};
+                p.midiBars=lengths[juce::jlimit(0,5,inspectorMidiBars.getSelectedId()-1)];
+            }
+        }
+        else
+        {
+            p.quantization=juce::jlimit(-1,2,inspectorQuantize.getSelectedId()-2);
+            p.launchMode=juce::jlimit(0,1,inspectorMode.getSelectedId()-1);
+        }
+        data.settings=LibertyPerformClip::validated(p);
+        player.updateClipSettings(selectedClipTrack,selectedClipScene,data.settings,
+            owner.getTimeSignatureNumerator(),owner.getTimeSignatureDenominator());
+        ++sessionRevision;
+        refreshClipLabels();
+        repaint();
+    }
+
     bool hasDroppedAudio(int track, int scene) const
     {
         return track >= 0 && track < audioTrackCount() && track < (int)performAudioFiles.size()
