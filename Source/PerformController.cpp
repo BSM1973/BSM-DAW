@@ -793,6 +793,75 @@ private:
         return trackColour(getLibertyTrackColourId(track));
     }
 
+    struct SessionMidiData {
+        bool valid=false;
+        std::int64_t lengthTicks=3840;
+        std::vector<MidiEngine::NoteEvent> notes;
+        juce::File source;
+    };
+    static bool isSupportedMidiFile(const juce::File& file) {
+        const auto ext=file.getFileExtension().toLowerCase();
+        return ext==".mid" || ext==".midi";
+    }
+    static bool parseMidiFile(const juce::File& file,SessionMidiData& data,juce::String& error) {
+        auto input=file.createInputStream();
+        juce::MidiFile midi;
+        if(input==nullptr || !midi.readFrom(*input) || midi.getTimeFormat()<=0) {
+            error="Le fichier MIDI doit utiliser une résolution PPQ valide.";return false;
+        }
+        const double ppq=(double)midi.getTimeFormat();
+        data={};
+        std::int64_t longest=0;
+        for(int track=0;track<midi.getNumTracks();++track) {
+            auto* sequence=midi.getTrack(track);
+            if(sequence==nullptr)continue;
+            sequence->updateMatchedPairs();
+            for(int i=0;i<sequence->getNumEvents();++i) {
+                const auto* event=sequence->getEventPointer(i);
+                if(event==nullptr || !event->message.isNoteOn()
+                    || event->noteOffObject==nullptr || data.notes.size()>=8192)continue;
+                const double first=event->message.getTimeStamp()*960.0/ppq;
+                const double last=event->noteOffObject->message.getTimeStamp()*960.0/ppq;
+                if(!std::isfinite(first) || !std::isfinite(last) || first<0.0 || last<=first)continue;
+                MidiEngine::NoteEvent note;
+                note.startTick=(std::int64_t)std::llround(first);
+                note.lengthTicks=juce::jmax<std::int64_t>(1,(std::int64_t)std::llround(last)-note.startTick);
+                note.pitch=(std::uint8_t)event->message.getNoteNumber();
+                note.velocity=(std::uint8_t)juce::jlimit(1,127,(int)std::lround(event->message.getVelocity()*127.f));
+                note.channel=(std::uint8_t)event->message.getChannel();
+                longest=juce::jmax(longest,note.startTick+note.lengthTicks);
+                data.notes.push_back(note);
+            }
+        }
+        data.lengthTicks=juce::jmax<std::int64_t>(3840,((longest+3839)/3840)*3840);
+        data.source=file;data.valid=true;return true;
+    }
+    bool assignMidiClip(int track,int scene,const SessionMidiData& data) {
+        if(track<audioTrackCount() || track>=(int)performMidiClips.size()
+            || scene<0 || scene>=sceneCount || !data.valid)return false;
+        if(!player.prepareMidiClip(track,scene,data.notes,data.lengthTicks))return false;
+        performMidiClips[(size_t)track][(size_t)scene]=data;
+        return true;
+    }
+    bool createMidiFromTrack(int track,int scene) {
+        SessionMidiData data;data.valid=true;
+        if(track<firstInstrumentTrack()) {
+            if(const auto* engine=owner.getMidiEngine(track-firstMidiTrack()))
+                data.notes=engine->getNotesCopy();
+        } else if(auto* pattern=owner.getInstrumentStepSequencer(track-firstInstrumentTrack())) {
+            data.notes=LibertyStepSequencer::render(*pattern);
+            data.lengthTicks=juce::jmax<std::int64_t>(3840,LibertyStepSequencer::getCycleLengthTicks(*pattern));
+        }
+        std::int64_t last=0;
+        for(const auto& note:data.notes)last=juce::jmax(last,note.startTick+note.lengthTicks);
+        data.lengthTicks=juce::jmax(data.lengthTicks,((last+3839)/3840)*3840);
+        if(!assignMidiClip(track,scene,data))return false;
+        ++sessionRevision;return true;
+    }
+    int launchQuantization() const noexcept {
+        return juce::jlimit(0,2,quantizeSelector.getSelectedId()-1);
+    }
+
     bool hasDroppedAudio(int track, int scene) const
     {
         return track >= 0 && track < audioTrackCount() && track < (int)performAudioFiles.size()
@@ -800,25 +869,20 @@ private:
             && performAudioFiles[(size_t)track][(size_t)scene].existsAsFile();
     }
 
-    bool slotHasClip(int track, int scene) const
-    {
-        if (track < audioTrackCount())
-            return hasDroppedAudio(track, scene);
-
-        // MIDI and virtual-instrument Session clips will get their own independent
-        // clip engine later. They deliberately do not inherit ARRANGE data.
-        return false;
+    bool slotHasClip(int track,int scene) const {
+        if(scene<0 || scene>=sceneCount)return false;
+        if(track<audioTrackCount())return hasDroppedAudio(track,scene);
+        return track>=0 && track<(int)performMidiClips.size()
+            && performMidiClips[(size_t)track][(size_t)scene].valid;
     }
-
-    juce::String slotName(int track, int scene) const
-    {
-        if (!slotHasClip(track, scene)
-            || track < 0 || track >= (int)performAudioFiles.size()
-            || scene < 0 || scene >= sceneCount)
-            return "EMPTY";
-        auto name = performAudioFiles[(size_t)track][(size_t)scene].getFileName();
-        if (name.length() > 22) name = name.substring(0, 19) + "...";
-        return name;
+    juce::String slotName(int track,int scene) const {
+        if(!slotHasClip(track,scene))return track<audioTrackCount()?"VIDE":"+ MIDI";
+        if(track>=audioTrackCount()) {
+            const auto& clip=performMidiClips[(size_t)track][(size_t)scene];
+            return clip.source.existsAsFile()?clip.source.getFileNameWithoutExtension():"CLIP MIDI";
+        }
+        auto name=performAudioFiles[(size_t)track][(size_t)scene].getFileName();
+        return name.length()>22?name.substring(0,19)+"...":name;
     }
 
     void refreshClipLabels()
