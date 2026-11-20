@@ -75,6 +75,12 @@ public:
         const juce::ScopedLock sl(lock);
         tracks.resize((size_t)juce::jmax(0,owner.getTotalArrangeTrackCount()));
     }
+    void insertNewAudioTrackAt(int index)
+    {
+        const juce::ScopedLock sl(lock);
+        if(index>=0 && index<=(int)tracks.size())
+            tracks.insert(tracks.begin()+index,TrackState{});
+    }
 
     void setEnabled(bool shouldEnable)
     {
@@ -3132,7 +3138,17 @@ private:
                 juce::String::fromUTF8("Impossible de créer la piste audio de capture."),"OK");
             return;
         }
-        player.syncTrackCount();
+        // Audio rows precede MIDI/instrument rows. Preserve every existing
+        // PERFORMANCE clip, player state and Follow target after insertion.
+        if(targetTrack<=(int)performMidiClips.size())
+        {
+            player.insertNewAudioTrackAt(targetTrack);
+            performMidiClips.insert(performMidiClips.begin()+targetTrack,{});
+            clipMetadata.insert(clipMetadata.begin()+targetTrack,{});
+            activeTrackScene.insert(activeTrackScene.begin()+targetTrack,-1);
+            performAudioFiles.resize((size_t)owner.getAudioTrackCount());
+            if(selectedClipTrack>=targetTrack)++selectedClipTrack;
+        }
         syncTrackContainers();
 
         juce::String error;
