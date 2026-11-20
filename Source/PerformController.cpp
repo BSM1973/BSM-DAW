@@ -437,6 +437,7 @@ public:
         captureMix.setSize(2,65536,false,false,true);
         captureMix.clear();
         captureStartSample=sessionSamples;
+        captureEndSample=sessionSamples;
         captureCount=0;
         for(int t=0;t<(int)tracks.size() && captureCount<(int)captureEvents.size();++t)
             if(tracks[(size_t)t].activeScene>=0)
@@ -465,7 +466,7 @@ public:
     std::int64_t getCapturedSamples() const
     {
         const juce::ScopedLock sl(lock);
-        return juce::jmax<std::int64_t>(0,sessionSamples-captureStartSample);
+        return juce::jmax<std::int64_t>(0,captureEndSample-captureStartSample);
     }
     float captureFinalMix(float* const* output,int channels,int samples)
     {
@@ -533,6 +534,7 @@ private:
 
     juce::File stopCaptureInternal()
     {
+        captureEndSample=sessionSamples;
         captureActive.store(false, std::memory_order_relaxed);
         captureWriter.reset();
         if (captureThread != nullptr)
@@ -680,7 +682,7 @@ private:
     juce::File captureFile;
     std::array<CaptureEvent,32768> captureEvents {};
     int captureCount=0;
-    std::int64_t captureStartSample=0;
+    std::int64_t captureStartSample=0,captureEndSample=0;
     std::atomic<bool> captureActive { false };
 };
 
@@ -801,6 +803,7 @@ public:
         performVisible = shouldShow;
         dragTrack = dragScene = -1;
         setVisible(shouldShow);
+        if(!shouldShow && player.isCapturing())finishCaptureToArrange();
         player.setEnabled(shouldShow);
 
         if (shouldShow)
@@ -823,7 +826,7 @@ public:
             player.stopAll();
             followNextAt=0;
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
-            if (player.isCapturing()) finishCaptureToArrange();
+            // Recording is finalized before disabling the session clock.
         }
     }
 
