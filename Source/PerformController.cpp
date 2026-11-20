@@ -1190,6 +1190,28 @@ public:
         }
         }
 
+        if(livePanelHeight()>0)
+        {
+            const auto live=juce::Rectangle<int>(
+                18,getHeight()-54-inspectorHeight()-livePanelHeight()-7,
+                juce::jmax(1,getWidth()-36),livePanelHeight());
+            g.setColour(juce::Colour(0xff111d2a));
+            g.fillRoundedRectangle(live.toFloat(),6.f);
+            g.setColour(juce::Colour(0xff335a72));
+            g.drawRoundedRectangle(live.toFloat(),6.f,1.f);
+            g.setColour(juce::Colour(0xffb1c6d7));
+            g.setFont(juce::Font(9.f,juce::Font::bold));
+            g.drawText("FOLLOW ACTIONS / MIDI LEARN",live.getX()+12,
+                live.getY()+2,juce::jmax(1,live.getWidth()-20),13,
+                juce::Justification::centredLeft);
+            const char* labels[]={"MASTER","AUDIO","INSTR.","FADE"};
+            const auto width=juce::jmax(1,(live.getWidth()-42)/4);
+            for(int i=0;i<4;++i)
+                g.drawText(juce::String("MACRO ")+juce::String(i+1)+
+                    "  "+labels[i],live.getX()+12+i*width,live.getY()+53,
+                    juce::jmax(1,width-6),12,juce::Justification::centredLeft);
+        }
+
         if(hasSelectedClip())
         {
             const auto area=inspectorArea();
@@ -1570,7 +1592,7 @@ public:
         const int rowsTop = 142;
         const int footerH = 54;
         const int rowsAvailable=juce::jmax(0,
-            getHeight()-rowsTop-footerH-inspectorHeight()-22);
+            getHeight()-rowsTop-footerH-inspectorHeight()-livePanelHeight()-22);
         const int rowH=juce::jlimit(9,86,rowsAvailable/sceneCount);
         const bool showGrid=!midiWorkspaceVisible();
 
@@ -1599,6 +1621,39 @@ public:
         }
         recordArrangeButton.setBounds(18, getHeight() - 44, 170, 30);
         stopAllButton.setBounds(getWidth() - 140, getHeight() - 44, 122, 30);
+
+        const bool showLive=livePanelHeight()>0;
+        const int liveY=getHeight()-54-inspectorHeight()-livePanelHeight()-7;
+        const int liveW=juce::jmax(1,getWidth()-60);
+        const int gapLive=5;
+        const int availableLive=juce::jmax(6,liveW-5*gapLive);
+        const int widths[]={availableLive*12/100,availableLive*15/100,
+            availableLive*14/100,availableLive*15/100,
+            availableLive*30/100,0};
+        const int total=widths[0]+widths[1]+widths[2]+widths[3]+widths[4];
+        const int lastWidth=juce::jmax(1,availableLive-total);
+        int liveX=30;
+        for(auto* combo:{&followSceneSelector,&followActionSelector,&followBarsSelector,
+                         &midiLearnTargetSelector})
+        {
+            const int index=combo==&followSceneSelector?0:
+                combo==&followActionSelector?1:combo==&followBarsSelector?2:3;
+            combo->setBounds(liveX,liveY+16,juce::jmax(1,widths[index]),27);
+            combo->setVisible(showLive);
+            liveX+=widths[index]+gapLive;
+        }
+        midiLearnButton.setBounds(liveX,liveY+16,juce::jmax(1,widths[4]),27);
+        midiLearnButton.setVisible(showLive);
+        liveX+=widths[4]+gapLive;
+        midiForgetButton.setBounds(liveX,liveY+16,lastWidth,27);
+        midiForgetButton.setVisible(showLive);
+        const int macroWidth=juce::jmax(1,(liveW-3*gapLive)/4);
+        for(int i=0;i<4;++i)
+        {
+            liveMacroSliders[(size_t)i].setBounds(
+                30+i*(macroWidth+gapLive),liveY+67,macroWidth,28);
+            liveMacroSliders[(size_t)i].setVisible(showLive);
+        }
 
         const auto panel=inspectorArea();
         const int x=panel.getX()+16;
