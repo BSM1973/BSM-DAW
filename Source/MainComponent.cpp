@@ -34,7 +34,7 @@ void ensureLibertyAudioRecordingController(MainComponent*);
 void ensureLibertyBrowserController(MainComponent*);
 bool isLibertyMixConsoleVisible(MainComponent*);
 bool isLibertyPerformVisible(MainComponent*);
-bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double);
+bool commitLibertySequencerMidiClip(MainComponent&, const std::vector<MidiEngine::NoteEvent>&, int, double, double, bool revealEditor);
 
 double getLibertyTimelinePixelsPerSecond() noexcept;
 int getLibertyTrackRowHeight() noexcept;
