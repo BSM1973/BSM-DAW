@@ -958,11 +958,12 @@ private:
         data={};
         std::int64_t longest=0;
         for(int track=0;track<midi.getNumTracks();++track) {
-            auto* sequence=midi.getTrack(track);
-            if(sequence==nullptr)continue;
-            sequence->updateMatchedPairs();
-            for(int i=0;i<sequence->getNumEvents();++i) {
-                const auto* event=sequence->getEventPointer(i);
+            const auto* source=midi.getTrack(track);
+            if(source==nullptr)continue;
+            juce::MidiMessageSequence sequence(*source);
+            sequence.updateMatchedPairs();
+            for(int i=0;i<sequence.getNumEvents();++i) {
+                const auto* event=sequence.getEventPointer(i);
                 if(event==nullptr || !event->message.isNoteOn()
                     || event->noteOffObject==nullptr || data.notes.size()>=8192)continue;
                 const double first=event->message.getTimeStamp()*960.0/ppq;
