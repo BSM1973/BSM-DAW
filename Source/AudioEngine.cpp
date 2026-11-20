@@ -146,6 +146,21 @@ std::vector<AudioEngine::CapturedMidiEvent> AudioEngine::endMidiCapture()
 
 void AudioEngine::handleIncomingMidiMessage(juce::MidiInput* source, const juce::MidiMessage& message)
 {
+    // A single atomic word for real MIDI Learn (no allocation, GUI or
+    // mutex in the external MIDI callback).
+    if(message.isController() || message.isNoteOn())
+    {
+        const auto serial=performMidiLearnSerial.fetch_add(1,std::memory_order_relaxed)+1;
+        const int kind=message.isController()?1:2;
+        const int number=message.isController()?message.getControllerNumber():message.getNoteNumber();
+        const int value=message.isController()?message.getControllerValue():
+                        juce::jlimit(0,127,(int)std::lround(message.getVelocity()*127.f));
+        const std::uint64_t packed=((std::uint64_t)serial<<32)|
+            ((std::uint64_t)kind<<24)|
+            ((std::uint64_t)message.getChannel()<<16)|
+            ((std::uint64_t)number<<8)|(std::uint64_t)value;
+        performMidiLearnEvent.store(packed,std::memory_order_release);
+    }
     const juce::String sourceId = source != nullptr ? source->getIdentifier() : juce::String();
     const int monitored = monitoredInstrumentTrack.load(std::memory_order_acquire);
     const int capturing = midiCaptureTrack.load(std::memory_order_acquire);
