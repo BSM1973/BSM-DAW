@@ -118,6 +118,16 @@ else()
 endif()
 add_test(NAME PolyphonicGridDirectEditSmoke COMMAND LibertyPolyphonicGridDirectEditSmoke)
 
+add_executable(LibertyPolyphonicGridPagesSmoke Tests/PolyphonicStepGridPagesSmoke.cpp)
+target_include_directories(LibertyPolyphonicGridPagesSmoke PRIVATE Source)
+target_compile_features(LibertyPolyphonicGridPagesSmoke PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(LibertyPolyphonicGridPagesSmoke PRIVATE /UNDEBUG)
+else()
+  target_compile_options(LibertyPolyphonicGridPagesSmoke PRIVATE -UNDEBUG)
+endif()
+add_test(NAME PolyphonicGridPagesSmoke COMMAND LibertyPolyphonicGridPagesSmoke)
+
 add_test(NAME AudioClipPlaybackSmoke COMMAND BSM_DAW --audio-clip-playback-test)
 
 add_test(NAME ArrangementToolsSmoke COMMAND BSM_DAW --arrangement-tools-test)
