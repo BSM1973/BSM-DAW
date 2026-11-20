@@ -135,9 +135,11 @@ public:
         LibertyStepSequencer::Pattern&, bool midi, int trackIndex);
     struct PolyGridGesture
     {
-        enum class Mode { None, Paint, Move, Resize, Marquee, Parameter };
+        enum class Mode { None, Paint, Move, Resize, Marquee, Parameter,
+                          PendingNote, NoteParameter };
         Mode mode = Mode::None;
         bool active = false, midi = false, additive = false;
+        bool fineParameter = false;
         int track = -1, bank = -1, startRow = -1, startStep = -1;
         int parameterSign = 0, parameterTab = 0;
         std::uint32_t noteId = 0;
