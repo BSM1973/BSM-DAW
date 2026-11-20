@@ -2706,6 +2706,216 @@ private:
         refreshClipLabels();
     }
 
+    void initialiseLiveControls()
+    {
+        for(int scene=0;scene<sceneCount;++scene)
+            followSceneSelector.addItem(juce::String::fromUTF8("SCÈNE ")+
+                juce::String(scene+1),scene+1);
+        followSceneSelector.setSelectedId(1,juce::dontSendNotification);
+        followSceneSelector.onChange=[this]
+        {
+            selectedFollowScene=juce::jlimit(0,sceneCount-1,
+                                            followSceneSelector.getSelectedId()-1);
+            updateFollowControls();
+        };
+        addAndMakeVisible(followSceneSelector);
+        followActionSelector.addItem("AUCUNE",1);
+        followActionSelector.addItem("SUIVANTE",2);
+        followActionSelector.addItem(juce::String::fromUTF8("PRÉCÉDENTE"),3);
+        followActionSelector.addItem(juce::String::fromUTF8("ALÉATOIRE"),4);
+        followActionSelector.addItem("STOP",5);
+        followActionSelector.onChange=[this]{commitFollowAction();};
+        addAndMakeVisible(followActionSelector);
+        for(int bars=1;bars<=32;++bars)
+            followBarsSelector.addItem(juce::String(bars)+
+                (bars==1?" MESURE":" MESURES"),bars);
+        followBarsSelector.onChange=[this]{commitFollowAction();};
+        addAndMakeVisible(followBarsSelector);
+
+        for(int i=0;i<8;++i)
+            midiLearnTargetSelector.addItem(juce::String::fromUTF8("SCÈNE ")+
+                juce::String(i+1),i+1);
+        midiLearnTargetSelector.addItem("STOP ALL",9);
+        midiLearnTargetSelector.addItem("MACRO MASTER",10);
+        midiLearnTargetSelector.addItem("MACRO AUDIO",11);
+        midiLearnTargetSelector.addItem("MACRO INSTR.",12);
+        midiLearnTargetSelector.addItem("MACRO FADE",13);
+        midiLearnTargetSelector.setSelectedId(1,juce::dontSendNotification);
+        midiLearnTargetSelector.onChange=[this]{
+            midiLearnArmed=false;
+            updateMidiLearnLabel();
+        };
+        addAndMakeVisible(midiLearnTargetSelector);
+        midiLearnButton.onClick=[this]
+        {
+            midiLearnArmed=!midiLearnArmed;
+            lastMidiSerial=LibertyPerformLive::unpackMidi(
+                owner.audioEngine.getPerformMidiLearnEvent()).serial;
+            updateMidiLearnLabel();
+        };
+        midiForgetButton.setButtonText("EFFACER");
+        midiForgetButton.onClick=[this]
+        {
+            const int target=midiLearnTargetSelector.getSelectedId()-1;
+            if(target>=0 && target<LibertyPerformLive::targets)
+            {
+                midiBindings[(size_t)target]={};
+                midiCcGates[(size_t)target]=false;
+                ++sessionRevision;
+            }
+            midiLearnArmed=false;
+            updateMidiLearnLabel();
+        };
+        addAndMakeVisible(midiLearnButton);
+        addAndMakeVisible(midiForgetButton);
+        const char* labels[]={"MASTER","AUDIO","INSTR.","FADE"};
+        for(int i=0;i<4;++i)
+        {
+            auto& slider=liveMacroSliders[(size_t)i];
+            slider.setSliderStyle(juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,48,24);
+            slider.setRange(0,i==3?1000:200,i==3?10:1);
+            slider.setValue(i==3?150:100,juce::dontSendNotification);
+            slider.setTextValueSuffix(i==3?" ms":" %");
+            slider.setTooltip(juce::String("MACRO ")+juce::String(i+1)+
+                              " - "+labels[i]);
+            slider.onValueChange=[this]
+            {
+                if(!updatingMacros)
+                {
+                    applyLiveMacros();
+                    ++sessionRevision;
+                }
+            };
+            addAndMakeVisible(slider);
+        }
+        applyLiveMacros();
+        updateFollowControls();
+        updateMidiLearnLabel();
+    }
+
+    void applyLiveMacros()
+    {
+        player.setLiveMasterGain(LibertyPerformLive::macroGain(
+            (int)liveMacroSliders[0].getValue()));
+        player.setLiveAudioGain(LibertyPerformLive::macroGain(
+            (int)liveMacroSliders[1].getValue()));
+        player.setLiveInstrumentGain(LibertyPerformLive::macroGain(
+            (int)liveMacroSliders[2].getValue()));
+        player.setTransitionMilliseconds((int)liveMacroSliders[3].getValue());
+    }
+
+    void updateFollowControls()
+    {
+        if(selectedFollowScene<0 || selectedFollowScene>=sceneCount)return;
+        updatingFollow=true;
+        const auto& rule=followActions[(size_t)selectedFollowScene];
+        followSceneSelector.setSelectedId(selectedFollowScene+1,juce::dontSendNotification);
+        followActionSelector.setSelectedId(rule.action+1,juce::dontSendNotification);
+        followBarsSelector.setSelectedId(rule.afterBars,juce::dontSendNotification);
+        updatingFollow=false;
+    }
+    void commitFollowAction()
+    {
+        if(updatingFollow)return;
+        followActions[(size_t)selectedFollowScene]=LibertyPerformLive::validFollow(
+            {followActionSelector.getSelectedId()-1,followBarsSelector.getSelectedId()});
+        // If current scene is already playing, arm a fresh Follow Action
+        // without jumping immediately at the next timer callback.
+        const auto rule=followActions[(size_t)selectedFollowScene];
+        followNextAt=rule.action==0?0:
+            LibertyPerformLive::nextFollowSample(player.getSessionSamples(),
+                rule,owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
+                owner.getTimeSignatureDenominator(),
+                juce::jmax(1.0,owner.audioEngine.getSampleRate()));
+        ++sessionRevision;
+    }
+    void pollFollowActions()
+    {
+        if(followNextAt<=0 || player.getSessionSamples()<followNextAt)return;
+        const auto rule=followActions[(size_t)selectedFollowScene];
+        followNextAt=0;
+        if(rule.action==0)return;
+        const int next=LibertyPerformLive::followScene(
+            selectedFollowScene,rule.action,followRandomSeed);
+        if(next<0)
+        {
+            player.stopAll();
+            refreshClipLabels();
+        }
+        else launchScene(next);
+    }
+
+    void updateMidiLearnLabel()
+    {
+        const int target=midiLearnTargetSelector.getSelectedId()-1;
+        if(target<0 || target>=LibertyPerformLive::targets)return;
+        const auto& binding=midiBindings[(size_t)target];
+        const auto description=binding.kind==0?juce::String("NON ASSIGNÉ"):
+            juce::String(binding.kind==1?"CC ":"NOTE ")+
+            juce::String(binding.number)+" / CH "+juce::String(binding.channel);
+        midiLearnButton.setButtonText(midiLearnArmed?
+            juce::String("EN ATTENTE MIDI..."):
+            juce::String("LEARN : ")+description);
+    }
+    void pollLiveMidiLearn()
+    {
+        const auto data=LibertyPerformLive::unpackMidi(
+            owner.audioEngine.getPerformMidiLearnEvent());
+        if(data.serial==0 || data.serial==lastMidiSerial)return;
+        lastMidiSerial=data.serial;
+        if(midiLearnArmed)
+        {
+            const int target=midiLearnTargetSelector.getSelectedId()-1;
+            if(target>=0 && target<LibertyPerformLive::targets)
+            {
+                midiBindings[(size_t)target]=LibertyPerformLive::validBinding(
+                    {data.channel,data.kind,data.number});
+                midiCcGates[(size_t)target]=false;
+                ++sessionRevision;
+            }
+            midiLearnArmed=false;
+            updateMidiLearnLabel();
+            return;
+        }
+        for(int target=0;target<LibertyPerformLive::targets;++target)
+        {
+            if(!LibertyPerformLive::matches(
+                midiBindings[(size_t)target],data.kind,data.channel,data.number))
+                continue;
+            if(target>=9)
+            {
+                if(data.kind==1)
+                {
+                    updatingMacros=true;
+                    liveMacroSliders[(size_t)(target-9)].setValue(
+                        target==12?(int)std::lround(data.value*1000.0/127):
+                            LibertyPerformLive::macroFromMidi(data.value),
+                        juce::dontSendNotification);
+                    updatingMacros=false;
+                    applyLiveMacros();
+                    ++sessionRevision;
+                }
+            }
+            else
+            {
+                const bool gate=data.kind!=1 || data.value>=64;
+                const bool trigger=gate && !midiCcGates[(size_t)target];
+                midiCcGates[(size_t)target]=data.kind==1?gate:false;
+                if(!trigger)continue;
+                if(target==8)
+                {
+                    player.stopAll();
+                    followNextAt=0;
+                    refreshClipLabels();
+                }
+                else launchScene(target);
+            }
+        }
+    }
+    int livePanelHeight() const noexcept
+    {return midiWorkspaceVisible()?0:102;}
+
     void toggleCaptureToArrange()
     {
         if (!player.isCapturing())
