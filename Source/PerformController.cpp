@@ -671,6 +671,7 @@ public:
         }
         else
         {
+            cancelTemporaryGeneratorPreview();
             player.stopAll();
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             if (player.isCapturing()) finishCaptureToArrange();
@@ -1551,15 +1552,24 @@ private:
         inspectorClipTab.setButtonText("CLIP");
         inspectorLaunchTab.setButtonText("LANCEMENT");
         inspectorMidiTab.setButtonText("PIANO ROLL");
+        inspectorTransformTab.setButtonText("TRANSFORMER");
+        inspectorGenerateTab.setButtonText(juce::String::fromUTF8("GÉNÉRER"));
         inspectorClose.setButtonText("FERMER");
         inspectorClipTab.onClick=[this]{inspectorTab=0;refreshInspector();};
         inspectorLaunchTab.onClick=[this]{inspectorTab=1;refreshInspector();};
         inspectorMidiTab.onClick=[this]{inspectorTab=2;refreshInspector();};
+        inspectorTransformTab.onClick=[this]{inspectorTab=3;refreshInspector();};
+        inspectorGenerateTab.onClick=[this]{
+            inspectorTab=4;
+            pianoBasePitch=24;
+            refreshInspector();
+        };
         inspectorClose.onClick=[this]{
             selectedClipTrack=selectedClipScene=-1;
             refreshInspector();
         };
-        for(auto* button:{&inspectorClipTab,&inspectorLaunchTab,&inspectorMidiTab,&inspectorClose})
+        for(auto* button:{&inspectorClipTab,&inspectorLaunchTab,&inspectorMidiTab,
+                          &inspectorTransformTab,&inspectorGenerateTab,&inspectorClose})
         {
             button->setMouseClickGrabsKeyboardFocus(false);
             addAndMakeVisible(*button);
@@ -1649,6 +1659,7 @@ private:
         midiVelocitySlider.setValue(100,juce::dontSendNotification);
         midiLengthSlider.setValue(240,juce::dontSendNotification);
         midiHumanizeAmount.setValue(25,juce::dontSendNotification);
+        initialiseGenerator();
         refreshInspector();
     }
 
@@ -1658,6 +1669,7 @@ private:
             scene<0 || scene>=sceneCount || !slotHasClip(track,scene))return;
         if(selectedClipTrack!=track || selectedClipScene!=scene)
         {
+            cancelTemporaryGeneratorPreview();
             selectedMidiNote=-1;
             midiSliderGesture=false;
             gestureNote=-1;
@@ -1665,6 +1677,7 @@ private:
         }
         selectedClipTrack=track;
         selectedClipScene=scene;
+        if(track<audioTrackCount() && inspectorTab>=2)inspectorTab=0;
         refreshInspector();
     }
 
@@ -1678,6 +1691,8 @@ private:
         inspectorClipTab.setVisible(visible);
         inspectorLaunchTab.setVisible(visible);
         inspectorMidiTab.setVisible(midi);
+        inspectorTransformTab.setVisible(midi);
+        inspectorGenerateTab.setVisible(midi);
         inspectorClose.setVisible(visible);
         inspectorName.setVisible(clipPage);
         inspectorColour.setVisible(clipPage);
@@ -1690,6 +1705,19 @@ private:
         inspectorQuantize.setVisible(visible&&inspectorTab==1);
         inspectorMode.setVisible(visible&&inspectorTab==1);
         const bool piano=midi&&inspectorTab==2;
+        const bool generate=midi && (inspectorTab==3 || inspectorTab==4);
+        generatorKind.setVisible(generate && inspectorTab==3);
+        generatorStyle.setVisible(generate && inspectorTab==4);
+        generatorDirection.setVisible(generate && inspectorTab==3);
+        generatorOctaves.setVisible(generate && inspectorTab==3);
+        generatorDivision.setVisible(generate);
+        generatorSteps.setVisible(generate);
+        for(auto* slider:{&generatorDensity,&generatorSwing,
+                          &generatorVariation,&generatorVelocity})
+            slider->setVisible(generate);
+        for(auto* button:{&generatorPreviewButton,&generatorApplyButton,
+                           &generatorOriginalButton,&generatorNewVariantButton})
+            button->setVisible(generate);
         for(auto* button:{&midiAddButton,&midiDeleteButton,&midiHumanizeButton,
                            &midiUndoButton,&midiRedoButton})
             button->setVisible(piano);
@@ -1716,6 +1744,7 @@ private:
         }
         updatingInspector=false;
         refreshMidiNoteControls();
+        refreshGeneratorControls();
         resized();
         repaint();
     }
@@ -1765,6 +1794,15 @@ private:
     {
         return hasSelectedClip() && selectedClipTrack>=audioTrackCount() &&
                inspectorTab==2;
+    }
+    bool midiGeneratorVisible() const
+    {
+        return hasSelectedClip() && selectedClipTrack>=audioTrackCount() &&
+               (inspectorTab==3 || inspectorTab==4);
+    }
+    bool midiWorkspaceVisible() const
+    {
+        return midiEditorVisible() || midiGeneratorVisible();
     }
     SessionMidiData* selectedMidiData()
     {
