@@ -7,6 +7,7 @@
 // PERFORM contributes audio to this engine-owned hardware callback. It never
 // registers its own AudioIODeviceCallback.
 void renderLibertyPerformAudio(AudioEngine*, float* const*, int, int);
+void appendLibertyPerformMidi(AudioEngine*,int,juce::MidiBuffer&,int);
 void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 #include "PluginHost.h"
 #include "LibertySpectralWarp.h"
@@ -2493,33 +2494,49 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
         }
-        // Always process loaded instrument plugins, including when transport is
-        // stopped. A plugin's own GUI keyboard generates notes internally and
-        // cannot be heard unless its processBlock keeps running.
+        // Process loaded instruments even when ARRANGEMENT is stopped.
+        // PERFORMANCE sends sample-positioned MIDI events to this same bus.
         auto& host = LibertyPluginHost::instance();
-        for (int instrumentTrack = 0; instrumentTrack < (int)instrumentPlayback.size(); ++instrumentTrack)
+        for(int instrumentTrack=0;instrumentTrack<(int)instrumentPlayback.size();++instrumentTrack)
         {
-            auto& state = *instrumentPlayback[(size_t)instrumentTrack];
-            if (state.muted.load(std::memory_order_relaxed)
-                || !host.hasInstrumentForTrack(instrumentTrack))
+            auto& state=*instrumentPlayback[(size_t)instrumentTrack];
+            const auto nativeDrums=instrumentTrack==drumSamplerTrack.load(std::memory_order_acquire)
+                ?std::atomic_load(&drumSampler):std::shared_ptr<LibertyDrumSampler>{};
+            if(state.muted.load(std::memory_order_relaxed)
+                || (!host.hasInstrumentForTrack(instrumentTrack) && nativeDrums==nullptr))
                 continue;
             juce::MidiBuffer midi;
-            if (instrumentTrack == liveTrack)
-                midi.addEvents(liveMidi, 0, numSamples, 0);
-            if (instrumentTrack == pianoPreviewLane)
-                midi.addEvents(pianoPreviewMidi, 0, numSamples, 0);
+            if(instrumentTrack==liveTrack)midi.addEvents(liveMidi,0,numSamples,0);
+            if(instrumentTrack==pianoPreviewLane)midi.addEvents(pianoPreviewMidi,0,numSamples,0);
+            appendLibertyPerformMidi(this,instrumentTrack,midi,numSamples);
             juce::AudioBuffer<float> bus;
-            if (host.renderInstrumentForTrack(instrumentTrack, bus, numSamples, midi,
-                                              state.gain.load(std::memory_order_relaxed),
-                                              state.pan.load(std::memory_order_relaxed)))
+            bool rendered=false;
+            if(nativeDrums!=nullptr)
             {
+                bus.setSize(2,numSamples,false,false,true);
+                bus.clear();
+                nativeDrums->renderMidi(bus,midi);
+                const float gain=state.gain.load(std::memory_order_relaxed);
+                const float pan=state.pan.load(std::memory_order_relaxed);
+                bus.applyGain(0,0,numSamples,gain*juce::jmin(1.0f,1.0f-pan));
+                bus.applyGain(1,0,numSamples,gain*juce::jmin(1.0f,1.0f+pan));
+                rendered=true;
+            }
+            else
+                rendered=host.renderInstrumentForTrack(instrumentTrack,bus,numSamples,midi,
+                    state.gain.load(std::memory_order_relaxed),
+                    state.pan.load(std::memory_order_relaxed));
+            if(rendered)
+            {
+                for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
+                    host.processInstrumentEffectSlot(instrumentTrack,slot,bus);
                 meterBus(state.meterPeak,state.meterPeakRight,
-                             state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
+                         state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
                 if(!routeToBus(state.mixerBusRoute.load(),bus)&&!anyBusSolo)
-                    for (int ch = 0; ch < juce::jmin(2, numOutputChannels); ++ch)
-                        if(outputChannelData[ch]!=nullptr&&ch<bus.getNumChannels())
-                            juce::FloatVectorOperations::add(outputChannelData[ch],
-                                bus.getReadPointer(ch),numSamples);
+                    for(int channel=0;channel<juce::jmin(2,numOutputChannels);++channel)
+                        if(outputChannelData[channel]!=nullptr && channel<bus.getNumChannels())
+                            juce::FloatVectorOperations::add(outputChannelData[channel],
+                                bus.getReadPointer(channel),numSamples);
             }
         }
         flushBuses();
