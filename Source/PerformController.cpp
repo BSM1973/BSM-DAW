@@ -9,6 +9,7 @@
 #include "PerformMidiEditorOps.h"
 #include "PerformMidiGenerator.h"
 #include "PerformLivePro.h"
+#include "NoOverlapLayout.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -1184,7 +1185,8 @@ public:
         // The MainComponent track-creation toolbar occupies x=0..330
         // in this same header. Keep this region text-free so that
         // + AUDIO / + MIDI / + INSTRUMENT / + BUS never cover another label.
-        const int titleX=loopButton.getRight()+18;
+        const int titleX=juce::jmax(loopButton.getRight()+18,
+            LibertyNoOverlap::creationZoneWidth+16);
         if(titleX+160<getWidth()-16)
         {
             g.setColour(juce::Colour(0xffb6d2e1));
