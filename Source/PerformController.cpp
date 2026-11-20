@@ -211,7 +211,6 @@ public:
         const double bpm=sessionTempo.load(std::memory_order_acquire);
         const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
         const std::int64_t blockStart=lastBlockStart;
-        const std::int64_t blockEnd=blockStart+numSamples;
         const bool repeat=loopEnabled.load(std::memory_order_acquire);
 
         for(int logical=audioTracks;logical<(int)tracks.size();++logical)
@@ -225,36 +224,50 @@ public:
                     midi.addEvent(juce::MidiMessage::allNotesOff(channel),state.panicOffset);
                     midi.addEvent(juce::MidiMessage::allSoundOff(channel),state.panicOffset);
                 }
-            if(state.activeScene<0)continue;
-            const auto& slot=state.slots[(size_t)state.activeScene];
-            if(!slot.valid || slot.midiLengthTicks<=0)continue;
-            const auto cycle=juce::jmax<std::int64_t>(1,
-                LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate));
-            const auto relative=blockStart-state.startedAt;
-            const auto first=juce::jmax<std::int64_t>(0,relative>0?relative/cycle-1:0);
-            const auto last=repeat?juce::jmax<std::int64_t>(0,(blockEnd-state.startedAt)/cycle+1):0;
-            for(std::int64_t iteration=first;iteration<=last;++iteration)
+            const auto emit=[&](int scene,std::int64_t startedAt,int from,int to)
             {
-                const std::int64_t base=state.startedAt+iteration*cycle;
-                if(base>=blockEnd)break;
-                for(const auto& note:slot.notes)
+                if(scene<0 || from>=to)return;
+                const auto& slot=state.slots[(size_t)scene];
+                if(!slot.valid || slot.midiLengthTicks<=0)return;
+                const auto cycle=juce::jmax<std::int64_t>(1,
+                    LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate));
+                const auto phaseStart=blockStart+from;
+                const auto phaseEnd=blockStart+to;
+                const auto relative=phaseStart-startedAt;
+                const auto first=juce::jmax<std::int64_t>(0,relative>0?relative/cycle-1:0);
+                const auto last=repeat?
+                    juce::jmax<std::int64_t>(0,(phaseEnd-startedAt)/cycle+1):0;
+                for(std::int64_t iteration=first;iteration<=last;++iteration)
                 {
-                    if(note.muted || note.lengthTicks<=0 || note.startTick<0)continue;
-                    const auto start=base+LibertyPerformTiming::ticksToSamples(note.startTick,bpm,rate);
-                    const auto end=juce::jmin(base+cycle,
-                        base+LibertyPerformTiming::ticksToSamples(note.startTick+note.lengthTicks,bpm,rate));
-                    const int channel=juce::jlimit(1,16,(int)note.channel);
-                    const int pitch=juce::jlimit(0,127,(int)note.pitch);
-                    const float velocity=juce::jlimit(0.f,1.f,(float)note.velocity/127.f);
-                    if(start>=blockStart && start<blockEnd)
-                        midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),
-                            juce::jlimit(0,numSamples-1,(int)(start-blockStart)));
-                    if(end>=blockStart && end<blockEnd && end>start)
-                        midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),
-                            juce::jlimit(0,numSamples-1,(int)(end-blockStart)));
+                    const std::int64_t base=startedAt+iteration*cycle;
+                    if(base>=phaseEnd)break;
+                    for(const auto& note:slot.notes)
+                    {
+                        if(note.muted || note.lengthTicks<=0 || note.startTick<0)continue;
+                        const auto start=base+LibertyPerformTiming::ticksToSamples(note.startTick,bpm,rate);
+                        const auto end=juce::jmin(base+cycle,
+                            base+LibertyPerformTiming::ticksToSamples(
+                                note.startTick+note.lengthTicks,bpm,rate));
+                        const int channel=juce::jlimit(1,16,(int)note.channel);
+                        const int pitch=juce::jlimit(0,127,(int)note.pitch);
+                        const float velocity=juce::jlimit(0.f,1.f,(float)note.velocity/127.f);
+                        if(start>=phaseStart && start<phaseEnd)
+                            midi.addEvent(juce::MidiMessage::noteOn(channel,pitch,velocity),
+                                juce::jlimit(0,numSamples-1,(int)(start-blockStart)));
+                        if(end>=phaseStart && end<phaseEnd && end>start)
+                            midi.addEvent(juce::MidiMessage::noteOff(channel,pitch),
+                                juce::jlimit(0,numSamples-1,(int)(end-blockStart)));
+                    }
+                    if(!repeat)break;
                 }
-                if(!repeat)break;
+            };
+            if(state.transitionOffset>=0)
+            {
+                emit(state.previousScene,state.previousStartedAt,0,state.transitionOffset);
+                emit(state.activeScene,state.startedAt,state.transitionOffset,numSamples);
             }
+            else
+                emit(state.activeScene,state.startedAt,0,numSamples);
         }
         lock.exit();
     }
