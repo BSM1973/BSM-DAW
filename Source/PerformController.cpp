@@ -944,7 +944,7 @@ public:
             juce::jmax(1,quantizeSelector.getX()-176),18,
             juce::Justification::centredLeft,1);
 
-        if(!midiEditorVisible())
+        if(!midiWorkspaceVisible())
         {
         const int paintedTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
         for (int track = 0; track < paintedTracks; ++track)
@@ -1045,7 +1045,7 @@ public:
             }
         }
 
-        if (!midiEditorVisible() && dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
+        if (!midiWorkspaceVisible() && dragTrack >= 0 && dragTrack < (int)clipButtons.size() && dragScene >= 0 && dragScene < sceneCount)
         {
             const auto r = clipButtons[(size_t)dragTrack][(size_t)dragScene].getBounds().expanded(2);
             g.setColour(juce::Colour(0xff69d4ff));
@@ -1251,7 +1251,7 @@ public:
     void mouseWheelMove(const juce::MouseEvent& event,
                         const juce::MouseWheelDetails& wheel) override
     {
-        if(midiEditorVisible() && midiPianoBounds().contains(event.getPosition()))
+        if(midiWorkspaceVisible() && midiPianoBounds().contains(event.getPosition()))
         {
             pianoBasePitch=juce::jlimit(0,92,pianoBasePitch+
                 (wheel.deltaY>0.0f?3:-3));
@@ -1263,7 +1263,7 @@ public:
 
     void paintOverChildren(juce::Graphics& g) override
     {
-        if(!midiEditorVisible() && hasSelectedClip() &&
+        if(!midiWorkspaceVisible() && hasSelectedClip() &&
            selectedClipTrack<(int)clipButtons.size())
         {
             g.setColour(juce::Colour(0xffe7c879));
@@ -1274,12 +1274,12 @@ public:
 
     int inspectorHeight() const noexcept
     {
-        if(midiEditorVisible())return 0;
+        if(midiWorkspaceVisible())return 0;
         return hasSelectedClip()?juce::jmin(184,juce::jmax(125,getHeight()/4)):0;
     }
     juce::Rectangle<int> inspectorArea() const noexcept
     {
-        if(midiEditorVisible())
+        if(midiWorkspaceVisible())
             return {18,72,juce::jmax(0,getWidth()-36),
                     juce::jmax(1,getHeight()-134)};
         const int h=inspectorHeight();
@@ -1307,7 +1307,7 @@ public:
         const int rowsAvailable=juce::jmax(0,
             getHeight()-rowsTop-footerH-inspectorHeight()-22);
         const int rowH=juce::jlimit(9,86,rowsAvailable/sceneCount);
-        const bool showGrid=!midiEditorVisible();
+        const bool showGrid=!midiWorkspaceVisible();
 
         for (int track = 0; track < visibleTracks; ++track)
         {
@@ -1888,7 +1888,7 @@ private:
             generatorVariation.setValue(p.variation,juce::dontSendNotification);
             generatorVelocity.setValue(p.velocity,juce::dontSendNotification);
             generatorPreviewButton.setButtonText(
-                clip->generatorState==1?juce::String("FIN PRÉÉCOUTE"):
+                clip->generatorState==1?juce::String::fromUTF8("FIN PRÉÉCOUTE"):
                 juce::String::fromUTF8("PRÉÉCOUTER"));
             generatorApplyButton.setButtonText(
                 clip->generatorState==2?"ACTIF":"ACTIVER");
@@ -1900,6 +1900,10 @@ private:
             generatorOriginalButton.setEnabled(clip->generatorState!=0);
         }
         updatingGenerator=false;
+        if(midiGeneratorVisible() && clip!=nullptr && clip->generatorState==0)
+            const_cast<SessionMidiData*>(clip)->generatedNotes=
+                LibertyPerformGenerator::render(
+                    clip->notes,clip->lengthTicks,readGeneratorParams());
     }
     bool publishGeneratorLayer()
     {
@@ -2112,6 +2116,10 @@ private:
     juce::Rectangle<int> midiPianoBounds() const
     {
         const auto panel=inspectorArea();
+        if(midiGeneratorVisible())
+            return {panel.getX()+70,panel.getY()+258,
+                    juce::jmax(0,panel.getWidth()-90),
+                    juce::jmax(0,panel.getHeight()-320)};
         return {panel.getX()+70,panel.getY()+132,
                 juce::jmax(0,panel.getWidth()-90),
                 juce::jmax(0,panel.getHeight()-190)};
@@ -2216,26 +2224,33 @@ private:
                 if(tick>=clip->lengthTicks)break;
             }
         }
-        for(int i=0;i<(int)clip->notes.size();++i)
+        const auto& visibleNotes=midiGeneratorVisible()?
+            clip->generatedNotes:clip->notes;
+        for(int i=0;i<(int)visibleNotes.size();++i)
         {
-            const auto& note=clip->notes[(size_t)i];
+            const auto& note=visibleNotes[(size_t)i];
             const auto bounds=midiNoteBounds(note);
             if(bounds.isEmpty())continue;
-            g.setColour(i==selectedMidiNote?juce::Colour(0xfff4c96d):
-                        note.muted?juce::Colour(0xff58636f):juce::Colour(0xff45c5c1));
+            g.setColour(midiEditorVisible() && i==selectedMidiNote?
+                        juce::Colour(0xfff4c96d):
+                        note.muted?juce::Colour(0xff58636f):
+                        midiGeneratorVisible()?juce::Colour(0xff67bce5):
+                        juce::Colour(0xff45c5c1));
             g.fillRoundedRectangle(bounds.toFloat(),2.f);
         }
         g.setColour(juce::Colour(0xff7d91a2));
         g.drawRect(area);
         g.drawRect(velArea);
-        for(int i=0;i<(int)clip->notes.size();++i)
+        for(int i=0;i<(int)visibleNotes.size();++i)
         {
-            const auto& note=clip->notes[(size_t)i];
+            const auto& note=visibleNotes[(size_t)i];
             const auto x=area.getX()+(int)std::llround(
                 (double)note.startTick*area.getWidth()/
                 (double)juce::jmax<std::int64_t>(1,clip->lengthTicks));
             const int barHeight=juce::jmax(1,(int)note.velocity*38/127);
-            g.setColour(i==selectedMidiNote?juce::Colour(0xfff4c96d):
+            g.setColour(midiEditorVisible() && i==selectedMidiNote?
+                         juce::Colour(0xfff4c96d):
+                         midiGeneratorVisible()?juce::Colour(0xff67bce5):
                          juce::Colour(0xff45c5c1));
             g.fillRect(x,velArea.getBottom()-barHeight-2,4,barHeight);
         }
