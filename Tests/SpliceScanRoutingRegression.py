@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Guard the Splice button against triggering a full AU/VST3 scan."""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+BROWSER = (ROOT / "Source/BrowserController.cpp").read_text(encoding="utf-8")
+SPLICE = (ROOT / "Source/SpliceBrowserController.cpp").read_text(encoding="utf-8")
+
+
+class SpliceRoutingTests(unittest.TestCase):
+    def test_splice_scan_button_opens_local_library(self):
+        self.assertIn(
+            "spliceScanButton.onClick = [this] { requestLibertySpliceSampleScan(&owner); };",
+            BROWSER)
+        self.assertNotIn("spliceScanButton.onClick = [this] { scanPlugins(); };", BROWSER)
+
+    def test_splice_open_does_not_auto_rescan_1800_plugins(self):
+        start = BROWSER.index("void openSpliceSounds()")
+        end = BROWSER.index("\n    void ", start + 5)
+        self.assertNotIn("scanPlugins();", BROWSER[start:end])
+
+    def test_splice_panel_attaches_to_current_french_browser_tabs(self):
+        start = SPLICE.index("juce::Component* findBrowserPanel(")
+        end = SPLICE.index("bool isAudioSample(", start)
+        lookup = SPLICE[start:end]
+        self.assertIn('findDirectButton(parent, "PROJETS")', lookup)
+        self.assertIn('findDirectButton(parent, "SAMPLES")', lookup)
+        self.assertIn('findDirectButton(parent, "SPLICE")', lookup)
+        self.assertIn('findDirectButton(browserPanel, "PROJETS")', SPLICE)
+        self.assertIn('findDirectButton(browserPanel, "SAMPLES")', SPLICE)
+
+    def test_missing_sample_folder_prompts_user_and_displays_path(self):
+        start = SPLICE.index("void requestLocalSampleScan()")
+        end = SPLICE.index("    void paint(", start)
+        request = SPLICE[start:end]
+        self.assertIn("if (!spliceRoot.isDirectory())", request)
+        self.assertIn("chooseSpliceFolder();", request)
+        self.assertIn("startScan();", request)
+        self.assertIn("saveRootFolder();", SPLICE)
+        self.assertIn("spliceRoot.getFullPathName(), juce::dontSendNotification", SPLICE)
+
+    def test_native_french_splice_tab_exposes_folder_choice(self):
+        self.assertIn('spliceChooseFolderButton.setButtonText(', BROWSER)
+        self.assertIn('spliceChooseFolderButton.onClick = [this] { chooseSpliceSampleFolder(); };', BROWSER)
+        self.assertIn('spliceChooseFolderButton.setVisible(spliceMode);', BROWSER)
+        self.assertIn('spliceChooseFolderButton.setBounds(', BROWSER)
+        self.assertIn('SpliceLibraryPath.txt', BROWSER)
+        self.assertIn('requestLibertySpliceSampleScan(&safe->owner);', BROWSER)
+        request = SPLICE[SPLICE.index("void requestLocalSampleScan()"):SPLICE.index("    void paint(", SPLICE.index("void requestLocalSampleScan()"))]
+        self.assertIn("loadRootFolder();", request)
+
+    def test_splice_overlay_never_covers_unselected_tabs(self):
+        self.assertIn("browserPanel->addChildComponent(*splicePanel);", SPLICE)
+        self.assertNotIn("browserPanel->addAndMakeVisible(*splicePanel);", SPLICE)
+        self.assertIn("splicePanel->setVisible(requestedVisible);", SPLICE)
+        self.assertIn("sampleLibraryRequested", SPLICE)
+        self.assertIn("if (!spliceButton->getToggleState())", SPLICE)
+        self.assertIn("sampleLibraryRequested = false;", SPLICE)
+
+    def test_splice_login_is_only_via_sounds(self):
+        self.assertNotIn('loginButton.setButtonText("CONNEXION")', SPLICE)
+        self.assertNotIn("loginButton.onClick", SPLICE)
+        self.assertIn('soundsButton.setButtonText("SONS")', SPLICE)
+        self.assertIn('browser.goToURL("https://splice.com/sounds");', SPLICE)
+
+    def test_splice_local_scan_uses_worker_thread(self):
+        self.assertIn("void requestLibertySpliceSampleScan(MainComponent* owner)", SPLICE)
+        self.assertIn("it->second->requestSampleScan();", SPLICE)
+        self.assertIn("splicePanel->requestLocalSampleScan();", SPLICE)
+        self.assertIn("void requestLocalSampleScan()", SPLICE)
+        self.assertIn("        showLibrary();\n        startScan();", SPLICE)
+        self.assertNotIn("splicePanel->showLibrary();", SPLICE)
+        self.assertNotIn("splicePanel->startScan();", SPLICE)
+        start = SPLICE.index("void startScan()")
+        end = SPLICE.index("\n    juce::TextButton ", start)
+        self.assertIn("scanThread = std::thread(", SPLICE[start:end])
+        self.assertIn("juce::MessageManager::callAsync", SPLICE[start:end])
+
+
+if __name__ == "__main__":
+    unittest.main()

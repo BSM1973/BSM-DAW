@@ -40,4 +40,6 @@ The project is currently establishing its architecture and build system before i
 
 Every milestone must remain buildable and testable. The audio thread is treated as a real-time critical path, with strict separation between the audio engine, project model, plugin layer, and user interface.
 
+<!-- CI restart after GitHub Actions startup failure #419 -->
+
 © BSM / Bijou Studio Music

@@ -3,8 +3,6 @@ name: Liberty Build
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +13,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore CMake build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+          key: liberty-macos-universal-cmake-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: |
+            liberty-macos-universal-cmake-
 
       - name: Configure CMake
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
@@ -29,7 +36,34 @@ jobs:
           test -d "$APP/Contents/MacOS"
           test -f "$APP/Contents/MacOS/Liberty"
 
+      - name: Check Apple release credentials
+        id: release_credentials
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        shell: bash
+        run: |
+          present=0
+          for secret in "$MACOS_CERTIFICATE_P12_BASE64" "$MACOS_CERTIFICATE_PASSWORD" "$MACOS_SIGNING_IDENTITY" "$APPLE_NOTARY_KEY_P8_BASE64" "$APPLE_NOTARY_KEY_ID" "$APPLE_NOTARY_ISSUER_ID"; do
+            if [[ -n "$secret" ]]; then present=$((present+1)); fi
+          done
+          if [[ "$present" -eq 6 ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "Apple release credentials configured; preparing signed notarized DMG."
+          elif [[ "$present" -eq 0 ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Apple credentials absent: producing ad-hoc development DMG only."
+          else
+            echo "::error::Incomplete Apple credentials ($present of 6). Configure all six secrets or none."
+            exit 1
+          fi
+
       - name: Sign application for local macOS execution
+        if: steps.release_credentials.outputs.ready != 'true'
         run: |
           APP="build/BSM_DAW_artefacts/Release/Liberty.app"
           xattr -cr "$APP"
@@ -37,6 +71,15 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
           file "$APP/Contents/MacOS/Liberty"
           lipo -info "$APP/Contents/MacOS/Liberty"
+
+      - name: Sign release application with Apple Developer ID
+        if: steps.release_credentials.outputs.ready == 'true'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          bash Scripts/sign-macos-release.sh "build/BSM_DAW_artefacts/Release/Liberty.app"
 
       - name: Package macOS application
         run: |
@@ -48,15 +91,38 @@ jobs:
             "$APP" \
             "dist/Liberty-macOS.zip"
 
-          hdiutil create \
-            -volname "Liberty" \
-            -srcfolder "$APP" \
-            -ov \
-            -format UDZO \
-            "dist/Liberty-macOS.dmg"
+          # Package Liberty.app plus an Applications shortcut, then mount
+          # the DMG and verify its signature, architecture and contents.
+          bash Scripts/create-macos-dmg.sh "$APP" "dist/Liberty-macOS.dmg"
 
           unzip -l "dist/Liberty-macOS.zip"
           hdiutil imageinfo "dist/Liberty-macOS.dmg"
+
+      - name: Notarize and staple Developer ID DMG with Apple
+        if: steps.release_credentials.outputs.ready == 'true'
+        env:
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          bash Scripts/notarize-macos-dmg.sh "dist/Liberty-macOS.dmg"
+
+      - name: Generate and verify DMG checksum and release status
+        shell: bash
+        env:
+          SIGNED_RELEASE: ${{ steps.release_credentials.outputs.ready }}
+        run: |
+          (
+            cd dist
+            shasum -a 256 Liberty-macOS.dmg > Liberty-macOS.dmg.sha256
+            shasum -a 256 -c Liberty-macOS.dmg.sha256
+            if [[ "$SIGNED_RELEASE" == "true" ]]; then
+              echo "Liberty: Developer ID signed and Apple notarized DMG" > RELEASE-STATUS.txt
+            else
+              echo "Liberty: ad-hoc signed diagnostic DMG, NOT Apple notarized" > RELEASE-STATUS.txt
+            fi
+            echo "GitHub commit: $GITHUB_SHA" >> RELEASE-STATUS.txt
+          )
 
       - name: Upload macOS installers
         uses: actions/upload-artifact@v4
