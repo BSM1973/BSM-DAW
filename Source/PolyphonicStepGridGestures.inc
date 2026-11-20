@@ -1,5 +1,6 @@
 // Phase 3: central pointer/keyboard routing for detached and dock editors.
 // All state mutations happen on JUCE's message thread, never in processBlock().
+#include "PolyphonicStepGridDirectEdit.h"
 namespace
 {
 LibertyPolyGridEditing::Property polyProperty(int tab) noexcept
@@ -252,8 +253,13 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
                 polyGridSelectedLane = row;
                 polyGridSelectedEvent = key.id;
                 polyGesture.originalSelection = editor.selection();
+                polyGesture.parameterTab = polyGridEditorTab;
+                polyGesture.fineParameter = mods.isAltDown();
+                // On the body of a note, decide the gesture from its initial
+                // direction: vertical adjusts the chosen bottom parameter;
+                // horizontal keeps note moving. The 7px right edge resizes.
                 polyGesture.mode = rightEdge - local.x <= 7
-                    ? PolyGridGesture::Mode::Resize : PolyGridGesture::Mode::Move;
+                    ? PolyGridGesture::Mode::Resize : PolyGridGesture::Mode::PendingNote;
                 polyGesture.active = true;
                 editor.begin(grid);
                 repaint();
@@ -309,7 +315,15 @@ bool MainComponent::dragPolyGridPointer(juce::Point<int> p)
     const int stepWidth = juce::jmax(1, l.gridWidth / 16);
     const int deltaStep = (int)std::lround((double)(p.x - gesture.down.x) / stepWidth);
     const int deltaRow = (int)std::lround((double)(p.y - gesture.down.y) / juce::jmax(1, l.rowHeight));
-    switch (gesture.mode)
+    if (gesture.mode == PolyGridGesture::Mode::PendingNote)
+    {
+        const auto intent = LibertyPolyGridDirect::chooseIntent(
+            p.x - gesture.down.x, p.y - gesture.down.y);
+        if (intent == LibertyPolyGridDirect::DragIntent::Pending) return true;
+        polyGesture.mode = intent == LibertyPolyGridDirect::DragIntent::Parameter
+            ? PolyGridGesture::Mode::NoteParameter : PolyGridGesture::Mode::Move;
+    }
+    switch (polyGesture.mode)
     {
         case PolyGridGesture::Mode::Move:
         {
@@ -327,6 +341,22 @@ bool MainComponent::dragPolyGridPointer(juce::Point<int> p)
                 polyGridSelectedLane = editor.selection().front().row;
                 polyGridSelectedEvent = editor.selection().front().id;
             }
+            publishPolyGrid(gesture.midi, gesture.track, *pattern);
+            return true;
+        }
+        case PolyGridGesture::Mode::NoteParameter:
+        {
+            // Relative to mouseDown on every frame: reversing the drag
+            // restores the original value, without accumulating rounding.
+            grid = gesture.original;
+            editor.clearSelection();
+            for (const auto& key : gesture.originalSelection)
+                editor.select(key, true);
+            const int pixelsUp = gesture.down.y - p.y;
+            const int delta = LibertyPolyGridDirect::deltaForVerticalDrag(
+                polyProperty(gesture.parameterTab), pixelsUp,
+                gesture.original.stepTicks, gesture.fineParameter);
+            editor.applyDelta(grid, polyProperty(gesture.parameterTab), delta);
             publishPolyGrid(gesture.midi, gesture.track, *pattern);
             return true;
         }
