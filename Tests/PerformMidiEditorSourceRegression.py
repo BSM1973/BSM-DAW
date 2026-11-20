@@ -30,7 +30,7 @@ for method in (
     "midiPianoBounds() const",
     "midiVelocityBounds() const",
     "inspectorArea() const noexcept",
-    "const bool showGrid=!midiEditorVisible();",
+    "const bool showGrid=!midiWorkspaceVisible();",
     "clipButtons[(size_t)track][(size_t)scene].setVisible(showGrid);",
     "sceneButtons[(size_t)scene].setVisible(showGrid);",
     "midiHumanizeButton.onClick=[this]{humanizeMidiNotes();};",
