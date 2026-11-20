@@ -809,6 +809,7 @@ public:
                 dragTrack=dragScene=-1;return;
             }
             performAudioFiles[(size_t)dragTrack][(size_t)dragScene]=chosen;
+            clipMetadata[(size_t)dragTrack][(size_t)dragScene]={};
         }
         else
         {
@@ -824,7 +825,10 @@ public:
             }
         }
         ++sessionRevision;
-        dragTrack=dragScene=-1;refreshClipLabels();repaint();
+        const int loadedTrack=dragTrack,loadedScene=dragScene;
+        dragTrack=dragScene=-1;
+        selectClip(loadedTrack,loadedScene);
+        refreshClipLabels();repaint();
     }
 
     void paint(juce::Graphics& g) override
@@ -1154,6 +1158,7 @@ private:
             || scene<0 || scene>=sceneCount || !data.valid)return false;
         if(!player.prepareMidiClip(track,scene,data.notes,data.lengthTicks))return false;
         performMidiClips[(size_t)track][(size_t)scene]=data;
+        clipMetadata[(size_t)track][(size_t)scene]={};
         return true;
     }
     bool createMidiFromTrack(int track,int scene) {
@@ -1355,6 +1360,9 @@ private:
     }
     juce::String slotName(int track,int scene) const {
         if(!slotHasClip(track,scene))return track<audioTrackCount()?"VIDE":"+ MIDI";
+        if(track>=0 && track<(int)clipMetadata.size() &&
+           clipMetadata[(size_t)track][(size_t)scene].name.isNotEmpty())
+            return clipMetadata[(size_t)track][(size_t)scene].name.substring(0,24);
         if(track>=audioTrackCount()) {
             const auto& clip=performMidiClips[(size_t)track][(size_t)scene];
             return clip.source.existsAsFile()?clip.source.getFileNameWithoutExtension():"CLIP MIDI";
@@ -1374,6 +1382,8 @@ private:
             {
                 auto& button=clipButtons[(size_t)track][(size_t)scene];
                 const bool valid=slotHasClip(track,scene);
+                const int colourId=clipMetadata[(size_t)track][(size_t)scene].colourId;
+                const auto clipColour=colourId<0?colour:trackColour(colourId);
                 const bool active=player.isTrackPlaying(track,scene);
                 const bool queued=player.isTrackQueued(track,scene);
                 const bool target=dragTrack==track && dragScene==scene;
@@ -1382,8 +1392,8 @@ private:
                 button.setEnabled(true);
                 button.setColour(juce::TextButton::buttonColourId,
                     target?juce::Colour(0xff245b70):
-                    active?colour.brighter(0.25f):
-                    valid?colour.withAlpha(0.70f):juce::Colour(0xff181d22));
+                    active?clipColour.brighter(0.25f):
+                    valid?clipColour.withAlpha(0.70f):juce::Colour(0xff181d22));
                 button.setColour(juce::TextButton::textColourOffId,
                     valid||target?juce::Colours::white:juce::Colour(0xff9ba6af));
                 if(track>=firstMidiTrack())
@@ -1423,7 +1433,13 @@ private:
         if(track<0 || track>=trackCount() || scene<0 || scene>=sceneCount)return;
         if(!slotHasClip(track,scene) && (track<audioTrackCount() ||
             !createMidiFromTrack(track,scene)))return;
-        player.queueScene(track,scene,launchQuantization(),
+        selectClip(track,scene);
+        const auto& p=clipMetadata[(size_t)track][(size_t)scene].settings;
+        const int action=LibertyPerformClip::launchedScene(
+            player.isTrackPlaying(track,scene)?scene:-1,scene,p.launchMode);
+        const int quantize=LibertyPerformClip::launchQuantization(
+            launchQuantization(),p.quantization);
+        player.queueScene(track,action,quantize,
             owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
             owner.getTimeSignatureDenominator());
         refreshClipLabels();
