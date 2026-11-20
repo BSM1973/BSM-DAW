@@ -2330,7 +2330,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     // arrangement transport is stopped. This is not yet track routing.
     if (auto sampler = std::atomic_load(&drumSampler))
     {
-        if (!playing.load(std::memory_order_relaxed) || drumSamplerTrack.load(std::memory_order_acquire) < 0)
+        if ((!playing.load(std::memory_order_relaxed) ||
+             drumSamplerTrack.load(std::memory_order_acquire) < 0) &&
+            // The independent preview below renders its MIDI target itself.
+            !(stepPreviewTrack.load(std::memory_order_acquire) >= 0 &&
+              stepPreviewTrack.load(std::memory_order_acquire) ==
+                  drumSamplerTrack.load(std::memory_order_acquire)))
         {
         sampler->processAuditions();
         if (numOutputChannels > 0 && numSamples > 0)
@@ -2361,8 +2366,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
     }
 
-    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0
-        && monitoredInstrumentTrack.load(std::memory_order_acquire) < 0)
+    if (!playing.load() && stepPreviewTrack.load(std::memory_order_acquire) >= 0)
     {
         // Audition only the selected instrument, leaving arrangement time untouched.
         const auto previewTrack = stepPreviewTrack.load(std::memory_order_acquire);
@@ -2382,7 +2386,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     midi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
                     midi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
                 }
-            if (snapshot != nullptr && cycle > 0.0 && host.hasInstrumentForTrack(previewTrack))
+            const auto nativeDrums = previewTrack == drumSamplerTrack.load(std::memory_order_acquire)
+                ? std::atomic_load(&drumSampler) : std::shared_ptr<LibertyDrumSampler>{};
+            if (snapshot != nullptr && cycle > 0.0 &&
+                (host.hasInstrumentForTrack(previewTrack) || nativeDrums != nullptr))
             {
                 const double blockStart = (double) position / rate;
                 const double blockEnd = (double) (position + numSamples) / rate;
@@ -2420,10 +2427,32 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     }
                 }
                 juce::AudioBuffer<float> bus;
-                if (host.renderInstrumentForTrack(previewTrack, bus, numSamples, midi,
-                                                  state.gain.load(std::memory_order_relaxed),
-                                                  state.pan.load(std::memory_order_relaxed)))
+                bool rendered = false;
+                if (nativeDrums != nullptr)
                 {
+                    bus.setSize(2, numSamples, false, true, true);
+                    bus.clear();
+                    if (panic) nativeDrums->reset();
+                    nativeDrums->processAuditions();
+                    nativeDrums->renderMidi(bus, midi);
+                    const float gain = state.gain.load(std::memory_order_relaxed);
+                    const float pan = state.pan.load(std::memory_order_relaxed);
+                    bus.applyGain(0, 0, numSamples, gain * juce::jmin(1.0f, 1.0f - pan));
+                    bus.applyGain(1, 0, numSamples, gain * juce::jmin(1.0f, 1.0f + pan));
+                    rendered = true;
+                }
+                else
+                    rendered = host.renderInstrumentForTrack(previewTrack, bus, numSamples, midi,
+                        state.gain.load(std::memory_order_relaxed),
+                        state.pan.load(std::memory_order_relaxed));
+                if (rendered)
+                {
+                    // Keep the same effects chain as arrangement instruments.
+                    for (int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
+                    {
+                        host.processInstrumentEffectSlot(previewTrack, slot, bus);
+                        oneKnob.process(100000 + previewTrack*8 + slot, bus);
+                    }
                     meterBus(state.meterPeak,state.meterPeakRight,
                              state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
                     if(!routeToBus(state.mixerBusRoute.load(),bus)&&!anyBusSolo)
