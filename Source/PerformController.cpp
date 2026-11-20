@@ -760,13 +760,14 @@ public:
         {
             player.stopAll();
             followNextAt=0;
+            activeFollowScene=-1;
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             refreshClipLabels();
             repaint();
         };
         addAndMakeVisible(stopAllButton);
 
-        recordArrangeButton.setButtonText("RECORD TO ARRANGE");
+        recordArrangeButton.setButtonText("CAPTURER VERS ARRANGEMENT");
         recordArrangeButton.setMouseClickGrabsKeyboardFocus(false);
         recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff31404d));
         recordArrangeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -831,6 +832,7 @@ public:
             cancelTemporaryGeneratorPreview();
             player.stopAll();
             followNextAt=0;
+            activeFollowScene=-1;
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             // Recording is finalized before disabling the session clock.
         }
@@ -866,6 +868,7 @@ public:
         for(auto& value:followActions)value={};
         for(auto& binding:midiBindings)binding={};
         followNextAt=0;
+        activeFollowScene=-1;
         selectedFollowScene=0;
         for(int i=0;i<4;++i)
             liveMacroSliders[(size_t)i].setValue(i==3?150:100,
@@ -1628,7 +1631,7 @@ public:
                 getWidth()-sceneLaunchW-18,y+2,sceneLaunchW,juce::jmax(1,rowH-4));
             sceneButtons[(size_t)scene].setVisible(showGrid);
         }
-        recordArrangeButton.setBounds(18, getHeight() - 44, 170, 30);
+        recordArrangeButton.setBounds(18, getHeight() - 44, 200, 30);
         stopAllButton.setBounds(getWidth() - 140, getHeight() - 44, 122, 30);
 
         const bool showLive=livePanelHeight()>0;
@@ -2754,6 +2757,7 @@ private:
     {
         if(scene<0 || scene>=sceneCount)return;
         selectedFollowScene=scene;
+        activeFollowScene=scene;
         updateFollowControls();
         const auto at=player.nextQuantizedSample(launchQuantization(),
             owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
@@ -2884,27 +2888,35 @@ private:
         if(updatingFollow)return;
         followActions[(size_t)selectedFollowScene]=LibertyPerformLive::validFollow(
             {followActionSelector.getSelectedId()-1,followBarsSelector.getSelectedId()});
-        // If current scene is already playing, arm a fresh Follow Action
-        // without jumping immediately at the next timer callback.
-        const auto rule=followActions[(size_t)selectedFollowScene];
-        followNextAt=rule.action==0?0:
-            LibertyPerformLive::nextFollowSample(player.getSessionSamples(),
-                rule,owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
-                owner.getTimeSignatureDenominator(),
-                juce::jmax(1.0,owner.audioEngine.getSampleRate()));
+        // Editing an inactive scene must not interrupt the running follow.
+        if(selectedFollowScene==activeFollowScene)
+        {
+            const auto rule=followActions[(size_t)selectedFollowScene];
+            followNextAt=rule.action==0?0:
+                LibertyPerformLive::nextFollowSample(player.getSessionSamples(),
+                    rule,owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
+                    owner.getTimeSignatureDenominator(),
+                    juce::jmax(1.0,owner.audioEngine.getSampleRate()));
+        }
         ++sessionRevision;
     }
     void pollFollowActions()
     {
         if(followNextAt<=0 || player.getSessionSamples()<followNextAt)return;
-        const auto rule=followActions[(size_t)selectedFollowScene];
+        if(activeFollowScene<0 || activeFollowScene>=sceneCount)
+        {
+            followNextAt=0;
+            return;
+        }
+        const auto rule=followActions[(size_t)activeFollowScene];
         followNextAt=0;
         if(rule.action==0)return;
         const int next=LibertyPerformLive::followScene(
-            selectedFollowScene,rule.action,followRandomSeed);
+            activeFollowScene,rule.action,followRandomSeed);
         if(next<0)
         {
             player.stopAll();
+            activeFollowScene=-1;
             refreshClipLabels();
         }
         else launchScene(next);
@@ -2971,6 +2983,7 @@ private:
                 {
                     player.stopAll();
                     followNextAt=0;
+                    activeFollowScene=-1;
                     refreshClipLabels();
                 }
                 else launchScene(target);
@@ -3087,7 +3100,7 @@ private:
                 return;
             }
             captureTempoBpm=owner.getTempoBpm();
-            recordArrangeButton.setButtonText("STOP RECORDING");
+            recordArrangeButton.setButtonText(juce::String::fromUTF8("ARRÊTER CAPTURE"));
             recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff9b4545));
         }
         else
@@ -3106,20 +3119,21 @@ private:
         // match, before adding an audio arrangement track.
         const int midiTracksImported=importCapturedMidiIntoArrangement(
             events,takeSamples,takeRate,captureTempoBpm);
-        recordArrangeButton.setButtonText("RECORD TO ARRANGE");
+        recordArrangeButton.setButtonText("CAPTURER VERS ARRANGEMENT");
         recordArrangeButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff31404d));
         if (!capture.existsAsFile()) return;
 
-        int targetTrack = -1;
-        for (int i = 0; i < owner.getAudioTrackCount(); ++i)
-            if (!owner.audioEngine.hasAudioFile(i)) { targetTrack = i; break; }
-
-        if (targetTrack < 0)
+        // A capture creates a new, dedicated arrangement lane.
+        const int targetTrack=owner.addAudioTrack();
+        if(targetTrack<0)
         {
-            targetTrack = owner.addAudioTrack();
-            player.syncTrackCount();
-            syncTrackContainers();
+            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                "Liberty - PERFORMANCE",
+                juce::String::fromUTF8("Impossible de créer la piste audio de capture."),"OK");
+            return;
         }
+        player.syncTrackCount();
+        syncTrackContainers();
 
         juce::String error;
         if (!owner.audioEngine.loadAudioFileIntoTrack(targetTrack, capture, error))
@@ -3170,7 +3184,7 @@ private:
     bool updatingFollow=false,midiLearnArmed=false,updatingMacros=false;
     std::int64_t followNextAt=0;
     std::uint32_t followRandomSeed=0x8f31c05u,lastMidiSerial=0;
-    int selectedFollowScene=0;
+    int selectedFollowScene=0,activeFollowScene=-1;
     double captureTempoBpm=120.0;
     std::vector<juce::Rectangle<int>> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
