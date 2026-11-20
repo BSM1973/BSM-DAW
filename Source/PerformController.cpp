@@ -694,6 +694,18 @@ public:
                 auto* clip=session->createNewChildElement("Clip");
                 clip->setAttribute("track",track);
                 clip->setAttribute("scene",scene);
+                const auto& data=clipMetadata[(size_t)track][(size_t)scene];
+                const auto& params=data.settings;
+                clip->setAttribute("name",data.name);
+                clip->setAttribute("colourId",data.colourId);
+                clip->setAttribute("clipLoop",params.loop);
+                clip->setAttribute("clipGainDb",(double)params.gainDb);
+                clip->setAttribute("transpose",params.transpose);
+                clip->setAttribute("inFraction",(double)params.inFraction);
+                clip->setAttribute("outFraction",(double)params.outFraction);
+                clip->setAttribute("clipQuantize",params.quantization);
+                clip->setAttribute("launchMode",params.launchMode);
+                clip->setAttribute("midiBars",params.midiBars);
                 if(track<audioTrackCount())
                 {
                     clip->setAttribute("kind","audio");
@@ -768,6 +780,23 @@ public:
                 }
                 assignMidiClip(track,scene,data);
             }
+            if(!slotHasClip(track,scene))continue;
+            ClipMetadata metadata;
+            metadata.name=clip->getStringAttribute("name").substring(0,80);
+            metadata.colourId=juce::jlimit(-1,8,clip->getIntAttribute("colourId",-1));
+            auto& params=metadata.settings;
+            params.loop=clip->getBoolAttribute("clipLoop",true);
+            params.gainDb=(float)clip->getDoubleAttribute("clipGainDb",0.0);
+            params.transpose=clip->getIntAttribute("transpose",0);
+            params.inFraction=(float)clip->getDoubleAttribute("inFraction",0.0);
+            params.outFraction=(float)clip->getDoubleAttribute("outFraction",1.0);
+            params.quantization=clip->getIntAttribute("clipQuantize",-1);
+            params.launchMode=clip->getIntAttribute("launchMode",0);
+            params.midiBars=clip->getIntAttribute("midiBars",0);
+            metadata.settings=LibertyPerformClip::validated(params);
+            clipMetadata[(size_t)track][(size_t)scene]=metadata;
+            player.updateClipSettings(track,scene,metadata.settings,
+                owner.getTimeSignatureNumerator(),owner.getTimeSignatureDenominator());
         }
         ++sessionRevision;
         refreshClipLabels();
