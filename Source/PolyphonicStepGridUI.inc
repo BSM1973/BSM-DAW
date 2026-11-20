@@ -3,6 +3,8 @@
 // cannot drift apart when the dock or floating window changes size.
 #include "PolyphonicStepGridLayout.h"
 #include "PolyphonicStepGridDirectEdit.h"
+#include "PolyphonicStepGridPages.h"
+#include "PolyphonicStepGridFrench.h"
 
 namespace
 {
@@ -40,7 +42,18 @@ void polyText(juce::Graphics& g, const juce::String& text,
 {
     if (r.getWidth() < 1 || r.getHeight() < 1) return;
     g.setColour(colour);
-    g.setFont(juce::Font(size, bold ? juce::Font::bold : juce::Font::plain));
+    // Use a real Unicode-capable system typeface; the default legacy font
+    // occasionally displayed symbols instead of accented French glyphs.
+   #if JUCE_MAC
+    g.setFont(juce::Font("Helvetica Neue", size,
+                         bold ? juce::Font::bold : juce::Font::plain));
+   #elif JUCE_WINDOWS
+    g.setFont(juce::Font("Segoe UI", size,
+                         bold ? juce::Font::bold : juce::Font::plain));
+   #else
+    g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), size,
+                         bold ? juce::Font::bold : juce::Font::plain));
+   #endif
     g.drawFittedText(text, r.reduced(1, 0), justification, 1, 0.70f);
 }
 void polyChip(juce::Graphics& g, const LibertyPolyGridUI::Rect& rect,
@@ -66,7 +79,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     g.fillAll(juce::Colour(0xff0d1926));
     if (!l.valid)
     {
-        polyText(g, juce::String::fromUTF8("Ouvrez le Step Sequencer en fenêtre détachée"),
+        polyText(g, LibertyPolyGridFrench::detachedHint(),
                  {10, 10, area.getWidth() - 20, area.getHeight() - 20}, 12.0f,
                  juce::Colour(dim));
         return;
@@ -82,6 +95,11 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         foundEditor != polyGridEditors.end() ? &foundEditor->second : nullptr;
     const int panelX = l.clipPanel.x;
     const auto panelR = polyRect(l.clipPanel);
+    const bool auditioning = audioEngine.isStepPreviewPlaying()
+        && polyPreviewLogicalTrack == logical;
+    polyChip(g, l.previewButton,
+             auditioning ? LibertyPolyGridFrench::stop() : "LECTURE",
+             auditioning, l.compact ? 9.6f : 12.0f);
     g.setColour(juce::Colour(0xff172636));
     g.fillRoundedRectangle(panelR.toFloat(), 5.0f);
     g.setColour(juce::Colour(0xff34546b));
@@ -97,9 +115,11 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         polyText(g, "BOUCLE : OUI", {panelX+6, statsY, l.clipPanel.w-12, 18},
                  11.0f, juce::Colour(dim), juce::Justification::centredLeft);
     if (!l.compact)
-        polyText(g, "PAGE " + juce::String(stepSequencerPage+1) + " / 4",
+        polyText(g, "PAGE " + juce::String(stepSequencerPage + 1)
+                  + " / 4   (" + juce::String(l.firstStep + 1)
+                  + "-" + juce::String(l.firstStep + 16) + ")",
                  {panelX+6, statsY+21, l.clipPanel.w-12, 18},
-                 11.0f, juce::Colour(white), juce::Justification::centredLeft);
+                 10.5f, juce::Colour(white), juce::Justification::centredLeft);
     int count = 0;
     for (const auto& row : grid.lanes) count += (int)row.events.size();
     if (!l.compact)
@@ -116,17 +136,20 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
              l.compact ? 8.0f : 9.5f);
     polyChip(g, l.pianoImport, l.compact ? "DEPUIS" : "DEPUIS PIANO", false,
              l.compact ? 8.0f : 9.5f);
+    const bool extendsPage = LibertyPolyGridPages::willExtend(grid, stepSequencerPage);
     polyChip(g, l.classicMode,
-             l.compact ? "PAGE " + juce::String(stepSequencerPage+1) + " / 4"
-                       : juce::String("PAGE SUIV."),
-             false, l.compact ? 8.3f : 10.0f);
-    polyChip(g, l.createClip, hasNotes ? "CRÉER CLIP" : "CLIP VIDE",
-             hasNotes, l.compact ? 8.3f : 10.0f);
+             extendsPage ? (l.compact ? juce::String("+16 PAS")
+                                      : juce::String("AJOUTER 16 PAS"))
+                         : (l.compact ? "PAGE " + juce::String(stepSequencerPage+1) + " >"
+                                      : juce::String("PAGE SUIVANTE")),
+             extendsPage, l.compact ? 8.2f : 9.5f);
+    polyChip(g, l.createClip, hasNotes ? LibertyPolyGridFrench::insert() : "CLIP VIDE",
+             hasNotes, l.compact ? 8.1f : 9.6f);
 
     // Undo/Redo controls occupy the top of the parameter panel, not the grid.
     polyChip(g, l.undoButton, "ANNULER", editor && editor->canUndo(),
              l.compact ? 8.2f : 10.0f);
-    polyChip(g, l.redoButton, "RÉTABLIR", editor && editor->canRedo(),
+    polyChip(g, l.redoButton, LibertyPolyGridFrench::redo(), editor && editor->canRedo(),
              l.compact ? 8.2f : 10.0f);
 
     // Eight retained pattern banks, shared with the legacy Step Sequencer.
@@ -245,10 +268,14 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
             }
         }
     }
-    const char* editors[6] = { "VÉLOCITÉ", "DÉCALAGE", "DURÉE",
-                                "RÉPÉTITION", "HAUTEUR", "CHANCE" };
+    // VÉLOCITÉ / DÉCALAGE / DURÉE / RÉPÉTITION:
+    // Unicode codepoints guarantee legible French, independent of source charset.
+    const juce::String editors[6] = {
+        LibertyPolyGridFrench::velocity(), LibertyPolyGridFrench::offset(),
+        LibertyPolyGridFrench::duration(), LibertyPolyGridFrench::repeat(),
+        "HAUTEUR", "CHANCE" };
     for (int i = 0; i < 6; ++i)
-        polyChip(g, l.editorTabs[(size_t)i], juce::String::fromUTF8(editors[i]),
+        polyChip(g, l.editorTabs[(size_t)i], editors[i],
                  polyGridEditorTab == i, l.compact ? 8.0f : 10.0f);
     // All six editors are live. +/- applies relative changes to every selected
     // note, while horizontal dragging continues the same Undo transaction.
@@ -260,7 +287,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
         if (!editor->selection().empty())
             selected = LibertyPolyGridEditing::find(grid, editor->selection().front());
     }
-    juce::String detail = juce::String::fromUTF8("SÉLECTIONNER UNE NOTE, PUIS GLISSER HAUT / BAS");
+    juce::String detail = LibertyPolyGridFrench::selectNote();
     if (selected)
     {
         switch (polyGridEditorTab)
