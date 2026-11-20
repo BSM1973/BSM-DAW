@@ -736,7 +736,7 @@ public:
         for (int scene = 0; scene < sceneCount; ++scene)
         {
             auto& launch = sceneButtons[(size_t)scene];
-            launch.setButtonText("SCENE " + juce::String(scene + 1));
+            launch.setButtonText(juce::String::fromUTF8("SCÈNE ") + juce::String(scene + 1));
             launch.setMouseClickGrabsKeyboardFocus(false);
             launch.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff27313a));
             launch.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
@@ -751,6 +751,7 @@ public:
         stopAllButton.onClick = [this]
         {
             player.stopAll();
+            followNextAt=0;
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             refreshClipLabels();
             repaint();
@@ -780,6 +781,7 @@ public:
             ++sessionRevision;
         };
         addAndMakeVisible(loopButton);
+        initialiseLiveControls();
         initialiseInspector();
         std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
         setVisible(false);
@@ -819,6 +821,7 @@ public:
         {
             cancelTemporaryGeneratorPreview();
             player.stopAll();
+            followNextAt=0;
             std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
             if (player.isCapturing()) finishCaptureToArrange();
         }
@@ -851,6 +854,16 @@ public:
         loopButton.setToggleState(true,juce::dontSendNotification);
         loopButton.setButtonText("BOUCLE : ON");
         player.setLoopEnabled(true);
+        for(auto& value:followActions)value={};
+        for(auto& binding:midiBindings)binding={};
+        followNextAt=0;
+        selectedFollowScene=0;
+        for(int i=0;i<4;++i)
+            liveMacroSliders[(size_t)i].setValue(i==3?150:100,
+                                                juce::dontSendNotification);
+        applyLiveMacros();
+        updateFollowControls();
+        updateMidiLearnLabel();
         ++sessionRevision;
         refreshClipLabels();
     }
@@ -860,6 +873,27 @@ public:
         auto* session=project.createNewChildElement("PerformanceSession");
         session->setAttribute("quantization",quantizeSelector.getSelectedId());
         session->setAttribute("loop",loopButton.getToggleState());
+        auto* live=session->createNewChildElement("LivePro");
+        live->setAttribute("followScene",selectedFollowScene);
+        for(int i=0;i<LibertyPerformLive::scenes;++i)
+        {
+            auto* rule=live->createNewChildElement("Follow");
+            rule->setAttribute("scene",i);
+            rule->setAttribute("action",followActions[(size_t)i].action);
+            rule->setAttribute("bars",followActions[(size_t)i].afterBars);
+        }
+        for(int i=0;i<LibertyPerformLive::targets;++i)
+        {
+            auto* binding=live->createNewChildElement("Binding");
+            binding->setAttribute("target",i);
+            const auto& value=midiBindings[(size_t)i];
+            binding->setAttribute("kind",value.kind);
+            binding->setAttribute("channel",value.channel);
+            binding->setAttribute("number",value.number);
+        }
+        for(int i=0;i<4;++i)
+            live->setAttribute("macro"+juce::String(i+1),
+                               (int)liveMacroSliders[(size_t)i].getValue());
         for(int track=0;track<trackCount();++track)
             for(int scene=0;scene<sceneCount;++scene)
             {
@@ -931,6 +965,39 @@ public:
         loopButton.setToggleState(repeat,juce::dontSendNotification);
         loopButton.setButtonText(repeat?"BOUCLE : ON":"BOUCLE : OFF");
         player.setLoopEnabled(repeat);
+        if(const auto* live=session->getChildByName("LivePro"))
+        {
+            selectedFollowScene=juce::jlimit(0,7,live->getIntAttribute("followScene",0));
+            for(const auto* value:live->getChildIterator())
+            {
+                if(value->hasTagName("Follow"))
+                {
+                    const int index=value->getIntAttribute("scene",-1);
+                    if(index>=0&&index<LibertyPerformLive::scenes)
+                        followActions[(size_t)index]=LibertyPerformLive::validFollow(
+                            {value->getIntAttribute("action",0),
+                             value->getIntAttribute("bars",4)});
+                }
+                if(value->hasTagName("Binding"))
+                {
+                    const int index=value->getIntAttribute("target",-1);
+                    if(index>=0&&index<LibertyPerformLive::targets)
+                        midiBindings[(size_t)index]=LibertyPerformLive::validBinding(
+                            {value->getIntAttribute("channel",0),
+                             value->getIntAttribute("kind",0),
+                             value->getIntAttribute("number",-1)});
+                }
+            }
+            for(int i=0;i<4;++i)
+                liveMacroSliders[(size_t)i].setValue(
+                    juce::jlimit(0,i==3?1000:200,
+                        live->getIntAttribute("macro"+juce::String(i+1),
+                                               i==3?150:100)),
+                    juce::dontSendNotification);
+            applyLiveMacros();
+            updateFollowControls();
+            updateMidiLearnLabel();
+        }
         for(const auto* clip:session->getChildIterator())
         {
             if(!clip->hasTagName("Clip"))continue;
@@ -2622,10 +2689,20 @@ private:
     void launchScene(int scene)
     {
         if(scene<0 || scene>=sceneCount)return;
+        selectedFollowScene=scene;
+        updateFollowControls();
+        const auto at=player.nextQuantizedSample(launchQuantization(),
+            owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
+            owner.getTimeSignatureDenominator());
         for(int track=0;track<trackCount();++track)
-            player.queueScene(track,slotHasClip(track,scene)?scene:-1,launchQuantization(),
-                owner.getTempoBpm(),owner.getTimeSignatureNumerator(),
-                owner.getTimeSignatureDenominator());
+            player.queueScene(track,slotHasClip(track,scene)?scene:-1,
+                launchQuantization(),owner.getTempoBpm(),
+                owner.getTimeSignatureNumerator(),owner.getTimeSignatureDenominator());
+        const auto rule=LibertyPerformLive::validFollow(followActions[(size_t)scene]);
+        followNextAt=rule.action==0?0:
+            LibertyPerformLive::nextFollowSample(at,rule,owner.getTempoBpm(),
+                owner.getTimeSignatureNumerator(),owner.getTimeSignatureDenominator(),
+                juce::jmax(1.0,owner.audioEngine.getSampleRate()));
         refreshClipLabels();
     }
 
@@ -2687,6 +2764,8 @@ private:
         const auto wanted = juce::Rectangle<int>(0, transportHeight, owner.getWidth(), juce::jmax(1, owner.getHeight() - transportHeight));
         if (getBounds() != wanted) setBounds(wanted);
         player.setTempoBpm(owner.getTempoBpm());
+        pollLiveMidiLearn();
+        pollFollowActions();
         // Keep z-order stable while PERFORM is running. Repeated toFront()
         // competes with the Browser's always-on-top layer and causes flicker.
         refreshClipLabels();
@@ -2699,6 +2778,17 @@ private:
     std::array<juce::TextButton, sceneCount> sceneButtons;
     std::deque<juce::TextButton> stopTrackButtons;
     juce::TextButton stopAllButton, recordArrangeButton;
+    std::array<LibertyPerformLive::Follow,LibertyPerformLive::scenes> followActions {};
+    std::array<LibertyPerformLive::Binding,LibertyPerformLive::targets> midiBindings {};
+    std::array<bool,LibertyPerformLive::targets> midiCcGates {};
+    std::array<juce::Slider,4> liveMacroSliders;
+    juce::ComboBox followSceneSelector,followActionSelector,followBarsSelector,
+                   midiLearnTargetSelector;
+    juce::TextButton midiLearnButton,midiForgetButton;
+    bool updatingFollow=false,midiLearnArmed=false,updatingMacros=false;
+    std::int64_t followNextAt=0;
+    std::uint32_t followRandomSeed=0x8f31c05u,lastMidiSerial=0;
+    int selectedFollowScene=0;
     std::vector<juce::Rectangle<int>> trackHeaders;
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::vector<int> activeTrackScene;
