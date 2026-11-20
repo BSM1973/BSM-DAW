@@ -70,6 +70,10 @@ public:
     // Select a physical MIDI input independently of the audio output device.
     void selectMidiInput(const juce::String& identifier);
     juce::String getSelectedMidiInput() const { return selectedMidiInput; }
+    // Lock-free snapshot of the last physical CC or note-on for PERFORMANCE
+    // MIDI Learn. The serial number distinguishes repeated identical messages.
+    std::uint64_t getPerformMidiLearnEvent() const noexcept
+    {return performMidiLearnEvent.load(std::memory_order_acquire);}
     void setInstrumentMidiInput(int track, const juce::String& identifier);
     juce::String getInstrumentMidiInput(int track) const;
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
@@ -554,6 +558,8 @@ private:
     };
 
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage& message) override;
+    std::atomic<std::uint64_t> performMidiLearnEvent { 0 };
+    std::atomic<std::uint32_t> performMidiLearnSerial { 0 };
     juce::MidiMessageCollector liveMidiCollector;
     // Piano-roll keyboard audition is independent of external MIDI monitoring.
     juce::MidiMessageCollector pianoPreviewCollector;
