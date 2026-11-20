@@ -1449,6 +1449,268 @@ private:
         repaint();
     }
 
+    bool midiEditorVisible() const
+    {
+        return hasSelectedClip() && selectedClipTrack>=audioTrackCount() &&
+               inspectorTab==2;
+    }
+    SessionMidiData* selectedMidiData()
+    {
+        if(!hasSelectedClip() || selectedClipTrack<audioTrackCount() ||
+           selectedClipTrack>=(int)performMidiClips.size())return nullptr;
+        return &performMidiClips[(size_t)selectedClipTrack][(size_t)selectedClipScene];
+    }
+    const SessionMidiData* selectedMidiData() const
+    {
+        if(!hasSelectedClip() || selectedClipTrack<audioTrackCount() ||
+           selectedClipTrack>=(int)performMidiClips.size())return nullptr;
+        return &performMidiClips[(size_t)selectedClipTrack][(size_t)selectedClipScene];
+    }
+    void refreshMidiNoteControls()
+    {
+        const auto* clip=selectedMidiData();
+        const bool noteSelected=clip!=nullptr && selectedMidiNote>=0 &&
+                                selectedMidiNote<(int)clip->notes.size();
+        updatingMidiSliders=true;
+        midiPitchSlider.setEnabled(noteSelected);
+        midiVelocitySlider.setEnabled(noteSelected);
+        midiLengthSlider.setEnabled(noteSelected);
+        midiDeleteButton.setEnabled(noteSelected);
+        midiHumanizeButton.setEnabled(clip!=nullptr && !clip->notes.empty());
+        midiUndoButton.setEnabled(clip!=nullptr && !clip->history.undo.empty());
+        midiRedoButton.setEnabled(clip!=nullptr && !clip->history.redo.empty());
+        midiAddButton.setEnabled(clip!=nullptr && clip->notes.size()<8192);
+        if(noteSelected)
+        {
+            const auto& note=clip->notes[(size_t)selectedMidiNote];
+            midiPitchSlider.setValue((double)note.pitch,juce::dontSendNotification);
+            midiVelocitySlider.setValue((double)note.velocity,juce::dontSendNotification);
+            midiLengthSlider.setValue((double)note.lengthTicks,juce::dontSendNotification);
+            const int pitch=(int)note.pitch;
+            if(pitch<pianoBasePitch)pianoBasePitch=juce::jlimit(0,92,pitch);
+            if(pitch>pianoBasePitch+35)pianoBasePitch=juce::jlimit(0,92,pitch-35);
+        }
+        updatingMidiSliders=false;
+    }
+
+    bool publishMidiNotes()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || !clip->valid)return false;
+        if(!player.replaceMidiNotes(selectedClipTrack,selectedClipScene,
+                                    clip->notes,clip->lengthTicks,
+                                    owner.getTimeSignatureNumerator(),
+                                    owner.getTimeSignatureDenominator()))return false;
+        ++sessionRevision;
+        refreshMidiNoteControls();
+        repaint();
+        return true;
+    }
+    void commitMidiSlider()
+    {
+        if(updatingMidiSliders || !midiEditorVisible())return;
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || selectedMidiNote<0 ||
+           selectedMidiNote>=(int)clip->notes.size())return;
+        const auto& note=clip->notes[(size_t)selectedMidiNote];
+        const int newPitch=(int)midiPitchSlider.getValue();
+        const int newVelocity=(int)midiVelocitySlider.getValue();
+        const auto newLength=(std::int64_t)midiLengthSlider.getValue();
+        const auto limit=juce::jmax<std::int64_t>(1,clip->lengthTicks-note.startTick);
+        if((int)note.pitch==newPitch && (int)note.velocity==newVelocity &&
+           note.lengthTicks==juce::jlimit<std::int64_t>(1,limit,newLength))return;
+        if(!midiSliderGesture)
+        {
+            clip->history.checkpoint(clip->notes);
+            midiSliderGesture=true;
+        }
+        LibertyPerformMidiEdit::edit(clip->notes,selectedMidiNote,note.startTick,
+            newLength,newPitch,newVelocity,clip->lengthTicks);
+        publishMidiNotes();
+    }
+    void insertMidiNote()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || clip->lengthTicks<=0 || clip->notes.size()>=8192)return;
+        clip->history.checkpoint(clip->notes);
+        MidiEngine::NoteEvent note;
+        note.startTick=juce::jlimit<std::int64_t>(0,clip->lengthTicks-1,
+            LibertyPerformMidiEdit::snap(midiLastClickTick));
+        note.lengthTicks=juce::jmin<std::int64_t>(
+            LibertyPerformMidiEdit::defaultGrid,clip->lengthTicks-note.startTick);
+        note.pitch=(std::uint8_t)juce::jlimit(0,127,(int)midiPitchSlider.getValue());
+        note.velocity=(std::uint8_t)juce::jlimit(1,127,(int)midiVelocitySlider.getValue());
+        clip->notes.push_back(note);
+        selectedMidiNote=(int)clip->notes.size()-1;
+        publishMidiNotes();
+    }
+    void deleteMidiNote()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || selectedMidiNote<0 ||
+           selectedMidiNote>=(int)clip->notes.size())return;
+        clip->history.checkpoint(clip->notes);
+        clip->notes.erase(clip->notes.begin()+selectedMidiNote);
+        selectedMidiNote=-1;
+        publishMidiNotes();
+    }
+    void humanizeMidiNotes()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || clip->notes.empty())return;
+        const int strength=(int)midiHumanizeAmount.getValue();
+        if(strength<=0)return;
+        clip->history.checkpoint(clip->notes);
+        humanizeSeed=LibertyPerformMidiEdit::nextRandom(humanizeSeed);
+        LibertyPerformMidiEdit::humanize(clip->notes,clip->lengthTicks,
+                                        strength,humanizeSeed);
+        publishMidiNotes();
+    }
+    void undoMidiNotes()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || !clip->history.undoStep(clip->notes))return;
+        if(selectedMidiNote>=(int)clip->notes.size())selectedMidiNote=-1;
+        publishMidiNotes();
+    }
+    void redoMidiNotes()
+    {
+        auto* clip=selectedMidiData();
+        if(clip==nullptr || !clip->history.redoStep(clip->notes))return;
+        if(selectedMidiNote>=(int)clip->notes.size())selectedMidiNote=-1;
+        publishMidiNotes();
+    }
+
+    static constexpr int visibleMidiPitches=36;
+    juce::Rectangle<int> midiPianoBounds() const
+    {
+        const auto panel=inspectorArea();
+        return {panel.getX()+70,panel.getY()+132,
+                juce::jmax(0,panel.getWidth()-90),
+                juce::jmax(0,panel.getHeight()-190)};
+    }
+    juce::Rectangle<int> midiVelocityBounds() const
+    {
+        const auto roll=midiPianoBounds();
+        return {roll.getX(),roll.getBottom()+7,roll.getWidth(),42};
+    }
+    juce::Rectangle<int> midiNoteBounds(const MidiEngine::NoteEvent& note) const
+    {
+        const auto area=midiPianoBounds();
+        const auto* clip=selectedMidiData();
+        if(clip==nullptr || area.isEmpty() || clip->lengthTicks<=0 ||
+           (int)note.pitch<pianoBasePitch ||
+           (int)note.pitch>=pianoBasePitch+visibleMidiPitches)return {};
+        const auto scale=(double)area.getWidth()/(double)clip->lengthTicks;
+        const int x=area.getX()+(int)std::llround(note.startTick*scale);
+        const int end=area.getX()+(int)std::llround(
+            juce::jmin<std::int64_t>(clip->lengthTicks,
+                                    note.startTick+note.lengthTicks)*scale);
+        const int row=(int)note.pitch-pianoBasePitch;
+        const int y=area.getY()+
+            (visibleMidiPitches-1-row)*area.getHeight()/visibleMidiPitches;
+        const int next=area.getY()+
+            (visibleMidiPitches-row)*area.getHeight()/visibleMidiPitches;
+        return {x,y,juce::jmax(2,end-x),juce::jmax(1,next-y-1)};
+    }
+    int midiNoteAt(juce::Point<int> point) const
+    {
+        const auto* clip=selectedMidiData();
+        if(clip==nullptr)return -1;
+        for(int i=(int)clip->notes.size()-1;i>=0;--i)
+            if(midiNoteBounds(clip->notes[(size_t)i]).contains(point))return i;
+        return -1;
+    }
+    std::int64_t midiTickAt(int x) const
+    {
+        const auto* clip=selectedMidiData();
+        const auto area=midiPianoBounds();
+        if(clip==nullptr || area.getWidth()<1)return 0;
+        const double normalized=juce::jlimit(0.0,1.0,
+            (double)(x-area.getX())/(double)area.getWidth());
+        return juce::jlimit<std::int64_t>(0,clip->lengthTicks-1,
+            LibertyPerformMidiEdit::snap(
+                (std::int64_t)std::llround(normalized*clip->lengthTicks)));
+    }
+    int midiPitchAt(int y) const
+    {
+        const auto area=midiPianoBounds();
+        if(area.getHeight()<=0)return 60;
+        const int row=juce::jlimit(0,visibleMidiPitches-1,
+            (int)((double)(y-area.getY())*visibleMidiPitches/
+                 (double)area.getHeight()));
+        return juce::jlimit(0,127,
+            pianoBasePitch+visibleMidiPitches-1-row);
+    }
+    void paintMidiPiano(juce::Graphics& g)
+    {
+        const auto* clip=selectedMidiData();
+        if(clip==nullptr)return;
+        const auto area=midiPianoBounds();
+        const auto velArea=midiVelocityBounds();
+        g.setColour(juce::Colour(0xff101822));
+        g.fillRect(area);
+        g.fillRect(velArea);
+        for(int row=0;row<visibleMidiPitches;++row)
+        {
+            const int pitch=pianoBasePitch+visibleMidiPitches-row-1;
+            const int y=area.getY()+row*area.getHeight()/visibleMidiPitches;
+            const int bottom=area.getY()+(row+1)*area.getHeight()/visibleMidiPitches;
+            if(pitch%12==0)
+            {
+                g.setColour(juce::Colour(0xff21384a));
+                g.fillRect(area.getX(),y,area.getWidth(),juce::jmax(1,bottom-y));
+            }
+            g.setColour(juce::Colour(0xff263542));
+            g.drawHorizontalLine(bottom,(float)area.getX(),(float)area.getRight());
+            g.setColour(pitch%12==0?juce::Colour(0xffe4edf5):
+                        juce::Colour(0xff6d8395));
+            g.setFont(juce::Font(9.0f));
+            g.drawText(juce::String(pitch),area.getX()-39,y,33,
+                       juce::jmax(1,bottom-y),juce::Justification::centredRight);
+        }
+        if(clip->lengthTicks>0)
+        {
+            for(std::int64_t tick=0;tick<=clip->lengthTicks;tick+=240)
+            {
+                const int x=area.getX()+(int)std::llround((double)tick*
+                    area.getWidth()/(double)clip->lengthTicks);
+                const bool bar=tick%3840==0;
+                g.setColour(bar?juce::Colour(0xff516a81):
+                            tick%960==0?juce::Colour(0xff344658):
+                            juce::Colour(0xff24313d));
+                g.drawVerticalLine(x,(float)area.getY(),(float)area.getBottom());
+                if(tick>=clip->lengthTicks)break;
+            }
+        }
+        for(int i=0;i<(int)clip->notes.size();++i)
+        {
+            const auto& note=clip->notes[(size_t)i];
+            const auto bounds=midiNoteBounds(note);
+            if(bounds.isEmpty())continue;
+            g.setColour(i==selectedMidiNote?juce::Colour(0xfff4c96d):
+                        note.muted?juce::Colour(0xff58636f):juce::Colour(0xff45c5c1));
+            g.fillRoundedRectangle(bounds.toFloat(),2.f);
+        }
+        g.setColour(juce::Colour(0xff7d91a2));
+        g.drawRect(area);
+        g.drawRect(velArea);
+        for(int i=0;i<(int)clip->notes.size();++i)
+        {
+            const auto& note=clip->notes[(size_t)i];
+            const auto x=area.getX()+(int)std::llround(
+                (double)note.startTick*area.getWidth()/
+                (double)juce::jmax<std::int64_t>(1,clip->lengthTicks));
+            const int barHeight=juce::jmax(1,(int)note.velocity*38/127);
+            g.setColour(i==selectedMidiNote?juce::Colour(0xfff4c96d):
+                         juce::Colour(0xff45c5c1));
+            g.fillRect(x,velArea.getBottom()-barHeight-2,4,barHeight);
+        }
+        g.setFont(juce::Font(9.5f));
+        g.setColour(juce::Colour(0xffb2c3d4));
+        g.drawText(juce::String::fromUTF8("VÉLOCITÉ"),area.getX()-63,
+                   velArea.getY()+6,60,20,juce::Justification::centredRight);
+    }
     bool hasDroppedAudio(int track, int scene) const
     {
         return track >= 0 && track < audioTrackCount() && track < (int)performAudioFiles.size()
