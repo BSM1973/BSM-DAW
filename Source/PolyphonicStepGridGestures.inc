@@ -63,7 +63,19 @@ LibertyPolyGridEditing& MainComponent::polyGridEditor(bool midi, int index, int 
 void MainComponent::publishPolyGrid(bool midi, int index, LibertyStepSequencer::Pattern& pattern)
 {
     pattern.enabled = pattern.polyGrid.active && pattern.polyGrid.hasNotes();
-    if (!midi) publishInstrumentStepSequencer(index);
+    if (!midi)
+        publishInstrumentStepSequencer(index);
+    else if (audioEngine.isStepPreviewPlaying() && polyPreviewMidiSource &&
+             polyPreviewLogicalTrack == getAudioTrackCount() + index &&
+             polyPreviewTargetTrack >= 0)
+    {
+        const auto notes = LibertyStepSequencer::render(pattern);
+        const auto ticks = LibertyStepSequencer::getCycleLengthTicks(pattern);
+        if (ticks > 0)
+            audioEngine.setInstrumentTrackNotes(
+                polyPreviewTargetTrack, notes, 0.0,
+                MidiEngine::tickToSeconds(ticks, tempoBpm), tempoBpm, true);
+    }
     repaint();
 }
 
@@ -100,9 +112,21 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
         else repaint();
         return true;
     }
-    if (hit(l.createClip) || hit(l.pianoExport))
+    if (hit(l.previewButton))
     {
-        exportPolyGridToPianoRoll(midi, track);
+        togglePolyGridPreview(midi, track);
+        repaint();
+        return true;
+    }
+    if (hit(l.createClip))
+    {
+        exportPolyGridToPianoRoll(midi, track, false);
+        repaint();
+        return true;
+    }
+    if (hit(l.pianoExport))
+    {
+        exportPolyGridToPianoRoll(midi, track, true);
         repaint();
         return true;
     }
@@ -114,13 +138,13 @@ bool MainComponent::beginPolyGridPointer(juce::Point<int> p, juce::Rectangle<int
     }
     if (hit(l.classicMode))
     {
-        stepSequencerPage = (stepSequencerPage + 1) % 4;
-        repaint();
+        advancePolyGridPage(midi, track);
         return true;
     }
     for (int i = 0; i < 8; ++i)
         if (hit(l.banks[(size_t)i]))
         {
+            if (audioEngine.isStepPreviewPlaying()) stopPolyGridPreview();
             if (midi) midiStepSequencers[(size_t)track].activePattern = i;
             else instrumentStepSequencers[(size_t)track].activePattern = i;
             stepSequencerPage = 0;
@@ -412,8 +436,11 @@ bool MainComponent::endPolyGridPointer()
                                   : getInstrumentStepSequencer(gesture.track);
     if (!pattern) return true;
     auto& editor = polyGridEditor(gesture.midi, gesture.track, gesture.bank);
-    editor.commit(pattern->polyGrid);
+    const bool changed = editor.commit(pattern->polyGrid);
     publishPolyGrid(gesture.midi, gesture.track, *pattern);
+    if (changed && audioEngine.isStepPreviewPlaying() &&
+        polyPreviewTargetTrack >= 0)
+        audioEngine.setStepPreview(polyPreviewTargetTrack, true);
     return true;
 }
 
