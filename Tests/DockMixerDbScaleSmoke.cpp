@@ -28,7 +28,10 @@ int main()
         const float gain=std::pow(10.0f,db/20.0f);
         const float position=gainToPosition(gain);
         assert(position>=0.0f&&position<=1.0f);
-        assert(std::abs(gainToDb(positionToGain(position))-db)<0.001f);
+        // The absolute bottom is deliberate silence (-inf); the -60 dB
+        // graduation marks the floor just above it.
+        if (db <= floorDb) assert(position == 0.0f);
+        else assert(std::abs(gainToDb(positionToGain(position))-db)<0.001f);
     }
     assert(ticks[0].major&&std::strcmp(ticks[0].label,"+6")==0);
     assert(ticks[1].major&&std::strcmp(ticks[1].label,"0")==0);
