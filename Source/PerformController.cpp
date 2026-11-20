@@ -465,6 +465,7 @@ public:
         trackHeaders.resize((size_t)trackCount());
         activeTrackScene.assign((size_t)trackCount(), -1);
         performAudioFiles.resize((size_t)audioTrackCount());
+        performMidiClips.resize((size_t)trackCount());
 
         for (int track = 0; track < trackCount(); ++track)
         {
@@ -475,7 +476,7 @@ public:
             stop.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
             stop.onClick = [this, track]
             {
-                if (track < audioTrackCount()) player.stopTrack(track);
+                player.stopTrack(track);
                 if (track >= 0 && track < (int)activeTrackScene.size())
                     activeTrackScene[(size_t)track] = -1;
                 refreshClipLabels();
@@ -522,7 +523,23 @@ public:
         recordArrangeButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         recordArrangeButton.onClick = [this] { toggleCaptureToArrange(); };
         addAndMakeVisible(recordArrangeButton);
-
+        quantizeSelector.addItem("IMMÉDIAT",1);
+        quantizeSelector.addItem("1 TEMPS",2);
+        quantizeSelector.addItem("1 MESURE",3);
+        quantizeSelector.setSelectedId(3,juce::dontSendNotification);
+        quantizeSelector.setTooltip("Quantification du lancement des clips et des scènes.");
+        addAndMakeVisible(quantizeSelector);
+        loopButton.setButtonText("BOUCLE : ON");
+        loopButton.setClickingTogglesState(true);
+        loopButton.setToggleState(true,juce::dontSendNotification);
+        loopButton.onClick=[this]
+        {
+            const bool on=loopButton.getToggleState();
+            loopButton.setButtonText(on?"BOUCLE : ON":"BOUCLE : OFF");
+            player.setLoopEnabled(on);
+            ++sessionRevision;
+        };
+        addAndMakeVisible(loopButton);
         std::fill(activeTrackScene.begin(), activeTrackScene.end(), -1);
         setVisible(false);
         owner.addAndMakeVisible(this);
@@ -627,7 +644,9 @@ public:
         g.drawText("PERFORM", 22, 10, 150, 28, juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff8f98a3));
         g.setFont(juce::Font(10.0f));
-        g.drawText("SESSION   CLIPS   SCENES   LIVE LAUNCH", 170, 16, 330, 18, juce::Justification::centredLeft);
+        g.drawFittedText("SESSION   CLIPS   SCÈNES   LIVE",170,16,
+            juce::jmax(1,quantizeSelector.getX()-176),18,
+            juce::Justification::centredLeft,1);
 
         const int paintedTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
         for (int track = 0; track < paintedTracks; ++track)
@@ -669,6 +688,9 @@ public:
     {
         syncTrackContainers();
         const int visibleTracks = juce::jmin(trackCount(), (int)trackHeaders.size());
+        const int controlsX=juce::jmax(500,getWidth()-330);
+        quantizeSelector.setBounds(controlsX,13,172,28);
+        loopButton.setBounds(controlsX+180,13,135,28);
         const int leftMargin = 18;
         const int sceneLaunchW = 92;
         const int gridLeft = leftMargin;
@@ -716,6 +738,8 @@ private:
         if (trackHeaders.size() != wantedTracks) trackHeaders.resize(wantedTracks);
         if (activeTrackScene.size() != wantedTracks) activeTrackScene.resize(wantedTracks, -1);
         if (performAudioFiles.size() != wantedAudio) performAudioFiles.resize(wantedAudio);
+        if (performMidiClips.size() != wantedTracks) performMidiClips.resize(wantedTracks);
+        player.syncTrackCount();
         for (size_t t = oldTracks; t < wantedTracks; ++t)
         {
             auto& stop = stopTrackButtons[t];
@@ -726,7 +750,7 @@ private:
             stop.onClick = [this, t]
             {
                 const int track = (int)t;
-                if (track < audioTrackCount()) player.stopTrack(track);
+                player.stopTrack(track);
                 if (track < (int)activeTrackScene.size()) activeTrackScene[t] = -1;
                 refreshClipLabels();
                 repaint();
@@ -959,6 +983,10 @@ private:
     std::array<juce::Rectangle<int>, sceneCount> sceneRows;
     std::vector<int> activeTrackScene;
     std::vector<std::array<juce::File, sceneCount>> performAudioFiles;
+    std::vector<std::array<SessionMidiData, sceneCount>> performMidiClips;
+    juce::ComboBox quantizeSelector;
+    juce::TextButton loopButton;
+    std::uint64_t sessionRevision=0;
     int dragTrack = -1;
     int dragScene = -1;
     bool performVisible = false;
