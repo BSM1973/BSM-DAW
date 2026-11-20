@@ -430,6 +430,12 @@ public:
         }
         stream.release();
 
+        // Capture the final bus after instruments, effects and master output.
+        // The scratch buffer is preallocated here, never on the audio thread.
+        captureMix.setSize(2,65536,false,false,true);
+        captureMix.clear();
+        captureStartSample=sessionSamples;
+        captureCount=0;
         captureThread = std::make_unique<juce::TimeSliceThread>("Liberty PERFORM Capture");
         captureThread->startThread();
         captureWriter = std::make_unique<juce::AudioFormatWriter::ThreadedWriter>(writer.release(), *captureThread, 65536);
@@ -444,6 +450,49 @@ public:
     }
 
     bool isCapturing() const noexcept { return captureActive.load(std::memory_order_relaxed); }
+
+    std::vector<CaptureEvent> getCaptureEvents() const
+    {
+        const juce::ScopedLock sl(lock);
+        return std::vector<CaptureEvent>(captureEvents.begin(),
+            captureEvents.begin()+captureCount);
+    }
+    std::int64_t getCapturedSamples() const
+    {
+        const juce::ScopedLock sl(lock);
+        return juce::jmax<std::int64_t>(0,sessionSamples-captureStartSample);
+    }
+    float captureFinalMix(float* const* output,int channels,int samples)
+    {
+        const float gain=masterMacroGain.load(std::memory_order_acquire);
+        // Apply performance master macro on the actual final stereo bus.
+        if(output!=nullptr)
+            for(int ch=0;ch<juce::jmin(channels,2);++ch)
+                if(output[ch]!=nullptr)
+                    juce::FloatVectorOperations::multiply(output[ch],gain,samples);
+        if(!captureActive.load(std::memory_order_acquire) || samples<=0 ||
+           output==nullptr || !lock.tryEnter())return gain;
+        if(captureWriter!=nullptr)
+        {
+            int offset=0;
+            while(offset<samples)
+            {
+                const int count=juce::jmin(samples-offset,captureMix.getNumSamples());
+                for(int ch=0;ch<2;++ch)
+                {
+                    captureMix.clear(ch,0,count);
+                    if(ch<channels && output[ch]!=nullptr)
+                        captureMix.copyFrom(ch,0,output[ch]+offset,count);
+                    else if(channels>0 && output[0]!=nullptr)
+                        captureMix.copyFrom(ch,0,output[0]+offset,count);
+                }
+                captureWriter->write(captureMix.getArrayOfReadPointers(),count);
+                offset+=count;
+            }
+        }
+        lock.exit();
+        return gain;
+    }
 
     void renderAudioBlock(float* const* outputs, int numOutputs, int numSamples)
     {
@@ -514,8 +563,8 @@ private:
         const double rate=juce::jmax(1.0,owner.audioEngine.getSampleRate());
         const double bpm=sessionTempo.load(std::memory_order_acquire);
         const bool repeat=loopEnabled.load(std::memory_order_acquire);
-        const int captureSamples=juce::jmin(samples,captureMix.getNumSamples());
-        if(captureSamples>0)captureMix.clear(0,captureSamples);
+        // The post-mixer capture hook owns the WAV writer, not this per-track
+        // render callback (which executes before the instruments/effects).
 
         for(int logical=0;logical<(int)tracks.size();++logical)
         {
@@ -539,44 +588,71 @@ private:
                 const auto absolute=blockStart+i;
                 if(state.queuedScene!=-2 && absolute>=state.queuedAt)
                 {
+                    if(state.activeScene!=state.queuedScene)
+                    {
+                        state.fadeFromScene=state.activeScene;
+                        state.fadeFromStarted=state.startedAt;
+                        state.fadeStart=absolute;
+                        state.fadeLength=LibertyPerformLive::transitionSamples(
+                            transitionMs.load(std::memory_order_relaxed),rate);
+                    }
                     state.activeScene=state.queuedScene;
                     state.startedAt=state.queuedAt;
                     state.transitionOffset=i;
                     state.queuedScene=-2;
                     state.panicOffset=i;
+                    if(captureActive.load(std::memory_order_relaxed) &&
+                       captureCount<(int)captureEvents.size())
+                        captureEvents[(size_t)captureCount++]={logical,state.activeScene,
+                            juce::jmax<std::int64_t>(0,absolute-captureStartSample)};
                 }
-                if(state.activeScene<0)continue;
-                auto& slot=state.slots[(size_t)state.activeScene];
-                const auto relative=absolute-state.startedAt;
-                if(relative<0)continue;
-                const auto length=slot.audio?
-                    (std::int64_t)slot.audioLength:
-                    LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate);
-                if(length<=0)
-                {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
-                if(!(repeat && slot.settings.loop) && relative>=length)
-                {state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;continue;}
-                if(!isAudio || slot.audio==nullptr || !audible)continue;
-                const int index=slot.audioFirst+(int)(relative%length);
-                const int sourceChannels=slot.audio->getNumChannels();
-                const float l=slot.audio->getSample(0,index)*left*slot.linearGain;
-                const float r=slot.audio->getSample(sourceChannels>1?1:0,index)*right*slot.linearGain;
+                if(state.activeScene>=0)
+                {
+                    const auto& slot=state.slots[(size_t)state.activeScene];
+                    const auto relative=absolute-state.startedAt;
+                    if(relative>=0)
+                    {
+                        const auto length=slot.audio?(std::int64_t)slot.audioLength:
+                            LibertyPerformTiming::ticksToSamples(slot.midiLengthTicks,bpm,rate);
+                        if(length<=0 || (!(repeat && slot.settings.loop) && relative>=length))
+                        {
+                            if(captureActive.load() && captureCount<(int)captureEvents.size())
+                                captureEvents[(size_t)captureCount++]={logical,-1,
+                                    juce::jmax<std::int64_t>(0,absolute-captureStartSample)};
+                            state.activeScene=-1;state.panicOffset=i;state.transitionOffset=i;
+                        }
+                    }
+                }
+                if(!isAudio || !audible)continue;
+                const auto readAudio=[&](int scene,std::int64_t startAt,float mix,int channel)
+                {
+                    if(scene<0 || mix<=0.f)return 0.f;
+                    const auto& slot=state.slots[(size_t)scene];
+                    if(slot.audio==nullptr || slot.audioLength<=0)return 0.f;
+                    const auto position=absolute-startAt;
+                    if(position<0 || (!(repeat && slot.settings.loop) &&
+                                      position>=slot.audioLength))return 0.f;
+                    const auto index=slot.audioFirst+(int)(position%slot.audioLength);
+                    return slot.audio->getSample(juce::jmin(channel,
+                        slot.audio->getNumChannels()-1),index)*slot.linearGain*mix;
+                };
+                const auto elapsed=absolute-state.fadeStart;
+                const bool inFade=state.fadeFromScene>=0 &&
+                                  elapsed>=0 && elapsed<state.fadeLength;
+                const float t=inFade?
+                    LibertyPerformLive::crossfadeIn(elapsed,state.fadeLength):1.f;
+                const float oldGain=inFade?1.f-t:0.f;
+                const float newGain=state.activeScene>=0?t:0.f;
+                const float volume=audioMacroGain.load(std::memory_order_relaxed);
+                const float l=(readAudio(state.activeScene,state.startedAt,newGain,0)+
+                    readAudio(state.fadeFromScene,state.fadeFromStarted,oldGain,0))*left*volume;
+                const float r=(readAudio(state.activeScene,state.startedAt,newGain,1)+
+                    readAudio(state.fadeFromScene,state.fadeFromStarted,oldGain,1))*right*volume;
                 if(channels>0 && outputs[0])outputs[0][i]+=l;
                 if(channels>1 && outputs[1])outputs[1][i]+=r;
-                if(captureActive.load(std::memory_order_relaxed) && i<captureSamples)
-                {
-                    captureMix.addSample(0,i,l);
-                    captureMix.addSample(1,i,r);
-                }
             }
         }
         sessionSamples+=samples;
-        if(captureActive.load(std::memory_order_relaxed)
-           && captureWriter!=nullptr && captureSamples>0)
-        {
-            captureMix.applyGain(0,captureSamples,owner.audioEngine.getMasterGain());
-            captureWriter->write(captureMix.getArrayOfReadPointers(),captureSamples);
-        }
         lock.exit();
     }
 
@@ -597,6 +673,9 @@ private:
     std::unique_ptr<juce::TimeSliceThread> captureThread;
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> captureWriter;
     juce::File captureFile;
+    std::array<CaptureEvent,32768> captureEvents {};
+    int captureCount=0;
+    std::int64_t captureStartSample=0;
     std::atomic<bool> captureActive { false };
 };
 
