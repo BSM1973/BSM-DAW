@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PageNavigationLayout.h"
+#include "LibertyDesignSystem.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <map>
@@ -28,14 +29,16 @@ public:
  {
      auto box = b.getLocalBounds().toFloat().reduced(0.7f);
      const bool selected = b.getToggleState();
-     const auto cyan = red ? juce::Colour(0xffe35a5a) : juce::Colour(0xff58d1ed);
-     juce::ColourGradient fill(selected ? juce::Colour(0xff305b78) : juce::Colour(0xff243a52),
+     const auto cyan = red ? LibertyUI::Colour::accentPurple : LibertyUI::Colour::accent;
+     juce::ColourGradient fill(selected ? LibertyUI::Colour::surfaceRaised
+                                       : LibertyUI::Colour::control,
                                box.getX(), box.getY(),
-                               selected ? juce::Colour(0xff142b43) : juce::Colour(0xff111f32),
+                               selected ? LibertyUI::Colour::selection
+                                        : LibertyUI::Colour::canvasDeep,
                                box.getRight(), box.getBottom(), false);
      g.setGradientFill(fill);
      g.fillRoundedRectangle(box, 6.5f);
-     g.setColour((selected ? cyan : juce::Colour(0xff65869f)).withAlpha(hover ? 0.95f : 0.65f));
+     g.setColour((selected ? cyan : LibertyUI::Colour::divider).withAlpha(hover ? 0.95f : 0.75f));
      g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, 1.0f);
      if (hover || pressed)
      {
@@ -44,15 +47,16 @@ public:
      }
      if (selected)
      {
-         g.setColour(cyan);
-         g.fillRoundedRectangle(box.getX() + 12.0f, box.getBottom() - 3.0f,
-                                box.getWidth() - 24.0f, 2.0f, 1.0f);
+         LibertyUI::accentRule(g,juce::Rectangle<float>(
+             box.getX()+10.f,box.getBottom()-3.f,
+             box.getWidth()-20.f,2.f),cyan);
      }
  }
  void drawButtonText(juce::Graphics& g, juce::TextButton& b,
                      bool, bool) override
  {
-     g.setColour(b.getToggleState() ? juce::Colours::white : juce::Colour(0xffd0e0ee));
+     g.setColour(b.getToggleState() ? LibertyUI::Colour::textPrimary
+                                   : LibertyUI::Colour::textMuted);
      g.setFont(juce::Font(11.0f, juce::Font::bold));
      g.drawFittedText(b.getButtonText(), b.getLocalBounds().reduced(6, 2),
                       juce::Justification::centred, 1, 0.9f);
@@ -72,6 +76,7 @@ public:
         configureButton(mixButton, "CONSOLE DE MIXAGE");
         mixButton.setLookAndFeel(&mixerLook);
         configureButton(performButton, "PERFORMANCE");
+        performButton.setLookAndFeel(&arrangementLook);
 
         captureLegacyButtons();
 
@@ -109,6 +114,7 @@ public:
         stopTimer();
         arrangeButton.setLookAndFeel(nullptr);
         mixButton.setLookAndFeel(nullptr);
+        performButton.setLookAndFeel(nullptr);
         arrangeButton.setVisible(false);
         mixButton.setVisible(false);
         performButton.setVisible(false);
@@ -164,12 +170,13 @@ private:
         const bool mix = !perform && isLibertyMixConsoleVisible(&owner);
         const bool arrange = !perform && !mix;
 
-        const auto active = juce::Colour(0xff315f7a);
-        const auto inactive = juce::Colour(0xff252a31);
+        const auto active = LibertyUI::Colour::selection;
+        const auto inactive = LibertyUI::Colour::control;
         arrangeButton.setToggleState(arrange, juce::dontSendNotification);
         arrangeButton.setColour(juce::TextButton::buttonColourId, arrange ? active : inactive);
         mixButton.setToggleState(mix, juce::dontSendNotification);
         mixButton.setColour(juce::TextButton::buttonColourId, mix ? active : inactive);
+        performButton.setToggleState(perform,juce::dontSendNotification);
         performButton.setColour(juce::TextButton::buttonColourId, perform ? active : inactive);
 
         // Shared coordinates keep all four page toggles distinct at every refresh.
