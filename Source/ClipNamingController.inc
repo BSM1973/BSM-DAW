@@ -36,9 +36,16 @@ void paintClipNames(juce::Graphics& g){
     syncClipNames();juce::Graphics::ScopedSaveState save(g);
     g.reduceClipRegion(owner.trackHeaderWidth,owner.getArrangeTop(),owner.getWidth()-owner.trackHeaderWidth,owner.getMixerTop()-owner.getArrangeTop());
     for(const auto& c:namedClips()){
-        const auto box=nameBounds(c);g.setColour(juce::Colour(0xff101f30).withAlpha(.96f));g.fillRoundedRectangle(box.toFloat(),3);
-        g.setColour(juce::Colour(0xffedf7ff));g.setFont(juce::Font(11.5f,juce::Font::bold));
-        g.drawText(clipNames.display(c.key,trackClipName(c.logical)),box.reduced(4,0),juce::Justification::centredLeft,true);
+        const auto box=nameBounds(c);
+        if(box.isEmpty())continue;
+        const juce::Graphics::ScopedSaveState clipNameState(g);
+        g.reduceClipRegion(box);
+        g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(.91f));
+        g.fillRoundedRectangle(box.toFloat(),3.f);
+        g.setColour(LibertyUI::Colour::textPrimary);
+        g.setFont(juce::Font(11.5f,juce::Font::bold));
+        g.drawFittedText(clipNames.display(c.key,trackClipName(c.logical)),
+            box.reduced(4,0),juce::Justification::centredLeft,1);
     }
 }
 bool renameClipAt(juce::Point<int> p){
