@@ -66,4 +66,42 @@ inline void accentRule(juce::Graphics& g,juce::Rectangle<float> area,
         colour.withAlpha(0.0f),area.getRight(),area.getY(),false));
     g.fillRect(area);
 }
+ // Musical surfaces share a single drawing vocabulary. These are paint-only:
+ // callers retain their own hit rectangles, note timing, clip colours and data.
+inline void musicalBlock(juce::Graphics& g,juce::Rectangle<float> area,
+                         juce::Colour tint,bool selected,bool muted=false)
+{
+    if(area.isEmpty())return;
+    const juce::Graphics::ScopedSaveState saved(g);
+    g.reduceClipRegion(area.toNearestInt());
+    if(muted)tint=tint.withMultipliedSaturation(0.12f).darker(0.35f);
+    const float radius=juce::jmin(5.f,area.getHeight()*0.32f,area.getWidth()*0.25f);
+    g.setGradientFill(juce::ColourGradient(
+        tint.brighter(0.16f),area.getX(),area.getY(),
+        tint.darker(0.23f),area.getX(),area.getBottom(),false));
+    g.fillRoundedRectangle(area,radius);
+    if(area.getWidth()>5.f&&area.getHeight()>5.f)
+    {
+        g.setColour(juce::Colours::white.withAlpha(muted?0.05f:0.19f));
+        g.drawLine(area.getX()+radius,area.getY()+1.f,
+                   area.getRight()-radius,area.getY()+1.f,0.8f);
+    }
+    g.setColour(selected?Colour::accentAmber:tint.brighter(0.3f));
+    g.drawRoundedRectangle(area.reduced(0.5f),radius,
+        juce::jmin(area.getHeight()*0.5f,selected?1.5f:0.8f));
+}
+inline void waveformEnvelope(juce::Graphics& g,const juce::Path& path,
+                             juce::Rectangle<float> area,bool selected)
+{
+    if(area.isEmpty()||path.isEmpty())return;
+    const juce::Graphics::ScopedSaveState saved(g);
+    g.reduceClipRegion(area.toNearestInt());
+    g.setGradientFill(juce::ColourGradient(
+        Colour::accentLight.withAlpha(selected?0.98f:0.84f),
+        area.getCentreX(),area.getY(),
+        Colour::accentBlue.withAlpha(selected?0.95f:0.72f),
+        area.getCentreX(),area.getBottom(),false));
+    g.fillPath(path);
+}
+
 }
