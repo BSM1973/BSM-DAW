@@ -23,7 +23,9 @@ class Tap
     alignas(64) std::atomic<std::uint32_t> head{0};
     alignas(64) std::atomic<std::uint32_t> tail{0};
     std::atomic<bool> enabled{false};
+    std::atomic<std::uint32_t> losses{0};
 public:
+    std::uint32_t dropped() const noexcept { return losses.load(std::memory_order_acquire); }
     void setEnabled(bool b) noexcept { enabled.store(b,std::memory_order_relaxed); }
     void capture(float* const* output,int channels,int samples) noexcept
     {
@@ -39,6 +41,7 @@ public:
             frames[(h+i)&(capacity-1)]={std::isfinite(l)?l:0.f,std::isfinite(r)?r:0.f};
         }
         head.store(h+n,std::memory_order_release);
+        if(n<static_cast<std::uint32_t>(samples)) losses.fetch_add(static_cast<std::uint32_t>(samples)-n,std::memory_order_release);
     }
     std::size_t read(Frame* dst,std::size_t limit) noexcept
     {

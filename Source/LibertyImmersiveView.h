@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include "LibertyDesignSystem.h"
 #include "LibertyImmersiveAnalysis.h"
+#include "LibertyMasteringMeter.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace LibertyImmersive
@@ -9,7 +10,14 @@ namespace LibertyImmersive
 class View final : public juce::Component, private juce::Timer
 {
     AudioEngine& engine;
-    std::array<juce::TextButton,5> tabs;
+    std::array<juce::TextButton,6> tabs;
+    juce::ComboBox target;
+    juce::TextButton resetLoudness{"RESET LUFS"},resetTruePeak{"RESET TP"},resetHistory{"RESET HIST."},exportReport{"EXPORT TXT"};
+    std::unique_ptr<juce::FileChooser> reportChooser;
+    LibertyMastering::Meter mastering;
+    std::uint32_t lastDropped=0;
+    bool incomplete=false;
+    double targetLU=-23.,targetTP=-1.;
     juce::TextButton freeze{"FIGER"},reset{"EFFACER"},hold{"CRETE MAX"};
     juce::ComboBox spectrumSource,scopeTime;
     SpectrumMode spectrumMode=SpectrumMode::stereoMax;
@@ -45,9 +53,12 @@ class View final : public juce::Component, private juce::Timer
         spectrum(ordered,work,bins,spectrumMode);
         if(holdEnabled)for(std::size_t i=0;i<bins.size();++i)heldBins[i]=std::max(heldBins[i],bins[i]);
     }
+    static juce::String formatMeasure(double x) {return std::isfinite(x)?juce::String(x,1):juce::String("--");}
     void refreshPageControls()
     {
         spectrumSource.setVisible(page==0);hold.setVisible(page==0);scopeTime.setVisible(page==1);
+        target.setVisible(page==5);resetLoudness.setVisible(page==5);resetTruePeak.setVisible(page==5);resetHistory.setVisible(page==5);exportReport.setVisible(page==5);
+        freeze.setEnabled(page!=5);reset.setEnabled(page!=5);
     }
     void clear()
     {
@@ -56,18 +67,21 @@ class View final : public juce::Component, private juce::Timer
     void timerCallback() override
     {
         const auto sr=engine.getSampleRate();
-        if(sr!=rate){rate=sr;clear();}
+        if(sr!=rate){rate=sr;clear();mastering.configure(rate);incomplete=false;engine.immersiveTap().discard();}
         auto& tap=engine.immersiveTap();
+        if(tap.dropped()!=lastDropped){incomplete=true;lastDropped=tap.dropped();}
         bool received=false;
         // Limit consumer work to one ring capacity per timer tick.
         for(int block=0;block<4;++block)
         {
             const auto n=tap.read(incoming.data(),incoming.size());if(!n)break;
-            if(frozen)continue;
+            mastering.push(incoming.data(),n);
+            if(frozen&&page!=5)continue;
             received=true;
             for(std::size_t i=0;i<n;++i){window[cursor]=incoming[i];cursor=(cursor+1)%fftSize;valid=std::min(fftSize,valid+1);}
         }
-        if(frozen)return;
+        if(tap.dropped()!=lastDropped){incomplete=true;lastDropped=tap.dropped();}
+        if(frozen&&page!=5)return;
         if(received&&valid)
         {
             const auto first=(cursor+fftSize-valid)%fftSize;
@@ -86,9 +100,9 @@ class View final : public juce::Component, private juce::Timer
 public:
     explicit View(AudioEngine& e):engine(e)
     {
-        const juce::String names[]={"SPECTRE","OSCILLOSCOPE","PHASE","DYNAMIQUE","HISTORIQUE"};
-        for(int i=0;i<5;++i){auto& b=tabs[(size_t)i];b.setButtonText(names[i]);b.setClickingTogglesState(false);b.setToggleState(i==0,juce::dontSendNotification);b.onClick=[this,i]{page=i;for(int j=0;j<5;++j)tabs[(size_t)j].setToggleState(i==j,juce::dontSendNotification);if(page==0)updateSpectrum();refreshPageControls();repaint();};addAndMakeVisible(b);}
-        freeze.onClick=[this]{frozen=!frozen;freeze.setToggleState(frozen,juce::dontSendNotification);freeze.setButtonText(frozen?"REPRENDRE":"FIGER");if(!frozen){cursor=valid=0;hasData=false;latest={};bins.fill(0.f);engine.immersiveTap().discard();}repaint();};
+        const juce::String names[]={"SPECTRE","OSCILLO","PHASE","DYNAMIQUE","HISTORIQUE","MASTERING"};
+        for(int i=0;i<6;++i){auto& b=tabs[(size_t)i];b.setButtonText(names[i]);b.setClickingTogglesState(false);b.setToggleState(i==0,juce::dontSendNotification);b.onClick=[this,i]{page=i;if(page==5&&frozen){frozen=false;freeze.setToggleState(false,juce::dontSendNotification);freeze.setButtonText("FIGER");cursor=valid=0;}for(int j=0;j<6;++j)tabs[(size_t)j].setToggleState(i==j,juce::dontSendNotification);if(page==0)updateSpectrum();refreshPageControls();repaint();};addAndMakeVisible(b);}
+        freeze.onClick=[this]{frozen=!frozen;freeze.setToggleState(frozen,juce::dontSendNotification);freeze.setButtonText(frozen?"REPRENDRE":"FIGER");if(!frozen){cursor=valid=0;hasData=false;latest={};bins.fill(0.f);}repaint();};
         const juce::String sources[]={"MAX L/R","GAUCHE","DROITE","MID (L+R)","SIDE (L-R)"};
         for(int i=0;i<5;++i)spectrumSource.addItem(sources[i],i+1);
         spectrumSource.setSelectedId(1,juce::dontSendNotification);
@@ -99,23 +113,40 @@ public:
         hold.setButtonText(juce::String::fromUTF8("CRÊTE MAX"));
         hold.onClick=[this]{holdEnabled=!holdEnabled;hold.setToggleState(holdEnabled,juce::dontSendNotification);heldBins.fill(0.f);if(holdEnabled)updateSpectrum();repaint();};
         addAndMakeVisible(spectrumSource);addAndMakeVisible(scopeTime);addAndMakeVisible(hold);refreshPageControls();
-        reset.onClick=[this]{clear();engine.immersiveTap().discard();repaint();};
+        reset.onClick=[this]{clear();repaint();};
         addAndMakeVisible(freeze);addAndMakeVisible(reset);
+        target.addItem("EBU R128 -23 LUFS",1);target.addItem("Streaming -14 LUFS",2);target.addItem("Musique -16 LUFS",3);target.addItem("Master -9 LUFS",4);
+        target.setSelectedId(1,juce::dontSendNotification);
+        target.onChange=[this]{const double values[]={-23.,-14.,-16.,-9.};targetLU=values[juce::jlimit(0,3,target.getSelectedId()-1)];targetTP=-1.;repaint();};
+        resetLoudness.onClick=[this]{mastering.resetLoudness();repaint();};
+        resetTruePeak.onClick=[this]{mastering.resetPeak();repaint();};
+        resetHistory.onClick=[this]{mastering.resetHistory();repaint();};
+        exportReport.onClick=[this]{
+            if(reportChooser)return;
+            const auto r=mastering.get();
+            const juce::String content=juce::String::fromUTF8("LIBERTY OBSIDIAN MASTERING - mesure en direct\\n")+"Date: "+juce::Time::getCurrentTime().toString(true,true)+"\\nDuree LUFS: "+juce::String(mastering.duration(),1)+" s\\nFrequence: "+juce::String(rate,0)+" Hz\\nMomentary LUFS: "+formatMeasure(r.momentary)+"\\nShort-term LUFS: "+formatMeasure(r.shortTerm)+"\\nIntegrated LUFS: "+formatMeasure(r.integrated)+"\\nLRA LU: "+formatMeasure(r.lra)+"\\nTrue Peak estime dBTP: "+formatMeasure(r.truePeak)+"\\nCible LUFS: "+juce::String(targetLU,1)+"\\nCible dBTP: "+juce::String(targetTP,1)+"\\nCapture: "+(incomplete?"INCOMPLETE - pertes audio":"Aucune perte FIFO detectee")+"\\nMesure indicative non certifiee. Periodes de remise a zero independantes.\\n";
+            reportChooser=std::make_unique<juce::FileChooser>("Exporter le rapport",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Liberty-Mastering.txt"),"*.txt");
+            reportChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<View>(this),content](const juce::FileChooser& chooser){if(!safe)return;const auto file=chooser.getResult();if(file!=juce::File{}&&!file.replaceWithText(content))juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Liberty",juce::String::fromUTF8("Impossible d'enregistrer le rapport."),"OK");juce::MessageManager::callAsync([safe]{if(safe)safe->reportChooser.reset();});});
+        };
+        addAndMakeVisible(target);addAndMakeVisible(resetLoudness);addAndMakeVisible(resetTruePeak);addAndMakeVisible(resetHistory);addAndMakeVisible(exportReport);refreshPageControls();
         setSize(800,540);
     }
     ~View() override { stopTimer();engine.immersiveTap().setEnabled(false); }
-    void begin(){clear();frozen=false;freeze.setButtonText("FIGER");freeze.setToggleState(false,juce::dontSendNotification);engine.immersiveTap().discard();engine.immersiveTap().setEnabled(true);startTimerHz(25);repaint();}
+    void begin(){clear();mastering.configure(engine.getSampleRate());lastDropped=engine.immersiveTap().dropped();incomplete=false;frozen=false;freeze.setButtonText("FIGER");freeze.setToggleState(false,juce::dontSendNotification);engine.immersiveTap().discard();engine.immersiveTap().setEnabled(true);startTimerHz(25);repaint();}
     void end(){stopTimer();engine.immersiveTap().setEnabled(false);}
     void resized() override
     {
         auto bar=getLocalBounds().reduced(18).withTrimmedTop(48).removeFromTop(32);
-        const int width=bar.getWidth()/7;
+        const int width=bar.getWidth()/8;
         for(auto& b:tabs)b.setBounds(bar.removeFromLeft(width).reduced(2,1));
         freeze.setBounds(bar.removeFromLeft(width).reduced(2,1));reset.setBounds(bar.reduced(2,1));
         auto controls=getLocalBounds().reduced(18).withTrimmedTop(90).removeFromTop(32);
         spectrumSource.setBounds(controls.removeFromLeft(166).reduced(2,1));
         hold.setBounds(controls.removeFromLeft(132).reduced(2,1));
         scopeTime.setBounds(18,108,164,30);
+        auto masterControls=getLocalBounds().reduced(18).withTrimmedTop(90).removeFromTop(32);
+        target.setBounds(masterControls.removeFromLeft(190).reduced(2,1));
+        for(auto* button:{&resetLoudness,&resetTruePeak,&resetHistory,&exportReport})button->setBounds(masterControls.removeFromLeft(126).reduced(2,1));
     }
     void mouseMove(const juce::MouseEvent&e) override{pointer=e.getPosition();if(page==0)repaint();}
     void mouseExit(const juce::MouseEvent&) override{pointer={-1,-1};repaint();}
@@ -123,7 +154,7 @@ public:
     {
         g.fillAll(LibertyUI::Colour::canvasDeep);
         g.setColour(LibertyUI::Colour::textPrimary);g.setFont(juce::Font(22.f,juce::Font::bold));
-        g.drawText("OBSIDIAN IMMERSIVE",18,12,getWidth()-36,30,juce::Justification::centredLeft);
+        g.drawText(page==5?"OBSIDIAN MASTERING":"OBSIDIAN IMMERSIVE",18,12,getWidth()-36,30,juce::Justification::centredLeft);
         auto panel=plot();LibertyUI::fillPanel(g,panel.toFloat(),false,9.f);
         auto a=panel.reduced(46,26).toFloat();
         if(a.isEmpty())return;
@@ -188,6 +219,20 @@ public:
             const float vals[]={db(latest.peak),db(latest.rms),latest.crest};const char* titles[]={"PEAK dBFS","RMS dBFS","CREST dB"};
             const float w=a.getWidth()/3.f;
             for(int i=0;i<3;++i){auto b=juce::Rectangle<float>(a.getX()+i*w,a.getY()+10.f,w-10.f,a.getHeight()-20.f);LibertyUI::fillPanel(g,b,false,7.f);label(g,titles[i],b.withHeight(30.f).toNearestInt());g.setColour(i==2?LibertyUI::Colour::accentAmber:LibertyUI::Colour::accentLight);g.setFont(juce::Font(32.f,juce::Font::bold));g.drawFittedText(hasData?juce::String(vals[i],1):juce::String("--"),b.toNearestInt(),juce::Justification::centred,1);const float amount=i==2?std::clamp(vals[i]/30.f,0.f,1.f):std::clamp((vals[i]+90.f)/96.f,0.f,1.f);g.fillRoundedRectangle(b.getX()+10.f,b.getBottom()-24.f,(b.getWidth()-20.f)*amount,7.f,3.f);}
+        }
+        else if(page==5)
+        {
+            const auto r=mastering.get();const double values[]={r.integrated,r.momentary,r.shortTerm,r.lra,r.truePeak};
+            const char* names[]={"LUFS I","LUFS M","LUFS S","LRA LU","dBTP EST."};
+            auto cards=a.withHeight(80.f);const float width=cards.getWidth()/5.f;
+            for(int i=0;i<5;++i){auto b=cards.removeFromLeft(width).reduced(3.f,0.f);LibertyUI::fillPanel(g,b,false,6.f);label(g,names[i],b.withHeight(22).toNearestInt());g.setColour(i==4&&std::isfinite(values[i])&&values[i]>targetTP?LibertyUI::Colour::danger:LibertyUI::Colour::accentLight);g.setFont(juce::Font(25.f,juce::Font::bold));g.drawFittedText(formatMeasure(values[i]),b.withTrimmedTop(22).toNearestInt(),juce::Justification::centred,1);}
+            auto graph=a.withTrimmedTop(108.f).withTrimmedBottom(30.f);const auto y=[&](double lu){return graph.getBottom()-graph.getHeight()*(float)std::clamp((lu+60.)/60.,0.,1.);};
+            for(int lu=-60;lu<=0;lu+=15){g.setColour(LibertyUI::Colour::dividerSoft);g.drawHorizontalLine((int)y(lu),graph.getX(),graph.getRight());label(g,juce::String(lu),{(int)graph.getX()-38,(int)y(lu)-7,34,14});}
+            g.setColour(LibertyUI::Colour::accentAmber);g.drawHorizontalLine((int)y(targetLU),graph.getX(),graph.getRight());
+            juce::Path p;bool first=true;for(std::size_t i=0;i<mastering.historyCount();++i){const auto lu=mastering.historyAt(i);if(!std::isfinite(lu)){first=true;continue;}const float x=graph.getX()+graph.getWidth()*(float)(LibertyMastering::Meter::historyCapacity-mastering.historyCount()+i)/(LibertyMastering::Meter::historyCapacity-1);if(first){p.startNewSubPath(x,y(lu));first=false;}else p.lineTo(x,y(lu));}trace(g,p,LibertyUI::Colour::accent);
+            label(g,"-60 s  |  LUFS M  |  CIBLE "+juce::String(targetLU,0)+" LUFS  |  "+(std::isfinite(r.integrated)?juce::String(r.integrated-targetLU,1)+" LU":"--"),{(int)a.getX(),(int)graph.getBottom()+5,(int)a.getWidth(),20});
+            label(g,incomplete?juce::String::fromUTF8("CAPTURE INCOMPLÈTE : pertes FIFO, relancer toutes les mesures."):juce::String::fromUTF8("Mesure directe : ")+juce::String(mastering.duration(),1)+" s",{18,getHeight()-65,getWidth()-36,25});
+            label(g,juce::String::fromUTF8("True Peak estimé 4x. Mesures indicatives, non certifiées."),{18,getHeight()-36,getWidth()-36,20});return;
         }
         else
         {
