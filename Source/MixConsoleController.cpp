@@ -74,21 +74,26 @@ public:
      const float cx=(float)x+(float)w*.5f;
      const auto rail=juce::Rectangle<float>(cx-2.2f,(float)y+6.f,4.4f,
                                            (float)juce::jmax(0,h-12));
-     g.setColour(juce::Colour(0xff091415));
+     g.setColour(LibertyUI::Colour::canvasDeep);
      g.fillRoundedRectangle(rail,2.2f);
-     g.setColour(juce::Colour(0xff455d59));
+     g.setColour(LibertyUI::Colour::divider);
      g.drawRoundedRectangle(rail,2.2f,.8f);
      g.setColour(ModernMixer::sage.withAlpha(.5f));
      g.fillRoundedRectangle(cx-1.f,pos+5.f,2.f,
          juce::jmax(0.f,rail.getBottom()-pos-5.f),1.f);
      const auto thumb=juce::Rectangle<float>((float)x+3.f,pos-7.f,
                                             (float)juce::jmax(1,w-6),14.f);
-     g.setColour(juce::Colour(0xffd4ded9));
+     // Studio-style satin fader cap, strictly inside the existing thumb bounds.
+     g.setGradientFill(juce::ColourGradient(
+         juce::Colour(0xffe7f0f7),thumb.getX(),thumb.getY(),
+         juce::Colour(0xff8398aa),thumb.getX(),thumb.getBottom(),false));
      g.fillRoundedRectangle(thumb,3.f);
-     g.setColour(juce::Colour(0xff6c8984));
-     g.drawRoundedRectangle(thumb,3.f,.8f);
-     g.setColour(juce::Colour(0xff536d67));
+     g.setColour(juce::Colour(0xffacc8d8));
+     g.drawRoundedRectangle(thumb.reduced(0.4f),3.f,.8f);
+     g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(0.8f));
      g.drawHorizontalLine((int)pos,thumb.getX()+5.f,thumb.getRight()-5.f);
+     g.setColour(juce::Colours::white.withAlpha(0.45f));
+     g.drawHorizontalLine((int)thumb.getY()+2,thumb.getX()+4.f,thumb.getRight()-4.f);
  }
  void drawRotarySlider(juce::Graphics&g,int x,int y,int w,int h,
     float position,float start,float end,juce::Slider& slider)override{
@@ -99,10 +104,10 @@ public:
     const float radius=(d-2.f)*.5f;
     const float angle=start+juce::jlimit(0.f,1.f,position)*(end-start);
     const auto accent=slider.findColour(juce::Slider::rotarySliderFillColourId);
-    // Flat rotary dial rather than brushed-metal bevels.
-    g.setColour(juce::Colour(0xff182a2c));
+    // Precision dark dial with a clear coloured value arc.
+    g.setColour(LibertyUI::Colour::canvasDeep);
     g.fillEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius);
-    g.setColour(juce::Colour(0xff66827a));
+    g.setColour(LibertyUI::Colour::divider);
     g.drawEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius,.7f);
     for(int tick=0;tick<=8;++tick){
         const float a=start+(end-start)*(float)tick/8.f;
@@ -120,11 +125,13 @@ public:
     g.setColour(accent.withAlpha(.93f));
     g.strokePath(filled,juce::PathStrokeType(1.9f));
     const float bodyRadius=radius*.70f;
-    g.setColour(juce::Colour(0xff364d4d));
+    g.setGradientFill(juce::ColourGradient(
+        LibertyUI::Colour::surfaceRaised,cx,cy-bodyRadius,
+        LibertyUI::Colour::canvasDeep,cx,cy+bodyRadius,false));
     g.fillEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius);
-    g.setColour(juce::Colour(0xffa0bcb3).withAlpha(.68f));
+    g.setColour(LibertyUI::Colour::textMuted.withAlpha(.68f));
     g.drawEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius,.85f);
-    g.setColour(juce::Colour(0xff223334));
+    g.setColour(LibertyUI::Colour::panel);
     g.fillEllipse(cx-bodyRadius*.58f,cy-bodyRadius*.58f,
                   1.16f*bodyRadius,1.16f*bodyRadius);
     const float inner=bodyRadius*.15f,outer=bodyRadius*.83f;
@@ -2859,8 +2866,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
     const bool muted=s.mute!=nullptr&&s.mute->getToggleState();
     const bool soloed=s.solo!=nullptr&&s.solo->getToggleState();
     const int x=s.bounds.getX(),y=s.bounds.getY(),w=s.bounds.getWidth(),h=s.bounds.getHeight();
-    g.setColour(chosen?ModernMixer::selected:ModernMixer::strip);
-    g.fillRoundedRectangle(s.bounds.toFloat(),6.f);
+    LibertyUI::fillPanel(g,s.bounds.toFloat().reduced(0.5f),chosen,6.f);
     if(s.kind==Strip::bus)
     {
         g.setColour((owner.getMixerBusColourId(s.lane)>0?
@@ -2914,7 +2920,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        s.kind==Strip::bus?juce::String::fromUTF8("GROUPE STÉRÉO"):
        juce::String::fromUTF8("MASTER STÉRÉO"),
        x+4,y+36,w-8,15,juce::Justification::centred);
-    g.setColour(juce::Colour(0xff132224));
+    g.setColour(LibertyUI::Colour::canvasDeep);
     g.fillRoundedRectangle((float)x+8,(float)y+56,(float)w-16,24.f,3.f);
     // The 24px route capsule holds phase correlation (left) and RMS balance
     // (right) without moving faders, meters or any processing module.
@@ -2926,7 +2932,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
        const auto balance=LibertyMixConsoleMeter::stereoRmsBalance(s.meter);
        juce::String label="BAL --";
        if(balance.side==LibertyMixConsoleMeter::BalanceSide::center)
-           label=juce::String::fromUTF8("Δ 0.0 dB");
+           label="BAL 0.0 dB";
        else if(balance.side==LibertyMixConsoleMeter::BalanceSide::left||
                balance.side==LibertyMixConsoleMeter::BalanceSide::right){
            const auto side=balance.side==LibertyMixConsoleMeter::BalanceSide::left
