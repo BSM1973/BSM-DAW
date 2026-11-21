@@ -294,11 +294,13 @@ public:
         if (isSelected())
         {
             // Obsidian selection uses the same deep turquoise as selected arranger rows.
-            g.setColour(juce::Colour(0xff23434c));
-            g.fillRect(0, 0, width, height);
-            // Obsidian selection marker stays inside the existing plugin row.
-            g.setColour(juce::Colour(0xff54d6dc));
-            g.fillRect(0, 0, 2, height);
+            LibertyUI::fillPanel(g,juce::Rectangle<float>(
+                1.f,1.f,(float)juce::jmax(0,width-2),
+                (float)juce::jmax(0,height-2)),true,5.f);
+            // Selection rail stays within the row's reserved edge.
+            g.setColour(LibertyUI::Colour::accent);
+            g.fillRoundedRectangle(1.f,3.f,2.f,
+                (float)juce::jmax(0,height-6),1.f);
         }
 
         int textLeft = 4;
@@ -1162,14 +1164,20 @@ public:
         // Obsidian deep graphite aligns the browser with mixer and editor panels.
         g.fillAll(LibertyUI::Colour::panel);
         // Obsidian browser edge matches the graphite dividers throughout Liberty.
-        g.setColour(juce::Colour(0xff40515f));
-        g.drawVerticalLine(0, 0.0f, (float)getHeight());
-        // Obsidian soft-white title matches primary labels across Liberty Pro.
+        g.setGradientFill(juce::ColourGradient(
+            LibertyUI::Colour::surface,0.f,0.f,
+            LibertyUI::Colour::panel,(float)getWidth(),101.f,false));
+        g.fillRect(0,0,getWidth(),101);
+        g.setColour(LibertyUI::Colour::divider);
+        g.drawVerticalLine(0,0.f,(float)getHeight());
+        // Title remains inside its original region, clear of the close button.
         g.setColour(LibertyUI::Colour::textPrimary);
-        g.setFont(juce::Font(15.0f, juce::Font::bold));
-        g.drawText("LIBERTY  /  NAVIGATEUR", 14, 10, juce::jmax(0, getWidth() - 96), 24, juce::Justification::centredLeft, true);
-        g.setColour(juce::Colour(0xff54d6dc));
-        g.fillRoundedRectangle(12.0f, 35.0f, juce::jmax(0.0f, (float)getWidth() - 24.0f), 2.0f, 1.0f);
+        g.setFont(juce::Font(15.f,juce::Font::bold));
+        g.drawFittedText("NAVIGATEUR",14,10,juce::jmax(0,getWidth()-96),24,
+            juce::Justification::centredLeft,1);
+        LibertyUI::accentRule(g,{12.f,35.f,
+            juce::jmax(0.f,(float)getWidth()-24.f),1.7f},
+            LibertyUI::Colour::accentBlue);
         // Obsidian separator clearly distinguishes browser controls from the plugin list.
         g.setColour(juce::Colour(0xff40515f));
         g.fillRect(0, 100, getWidth(), 1);
@@ -1181,15 +1189,11 @@ public:
         }
         if (category == Category::audio)
         {
-            g.setColour(juce::Colour(0xff142638));
-            g.fillRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f);
-            g.setColour(juce::Colour(0xff324d63));
-            g.drawRoundedRectangle(7.0f, 102.0f, (float)juce::jmax(0, getWidth() - 14), 116.0f, 8.0f, 1.0f);
+            LibertyUI::fillPanel(g,{7.f,102.f,
+                (float)juce::jmax(0,getWidth()-14),116.f},false,8.f);
             const int previewTop = juce::jmax(136, getHeight() - 144);
-            g.setColour(juce::Colour(0xff142638));
-            g.fillRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 134.0f, 8.0f);
-            g.setColour(juce::Colour(0xff324d63));
-            g.drawRoundedRectangle(7.0f, (float)previewTop - 5.0f, (float)juce::jmax(0, getWidth() - 14), 134.0f, 8.0f, 1.0f);
+            LibertyUI::fillPanel(g,{7.f,(float)previewTop-5.f,
+                (float)juce::jmax(0,getWidth()-14),134.f},false,8.f);
             const auto wave = juce::Rectangle<int>(14, previewTop + 24, juce::jmax(0, getWidth() - 28), 36);
             g.setColour(juce::Colour(0xff0c1723));
             g.fillRoundedRectangle(wave.toFloat(), 4.0f);
