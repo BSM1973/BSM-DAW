@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "NoOverlapLayout.h"
+#include "LibertyDesignSystem.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <map>
@@ -43,7 +44,7 @@ public:
     explicit DynamicTrackController(MainComponent& o) : owner(o), heightIcon(o)
     {
         addAudio.setButtonText("+ AUDIO");
-        addAudio.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff245b70));
+        addAudio.setColour(juce::TextButton::buttonColourId, LibertyUI::Colour::active);
         addAudio.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         addAudio.setMouseClickGrabsKeyboardFocus(false);
         addAudio.onClick = [this]
@@ -58,11 +59,15 @@ public:
             "Créer une piste BUS stéréo dans la Console de mixage."));
         for (auto* b : { &addAudio, &addMidi, &addInstrument, &addBus })
         {
-            b->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff245b70));
-            b->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+            b->setColour(juce::TextButton::buttonColourId, LibertyUI::Colour::control);
+            b->setColour(juce::TextButton::buttonOnColourId, LibertyUI::Colour::active);
+            b->setColour(juce::TextButton::textColourOffId, LibertyUI::Colour::textPrimary);
             b->setMouseClickGrabsKeyboardFocus(false);
             addAndMakeVisible(*b);
         }
+        addAudio.setColour(juce::TextButton::buttonColourId, LibertyUI::Colour::active);
+        addInstrument.setColour(juce::TextButton::buttonColourId,
+                                LibertyUI::Colour::surfaceRaised);
         addMidi.onClick = [this] { owner.addMidiTrack(); };
         addInstrument.onClick = [this] { owner.addInstrumentTrack(); };
         addBus.onClick = [this]
@@ -84,12 +89,11 @@ public:
         // A single reserved creation row, distinct from the wordmark above
         // and the mixer captions to its right, on every Liberty page.
         const auto c = LibertyNoOverlap::creationZone;
-        g.setColour(juce::Colour(0xff122332));
-        g.fillRoundedRectangle((float)c.x+3.f,(float)c.y+1.f,
-            (float)c.w-6.f,(float)c.h-3.f,6.f);
-        g.setColour(juce::Colour(0xff405c72));
-        g.drawRoundedRectangle((float)c.x+3.f,(float)c.y+1.f,
-            (float)c.w-6.f,(float)c.h-3.f,6.f,1.f);
+        LibertyUI::fillPanel(g,juce::Rectangle<float>(
+            (float)c.x+3.f,(float)c.y+1.f,
+            (float)c.w-6.f,(float)c.h-3.f),false,7.f);
+        LibertyUI::accentRule(g,juce::Rectangle<float>(
+            (float)c.x+6.f,(float)c.y+1.f,65.f,1.6f));
     }
     void resized() override
     {
