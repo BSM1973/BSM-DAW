@@ -11,6 +11,7 @@
 #include "PerformLivePro.h"
 #include "NoOverlapLayout.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyMotionMath.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -1605,6 +1606,7 @@ public:
 
     void paintOverChildren(juce::Graphics& g) override
     {
+        const double seconds=juce::Time::getMillisecondCounterHiRes()/1000.0;
         if(!midiWorkspaceVisible())
         {
             // A dedicated non-interactive status light stays inside each real
@@ -1625,9 +1627,21 @@ public:
                     const auto light=juce::Rectangle<float>(
                         (float)cell.getX()+5.f,(float)cell.getY()+5.f,3.f,
                         (float)cell.getHeight()-10.f);
-                    g.setColour(status);
+                    const float intensity=queued?
+                        0.55f+0.45f*LibertyMotion::pulse(seconds,1.0):0.96f;
+                    g.setColour(status.withAlpha(intensity));
                     g.fillRoundedRectangle(light,1.5f);
                 }
+        }
+        if(player.isCapturing() && recordArrangeButton.isVisible())
+        {
+            // A red recording rail at the bottom of the button leaves the
+            // entire text region untouched; always clearly lit while recording.
+            const auto button=recordArrangeButton.getBounds().toFloat();
+            const float intensity=0.65f+0.35f*LibertyMotion::pulse(seconds,1.4);
+            g.setColour(juce::Colour(0xffff8181).withAlpha(intensity));
+            g.fillRoundedRectangle(button.getX()+8.f,button.getBottom()-4.f,
+                juce::jmax(0.f,button.getWidth()-16.f),2.f,1.f);
         }
         if(!midiWorkspaceVisible() && hasSelectedClip() &&
            selectedClipTrack<(int)clipButtons.size())
