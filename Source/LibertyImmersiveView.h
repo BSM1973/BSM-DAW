@@ -10,11 +10,16 @@ class View final : public juce::Component, private juce::Timer
 {
     AudioEngine& engine;
     std::array<juce::TextButton,5> tabs;
-    juce::TextButton freeze{"FIGER"},reset{"EFFACER"};
+    juce::TextButton freeze{"FIGER"},reset{"EFFACER"},hold{"CRETE MAX"};
+    juce::ComboBox spectrumSource,scopeTime;
+    SpectrumMode spectrumMode=SpectrumMode::stereoMax;
+    double scopeMs=10.;
+    double lastSamplesMs=0.;
+    bool holdEnabled=false;
     std::array<Frame,fftSize> window{},ordered{};
     std::array<Frame,8192> incoming{};
     ComplexBuffer work{};
-    Spectrum bins{};
+    Spectrum bins{},heldBins{};
     std::array<Metrics,300> history{};
     std::size_t cursor=0,valid=0,histCursor=0,histCount=0;
     Metrics latest{};
@@ -22,7 +27,7 @@ class View final : public juce::Component, private juce::Timer
     int page=0;
     bool frozen=false,hasData=false;
     juce::Point<int> pointer{-1,-1};
-    juce::Rectangle<int> plot() const { return getLocalBounds().reduced(18).withTrimmedTop(100).withTrimmedBottom(64); }
+    juce::Rectangle<int> plot() const { return getLocalBounds().reduced(18).withTrimmedTop(140).withTrimmedBottom(64); }
     float hz(float x) const { const float max=static_cast<float>(std::max(21.0,std::min(20000.0,rate*.5)));return 20.f*std::pow(max/20.f,std::clamp(x,0.f,1.f)); }
     float freqX(float frequency) const { return std::log(frequency/20.f)/std::log(hz(1.f)/20.f); }
     static float dbY(float value,juce::Rectangle<float> a) {return a.getBottom()-a.getHeight()*std::clamp((value+90.f)/96.f,0.f,1.f);}
@@ -34,9 +39,19 @@ class View final : public juce::Component, private juce::Timer
     {
         for(int v=-90;v<=0;v+=15){float y=dbY((float)v,a);g.setColour(LibertyUI::Colour::dividerSoft);g.drawLine(a.getX(),y,a.getRight(),y);label(g,juce::String(v),{(int)a.getX()-40,(int)y-8,36,16},juce::Justification::centredRight);}
     }
+    void updateSpectrum()
+    {
+        if(valid!=fftSize)return;
+        spectrum(ordered,work,bins,spectrumMode);
+        if(holdEnabled)for(std::size_t i=0;i<bins.size();++i)heldBins[i]=std::max(heldBins[i],bins[i]);
+    }
+    void refreshPageControls()
+    {
+        spectrumSource.setVisible(page==0);hold.setVisible(page==0);scopeTime.setVisible(page==1);
+    }
     void clear()
     {
-        cursor=valid=histCursor=histCount=0;hasData=false;latest={};window.fill({});ordered.fill({});bins.fill(0.f);history.fill({});
+        cursor=valid=histCursor=histCount=0;hasData=false;latest={};window.fill({});ordered.fill({});bins.fill(0.f);heldBins.fill(0.f);history.fill({});lastSamplesMs=0.;
     }
     void timerCallback() override
     {
@@ -60,9 +75,11 @@ class View final : public juce::Component, private juce::Timer
             for(std::size_t i=0;i<valid;++i)ordered[fftSize-valid+i]=window[(first+i)%fftSize];
             latest=measure(ordered.data()+fftSize-valid,valid);
             hasData=true;
-            if(page==0&&valid==fftSize)spectrum(ordered,work,bins);
+            lastSamplesMs=juce::Time::getMillisecondCounterHiRes();
+            if(page==0&&valid==fftSize)updateSpectrum();
         }
-        else if(!received){hasData=false;latest={};valid=0;bins.fill(0.f);}
+        else if(!received&&juce::Time::getMillisecondCounterHiRes()-lastSamplesMs>250.)
+        {hasData=false;latest={};valid=cursor=0;bins.fill(0.f);}
         history[histCursor]=latest;histCursor=(histCursor+1)%history.size();histCount=std::min(history.size(),histCount+1);
         repaint();
     }
@@ -70,14 +87,24 @@ public:
     explicit View(AudioEngine& e):engine(e)
     {
         const juce::String names[]={"SPECTRE","OSCILLOSCOPE","PHASE","DYNAMIQUE","HISTORIQUE"};
-        for(int i=0;i<5;++i){auto& b=tabs[(size_t)i];b.setButtonText(names[i]);b.setClickingTogglesState(false);b.setToggleState(i==0,juce::dontSendNotification);b.onClick=[this,i]{page=i;for(int j=0;j<5;++j)tabs[(size_t)j].setToggleState(i==j,juce::dontSendNotification);if(page==0&&valid==fftSize)spectrum(ordered,work,bins);repaint();};addAndMakeVisible(b);}
-        freeze.onClick=[this]{frozen=!frozen;freeze.setToggleState(frozen,juce::dontSendNotification);freeze.setButtonText(frozen?"REPRENDRE":"FIGER");repaint();};
+        for(int i=0;i<5;++i){auto& b=tabs[(size_t)i];b.setButtonText(names[i]);b.setClickingTogglesState(false);b.setToggleState(i==0,juce::dontSendNotification);b.onClick=[this,i]{page=i;for(int j=0;j<5;++j)tabs[(size_t)j].setToggleState(i==j,juce::dontSendNotification);if(page==0)updateSpectrum();refreshPageControls();repaint();};addAndMakeVisible(b);}
+        freeze.onClick=[this]{frozen=!frozen;freeze.setToggleState(frozen,juce::dontSendNotification);freeze.setButtonText(frozen?"REPRENDRE":"FIGER");if(!frozen){cursor=valid=0;hasData=false;latest={};bins.fill(0.f);engine.immersiveTap().discard();}repaint();};
+        const juce::String sources[]={"MAX L/R","GAUCHE","DROITE","MID (L+R)","SIDE (L-R)"};
+        for(int i=0;i<5;++i)spectrumSource.addItem(sources[i],i+1);
+        spectrumSource.setSelectedId(1,juce::dontSendNotification);
+        spectrumSource.onChange=[this]{spectrumMode=static_cast<SpectrumMode>(juce::jlimit(0,4,spectrumSource.getSelectedId()-1));bins.fill(0.f);heldBins.fill(0.f);updateSpectrum();repaint();};
+        for(int ms:{5,10,20,40})scopeTime.addItem(juce::String(ms)+" ms",ms);
+        scopeTime.setSelectedId(10,juce::dontSendNotification);
+        scopeTime.onChange=[this]{scopeMs=(double)scopeTime.getSelectedId();repaint();};
+        hold.setButtonText(juce::String::fromUTF8("CRÊTE MAX"));
+        hold.onClick=[this]{holdEnabled=!holdEnabled;hold.setToggleState(holdEnabled,juce::dontSendNotification);heldBins.fill(0.f);if(holdEnabled)updateSpectrum();repaint();};
+        addAndMakeVisible(spectrumSource);addAndMakeVisible(scopeTime);addAndMakeVisible(hold);refreshPageControls();
         reset.onClick=[this]{clear();engine.immersiveTap().discard();repaint();};
         addAndMakeVisible(freeze);addAndMakeVisible(reset);
         setSize(800,540);
     }
     ~View() override { stopTimer();engine.immersiveTap().setEnabled(false); }
-    void begin(){clear();engine.immersiveTap().discard();engine.immersiveTap().setEnabled(true);startTimerHz(25);repaint();}
+    void begin(){clear();frozen=false;freeze.setButtonText("FIGER");freeze.setToggleState(false,juce::dontSendNotification);engine.immersiveTap().discard();engine.immersiveTap().setEnabled(true);startTimerHz(25);repaint();}
     void end(){stopTimer();engine.immersiveTap().setEnabled(false);}
     void resized() override
     {
@@ -85,6 +112,10 @@ public:
         const int width=bar.getWidth()/7;
         for(auto& b:tabs)b.setBounds(bar.removeFromLeft(width).reduced(2,1));
         freeze.setBounds(bar.removeFromLeft(width).reduced(2,1));reset.setBounds(bar.reduced(2,1));
+        auto controls=getLocalBounds().reduced(18).withTrimmedTop(90).removeFromTop(32);
+        spectrumSource.setBounds(controls.removeFromLeft(166).reduced(2,1));
+        hold.setBounds(controls.removeFromLeft(132).reduced(2,1));
+        scopeTime.setBounds(18,108,164,30);
     }
     void mouseMove(const juce::MouseEvent&e) override{pointer=e.getPosition();if(page==0)repaint();}
     void mouseExit(const juce::MouseEvent&) override{pointer={-1,-1};repaint();}
@@ -107,17 +138,17 @@ public:
             }
             if(hasData&&valid==fftSize&&rate>0)
             {
-                juce::Path path;bool first=true;
+                juce::Path path,heldPath;bool first=true;
                 for(int x=0;x<(int)a.getWidth();++x)
                 {
                     const float low=hz((float)x/a.getWidth()),high=hz((float)(x+1)/a.getWidth());
                     const int i0=juce::jlimit(1,(int)bins.size()-1,(int)std::floor(low*fftSize/rate));
                     const int i1=juce::jlimit(i0,(int)bins.size()-1,(int)std::ceil(high*fftSize/rate));
-                    float m=0.f;for(int i=i0;i<=i1;++i)m=std::max(m,bins[(size_t)i]);
+                    float m=0.f,held=0.f;for(int i=i0;i<=i1;++i){m=std::max(m,bins[(size_t)i]);held=std::max(held,heldBins[(size_t)i]);}
                     const float y=dbY(db(m),a);
-                    if(first){path.startNewSubPath(a.getX()+x,y);first=false;}else path.lineTo(a.getX()+x,y);
+                    if(first){path.startNewSubPath(a.getX()+x,y);heldPath.startNewSubPath(a.getX()+x,dbY(db(held),a));first=false;}else{path.lineTo(a.getX()+x,y);heldPath.lineTo(a.getX()+x,dbY(db(held),a));}
                 }
-                juce::Graphics::ScopedSaveState saved(g);g.reduceClipRegion(a.toNearestInt());trace(g,path,LibertyUI::Colour::accent);
+                juce::Graphics::ScopedSaveState saved(g);g.reduceClipRegion(a.toNearestInt());if(holdEnabled)trace(g,heldPath,LibertyUI::Colour::accentAmber.withAlpha(.75f));trace(g,path,LibertyUI::Colour::accent);
             }
             if(a.contains(pointer.toFloat())&&rate>0)
             {
@@ -135,10 +166,11 @@ public:
                 g.setColour(LibertyUI::Colour::divider);g.drawHorizontalLine((int)b.getCentreY(),b.getX(),b.getRight());
                 label(g,ch?"R":"L",{(int)b.getX()-30,(int)b.getCentreY()-10,24,20});
                 if(!hasData)continue;
-                const auto n=std::min<std::size_t>(512,valid);juce::Path p;
+                const auto n=std::min(scopeSampleCount(rate,scopeMs),valid);juce::Path p;
                 for(std::size_t i=0;i<n;++i){const auto& s=ordered[fftSize-n+i];const float x=b.getX()+b.getWidth()*(float)i/(float)std::max<std::size_t>(1,n-1);const float y=b.getCentreY()-std::clamp(ch?s.r:s.l,-1.f,1.f)*b.getHeight()*.48f;if(i==0)p.startNewSubPath(x,y);else p.lineTo(x,y);}
                 trace(g,p,ch?LibertyUI::Colour::accentPurple:LibertyUI::Colour::accent);
             }
+            if(rate>0.)label(g,juce::String(1000.0*(double)std::min(scopeSampleCount(rate,scopeMs),valid)/rate,1)+" ms",{(int)a.getX(),(int)a.getBottom()+4,(int)a.getWidth(),18});
         }
         else if(page==2)
         {
@@ -162,7 +194,7 @@ public:
             for(int channel=0;channel<2;++channel){juce::Path p;for(std::size_t i=0;i<histCount;++i){const auto& m=history[(histCursor+history.size()-histCount+i)%history.size()];const float x=a.getX()+a.getWidth()*(float)(history.size()-histCount+i)/(float)(history.size()-1);const float y=dbY(db(channel?m.rms:m.peak),a);if(i==0)p.startNewSubPath(x,y);else p.lineTo(x,y);}trace(g,p,channel?LibertyUI::Colour::accentPurple:LibertyUI::Colour::accent);}
             label(g,"-12 s                                      PEAK / RMS                                      0 s",{(int)a.getX(),(int)a.getBottom()+4,(int)a.getWidth(),18});
         }
-        label(g,juce::String::fromUTF8("MASTER : sortie stéréo finale")+"  |  "+juce::String(rate,0)+" Hz  |  FFT 4096 / Hann  |  "+(frozen?"FIGE":hasData?"LIVE":"AUCUNE DONNEE"),{18,getHeight()-65,getWidth()-36,25});
+        label(g,juce::String::fromUTF8("MASTER : sortie stéréo finale")+"  |  "+juce::String(rate,0)+" Hz  |  FFT 4096 / Hann  |  "+(frozen?juce::String::fromUTF8("FIGÉ"):hasData?juce::String("LIVE"):juce::String::fromUTF8("AUCUNE DONNÉE")),{18,getHeight()-65,getWidth()-36,25});
         label(g,juce::String::fromUTF8("Mesures dBFS échantillon, RMS et corrélation. Aucun traitement du signal."),{18,getHeight()-36,getWidth()-36,20});
     }
 };

@@ -97,16 +97,28 @@ inline void fft(ComplexBuffer& a) noexcept
         }
     }
 }
-inline void spectrum(const std::array<Frame,fftSize>& frames,ComplexBuffer& work,Spectrum& out) noexcept
+enum class SpectrumMode { stereoMax, left, right, mid, side };
+inline float analysisSample(Frame s,SpectrumMode mode,int channel) noexcept
+{
+    switch(mode){case SpectrumMode::left:return s.l;case SpectrumMode::right:return s.r;
+    case SpectrumMode::mid:return (s.l+s.r)*.5f;case SpectrumMode::side:return (s.l-s.r)*.5f;
+    default:return channel?s.r:s.l;}
+}
+inline std::size_t scopeSampleCount(double rate,double milliseconds) noexcept
+{
+    if(!std::isfinite(rate)||!std::isfinite(milliseconds)||rate<=0||milliseconds<=0)return 1;
+    return static_cast<std::size_t>(std::clamp(std::round(rate*milliseconds*.001),1.0,static_cast<double>(fftSize)));
+}
+inline void spectrum(const std::array<Frame,fftSize>& frames,ComplexBuffer& work,Spectrum& out,SpectrumMode mode=SpectrumMode::stereoMax) noexcept
 {
     out.fill(0.f);float gain=0.f;
     for(std::size_t i=0;i<fftSize;++i)gain+=.5f-.5f*std::cos(2.f*pi*static_cast<float>(i)/static_cast<float>(fftSize-1));
-    for(int channel=0;channel<2;++channel)
+    for(int channel=0;channel<(mode==SpectrumMode::stereoMax?2:1);++channel)
     {
         for(std::size_t i=0;i<fftSize;++i)
         {
             const float window=.5f-.5f*std::cos(2.f*pi*static_cast<float>(i)/static_cast<float>(fftSize-1));
-            work[i]={window*(channel?frames[i].r:frames[i].l),0.f};
+            work[i]={window*analysisSample(frames[i],mode,channel),0.f};
         }
         fft(work);
         for(std::size_t i=0;i<out.size();++i)

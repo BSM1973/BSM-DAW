@@ -13,6 +13,13 @@ int main()
     ComplexBuffer work{};Spectrum spectrumBins{};spectrum(samples,work,spectrumBins);
     assert(std::distance(spectrumBins.begin(),std::max_element(spectrumBins.begin(),spectrumBins.end()))==128);
     assert(std::abs(db(spectrumBins[128])+6.0206f)<.02f);
+    spectrum(samples,work,spectrumBins,SpectrumMode::mid);assert(spectrumBins[128]<.00001f);
+    spectrum(samples,work,spectrumBins,SpectrumMode::side);assert(std::abs(db(spectrumBins[128])+6.0206f)<.02f);
+    spectrum(samples,work,spectrumBins,SpectrumMode::left);assert(std::abs(db(spectrumBins[128])+6.0206f)<.02f);
+    spectrum(samples,work,spectrumBins,SpectrumMode::right);assert(std::abs(db(spectrumBins[128])+6.0206f)<.02f);
+    assert(scopeSampleCount(48000.,10.)==480);
+    assert(scopeSampleCount(192000.,40.)==fftSize);
+    assert(scopeSampleCount(0.,10.)==1);
     tap.capture(channels,1,(int)fftSize);assert(tap.read(samples.data(),fftSize)==fftSize);assert(measure(samples.data(),fftSize).correlation>.999f);
     for(int i=0;i<10;++i)tap.capture(channels,2,(int)fftSize);
     for(int i=0;i<8;++i)assert(tap.read(samples.data(),fftSize)==fftSize);
