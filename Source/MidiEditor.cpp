@@ -1,4 +1,5 @@
 #include "MidiEditor.h"
+#include "LibertyDesignSystem.h"
 #include "MainComponent.h"
 #include <algorithm>
 #include <array>
@@ -4537,8 +4538,8 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff0b0d10));
-        g.setColour(juce::Colour(0xff151f28));
+        g.fillAll(LibertyUI::Colour::canvasDeep);
+        g.setColour(LibertyUI::Colour::header);
         g.fillRect(0, 0, getWidth(), editorToolbarHeight);
         g.setColour(juce::Colour(0xff3b5262));
         g.fillRect(0, editorToolbarHeight - 1, getWidth(), 1);
@@ -4680,8 +4681,10 @@ public:
             if (x > grid.getRight()) break;
             const bool measure = ticksPerMeasure > 0 && t % ticksPerMeasure == 0;
             const bool beat = t % MidiEngine::ticksPerQuarterNote == 0;
-            // Obsidian Piano Roll: measure lines lead, beats and subdivisions recede.
-            g.setColour(measure ? juce::Colour(0xff688996) : beat ? juce::Colour(0xff344452) : juce::Colour(0xff1c2832));
+            // Strong bar hierarchy, quieter subdivisions.
+            g.setColour(measure?LibertyUI::Colour::divider.brighter(0.45f):
+                beat?LibertyUI::Colour::dividerSoft.brighter(0.15f):
+                     LibertyUI::Colour::dividerSoft.withAlpha(0.55f));
             g.drawVerticalLine(x, (float)rulerHeight, (float)grid.getBottom());
             if (measure)
             {
@@ -4800,8 +4803,8 @@ public:
             // Selection and playback use outlines so the velocity colour remains visible.
             const bool selected = owner.getMidiEngine().isNoteSelected(n);
             const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);
-            g.setColour(n.muted ? juce::Colour(0xff46505a) : velocityColour);
-            g.fillRoundedRectangle(r.toFloat(), juce::jmin(3.0f, (float)r.getHeight() * 0.35f));
+            LibertyUI::musicalBlock(g,r.toFloat(),
+                n.muted?juce::Colour(0xff46505a):velocityColour,selected,n.muted);
             // Subtle Obsidian highlight adds definition to idle MIDI notes.
             g.setColour(juce::Colour(0xffe8eff7).withAlpha(active ? 0.24f : 0.16f));
             g.fillRoundedRectangle(r.toFloat().withHeight(juce::jmin(4.0f, (float)r.getHeight())), 2.0f);
