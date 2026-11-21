@@ -77,3 +77,33 @@ assert "if(!queued&&!active)continue;" in performance
 assert "g.fillRoundedRectangle(light,1.5f);" in performance
 assert "queued?LibertyUI::Colour::accentAmber" in performance
 print("PASS: Obsidian Signature rendering, typography and preserved control geometry")
+
+# Obsidian Studio: shared musical visuals, real signal data, and non-overlapping
+# information regions. Interaction geometry remains under the original editors.
+piano=read("Source/MidiEditor.cpp")
+step=read("Source/PolyphonicStepGridUI.inc")
+multi=read("Source/MultiMidiClipController.cpp")
+inline=read("Source/InlineMidiEditor.inc")
+names=read("Source/ClipNamingController.inc")
+warp=read("Source/AudioClipWarpView.cpp")
+assert "inline void musicalBlock(" in theme
+assert "inline void waveformEnvelope(" in theme
+assert "g.reduceClipRegion(area.toNearestInt());" in theme
+assert "LibertyUI::waveformEnvelope(g,waveform,clip.toFloat(),selected);" in arrange
+assert "waveformMin[index][(size_t)bin]" in arrange
+assert "waveformMax[index][(size_t)bin]" in arrange
+assert "LibertyUI::musicalBlock(g,r.toFloat(),col.withAlpha(" in multi
+assert "LibertyUI::musicalBlock(g,bounds.toFloat()," in inline
+assert "g.reduceClipRegion(box);" in names
+assert "LibertyUI::musicalBlock(g,r.toFloat()," in piano
+assert "const juce::Colour velocityColour = colourForMidiVelocity((int)n.velocity);" in piano
+assert "infoArea.removeFromRight(122).reduced(2,1)" in piano
+assert "infoArea.removeFromRight(6);" in piano
+assert "g.drawFittedText(baseInfo,infoArea," in piano
+assert "pianoKeyWidth + 158, infoY" not in piano
+assert "LibertyUI::musicalBlock(g,noteR," in step
+assert "LibertyPolyGridDirect::normalizedValue(grid, note, activeProperty)" in step
+assert "LibertyUI::musicalBlock(g,bounds.toFloat(),colour," in performance
+assert "const int step = 1; // Exact peak envelope" in warp
+assert "LibertyUI::Colour::accentLight);" in warp
+print("PASS: Obsidian Studio waveform and musical block rendering")
