@@ -3,6 +3,7 @@
 #include "LibertyDesignSystem.h"
 #include "LibertyImmersiveAnalysis.h"
 #include "LibertyMasteringMeter.h"
+#include "LibertyMasteringOffline.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 
 namespace LibertyImmersive
@@ -12,6 +13,8 @@ class View final : public juce::Component, private juce::Timer
     AudioEngine& engine;
     std::array<juce::TextButton,6> tabs;
     juce::ComboBox target;
+    juce::TextButton offlineButton{"A/B PRO"};
+    std::unique_ptr<LibertyMastering::OfflineWindow> offlineWindow;
     juce::TextButton resetLoudness{"RESET LUFS"},resetTruePeak{"RESET TP"},resetHistory{"RESET HIST."},exportReport{"EXPORT TXT"};
     std::unique_ptr<juce::FileChooser> reportChooser;
     LibertyMastering::Meter mastering;
@@ -57,7 +60,7 @@ class View final : public juce::Component, private juce::Timer
     void refreshPageControls()
     {
         spectrumSource.setVisible(page==0);hold.setVisible(page==0);scopeTime.setVisible(page==1);
-        target.setVisible(page==5);resetLoudness.setVisible(page==5);resetTruePeak.setVisible(page==5);resetHistory.setVisible(page==5);exportReport.setVisible(page==5);
+        target.setVisible(page==5);resetLoudness.setVisible(page==5);resetTruePeak.setVisible(page==5);resetHistory.setVisible(page==5);exportReport.setVisible(page==5);offlineButton.setVisible(page==5);
         freeze.setEnabled(page!=5);reset.setEnabled(page!=5);
     }
     void clear()
@@ -116,8 +119,9 @@ public:
         reset.onClick=[this]{clear();repaint();};
         addAndMakeVisible(freeze);addAndMakeVisible(reset);
         target.addItem("EBU R128 -23 LUFS",1);target.addItem("Streaming -14 LUFS",2);target.addItem("Musique -16 LUFS",3);target.addItem("Master -9 LUFS",4);
+        for(int lu=-36;lu<=-5;++lu)target.addItem(juce::String(lu)+" LUFS - perso",100+lu+36);
         target.setSelectedId(1,juce::dontSendNotification);
-        target.onChange=[this]{const double values[]={-23.,-14.,-16.,-9.};targetLU=values[juce::jlimit(0,3,target.getSelectedId()-1)];targetTP=-1.;repaint();};
+        target.onChange=[this]{const double values[]={-23.,-14.,-16.,-9.};const int id=target.getSelectedId();targetLU=id>=100?double(id-136):values[juce::jlimit(0,3,id-1)];targetTP=-1.;repaint();};
         resetLoudness.onClick=[this]{mastering.resetLoudness();repaint();};
         resetTruePeak.onClick=[this]{mastering.resetPeak();repaint();};
         resetHistory.onClick=[this]{mastering.resetHistory();repaint();};
@@ -128,6 +132,8 @@ public:
             reportChooser=std::make_unique<juce::FileChooser>("Exporter le rapport",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Liberty-Mastering.txt"),"*.txt");
             reportChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<View>(this),content](const juce::FileChooser& chooser){if(!safe)return;const auto file=chooser.getResult();if(file!=juce::File{}&&!file.replaceWithText(content))juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Liberty",juce::String::fromUTF8("Impossible d'enregistrer le rapport."),"OK");juce::MessageManager::callAsync([safe]{if(safe)safe->reportChooser.reset();});});
         };
+        offlineButton.onClick=[this]{if(!offlineWindow)offlineWindow=std::make_unique<LibertyMastering::OfflineWindow>();offlineWindow->setVisible(true);offlineWindow->toFront(true);};
+        addAndMakeVisible(offlineButton);
         addAndMakeVisible(target);addAndMakeVisible(resetLoudness);addAndMakeVisible(resetTruePeak);addAndMakeVisible(resetHistory);addAndMakeVisible(exportReport);refreshPageControls();
         setSize(800,540);
     }
@@ -146,7 +152,8 @@ public:
         scopeTime.setBounds(18,108,164,30);
         auto masterControls=getLocalBounds().reduced(18).withTrimmedTop(90).removeFromTop(32);
         target.setBounds(masterControls.removeFromLeft(190).reduced(2,1));
-        for(auto* button:{&resetLoudness,&resetTruePeak,&resetHistory,&exportReport})button->setBounds(masterControls.removeFromLeft(126).reduced(2,1));
+        for(auto* button:{&resetLoudness,&resetTruePeak,&resetHistory,&exportReport})button->setBounds(masterControls.removeFromLeft(116).reduced(2,1));
+        offlineButton.setBounds(masterControls.removeFromLeft(106).reduced(2,1));
     }
     void mouseMove(const juce::MouseEvent&e) override{pointer=e.getPosition();if(page==0)repaint();}
     void mouseExit(const juce::MouseEvent&) override{pointer={-1,-1};repaint();}
@@ -232,7 +239,7 @@ public:
             juce::Path p;bool first=true;for(std::size_t i=0;i<mastering.historyCount();++i){const auto lu=mastering.historyAt(i);if(!std::isfinite(lu)){first=true;continue;}const float x=graph.getX()+graph.getWidth()*(float)(LibertyMastering::Meter::historyCapacity-mastering.historyCount()+i)/(LibertyMastering::Meter::historyCapacity-1);if(first){p.startNewSubPath(x,y(lu));first=false;}else p.lineTo(x,y(lu));}trace(g,p,LibertyUI::Colour::accent);
             label(g,"-60 s  |  LUFS M  |  CIBLE "+juce::String(targetLU,0)+" LUFS  |  "+(std::isfinite(r.integrated)?juce::String(r.integrated-targetLU,1)+" LU":"--"),{(int)a.getX(),(int)graph.getBottom()+5,(int)a.getWidth(),20});
             label(g,incomplete?juce::String::fromUTF8("CAPTURE INCOMPLÈTE : pertes FIFO, relancer toutes les mesures."):juce::String::fromUTF8("Mesure directe : ")+juce::String(mastering.duration(),1)+" s",{18,getHeight()-65,getWidth()-36,25});
-            label(g,juce::String::fromUTF8("True Peak estimé 4x. Mesures indicatives, non certifiées."),{18,getHeight()-36,getWidth()-36,20});return;
+            label(g,juce::String::fromUTF8("True Peak estimé 8x. Mesures indicatives, non certifiées."),{18,getHeight()-36,getWidth()-36,20});return;
         }
         else
         {

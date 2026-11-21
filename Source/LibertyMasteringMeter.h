@@ -59,27 +59,28 @@ public:
         return unavailable;
     }
 };
-// Four-phase band-limited interpolator, on the UI consumer only.
+// Eight-phase band-limited interpolator, on the UI consumer only.
 // This is an estimated intersample peak, not a certified compliance meter.
 class TruePeak
 {
     static constexpr int taps=32;
-    std::array<std::array<double,taps>,3> coeff{};
-    std::array<std::array<double,taps>,2> delay{};
+    std::array<std::array<double,taps>,7> coeff{};
+    std::array<std::array<double,taps*2>,2> delay{};
     int cursor=0;
     double maximum=0.;
 public:
     TruePeak()
     {
         constexpr double p=3.14159265358979323846;
-        for(int phase=0;phase<3;++phase){double sum=0.;for(int i=0;i<taps;++i){const double x=i-15.-(phase+1)*.25;const double w=.42-.5*std::cos(2*p*i/(taps-1))+.08*std::cos(4*p*i/(taps-1));const double c=w*(std::abs(x)<1e-12?1.:std::sin(p*x)/(p*x));coeff[(size_t)phase][(size_t)i]=c;sum+=c;}for(auto& c:coeff[(size_t)phase])c/=sum;}
+        for(int phase=0;phase<7;++phase){double sum=0.;for(int i=0;i<taps;++i){const double x=i-15.-(phase+1)*.125;const double w=.42-.5*std::cos(2*p*i/(taps-1))+.08*std::cos(4*p*i/(taps-1));const double c=w*(std::abs(x)<1e-12?1.:std::sin(p*x)/(p*x));coeff[(size_t)phase][(size_t)i]=c;sum+=c;}for(auto& c:coeff[(size_t)phase])c/=sum;}
     }
     void clear() noexcept {maximum=0.;cursor=0;for(auto& d:delay)d.fill(0.);}
     void push(LibertyImmersive::Frame s) noexcept
     {
-        delay[0][(size_t)cursor]=s.l;delay[1][(size_t)cursor]=s.r;
+        delay[0][(size_t)cursor]=delay[0][(size_t)(cursor+taps)]=s.l;
+        delay[1][(size_t)cursor]=delay[1][(size_t)(cursor+taps)]=s.r;
         maximum=std::max({maximum,std::abs(double(s.l)),std::abs(double(s.r))});
-        for(const auto& d:delay)for(const auto& phase:coeff){double y=0.;for(int i=0;i<taps;++i)y+=phase[(size_t)i]*d[(size_t)((cursor-i+taps)%taps)];maximum=std::max(maximum,std::abs(y));}
+        for(const auto& d:delay)for(const auto& phase:coeff){double y=0.;const auto* p=d.data()+cursor+taps;for(int i=0;i<taps;++i)y+=phase[(size_t)i]*p[-i];maximum=std::max(maximum,std::abs(y));}
         cursor=(cursor+1)%taps;
     }
     double dbtp() const noexcept {return amplitudeDb(maximum);}
@@ -142,6 +143,7 @@ public:
         }
         reading.truePeak=peak.dbtp();
     }
+    void finish() noexcept {for(int i=0;i<32;++i)peak.push({});reading.truePeak=peak.dbtp();}
     Reading get() const noexcept {return reading;}
     double duration() const noexcept {return rate>0.?double(samples)/rate:0.;}
     std::size_t historyCount() const noexcept{return histCount;}

@@ -8,7 +8,7 @@ name: Liberty Fast Diagnostic
 # Keep manual runs available; the separate build.yml handles pushes to main.
 on:
   push:
-    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3', 'feature/perform-transform-generate-phase4', 'feature/perform-live-pro-phase5', 'fix/performance-live-ui-cleanup', 'feature/liberty-ui-modern-refresh', 'feature/liberty-obsidian-signature', 'feature/liberty-obsidian-studio', 'feature/liberty-obsidian-motion', 'feature/liberty-obsidian-precision', 'feature/liberty-obsidian-immersive', 'feature/liberty-obsidian-mastering' ]
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3', 'feature/perform-transform-generate-phase4', 'feature/perform-live-pro-phase5', 'fix/performance-live-ui-cleanup', 'feature/liberty-ui-modern-refresh', 'feature/liberty-obsidian-signature', 'feature/liberty-obsidian-studio', 'feature/liberty-obsidian-motion', 'feature/liberty-obsidian-precision', 'feature/liberty-obsidian-immersive', 'feature/liberty-obsidian-mastering', 'feature/liberty-obsidian-mastering-pro' ]
   workflow_dispatch:
 
 jobs:
@@ -113,6 +113,33 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG Tests/MixConsoleMeterRegression.cpp -o /tmp/liberty-mixer-meter
           /tmp/liberty-mixer-meter
+
+  mastering-ebu-reference:
+    name: Mastering PRO - EBU stereo reference subset
+    if: github.ref == 'refs/heads/feature/liberty-obsidian-mastering-pro'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile offline reference meter
+        run: c++ -O3 -std=c++17 -Wall -Wextra -Werror -I Source Tests/LibertyMasteringReference.cpp -o /tmp/liberty-ebu-meter
+      - name: Measure official EBU sequences (separate non-certification report)
+        run: |
+          set -o pipefail
+          mkdir -p ebu-report
+          if ! curl --fail --location --retry 1 --max-time 120 'https://tech.ebu.ch/files/live/sites/tech/files/shared/testmaterial/ebu-loudness-test-setv05.zip' -o /tmp/ebu-test.zip; then
+            echo 'NOT RUN: official EBU archive unavailable' | tee ebu-report/results.txt
+            exit 1
+          fi
+          python3 Tests/LibertyMasteringEbu.py /tmp/ebu-test.zip /tmp/liberty-ebu-meter | tee ebu-report/results.txt
+      - name: Upload EBU measurement report only (no reference audio)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Mastering-EBU-Report
+          path: ebu-report/results.txt
+          if-no-files-found: warn
 
   fast-macos-arm64:
     name: Fast macOS arm64 (macOS 26)
