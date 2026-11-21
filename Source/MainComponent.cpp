@@ -2189,9 +2189,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                                     .getIntersection(row.withTrimmedLeft(headerW));
                     if (!clip.isEmpty())
                     {
-                        g.setColour(selected ? juce::Colour(0xff645034)
-                                             : juce::Colour(0xff463b2c));
-                        g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                        LibertyUI::musicalBlock(g,clip.toFloat(),
+                            selected?juce::Colour(0xff645034):
+                                     juce::Colour(0xff463b2c),selected);
                         g.setColour(selected ? juce::Colour(0xffe0ae65)
                                              : juce::Colour(0xffae8954));
                         if (selected && clip.getWidth() > 8 && clip.getHeight() > 8)
