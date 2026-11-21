@@ -132,7 +132,7 @@ public:
             reportChooser=std::make_unique<juce::FileChooser>("Exporter le rapport",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Liberty-Mastering.txt"),"*.txt");
             reportChooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<View>(this),content](const juce::FileChooser& chooser){if(!safe)return;const auto file=chooser.getResult();if(file!=juce::File{}&&!file.replaceWithText(content))juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Liberty",juce::String::fromUTF8("Impossible d'enregistrer le rapport."),"OK");juce::MessageManager::callAsync([safe]{if(safe)safe->reportChooser.reset();});});
         };
-        offlineButton.onClick=[this]{if(!offlineWindow)offlineWindow=std::make_unique<LibertyMastering::OfflineWindow>();offlineWindow->setVisible(true);offlineWindow->toFront(true);};
+        offlineButton.onClick=[this]{if(!offlineWindow)offlineWindow=std::make_unique<LibertyMastering::OfflineWindow>(engine);offlineWindow->setVisible(true);offlineWindow->toFront(true);};
         addAndMakeVisible(offlineButton);
         addAndMakeVisible(target);addAndMakeVisible(resetLoudness);addAndMakeVisible(resetTruePeak);addAndMakeVisible(resetHistory);addAndMakeVisible(exportReport);refreshPageControls();
         setSize(800,540);
