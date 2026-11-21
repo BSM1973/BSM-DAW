@@ -10,6 +10,7 @@
 #include "PerformMidiGenerator.h"
 #include "PerformLivePro.h"
 #include "NoOverlapLayout.h"
+#include "LibertyDesignSystem.h"
 #include "StepSequencer.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -1176,11 +1177,14 @@ public:
 
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff0c1014));
-        g.setColour(juce::Colour(0xff161c22));
-        g.fillRect(0, 0, getWidth(), 64);
-        g.setColour(juce::Colour(0xff303944));
-        g.drawHorizontalLine(63, 0.0f, (float)getWidth());
+        g.fillAll(LibertyUI::Colour::canvasDeep);
+        g.setGradientFill(juce::ColourGradient(
+            LibertyUI::Colour::surface,0.f,0.f,
+            LibertyUI::Colour::header,(float)getWidth(),64.f,false));
+        g.fillRect(0,0,getWidth(),64);
+        g.setColour(LibertyUI::Colour::dividerSoft);
+        g.drawHorizontalLine(63,0.0f,(float)getWidth());
+        LibertyUI::accentRule(g,{0.f,62.f,(float)getWidth(),1.f});
 
         // The MainComponent track-creation toolbar occupies x=0..330
         // in this same header. Keep this region text-free so that
@@ -1189,8 +1193,8 @@ public:
             LibertyNoOverlap::creationZoneWidth+16);
         if(titleX+160<getWidth()-16)
         {
-            g.setColour(juce::Colour(0xffb6d2e1));
-            g.setFont(juce::Font(13.0f,juce::Font::bold));
+            g.setColour(LibertyUI::Colour::textPrimary);
+            g.setFont(juce::Font(14.0f,juce::Font::bold));
             g.drawFittedText("PERFORMANCE",titleX,16,160,24,
                 juce::Justification::centredLeft,1);
         }
@@ -1202,25 +1206,47 @@ public:
         {
             const auto header = trackHeaders[(size_t)track];
             const auto colour = colourForTrack(track);
-            g.setColour(juce::Colour(0xff151a20));
-            g.fillRoundedRectangle(header.toFloat(), 5.0f);
-            g.setColour(colour);
-            g.fillRoundedRectangle((float)header.getX(), (float)header.getY(), (float)header.getWidth(), 5.0f, 2.5f);
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::Font(11.5f, juce::Font::bold));
-            g.drawText(trackName(track), header.reduced(6, 6), juce::Justification::centredTop, true);
-            g.setColour(juce::Colour(0xff7e8791));
-            g.setFont(juce::Font(8.0f, juce::Font::bold));
-            g.drawText(trackType(track), header.getX() + 5, header.getY() + 28, header.getWidth() - 10, 14, juce::Justification::centred, true);
+            LibertyUI::fillPanel(g,header.toFloat(),false,7.f);
+            g.setColour(colour.brighter(0.26f));
+            g.fillRoundedRectangle((float)header.getX()+10.f,
+                (float)header.getY()+1.f,
+                (float)juce::jmax(1,header.getWidth()-20),3.f,1.5f);
+            g.setColour(LibertyUI::Colour::textPrimary);
+            g.setFont(juce::Font(12.0f,juce::Font::bold));
+            g.drawFittedText(trackName(track),
+                header.reduced(10,6),juce::Justification::centredTop,1);
+            g.setColour(LibertyUI::Colour::textMuted);
+            g.setFont(juce::Font(9.0f,juce::Font::plain));
+            g.drawFittedText(trackType(track),
+                header.getX()+8,header.getY()+27,
+                header.getWidth()-16,14,juce::Justification::centred,1);
         }
 
         for (int scene = 0; scene < sceneCount; ++scene)
         {
             const auto y = sceneRows[(size_t)scene].getY();
-            g.setColour(scene % 2 == 0 ? juce::Colour(0xff11161b) : juce::Colour(0xff0f1419));
-            g.fillRect(0, y, getWidth(), sceneRows[(size_t)scene].getHeight());
-            g.setColour(juce::Colour(0xff29313a));
-            g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom() - 1, 0.0f, (float)getWidth());
+            g.setColour(scene % 2 == 0?
+                LibertyUI::Colour::canvas : LibertyUI::Colour::canvasDeep);
+            g.fillRect(0,y,getWidth(),sceneRows[(size_t)scene].getHeight());
+            g.setColour(LibertyUI::Colour::dividerSoft.withAlpha(0.47f));
+            g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom()-1,
+                                 0.0f,(float)getWidth());
+        }
+        }
+        // Subtle track lanes: rhythm and vertical alignment remain readable
+        // without adding outlines that compete with clip launch buttons.
+        for(int track=0;track<paintedTracks;++track)
+        {
+            const auto header=trackHeaders[(size_t)track];
+            if(header.isEmpty())continue;
+            const auto lane=juce::Rectangle<float>(
+                (float)header.getX()+0.5f,
+                (float)sceneRows[0].getY(),
+                (float)header.getWidth()-1.f,
+                (float)juce::jmax(0,
+                    sceneRows[sceneCount-1].getBottom()-sceneRows[0].getY()));
+            g.setColour(colourForTrack(track).withAlpha(0.075f));
+            g.fillRoundedRectangle(lane,4.f);
         }
         }
 
@@ -1229,11 +1255,10 @@ public:
             const auto live=juce::Rectangle<int>(
                 18,getHeight()-54-inspectorHeight()-livePanelHeight()-7,
                 juce::jmax(1,getWidth()-36),livePanelHeight());
-            g.setColour(juce::Colour(0xff111d2a));
-            g.fillRoundedRectangle(live.toFloat(),6.f);
-            g.setColour(juce::Colour(0xff335a72));
-            g.drawRoundedRectangle(live.toFloat(),6.f,1.f);
-            g.setColour(juce::Colour(0xffb1c6d7));
+            LibertyUI::fillPanel(g,live.toFloat(),false,8.f);
+            LibertyUI::accentRule(g,{(float)live.getX()+12.f,
+                (float)live.getY()+1.f,165.f,1.7f});
+            g.setColour(LibertyUI::Colour::textMuted);
             g.setFont(juce::Font(9.f,juce::Font::bold));
             g.drawText(juce::String::fromUTF8("SCÈNES ET MIDI"),live.getX()+12,
                 live.getY()+2,juce::jmax(1,live.getWidth()-20),13,
@@ -1249,10 +1274,7 @@ public:
         if(hasSelectedClip())
         {
             const auto area=inspectorArea();
-            g.setColour(juce::Colour(0xff151f2b));
-            g.fillRoundedRectangle(area.toFloat(),8.0f);
-            g.setColour(juce::Colour(0xff365a71));
-            g.drawRoundedRectangle(area.toFloat(),8.0f,1.0f);
+            LibertyUI::fillPanel(g,area.toFloat(),true,10.f);
             const auto title=slotName(selectedClipTrack,selectedClipScene);
             g.setColour(juce::Colour(0xffbfccd8));
             g.setFont(juce::Font(11.5f,juce::Font::bold));
@@ -1618,9 +1640,15 @@ public:
         const int sceneLaunchW = 92;
         const int gridLeft = leftMargin;
         const int gridRight = getWidth() - sceneLaunchW - 28;
-        const int gap = 6;
-        const int available = juce::jmax(visibleTracks * 110, gridRight - gridLeft);
-        const int columnW = visibleTracks > 0 ? juce::jlimit(110, 220, (available - (visibleTracks - 1) * gap) / visibleTracks) : 110;
+        const int gap = 8;
+        // Fluid track columns fill the available canvas. The previous 220 px
+        // hard limit left half the PERFORMANCE page empty with four tracks.
+        // Keep columns disjoint even if a session has many tracks.
+        const int available = juce::jmax(1,gridRight-gridLeft);
+        const int totalGaps = juce::jmax(0,visibleTracks-1)*gap;
+        const int columnW = visibleTracks>0?
+            juce::jmin(440,juce::jmax(1,
+                (juce::jmax(1,available-totalGaps))/visibleTracks)):110;
         const int headerTop = 72;
         const int headerH = 62;
         const int rowsTop = 142;
