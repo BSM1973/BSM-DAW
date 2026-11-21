@@ -9,6 +9,7 @@
 #include "NoOverlapLayout.h"
 #include "MixerSearchFilter.h"
 #include "LibertyFrenchLabels.h"
+#include "LibertyDesignSystem.h"
 #include "MixConsoleSoloLogic.h"
 #include "MixConsoleMeter.h"
 #include "ChannelDialogLayout.h"
@@ -48,16 +49,16 @@ juce::Colour trackColour(int id){return libertySharedTrackColour(id);}
 // Compact console inspired by the uploaded reference video: understated
 // graphite surfaces, sage accents and a warm Master, preserving DSP layout.
 namespace ModernMixer {
-const juce::Colour canvas{0xff101a1c};
-const juce::Colour header{0xff172627};
-const juce::Colour strip{0xff1d2d2e};
-const juce::Colour selected{0xff2b4141};
-const juce::Colour border{0xff385052};
-const juce::Colour panel{0xff223638};
-const juce::Colour text{0xffeef5f2};
-const juce::Colour secondary{0xffa5bdb6};
-const juce::Colour sage{0xff75d3b9};
-const juce::Colour amber{0xffdfa167};
+const juce::Colour canvas=LibertyUI::Colour::canvas;
+const juce::Colour header=LibertyUI::Colour::header;
+const juce::Colour strip=LibertyUI::Colour::surface;
+const juce::Colour selected=LibertyUI::Colour::selection;
+const juce::Colour border=LibertyUI::Colour::divider;
+const juce::Colour panel=LibertyUI::Colour::panel;
+const juce::Colour text=LibertyUI::Colour::textPrimary;
+const juce::Colour secondary=LibertyUI::Colour::textMuted;
+const juce::Colour sage=LibertyUI::Colour::accent;
+const juce::Colour amber=LibertyUI::Colour::accentAmber;
 }
 
 class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{
@@ -1604,13 +1605,18 @@ public:
  void paint(juce::Graphics&g)override
  {
      g.fillAll(ModernMixer::canvas);
-     g.setColour(ModernMixer::header);
+     g.setGradientFill(juce::ColourGradient(
+         LibertyUI::Colour::surface,0.f,0.f,
+         ModernMixer::header,(float)getWidth(),
+         (float)LibertyNoOverlap::mixerToolbarHeight,false));
      g.fillRect(0,0,getWidth(),LibertyNoOverlap::mixerToolbarHeight);
-     // The 330px left zone belongs exclusively to the creation controls.
-     // Never draw a caption or another mixer command over it.
-     g.setColour(juce::Colour(0xff1a2b2b));
+     // Reserved creation toolbar: keep captions and mixer commands outside.
+     g.setColour(LibertyUI::Colour::canvasDeep);
      g.fillRect(0,0,LibertyNoOverlap::creationZoneWidth,
                 LibertyNoOverlap::mixerToolbarHeight);
+     LibertyUI::accentRule(g,{(float)LibertyNoOverlap::creationZoneWidth,
+        (float)LibertyNoOverlap::mixerToolbarHeight-2,
+        (float)juce::jmax(0,getWidth()-LibertyNoOverlap::creationZoneWidth),2.f});
      g.setColour(ModernMixer::border);
      g.drawHorizontalLine(53,0.0f,(float)getWidth());
      g.drawVerticalLine(LibertyNoOverlap::creationZoneWidth,3.0f,50.0f);
