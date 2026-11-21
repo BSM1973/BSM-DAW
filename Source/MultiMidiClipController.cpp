@@ -1,3 +1,4 @@
+#include "LibertyPrecisionUI.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -298,6 +299,9 @@ bool hitTest(int x,int y)override{
                              :juce::MouseCursor::DraggingHandCursor)));
             return;
         }
+    }
+    if(activeArrangeTool>0 && (audioLaneAt(e.getPosition())>=0 || laneAtPoint(e.getPosition(),false)>=0 || laneAtPoint(e.getPosition(),true)>=0)) {
+        setMouseCursor(LibertyPrecision::arrangementCursor(activeArrangeTool));return;
     }
     if(inlineMidiMode&&activeArrangeTool>0){
         bool instrument=false;

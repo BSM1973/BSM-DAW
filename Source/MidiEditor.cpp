@@ -1,3 +1,4 @@
+#include "LibertyPrecisionUI.h"
 #include "MidiEditor.h"
 #include "LibertyDesignSystem.h"
 #include "MainComponent.h"
@@ -4825,6 +4826,8 @@ public:
 
         if (draggingNote) return;
         if (isInVelocityLane(e.y)) { setMouseCursor(juce::MouseCursor::UpDownResizeCursor); return; }
+        const int tool=getLibertyActiveTool();
+        if(tool!=0) { setMouseCursor(LibertyPrecision::midiCursor(tool)); return; }
         const auto side = findResizeSide(e.position);
         if (side != ResizeSide::none) { setMouseCursor(juce::MouseCursor::LeftRightResizeCursor); return; }
         if (findNoteAt(e.position)) { setMouseCursor(juce::MouseCursor::DraggingHandCursor); return; }
@@ -5425,20 +5428,7 @@ private:
         if (lastCursorTool != tool)
         {
             lastCursorTool = tool;
-            if (tool == 0) setMouseCursor(juce::MouseCursor::NormalCursor);
-            else if (tool == 4) setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            else
-            {
-                // Tool-shaped cursor, shared by dock and floating editors.
-                static const char* symbols[] = { "", "✎", "✂", "⌫", "", "◇", "▥", "▧", "◉" };
-                juce::Image cursorImage(juce::Image::ARGB, 36, 36, true);
-                juce::Graphics cursorGraphics(cursorImage);
-                cursorGraphics.setColour(juce::Colours::white);
-                cursorGraphics.setFont(juce::Font(25.0f));
-                cursorGraphics.drawText(juce::String::fromUTF8(symbols[juce::jlimit(0, 8, tool)]),
-                                        2, 2, 32, 32, juce::Justification::centred);
-                setMouseCursor(juce::MouseCursor(cursorImage, 3, 3));
-            }
+            setMouseCursor(LibertyPrecision::midiCursor(tool));
         }
         repaint(); velocityLane.repaint();
     }

@@ -15,4 +15,10 @@ int main()
     assert(meterSegmentFill(0.625f,1,4)==1.f);
     assert(meterSegmentFill(0.625f,3,4)==0.f);
     assert(meterSegmentFill(1.f,0,0)==0.f);
+    setAnimationsEnabled(false);
+    assert(!animationsEnabled());
+    assert(pulse(0.75,1.0)==1.f);
+    assert(meterSegmentFill(.625f,2,4)==.5f);
+    setAnimationsEnabled(true);
+    assert(pulse(.75,1.0)<.01f);
 }

@@ -1,3 +1,4 @@
+#include "LibertyPrecisionUI.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cstdlib>
 #include <chrono>
@@ -143,10 +144,19 @@ static void renderLibertyPluginArtwork(const juce::String& xmlPath, const juce::
 bool handleLibertyArrangementClipKeyPress(const juce::KeyPress& key);
 bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key); bool handleLibertyMidiQuantizeKeyPress(const juce::KeyPress& key);
 void shutdownLibertyMidiKeyboardRouter(); void shutdownLibertyMidiGroupDragInteraction(); void shutdownLibertyAudioRecordingController(); void shutdownLibertyTrackColourInteraction(); void shutdownLibertyMultiMidiClipController(); void shutdownLibertyGridSnapController(); void shutdownLibertyTrackHeaderMixControls(); void shutdownLibertyZoomController(); void shutdownLibertyAudioClipWarpView(); void shutdownLibertyMetronomeController(); void shutdownLibertyBrowserController(); void shutdownLibertyBrowserResizeController(); void shutdownLibertyUILayerCoordinator(); void shutdownLibertyAudioSettingsRelocator(); void shutdownLibertyLanguageController(); void shutdownLibertyToolPaletteController(); void shutdownLibertyAIAdvancedController(); void shutdownLibertyAINoveltyController(); void shutdownLibertyAIArrangerController(); void shutdownLibertyAISongIntelligenceController(); void shutdownLibertyAIComposer2Controller(); void shutdownLibertyAIController(); void shutdownLibertyTrackPluginInsertControls(); void shutdownLibertyPluginDragDropController(); void shutdownLibertyMixConsoleController(); void shutdownLibertyPerformController(); void shutdownLibertyPageModeCoordinator(); void shutdownLibertyUISymbolCleaner(); void shutdownLibertySpliceBrowserController();
+static juce::File libertyMotionPreferenceFile()
+{
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Liberty").getChildFile("ui-motion.txt");
+}
 class LibertyMainMenu final : public juce::MenuBarModel
 {
 public:
-    explicit LibertyMainMenu(MainComponent& component) : owner(component) {}
+    explicit LibertyMainMenu(MainComponent& component) : owner(component)
+    {
+        const auto file=libertyMotionPreferenceFile();
+        if(file.existsAsFile()) LibertyMotion::setAnimationsEnabled(file.loadFileAsString().trim()!="off");
+    }
     juce::StringArray getMenuBarNames() override
     {
         return { "Fichier", juce::String::fromUTF8("\xC3\x89" "dition"),
@@ -191,6 +201,8 @@ public:
                 menu.addItem(6504, "Analyse musicale IA");
                 break;
             case 7:
+                menu.addItem(7002, "Animations graphiques", true, LibertyMotion::animationsEnabled());
+                menu.addSeparator();
                 menu.addItem(7001, juce::String::fromUTF8("R\xC3\xA9glages audio et MIDI..."));
                 break;
             case 8:
@@ -202,6 +214,21 @@ public:
     }
     void menuItemSelected(int commandId, int) override
     {
+        if(commandId==7002)
+        {
+            const bool next=!LibertyMotion::animationsEnabled();
+            const auto file=libertyMotionPreferenceFile();
+            if(!file.getParentDirectory().createDirectory().wasOk() || !file.replaceWithText(next?"on":"off"))
+            {
+                juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Liberty",
+                    juce::String::fromUTF8("Impossible de mémoriser la préférence d\x27animation."),"OK");
+                return;
+            }
+            LibertyMotion::setAnimationsEnabled(next);
+            owner.getTopLevelComponent()->repaint();
+            menuItemsChanged();
+            return;
+        }
         owner.performMainMenuAction(commandId);
     }
 private:
@@ -214,6 +241,9 @@ class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
 public:
     LibertyMenuLookAndFeel()
     {
+        setColour(juce::TooltipWindow::backgroundColourId, LibertyUI::Colour::panel);
+        setColour(juce::TooltipWindow::textColourId, LibertyUI::Colour::textPrimary);
+        setColour(juce::TooltipWindow::outlineColourId, LibertyUI::Colour::accentBlue);
         setColour(juce::PopupMenu::backgroundColourId, LibertyUI::Colour::panel);
         setColour(juce::PopupMenu::textColourId, LibertyUI::Colour::textPrimary);
         setColour(juce::PopupMenu::highlightedBackgroundColourId, LibertyUI::Colour::selection);
@@ -272,6 +302,11 @@ public:
         g.setColour(stroke.withAlpha(button.isEnabled()?
             (active?0.96f:0.60f+motion*0.25f):0.25f));
         g.drawRoundedRectangle(r.reduced(0.4f),radius,active?1.35f:0.8f);
+        if(button.hasKeyboardFocus(true))
+        {
+            g.setColour(LibertyUI::Colour::accentLight);
+            g.drawRoundedRectangle(r.reduced(1.8f),radius,1.1f);
+        }
         if(active && r.getWidth()>12.f)
             LibertyUI::accentRule(g,juce::Rectangle<float>(
                 r.getX()+5.f,r.getBottom()-2.4f,r.getWidth()-10.f,1.7f));
@@ -330,6 +365,24 @@ public:
         g.fillEllipse(thumb-4.9f,cy-4.9f,9.8f,9.8f);
         g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(0.7f));
         g.drawEllipse(thumb-4.9f,cy-4.9f,9.8f,9.8f,0.7f);
+    }
+
+    void drawRotarySlider(juce::Graphics& g,int x,int y,int w,int h,float position,float start,float end,juce::Slider& slider) override
+    {
+        LibertyPrecision::drawDial(g,x,y,w,h,position,start,end,slider);
+    }
+
+    void drawPopupMenuItem(juce::Graphics& g,const juce::Rectangle<int>& area,
+        bool separator,bool active,bool highlighted,bool ticked,bool submenu,
+        const juce::String& text,const juce::String& shortcut,const juce::Drawable* icon,
+        const juce::Colour* textColour) override
+    {
+        juce::LookAndFeel_V4::drawPopupMenuItem(g,area,separator,active,highlighted,ticked,submenu,text,shortcut,icon,textColour);
+        if(active && highlighted && !separator && area.getHeight()>8)
+        {
+            g.setColour(LibertyUI::Colour::accentLight);
+            g.fillRoundedRectangle((float)area.getX()+1.f,(float)area.getY()+3.f,2.f,(float)area.getHeight()-6.f,1.f);
+        }
     }
 
     // Obsidian controls: rounded surfaces, clear focus and generous hit targets.
@@ -827,6 +880,7 @@ public:
     }
 private:
     LibertyMenuLookAndFeel menuLookAndFeel;
+    juce::TooltipWindow precisionTooltips{this,600};
     std::unique_ptr<MainComponent> editor;
     std::unique_ptr<LibertyWelcomeScreen> welcome;
     std::unique_ptr<LibertyMainMenu> menuModel;

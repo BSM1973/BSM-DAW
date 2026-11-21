@@ -128,3 +128,17 @@ assert "LibertyMotion::pulse(seconds,1.0)" in performance
 assert "player.isCapturing() && recordArrangeButton.isVisible()" in performance
 assert "LibertyMotion::pulse(seconds,1.4)" in performance
 print("PASS: Motion bounded animation, real stereo meter, locator and capture lights")
+
+precision=read("Source/LibertyPrecisionUI.h")
+assert "LibertyPrecision::drawDial(g" in main and "LibertyPrecision::drawDial(g" in mixer
+assert "slider.setPopupDisplayEnabled(true,true,nullptr,950)" in precision
+assert "tickCount=d>=36.f?16:8" in precision
+assert "drawPopupMenuItem" in main and "precisionTooltips" in main
+assert "hasKeyboardFocus(true)" in main and "hasKeyboardFocus(true)" in precision
+assert "ui-motion.txt" in main and "LibertyMotion::setAnimationsEnabled(next)" in main
+assert "!animationsEnabled() || !c.isShowing()" in motion
+assert "juce::AffineTransform::scale(2.f)" in precision
+assert "LibertyPrecision::midiCursor(tool)" in piano
+assert "LibertyPrecision::arrangementCursor(activeArrangeTool)" in multi
+assert "cursorGraphics.drawText" not in piano
+print("PASS: Precision vector controls, value popups, focus, saved motion preference and tool cursors")

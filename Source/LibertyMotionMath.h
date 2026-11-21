@@ -3,6 +3,10 @@
 #include <cmath>
 namespace LibertyMotion
 {
+// Message-thread preference; no engine or audio callback reads this state.
+inline bool motionEnabled=true;
+inline bool animationsEnabled() noexcept { return motionEnabled; }
+inline void setAnimationsEnabled(bool enabled) noexcept { motionEnabled=enabled; }
 inline float advance(float current,float target,float seconds) noexcept
 {
     current=std::clamp(current,0.f,1.f);
@@ -13,6 +17,7 @@ inline float advance(float current,float target,float seconds) noexcept
 }
 inline float pulse(double seconds,double period) noexcept
 {
+    if(!animationsEnabled())return 1.f;
     return static_cast<float>(0.5+0.5*std::sin(6.283185307179586*
         seconds/std::max(0.1,period)));
 }

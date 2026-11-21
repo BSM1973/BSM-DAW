@@ -1,3 +1,4 @@
+#include "LibertyPrecisionUI.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -67,11 +68,13 @@ public:
  void drawLinearSlider(juce::Graphics& g,int x,int y,int w,int h,float pos,float,
                        float,const juce::Slider::SliderStyle style,juce::Slider& slider)override
  {
-     if(style!=juce::Slider::LinearVertical)
+     if(style!=juce::Slider::LinearVertical || w<16 || h<24)
      {
          juce::LookAndFeel_V4::drawLinearSlider(g,x,y,w,h,pos,0.f,0.f,style,slider);
          return;
      }
+     juce::Graphics::ScopedSaveState state(g);
+     g.reduceClipRegion(juce::Rectangle<int>(x,y,w,h));
      const float cx=(float)x+(float)w*.5f;
      const auto rail=juce::Rectangle<float>(cx-2.2f,(float)y+6.f,4.4f,
                                            (float)juce::jmax(0,h-12));
@@ -79,6 +82,15 @@ public:
      g.fillRoundedRectangle(rail,2.2f);
      g.setColour(LibertyUI::Colour::divider);
      g.drawRoundedRectangle(rail,2.2f,.8f);
+     // Tick positions use the slider range and skew, not an assumed linear dB scale.
+     for(double db : {-60.,-48.,-36.,-24.,-12.,-6.,0.,6.})
+     {
+         if(db<slider.getMinimum()||db>slider.getMaximum())continue;
+         const float yy=rail.getBottom()-rail.getHeight()*(float)slider.valueToProportionOfLength(db);
+         g.setColour((db==0.?LibertyUI::Colour::accentLight:LibertyUI::Colour::textMuted).withAlpha(db==0.?.9f:.5f));
+         g.drawLine(cx-6.f,yy,cx-4.f,yy,0.8f);
+         g.drawLine(cx+4.f,yy,cx+6.f,yy,0.8f);
+     }
      g.setColour(ModernMixer::sage.withAlpha(.5f));
      g.fillRoundedRectangle(cx-1.f,pos+5.f,2.f,
          juce::jmax(0.f,rail.getBottom()-pos-5.f),1.f);
@@ -89,7 +101,7 @@ public:
          juce::Colour(0xffe7f0f7),thumb.getX(),thumb.getY(),
          juce::Colour(0xff8398aa),thumb.getX(),thumb.getBottom(),false));
      g.fillRoundedRectangle(thumb,3.f);
-     g.setColour(slider.isMouseOverOrDragging()?LibertyUI::Colour::accentLight:
+     g.setColour((slider.isMouseOverOrDragging()||slider.hasKeyboardFocus(true))?LibertyUI::Colour::accentLight:
                                                   juce::Colour(0xffacc8d8));
      g.drawRoundedRectangle(thumb.reduced(0.4f),3.f,
                             slider.isMouseOverOrDragging()?1.2f:.8f);
@@ -100,49 +112,7 @@ public:
  }
  void drawRotarySlider(juce::Graphics&g,int x,int y,int w,int h,
     float position,float start,float end,juce::Slider& slider)override{
-    const float d=(float)juce::jmin(w,h);
-    if(d<10.f)return;
-    const float cx=(float)x+(float)w*.5f;
-    const float cy=(float)y+(float)h*.5f;
-    const float radius=(d-2.f)*.5f;
-    const float angle=start+juce::jlimit(0.f,1.f,position)*(end-start);
-    const auto accent=slider.findColour(juce::Slider::rotarySliderFillColourId);
-    // Precision dark dial with a clear coloured value arc.
-    g.setColour(LibertyUI::Colour::canvasDeep);
-    g.fillEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius);
-    g.setColour(LibertyUI::Colour::divider);
-    g.drawEllipse(cx-radius,cy-radius,2.f*radius,2.f*radius,.7f);
-    for(int tick=0;tick<=8;++tick){
-        const float a=start+(end-start)*(float)tick/8.f;
-        const float inside=radius*.84f,outside=radius*.97f;
-        g.setColour(juce::Colour(0xffa0b2bf).withAlpha(tick==4?.9f:.58f));
-        g.drawLine(cx+std::sin(a)*inside,cy-std::cos(a)*inside,
-                   cx+std::sin(a)*outside,cy-std::cos(a)*outside,.85f);
-    }
-    juce::Path track;
-    track.addCentredArc(cx,cy,radius*.81f,radius*.81f,0.f,start,end,true);
-    g.setColour(juce::Colour(0xff304653));
-    g.strokePath(track,juce::PathStrokeType(1.6f));
-    juce::Path filled;
-    filled.addCentredArc(cx,cy,radius*.81f,radius*.81f,0.f,start,angle,true);
-    g.setColour(accent.withAlpha(.16f));
-    g.strokePath(filled,juce::PathStrokeType(3.8f));
-    g.setColour(accent.withAlpha(.93f));
-    g.strokePath(filled,juce::PathStrokeType(1.9f));
-    const float bodyRadius=radius*.70f;
-    g.setGradientFill(juce::ColourGradient(
-        LibertyUI::Colour::surfaceRaised,cx,cy-bodyRadius,
-        LibertyUI::Colour::canvasDeep,cx,cy+bodyRadius,false));
-    g.fillEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius);
-    g.setColour(LibertyUI::Colour::textMuted.withAlpha(.68f));
-    g.drawEllipse(cx-bodyRadius,cy-bodyRadius,2.f*bodyRadius,2.f*bodyRadius,.85f);
-    g.setColour(LibertyUI::Colour::panel);
-    g.fillEllipse(cx-bodyRadius*.58f,cy-bodyRadius*.58f,
-                  1.16f*bodyRadius,1.16f*bodyRadius);
-    const float inner=bodyRadius*.15f,outer=bodyRadius*.83f;
-    g.setColour(accent.brighter(.28f));
-    g.drawLine(cx+std::sin(angle)*inner,cy-std::cos(angle)*inner,
-               cx+std::sin(angle)*outer,cy-std::cos(angle)*outer,1.7f);
+    LibertyPrecision::drawDial(g,x,y,w,h,position,start,end,slider);
 }};
 
 class LibertyChannelInspector final:public juce::Component, private juce::Timer {
@@ -1367,6 +1337,7 @@ private:
     slider.setColour(juce::Slider::textBoxTextColourId,juce::Colour(0xffeef5fa));
     slider.setColour(juce::Slider::textBoxBackgroundColourId,juce::Colour(0xff0c1b29));
     slider.setColour(juce::Slider::textBoxOutlineColourId,juce::Colour(0xff3f667d));
+    LibertyPrecision::enableValuePopup(slider);
     slider.setLookAndFeel(&metallicStyle);
     addAndMakeVisible(slider);
  }
@@ -2412,6 +2383,14 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  if(s->mute)
      s->mute->setTooltip(juce::String::fromUTF8(
          "MUET : couper ou rétablir cette piste."));
+ for(auto* slider : {s->fader.get(),s->pan.get(),s->gateThreshold.get(),s->compThreshold.get(),s->compRatio.get(),s->highPass.get(),s->inputGain.get()})
+     if(slider) LibertyPrecision::enableValuePopup(*slider);
+ for(auto& knob:s->eqKnobs)if(knob){knob->setTextValueSuffix(" dB");LibertyPrecision::enableValuePopup(*knob);}
+ if(s->gateThreshold)s->gateThreshold->setTextValueSuffix(" dB");
+ if(s->compThreshold)s->compThreshold->setTextValueSuffix(" dB");
+ if(s->compRatio)s->compRatio->setTextValueSuffix(":1");
+ if(s->highPass)s->highPass->setTextValueSuffix(" Hz");
+ if(s->inputGain)s->inputGain->setTextValueSuffix(" dB");
  // This target sits above the name text ONLY and cannot intercept routing,
  // channel plugins, pan controls, mute/solo, meters or faders.
  s->nameHit=std::make_unique<MixerNameHitTarget>();
@@ -3219,7 +3198,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
                  fraction<0.90f?LibertyUI::Colour::accentAmber:
                                 juce::Colour(0xffff6969);
              const float height=segment.getHeight()*lit;
-             g.setColour(colour);
+             g.setGradientFill(juce::ColourGradient(colour.brighter(.16f),segment.getX(),segment.getY(),
+                 colour.darker(.19f),segment.getRight(),segment.getBottom(),false));
              g.fillRoundedRectangle(segment.withY(segment.getBottom()-height)
                  .withHeight(height),0.8f);
          }
@@ -3236,8 +3216,8 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
          }
          if(value.heldPeak>0.f)
          {
-             const float y=bar.getBottom()-bar.getHeight()*
-                 LibertyMixConsoleMeter::meterPosition(value.heldPeak);
+             const float y=juce::jlimit(bar.getY()+1.f,bar.getBottom()-1.f,
+                 bar.getBottom()-bar.getHeight()*LibertyMixConsoleMeter::meterPosition(value.heldPeak));
              g.setColour(value.heldPeak>=1.f?
                  juce::Colour(0xffff6565):juce::Colour(0xfff2f6f8));
              g.fillRect((int)bar.getX(),(int)std::round(y)-1,

@@ -25,7 +25,7 @@ public:
         target=juce::jlimit(0.f,1.f,target);
         auto& props=c.getProperties();
         const float current=(float)(double)props.getWithDefault(property,0.0);
-        if(!c.isShowing())
+        if(!animationsEnabled() || !c.isShowing())
         {
             props.set(property,(double)target);
             return target;
@@ -67,7 +67,7 @@ private:
             }
             auto& props=c->getProperties();
             const float old=(float)(double)props.getWithDefault(property,0.0);
-            const float next=advance(old,it->target,dt);
+            const float next=animationsEnabled()?advance(old,it->target,dt):it->target;
             props.set(property,(double)next);
             c->repaint();
             if(next==it->target)it=entries.erase(it);else ++it;
