@@ -10,6 +10,7 @@
 #include "MixerSearchFilter.h"
 #include "LibertyFrenchLabels.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyMotionMath.h"
 #include "MixConsoleSoloLogic.h"
 #include "MixConsoleMeter.h"
 #include "ChannelDialogLayout.h"
@@ -88,8 +89,10 @@ public:
          juce::Colour(0xffe7f0f7),thumb.getX(),thumb.getY(),
          juce::Colour(0xff8398aa),thumb.getX(),thumb.getBottom(),false));
      g.fillRoundedRectangle(thumb,3.f);
-     g.setColour(juce::Colour(0xffacc8d8));
-     g.drawRoundedRectangle(thumb.reduced(0.4f),3.f,.8f);
+     g.setColour(slider.isMouseOverOrDragging()?LibertyUI::Colour::accentLight:
+                                                  juce::Colour(0xffacc8d8));
+     g.drawRoundedRectangle(thumb.reduced(0.4f),3.f,
+                            slider.isMouseOverOrDragging()?1.2f:.8f);
      g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(0.8f));
      g.drawHorizontalLine((int)pos,thumb.getX()+5.f,thumb.getRight()-5.f);
      g.setColour(juce::Colours::white.withAlpha(0.45f));
@@ -122,6 +125,8 @@ public:
     g.strokePath(track,juce::PathStrokeType(1.6f));
     juce::Path filled;
     filled.addCentredArc(cx,cy,radius*.81f,radius*.81f,0.f,start,angle,true);
+    g.setColour(accent.withAlpha(.16f));
+    g.strokePath(filled,juce::PathStrokeType(3.8f));
     g.setColour(accent.withAlpha(.93f));
     g.strokePath(filled,juce::PathStrokeType(1.9f));
     const float bodyRadius=radius*.70f;
@@ -3183,10 +3188,10 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
      // Stereo twin bars, no change to existing fader/control geometry.
      const float x=(float)s.bounds.getX()+8.f;
      const auto frame=juce::Rectangle<float>(x,(float)top,21.f,(float)(bottom-top));
-     g.setColour(juce::Colour(0xff0b1721));
-     g.fillRoundedRectangle(frame,2.f);
-     g.setColour(juce::Colour(0xff3e596e));
-     g.drawRoundedRectangle(frame,2.f,1.f);
+     g.setColour(LibertyUI::Colour::canvasDeep);
+     g.fillRoundedRectangle(frame,3.f);
+     g.setColour(LibertyUI::Colour::divider);
+     g.drawRoundedRectangle(frame,3.f,1.f);
      for(int channel=0;channel<2;++channel)
      {
          const auto& value=s.meter.channel[(size_t)channel];
@@ -3194,18 +3199,29 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
              x+1.f+10.f*(float)channel,(float)top+1.f,8.f,
              (float)(bottom-top-2));
          const float amount=LibertyMixConsoleMeter::meterPosition(value.level);
-         if(amount>0.f)
+         // Continuous measured level with finely segmented LED surfaces.
+         // Partial top segment preserves the original meter resolution.
+         const int segments=juce::jlimit(8,36,(int)bar.getHeight()/5);
+         const float segmentHeight=bar.getHeight()/(float)segments;
+         for(int i=0;i<segments;++i)
          {
-             auto fill=bar;
-             fill.setY(bar.getBottom()-bar.getHeight()*amount);
-             fill.setHeight(bar.getHeight()*amount);
-             juce::ColourGradient gradient(
-                 juce::Colour(0xff43cdbd),bar.getX(),bar.getBottom(),
-                 juce::Colour(0xffff5959),bar.getX(),bar.getY(),false);
-             gradient.addColour(0.68,juce::Colour(0xffe1ba57));
-             gradient.addColour(0.91,juce::Colour(0xfff08c49));
-             g.setGradientFill(gradient);
-             g.fillRect(fill);
+             const float fraction=(float)i/(float)juce::jmax(1,segments-1);
+             const auto segment=juce::Rectangle<float>(
+                 bar.getX(),bar.getBottom()-(i+1)*segmentHeight+0.5f,
+                 bar.getWidth(),juce::jmax(0.5f,segmentHeight-1.f));
+             g.setColour(LibertyUI::Colour::dividerSoft.withAlpha(0.45f));
+             g.fillRoundedRectangle(segment,0.8f);
+             const float lit=LibertyMotion::meterSegmentFill(amount,i,segments);
+             if(lit<=0.f)continue;
+             const auto colour=fraction<0.68f?
+                 LibertyUI::Colour::accent.interpolatedWith(
+                    juce::Colour(0xff59df99),fraction/0.68f):
+                 fraction<0.90f?LibertyUI::Colour::accentAmber:
+                                juce::Colour(0xffff6969);
+             const float height=segment.getHeight()*lit;
+             g.setColour(colour);
+             g.fillRoundedRectangle(segment.withY(segment.getBottom()-height)
+                 .withHeight(height),0.8f);
          }
          // Actual RMS level: narrow cyan centre inside each peak bar.
          const float rmsAmount=LibertyMixConsoleMeter::meterPosition(value.rms);
