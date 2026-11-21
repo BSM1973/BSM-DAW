@@ -8,7 +8,7 @@ name: Liberty Fast Diagnostic
 # Keep manual runs available; the separate build.yml handles pushes to main.
 on:
   push:
-    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3', 'feature/perform-transform-generate-phase4', 'feature/perform-live-pro-phase5', 'fix/performance-live-ui-cleanup', 'feature/liberty-ui-modern-refresh', 'feature/liberty-obsidian-signature', 'feature/liberty-obsidian-studio', 'feature/liberty-obsidian-motion', 'feature/liberty-obsidian-precision' ]
+    branches: [ 'fix/midi-timeline-instrument-audio-32aa5ab', 'feature/step-sequencer-polyphonic-phase1', 'feature/step-sequencer-ui-phase2', 'feature/step-sequencer-edit-phase3', 'feature/step-sequencer-midi-phase4', 'feature/step-sequencer-validation-phase5', 'feature/step-sequencer-direct-note-edit', 'feature/step-seq-preview-arrangement-pages-french', 'feature/dock-mixer-db-graduations', 'feature/perform-session-phase1', 'feature/perform-clip-inspector-phase2', 'feature/perform-midi-editor-phase3', 'feature/perform-transform-generate-phase4', 'feature/perform-live-pro-phase5', 'fix/performance-live-ui-cleanup', 'feature/liberty-ui-modern-refresh', 'feature/liberty-obsidian-signature', 'feature/liberty-obsidian-studio', 'feature/liberty-obsidian-motion', 'feature/liberty-obsidian-precision', 'feature/liberty-obsidian-immersive' ]
   workflow_dispatch:
 
 jobs:
@@ -48,6 +48,8 @@ jobs:
           python3 Tests/LibertyModernUiSourceRegression.py
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyMotionSmoke.cpp -o /tmp/liberty-motion
           /tmp/liberty-motion
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyImmersiveSmoke.cpp -o /tmp/liberty-immersive
+          /tmp/liberty-immersive
 
       - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
@@ -172,6 +174,8 @@ jobs:
           python3 Tests/LibertyModernUiSourceRegression.py
           clang++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyMotionSmoke.cpp -o /tmp/liberty-motion
           /tmp/liberty-motion
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyImmersiveSmoke.cpp -o /tmp/liberty-immersive
+          /tmp/liberty-immersive
 
       - name: Verify strict non-overlapping global UI regions
         run: |

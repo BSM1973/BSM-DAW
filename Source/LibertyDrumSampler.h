@@ -1,4 +1,5 @@
 #pragma once
+#include "LibertyDesignSystem.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -1417,8 +1418,8 @@ public:
     void paint(juce::Graphics& g) override
     {
         // Obsidian drum panel: deeper graphite to match the arranger and mixer.
-        juce::ColourGradient background(juce::Colour(0xff1b2833), 0.0f, 0.0f,
-                                         juce::Colour(0xff101821), 0.0f, (float)getHeight(), false);
+        juce::ColourGradient background(LibertyUI::Colour::header, 0.0f, 0.0f,
+                                         LibertyUI::Colour::canvasDeep, 0.0f, (float)getHeight(), false);
         g.setGradientFill(background);
         g.fillAll();
         // Draw depth behind the existing TextButtons without changing hitboxes.

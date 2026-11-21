@@ -1,5 +1,6 @@
 #pragma once
 #include "MixConsoleMeter.h"
+#include "LibertyImmersiveAnalysis.h"
 #include "MixerBusRouting.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -243,6 +244,7 @@ public:
     float consumeTrackMeterPeak(int trackIndex) noexcept;
     float consumeInstrumentMeterPeak(int instrumentTrack) noexcept;
     float consumeMasterMeterPeak() noexcept;
+    LibertyImmersive::Tap& immersiveTap() noexcept { return masterAnalysis; }
     // Post-FX sample peaks separated by channel, always {left, right}.
     // The older mono methods remain as compatibility wrappers.
     std::array<float,2> consumeTrackStereoMeterPeaks(int trackIndex) noexcept;
@@ -637,6 +639,7 @@ private:
     };
     std::atomic<int> mixerBusCount{0};
     std::array<MixerBusState,maxMixerBuses> mixerBuses{};
+    LibertyImmersive::Tap masterAnalysis;
     std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
     std::atomic<float> masterMeterPeakRight { 0.0f }; // post-master right
     std::atomic<std::uint64_t> masterMeterRmsLeft { 0 }, masterMeterRmsRight { 0 };

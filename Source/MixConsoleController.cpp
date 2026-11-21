@@ -1,4 +1,5 @@
 #include "LibertyPrecisionUI.h"
+#include "LibertyImmersiveView.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -1544,6 +1545,7 @@ public:
  startTimerHz(24);setVisible(false);}
  ~MixConsoleView()override{
     stopTimer();
+    immersiveWindow.reset();
     searchBox.onTextChange=nullptr;
     searchBox.onReturnKey=nullptr;
     searchBox.onEscapeKey=nullptr;
@@ -1985,6 +1987,8 @@ private:
      menu.addSeparator();
      menu.addItem(5,juce::String::fromUTF8("COPIER LES NIVEAUX L/R (dBFS)"));
      menu.addItem(6,juce::String::fromUTF8("COPIER LE RAPPORT DES NIVEAUX DE LA CONSOLE"));
+     menu.addSeparator();
+     menu.addItem(7,juce::String::fromUTF8("ANALYSE MASTER - OBSIDIAN IMMERSIVE"));
      menu.showMenuAsync(
          juce::PopupMenu::Options().withTargetScreenArea(
              juce::Rectangle<int>(point.x,point.y,1,1)),
@@ -1992,6 +1996,11 @@ private:
           kind=source.kind,lane=source.lane](int action)
          {
              if(safe==nullptr||action==0)return;
+             if(action==7)
+             {
+                 if(!safe->immersiveWindow) safe->immersiveWindow=std::make_unique<LibertyImmersive::Window>(safe->owner.audioEngine);
+                 safe->immersiveWindow->open();return;
+             }
              if(action==6)
              {
                  const auto mode=safe->meterReadoutMode;
@@ -3420,6 +3429,7 @@ knob->setTooltip(juce::String("EQ : ")+juce::String::fromUTF8(band==0?"graves":b
  Strip*draggingHeight=nullptr;Strip*draggingStrip=nullptr;int dropStripIndex=-1;
  int dragStartY=0,dragStartPreference=0;
  MainComponent&owner;ConsoleLookAndFeel lookAndFeel;
+ std::unique_ptr<LibertyImmersive::Window> immersiveWindow;
  juce::TextButton routeClose;
  std::array<juce::TextButton,9> routeChoices;
  juce::TextButton detailButton;

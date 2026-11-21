@@ -1,8 +1,15 @@
 #include "OneKnobEffects.h"
+#include "LibertyPrecisionUI.h"
 #include <cmath>
 
 namespace
 {
+class InternalEffectLook final : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider(juce::Graphics& g,int x,int y,int w,int h,float p,float a,float b,juce::Slider& slider) override
+    { LibertyPrecision::drawDial(g,x,y,w,h,p,a,b,slider); }
+};
 class OneKnobEditor final : public juce::Component, private juce::Timer
 {
 public:
@@ -15,13 +22,18 @@ public:
         knob.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xff22c7ff));
         knob.setColour(juce::Slider::thumbColourId, juce::Colours::white);
         knob.onValueChange = [this] { manager.setAmount(track, (float)knob.getValue() / 100.0f); };
+        knob.setTextValueSuffix(" %");
+        knob.setLookAndFeel(&effectLook);
+        LibertyPrecision::enableValuePopup(knob);
         addAndMakeVisible(knob);
         startTimerHz(8);
     }
 
+    ~OneKnobEditor() override { stopTimer();knob.setLookAndFeel(nullptr); }
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xff11151b));
+        g.fillAll(LibertyUI::Colour::canvasDeep);
+        LibertyUI::fillPanel(g,getLocalBounds().toFloat().reduced(9.f),false,10.f);
         g.setColour(juce::Colours::white);
         g.setFont(juce::Font(18.0f, juce::Font::bold));
         g.drawText("LIBERTY", 0, 14, getWidth(), 26, juce::Justification::centred);
@@ -45,6 +57,7 @@ private:
 
     LibertyOneKnobManager& manager;
     int track;
+    InternalEffectLook effectLook;
     juce::Slider knob;
 };
 

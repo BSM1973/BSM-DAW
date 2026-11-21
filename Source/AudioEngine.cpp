@@ -2483,6 +2483,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
         flushBuses();
         processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
+        masterAnalysis.capture(outputChannelData,numOutputChannels,numSamples);
         meterIdleOutput();
         return;
     }
@@ -2560,6 +2561,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
         flushBuses();
         processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
+        masterAnalysis.capture(outputChannelData,numOutputChannels,numSamples);
         meterIdleOutput();
         return;
     }
@@ -2856,6 +2858,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         return;
     }
     processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
+        masterAnalysis.capture(outputChannelData,numOutputChannels,numSamples);
     if (!hasBoundedAudioProject)
     {
         transportSamples.fetch_add(numSamples);
