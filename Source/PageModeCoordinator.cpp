@@ -3,6 +3,7 @@
 #undef private
 #include "PageNavigationLayout.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyMotionAnimator.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <map>
@@ -30,26 +31,30 @@ public:
      auto box = b.getLocalBounds().toFloat().reduced(0.7f);
      const bool selected = b.getToggleState();
      const auto cyan = red ? LibertyUI::Colour::accentPurple : LibertyUI::Colour::accent;
-     juce::ColourGradient fill(selected ? LibertyUI::Colour::surfaceRaised
-                                       : LibertyUI::Colour::control,
+     const float activity=pageMotion.request(b,selected?1.f:0.f);
+     const float interaction=hoverMotion.request(b,pressed?1.f:hover?0.65f:0.f);
+     juce::ColourGradient fill(LibertyUI::Colour::control.interpolatedWith(
+                                    LibertyUI::Colour::surfaceRaised,activity),
                                box.getX(), box.getY(),
-                               selected ? LibertyUI::Colour::selection
-                                        : LibertyUI::Colour::canvasDeep,
+                               LibertyUI::Colour::canvasDeep.interpolatedWith(
+                                    LibertyUI::Colour::selection,activity),
                                box.getRight(), box.getBottom(), false);
      g.setGradientFill(fill);
      g.fillRoundedRectangle(box, 6.5f);
-     g.setColour((selected ? cyan : LibertyUI::Colour::divider).withAlpha(hover ? 0.95f : 0.75f));
+     g.setColour(LibertyUI::Colour::divider.interpolatedWith(cyan,activity)
+        .withAlpha(0.75f+interaction*0.20f));
      g.drawRoundedRectangle(box.reduced(0.5f), 6.0f, 1.0f);
-     if (hover || pressed)
+     if (interaction>0.f)
      {
-         g.setColour(cyan.withAlpha(pressed ? 0.18f : 0.08f));
+         g.setColour(cyan.withAlpha(interaction*0.18f));
          g.fillRoundedRectangle(box.reduced(1.0f), 6.0f);
      }
-     if (selected)
+     if(activity>0.f && box.getWidth()>20.f)
      {
+         const float width=(box.getWidth()-20.f)*activity;
          LibertyUI::accentRule(g,juce::Rectangle<float>(
-             box.getX()+10.f,box.getBottom()-3.f,
-             box.getWidth()-20.f,2.f),cyan);
+             box.getCentreX()-width*0.5f,box.getBottom()-3.f,
+             width,2.f),cyan.withAlpha(activity));
      }
  }
  void drawButtonText(juce::Graphics& g, juce::TextButton& b,
@@ -62,6 +67,8 @@ public:
                       juce::Justification::centred, 1, 0.9f);
  }
 private:
+ LibertyMotion::Animator pageMotion{"libertyMotionPage"};
+ LibertyMotion::Animator hoverMotion{"libertyMotionNavHover"};
  bool red = false;
 };
 
