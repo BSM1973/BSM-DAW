@@ -32,7 +32,7 @@ for key in (
     "LibertyPerformClip::launchedScene(",
     "slot.audioFirst+(int)(position%slot.audioLength)",
     "slot.audio->getSample(juce::jmin(channel,",
-    "clipColour.withAlpha",
+    "clipColour.interpolatedWith(LibertyUI::Colour::surface,0.32f)",
     "clip->setAttribute(\"name\",data.name)",
     "clip->setAttribute(\"clipGainDb\",",
     "clip->setAttribute(\"clipQuantize\",",
