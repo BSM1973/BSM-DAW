@@ -14,7 +14,8 @@ assert guard in overlay, "The over-children overlay must be hidden in MIXCONSOLE
 assert overlay.index(guard) < overlay.index("const float x ="), "Guard must run before cursor coordinates"
 assert overlay.index(guard) < overlay.index("g.drawLine(x,"), "Never draw the cursor over PERFORMANCE"
 assert "playheadSeconds * getLibertyTimelinePixelsPerSecond()" in overlay
-assert 'juce::Colour(0xfff8b84d)' in overlay, "Retain the orange playhead in ARRANGEMENT"
+assert "LibertyUI::Colour::accentAmber.brighter(isPlaying?0.14f:0.f)" in overlay, "Retain the amber playhead in ARRANGEMENT"
+assert "g.reduceClipRegion(juce::Rectangle<int>(trackHeaderWidth, top," in overlay
 
 # PERFORMANCE intentionally owns its independent live audio engine and opaque grid;
 # it must not receive the ARRANGEMENT overlay after its own children are drawn.
