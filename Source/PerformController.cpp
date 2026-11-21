@@ -2652,8 +2652,9 @@ private:
         if(clip==nullptr)return;
         const auto area=midiPianoBounds();
         const auto velArea=midiVelocityBounds();
-        g.setColour(juce::Colour(0xff101822));
+        g.setColour(LibertyUI::Colour::canvasDeep);
         g.fillRect(area);
+        g.setColour(LibertyUI::Colour::panel);
         g.fillRect(velArea);
         for(int row=0;row<visibleMidiPitches;++row)
         {
@@ -2700,12 +2701,10 @@ private:
             const auto& note=visibleNotes[(size_t)i];
             const auto bounds=midiNoteBounds(note);
             if(bounds.isEmpty())continue;
-            g.setColour(midiEditorVisible() && i==selectedMidiNote?
-                        juce::Colour(0xfff4c96d):
-                        note.muted?juce::Colour(0xff58636f):
-                        midiGeneratorVisible()?juce::Colour(0xff67bce5):
-                        juce::Colour(0xff45c5c1));
-            g.fillRoundedRectangle(bounds.toFloat(),2.f);
+            const auto colour=midiGeneratorVisible()?LibertyUI::Colour::accentBlue:
+                LibertyUI::Colour::accent;
+            LibertyUI::musicalBlock(g,bounds.toFloat(),colour,
+                midiEditorVisible()&&i==selectedMidiNote,note.muted);
         }
         g.setColour(juce::Colour(0xff7d91a2));
         g.drawRect(area);
