@@ -1232,7 +1232,6 @@ public:
             g.drawHorizontalLine(sceneRows[(size_t)scene].getBottom()-1,
                                  0.0f,(float)getWidth());
         }
-        }
         // Subtle track lanes: rhythm and vertical alignment remain readable
         // without adding outlines that compete with clip launch buttons.
         for(int track=0;track<paintedTracks;++track)
