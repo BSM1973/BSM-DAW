@@ -238,10 +238,13 @@ void MainComponent::paintOverChildren(juce::Graphics& g)
     g.reduceClipRegion(juce::Rectangle<int>(trackHeaderWidth, top,
                                             juce::jmax(0, getWidth() - trackHeaderWidth),
                                             bottom - top));
-    g.setColour(juce::Colour(0xff07111c).withAlpha(0.75f));
-    g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 4.0f);
-    g.setColour(juce::Colour(0xfff8b84d));
-    g.drawLine(x, static_cast<float>(top), x, static_cast<float>(bottom), 1.5f);
+    const auto cursor=LibertyUI::Colour::accentAmber.brighter(isPlaying?0.14f:0.f);
+    g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(0.78f));
+    g.drawLine(x,static_cast<float>(top),x,static_cast<float>(bottom),4.f);
+    g.setColour(cursor.withAlpha(isPlaying?0.24f:0.12f));
+    g.drawLine(x,static_cast<float>(top),x,static_cast<float>(bottom),3.f);
+    g.setColour(cursor);
+    g.drawLine(x,static_cast<float>(top),x,static_cast<float>(bottom),1.2f);
 }
 
 void MainComponent::paint(juce::Graphics& g)
@@ -2241,16 +2244,22 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     const float playheadX = headerW + (float)(playheadSeconds * pixelsPerSecond);
     if (playheadX >= headerW && playheadX <= (float)getWidth())
     {
-        // Subtle halo separates the transport cursor from dense clip waveforms.
-        g.setColour(juce::Colour(0xffe4a85e).withAlpha(0.18f));
-        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 5.0f);
-        g.setColour(juce::Colour(0xfff2bb73));
-        g.drawLine(playheadX, (float)ruler.getY(), playheadX, (float)area.getBottom(), 1.5f);
-        // Small ruler-only locator; the transport position and hit areas are unchanged.
+        // Keep the entire locator in the ruler/timeline region, including at time zero.
+        const juce::Graphics::ScopedSaveState cursorClip(g);
+        g.reduceClipRegion(area.withTrimmedLeft(headerW));
+        const auto cursor=LibertyUI::Colour::accentAmber.brighter(isPlaying?0.14f:0.f);
+        g.setColour(cursor.withAlpha(isPlaying?0.24f:0.12f));
+        g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),4.f);
+        g.setColour(cursor);
+        g.drawLine(playheadX,(float)ruler.getY(),playheadX,(float)area.getBottom(),1.2f);
+        const float markerY=(float)ruler.getY()+2.f;
         juce::Path playheadMarker;
-        playheadMarker.addTriangle(playheadX - 10.0f, (float)ruler.getY() + 2.0f,
-                                   playheadX + 10.0f, (float)ruler.getY() + 2.0f,
-                                   playheadX, (float)ruler.getY() + 17.0f);
+        playheadMarker.startNewSubPath(playheadX-7.f,markerY);
+        playheadMarker.lineTo(playheadX+7.f,markerY);
+        playheadMarker.lineTo(playheadX+7.f,markerY+6.f);
+        playheadMarker.lineTo(playheadX,markerY+13.f);
+        playheadMarker.lineTo(playheadX-7.f,markerY+6.f);
+        playheadMarker.closeSubPath();
         g.fillPath(playheadMarker);
     }
     // Render track colours in the main arranger paint pass, above its own
@@ -2731,12 +2740,18 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             }
             const float normalized = LibertyDockMixerDbScale::gainToPosition(gain);
             const float knobY = fader.getBottom() - normalized * fader.getHeight();
-            g.setColour(master ? juce::Colour(0xffc6e7ed) : juce::Colour(0xffb8c9d3));
-            g.fillRoundedRectangle(fader.getX() - 2.0f, knobY - 6.0f,
-                                   fader.getWidth() + 4.0f, 12.0f, 3.0f);
-            g.setColour(master ? juce::Colour(0xfff0fbfd) : juce::Colour(0xffe2edf2));
-            g.drawHorizontalLine(juce::roundToInt(knobY - 2.0f),
-                                 fader.getX() + 1.0f, fader.getRight() - 1.0f);
+            const auto cap=juce::Rectangle<float>(fader.getX()-2.f,knobY-6.f,
+                fader.getWidth()+4.f,12.f);
+            g.setGradientFill(juce::ColourGradient(
+                juce::Colour(0xffe7f0f7),cap.getX(),cap.getY(),
+                juce::Colour(0xff8398aa),cap.getX(),cap.getBottom(),false));
+            g.fillRoundedRectangle(cap,3.f);
+            g.setColour(master?LibertyUI::Colour::accentLight:
+                              LibertyUI::Colour::textMuted);
+            g.drawRoundedRectangle(cap.reduced(0.4f),3.f,0.8f);
+            g.setColour(LibertyUI::Colour::canvasDeep);
+            g.drawHorizontalLine(juce::roundToInt(knobY),
+                                 fader.getX()+1.f,fader.getRight()-1.f);
         }
 
         const auto db = 20.0f * std::log10(juce::jmax(0.000001f, gain));
@@ -2893,8 +2908,14 @@ void MainComponent::timerCallback()
     const bool changed = newPlaying != isPlaying || (newPlaying && std::abs(newPlayhead - playheadSeconds) > 0.0001);
     playheadSeconds = newPlayhead;
     isPlaying = newPlaying;
-    if (changed)
-        repaint(0, transportHeight, getWidth(), juce::jmax(0, getHeight() - transportHeight));
+    if(changed)
+    {
+        // The position/PLAY readouts live above transportHeight, not inside
+        // the arrangement. Refresh just their existing rectangles.
+        repaint(339,38,56,28);
+        repaint(740,34,90,36);
+        repaint(0,transportHeight,getWidth(),juce::jmax(0,getHeight()-transportHeight));
+    }
 }
 
 void showLibertyAIMusicPanel(MainComponent&);
