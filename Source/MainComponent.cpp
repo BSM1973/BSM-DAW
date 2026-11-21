@@ -1739,10 +1739,10 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     const auto logoBounds=LibertyNoOverlap::logo;
     const auto brandPanel=juce::Rectangle<float>((float)logoBounds.x,(float)logoBounds.y,
                                                  (float)logoBounds.w,(float)logoBounds.h);
-    g.setColour(LibertyUI::Colour::surface);
-    g.fillRoundedRectangle(brandPanel, 10.0f);
-    g.setColour(LibertyUI::Colour::divider);
-    g.drawRoundedRectangle(brandPanel.reduced(0.5f), 10.0f, 1.0f);
+    LibertyUI::fillPanel(g,brandPanel,false,10.f);
+    LibertyUI::accentRule(g,{brandPanel.getX()+10.f,
+        brandPanel.getBottom()-2.f,brandPanel.getWidth()-20.f,1.f},
+        LibertyUI::Colour::accentBlue);
     g.setColour(LibertyUI::Colour::accent);
     g.fillRoundedRectangle(15.0f, 17.0f, 3.0f, 42.0f, 1.5f);
 
@@ -1772,10 +1772,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
     // interactive BPM/signature component share one Obsidian panel.
     // The controls retain their exact bounds and callbacks.
     const auto commandDeck = juce::Rectangle<float>(205.0f, 31.0f, 1035.0f, 42.0f);
-    g.setColour(LibertyUI::Colour::canvas);
-    g.fillRoundedRectangle(commandDeck, 11.0f);
-    g.setColour(LibertyUI::Colour::divider);
-    g.drawRoundedRectangle(commandDeck.reduced(0.5f), 11.0f, 1.0f);
+    LibertyUI::fillPanel(g,commandDeck,false,11.f);
     // Obsidian deck: a restrained top-edge highlight and a quiet lower
     // cyan guide reinforce the command group without covering controls.
     g.setColour(juce::Colour(0xff526978).withAlpha(0.65f));
@@ -1784,7 +1781,7 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Liberty Pro transport: high-contrast segmented controls with no geometry changes.
     // Hit targets remain exactly 56 x 28 at the existing coordinates.
-    const char* labels[] = { "|<", "<", "PLAY", ">", "|>" };
+    // Draw actual transport paths rather than font-dependent glyphs.
     for (int i = 0; i < 5; ++i)
     {
         const auto r = juce::Rectangle<int>(215 + i * 62, 38, 56, 28);
@@ -1792,8 +1789,11 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         const bool playing = primary && isPlaying;
         const auto face = primary ? (playing ? juce::Colour(0xff177f83) : juce::Colour(0xff24535d))
                                   : LibertyUI::Colour::surface;
-        g.setColour(face);
-        g.fillRoundedRectangle(r.toFloat(), 7.0f);
+        const auto rect=r.toFloat();
+        g.setGradientFill(juce::ColourGradient(
+            face.brighter(0.13f),rect.getX(),rect.getY(),
+            face.darker(0.22f),rect.getX(),rect.getBottom(),false));
+        g.fillRoundedRectangle(rect,7.f);
         g.setColour(primary ? LibertyUI::Colour::accent : LibertyUI::Colour::divider);
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 7.0f, primary ? 1.7f : 1.0f);
 
@@ -1808,7 +1808,27 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
         const auto textArea = r.reduced(4, 3);
         g.setColour(primary ? LibertyUI::Colour::textPrimary : LibertyUI::Colour::textCyan);
         g.setFont(juce::Font(primary ? 12.0f : 11.0f, juce::Font::bold));
-        g.drawFittedText(playing ? "STOP" : labels[i], textArea, juce::Justification::centred, 1);
+        if(primary)
+        {
+            // Explicit text remains present: never substitute a letter with a glyph.
+            g.drawFittedText(playing?"STOP":"PLAY",textArea,
+                juce::Justification::centred,1);
+        }
+        else
+        {
+            const bool forward=i>2;
+            const bool edge=i==0||i==4;
+            const float cx=(float)r.getCentreX(),cy=(float)r.getCentreY();
+            const float sign=forward?1.f:-1.f;
+            juce::Path mark;
+            mark.startNewSubPath(cx+sign*5.f,cy);
+            mark.lineTo(cx-sign*4.f,cy-5.5f);
+            mark.lineTo(cx-sign*4.f,cy+5.5f);
+            mark.closeSubPath();
+            g.fillPath(mark);
+            if(edge)g.fillRoundedRectangle(cx+sign*8.f-0.9f,
+                cy-6.f,1.8f,12.f,0.9f);
+        }
     }
 
     const double secondsPerBeat = 60.0 / juce::jmax(1.0, tempoBpm) * (4.0 / (double) juce::jmax(1, timeSignatureDenominator));
@@ -1820,10 +1840,8 @@ void MainComponent::drawTransport(juce::Graphics& g, juce::Rectangle<int> area)
 
     // Readouts use dedicated, non-overlapping regions. Preserve existing hit targets.
     const auto positionBox = juce::Rectangle<int>(740, 34, 90, 36);
-    g.setColour(LibertyUI::Colour::surface);
-    g.fillRoundedRectangle(positionBox.toFloat(), 7.0f);
+    LibertyUI::fillPanel(g,positionBox.toFloat(),true,7.f);
     g.setColour(LibertyUI::Colour::accent);
-    g.drawRoundedRectangle(positionBox.toFloat().reduced(0.5f), 7.0f, 1.3f);
     g.fillRoundedRectangle((float)positionBox.getX() + 10.0f, (float)positionBox.getBottom() - 4.0f,
                            (float)positionBox.getWidth() - 20.0f, 2.0f, 1.0f);
     g.setColour(LibertyUI::Colour::textPrimary);
@@ -1951,9 +1969,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             && floatingDrumSamplerWindow->isVisible()
             && logicalRow == floatingDrumSamplerSourceTrack;
         const bool activeLane = logicalRow == selectedTrack || detachedSource || detachedDrumSource;
-        g.setColour(activeLane ? juce::Colour(0xff1b303a)
-                     : (logicalRow % 2 == 0 ? juce::Colour(0xff151f29)
-                                            : juce::Colour(0xff111b24)));
+        g.setColour(activeLane ? LibertyUI::Colour::selection.withAlpha(0.52f)
+                     : (logicalRow % 2 == 0 ? LibertyUI::Colour::panel
+                                            : LibertyUI::Colour::canvas));
         g.fillRect(row);
         auto header = row.withWidth(headerW);
         // Dedicated reorder grip stays visible on every track type.
