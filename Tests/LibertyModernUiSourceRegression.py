@@ -107,3 +107,24 @@ assert "LibertyUI::musicalBlock(g,bounds.toFloat(),colour," in performance
 assert "const int step = 1; // Exact peak envelope" in warp
 assert "LibertyUI::Colour::accentLight);" in warp
 print("PASS: Obsidian Studio waveform and musical block rendering")
+
+# Motion: animations remain message-thread-only, have bounded lifetime and never
+# move hit targets. Stereo values and the transport clock remain engine-driven.
+motion=read("Source/LibertyMotionAnimator.h")
+assert "SafePointer<juce::Component>" in motion
+assert "entries.size()>=32" in motion
+assert "if(entries.empty())stopTimer();" in motion
+assert "c->repaint();" in motion
+assert "startTimerHz(60);" in motion
+assert "hoverMotion.request(button," in main
+assert "pageMotion.request(b,selected?1.f:0.f)" in pages
+assert "LibertyMotion::meterSegmentFill(amount,i,segments)" in mixer
+assert "LibertyMixConsoleMeter::meterPosition(value.rms)" in mixer
+assert "LibertyMixConsoleMeter::meterPosition(value.heldPeak)" in mixer
+assert "LibertyMixConsoleMeter::advance(strip->meter,peaks,rms)" in mixer
+assert "g.reduceClipRegion(area.withTrimmedLeft(headerW));" in arrange
+assert "repaint(740,34,90,36);" in arrange
+assert "LibertyMotion::pulse(seconds,1.0)" in performance
+assert "player.isCapturing() && recordArrangeButton.isVisible()" in performance
+assert "LibertyMotion::pulse(seconds,1.4)" in performance
+print("PASS: Motion bounded animation, real stereo meter, locator and capture lights")
