@@ -5,6 +5,7 @@
 #include "PolyphonicStepGridDirectEdit.h"
 #include "PolyphonicStepGridPages.h"
 #include "PolyphonicStepGridFrench.h"
+#include "LibertyDesignSystem.h"
 
 namespace
 {
@@ -100,10 +101,7 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
     polyChip(g, l.previewButton,
              auditioning ? LibertyPolyGridFrench::stop() : "LECTURE",
              auditioning, l.compact ? 9.6f : 12.0f);
-    g.setColour(juce::Colour(0xff172636));
-    g.fillRoundedRectangle(panelR.toFloat(), 5.0f);
-    g.setColour(juce::Colour(0xff34546b));
-    g.drawRoundedRectangle(panelR.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    LibertyUI::fillPanel(g,panelR.toFloat(),false,6.f);
 
     polyText(g, "CLIP MIDI", {panelX+6, 39, l.clipPanel.w-12, 22},
              l.compact ? 10.0f : 13.0f, juce::Colour(cyan), juce::Justification::centredLeft, true);
@@ -209,8 +207,8 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
             const int absoluteStep = l.firstStep + step;
             const auto r = polyRect(l.cells[(size_t)row][(size_t)step]);
             const bool inCycle = absoluteStep < grid.stepCount;
-            g.setColour(juce::Colour(!inCycle ? 0xff101b28
-                        : (step % 4 == 0 ? 0xff293e51 : 0xff213345)));
+            g.setColour(!inCycle?LibertyUI::Colour::canvasDeep:
+                step%4==0?LibertyUI::Colour::surfaceRaised:LibertyUI::Colour::panel);
             g.fillRoundedRectangle(r.toFloat(), 2.0f);
             if (step % 4 == 0)
             {
@@ -234,11 +232,12 @@ void MainComponent::drawPolyphonicStepSequencer(juce::Graphics& g, juce::Rectang
             const int h = juce::jmax(2, l.rowHeight - 4);
             const auto noteR = juce::Rectangle<float>((float)x0+1.0f, (float)y,
                                                       (float)juce::jmax(2,x1-x0-3), (float)h);
-            g.setColour(juce::Colour(note.muted || silent ? 0xff6f6c63 : orange));
-            g.fillRoundedRectangle(noteR, 3.0f);
             const bool isSelected = editor
                 ? editor->contains({row, note.id})
                 : (row == polyGridSelectedLane && note.id == polyGridSelectedEvent);
+            LibertyUI::musicalBlock(g,noteR,
+                juce::Colour(note.muted||silent?0xff6f6c63:orange),
+                isSelected,note.muted||silent);
 
             // The active bottom tab is reflected directly on EVERY MIDI note.
             // For short cells, the coloured indicator stays inside the bar;
