@@ -726,7 +726,7 @@ void MainComponent::paint(juce::Graphics& g)
                         if (sample == firstSample) signal.startNewSubPath(x, y);
                         else signal.lineTo(x, y);
                     }
-                    g.setColour(juce::Colour(0xffffcf75));
+                    g.setColour(LibertyUI::Colour::accentLight);
                     g.strokePath(signal, juce::PathStrokeType(1.35f));
                     // At sample-level magnification show each actual sample point.
                     if (samplesPerPixel <= 0.5)
@@ -789,9 +789,10 @@ void MainComponent::paint(juce::Graphics& g)
                         const float top = laneCentre - high * laneAmplitude;
                         const float bottom = laneCentre - low * laneAmplitude;
                         const int pixel = wave.getX() + x;
-                        g.setColour(juce::Colour(0xffd3a55b).withAlpha(0.58f));
-                        g.drawVerticalLine(pixel, top, bottom);
-                        g.setColour(juce::Colour(0xffffd68b).withAlpha(0.90f));
+                        g.setColour((channel==0?LibertyUI::Colour::accent:
+                            LibertyUI::Colour::accentBlue).withAlpha(0.72f));
+                        g.drawVerticalLine(pixel,top,bottom);
+                        g.setColour(LibertyUI::Colour::accentLight.withAlpha(0.94f));
                         g.fillRect((float)pixel, top, 1.0f, 1.0f);
                         g.fillRect((float)pixel, bottom - 1.0f, 1.0f, 1.0f);
                     }
@@ -1997,7 +1998,8 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
             {
                 clip.setWidth(juce::jmax(1, (int)std::round(audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond)));
                 clip.setX(headerW + (int)std::round(audioEngine.getTrackStartSeconds(i) * pixelsPerSecond));
-                g.setColour(selected ? juce::Colour(0xff315e73) : juce::Colour(0xff24475b)); g.fillRoundedRectangle(clip.toFloat(), 5.0f);
+                LibertyUI::musicalBlock(g,clip.toFloat(),
+                    selected?juce::Colour(0xff315e73):juce::Colour(0xff24475b),selected);
                 g.setColour(selected ? juce::Colour(0xff89d6e5)
                                      : juce::Colour(0xff5598b3));
                 // Inset selection rim stays inside the clip and preserves hit geometry.
@@ -2019,9 +2021,9 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                         continue;
                     const bool extraSelected = selectedExtraAudioClipTrack == i
                         && selectedExtraAudioClipId == extra.id;
-                    g.setColour(extraSelected ? juce::Colour(0xff38657c)
-                                              : juce::Colour(0xff304258));
-                    g.fillRoundedRectangle(extraBounds.toFloat(), 5.0f);
+                    LibertyUI::musicalBlock(g,extraBounds.toFloat(),
+                        extraSelected?juce::Colour(0xff38657c):
+                                      juce::Colour(0xff304258),extraSelected);
                     g.setColour(extraSelected ? juce::Colour(0xffb5eafa)
                                               : juce::Colour(0xff8bb2d5));
                     g.drawRoundedRectangle(extraBounds.toFloat().reduced(0.5f), 5.0f, 1.0f);
@@ -2038,9 +2040,7 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
                     // A soft underlay adds depth without altering waveform geometry.
                     g.setColour(juce::Colour(0xff0c2432).withAlpha(0.30f));
                     g.fillPath(waveform);
-                    g.setColour(selected ? juce::Colour(0xffffd98c)
-                                         : juce::Colour(0xffd8b878));
-                    g.fillPath(waveform);
+                    LibertyUI::waveformEnvelope(g,waveform,clip.toFloat(),selected);
                 }
                 // File names follow the same selected/inactive hierarchy as track headers.
                 g.setColour(selected ? juce::Colour(0xfff5fcfd)
