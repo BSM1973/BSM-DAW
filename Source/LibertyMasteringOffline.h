@@ -1,6 +1,7 @@
 #pragma once
 #include "LibertyMasteringMeter.h"
 #include "LibertyReferenceAnalysis.h"
+#include "LibertyReferencePdf.h"
 #include "AudioEngine.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "LibertyDesignSystem.h"
@@ -54,7 +55,8 @@ public:
                     const int n=(int)std::min<juce::int64>(block,reader->lengthInSamples-pos);
                     pcm.clear();if(!reader->read(&pcm,0,n,pos,true,reader->numChannels>1)){out->error=juce::String::fromUTF8("Erreur de lecture audio.");break;}
                     for(int i=0;i<n;++i){const float l=pcm.getSample(0,i),r=reader->numChannels>1?pcm.getSample(1,i):0.f;frames[(size_t)i]={std::isfinite(l)?l:0.f,std::isfinite(r)?r:0.f};}
-                    meter->push(frames.data(),(size_t)n);analyzer->push(frames.data(),(size_t)n);pos+=n;
+                    meter->push(frames.data(),(size_t)n);if(reader->numChannels==1)for(int i=0;i<n;++i)frames[(size_t)i].r=frames[(size_t)i].l;
+                    analyzer->push(frames.data(),(size_t)n);pos+=n;
                     const auto r=meter->get();if(n==block){out->timeline.push_back(r.momentary);out->maxM=std::max(out->maxM,r.momentary);out->maxS=std::max(out->maxS,r.shortTerm);}
                     progress.store(float(double(pos)/double(reader->lengthInSamples)));
                 }
@@ -87,6 +89,7 @@ class OfflineView final:public juce::Component,private juce::Timer
     juce::TextButton loadA{"IMPORT A"},loadB{"IMPORT B"},cancel{"ANNULER"},exportButton{"EXPORT TXT"};
     AudioEngine& engine;
     juce::TextButton playA{"LIRE A"},playB{"LIRE B"},stop{"STOP"},clearMarkers{"EFFACER REP."};
+    juce::TextButton pdfButton{"EXPORT PDF"};
     juce::TextButton libraryAdd{"FAVORI B"},libraryRemove{"RETIRER"},libraryLoad{"CHARGER B"};
     juce::ComboBox graphMode,library;
     juce::StringArray references;
@@ -122,13 +125,13 @@ class OfflineView final:public juce::Component,private juce::Timer
         juce::AudioFormatManager formats;formats.registerBasicFormats();auto* reader=formats.createReaderFor(a.file);if(!reader){status=juce::String::fromUTF8("Fichier de lecture indisponible.");refresh();return;}
         const auto sr=reader->sampleRate;previewReader=std::make_unique<juce::AudioFormatReaderSource>(reader,true);
         preview.transport.setSource(previewReader.get(),32768,&readAhead,sr);
-        const auto gain=LibertyReference::matchGain(a.reading.integrated,b.reading.integrated,a.reading.truePeak,b.reading.truePeak);
+        const auto gain=LibertyReference::matchGain(a.reading.integrated+(a.channels==1?3.0102999566:0.),b.reading.integrated+(b.channels==1?3.0102999566:0.),a.reading.truePeak,b.reading.truePeak);
         preview.transport.setGain((float)std::pow(10.,gain/20.));preview.transport.setPosition(position<a.duration?std::max(0.,position):0.);
         player.setSource(&preview);engine.getDeviceManager().addAudioCallback(&player);attached=true;playingSlot=slot;preview.transport.start();status=juce::String::fromUTF8("Écoute ")+juce::String(slot?"B":"A")+" | "+number(gain)+" dB";refresh();
     }
     void refresh()
     {
-        loadA.setEnabled(!job&&!chooser);loadB.setEnabled(!job&&!chooser);cancel.setEnabled((bool)job);exportButton.setEnabled(!job&&!chooser&&(results[0]||results[1]));
+        loadA.setEnabled(!job&&!chooser);loadB.setEnabled(!job&&!chooser);cancel.setEnabled((bool)job);exportButton.setEnabled(!job&&!chooser&&(results[0]||results[1]));pdfButton.setEnabled(exportButton.isEnabled());
         const bool canPlay=results[0]&&results[1]&&!job&&!engine.isPlaying()&&!engine.isStepPreviewPlaying();playA.setEnabled(canPlay);playB.setEnabled(canPlay);stop.setEnabled(playingSlot>=0);libraryAdd.setEnabled((bool)results[1]);libraryLoad.setEnabled(!job&&!chooser&&library.getSelectedId()>0);libraryRemove.setEnabled(library.getSelectedId()>0);repaint();
     }
     void choose(int slot)
@@ -151,7 +154,29 @@ class OfflineView final:public juce::Component,private juce::Timer
             for(size_t j=0;j<a.timeline.size();++j)s+=juce::String(double(j+1)*std::round(a.rate*.1)/a.rate,3)+";"+number(a.timeline[j])+"\n";
         }
         if(results[0]&&results[1])s+="\nA moins B LUFS-I: "+number(results[0]->reading.integrated-results[1]->reading.integrated)+"\nA moins B dBTP: "+number(results[0]->reading.truePeak-results[1]->reading.truePeak)+"\n";
+        s+="\n";for(const auto& line:summaryLines())s+=juce::String::fromUTF8(line.c_str())+"\n";
         return s;
+    }
+    std::vector<std::string> summaryLines() const
+    {
+        std::vector<std::string> lines;
+        const auto append=[&](const juce::String& text){for(int offset=0;offset<text.length();offset+=80)lines.push_back(text.substring(offset,offset+80).toStdString());if(text.isEmpty())lines.emplace_back();};
+        append(juce::String::fromUTF8("Rapport A/B - mesures hors ligne non certifiées"));append(juce::Time::getCurrentTime().toString(true,true));append("Cible: "+number(target.getValue())+" LUFS | Plafond: "+number(ceiling.getValue())+" dBTP");
+        for(int j=0;j<2;++j)if(const auto* a=results[(size_t)j].get()){
+            append("");append(juce::String(j?"B : ":"A : ")+a->name);append(juce::String::fromUTF8("Durée : ")+number(a->duration)+" s | "+juce::String(a->rate,0)+" Hz | "+juce::String(a->channels)+" ch");
+            append("LUFS-I: "+number(a->reading.integrated)+" | LUFS-M max: "+number(a->maxM)+" | LUFS-S max: "+number(a->maxS));append("LRA: "+number(a->reading.lra)+" LU | True Peak 8x: "+number(a->reading.truePeak)+" dBTP");append(juce::String::fromUTF8("Écart cible : ")+number(a->reading.integrated-target.getValue())+" LU | Marge TP: "+number(ceiling.getValue()-a->reading.truePeak)+" dB");
+            append(juce::String::fromUTF8("Bande (Hz) | Énergie Side (%) | Max / moyenne (dB)"));
+            for(int i=0;i<LibertyReference::bands;++i){const auto w=a->profile.width(i),d=a->profile.dynamics(i);append(juce::String(LibertyReference::edges[(size_t)i],0)+" - "+juce::String(LibertyReference::edges[(size_t)i+1],0)+" | "+(w<0.?juce::String("--"):number(w))+" | "+(d<0.?juce::String("--"):number(d)));}
+        }
+        if(results[0]&&results[1]){append("");append("A - B : "+number(results[0]->reading.integrated-results[1]->reading.integrated)+" LU | "+number(results[0]->reading.truePeak-results[1]->reading.truePeak)+" dBTP");}
+        if(!markers.empty()){append("");append(juce::String::fromUTF8("Repères temporels (secondes)"));for(size_t i=0;i<markers.size();++i)append(juce::String((int)i+1)+" : "+number(markers[i]));}
+        return lines;
+    }
+    void savePdf()
+    {
+        if(chooser||job)return;const auto content=LibertyReference::makePdf(summaryLines());
+        chooser=std::make_unique<juce::FileChooser>("Exporter le rapport PDF",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Liberty-Reference-Studio.pdf"),"*.pdf");
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe=juce::Component::SafePointer<OfflineView>(this),content](const juce::FileChooser& fc){if(!safe)return;const auto file=fc.getResult();if(file!=juce::File{})safe->status=file.replaceWithData(content.data(),content.size())?juce::String::fromUTF8("PDF enregistré."):juce::String::fromUTF8("Échec de l'export PDF.");juce::MessageManager::callAsync([safe]{if(safe){safe->chooser.reset();safe->refresh();}});});refresh();
     }
     void save()
     {
@@ -180,7 +205,7 @@ public:
         playA.onClick=[this]{audition(0);};playB.onClick=[this]{audition(1);};stop.onClick=[this]{stopPreview();seekSeconds=0.;refresh();};clearMarkers.onClick=[this]{markers.clear();seekSeconds=0.;repaint();};
         graphMode.addItem(juce::String::fromUTF8("SONIE / REPÈRES"),1);graphMode.addItem("SPECTRE A/B",2);graphMode.addItem(juce::String::fromUTF8("STÉRÉO / BANDES"),3);graphMode.addItem("DYNAMIQUE / BANDES",4);graphMode.setSelectedId(1,juce::dontSendNotification);graphMode.onChange=[this]{repaint();};
         for(auto* b:{&playA,&playB,&stop,&clearMarkers,&libraryAdd,&libraryRemove,&libraryLoad})addAndMakeVisible(*b);addAndMakeVisible(graphMode);addAndMakeVisible(library);
-        loadA.onClick=[this]{choose(0);};loadB.onClick=[this]{choose(1);};cancel.onClick=[this]{if(job)job->cancel();};exportButton.onClick=[this]{save();};
+        loadA.onClick=[this]{choose(0);};loadB.onClick=[this]{choose(1);};cancel.onClick=[this]{if(job)job->cancel();};exportButton.onClick=[this]{save();};pdfButton.onClick=[this]{savePdf();};addAndMakeVisible(pdfButton);
         for(auto* b:{&loadA,&loadB,&cancel,&exportButton})addAndMakeVisible(*b);
         targetLabel.setText("CIBLE LUFS",juce::dontSendNotification);ceilingLabel.setText("PLAFOND dBTP",juce::dontSendNotification);
         for(auto* l:{&targetLabel,&ceilingLabel}){l->setJustificationType(juce::Justification::centredRight);addAndMakeVisible(*l);}
@@ -191,11 +216,11 @@ public:
     ~OfflineView() override{stopTimer();stopPreview();readAhead.stopThread(1000);chooser.reset();job.reset();}
     void hideAndStop(){stopPreview();refresh();}
     void mouseDown(const juce::MouseEvent& e) override
-    {if(graphMode.getSelectedId()!=1||e.x<58||e.x>getWidth()-28||e.y<352||e.y>468)return;double length=0.;for(const auto& r:results)if(r)length=std::max(length,r->duration);if(length<=0.)return;seekSeconds=length*(e.x-58.)/double(getWidth()-86);if(markers.size()<64)markers.push_back(seekSeconds);if(playingSlot>=0&&results[(size_t)playingSlot]&&seekSeconds<results[(size_t)playingSlot]->duration)preview.transport.setPosition(seekSeconds);repaint();}
+    {if(graphMode.getSelectedId()!=1||e.x<58||e.x>getWidth()-28||e.y<356||e.y>468)return;double length=0.;for(const auto& r:results)if(r)length=std::max(length,r->duration);if(length<=0.)return;seekSeconds=length*(e.x-58.)/double(getWidth()-86);if(markers.size()<64)markers.push_back(seekSeconds);if(playingSlot>=0&&results[(size_t)playingSlot]&&seekSeconds<results[(size_t)playingSlot]->duration)preview.transport.setPosition(seekSeconds);repaint();}
     void resized() override
     {
         auto b=getLocalBounds().reduced(18).withTrimmedTop(42).removeFromTop(32);
-        for(auto* button:{&loadA,&loadB,&cancel,&exportButton})button->setBounds(b.removeFromLeft(130).reduced(3,1));
+        for(auto* button:{&loadA,&loadB,&cancel,&exportButton,&pdfButton})button->setBounds(b.removeFromLeft(130).reduced(3,1));
         auto r=getLocalBounds().reduced(18).withTrimmedTop(80).removeFromTop(30);
         targetLabel.setBounds(r.removeFromLeft(100));target.setBounds(r.removeFromLeft(235));ceilingLabel.setBounds(r.removeFromLeft(118));ceiling.setBounds(r.removeFromLeft(235));
         auto controls=juce::Rectangle<int>(18,326,getWidth()-36,22);graphMode.setBounds(controls.removeFromLeft(174).reduced(1));for(auto* b:{&playA,&playB,&stop,&clearMarkers})b->setBounds(controls.removeFromLeft(90).reduced(1));
@@ -218,7 +243,7 @@ public:
             for(int k=0;k<7;++k){auto row=b.removeFromTop(20).reduced(12,0);drawLabel(g,metrics[k],row.removeFromLeft(row.getWidth()/2));drawLabel(g,number(values[k]),row,c,true);}
             drawLabel(g,number(a->duration)+" s | "+juce::String(a->rate,0)+" Hz | "+juce::String(a->channels)+" ch",b.removeFromTop(20));
         }
-        auto graph=juce::Rectangle<float>(58.f,352.f,(float)getWidth()-86.f,116.f);LibertyUI::fillPanel(g,graph.expanded(8.f),false,7.f);
+        auto graph=juce::Rectangle<float>(58.f,356.f,(float)getWidth()-86.f,112.f);LibertyUI::fillPanel(g,graph.expanded(8.f),false,7.f);
         if(graphMode.getSelectedId()!=1)
         {
             const int mode=graphMode.getSelectedId();
