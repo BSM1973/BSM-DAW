@@ -59,4 +59,21 @@ for width in (1280,1440,1659,1920,2560):
         if tracks==4:
             assert tracks*col>=total*0.72, (width,col,total)
 
-print("PASS: Obsidian 2.0 shared styles, page navigation, French labels and responsive grid")
+# Signature rendering protects original control geometry.
+browser=read("Source/BrowserController.cpp")
+assert "LibertyUI::fillPanel(g,brandPanel,false,10.f);" in arrange
+assert "LibertyUI::fillPanel(g,commandDeck,false,11.f);" in arrange
+assert "mark.closeSubPath();" in arrange
+assert 'g.drawFittedText(playing?"STOP":"PLAY",textArea,' in arrange
+assert "215 + i * 62, 38, 56, 28" in arrange
+assert "LibertyUI::fillPanel(g,s.bounds.toFloat().reduced(0.5f),chosen,6.f);" in mixer
+assert "juce::Colour(0xffe7f0f7),thumb.getX(),thumb.getY()" in mixer
+assert 'label="BAL 0.0 dB";' in mixer
+assert "setDoubleClickReturnValue(true,0.0)" in mixer
+assert 'g.drawFittedText("NAVIGATEUR",14,10,juce::jmax(0,getWidth()-96),24,' in browser
+assert "closeButton.setBounds(getWidth() - 72, 8, 62, 26);" in browser
+assert "if(!button.isVisible()||cell.getWidth()<80||cell.getHeight()<24)" in performance
+assert "if(!queued&&!active)continue;" in performance
+assert "g.fillRoundedRectangle(light,1.5f);" in performance
+assert "queued?LibertyUI::Colour::accentAmber" in performance
+print("PASS: Obsidian Signature rendering, typography and preserved control geometry")
