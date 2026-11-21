@@ -1196,7 +1196,7 @@ void drawInlineMidiPreview(juce::Graphics& g,bool instrument,const Clip& c)const
         if(bounds.isEmpty())continue;
         const float alpha=c.muted||note.muted?.27f:
             juce::jlimit(.60f,1.0f,.58f+note.velocity/250.0f);
-        g.setColour(juce::Colour(0xffe0f5ff).withAlpha(alpha));
+        g.setColour(LibertyUI::Colour::accentLight.withAlpha(alpha));
         g.fillRoundedRectangle(bounds.toFloat(),1.2f);
     }
 }
@@ -1229,10 +1229,10 @@ void drawInlineMidiNotes(juce::Graphics& g,bool instrument,const Clip& c)const {
         const bool selected=inlineMidiSelectedClipId==c.id
             && inlineMidiSelectedInstrument==instrument
             && inlineMidiSelectedNotes.count(index)!=0;
-        g.setColour(selected?juce::Colour(0xfff7df90):
-            juce::Colour(0xffd4efff).withAlpha(
-            c.muted||note.muted?.32f:juce::jlimit(.60f,1.0f,.60f+note.velocity/320.0f)));
-        g.fillRoundedRectangle(bounds.toFloat(),2);
+        LibertyUI::musicalBlock(g,bounds.toFloat(),
+            LibertyUI::Colour::accentLight.withAlpha(
+                c.muted||note.muted?.32f:juce::jlimit(.60f,1.0f,.60f+note.velocity/320.0f)),
+            selected,c.muted||note.muted);
         if(selected){
             g.setColour(juce::Colour(0xff091b30));
             g.drawRoundedRectangle(bounds.toFloat().reduced(.5f),2,1.2f);
