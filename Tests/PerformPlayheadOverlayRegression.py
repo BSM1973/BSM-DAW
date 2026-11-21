@@ -21,6 +21,6 @@ assert 'juce::Colour(0xfff8b84d)' in overlay, "Retain the orange playhead in ARR
 assert "bool isLibertyPerformVisible(MainComponent* owner)" in perform
 assert "owner.audioEngine.setPlaying(false);" in perform
 assert "owner.isPlaying = false;" in perform
-assert "g.fillAll(juce::Colour(0xff0c1014));" in perform
+assert "g.fillAll(LibertyUI::Colour::canvasDeep);" in perform
 
 print("PASS: golden playhead remains in ARRANGEMENT; neither PERFORMANCE nor MIXCONSOLE paints it")
