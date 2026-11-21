@@ -1605,6 +1605,30 @@ public:
 
     void paintOverChildren(juce::Graphics& g) override
     {
+        if(!midiWorkspaceVisible())
+        {
+            // A dedicated non-interactive status light stays inside each real
+            // clip button; nothing overlays the centered clip name.
+            const int count=juce::jmin(trackCount(),(int)clipButtons.size());
+            for(int track=0;track<count;++track)
+                for(int scene=0;scene<sceneCount;++scene)
+                {
+                    const auto& button=clipButtons[(size_t)track][(size_t)scene];
+                    const auto cell=button.getBounds();
+                    if(!button.isVisible()||cell.getWidth()<80||cell.getHeight()<24)
+                        continue;
+                    const bool queued=player.isTrackQueued(track,scene);
+                    const bool active=player.isTrackPlaying(track,scene);
+                    if(!queued&&!active)continue;
+                    const auto status=queued?LibertyUI::Colour::accentAmber:
+                                               LibertyUI::Colour::accentLight;
+                    const auto light=juce::Rectangle<float>(
+                        (float)cell.getX()+5.f,(float)cell.getY()+5.f,3.f,
+                        (float)cell.getHeight()-10.f);
+                    g.setColour(status);
+                    g.fillRoundedRectangle(light,1.5f);
+                }
+        }
         if(!midiWorkspaceVisible() && hasSelectedClip() &&
            selectedClipTrack<(int)clipButtons.size())
         {
@@ -2753,10 +2777,14 @@ private:
                 button.setEnabled(true);
                 button.setColour(juce::TextButton::buttonColourId,
                     target?juce::Colour(0xff245b70):
-                    active?clipColour.brighter(0.25f):
-                    valid?clipColour.withAlpha(0.70f):juce::Colour(0xff181d22));
+                    queued?LibertyUI::Colour::accentAmber.darker(0.65f):
+                    active?clipColour.interpolatedWith(LibertyUI::Colour::accent,0.28f):
+                    valid?clipColour.interpolatedWith(LibertyUI::Colour::surface,0.32f):
+                          LibertyUI::Colour::control.darker(0.20f));
                 button.setColour(juce::TextButton::textColourOffId,
-                    valid||target?juce::Colours::white:juce::Colour(0xff9ba6af));
+                    queued?LibertyUI::Colour::accentAmber.brighter(0.30f):
+                    valid||target?LibertyUI::Colour::textPrimary:
+                                  LibertyUI::Colour::textMuted);
                 if(track>=firstMidiTrack())
                 {
                     const int lane=LibertyPerformTiming::instrumentForLogicalTrack(
