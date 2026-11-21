@@ -269,19 +269,17 @@ void MainComponent::paint(juce::Graphics& g)
         g.drawText("DOCK", 12, mixer.getY() + 6, 100, 20, juce::Justification::centredLeft);
         return;
     }
-    // Permanent visible gold resize rail, drawn across the full draggable boundary.
-    g.setColour(juce::Colour(0xffb88732));
-    g.fillRect(0, mixer.getY() - 5, getWidth(), 10);
-    g.setColour(juce::Colour(0xffffdf83));
-    g.fillRect(0, mixer.getY() - 2, getWidth(), 4);
-    // Visual dock boundary only; leave editor and tab hit areas unchanged.
-    g.setColour(juce::Colour(0xff070b10));
-    g.fillRect(mixer.getX(), mixer.getY(), mixer.getWidth(), 2);
-    g.setColour(juce::Colour(0xffd7ad53));
-    g.fillRect(mixer.getX(), mixer.getY() + 2, mixer.getWidth(), 3);
-    g.setColour(juce::Colour(0xffffdf87));
-    g.fillRect(mixer.getX() + 8, mixer.getY() + 2,
-               juce::jmax(0, juce::jmin(144, mixer.getWidth() - 16)), 1);
+    // A fine two-tone docking seam replaces the former heavy gold bar.
+    // The draggable hit area is unchanged; this is paint-only.
+    g.setColour(LibertyUI::Colour::canvasDeep);
+    g.fillRect(0,mixer.getY()-5,getWidth(),7);
+    g.setGradientFill(juce::ColourGradient(
+        LibertyUI::Colour::accent.withAlpha(0.85f),0.f,(float)mixer.getY(),
+        LibertyUI::Colour::accentBlue.withAlpha(0.4f),
+        (float)getWidth(),(float)mixer.getY(),false));
+    g.fillRect(0,mixer.getY()-2,getWidth(),2);
+    g.setColour(LibertyUI::Colour::dividerSoft);
+    g.fillRect(0,mixer.getY(),getWidth(),1);
     const int instrumentFirst = getAudioTrackCount() + getMidiTrackCount();
     const bool showStepSequencer = selectedTrack >= instrumentFirst && selectedTrack < instrumentFirst + getInstrumentTrackCount();
     const bool isMidiDockTrack = selectedTrack >= getAudioTrackCount() && selectedTrack < instrumentFirst;
@@ -1855,15 +1853,19 @@ void MainComponent::drawTrackArea(juce::Graphics& g, juce::Rectangle<int> area)
     auto ruler = area.removeFromTop(rulerH);
     auto rows = area;
     // Deeper Obsidian ruler surface improves label and playhead contrast.
-    g.setColour(juce::Colour(0xff141e28)); g.fillRect(ruler);
-    // Distinct graphite corner anchors the track headers against the ruler.
-    g.setColour(juce::Colour(0xff1d2a35));
+    g.setGradientFill(juce::ColourGradient(
+        LibertyUI::Colour::header,(float)ruler.getX(),(float)ruler.getY(),
+        LibertyUI::Colour::canvas,(float)ruler.getRight(),
+        (float)ruler.getBottom(),false));
+    g.fillRect(ruler);
+    // Track headers and time ruler use the shared Obsidian surfaces.
+    g.setColour(LibertyUI::Colour::surface);
     g.fillRect(ruler.withWidth(headerW));
     // Continue the header/timeline seam through the ruler corner.
     g.setColour(juce::Colour(0xff40515f));
     g.drawVerticalLine(headerW - 1, (float)ruler.getY(), (float)ruler.getBottom());
-    g.setColour(juce::Colour(0xff202c37)); g.fillRect(rows.withWidth(headerW));
-    g.setColour(juce::Colour(0xff0b0f14)); g.fillRect(rows.withTrimmedLeft(headerW));
+    g.setColour(LibertyUI::Colour::panel);g.fillRect(rows.withWidth(headerW));
+    g.setColour(LibertyUI::Colour::canvasDeep);g.fillRect(rows.withTrimmedLeft(headerW));
     // Thin boundary keeps the time ruler distinct from the track canvas.
     g.setColour(juce::Colour(0xff344452));
     g.drawHorizontalLine(ruler.getBottom() - 1, (float)area.getX(), (float)area.getRight());
@@ -2555,7 +2557,7 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
     area = area.withTrimmedLeft(juce::jmax(0, 220 - area.getX()));
     g.saveState();
     g.reduceClipRegion(area.withTrimmedBottom(18));
-    g.setColour(juce::Colour(0xff101821)); g.fillRect(area);
+    g.setColour(LibertyUI::Colour::canvas);g.fillRect(area);
 
     const int audioTracks = getAudioTrackCount();
     const int instrumentTracks = getInstrumentTrackCount();
@@ -2579,13 +2581,14 @@ void MainComponent::drawMixer(juce::Graphics& g, juce::Rectangle<int> area)
             const int separatorX = c.getX() - 5;
             g.drawVerticalLine(separatorX, (float)c.getY() + 9.0f, (float)c.getBottom() - 9.0f);
         }
-        g.setColour(master ? juce::Colour(0xff26313d)
-                           : (isInstrument ? juce::Colour(0xff1d303b) : juce::Colour(0xff1c2732)));
-        g.fillRoundedRectangle(c.toFloat(), 5.0f);
-        g.setColour(master ? juce::Colour(0xff607989)
-                           : (isInstrument ? juce::Colour(0xff427887)
-                                           : juce::Colour(0xff405361)));
-        g.drawRoundedRectangle(c.toFloat(), 5.0f, 1.0f);
+        LibertyUI::fillPanel(g,c.toFloat(),master,7.f);
+        if(isInstrument && !master)
+        {
+            LibertyUI::accentRule(g,juce::Rectangle<float>(
+                (float)c.getX()+10.f,(float)c.getY()+3.f,
+                (float)c.getWidth()-20.f,2.f),
+                LibertyUI::Colour::accentPurple.withAlpha(0.65f));
+        }
         // The mini mixer shares the arranger's single selectedTrack index.
         // Instrument lanes follow MIDI lanes in the arranger.
         const int dockLogicalTrack = logicalTrack;
