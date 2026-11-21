@@ -10,6 +10,7 @@
 #endif
 #include "MainComponent.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyMotionAnimator.h"
 bool runLibertyPolyGridProjectRoundTripSmoke();
 #include "MidiEditor.h"
 #include "PluginHost.h"
@@ -209,6 +210,7 @@ private:
 // Liberty Obsidian: a scoped, reusable menu skin based on the welcome screen.
 class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
 {
+    LibertyMotion::Animator hoverMotion{"libertyMotionHover"};
 public:
     LibertyMenuLookAndFeel()
     {
@@ -255,8 +257,9 @@ public:
         auto base=button.findColour(active?
             juce::TextButton::buttonOnColourId:
             juce::TextButton::buttonColourId);
-        if(pressed)base=base.brighter(0.20f);
-        else if(hover)base=base.brighter(0.10f);
+        const float motion=hoverMotion.request(button,
+            !button.isEnabled()?0.f:pressed?1.f:hover?0.65f:0.f);
+        base=base.brighter(motion*0.22f);
         if(!button.isEnabled())base=base.withMultipliedAlpha(0.45f);
         const float radius=juce::jmin(8.f,r.getHeight()*0.24f);
         g.setGradientFill(juce::ColourGradient(
@@ -264,9 +267,10 @@ public:
             base.darker(0.19f),r.getRight(),r.getBottom(),false));
         g.fillRoundedRectangle(r,radius);
         const auto stroke=active?LibertyUI::Colour::accent:
-            hover?LibertyUI::Colour::accentBlue:LibertyUI::Colour::divider;
+            LibertyUI::Colour::divider.interpolatedWith(
+                LibertyUI::Colour::accentBlue,motion);
         g.setColour(stroke.withAlpha(button.isEnabled()?
-            (active?0.96f:hover?0.72f:0.60f):0.25f));
+            (active?0.96f:0.60f+motion*0.25f):0.25f));
         g.drawRoundedRectangle(r.reduced(0.4f),radius,active?1.35f:0.8f);
         if(active && r.getWidth()>12.f)
             LibertyUI::accentRule(g,juce::Rectangle<float>(
@@ -317,7 +321,9 @@ public:
             g.fillRoundedRectangle(juce::Rectangle<float>(
                 left,cy-2.3f,thumb-left,4.6f),2.3f);
         }
-        g.setColour(LibertyUI::Colour::accent.withAlpha(0.15f));
+        const float focus=hoverMotion.request(slider,
+            slider.isEnabled()&&slider.isMouseOverOrDragging()?1.f:0.f);
+        g.setColour(LibertyUI::Colour::accent.withAlpha(0.12f+focus*0.23f));
         g.fillEllipse(thumb-7.7f,cy-7.7f,15.4f,15.4f);
         g.setColour(slider.isEnabled()?LibertyUI::Colour::accentLight:
                     LibertyUI::Colour::textMuted);
@@ -332,7 +338,10 @@ public:
     {
         const auto bounds = juce::Rectangle<float>(0.5f, 0.5f,
                                                     (float)width - 1.0f, (float)height - 1.0f);
-        g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+        const float motion=hoverMotion.request(box,
+            box.isEnabled()&&box.isMouseOverOrDragging()?1.f:0.f);
+        g.setColour(box.findColour(juce::ComboBox::backgroundColourId)
+            .interpolatedWith(LibertyUI::Colour::surfaceRaised,motion*0.45f));
         g.fillRoundedRectangle(bounds, 7.0f);
         g.setColour(box.findColour(box.hasKeyboardFocus(true)
                                   ? juce::ComboBox::focusedOutlineColourId
@@ -370,9 +379,13 @@ public:
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
     {
-        g.fillAll(LibertyUI::Colour::panel);
+        g.setGradientFill(juce::ColourGradient(
+            LibertyUI::Colour::header,0.f,0.f,
+            LibertyUI::Colour::canvasDeep,0.f,(float)height,false));
+        g.fillRect(0,0,width,height);
         g.setColour(LibertyUI::Colour::divider);
-        g.drawRect(0, 0, width, height, 1);
+        g.drawRect(0,0,width,height,1);
+        LibertyUI::accentRule(g,{1.f,1.f,(float)juce::jmax(0,width-2),1.f});
     }
 };
 // Test-only CLI: exercise Liberty's real audio engine without opening the UI.
