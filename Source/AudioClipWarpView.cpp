@@ -1,5 +1,6 @@
 #define private public
 #include "MainComponent.h"
+#include "LibertyDesignSystem.h"
 #undef private
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -400,10 +401,7 @@ private:
     {
         const auto outer = waveformBounds();
         const auto area = waveformPlotBounds();
-        g.setColour(juce::Colour(0xff14283b));
-        g.fillRoundedRectangle(outer.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xff476078));
-        g.drawRoundedRectangle(outer.toFloat(), 5.0f, 1.0f);
+        LibertyUI::fillPanel(g,outer.toFloat(),false,7.f);
         drawTimeline(g);
 
         const auto bufferSnapshot = owner.audioEngine.getAudioBufferSnapshot(selectedTrack);
@@ -473,8 +471,8 @@ private:
         }
 
         g.setColour(owner.audioEngine.isTrackWarpEnabled(selectedTrack)
-            ? juce::Colour(0xffffcf75)
-            : juce::Colour(0xffd8b878));
+            ? LibertyUI::Colour::accentAmber
+            : LibertyUI::Colour::accentLight);
         g.strokePath(upper, juce::PathStrokeType(1.2f));
         g.strokePath(lower, juce::PathStrokeType(1.2f));
         g.setColour(juce::Colour(0xff2d3540));
