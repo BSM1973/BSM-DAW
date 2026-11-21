@@ -221,7 +221,7 @@ public:
             if(!file.getParentDirectory().createDirectory().wasOk() || !file.replaceWithText(next?"on":"off"))
             {
                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Liberty",
-                    juce::String::fromUTF8("Impossible de mémoriser la préférence d\x27animation."),"OK");
+                    juce::String::fromUTF8("Impossible de mémoriser la préférence d'animation."),"OK");
                 return;
             }
             LibertyMotion::setAnimationsEnabled(next);
