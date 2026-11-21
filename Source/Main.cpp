@@ -9,6 +9,7 @@
  #include <unistd.h>
 #endif
 #include "MainComponent.h"
+#include "LibertyDesignSystem.h"
 bool runLibertyPolyGridProjectRoundTripSmoke();
 #include "MidiEditor.h"
 #include "PluginHost.h"
@@ -211,23 +212,118 @@ class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
 public:
     LibertyMenuLookAndFeel()
     {
-        setColour(juce::PopupMenu::backgroundColourId, juce::Colour(0xff192e3c));
-        setColour(juce::PopupMenu::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(0xff285362));
-        setColour(juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+        setColour(juce::PopupMenu::backgroundColourId, LibertyUI::Colour::panel);
+        setColour(juce::PopupMenu::textColourId, LibertyUI::Colour::textPrimary);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, LibertyUI::Colour::selection);
+        setColour(juce::PopupMenu::highlightedTextColourId, LibertyUI::Colour::accentLight);
+        setColour(juce::TextButton::buttonColourId, LibertyUI::Colour::control);
+        setColour(juce::TextButton::buttonOnColourId, LibertyUI::Colour::active);
+        setColour(juce::TextButton::textColourOffId, LibertyUI::Colour::textPrimary);
+        setColour(juce::TextButton::textColourOnId, LibertyUI::Colour::accentLight);
+        setColour(juce::Slider::trackColourId, LibertyUI::Colour::dividerSoft);
+        setColour(juce::Slider::thumbColourId, LibertyUI::Colour::accentLight);
         // Shared Obsidian palette for all ComboBoxes and their popup lists.
-        setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff1b3140));
-        setColour(juce::ComboBox::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff41677a));
-        setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
-        setColour(juce::ComboBox::focusedOutlineColourId, juce::Colour(0xff54d6dc));
-        setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff192e3c));
-        setColour(juce::TextEditor::textColourId, juce::Colour(0xffe8f3fa));
-        setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff41677a));
-        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour(0xff54d6dc));
+        setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+        setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
+        setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
+        setColour(juce::ComboBox::arrowColourId, LibertyUI::Colour::accent);
+        setColour(juce::ComboBox::focusedOutlineColourId, LibertyUI::Colour::accent);
+        setColour(juce::TextEditor::backgroundColourId, LibertyUI::Colour::panel);
+        setColour(juce::TextEditor::textColourId, LibertyUI::Colour::textPrimary);
+        setColour(juce::TextEditor::outlineColourId, LibertyUI::Colour::divider);
+        setColour(juce::TextEditor::focusedOutlineColourId, LibertyUI::Colour::accent);
         setColour(juce::AlertWindow::backgroundColourId, juce::Colour(0xff112431));
         setColour(juce::AlertWindow::textColourId, juce::Colour(0xffe8f3fa));
         setColour(juce::AlertWindow::outlineColourId, juce::Colour(0xff41677a));
+    }
+
+    // One visual vocabulary for actual interactive JUCE controls throughout
+    // ARRANGEMENT, PERFORMANCE and the dock. Layout and callbacks are untouched.
+    void drawButtonBackground(juce::Graphics& g,juce::Button& button,
+                              const juce::Colour&,bool hover,bool pressed) override
+    {
+        auto* textButton=dynamic_cast<juce::TextButton*>(&button);
+        if(textButton==nullptr)
+        {
+            juce::LookAndFeel_V4::drawButtonBackground(g,button,
+                button.findColour(juce::TextButton::buttonColourId),hover,pressed);
+            return;
+        }
+        const auto r=button.getLocalBounds().toFloat().reduced(0.8f);
+        if(r.getWidth()<3.f||r.getHeight()<3.f)return;
+        const bool active=button.getToggleState();
+        auto base=button.findColour(active?
+            juce::TextButton::buttonOnColourId:
+            juce::TextButton::buttonColourId);
+        if(pressed)base=base.brighter(0.20f);
+        else if(hover)base=base.brighter(0.10f);
+        if(!button.isEnabled())base=base.withMultipliedAlpha(0.45f);
+        const float radius=juce::jmin(8.f,r.getHeight()*0.24f);
+        g.setGradientFill(juce::ColourGradient(
+            base.brighter(0.13f),r.getX(),r.getY(),
+            base.darker(0.19f),r.getRight(),r.getBottom(),false));
+        g.fillRoundedRectangle(r,radius);
+        const auto stroke=active?LibertyUI::Colour::accent:
+            hover?LibertyUI::Colour::accentBlue:LibertyUI::Colour::divider;
+        g.setColour(stroke.withAlpha(button.isEnabled()?
+            (active?0.96f:hover?0.72f:0.60f):0.25f));
+        g.drawRoundedRectangle(r.reduced(0.4f),radius,active?1.35f:0.8f);
+        if(active && r.getWidth()>12.f)
+            LibertyUI::accentRule(g,juce::Rectangle<float>(
+                r.getX()+5.f,r.getBottom()-2.4f,r.getWidth()-10.f,1.7f));
+    }
+
+    void drawButtonText(juce::Graphics& g,juce::TextButton& b,
+                        bool hover,bool) override
+    {
+        const bool active=b.getToggleState();
+        auto colour=b.findColour(active?
+            juce::TextButton::textColourOnId:
+            juce::TextButton::textColourOffId);
+        if(hover && b.isEnabled())colour=colour.brighter(0.13f);
+        g.setColour(colour.withMultipliedAlpha(b.isEnabled()?1.f:0.48f));
+        const auto height=b.getHeight();
+        g.setFont(juce::Font(juce::jlimit(9.f,12.f,
+            (float)height*0.37f),juce::Font::bold));
+        g.drawFittedText(b.getButtonText(),b.getLocalBounds().reduced(5,2),
+            juce::Justification::centred,1,0.80f);
+    }
+
+    void drawLinearSlider(juce::Graphics& g,int x,int y,int width,int height,
+                          float sliderPos,float minPos,float maxPos,
+                          const juce::Slider::SliderStyle style,
+                          juce::Slider& slider) override
+    {
+        if(style!=juce::Slider::LinearHorizontal || width<20 || height<12)
+        {
+            juce::LookAndFeel_V4::drawLinearSlider(g,x,y,width,height,
+                sliderPos,minPos,maxPos,style,slider);
+            return;
+        }
+        const float cy=(float)y+height*0.50f;
+        const float left=(float)x+5.f;
+        const float right=(float)(x+width)-5.f;
+        const float thumb=juce::jlimit(left,right,sliderPos);
+        const auto rail=juce::Rectangle<float>(left,cy-2.3f,right-left,4.6f);
+        g.setColour(LibertyUI::Colour::canvasDeep);
+        g.fillRoundedRectangle(rail,2.3f);
+        g.setColour(LibertyUI::Colour::divider.withAlpha(0.75f));
+        g.drawRoundedRectangle(rail,2.3f,0.75f);
+        if(thumb>left)
+        {
+            g.setGradientFill(juce::ColourGradient(
+                LibertyUI::Colour::accentBlue.withAlpha(0.86f),left,cy,
+                LibertyUI::Colour::accent.withAlpha(0.98f),thumb,cy,false));
+            g.fillRoundedRectangle(juce::Rectangle<float>(
+                left,cy-2.3f,thumb-left,4.6f),2.3f);
+        }
+        g.setColour(LibertyUI::Colour::accent.withAlpha(0.15f));
+        g.fillEllipse(thumb-7.7f,cy-7.7f,15.4f,15.4f);
+        g.setColour(slider.isEnabled()?LibertyUI::Colour::accentLight:
+                    LibertyUI::Colour::textMuted);
+        g.fillEllipse(thumb-4.9f,cy-4.9f,9.8f,9.8f);
+        g.setColour(LibertyUI::Colour::canvasDeep.withAlpha(0.7f));
+        g.drawEllipse(thumb-4.9f,cy-4.9f,9.8f,9.8f,0.7f);
     }
 
     // Obsidian controls: rounded surfaces, clear focus and generous hit targets.
@@ -264,16 +360,18 @@ public:
     void drawMenuBarBackground(juce::Graphics& g, int width, int height,
                                bool, juce::MenuBarComponent&) override
     {
-        g.setColour(juce::Colour(0xff101f2c));
-        g.fillRect(0, 0, width, height);
-        g.setColour(juce::Colour(0xff35596b));
-        g.fillRect(0, height - 1, width, 1);
+        g.setGradientFill(juce::ColourGradient(
+            LibertyUI::Colour::header,0.f,0.f,
+            LibertyUI::Colour::canvas,0.f,(float)height,false));
+        g.fillRect(0,0,width,height);
+        g.setColour(LibertyUI::Colour::dividerSoft);
+        g.fillRect(0,height-1,width,1);
     }
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
     {
-        g.fillAll(juce::Colour(0xff192e3c));
-        g.setColour(juce::Colour(0xff41677a));
+        g.fillAll(LibertyUI::Colour::panel);
+        g.setColour(LibertyUI::Colour::divider);
         g.drawRect(0, 0, width, height, 1);
     }
 };
@@ -658,6 +756,9 @@ public:
         menuModel = std::make_unique<LibertyMainMenu>(*editor);
         menuBar = std::make_unique<juce::MenuBarComponent>(menuModel.get());
         menuBar->setLookAndFeel(&menuLookAndFeel);
+        // Children inherit the visual theme unless a specialist editor has
+        // deliberately installed its own LookAndFeel.
+        editor->setLookAndFeel(&menuLookAndFeel);
         addAndMakeVisible(*menuBar);
         addAndMakeVisible(*editor);
         setSize(editor->getWidth(), editor->getHeight() + 30);
@@ -697,7 +798,11 @@ public:
         addAndMakeVisible(*welcome);
         welcome->toFront(false);
     }
-    ~LibertyMainContent() override { if (menuBar) menuBar->setLookAndFeel(nullptr); }
+    ~LibertyMainContent() override
+    {
+        if(editor)editor->setLookAndFeel(nullptr);
+        if(menuBar)menuBar->setLookAndFeel(nullptr);
+    }
     MainComponent& getEditor() const { return *editor; }
     void resized() override
     {
