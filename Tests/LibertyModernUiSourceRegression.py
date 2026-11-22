@@ -153,5 +153,5 @@ assert "ticked,submenu,text,shortcut,icon,&colour" in menus
 assert "g.reduceClipRegion(area)" in menus
 for path in ("Source/AudioRecordingController.cpp","Source/MidiEditor.cpp","Source/LibertyDrumSampler.h"):
     import re
-    assert not re.search(r"juce::ComboBox::\\w+ColourId,\\s*juce::Colour\\(0x",read(path)), path
+    assert not re.search(r"juce::ComboBox::\w+ColourId,\s*juce::Colour\(0x",read(path)), path
 print("PASS: common Obsidian menu painter, preserved native menu content and shared selector colors")
