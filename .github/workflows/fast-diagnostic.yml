@@ -60,7 +60,12 @@ jobs:
       - name: Validate final-control PDF using an independent reader
         run: |
           command -v pdfinfo >/dev/null || (sudo apt-get update && sudo apt-get install -y poppler-utils)
-          pdfinfo /tmp/liberty-final-report.pdf | grep -E 'Pages:[[:space:]]+2
+          pdfinfo /tmp/liberty-final-report.pdf | grep -E 'Pages:[[:space:]]+2$'
+          pdftotext /tmp/liberty-final-report.pdf /tmp/liberty-final-report.txt
+          grep -F 'Synthèse (A) et référence B' /tmp/liberty-final-report.txt
+          grep -F 'Repere 60' /tmp/liberty-final-report.txt
+
+      - name: Verify plugin collections XML parser, size limits and import rollback
         run: python3 Tests/PluginCollectionsXmlRegression.py
 
       - name: Verify polyphonic Step Sequencer notes and per-note lengths
