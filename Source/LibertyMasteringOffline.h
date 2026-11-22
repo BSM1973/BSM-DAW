@@ -8,6 +8,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <thread>
+#include <map>
 #include <mutex>
 #include <vector>
 #include <memory>
@@ -41,7 +42,7 @@ public:
             std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
             if(!reader)out->error=juce::String::fromUTF8("Fichier audio illisible.");
             else if(reader->numChannels<1||reader->numChannels>2)out->error=juce::String::fromUTF8("Seuls les fichiers mono et stéréo sont pris en charge.");
-            else if(reader->sampleRate<8000.||reader->sampleRate>384000.||reader->lengthInSamples<=0||double(reader->lengthInSamples)/reader->sampleRate>43200.)out->error=juce::String::fromUTF8("Durée ou fréquence non prise en charge (maximum 12 h).");
+            else if(!std::isfinite(reader->sampleRate)||reader->sampleRate<8000.||reader->sampleRate>384000.||reader->lengthInSamples<=0||double(reader->lengthInSamples)/reader->sampleRate>43200.)out->error=juce::String::fromUTF8("Durée ou fréquence non prise en charge (maximum 12 h).");
             else
             {
                 out->rate=reader->sampleRate;out->channels=(int)reader->numChannels;out->duration=double(reader->lengthInSamples)/out->rate;
@@ -89,7 +90,11 @@ class OfflineView final:public juce::Component,private juce::Timer
     juce::TextButton loadA{"IMPORT A"},loadB{"IMPORT B"},cancel{"ANNULER"},exportButton{"EXPORT TXT"};
     AudioEngine& engine;
     juce::TextButton playA{"LIRE A"},playB{"LIRE B"},stop{"STOP"},clearMarkers{"EFFACER REP."};
-    juce::TextButton pdfButton{"EXPORT PDF"};
+    juce::TextButton pdfButton{"EXPORT PDF"},watchButton{"SUIVI WAV"};
+    juce::File watchFolder;
+    struct Watched { juce::int64 size=0,modified=0; int stable=0; bool seen=false; };
+    std::map<juce::String,Watched> watched;
+    int watchTick=0;
     juce::TextButton libraryAdd{"FAVORI B"},libraryRemove{"RETIRER"},libraryLoad{"CHARGER B"};
     juce::ComboBox graphMode,library;
     juce::StringArray references;
@@ -129,9 +134,28 @@ class OfflineView final:public juce::Component,private juce::Timer
         preview.transport.setGain((float)std::pow(10.,gain/20.));preview.transport.setPosition(position<a.duration?std::max(0.,position):0.);
         player.setSource(&preview);engine.getDeviceManager().addAudioCallback(&player);attached=true;playingSlot=slot;preview.transport.start();status=juce::String::fromUTF8("Écoute ")+juce::String(slot?"B":"A")+" | "+number(gain)+" dB";refresh();
     }
+    void scanWatch(bool baseline=false)
+    {
+        if(!watchFolder.isDirectory())return;
+        juce::Array<juce::File> files;watchFolder.findChildFiles(files,juce::File::findFiles,false,"*.wav");
+        juce::File candidate;juce::int64 newest=0;
+        for(const auto& file:files){const auto key=file.getFullPathName();const auto size=file.getSize(),mtime=file.getLastModificationTime().toMilliseconds();auto it=watched.find(key);
+            if(it==watched.end()){watched.emplace(key,Watched{size,mtime,0,baseline});continue;}
+            auto& w=it->second;if(w.size!=size||w.modified!=mtime){w={size,mtime,0,false};continue;}
+            if(!w.seen&&size>44&&++w.stable>=3&&mtime>=newest){candidate=file;newest=mtime;}}
+        if(!baseline&&!job&&!chooser&&playingSlot<0&&candidate.existsAsFile()){
+            watched[candidate.getFullPathName()].seen=true;destination=0;job=std::make_unique<OfflineJob>(candidate);status=juce::String::fromUTF8("Analyse après export WAV : ")+candidate.getFileName();refresh();}
+    }
+    void chooseWatch()
+    {
+        if(chooser||job)return;
+        if(watchFolder.isDirectory()){watchFolder=juce::File{};watched.clear();watchButton.setButtonText("SUIVI WAV");watchButton.setToggleState(false,juce::dontSendNotification);status=juce::String::fromUTF8("Suivi WAV désactivé.");refresh();return;}
+        chooser=std::make_unique<juce::FileChooser>(juce::String::fromUTF8("Choisir le dossier des exports WAV"),juce::File::getSpecialLocation(juce::File::userMusicDirectory));
+        chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectDirectories,[safe=juce::Component::SafePointer<OfflineView>(this)](const juce::FileChooser& fc){if(!safe)return;const auto folder=fc.getResult();if(folder.isDirectory()){safe->watchFolder=folder;safe->watched.clear();safe->scanWatch(true);safe->watchButton.setButtonText("SUIVI ON");safe->watchButton.setToggleState(true,juce::dontSendNotification);safe->status=juce::String::fromUTF8("Suivi WAV actif (fenêtre ouverte) : ")+folder.getFileName();}juce::MessageManager::callAsync([safe]{if(safe){safe->chooser.reset();safe->refresh();}});});refresh();
+    }
     void refresh()
     {
-        loadA.setEnabled(!job&&!chooser);loadB.setEnabled(!job&&!chooser);cancel.setEnabled((bool)job);exportButton.setEnabled(!job&&!chooser&&(results[0]||results[1]));pdfButton.setEnabled(exportButton.isEnabled());
+        loadA.setEnabled(!job&&!chooser);loadB.setEnabled(!job&&!chooser);cancel.setEnabled((bool)job);exportButton.setEnabled(!job&&!chooser&&(results[0]||results[1]));pdfButton.setEnabled(exportButton.isEnabled());watchButton.setEnabled(!job&&!chooser);
         const bool canPlay=results[0]&&results[1]&&!job&&!engine.isPlaying()&&!engine.isStepPreviewPlaying();playA.setEnabled(canPlay);playB.setEnabled(canPlay);stop.setEnabled(playingSlot>=0);libraryAdd.setEnabled((bool)results[1]);libraryLoad.setEnabled(!job&&!chooser&&library.getSelectedId()>0);libraryRemove.setEnabled(library.getSelectedId()>0);repaint();
     }
     void choose(int slot)
@@ -188,8 +212,9 @@ class OfflineView final:public juce::Component,private juce::Timer
     }
     void timerCallback() override
     {
-        if(playingSlot>=0&&(engine.isPlaying()||engine.isStepPreviewPlaying()||preview.transport.hasStreamFinished()))stopPreview();
-        if(!job){refresh();return;}
+        if(playingSlot>=0&&(engine.isPlaying()||engine.isStepPreviewPlaying()||preview.transport.hasStreamFinished())){stopPreview();refresh();}
+        if(isShowing()&&watchFolder.isDirectory()&&++watchTick>=10){watchTick=0;scanWatch();}
+        if(!job){if(isShowing()){const bool canPlay=results[0]&&results[1]&&!engine.isPlaying()&&!engine.isStepPreviewPlaying();if(playA.isEnabled()!=canPlay)refresh();}return;}
         if(job->finished()){auto r=job->take();job.reset();if(r&&r->error.isEmpty()){status=juce::String::fromUTF8("Analyse terminée : ")+r->name;results[(size_t)destination]=std::move(r);}else status=r?r->error:"Analyse impossible";refresh();}
         else repaint();
     }
@@ -205,7 +230,7 @@ public:
         playA.onClick=[this]{audition(0);};playB.onClick=[this]{audition(1);};stop.onClick=[this]{stopPreview();seekSeconds=0.;refresh();};clearMarkers.onClick=[this]{markers.clear();seekSeconds=0.;repaint();};
         graphMode.addItem(juce::String::fromUTF8("SONIE / REPÈRES"),1);graphMode.addItem("SPECTRE A/B",2);graphMode.addItem(juce::String::fromUTF8("STÉRÉO / BANDES"),3);graphMode.addItem("DYNAMIQUE / BANDES",4);graphMode.setSelectedId(1,juce::dontSendNotification);graphMode.onChange=[this]{repaint();};
         for(auto* b:{&playA,&playB,&stop,&clearMarkers,&libraryAdd,&libraryRemove,&libraryLoad})addAndMakeVisible(*b);addAndMakeVisible(graphMode);addAndMakeVisible(library);
-        loadA.onClick=[this]{choose(0);};loadB.onClick=[this]{choose(1);};cancel.onClick=[this]{if(job)job->cancel();};exportButton.onClick=[this]{save();};pdfButton.onClick=[this]{savePdf();};addAndMakeVisible(pdfButton);
+        loadA.onClick=[this]{choose(0);};loadB.onClick=[this]{choose(1);};cancel.onClick=[this]{if(job)job->cancel();};exportButton.onClick=[this]{save();};pdfButton.onClick=[this]{savePdf();};addAndMakeVisible(pdfButton);watchButton.onClick=[this]{chooseWatch();};watchButton.setTooltip(juce::String::fromUTF8("Analyser automatiquement un nouveau WAV stable dans le dossier choisi, lorsque cette fenêtre est ouverte."));addAndMakeVisible(watchButton);
         for(auto* b:{&loadA,&loadB,&cancel,&exportButton})addAndMakeVisible(*b);
         targetLabel.setText("CIBLE LUFS",juce::dontSendNotification);ceilingLabel.setText("PLAFOND dBTP",juce::dontSendNotification);
         for(auto* l:{&targetLabel,&ceilingLabel}){l->setJustificationType(juce::Justification::centredRight);addAndMakeVisible(*l);}
@@ -220,7 +245,7 @@ public:
     void resized() override
     {
         auto b=getLocalBounds().reduced(18).withTrimmedTop(42).removeFromTop(32);
-        for(auto* button:{&loadA,&loadB,&cancel,&exportButton,&pdfButton})button->setBounds(b.removeFromLeft(130).reduced(3,1));
+        for(auto* button:{&loadA,&loadB,&cancel,&exportButton,&pdfButton,&watchButton})button->setBounds(b.removeFromLeft(127).reduced(3,1));
         auto r=getLocalBounds().reduced(18).withTrimmedTop(80).removeFromTop(30);
         targetLabel.setBounds(r.removeFromLeft(100));target.setBounds(r.removeFromLeft(235));ceilingLabel.setBounds(r.removeFromLeft(118));ceiling.setBounds(r.removeFromLeft(235));
         auto controls=juce::Rectangle<int>(18,326,getWidth()-36,22);graphMode.setBounds(controls.removeFromLeft(174).reduced(1));for(auto* b:{&playA,&playB,&stop,&clearMarkers})b->setBounds(controls.removeFromLeft(90).reduced(1));
@@ -263,7 +288,7 @@ public:
             g.setColour(j?LibertyUI::Colour::accentPurple:LibertyUI::Colour::accent);g.strokePath(p,juce::PathStrokeType(1.4f));
         }
         if(maxDuration>0.){g.setColour(LibertyUI::Colour::accentAmber);for(double time:markers){const float x=graph.getX()+graph.getWidth()*(float)std::clamp(time/maxDuration,0.,1.);g.drawVerticalLine((int)x,graph.getY(),graph.getBottom());}}
-        drawLabel(g,"0 s  |  LUFS-M A / B  |  "+number(maxDuration)+" s",{58,474,getWidth()-86,18});
+        drawLabel(g,"0 s  |  LUFS-M A / B  |  "+number(maxDuration)+" s  |  "+juce::String((int)markers.size())+" rep.",{58,474,getWidth()-86,18});
         drawLabel(g,job?status+"  "+juce::String(job->fraction()*100.f,0)+" %":status,{18,500,getWidth()-36,24});
     }
 };

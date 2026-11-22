@@ -11,6 +11,8 @@ cases = [
     ("3341-3", 0, -23., .1, .1),
     ("3341-4", 0, -23., .1, .1),
     ("3341-5", 0, -23., .1, .1),
+    ("3341-7", 0, -23., .1, .1),
+    ("3341-8", 0, -23., .1, .1),
     ("3342-1", 1, 10., 1., 1.),
     ("3342-2", 1, 5., 1., 1.),
     ("3342-3", 1, 20., 1., 1.),
@@ -41,7 +43,7 @@ def measure(z, name):
 errors=0; tested=0
 with zipfile.ZipFile(archive) as z:
     for key,metric,ref,lo,hi in cases:
-        regex=re.compile(r"(?<!\d)"+key+r"(?!\d)",re.I)
+        regex=re.compile(r"(?<!\d)"+key.replace("3341-","3341-(?:2011-)?")+r"(?!\d)",re.I)
         files=sorted(n for n in z.namelist() if n.lower().endswith(".wav") and regex.search(os.path.basename(n)) and "5channels" not in n and "6channels" not in n)
         if not files:
             print(f"NOT RUN {key}: fixture missing",flush=True);errors+=1;continue

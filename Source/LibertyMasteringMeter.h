@@ -31,15 +31,18 @@ class Distribution
     static constexpr int count=11001;
     struct Bin {double sum=0.;std::uint64_t n=0;};
     std::array<Bin,count> bins{};
+    double totalEnergy=0.;std::uint64_t totalCount=0;
     static int index(double lu) noexcept {return static_cast<int>(std::clamp(std::round((lu+70.)*100.),0.,double(count-1)));}
     static double centre(int i) noexcept {return -70.+i*.01;}
 public:
-    void clear() noexcept {bins.fill({});}
-    void add(double energy) noexcept {const double lu=loudness(energy);if(!std::isfinite(lu)||lu< -70.)return;auto& b=bins[(size_t)index(lu)];b.sum+=energy;++b.n;}
+    void clear() noexcept {bins.fill({});totalEnergy=0.;totalCount=0;}
+    void add(double energy) noexcept {const double lu=loudness(energy);if(!std::isfinite(lu)||lu< -70.)return;auto& b=bins[(size_t)index(lu)];b.sum+=energy;++b.n;totalEnergy+=energy;++totalCount;}
     double mean(double threshold) const noexcept
     {
+        if(threshold<=-70.)return totalCount?totalEnergy/double(totalCount):0.;
         double sum=0.;std::uint64_t n=0;
-        for(int i=0;i<count;++i)if(centre(i)>=threshold-.005){const auto& b=bins[(size_t)i];sum+=b.sum;n+=b.n;}
+        const int first=static_cast<int>(std::clamp(std::ceil((threshold+70.-.005)*100.),0.,double(count)));
+        for(int i=first;i<count;++i){const auto& b=bins[(size_t)i];sum+=b.sum;n+=b.n;}
         return n?sum/double(n):0.;
     }
     double integrated() const noexcept
@@ -50,12 +53,13 @@ public:
     double range() const noexcept
     {
         const double threshold=std::max(-70.,loudness(mean(-70.))-20.);
-        std::uint64_t n=0;for(int i=0;i<count;++i)if(centre(i)>=threshold-.005)n+=bins[(size_t)i].n;
+        const int first=static_cast<int>(std::clamp(std::ceil((threshold+70.-.005)*100.),0.,double(count)));
+        std::uint64_t n=0;for(int i=first;i<count;++i)n+=bins[(size_t)i].n;
         if(n<2)return unavailable;
         const auto lo=static_cast<std::uint64_t>(std::llround(double(n-1)*.10));
         const auto hi=static_cast<std::uint64_t>(std::llround(double(n-1)*.95));
         std::uint64_t cursor=0;double low=unavailable;
-        for(int i=0;i<count;++i){if(centre(i)<threshold-.005)continue;cursor+=bins[(size_t)i].n;if(!std::isfinite(low)&&cursor>lo)low=centre(i);if(cursor>hi)return centre(i)-low;}
+        for(int i=first;i<count;++i){cursor+=bins[(size_t)i].n;if(!std::isfinite(low)&&cursor>lo)low=centre(i);if(cursor>hi)return centre(i)-low;}
         return unavailable;
     }
 };
@@ -80,7 +84,9 @@ public:
         delay[0][(size_t)cursor]=delay[0][(size_t)(cursor+taps)]=s.l;
         delay[1][(size_t)cursor]=delay[1][(size_t)(cursor+taps)]=s.r;
         maximum=std::max({maximum,std::abs(double(s.l)),std::abs(double(s.r))});
-        for(const auto& d:delay)for(const auto& phase:coeff){double y=0.;const auto* p=d.data()+cursor+taps;for(int i=0;i<taps;++i)y+=phase[(size_t)i]*p[-i];maximum=std::max(maximum,std::abs(y));}
+        for(const auto& d:delay)for(const auto& phase:coeff){double a=0.,b=0.,c=0.,e=0.;const auto* p=d.data()+cursor+taps;
+            for(int i=0;i<taps;i+=4){a+=phase[(size_t)i]*p[-i];b+=phase[(size_t)i+1]*p[-i-1];c+=phase[(size_t)i+2]*p[-i-2];e+=phase[(size_t)i+3]*p[-i-3];}
+            maximum=std::max(maximum,std::abs((a+b)+(c+e)));}
         cursor=(cursor+1)%taps;
     }
     double dbtp() const noexcept {return amplitudeDb(maximum);}
@@ -108,7 +114,7 @@ class Meter
     {
         blocks[cursor]=energy/filled;cursor=(cursor+1)%30;valid=std::min<std::size_t>(30,valid+1);energy=0.;filled=0;
         if(valid>=4){const auto e=average(4);reading.momentary=loudness(e);integratedBlocks.add(e);}
-        if(valid>=30){const auto e=average(30);reading.shortTerm=loudness(e);shortBlocks.add(e);}
+        if(valid>=30){const auto e=average(30);reading.shortTerm=loudness(e);if((updates+1)%10==0)shortBlocks.add(e);}
         history[histCursor]=reading.momentary;histCursor=(histCursor+1)%history.size();histCount=std::min(history.size(),histCount+1);
         ++updates;
         // Distribution scans are bounded and run ten times per second at most.
