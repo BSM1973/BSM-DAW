@@ -1321,6 +1321,18 @@ bool runArrangementTests(){
         bool previewIns=false;int previewIndex=-1,previewNote=-1;
         require(!inlineMidiAt(miniNote.getCentre(),previewIns,previewIndex,previewNote),
                 "read-only MIDI preview does not enable edit hit testing");
+        // Legacy fixed-scale painter must never appear beside the real clip.
+        require(owner.midiClipOverlay.isRetired() && !owner.midiClipOverlay.isVisible(),
+                "legacy MIDI overlay retired, timer stopped after modern controller takeover");
+        {
+            juce::Image legacy(juce::Image::ARGB, 1000, 180, true);
+            juce::Graphics graphics(legacy);
+            owner.midiClipOverlay.paint(graphics);
+            for(int y=0;y<legacy.getHeight();++y)
+                for(int x=0;x<legacy.getWidth();++x)
+                    require(legacy.getPixelAt(x,y).getAlpha()==0,
+                            "retired MIDI overlay must paint no pixels");
+        }
         const auto beforePreview=stateSignature();
         {
             juce::Image image(juce::Image::ARGB,juce::jmax(1,mini.getRight()+2),

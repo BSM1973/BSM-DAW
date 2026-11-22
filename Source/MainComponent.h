@@ -1149,9 +1149,22 @@ private:
             owner->addAndMakeVisible(this);
             startTimerHz(30);
         }
+        // The modern multi-clip controller exclusively owns MIDI arrangement
+        // painting, hit testing and playback publication after takeover.
+        void retireForMultiClipController() noexcept
+        {
+            retired = true;
+            stopTimer();
+            dragging = resizing = false;
+            resizeSide = ResizeSide::none;
+            setInterceptsMouseClicks(false, false);
+            setVisible(false);
+        }
+        bool isRetired() const noexcept { return retired && !isTimerRunning(); }
         void resized() override {}
         void paint(juce::Graphics& g) override
         {
+            if (retired) return;
             const auto notes = owner->midiEngine.getNotesCopy();
             if (notes.empty()) return;
             constexpr float pixelsPerSecond = 80.0f;
@@ -1270,6 +1283,7 @@ private:
         }
         void timerCallback() override
         {
+            if (retired) return;
             owner->updateMidiClipTiming();
             // Keep Piano Roll notes visible on MIDI and Instrument tracks.
             const int firstMidiTrack = owner->getAudioTrackCount();
@@ -1290,6 +1304,7 @@ private:
             repaint();
         }
         MainComponent* owner;
+        bool retired = false;
         bool dragging = false;
         bool resizing = false;
         ResizeSide resizeSide = ResizeSide::none;

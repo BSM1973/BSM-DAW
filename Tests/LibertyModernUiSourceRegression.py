@@ -155,3 +155,13 @@ for path in ("Source/AudioRecordingController.cpp","Source/MidiEditor.cpp","Sour
     import re
     assert not re.search(r"juce::ComboBox::\w+ColourId,\s*juce::Colour\(0x",read(path)), path
 print("PASS: common Obsidian menu painter, preserved native menu content and shared selector colors")
+
+# Superseded single-clip overlay must not wake up and draw a fixed-scale ghost.
+owner_header=read("Source/MainComponent.h")
+assert "owner.midiClipOverlay.retireForMultiClipController();" in multi
+retirement=owner_header.split("void retireForMultiClipController() noexcept",1)[1].split("bool isRetired()",1)[0]
+for token in ("retired = true;","stopTimer();","setInterceptsMouseClicks(false, false);","setVisible(false);"):
+    assert token in retirement
+assert owner_header.split("class MidiClipOverlay final",1)[1].split("void timerCallback() override;",1)[0].count("if (retired) return;")>=2
+assert "retired MIDI overlay must paint no pixels" in read("Source/ArrangementTools.inc")
+print("PASS: legacy MIDI overlay permanently retired after multi-clip takeover")
