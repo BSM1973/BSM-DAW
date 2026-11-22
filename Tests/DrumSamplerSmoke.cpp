@@ -2,6 +2,7 @@
 #include <juce_core/juce_core.h>
 #include <cmath>
 #include <iostream>
+#include <set>
 
 static bool near(float actual, float expected, float tolerance = 0.002f)
 {
@@ -990,6 +991,56 @@ int main()
             if (!std::isfinite(cymbalAfterReset.getSample(channel, frame))
                 || std::abs(cymbalAfterReset.getSample(channel, frame)) > 1.0e-8f)
             { fixture.deleteFile(); return fail(126); }
+    // New recorded CC0 factory kits: all ten must preserve their distinct sound
+    // mapping and be reconstructible from the portable kit manifest alone.
+    std::set<std::uint64_t> soundFingerprints;
+    for(int style=0;style<10;++style)
+    {
+        if(!allFactoryKits.loadFactoryKit(style))return fail(151);
+        if(allFactoryKits.getFactoryKit()!=style)return fail(152);
+        std::uint64_t fingerprint=1469598103934665603ULL;
+        for(int padIndex:{0,1,3,10})
+        {
+            const auto audio=std::atomic_load(&allFactoryKits.getPad(padIndex).audio);
+            if(!audio||audio->getNumSamples()<300)return fail(153);
+            fingerprint^=(std::uint64_t)audio->getNumSamples();
+            fingerprint*=1099511628211ULL;
+            for(int k=0;k<300;++k)
+            {
+                const int n=(k*audio->getNumSamples()/300);
+                const float sample=audio->getSample(0,n);
+                if(!std::isfinite(sample)||std::abs(sample)>.98f)return fail(154);
+                const auto quantized=(std::int32_t)std::llround(sample*32768.f);
+                fingerprint^=(std::uint32_t)quantized;
+                fingerprint*=1099511628211ULL;
+            }
+        }
+        if(!soundFingerprints.insert(fingerprint).second)return fail(155);
+        auto manifest=allFactoryKits.createKitXml();
+        if(!manifest||manifest->getIntAttribute("factoryKit",-1)!=style)return fail(156);
+        LibertyDrumSampler fromManifest;
+        fromManifest.prepare(48000.);
+        if(!fromManifest.restoreKitXml(*manifest)||!fromManifest.hasSample(0)
+            ||fromManifest.getFactoryKit()!=style)return fail(157);
+    }
+    // Saved presets retain their original ID; direct editing changes the
+    // selected identity to CUSTOM without ever altering the factory library.
+    for(int style=0;style<10;++style)
+        for(int groove=0;groove<10;++groove)
+        {
+            if(!allFactoryKits.loadFactoryPattern(style,groove))return fail(158);
+            if(allFactoryKits.getActivePatternPreset()!=style*10+groove)return fail(159);
+            const auto notes=allFactoryKits.patternMidiNotes();
+            if(notes.empty())return fail(160);
+            auto saved=allFactoryKits.createKitXml();
+            LibertyDrumSampler restoredPreset;
+            restoredPreset.prepare(48000.);
+            if(!restoredPreset.restoreKitXml(*saved)
+                ||restoredPreset.getActivePatternPreset()!=style*10+groove
+                ||restoredPreset.patternMidiNotes().size()!=notes.size())return fail(161);
+        }
+    allFactoryKits.setPatternVelocity(0,2,94);
+    if(allFactoryKits.getActivePatternPreset()!=-1)return fail(162);
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";

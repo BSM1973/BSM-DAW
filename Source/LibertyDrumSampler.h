@@ -1,6 +1,8 @@
 #pragma once
 #include "LibertyDesignSystem.h"
 #include "MidiEngine.h"
+#include "LibertyDrumPatternLibrary.h"
+#include "LibertyDrumFactoryCC0.h"
 #include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
@@ -119,181 +121,66 @@ public:
         pads[(size_t)index].factoryTone.store(false);
         return true;
     }
-    // Self-contained synthesized factory sounds: no external sample files required.
-    // Acoustic-style timbres are approximations until licensed recordings are bundled.
+    // 10 style-specific kits made from real CC0 source recordings, drum-machine
+    // samples and original synthesised hits. No runtime file/network dependency.
+    // Decode and validate all 16 pads before publishing any pad to the audio thread.
     bool loadFactoryKit(int kitIndex)
     {
-        if (kitIndex < 0 || kitIndex >= 10) return false;
-        static constexpr const char* instruments[16] = {
-            "KICK", "SNARE", "CLAP", "CLOSED HAT", "OPEN HAT", "LOW TOM",
-            "MID TOM", "HIGH TOM", "RIM", "SHAKER", "PERC 1", "PERC 2",
-            "CRASH", "RIDE", "FX", "SUB KICK" };
-        const double sr = 44100.0;
-        const double pi = juce::MathConstants<double>::pi;
-        for (int padIndex = 0; padIndex < padCount; ++padIndex)
+        if(kitIndex<0||kitIndex>=LibertyDrumFactory::styles)return false;
+        std::array<std::shared_ptr<const juce::AudioBuffer<float>>,padCount> decoded{};
+        std::array<double,padCount> rates{};
+        for(int i=0;i<padCount;++i)
         {
-            const int category = padIndex;
-            const double duration = category == 4 || category == 12 || category == 13 ? 1.0
-                : category == 15 ? 0.8 : category >= 5 && category <= 7 ? 0.55 : 0.35;
-            const int length = (int)(sr * duration);
-            juce::AudioBuffer<float> generated(1, length);
-            juce::Random random(0x5a17 + kitIndex * 137 + padIndex * 31);
-            double phase = 0.0;
-            for (int n = 0; n < length; ++n)
-            {
-                const double t = n / sr;
-                const double progress = t / duration;
-                const double noise = random.nextFloat() * 2.0 - 1.0;
-                double value = 0.0;
-                if (category == 0 || category == 15)
-                {
-                    const double base = category == 15 ? 44.0 : 52.0 + kitIndex * 2.0;
-                    phase += 2.0 * pi * (base + 125.0 * std::exp(-t * 38.0)) / sr;
-                    value = std::sin(phase) * std::exp(-t * (category == 15 ? 5.0 : 14.0));
-                }
-                else if (category == 1 || category == 2 || category == 8)
-                {
-                    phase += 2.0 * pi * (category == 8 ? 900.0 : 185.0) / sr;
-                    const double decay = category == 8 ? 50.0 : (category == 2 ? 24.0 : 17.0);
-                    value = (noise * 0.8 + std::sin(phase) * 0.2) * std::exp(-t * decay);
-                    if (category == 2) value *= (0.6 + 0.4 * std::sin(2.0 * pi * 28.0 * t));
-                }
-                else if (category == 5 || category == 6 || category == 7)
-                {
-                    const double freq = (category == 5 ? 115.0 : category == 6 ? 175.0 : 245.0) * (1.0 + 0.02 * kitIndex);
-                    phase += 2.0 * pi * (freq + 90.0 * std::exp(-t * 18.0)) / sr;
-                    value = (std::sin(phase) + 0.18 * noise) * std::exp(-t * 11.0);
-                }
-                else
-                {
-                    // Closed hats have a short pedal-damped envelope; open
-                    // hats ring longer, with genre-specific decay character.
-                    const double decay = category == 3 ? (kitIndex == 8 ? 43.0 : 34.0)
-                        : category == 4 ? (kitIndex == 3 ? 4.0 : 6.0)
-                        : category == 12 || category == 13 ? 5.0 : 29.0;
-                    // Differentiated metallic/noisy percussion timbres.
-                    phase += 2.0 * pi * (4300.0 + category * 160.0 + kitIndex * 35.0) / sr;
-                    value = (0.75 * noise + 0.25 * std::sin(phase)) * std::exp(-t * decay);
-                }
-                // Per-style timbre: acoustic families emphasize resonant drums;
-                // electronic styles emphasize sub, metallic hats and saturation.
-                const bool electronic = kitIndex == 0 || kitIndex == 4 || kitIndex == 9;
-                const bool heavy = kitIndex == 2 || kitIndex == 3;
-                if (category == 0 || category == 15)
-                {
-                    if (electronic)
-                        value += 0.28 * std::sin(phase * 0.5) * std::exp(-t * (kitIndex == 9 ? 3.0 : 8.0));
-                    if (heavy)
-                        value += 0.16 * noise * std::exp(-t * 110.0);
-                    if (kitIndex == 5) value *= 0.78; // Reggae: softer, rounder kick.
-                }
-                else if (category == 1 || category == 2 || category == 8)
-                {
-                    if (kitIndex == 3) value += 0.20 * noise * std::exp(-t * 33.0);
-                    if (kitIndex == 8) value *= 0.72; // Funk: tight, dry snare.
-                    if (kitIndex == 7) value += 0.25 * std::sin(phase * 2.4) * std::exp(-t * 27.0);
-                    if (kitIndex == 9 && category == 2) value *= 1.3;
-                }
-                else if (category == 3 || category == 4 || category == 9)
-                {
-                    if (kitIndex == 9) value *= 0.65 + 0.35 * std::sin(2.0 * pi * 55.0 * t);
-                    if (kitIndex == 4) value += 0.15 * std::sin(phase * 1.7) * std::exp(-t * 20.0);
-                }
-                else if (kitIndex == 7 && category >= 10 && category <= 13)
-                {
-                    // Oriental: resonant hand-drum and jingling percussion character.
-                    value = 0.55 * value + 0.4 * std::sin(phase * (category == 10 ? 0.27 : 0.53))
-                        * std::exp(-t * (category == 10 ? 13.0 : 24.0));
-                }
-                if (!electronic)
-                {
-                    // Acoustic-inspired layering: drumhead resonance, snare wires,
-                    // and inharmonic cymbal partials, with genre-dependent damping.
-                    if (category == 1)
-                    {
-                        const double body = std::sin(2.0 * pi * (172.0 + 60.0 * std::exp(-t * 24.0)) * t);
-                        const double wires = noise * std::exp(-t * (kitIndex == 8 ? 33.0 : 16.0));
-                        value = 0.50 * value + 0.28 * body * std::exp(-t * 19.0) + 0.22 * wires;
-                    }
-                    else if (category >= 5 && category <= 7)
-                    {
-                        const double fundamental = category == 5 ? 106.0 : category == 6 ? 155.0 : 217.0;
-                        value += 0.22 * std::sin(2.0 * pi * fundamental * 1.51 * t)
-                            * std::exp(-t * (kitIndex == 3 ? 7.0 : 11.0));
-                    }
-                    else if (category == 12 || category == 13)
-                    {
-                        const double metallic = std::sin(2.0 * pi * 1731.0 * t)
-                            + 0.6 * std::sin(2.0 * pi * 2879.0 * t)
-                            + 0.35 * std::sin(2.0 * pi * 4177.0 * t);
-                        value = 0.62 * value + 0.13 * metallic * std::exp(-t * 3.8);
-                    }
-                }
-                if (electronic) value = std::tanh(value * (kitIndex == 4 ? 2.0 : 1.55));
-                const double attack = juce::jmin(1.0, t * 2500.0);
-                generated.setSample(0, n, (float)juce::jlimit(-1.0, 1.0, value * attack * (0.7 + 0.03 * kitIndex)));
-            }
-            auto& pad = pads[(size_t)padIndex];
-            std::atomic_store(&pad.audio, std::make_shared<const juce::AudioBuffer<float>>(std::move(generated)));
-            pad.sourceRate.store(sr);
-            pad.name = instruments[padIndex];
-            // Instrument labels reflect the selected genre, not only the generic
-            // synthesis category. MIDI note assignments remain unchanged.
-            if (kitIndex == 7)
-            {
-                static constexpr const char* orientalNames[16] = {
-                    "DOUM", "TEK", "KA", "RIQ CLOSED", "RIQ OPEN", "DARBUKA LOW",
-                    "DARBUKA MID", "DARBUKA HIGH", "RIM TEK", "SHAKER", "DOUMBEK",
-                    "FRAME DRUM", "ZILLS", "RIQ JINGLE", "PERC FX", "BASS DOUM" };
-                pad.name = orientalNames[padIndex];
-            }
-            else if (kitIndex == 9)
-            {
-                static constexpr const char* trapNames[16] = {
-                    "808 KICK", "TRAP SNARE", "TRAP CLAP", "HAT CLOSED", "HAT OPEN",
-                    "808 TOM LOW", "808 TOM MID", "808 TOM HIGH", "RIM", "HAT ROLL",
-                    "PERC A", "PERC B", "CRASH", "METAL", "RISER FX", "808 SUB" };
-                pad.name = trapNames[padIndex];
-            }
-            else if (kitIndex == 5)
-            {
-                static constexpr const char* reggaeNames[16] = {
-                    "ONE DROP KICK", "CROSS STICK", "CLAP", "CLOSED HAT", "OPEN HAT",
-                    "LOW TOM", "MID TOM", "HIGH TOM", "RIMSHOT", "SHAKER",
-                    "BONGO LOW", "BONGO HIGH", "CRASH", "RIDE", "DUB FX", "SUB KICK" };
-                pad.name = reggaeNames[padIndex];
-            }
-            else if (kitIndex == 3 && padIndex == 15) pad.name = "DOUBLE KICK";
-            else if (kitIndex == 4 && padIndex == 15) pad.name = "SYNTH KICK";
-            pad.sourcePath.clear();
-            pad.factoryTone.store(true);
-            pad.gain.store(1.0f);
-            pad.pan.store(0.0f);
-            pad.pitchSemitones.store(0.0f);
-            pad.startFraction.store(0.0f);
-            pad.endFraction.store(1.0f);
-            pad.loopEnabled.store(false);
-            // Factory kit loading must not inherit envelopes or choke settings
-            // from a previously edited or imported kit.
-            pad.chokeGroup.store(padIndex == 3 || padIndex == 4 ? 1 : 0);
-            pad.chokeFadeMs.store(padIndex == 3 ? 5.0f : 8.0f);
-            pad.gateMode.store(false);
-            pad.attackMs.store(0.0f);
-            pad.decayMs.store(0.0f);
-            pad.sustain.store(1.0f);
-            pad.releaseMs.store(8.0f);
-            pad.colourArgb.store((int)(padIndex < 3 ? 0xffbb5147u : padIndex < 5 ? 0xffd8a343u
-                : padIndex < 8 ? 0xff3b91a8u : padIndex < 12 ? 0xff7c65bbu : 0xff477a67u));
+            decoded[(size_t)i]=LibertyDrumFactory::render(formats,kitIndex,i,rates[(size_t)i]);
+            if(!decoded[(size_t)i]||rates[(size_t)i]<8000.)return false;
         }
-        // Restart each pad's deterministic timbre cycle for the new kit.
-        // Atomics avoid a data race with the audio callback.
-        for (auto& counter : factoryHitCounters)
-            counter.store(0u, std::memory_order_relaxed);
-        // Stop voices on the audio thread, not from the UI thread.
-        pendingTriggers.store(0, std::memory_order_release);
-        pendingStopAll.store(true, std::memory_order_release);
+        static constexpr const char* instruments[16]={
+            "KICK","SNARE","CLAP","CLOSED HAT","OPEN HAT","LOW TOM","MID TOM",
+            "HIGH TOM","RIM","SHAKER","PERC 1","PERC 2","CRASH","RIDE","FX","SUB KICK"
+        };
+        for(int i=0;i<padCount;++i)
+        {
+            auto& pad=pads[(size_t)i];
+            std::atomic_store(&pad.audio,std::move(decoded[(size_t)i]));
+            pad.sourceRate.store(rates[(size_t)i]);
+            pad.name=instruments[i];
+            if(kitIndex==7)
+            {
+                static constexpr const char* names[]={
+                    "CONGA LOW","BONGO HIGH","HAND CLAP","RIQ SHAKER","TAMBOURINE",
+                    "CONGA LOW","CONGA","BONGO HIGH","CLAVES","SHAKER",
+                    "BONGO LOW","CONGA","CRASH","TAMBOURINE","GONG","SUB BASS"};
+                pad.name=names[i];
+            }
+            else if(kitIndex==9)
+            {
+                static constexpr const char* names[]={
+                    "808 LONG","TRAP SNARE","CLAP 808","CLOSED HAT","OPEN HAT",
+                    "808 TOM","TOM LOW","TOM HIGH","RIM","HAT ANALOG",
+                    "COWBELL","CLAVES","CRASH","RIDE","BOOM FX","808 PUNCH"};
+                pad.name=names[i];
+            }
+            else if(kitIndex==5&&i==1)pad.name="CROSS STICK";
+            else if(kitIndex==3&&i==15)pad.name="HARD DOUBLE KICK";
+            pad.sourcePath.clear();
+            pad.factoryTone.store(true); // Preserve factory MIDI 52 semi-open hats and 4-hit articulations.
+            pad.gain.store(1.f);pad.pan.store(0.f);pad.pitchSemitones.store(0.f);
+            pad.startFraction.store(0.f);pad.endFraction.store(1.f);
+            pad.loopEnabled.store(false);
+            pad.chokeGroup.store(i==3||i==4?1:0);
+            pad.chokeFadeMs.store(i==3?5.f:8.f);
+            pad.gateMode.store(false);
+            pad.attackMs.store(0.f);pad.decayMs.store(0.f);
+            pad.sustain.store(1.f);pad.releaseMs.store(8.f);
+            pad.colourArgb.store((int)(i<3?0xffbb5147u:
+                i<5?0xffd8a343u:i<8?0xff3b91a8u:i<12?0xff7c65bbu:0xff477a67u));
+        }
+        currentFactoryKit.store(kitIndex,std::memory_order_release);
+        for(auto& counter:factoryHitCounters)counter.store(0u,std::memory_order_relaxed);
+        stopAllPads();
         return true;
     }
+    int getFactoryKit() const noexcept{return currentFactoryKit.load(std::memory_order_acquire);}
     // Pattern Studio: one bar, 16 instruments, 16 quantised steps.
     // The UI publishes individual velocity cells atomically. Playback ticks
     // and all sample voices remain exclusively on the audio thread.
@@ -303,6 +190,7 @@ public:
         if(pad<0||pad>=padCount||step<0||step>=patternSteps)return;
         patternCells[(size_t)(pad*patternSteps+step)].store(
             (unsigned char)juce::jlimit(0,127,velocity),std::memory_order_release);
+        activePatternPreset.store(-1,std::memory_order_release);
     }
     int getPatternVelocity(int pad,int step) const noexcept
     {
@@ -318,15 +206,25 @@ public:
     }
     void clearPattern() noexcept
     {
+        activePatternPreset.store(-1,std::memory_order_release);
         for(auto& cell:patternCells)cell.store(0,std::memory_order_release);
     }
-    void loadStarterPattern() noexcept
+    bool loadFactoryPattern(int style,int variation) noexcept
     {
-        clearPattern();
-        for(int step:{0,8})setPatternVelocity(0,step,118);
-        for(int step:{4,12})setPatternVelocity(1,step,105);
-        for(int step=0;step<patternSteps;step+=2)setPatternVelocity(3,step,step%4?66:91);
+        if(style<0||style>=LibertyDrumPatterns::styleCount||
+           variation<0||variation>=LibertyDrumPatterns::variationsPerStyle)return false;
+        const auto notes=LibertyDrumPatterns::make(style,variation);
+        for(std::size_t i=0;i<notes.size();++i)
+            patternCells[i].store(notes[i],std::memory_order_release);
+        activePatternPreset.store(style*10+variation,std::memory_order_release);
+        return true;
     }
+    int getActivePatternPreset() const noexcept
+    {
+        return activePatternPreset.load(std::memory_order_acquire);
+    }
+    void loadStarterPattern() noexcept{loadFactoryPattern(0,0);}
+    static constexpr int factoryPatternCount=100;
     void setPatternTempo(double bpm) noexcept
     {
         if(std::isfinite(bpm))patternTempo.store(juce::jlimit(30.,300.,bpm),std::memory_order_release);
@@ -382,7 +280,8 @@ public:
     std::unique_ptr<juce::XmlElement> createKitXml() const
     {
         auto kit = std::make_unique<juce::XmlElement>("LibertyDrumKit");
-        kit->setAttribute("version", 1);
+        kit->setAttribute("version", 2);
+        kit->setAttribute("factoryKit",getFactoryKit());
         for (int i = 0; i < padCount; ++i)
         {
             const auto& pad = pads[(size_t)i];
@@ -407,6 +306,7 @@ public:
         }
         auto* sequence=kit->createNewChildElement("Pattern");
         sequence->setAttribute("tempo",getPatternTempo());
+        sequence->setAttribute("factoryPreset",getActivePatternPreset());
         for(int pad=0;pad<padCount;++pad)
             for(int step=0;step<patternSteps;++step)
                 if(const int velocity=getPatternVelocity(pad,step);velocity>0)
@@ -421,6 +321,9 @@ public:
     bool restoreKitXml(const juce::XmlElement& kit)
     {
         if (!kit.hasTagName("LibertyDrumKit")) return false;
+        const int factoryKit=kit.getIntAttribute("factoryKit",-1);
+        if(factoryKit<-1||factoryKit>=LibertyDrumFactory::styles)return false;
+        if(factoryKit>=0&&!loadFactoryKit(factoryKit))return false;
         for (auto* node : kit.getChildIterator())
         {
             if (!node->hasTagName("Pad")) continue;
@@ -468,6 +371,9 @@ public:
                     return false;
                 setPatternVelocity(pad,step,velocity);
             }
+            const int selected=sequence->getIntAttribute("factoryPreset",-1);
+            if(selected<-1||selected>=factoryPatternCount)return false;
+            activePatternPreset.store(selected,std::memory_order_release);
         }
         return true;
     }
@@ -548,6 +454,8 @@ public:
     {
         const auto xml = juce::XmlDocument::parse(manifestFile);
         if (xml == nullptr || !xml->hasTagName("LibertyDrumKit")) return false;
+        const int savedFactory=xml->getIntAttribute("factoryKit",-1);
+        if(savedFactory<-1||savedFactory>=LibertyDrumFactory::styles)return false;
         // Resolve relative paths against the kit manifest, not the current working directory.
         for (auto* node : xml->getChildIterator())
         {
@@ -659,6 +567,8 @@ public:
             for(int step=0;step<patternSteps;++step)
                 setPatternVelocity(pad,step,candidate.getPatternVelocity(pad,step));
         setPatternTempo(candidate.getPatternTempo());
+        activePatternPreset.store(candidate.getActivePatternPreset(),std::memory_order_release);
+        currentFactoryKit.store(candidate.getFactoryKit(),std::memory_order_release);
         setPatternPreviewPlaying(false);
         // Existing voices retain their decoded audio and their original envelope.
         // Mark notes as released before switching kits so a later Note Off
@@ -1075,6 +985,7 @@ private:
     unsigned int audioPreviewEpoch=0;
     int nextPatternStep=0;
     double samplesUntilNextStep=0.;
+    std::atomic<int> currentFactoryKit{-1},activePatternPreset{-1};
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::atomic<bool> pendingStopAll { false };
@@ -1230,8 +1141,18 @@ public:
             sampler.setPatternPreviewPlaying(true);status=juce::String::fromUTF8("Lecture du pattern en boucle.");refreshPage();};
         previewStop.setButtonText("STOP");
         previewStop.onClick=[this]{stopPreview();};
-        starterButton.setButtonText("RYTHME DE BASE");starterButton.onClick=[this]{sampler.loadStarterPattern();patternGrid.repaint();status=juce::String::fromUTF8("Rythme de départ chargé : modifiable.");repaint();};
-        clearPatternButton.setButtonText("EFFACER PATTERN");clearPatternButton.onClick=[this]{sampler.clearPattern();patternGrid.repaint();status=juce::String::fromUTF8("Pattern vidé.");repaint();};
+        starterButton.setButtonText("RECHARGER PRESET");
+        starterButton.onClick=[this]{
+            const int style=juce::jmax(0,libraryStyleSelector.getSelectedId()-1);
+            const int variant=juce::jmax(0,libraryPatternSelector.getSelectedId()-1);
+            chooseLibraryPattern(style,variant);
+        };
+        clearPatternButton.setButtonText("EFFACER PATTERN");clearPatternButton.onClick=[this]{
+            sampler.clearPattern();
+            libraryPatternSelector.setSelectedId(0,juce::dontSendNotification);
+            patternGrid.repaint();status=juce::String::fromUTF8("Pattern personnel vidé.");
+            repaint();
+        };
         insertButton.setButtonText(juce::String::fromUTF8("INSÉRER DANS LA PISTE"));
         insertButton.onClick=[this]{
             if(!sampler.hasPatternNotes()){status=juce::String::fromUTF8("Aucune note à insérer.");repaint();return;}
@@ -1241,6 +1162,35 @@ public:
             else status=juce::String::fromUTF8("Insertion impossible : vérifiez la piste et les clips existants.");
             repaint();
         };
+        // Browse 100 real drum grooves without a 100-row popup or scrolling
+        // window. First selector: 10 musical styles; second: 10 named grooves.
+        for(int i=0;i<LibertyDrumPatterns::styleCount;++i)
+            libraryStyleSelector.addItem(juce::String::fromUTF8(LibertyDrumPatterns::styleName(i)),i+1);
+        libraryStyleSelector.setTextWhenNothingSelected("STYLE DE RYTHME");
+        libraryPatternSelector.setTextWhenNothingSelected(juce::String::fromUTF8("PERSONNALISÉ"));
+        libraryStyleSelector.onChange=[this]{
+            const int style=libraryStyleSelector.getSelectedId()-1;
+            if(style<0)return;
+            populateLibraryNames(style,0);
+            chooseLibraryPattern(style,0);
+        };
+        libraryPatternSelector.onChange=[this]{
+            const int style=libraryStyleSelector.getSelectedId()-1;
+            const int variation=libraryPatternSelector.getSelectedId()-1;
+            if(style>=0&&variation>=0)chooseLibraryPattern(style,variation);
+        };
+        for(auto* combo:{&libraryStyleSelector,&libraryPatternSelector})
+        {
+            combo->setColour(juce::ComboBox::backgroundColourId,LibertyUI::Colour::control);
+            combo->setColour(juce::ComboBox::textColourId,LibertyUI::Colour::textPrimary);
+            combo->setColour(juce::ComboBox::outlineColourId,LibertyUI::Colour::divider);
+            combo->setColour(juce::ComboBox::arrowColourId,LibertyUI::Colour::accent);
+            addAndMakeVisible(*combo);
+        }
+        const int selected=sampler.getActivePatternPreset();
+        const int firstStyle=selected>=0?selected/10:juce::jmax(0,sampler.getFactoryKit());
+        libraryStyleSelector.setSelectedId(firstStyle+1,juce::dontSendNotification);
+        populateLibraryNames(firstStyle,selected>=0?selected%10:-1);
         patternGrid.onPadSelected=[this](int pad){selectedPad=pad;updateControls();waveform.selectPad(pad);samplePadSelector.setSelectedId(pad+1,juce::dontSendNotification);refreshPage();};
         addAndMakeVisible(patternGrid);
         for(int i=0;i<LibertyDrumSampler::padCount;++i)samplePadSelector.addItem("PAD "+juce::String(i+1),i+1);
@@ -1371,10 +1321,10 @@ public:
         importButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
         addAndMakeVisible(importButton);
         factorySelector.addItem("FACTORY KITS", 1);
-        const char* factoryNames[] = { "HIP-HOP", "ACOUSTIC", "ROCK", "METAL", "ELECTRO",
-            "REGGAE", "POP", "ORIENTAL", "FUNK", "TRAP" };
-        for (int i = 0; i < 10; ++i) factorySelector.addItem(factoryNames[i], i + 2);
-        factorySelector.setSelectedId(2, juce::dontSendNotification);
+        for(int i=0;i<LibertyDrumPatterns::styleCount;++i)
+            factorySelector.addItem(juce::String::fromUTF8(LibertyDrumPatterns::styleName(i)),i+2);
+        factorySelector.setSelectedId(juce::jmax(1,sampler.getFactoryKit()+2),
+            juce::dontSendNotification);
         factorySelector.onChange = [this]
         {
             const int kitIndex = factorySelector.getSelectedId() - 2;
@@ -1384,7 +1334,17 @@ public:
                 refreshLabels();
                 updateControls();
                 waveform.selectPad(selectedPad);
+                samplePadSelector.setSelectedId(1,juce::dontSendNotification);
                 waveform.repaint();
+                status=juce::String::fromUTF8("KIT ")+
+                    juce::String::fromUTF8(LibertyDrumPatterns::styleName(kitIndex))+
+                    juce::String::fromUTF8(" : échantillons CC0 chargés. Le pattern reste indépendant.");
+                repaint();
+            }
+            else if(kitIndex>=0)
+            {
+                status=juce::String::fromUTF8("Échec du chargement du kit : échantillons manquants.");
+                repaint();
             }
         };
         addAndMakeVisible(factorySelector);
@@ -1541,7 +1501,44 @@ public:
     {
         if(transportPlaying&&transportPlaying()&&sampler.isPatternPreviewPlaying())stopPreview();
         if(projectTempo)sampler.setPatternTempo(projectTempo());
+        const int preset=sampler.getActivePatternPreset();
+        if(preset>=0)
+        {
+            const int style=preset/10,variation=preset%10;
+            if(libraryStyleSelector.getSelectedId()!=style+1)
+            {
+                libraryStyleSelector.setSelectedId(style+1,juce::dontSendNotification);
+                populateLibraryNames(style,variation);
+            }
+            else if(libraryPatternSelector.getSelectedId()!=variation+1)
+                libraryPatternSelector.setSelectedId(variation+1,juce::dontSendNotification);
+        }
+        else if(libraryPatternSelector.getSelectedId()!=0)
+            libraryPatternSelector.setSelectedId(0,juce::dontSendNotification);
         if(isShowing()&&sampler.isPatternPreviewPlaying())repaint();
+    }
+    void populateLibraryNames(int style,int variation)
+    {
+        if(style<0||style>=LibertyDrumPatterns::styleCount)return;
+        libraryPatternSelector.clear(juce::dontSendNotification);
+        for(int i=0;i<LibertyDrumPatterns::variationsPerStyle;++i)
+            libraryPatternSelector.addItem(juce::String::fromUTF8(
+                LibertyDrumPatterns::name(style,i)),i+1);
+        libraryPatternSelector.setSelectedId(variation+1,juce::dontSendNotification);
+    }
+    void chooseLibraryPattern(int style,int variation)
+    {
+        const bool wasPlaying=sampler.isPatternPreviewPlaying();
+        if(wasPlaying)sampler.setPatternPreviewPlaying(false);
+        if(!sampler.loadFactoryPattern(style,variation))return;
+        libraryStyleSelector.setSelectedId(style+1,juce::dontSendNotification);
+        libraryPatternSelector.setSelectedId(variation+1,juce::dontSendNotification);
+        status=juce::String::fromUTF8("RYTHME ")+juce::String(style*10+variation+1)+
+            " / 100  -  "+juce::String::fromUTF8(LibertyDrumPatterns::styleName(style))+
+            "  -  "+juce::String::fromUTF8(LibertyDrumPatterns::name(style,variation));
+        if(wasPlaying && (!transportPlaying||!transportPlaying()))
+            sampler.setPatternPreviewPlaying(true);
+        patternGrid.repaint();refreshPage();
     }
     void setPage(int next)
     {
@@ -1561,6 +1558,8 @@ public:
         for(auto& label:adsrLabels)label.setVisible(sampleVisible);
         chokeSelector.setVisible(sampleVisible);playModeSelector.setVisible(sampleVisible);
         patternGrid.setVisible(patternVisible);
+        libraryStyleSelector.setVisible(patternVisible);
+        libraryPatternSelector.setVisible(patternVisible);
         starterButton.setVisible(patternVisible);clearPatternButton.setVisible(patternVisible);insertButton.setVisible(patternVisible);
         for(auto* b:{&pagePads,&pagePattern,&pageSample})b->setToggleState(false,juce::dontSendNotification);
         (page==0?pagePads:page==1?pagePattern:pageSample).setToggleState(true,juce::dontSendNotification);
@@ -1631,6 +1630,8 @@ public:
         }
         else if(page==1)
         {
+            libraryStyleSelector.setBounds(margin,87,198,31);
+            libraryPatternSelector.setBounds(margin+208,87,330,31);
             patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-266);
             const int actionY=getHeight()-95,available=getWidth()-2*margin,gap=10;
             starterButton.setBounds(margin,actionY,juce::jmin(180,available/4),34);
@@ -1683,8 +1684,8 @@ public:
         else if(page==1)
         {
             g.setColour(LibertyUI::Colour::textMuted);g.setFont(12.f);
-            g.drawText(juce::String::fromUTF8("PATTERN 16 PAS   •   4/4   •   1/16   •   ")+
-                juce::String(sampler.getPatternTempo(),1)+" BPM",14,90,getWidth()-28,26,juce::Justification::centredLeft);
+            g.drawText(juce::String::fromUTF8("100 RYTHMES / 10 STYLES   •   4/4   •   ")+
+                juce::String(sampler.getPatternTempo(),1)+" BPM",560,90,getWidth()-574,26,juce::Justification::centredRight);
             g.setColour(LibertyUI::Colour::textMuted);g.setFont(11.f);
             g.drawFittedText(juce::String::fromUTF8("Clic : ON/OFF     Maj + clic : vélocité     Glisser : dessiner"),
                 {14,getHeight()-130,getWidth()-28,25},juce::Justification::centredLeft,1);
@@ -1780,7 +1781,7 @@ private:
     LibertyDrumPatternGrid patternGrid;
     juce::TextButton pagePads,pagePattern,pageSample,previewPlay,previewStop;
     juce::TextButton starterButton,clearPatternButton,insertButton;
-    juce::ComboBox samplePadSelector;
-    juce::String status=juce::String::fromUTF8("Prêt : choisissez un kit puis créez un pattern.");
+    juce::ComboBox samplePadSelector,libraryStyleSelector,libraryPatternSelector;
+    juce::String status=juce::String::fromUTF8("Prêt : 100 rythmes, 10 kits CC0.");
     std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };

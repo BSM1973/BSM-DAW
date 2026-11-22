@@ -46,6 +46,8 @@ jobs:
           python3 Tests/PerformLiveProSourceRegression.py
           python3 Tests/PerformLiveUiCleanupSourceRegression.py
           python3 Tests/LibertyModernUiSourceRegression.py
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDrumPatterns100Smoke.cpp -o /tmp/liberty-100-drums
+          /tmp/liberty-100-drums
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyMotionSmoke.cpp -o /tmp/liberty-motion
           /tmp/liberty-motion
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyImmersiveSmoke.cpp -o /tmp/liberty-immersive

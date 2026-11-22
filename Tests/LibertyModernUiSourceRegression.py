@@ -206,7 +206,7 @@ cell_w=(w-2*margin-3*gap)//4;cell_h=(pad_bottom-pad_top-3*gap)//4
 pads=[(margin+(i%4)*(cell_w+gap),pad_top+(i//4)*(cell_h+gap),cell_w,cell_h) for i in range(16)]
 assert all(x>=margin and y>=pad_top and x+cw<=w-margin and y+ch<=pad_bottom for x,y,cw,ch in pads)
 assert all(not (a[0]<b[0]+b[2] and b[0]<a[0]+a[2] and a[1]<b[1]+b[3] and b[1]<a[1]+a[3]) for i,a in enumerate(pads) for b in pads[i+1:])
-pattern_bounds=(margin,125,w-2*margin,h-242)
+pattern_bounds=(margin,125,w-2*margin,h-266)
 assert pattern_bounds[1]+pattern_bounds[3]<h-95
 assert h-95+34<h-28
 sample_last_row=316+5*39+28
@@ -224,7 +224,7 @@ print("PASS: Drum Studio startup size and instruction/grid separation")
 # Fresh projects must ship with audible drum samples and an editable rhythm.
 assert "drumSampler->loadFactoryKit(0);" in main_drum
 assert "drumSampler->loadStarterPattern();" in main_drum
-assert "factorySelector.setSelectedId(2, juce::dontSendNotification);" in drum
+assert "sampler.getFactoryKit()+2" in drum
 print("PASS: first-run Drum Studio has audible default kit and playable starter rhythm")
 
 # Closing Drum Studio during song playback must not mute the routed instrument.
@@ -233,3 +233,26 @@ assert "if(wasPreviewing || (!closingWindow && (!transportPlaying||!transportPla
 assert "panel->stopPreview(true);" in main_drum
 assert "if(!allowed && previewPlaying.load(std::memory_order_acquire))" in drum
 print("PASS: Drum Studio closes without silencing arrangement drum voices")
+
+# 100 real factory grooves have compact two-level navigation and retain the
+# authoritative native MIDI clip insertion (no placeholder graphic).
+library=read("Source/LibertyDrumPatternLibrary.h")
+kit=read("Source/LibertyDrumFactoryCC0.h")
+cmake=read("CMakeLists.txt")
+assert "styleCount=10, variationsPerStyle=10" in library
+assert "static constexpr int factoryPatternCount=100" in drum
+assert "libraryStyleSelector.onChange=" in drum
+assert "libraryPatternSelector.onChange=" in drum
+assert "sampler.loadFactoryPattern(style,variation)" in drum
+assert "libraryPatternSelector.setTextWhenNothingSelected" in drum
+assert "factoryKit" in drum and "factoryPreset" in drum
+assert "juce_add_binary_data(LibertyFactoryDrumAssets" in cmake
+assert "bd71faf5035e8aa278ebfe3f4dc68804ae7bc5ca" in cmake
+assert "LibertyDrumAssets::getNamedResource" in kit
+assert "namedResourceListSize" in kit
+assert "setResizable(false,false)" in main_drum
+assert 'libraryStyleSelector.setBounds(margin,87,198,31)' in drum
+assert 'libraryPatternSelector.setBounds(margin+208,87,330,31)' in drum
+assert 14+198 < 14+208
+assert 14+208+330 < 560
+print("PASS: 100 named rhythms, CC0 audio bundling, saved kits and fixed-size menu geometry")

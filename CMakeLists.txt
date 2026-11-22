@@ -10,6 +10,32 @@ include(FetchContent)
 FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git GIT_TAG 8.0.10 GIT_SHALLOW TRUE)
 FetchContent_Declare(signalsmith-stretch GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git GIT_TAG main GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(JUCE signalsmith-stretch)
+# Pinned public-domain (CC0 1.0) recorded and designed drum one-shots.
+# Sources, creators and exact source checksums are documented in the pack.
+# Bundled into Liberty with JUCE BinaryData: no runtime network dependency,
+# and no redistribution of incompatible commercial sample-pack licenses.
+FetchContent_Declare(liberty_factory_drums
+ GIT_REPOSITORY https://github.com/august-byrne/phazite-sounds.git
+ GIT_TAG bd71faf5035e8aa278ebfe3f4dc68804ae7bc5ca
+ GIT_SHALLOW FALSE)
+FetchContent_MakeAvailable(liberty_factory_drums)
+file(GLOB_RECURSE LIBERTY_DRUM_RECORDINGS CONFIGURE_DEPENDS
+ "${liberty_factory_drums_SOURCE_DIR}/pack/Drums/*.flac"
+ "${liberty_factory_drums_SOURCE_DIR}/pack/808s/*.flac")
+set(LIBERTY_DRUM_SPECIALS
+ "${liberty_factory_drums_SOURCE_DIR}/pack/FX/Impact Boom.flac"
+ "${liberty_factory_drums_SOURCE_DIR}/pack/FX/Impact Concert Drum.flac"
+ "${liberty_factory_drums_SOURCE_DIR}/pack/FX/Impact Hit.flac"
+ "${liberty_factory_drums_SOURCE_DIR}/pack/FX/Gong.flac"
+ "${liberty_factory_drums_SOURCE_DIR}/pack/FX/Whoosh.flac")
+list(LENGTH LIBERTY_DRUM_RECORDINGS LIBERTY_DRUM_COUNT)
+if(LIBERTY_DRUM_COUNT LESS 40)
+ message(FATAL_ERROR "Liberty Drum Studio requires the CC0 factory sample library")
+endif()
+juce_add_binary_data(LibertyFactoryDrumAssets
+ HEADER_NAME "LibertyFactoryDrumData.h"
+ NAMESPACE LibertyDrumAssets
+ SOURCES ${LIBERTY_DRUM_RECORDINGS} ${LIBERTY_DRUM_SPECIALS})
 juce_add_gui_app(BSM_DAW PRODUCT_NAME "Liberty" COMPANY_NAME "BSM / Bijou Studio Music" VERSION "0.1.0" BUNDLE_ID "com.bsm.liberty" NEEDS_CURL FALSE NEEDS_WEB_BROWSER TRUE MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Liberty needs access to your audio interface inputs for audio recording." PLIST_TO_MERGE "<key>NSScreenCaptureUsageDescription</key><string>Liberty captures plugin interfaces locally to display accurate thumbnails in its browser.</string>")
 target_sources(BSM_DAW PRIVATE
  Source/Main.cpp Source/MainComponent.cpp Source/AudioArrangement.cpp Source/AudioEngine.cpp Source/MidiEngine.cpp Source/StepSequencer.cpp Source/MidiQuantize.cpp Source/MidiEditor.cpp
@@ -32,6 +58,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(BSM_DAW PRIVATE -finput-charset=UTF-8)
 endif()
 target_compile_definitions(BSM_DAW PRIVATE JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1 SIGNALSMITH_USE_ACCELERATE=1)
+target_link_libraries(BSM_DAW PRIVATE LibertyFactoryDrumAssets)
 target_link_libraries(BSM_DAW PRIVATE juce::juce_audio_basics juce::juce_audio_devices juce::juce_audio_formats juce::juce_audio_processors juce::juce_audio_utils juce::juce_dsp juce::juce_core juce::juce_data_structures juce::juce_events juce::juce_graphics juce::juce_gui_basics juce::juce_gui_extra signalsmith-stretch)
 juce_generate_juce_header(BSM_DAW)
 # Lightweight headless regression coverage for the Drum Sampler.
@@ -40,6 +67,7 @@ target_sources(LibertyDrumSamplerSmoke PRIVATE Tests/DrumSamplerSmoke.cpp)
 target_include_directories(LibertyDrumSamplerSmoke PRIVATE Source)
 target_compile_features(LibertyDrumSamplerSmoke PRIVATE cxx_std_17)
 target_compile_definitions(LibertyDrumSamplerSmoke PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(LibertyDrumSamplerSmoke PRIVATE LibertyFactoryDrumAssets)
 target_link_libraries(LibertyDrumSamplerSmoke PRIVATE
     juce::juce_audio_basics juce::juce_audio_formats juce::juce_gui_basics
     juce::juce_core juce::juce_events juce::juce_graphics)
