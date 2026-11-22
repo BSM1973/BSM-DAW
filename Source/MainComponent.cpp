@@ -1211,7 +1211,7 @@ public:
     void closeButtonPressed() override
     {
         if(auto* panel=dynamic_cast<LibertyDrumSamplerPanel*>(getContentComponent()))
-            panel->stopPreview();
+            panel->stopPreview(true);
         setVisible(false);
     }
 };

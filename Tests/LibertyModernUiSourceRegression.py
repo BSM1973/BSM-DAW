@@ -226,3 +226,10 @@ assert "drumSampler->loadFactoryKit(0);" in main_drum
 assert "drumSampler->loadStarterPattern();" in main_drum
 assert "factorySelector.setSelectedId(2, juce::dontSendNotification);" in drum
 print("PASS: first-run Drum Studio has audible default kit and playable starter rhythm")
+
+# Closing Drum Studio during song playback must not mute the routed instrument.
+assert "void stopPreview(bool closingWindow=false)" in drum
+assert "if(wasPreviewing || (!closingWindow && (!transportPlaying||!transportPlaying())))" in drum
+assert "panel->stopPreview(true);" in main_drum
+assert "if(!allowed && previewPlaying.load(std::memory_order_acquire))" in drum
+print("PASS: Drum Studio closes without silencing arrangement drum voices")

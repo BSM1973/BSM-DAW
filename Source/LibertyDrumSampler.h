@@ -347,7 +347,13 @@ public:
     int getPatternPreviewStep() const noexcept{return previewStepVisual.load(std::memory_order_acquire);}
     void allowPatternPreview(bool allowed) noexcept
     {
-        if(!allowed)setPatternPreviewPlaying(false);
+        // When ARRANGE starts, end the isolated preview and its old tails
+        // before the first native-instrument MIDI notes are processed.
+        if(!allowed && previewPlaying.load(std::memory_order_acquire))
+        {
+            setPatternPreviewPlaying(false);
+            stopAllPads();
+        }
     }
     // Native MIDI clip, not a graphic/placeholder clip. Render only on UI thread.
     std::vector<MidiEngine::NoteEvent> patternMidiNotes() const
@@ -1522,7 +1528,15 @@ public:
     }
     ~LibertyDrumSamplerPanel() override{stopTimer();sampler.setPatternPreviewPlaying(false);}
     void setTargetInstrumentLane(int lane){targetInstrumentLane=lane;repaint();}
-    void stopPreview(){sampler.setPatternPreviewPlaying(false);sampler.stopAllPads();status="STOP";refreshPage();}
+    void stopPreview(bool closingWindow=false)
+    {
+        const bool wasPreviewing=sampler.isPatternPreviewPlaying();
+        sampler.setPatternPreviewPlaying(false);
+        // Closing the editor during ARRANGE must never stop song drum voices.
+        if(wasPreviewing || (!closingWindow && (!transportPlaying||!transportPlaying())))
+            sampler.stopAllPads();
+        status="STOP";refreshPage();
+    }
     void timerCallback() override
     {
         if(transportPlaying&&transportPlaying()&&sampler.isPatternPreviewPlaying())stopPreview();
