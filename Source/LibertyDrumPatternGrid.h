@@ -52,7 +52,7 @@ public:
             const juce::String name=sampler.hasSample(pad)?sampler.getPad(pad).name:("PAD "+juce::String(pad+1));
             g.drawFittedText(name,{18,row.getY()+2,104,juce::jmax(0,row.getHeight()-4)},juce::Justification::centredLeft,1);
             g.setColour(LibertyUI::Colour::textMuted);g.setFont(10.f);
-            g.drawText(juce::String(36+pad),{121,row.getY(),23,row.getHeight()},juce::Justification::centred);
+            g.drawText(juce::String(36+pad),juce::Rectangle<int>(121,row.getY(),23,row.getHeight()),juce::Justification::centred);
             for(int step=0;step<LibertyDrumSampler::patternSteps;++step)
             {
                 auto r=cell(pad,step).reduced(2,3);
@@ -97,7 +97,8 @@ private:
     std::pair<int,int> hit(juce::Point<int> p) const noexcept
     {
         if(p.x<148||p.x>=getWidth()||p.y<27||p.y>=getHeight())return {-1,-1};
-        const auto r=cell(0,0),w=r.getWidth(),h=r.getHeight();
+        const auto r=cell(0,0);
+        const int w=r.getWidth(),h=r.getHeight();
         const int step=(p.x-148)/w,pad=(p.y-27)/h;
         if(pad<0||pad>=LibertyDrumSampler::padCount||step<0||step>=LibertyDrumSampler::patternSteps)return {-1,-1};
         return {pad,step};
