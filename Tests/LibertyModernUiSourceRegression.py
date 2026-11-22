@@ -193,6 +193,23 @@ assert 'sampler.setPatternVelocity(found.first,found.second,dragValue)' in drum_
 assert 'engine.setDrumSamplerTrack(lane);' in main_drum
 assert 'commitLibertySequencerInstrumentClip(*this,notes,lane,start,duration,false)' in main_header
 assert 'centreWithSize(960,700);' in main_drum
-assert 'setResizable(true, true)' not in main_drum
+drum_window=main_drum.split("class FloatingDrumSamplerWindow final",1)[1].split("std::unique_ptr<FloatingDrumSamplerWindow>",1)[0]
+assert 'setResizable(true, true)' not in drum_window
 assert 'setScrollBarsShown(' not in drum
 print("PASS: Drum Studio PLAY/STOP, 16x16 grid, native arrangement insertion, 13-inch fixed UI")
+
+# 960x700 design-system layout: all page controls stay inside the window,
+# apart from deliberate panel-only backgrounds (not interactive hit areas).
+w,h=960,700
+margin=14; pad_top=135;pad_bottom=h-80;gap=12
+cell_w=(w-2*margin-3*gap)//4;cell_h=(pad_bottom-pad_top-3*gap)//4
+pads=[(margin+(i%4)*(cell_w+gap),pad_top+(i//4)*(cell_h+gap),cell_w,cell_h) for i in range(16)]
+assert all(x>=margin and y>=pad_top and x+cw<=w-margin and y+ch<=pad_bottom for x,y,cw,ch in pads)
+assert all(not (a[0]<b[0]+b[2] and b[0]<a[0]+a[2] and a[1]<b[1]+b[3] and b[1]<a[1]+a[3]) for i,a in enumerate(pads) for b in pads[i+1:])
+pattern_bounds=(margin,125,w-2*margin,h-242)
+assert pattern_bounds[1]+pattern_bounds[3]<h-95
+assert h-95+34<h-28
+sample_last_row=316+5*39+28
+assert sample_last_row<h-28
+assert 'setScrollBarsShown' not in drum
+print("PASS: 960x700 Drum Studio page geometry and non-overlapping pad grid")

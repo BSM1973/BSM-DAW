@@ -1510,6 +1510,7 @@ public:
             selector->setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
             selector->setColour(juce::ComboBox::arrowColourId, LibertyUI::Colour::accent);
         }
+        // The same kit/pad model drives every page; no duplicate display-only controls.
         // Action colours are configured beside each button above, so their
         // individual Obsidian states are not overwritten by a shared palette.
         refreshLabels();

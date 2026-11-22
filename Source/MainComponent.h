@@ -353,6 +353,9 @@ public:
         const auto snapped=(current/snapTicks)*snapTicks;
         const double start=MidiEngine::tickToSeconds(snapped,tempoBpm);
         const double duration=MidiEngine::tickToSeconds(LibertyDrumSampler::patternLengthTicks,tempoBpm);
+        for(const auto& clip:instrumentStepSequencers[(size_t)lane].timelineClips)
+            if(start<clip.startSeconds+clip.lengthSeconds &&
+               clip.startSeconds<start+duration)return false;
         // Existing clip controller creates the actual persistent MIDI clip,
         // publishes it to the native instrument and rejects overlapping clips.
         return commitLibertySequencerInstrumentClip(*this,notes,lane,start,duration,false);
