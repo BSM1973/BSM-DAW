@@ -1308,10 +1308,10 @@ public:
         }
         for (auto* selector : { &factorySelector, &chokeSelector, &playModeSelector })
         {
-            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff25323e));
-            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffd9f3f5));
-            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff48606d));
-            selector->setColour(juce::ComboBox::arrowColourId, juce::Colour(0xff54d6dc));
+            selector->setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+            selector->setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
+            selector->setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
+            selector->setColour(juce::ComboBox::arrowColourId, LibertyUI::Colour::accent);
         }
         // Action colours are configured beside each button above, so their
         // individual Obsidian states are not overwritten by a shared palette.

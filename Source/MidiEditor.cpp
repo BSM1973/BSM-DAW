@@ -551,9 +551,9 @@ public:
         controllerSelector.addItem("Pitch Bend", 5);
         controllerSelector.addItem("Aftertouch", 6);
         controllerSelector.setTooltip(juce::String::fromUTF8("Choisir le contrôleur MIDI à éditer"));
-        controllerSelector.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
-        controllerSelector.setColour(juce::ComboBox::textColourId, juce::Colour(0xffe2edf2));
-        controllerSelector.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff40515f));
+        controllerSelector.setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+        controllerSelector.setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
+        controllerSelector.setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
         controllerSelector.setSelectedId(1, juce::dontSendNotification);
         controllerSelector.onChange = [this] {
             static constexpr int ids[] = { -1, 1, 11, 64, 128, 129 };
@@ -1696,8 +1696,8 @@ public:
                 focus.setToggleState(focusEnabled, juce::dontSendNotification);
                 for (auto* combo : { &tonic, &scale })
                 {
-                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
-                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    combo->setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+                    combo->setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
                     addAndMakeVisible(*combo);
                 }
                 title.setText(juce::String::fromUTF8("COMPOSITION  /  GAMMES"),
@@ -1829,8 +1829,8 @@ public:
                 duration.setSelectedId(1, juce::dontSendNotification);
                 for (auto* combo : { &key, &pattern, &octave, &duration, &mode })
                 {
-                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
-                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    combo->setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+                    combo->setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
                     addAndMakeVisible(*combo);
                 }
                 heading.setText(juce::String::fromUTF8("COMPOSITION  /  PROGRESSIONS"),
@@ -2157,8 +2157,8 @@ public:
                 noteLength.setSelectedId(1, juce::dontSendNotification);
                 for (auto* combo : { &root, &quality, &inversion, &octave, &noteLength })
                 {
-                    combo->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff263544));
-                    combo->setColour(juce::ComboBox::textColourId, juce::Colour(0xfff3d48b));
+                    combo->setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+                    combo->setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
                     addAndMakeVisible(*combo);
                 }
                 heading.setText(juce::String::fromUTF8("COMPOSITION  /  ACCORDS"),
@@ -3475,9 +3475,9 @@ public:
             presets.addItem(juce::String::fromUTF8("Accentuée"), 5);
             presets.setSelectedId(1, juce::dontSendNotification);
             syncPresetFromControls();
-            presets.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff192634));
-            presets.setColour(juce::ComboBox::textColourId, juce::Colour(0xffedf4fc));
-            presets.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff34495b));
+            presets.setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+            presets.setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
+            presets.setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
             presets.onChange = [this]
             {
                 const int id = presets.getSelectedId();

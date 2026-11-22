@@ -1,3 +1,4 @@
+#include "LibertyDesignSystem.h"
 #define private public
 #include "MainComponent.h"
 #include "TrackInputPaletteLookAndFeel.h"
@@ -805,9 +806,9 @@ public:
             owner.addAndMakeVisible(*mon); monitorButtons.push_back(std::move(mon)); monitoringEnabled.push_back(std::move(state));
             auto selector = std::make_unique<juce::ComboBox>();
             selector->setLookAndFeel(&libertyTrackInputPaletteStyle());
-            selector->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff233746));
-            selector->setColour(juce::ComboBox::textColourId, juce::Colour(0xffffdf99));
-            selector->setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff42596b));
+            selector->setColour(juce::ComboBox::backgroundColourId, LibertyUI::Colour::control);
+            selector->setColour(juce::ComboBox::textColourId, LibertyUI::Colour::textPrimary);
+            selector->setColour(juce::ComboBox::outlineColourId, LibertyUI::Colour::divider);
             selector->setTooltip(juce::String::fromUTF8("Entrée audio de cette piste : mono ou paire stéréo"));
             selector->onChange = [this, i]
             {

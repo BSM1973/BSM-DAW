@@ -142,3 +142,16 @@ assert "LibertyPrecision::midiCursor(tool)" in piano
 assert "LibertyPrecision::arrangementCursor(activeArrangeTool)" in multi
 assert "cursorGraphics.drawText" not in piano
 print("PASS: Precision vector controls, value popups, focus, saved motion preference and tool cursors")
+
+# Obsidian menu consistency: shared native painter and no legacy local selector colors.
+menus=read("Source/LibertyObsidianMenuStyle.h")
+inputs=read("Source/TrackInputPaletteLookAndFeel.h")
+assert "public LibertyUI::ObsidianMenuStyle" in main and "public LibertyUI::ObsidianMenuStyle" in inputs and "public LibertyUI::ObsidianMenuStyle" in mixer
+assert "LibertyUI::ObsidianMenuStyle::drawPopupMenuItem" in main
+assert "drawRoundedRectangle(tile.reduced(.5f)" in menus
+assert "ticked,submenu,text,shortcut,icon,&colour" in menus
+assert "g.reduceClipRegion(area)" in menus
+for path in ("Source/AudioRecordingController.cpp","Source/MidiEditor.cpp","Source/LibertyDrumSampler.h"):
+    import re
+    assert not re.search(r"juce::ComboBox::\\w+ColourId,\\s*juce::Colour\\(0x",read(path)), path
+print("PASS: common Obsidian menu painter, preserved native menu content and shared selector colors")

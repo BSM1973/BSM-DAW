@@ -1,4 +1,5 @@
 #include "LibertyPrecisionUI.h"
+#include "LibertyObsidianMenuStyle.h"
 #include "LibertyImmersiveView.h"
 #define private public
 #include "MainComponent.h"
@@ -64,7 +65,7 @@ const juce::Colour sage=LibertyUI::Colour::accent;
 const juce::Colour amber=LibertyUI::Colour::accentAmber;
 }
 
-class ConsoleLookAndFeel final:public juce::LookAndFeel_V4{
+class ConsoleLookAndFeel final:public LibertyUI::ObsidianMenuStyle{
 public:
  void drawLinearSlider(juce::Graphics& g,int x,int y,int w,int h,float pos,float,
                        float,const juce::Slider::SliderStyle style,juce::Slider& slider)override

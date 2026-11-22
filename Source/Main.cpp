@@ -1,4 +1,5 @@
 #include "LibertyPrecisionUI.h"
+#include "LibertyObsidianMenuStyle.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cstdlib>
 #include <chrono>
@@ -235,7 +236,7 @@ private:
     MainComponent& owner;
 };
 // Liberty Obsidian: a scoped, reusable menu skin based on the welcome screen.
-class LibertyMenuLookAndFeel final : public juce::LookAndFeel_V4
+class LibertyMenuLookAndFeel final : public LibertyUI::ObsidianMenuStyle
 {
     LibertyMotion::Animator hoverMotion{"libertyMotionHover"};
 public:
@@ -377,12 +378,7 @@ public:
         const juce::String& text,const juce::String& shortcut,const juce::Drawable* icon,
         const juce::Colour* textColour) override
     {
-        juce::LookAndFeel_V4::drawPopupMenuItem(g,area,separator,active,highlighted,ticked,submenu,text,shortcut,icon,textColour);
-        if(active && highlighted && !separator && area.getHeight()>8)
-        {
-            g.setColour(LibertyUI::Colour::accentLight);
-            g.fillRoundedRectangle((float)area.getX()+1.f,(float)area.getY()+3.f,2.f,(float)area.getHeight()-6.f,1.f);
-        }
+        LibertyUI::ObsidianMenuStyle::drawPopupMenuItem(g,area,separator,active,highlighted,ticked,submenu,text,shortcut,icon,textColour);
     }
 
     // Obsidian controls: rounded surfaces, clear focus and generous hit targets.
@@ -432,13 +428,7 @@ public:
 
     void drawPopupMenuBackground(juce::Graphics& g, int width, int height) override
     {
-        g.setGradientFill(juce::ColourGradient(
-            LibertyUI::Colour::header,0.f,0.f,
-            LibertyUI::Colour::canvasDeep,0.f,(float)height,false));
-        g.fillRect(0,0,width,height);
-        g.setColour(LibertyUI::Colour::divider);
-        g.drawRect(0,0,width,height,1);
-        LibertyUI::accentRule(g,{1.f,1.f,(float)juce::jmax(0,width-2),1.f});
+        LibertyUI::ObsidianMenuStyle::drawPopupMenuBackground(g,width,height);
     }
 };
 // Test-only CLI: exercise Liberty's real audio engine without opening the UI.
