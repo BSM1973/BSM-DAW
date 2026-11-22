@@ -21,7 +21,7 @@ constexpr juce::uint32 libertyTrackPalette[33] = {
 #include "LibertyDesignSystem.h"
 void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
-void showFloatingDrumSamplerWindow(AudioEngine&);
+void showFloatingDrumSamplerWindow(AudioEngine&,MainComponent&,int);
 void resizeLibertyDynamicTrackController(MainComponent*);
 void ensureLibertyPageModeCoordinator(MainComponent*);
 void resizeLibertyGridSnapController(MainComponent*);
@@ -1186,17 +1186,30 @@ void closeFloatingStepSequencerWindow() { floatingStepSequencerWindow.reset(); }
 class FloatingDrumSamplerWindow final : public juce::DocumentWindow
 {
 public:
-    explicit FloatingDrumSamplerWindow(LibertyDrumSampler& sampler)
-        : juce::DocumentWindow("Liberty - Drum Sampler", juce::Colour(0xff121c27),
+    FloatingDrumSamplerWindow(LibertyDrumSampler& sampler,MainComponent& owner,int lane)
+        : juce::DocumentWindow("Liberty - Drum Studio",LibertyUI::Colour::canvasDeep,
                                juce::DocumentWindow::closeButton)
     {
         setUsingNativeTitleBar(true);
-        setContentOwned(new LibertyDrumSamplerPanel(sampler), true);
-        setResizable(true, true);
-        setResizeLimits(740, 760, 2200, 1600);
-        centreWithSize(1050, 950);
+        setContentOwned(new LibertyDrumSamplerPanel(sampler,
+            [&owner,&sampler](int destination){
+                return owner.insertDrumPatternClip(sampler.patternMidiNotes(),destination);},
+            [&owner]{return owner.isAudioPlaying();},
+            [&owner]{return owner.getProjectTempoBpm();},lane),true);
+        setResizable(false,false);
+        centreWithSize(960,700);
     }
-    void closeButtonPressed() override { setVisible(false); }
+    void setTargetInstrumentLane(int lane)
+    {
+        if(auto* panel=dynamic_cast<LibertyDrumSamplerPanel*>(getContentComponent()))
+            panel->setTargetInstrumentLane(lane);
+    }
+    void closeButtonPressed() override
+    {
+        if(auto* panel=dynamic_cast<LibertyDrumSamplerPanel*>(getContentComponent()))
+            panel->stopPreview();
+        setVisible(false);
+    }
 };
 std::unique_ptr<FloatingDrumSamplerWindow> floatingDrumSamplerWindow;
 int floatingDrumSamplerSourceTrack = -1;
@@ -1207,12 +1220,17 @@ bool isLibertyFloatingDrumSamplerVisible() noexcept
 
 
 void closeFloatingDrumSamplerWindow() { floatingDrumSamplerWindow.reset(); }
-void showFloatingDrumSamplerWindow(AudioEngine& engine)
+void showFloatingDrumSamplerWindow(AudioEngine& engine,MainComponent& owner,int lane)
 {
-    auto sampler = engine.getDrumSampler();
-    if (!sampler) return;
-    if (!floatingDrumSamplerWindow)
-        floatingDrumSamplerWindow = std::make_unique<FloatingDrumSamplerWindow>(*sampler);
+    auto sampler=engine.getDrumSampler();
+    if(!sampler||lane<0||lane>=owner.getInstrumentTrackCount())return;
+    // Selecting Drum Studio explicitly assigns the native instrument to
+    // this track, so inserted MIDI notes generate audio during song playback.
+    engine.setDrumSamplerTrack(lane);
+    floatingDrumSamplerSourceTrack=owner.getAudioTrackCount()+owner.getMidiTrackCount()+lane;
+    if(!floatingDrumSamplerWindow)
+        floatingDrumSamplerWindow=std::make_unique<FloatingDrumSamplerWindow>(*sampler,owner,lane);
+    floatingDrumSamplerWindow->setTargetInstrumentLane(lane);
     floatingDrumSamplerWindow->setVisible(true);
     floatingDrumSamplerWindow->toFront(true);
 }
@@ -3857,7 +3875,7 @@ void MainComponent::activateDockTab(int index)
             dockMixerMode = true;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = true;
-            showFloatingDrumSamplerWindow(audioEngine);
+            showFloatingDrumSamplerWindow(audioEngine,*this,getSelectedPianoInstrumentLane());
             break;
         default: return;
     }
@@ -4650,7 +4668,7 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
             dockMixerMode = true;
             dockStepSequencerMode = false;
             drumSamplerDockSelected = true;
-            showFloatingDrumSamplerWindow(audioEngine);
+            showFloatingDrumSamplerWindow(audioEngine,*this,getSelectedPianoInstrumentLane());
             repaint();
         }
         return;

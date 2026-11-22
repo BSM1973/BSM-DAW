@@ -83,6 +83,7 @@ public:
     int getTimeSignatureDenominator() const noexcept { return timeSignatureDenominator; }
     double getAudioCurrentTimeSeconds() const noexcept { return audioEngine.getCurrentTimeSeconds(); }
     bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
+    double getProjectTempoBpm() const noexcept {return tempoBpm;}
     void notifyInstrumentChanged() noexcept { audioEngine.notifyInstrumentChanged(); }
     double getMidiClipLengthSeconds() const noexcept { return midiClipLengthSeconds; }
     double getMidiClipStartSeconds(int track) const noexcept
@@ -340,6 +341,21 @@ public:
         publishInstrumentArrangementClips(instrumentIndex);
         repaint();
         return true;
+    }
+    bool insertDrumPatternClip(const std::vector<MidiEngine::NoteEvent>& notes,int lane)
+    {
+        if(lane<0||lane>=getInstrumentTrackCount()
+           ||audioEngine.getDrumSamplerTrack()!=lane||notes.empty()||notes.size()>256)
+            return false;
+        constexpr auto snapTicks=MidiEngine::ticksPerQuarterNote/4;
+        const auto current=juce::jmax<std::int64_t>(0,
+            MidiEngine::secondsToTick(juce::jmax(0.0,playheadSeconds),tempoBpm));
+        const auto snapped=(current/snapTicks)*snapTicks;
+        const double start=MidiEngine::tickToSeconds(snapped,tempoBpm);
+        const double duration=MidiEngine::tickToSeconds(LibertyDrumSampler::patternLengthTicks,tempoBpm);
+        // Existing clip controller creates the actual persistent MIDI clip,
+        // publishes it to the native instrument and rejects overlapping clips.
+        return commitLibertySequencerInstrumentClip(*this,notes,lane,start,duration,false);
     }
     // Per-track heights are indexed by the logical arranger track order.
     // A zero entry inherits the global default height.

@@ -6,9 +6,7 @@ public:
     explicit LibertyDrumPatternGrid(LibertyDrumSampler& engine):sampler(engine)
     {
         setMouseCursor(juce::MouseCursor::CrosshairCursor);
-        setTooltip(juce::String::fromUTF8(
-            "Clic : activer/effacer. Maj + clic : vélocité 48/80/112/127. "
-            "Glisser : dessiner ou effacer. Clic droit : effacer."));
+        // Fully self-describing controls, no extra floating tooltip window.
         startTimerHz(16);
     }
     std::function<void(int)> onPadSelected;

@@ -179,3 +179,20 @@ assert "setScrollBarsShown(true,false)" in inline_midi
 assert "options.content.setOwned(scrollable);" in inline_midi
 assert "options.launchAsync();" in inline_midi
 print("PASS: MIDI dialog wheel stays in its viewport, ARRANGE zoom isolated")
+
+# Drum Studio: all controls are real, native notes are committed to a chosen
+# instrument lane, and the fixed-size three-page UI has no scrolling.
+drum=read("Source/LibertyDrumSampler.h")
+drum_grid=read("Source/LibertyDrumPatternGrid.h")
+main_drum=read("Source/MainComponent.cpp")
+main_header=read("Source/MainComponent.h")
+for token in ('previewPlay.onClick=','previewStop.onClick=','insertButton.onClick=','sampler.setPatternPreviewPlaying(true)','patternMidiNotes()','sampler.stopAllPads()','setPage(0)','patternGrid.setBounds','setResizable(false,false)'):
+    assert token in (drum+main_drum),token
+assert 'class LibertyDrumPatternGrid final' in drum_grid
+assert 'sampler.setPatternVelocity(found.first,found.second,dragValue)' in drum_grid
+assert 'engine.setDrumSamplerTrack(lane);' in main_drum
+assert 'commitLibertySequencerInstrumentClip(*this,notes,lane,start,duration,false)' in main_header
+assert 'centreWithSize(960,700);' in main_drum
+assert 'setResizable(true, true)' not in main_drum
+assert 'setScrollBarsShown(' not in drum
+print("PASS: Drum Studio PLAY/STOP, 16x16 grid, native arrangement insertion, 13-inch fixed UI")

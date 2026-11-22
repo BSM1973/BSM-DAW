@@ -332,6 +332,11 @@ public:
         if(std::isfinite(bpm))patternTempo.store(juce::jlimit(30.,300.,bpm),std::memory_order_release);
     }
     double getPatternTempo() const noexcept{return patternTempo.load(std::memory_order_acquire);}
+    void stopAllPads() noexcept
+    {
+        pendingTriggers.store(0,std::memory_order_release);
+        pendingStopAll.store(true,std::memory_order_release);
+    }
     void setPatternPreviewPlaying(bool playing) noexcept
     {
         if(previewPlaying.exchange(playing,std::memory_order_acq_rel)!=playing)
@@ -1196,9 +1201,9 @@ public:
         std::function<bool(int)> insertClip={},
         std::function<bool()> isArrangementPlaying={},
         std::function<double()> readProjectTempo={},int instrumentLane=-1)
-        :sampler(engine),waveform(engine),patternGrid(engine),
+        :sampler(engine),waveform(engine),targetInstrumentLane(instrumentLane),
          insertPattern(std::move(insertClip)),transportPlaying(std::move(isArrangementPlaying)),
-         projectTempo(std::move(readProjectTempo)),targetInstrumentLane(instrumentLane)
+         projectTempo(std::move(readProjectTempo)),patternGrid(engine)
     {
         for(auto* button:{&pagePads,&pagePattern,&pageSample,&previewPlay,&previewStop,
                           &starterButton,&clearPatternButton,&insertButton})
@@ -1245,7 +1250,7 @@ public:
             button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9f3f5));
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
             button.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
-            button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); sampler.auditionPad(i, 1.0f); repaint(); };
+            button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); patternGrid.setSelectedPad(i); samplePadSelector.setSelectedId(i,juce::dontSendNotification); sampler.auditionPad(i, 1.0f); repaint(); };
             addAndMakeVisible(button);
         }
         loadButton.setButtonText("CHARGER SAMPLE");
@@ -1509,6 +1514,7 @@ public:
         // individual Obsidian states are not overwritten by a shared palette.
         refreshLabels();
         updateControls();
+        setPage(0);
     }
     ~LibertyDrumSamplerPanel() override{stopTimer();sampler.setPatternPreviewPlaying(false);}
     void setTargetInstrumentLane(int lane){targetInstrumentLane=lane;repaint();}
