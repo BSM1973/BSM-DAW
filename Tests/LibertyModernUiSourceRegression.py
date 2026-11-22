@@ -165,3 +165,17 @@ for token in ("retired = true;","stopTimer();","setInterceptsMouseClicks(false, 
 assert owner_header.split("class MidiClipOverlay final",1)[1].split("void timerCallback() override;",1)[0].count("if (retired) return;")>=2
 assert "retired MIDI overlay must paint no pixels" in read("Source/ArrangementTools.inc")
 print("PASS: legacy MIDI overlay permanently retired after multi-clip takeover")
+
+# MIDI right-click opens a scrollable JUCE dialog. Wheel input stays in the
+# dialog and must never zoom/scroll the underlying ARRANGE timeline.
+zoom=read("Source/ZoomController.cpp")
+inline_midi=read("Source/InlineMidiEditor.inc")
+assert "juce::Viewport*>(component)" in zoom
+assert "juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0" in zoom
+assert zoom.index("getNumModalComponents() > 0") < zoom.index("timelineHorizontalZoom.store(applyWheelZoom")
+assert "if (isInsideScrollableControl(event.eventComponent))" in zoom
+assert "class InlineMidiActionsViewport final : public juce::Viewport" in inline_midi
+assert "setScrollBarsShown(true,false)" in inline_midi
+assert "options.content.setOwned(scrollable);" in inline_midi
+assert "options.launchAsync();" in inline_midi
+print("PASS: MIDI dialog wheel stays in its viewport, ARRANGE zoom isolated")

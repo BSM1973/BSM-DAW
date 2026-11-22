@@ -45,12 +45,13 @@ bool isInsideMidiEditor(juce::Component* component)
     return false;
 }
 
-bool isInsideScrollableBrowserContent(juce::Component* component)
+bool isInsideScrollableControl(juce::Component* component)
 {
     while (component != nullptr)
     {
         if (dynamic_cast<juce::ListBox*>(component) != nullptr
-            || dynamic_cast<juce::TreeView*>(component) != nullptr)
+            || dynamic_cast<juce::TreeView*>(component) != nullptr
+            || dynamic_cast<juce::Viewport*>(component) != nullptr)
             return true;
 
         component = component->getParentComponent();
@@ -157,6 +158,15 @@ public:
 
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override
     {
+        // Global mouse listeners also see wheel events in the MIDI context dialog.
+        // A modal menu owns the wheel: never apply the same delta to ARRANGE.
+        if (juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0)
+            return;
+        // The MIDI action dialog uses a Viewport with its own vertical scroll.
+        // Do not steal scroll from any viewport/list/tree in Liberty.
+        if (isInsideScrollableControl(event.eventComponent))
+            return;
+
         // Dock Piano Roll is embedded in MainComponent, not a MIDI window.
         // The global zoom listener must not steal its wheel events.
         MainComponent* dockOwner = nullptr;
@@ -172,8 +182,7 @@ public:
                 && !isInsideDrumSampler(event.eventComponent))
                 return;
         }
-        if (isInsideDrumSampler(event.eventComponent)
-            || isInsideScrollableBrowserContent(event.eventComponent))
+        if (isInsideDrumSampler(event.eventComponent))
             return;
 
         const float delta = std::abs(wheel.deltaY) >= std::abs(wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
