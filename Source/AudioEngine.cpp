@@ -2343,6 +2343,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             LibertyMixConsoleMeter::publishStereoCorrelationSamples(
                 masterMeterCorrelation,outputChannelData[0],outputChannelData[1],numSamples);
     };
+    // Shared processing manager: idle audition and arrangement use precisely
+    // the same effect processor instance and channel states.
+    auto& oneKnob = LibertyOneKnobManager::instance();
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
     // Standalone fallback only for an unassigned sampler. Once assigned to
     // an instrument lane, its preview and pad auditions MUST be rendered
@@ -2586,7 +2589,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const bool anyPlaybackSolo = isAnyTrackSolo();
     const auto rate = sampleRate.load();
     auto& pluginHost = LibertyPluginHost::instance();
-    auto& oneKnob = LibertyOneKnobManager::instance();
     const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
     const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
 
