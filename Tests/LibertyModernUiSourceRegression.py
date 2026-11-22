@@ -220,3 +220,9 @@ assert drum.index("setSize(960,700);") < drum.index("setPage(0);",drum.index("se
 assert "patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-266);" in drum
 assert 125+(700-266)<=700-130
 print("PASS: Drum Studio startup size and instruction/grid separation")
+
+# Fresh projects must ship with audible drum samples and an editable rhythm.
+assert "drumSampler->loadFactoryKit(0);" in main_drum
+assert "drumSampler->loadStarterPattern();" in main_drum
+assert "factorySelector.setSelectedId(2, juce::dontSendNotification);" in drum
+print("PASS: first-run Drum Studio has audible default kit and playable starter rhythm")

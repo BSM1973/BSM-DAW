@@ -1368,7 +1368,7 @@ public:
         const char* factoryNames[] = { "HIP-HOP", "ACOUSTIC", "ROCK", "METAL", "ELECTRO",
             "REGGAE", "POP", "ORIENTAL", "FUNK", "TRAP" };
         for (int i = 0; i < 10; ++i) factorySelector.addItem(factoryNames[i], i + 2);
-        factorySelector.setSelectedId(1, juce::dontSendNotification);
+        factorySelector.setSelectedId(2, juce::dontSendNotification);
         factorySelector.onChange = [this]
         {
             const int kitIndex = factorySelector.getSelectedId() - 2;

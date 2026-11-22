@@ -179,6 +179,10 @@ MainComponent::MainComponent()
     auto drumSampler = std::make_shared<LibertyDrumSampler>();
     drumSampler->prepare(audioEngine.getDeviceManager().getCurrentAudioDevice() != nullptr
         ? audioEngine.getDeviceManager().getCurrentAudioDevice()->getCurrentSampleRate() : 44100.0);
+    // A new empty project must have audible pads when the user presses PLAY.
+    // User kits and saved projects can replace the built-in kit afterwards.
+    drumSampler->loadFactoryKit(0);
+    drumSampler->loadStarterPattern();
     audioEngine.setDrumSampler(std::move(drumSampler));
     initializeProjectTracking(); // Project actions now live in the Fichier menu.
     dockResizeHandle.setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
