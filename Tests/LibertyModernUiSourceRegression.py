@@ -213,3 +213,10 @@ sample_last_row=316+5*39+28
 assert sample_last_row<h-28
 assert 'setScrollBarsShown' not in drum
 print("PASS: 960x700 Drum Studio page geometry and non-overlapping pad grid")
+
+# Layout is initialized after the component has real dimensions; the pattern
+# grid finishes before its instruction line (both on a 13-inch display).
+assert drum.index("setSize(960,700);") < drum.index("setPage(0);",drum.index("setSize(960,700);"))
+assert "patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-266);" in drum
+assert 125+(700-266)<=700-130
+print("PASS: Drum Studio startup size and instruction/grid separation")

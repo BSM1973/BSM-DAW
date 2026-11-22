@@ -1515,6 +1515,9 @@ public:
         // individual Obsidian states are not overwritten by a shared palette.
         refreshLabels();
         updateControls();
+        // JUCE assigns a component its initial dimensions only after ownership.
+        // Layout calculations must never run against the default 0x0 size.
+        setSize(960,700);
         setPage(0);
     }
     ~LibertyDrumSamplerPanel() override{stopTimer();sampler.setPatternPreviewPlaying(false);}
@@ -1614,7 +1617,7 @@ public:
         }
         else if(page==1)
         {
-            patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-242);
+            patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-266);
             const int actionY=getHeight()-95,available=getWidth()-2*margin,gap=10;
             starterButton.setBounds(margin,actionY,juce::jmin(180,available/4),34);
             clearPatternButton.setBounds(margin+190,actionY,juce::jmin(180,available/4),34);
