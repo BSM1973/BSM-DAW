@@ -1187,11 +1187,56 @@ private:
     float viewSpan = 1.0f;
 };
 
-class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget
+#include "LibertyDrumPatternGrid.h"
+
+class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
 public:
-    explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine) : sampler(engine), waveform(engine)
+    explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine,
+        std::function<bool(int)> insertClip={},
+        std::function<bool()> isArrangementPlaying={},
+        std::function<double()> readProjectTempo={},int instrumentLane=-1)
+        :sampler(engine),waveform(engine),patternGrid(engine),
+         insertPattern(std::move(insertClip)),transportPlaying(std::move(isArrangementPlaying)),
+         projectTempo(std::move(readProjectTempo)),targetInstrumentLane(instrumentLane)
     {
+        for(auto* button:{&pagePads,&pagePattern,&pageSample,&previewPlay,&previewStop,
+                          &starterButton,&clearPatternButton,&insertButton})
+        {
+            button->setColour(juce::TextButton::buttonColourId,LibertyUI::Colour::control);
+            button->setColour(juce::TextButton::buttonOnColourId,LibertyUI::Colour::active);
+            button->setColour(juce::TextButton::textColourOffId,LibertyUI::Colour::textPrimary);
+            button->setColour(juce::TextButton::textColourOnId,LibertyUI::Colour::accentLight);
+            addAndMakeVisible(*button);
+        }
+        pagePads.setButtonText("PADS");pagePattern.setButtonText("PATTERN");pageSample.setButtonText(juce::String::fromUTF8("ÉDITION SAMPLE"));
+        pagePads.onClick=[this]{setPage(0);};pagePattern.onClick=[this]{setPage(1);};pageSample.onClick=[this]{setPage(2);};
+        previewPlay.setButtonText("PLAY");
+        previewPlay.onClick=[this]{
+            if(transportPlaying&&transportPlaying()){status=juce::String::fromUTF8("Arrêtez la lecture de l'arrangement pour écouter le pattern.");repaint();return;}
+            if(!sampler.hasPatternNotes()){status=juce::String::fromUTF8("Pattern vide : dessinez des pas ou chargez le rythme de départ.");repaint();return;}
+            sampler.setPatternTempo(projectTempo?projectTempo():120.);
+            sampler.setPatternPreviewPlaying(true);status=juce::String::fromUTF8("Lecture du pattern en boucle.");refreshPage();};
+        previewStop.setButtonText("STOP");
+        previewStop.onClick=[this]{stopPreview();};
+        starterButton.setButtonText("RYTHME DE BASE");starterButton.onClick=[this]{sampler.loadStarterPattern();patternGrid.repaint();status=juce::String::fromUTF8("Rythme de départ chargé : modifiable.");repaint();};
+        clearPatternButton.setButtonText("EFFACER PATTERN");clearPatternButton.onClick=[this]{sampler.clearPattern();patternGrid.repaint();status=juce::String::fromUTF8("Pattern vidé.");repaint();};
+        insertButton.setButtonText(juce::String::fromUTF8("INSÉRER DANS LA PISTE"));
+        insertButton.onClick=[this]{
+            if(!sampler.hasPatternNotes()){status=juce::String::fromUTF8("Aucune note à insérer.");repaint();return;}
+            if(targetInstrumentLane<0||!insertPattern){status=juce::String::fromUTF8("Sélectionnez une piste instrument avec Drum Sampler.");repaint();return;}
+            if(insertPattern(targetInstrumentLane))
+                status=juce::String::fromUTF8("Clip MIDI inséré dans l'arrangement sur Instrument ")+juce::String(targetInstrumentLane+1);
+            else status=juce::String::fromUTF8("Insertion impossible : vérifiez la piste et les clips existants.");
+            repaint();
+        };
+        patternGrid.onPadSelected=[this](int pad){selectedPad=pad;updateControls();waveform.selectPad(pad);samplePadSelector.setSelectedId(pad+1,juce::dontSendNotification);refreshPage();};
+        addAndMakeVisible(patternGrid);
+        for(int i=0;i<LibertyDrumSampler::padCount;++i)samplePadSelector.addItem("PAD "+juce::String(i+1),i+1);
+        samplePadSelector.setSelectedId(1,juce::dontSendNotification);
+        samplePadSelector.onChange=[this]{selectedPad=juce::jlimit(0,LibertyDrumSampler::padCount-1,samplePadSelector.getSelectedId()-1);updateControls();waveform.selectPad(selectedPad);patternGrid.setSelectedPad(selectedPad);repaint();};
+        addAndMakeVisible(samplePadSelector);
+        startTimerHz(15);
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
         {
             auto& button = pads[(size_t)i];
@@ -1465,7 +1510,40 @@ public:
         refreshLabels();
         updateControls();
     }
-    bool isInterestedInFileDrag(const juce::StringArray& files) override
+    ~LibertyDrumSamplerPanel() override{stopTimer();sampler.setPatternPreviewPlaying(false);}
+    void setTargetInstrumentLane(int lane){targetInstrumentLane=lane;repaint();}
+    void stopPreview(){sampler.setPatternPreviewPlaying(false);sampler.stopAllPads();status="STOP";refreshPage();}
+    void timerCallback() override
+    {
+        if(transportPlaying&&transportPlaying()&&sampler.isPatternPreviewPlaying())stopPreview();
+        if(projectTempo)sampler.setPatternTempo(projectTempo());
+        if(isShowing()&&sampler.isPatternPreviewPlaying())repaint();
+    }
+    void setPage(int next)
+    {
+        page=juce::jlimit(0,2,next);refreshPage();resized();repaint();
+    }
+    void refreshPage()
+    {
+        const bool padsVisible=page==0,patternVisible=page==1,sampleVisible=page==2;
+        for(auto& b:pads)b.setVisible(padsVisible);
+        factorySelector.setVisible(padsVisible);
+        for(auto* b:{&exportButton,&importButton})b->setVisible(padsVisible);
+        for(auto* b:{&loadButton,&stopButton,&loopButton,&colourButton})b->setVisible(sampleVisible);
+        waveform.setVisible(sampleVisible);samplePadSelector.setVisible(sampleVisible);
+        for(auto* slider:{&gainSlider,&panSlider,&pitchSlider,&startSlider,&endSlider,&chokeFadeSlider})slider->setVisible(sampleVisible);
+        for(auto& slider:adsrSliders)slider.setVisible(sampleVisible);
+        for(auto* label:{&gainLabel,&panLabel,&pitchLabel,&startLabel,&endLabel,&chokeLabel,&chokeFadeLabel,&playModeLabel})label->setVisible(sampleVisible);
+        for(auto& label:adsrLabels)label.setVisible(sampleVisible);
+        chokeSelector.setVisible(sampleVisible);playModeSelector.setVisible(sampleVisible);
+        patternGrid.setVisible(patternVisible);
+        starterButton.setVisible(patternVisible);clearPatternButton.setVisible(patternVisible);insertButton.setVisible(patternVisible);
+        for(auto* b:{&pagePads,&pagePattern,&pageSample})b->setToggleState(false,juce::dontSendNotification);
+        (page==0?pagePads:page==1?pagePattern:pageSample).setToggleState(true,juce::dontSendNotification);
+        previewPlay.setToggleState(sampler.isPatternPreviewPlaying(),juce::dontSendNotification);
+        repaint();
+    }
+        bool isInterestedInFileDrag(const juce::StringArray& files) override
     {
         for (const auto& path : files)
         {
@@ -1503,123 +1581,107 @@ public:
     }
     void resized() override
     {
-        const int margin = 12;
-        // Reserve a fixed lower section for the waveform, kit actions and ADSR.
-        // Derive the four pad rows from the actual space above that section.
-        const int actionsTop = getHeight() - 550;
-        factorySelector.setBounds(juce::jmax(margin, getWidth() - 226), 8, 214, 28);
-        const int padTop = 40 + margin;
-        const int padBottom = actionsTop - margin;
-        const int cellWidth = juce::jmax(1, (getWidth() - margin * 5) / 4);
-        const int padAreaHeight = juce::jmax(0, padBottom - padTop);
-        const int cellHeight = juce::jmax(0, (padAreaHeight - margin * 3) / 4);
-        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
-            pads[(size_t)i].setBounds(margin + (i % 4) * (cellWidth + margin),
-                                     padTop + (i / 4) * (cellHeight + margin), cellWidth, cellHeight);
-        // Actions live above the waveform, never on top of the last ADSR row.
-        // Keep kit actions inside the panel even when the window is narrower.
-        // The waveform begins 40 px below this row.
-        const int actionGap = 8;
-        const int availableWidth = juce::jmax(0, getWidth() - margin * 2);
-        const int actionWidth = juce::jmax(0, (availableWidth - actionGap * 3) / 4);
-        const int lastActionWidth = juce::jmax(0, availableWidth - 3 * (actionWidth + actionGap));
-        loadButton.setBounds(margin, actionsTop, actionWidth, 28);
-        stopButton.setBounds(margin + actionWidth + actionGap, actionsTop, actionWidth, 28);
-        exportButton.setBounds(margin + 2 * (actionWidth + actionGap), actionsTop, actionWidth, 28);
-        importButton.setBounds(margin + 3 * (actionWidth + actionGap), actionsTop, lastActionWidth, 28);
-        const int controlTop = getHeight() - 382;
-        waveform.setBounds(margin, getHeight() - 470, getWidth() - margin * 2, 76);
-        // Three distinct rows: kit actions (-550..-522), pad actions
-        // (-516..-490), waveform (-470..-394), then GAIN (-382).
-        // Never place interactive buttons inside the waveform component.
-        const int loopActionsY = actionsTop + 34;
-        const int padActionGap = 8;
-        const int loopWidth = juce::jmin(190, juce::jmax(0, (availableWidth - padActionGap) / 2));
-        const int colourWidth = juce::jmin(160, juce::jmax(0, availableWidth - padActionGap - loopWidth));
-        const int padActionLeft = margin + (availableWidth - loopWidth - padActionGap - colourWidth) / 2;
-        loopButton.setBounds(padActionLeft, loopActionsY, loopWidth, 26);
-        colourButton.setBounds(padActionLeft + loopWidth + padActionGap, loopActionsY, colourWidth, 26);
-        gainLabel.setBounds(margin, controlTop, 48, 25);
-        gainSlider.setBounds(margin + 48, controlTop, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
-        panLabel.setBounds(margin, controlTop + 31, 48, 25);
-        panSlider.setBounds(margin + 48, controlTop + 31, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
-        pitchLabel.setBounds(margin, controlTop + 62, 48, 25);
-        pitchSlider.setBounds(margin + 48, controlTop + 62, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
-        startLabel.setBounds(margin, controlTop + 93, 48, 25);
-        startSlider.setBounds(margin + 48, controlTop + 93, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
-        endLabel.setBounds(margin, controlTop + 124, 48, 25);
-        endSlider.setBounds(margin + 48, controlTop + 124, juce::jmax(80, getWidth() - margin * 2 - 48), 25);
-        chokeLabel.setBounds(margin, controlTop + 155, 56, 25);
-        chokeSelector.setBounds(margin + 56, controlTop + 155, 160, 25);
-        chokeFadeLabel.setBounds(margin, controlTop + 186, 72, 25);
-        chokeFadeSlider.setBounds(margin + 72, controlTop + 186, juce::jmax(80, getWidth() - margin * 2 - 72), 25);
-        playModeLabel.setBounds(margin, controlTop + 217, 56, 25);
-        playModeSelector.setBounds(margin + 56, controlTop + 217, 160, 25);
-        for (int k = 0; k < 4; ++k)
+        constexpr int margin=14;
+        pagePads.setBounds(margin,45,120,30);
+        pagePattern.setBounds(margin+128,45,120,30);
+        pageSample.setBounds(margin+256,45,160,30);
+        previewPlay.setBounds(getWidth()-202,43,88,32);
+        previewStop.setBounds(getWidth()-106,43,88,32);
+        if(page==0)
         {
-            adsrLabels[(size_t)k].setBounds(margin, controlTop + 248 + 31 * k, 72, 25);
-            adsrSliders[(size_t)k].setBounds(margin + 72, controlTop + 248 + 31 * k,
-                juce::jmax(80, getWidth() - margin * 2 - 72), 25);
+            factorySelector.setBounds(getWidth()-238,88,224,29);
+            const int top=135,bottom=getHeight()-80,gap=12;
+            const int totalWidth=getWidth()-2*margin;
+            const int width=(totalWidth-gap*3)/4;
+            const int height=(bottom-top-gap*3)/4;
+            for(int pad=0;pad<LibertyDrumSampler::padCount;++pad)
+                pads[(size_t)pad].setBounds(margin+(pad%4)*(width+gap),
+                    top+(pad/4)*(height+gap),width,height);
+            const int actionY=getHeight()-59,actionGap=10;
+            const int actionWidth=(totalWidth-actionGap*3)/4;
+            for(int i=0;i<4;++i)
+                (i==0?loadButton:i==1?stopButton:i==2?exportButton:importButton).setBounds(
+                    margin+i*(actionWidth+actionGap),actionY,actionWidth,30);
+            // Loading a sample or stopping a pad is also available from PADS.
+            loadButton.setVisible(true);stopButton.setVisible(true);
+        }
+        else if(page==1)
+        {
+            patternGrid.setBounds(margin,125,getWidth()-2*margin,getHeight()-242);
+            const int actionY=getHeight()-95,available=getWidth()-2*margin,gap=10;
+            starterButton.setBounds(margin,actionY,juce::jmin(180,available/4),34);
+            clearPatternButton.setBounds(margin+190,actionY,juce::jmin(180,available/4),34);
+            insertButton.setBounds(getWidth()-286,actionY,272,34);
+        }
+        else
+        {
+            samplePadSelector.setBounds(margin,87,245,28);
+            waveform.setBounds(margin,134,getWidth()-2*margin,114);
+            const int available=getWidth()-2*margin,gap=10,w=(available-gap*3)/4;
+            for(int i=0;i<4;++i)
+                (i==0?loadButton:i==1?stopButton:i==2?loopButton:colourButton).setBounds(
+                    margin+i*(w+gap),264,w,30);
+            const int columnGap=22,columnWidth=(available-columnGap)/2;
+            const int labelW=90,top=316,rowGap=39;
+            auto field=[&](juce::Label& label,juce::Component& control,int col,int row)
+            {
+                const int x=margin+col*(columnWidth+columnGap),y=top+row*rowGap;
+                label.setBounds(x,y,labelW,28);
+                control.setBounds(x+labelW,y,columnWidth-labelW,28);
+            };
+            field(gainLabel,gainSlider,0,0);field(panLabel,panSlider,1,0);
+            field(pitchLabel,pitchSlider,0,1);field(startLabel,startSlider,1,1);
+            field(endLabel,endSlider,0,2);field(chokeLabel,chokeSelector,1,2);
+            field(chokeFadeLabel,chokeFadeSlider,0,3);field(playModeLabel,playModeSelector,1,3);
+            for(int i=0;i<4;++i)field(adsrLabels[(size_t)i],adsrSliders[(size_t)i],i%2,4+i/2);
         }
     }
     void paint(juce::Graphics& g) override
     {
-        // Obsidian drum panel: deeper graphite to match the arranger and mixer.
-        juce::ColourGradient background(LibertyUI::Colour::header, 0.0f, 0.0f,
-                                         LibertyUI::Colour::canvasDeep, 0.0f, (float)getHeight(), false);
-        g.setGradientFill(background);
+        g.setGradientFill(juce::ColourGradient(LibertyUI::Colour::header,0.f,0.f,
+            LibertyUI::Colour::canvasDeep,0.f,(float)getHeight(),false));
         g.fillAll();
-        // Draw depth behind the existing TextButtons without changing hitboxes.
-        for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
+        g.setColour(LibertyUI::Colour::textPrimary);
+        g.setFont(juce::Font(17.f,juce::Font::bold));
+        g.drawText("LIBERTY DRUM STUDIO",14,7,getWidth()-28,28,juce::Justification::centredLeft);
+        LibertyUI::accentRule(g,{14.f,39.f,(float)getWidth()-28.f,2.f});
+        if(page==0)
         {
-            const auto bounds = pads[(size_t)i].getBounds().toFloat();
-            if (bounds.isEmpty()) continue;
-            const bool active = i == selectedPad;
-            const auto padColour = juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load());
-            g.setColour(juce::Colour(0xff070b10));
-            g.fillRoundedRectangle(bounds.expanded(3.0f), 8.0f);
-            // Selected pads receive a crisp turquoise edge; custom pad colours remain visible.
-            // Obsidian pad rims: custom hues stay visible, with clearer idle definition.
-            g.setColour(active ? juce::Colour(0xff54d6dc).withAlpha(0.96f) : padColour.interpolatedWith(juce::Colour(0xff91bbc3), 0.25f).withAlpha(0.62f));
-            g.drawRoundedRectangle(bounds.expanded(active ? 3.0f : 2.0f), 8.0f, active ? 2.0f : 1.0f);
-            if (active)
+            g.setColour(LibertyUI::Colour::textMuted);g.setFont(11.f);
+            g.drawText(juce::String::fromUTF8("16 PADS  •  KITS  •  JOUER AU CLIC"),14,91,480,30,juce::Justification::centredLeft);
+            for(int i=0;i<LibertyDrumSampler::padCount;++i)
             {
-                // Slightly clearer outer selection halo; no pad geometry changes.
-                g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.26f));
-                g.drawRoundedRectangle(bounds.expanded(5.0f), 10.0f, 1.0f);
+                const auto r=pads[(size_t)i].getBounds().toFloat();
+                if(r.isEmpty())continue;
+                LibertyUI::fillPanel(g,r.expanded(2.f),i==selectedPad,9.f);
             }
         }
-        // Restrained Obsidian header: graphite baseline and short turquoise accent.
-        g.setColour(juce::Colour(0xff344452));
-        g.fillRect(12, 36, juce::jmax(0, getWidth() - 24), 1);
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.72f));
-        g.fillRect(12, 36, juce::jmax(0, juce::jmin(104, getWidth() - 24)), 1);
-        // Main panel title follows the Obsidian high-contrast heading palette.
-        g.setColour(juce::Colour(0xffeffcfd));
-        g.setFont(juce::Font(18.0f, juce::Font::bold));
-        g.drawText("LIBERTY DRUM SAMPLER", 12, 7, getWidth() - 250, 26, juce::Justification::centredLeft);
-        const int actionsTop = getHeight() - 550;
-        const int innerWidth = juce::jmax(0, getWidth() - 24);
-        // Section dividers sit in existing non-interactive gaps.
-        g.setColour(juce::Colour(0xff344452));
-        g.fillRect(12, actionsTop - 7, innerWidth, 1);
-        g.fillRect(12, getHeight() - 390, innerWidth, 1);
-        // Match the kit-action divider to the restrained Obsidian turquoise accents.
-        g.setColour(juce::Colour(0xff54d6dc).withAlpha(0.68f));
-        g.fillRect(12, actionsTop - 7, juce::jmin(72, innerWidth), 1);
-        // Violet distinguishes waveform editing from the kit action strip.
-        // The waveform section accent remains subtle but legible against graphite.
-        g.setColour(juce::Colour(0xffc4adff).withAlpha(0.46f));
-        g.fillRect(12, getHeight() - 390, juce::jmin(72, innerWidth), 1);
-        // Keep section labels away from pads and editable controls.
-        g.setFont(juce::Font(10.0f, juce::Font::bold));
-        g.setColour(juce::Colour(0xffc2d8e2));
-        g.drawText("PADS  /  16 VOICES", 12, 39, juce::jmax(0, getWidth() - 250), 12,
-                   juce::Justification::centredLeft);
-        // Subtle violet identifies the sample-editing section without altering its layout.
-        g.setColour(juce::Colour(0xffc4adff));
-        g.drawText("SAMPLE  /  WAVEFORM", 12, getHeight() - 486, innerWidth, 13,
-                   juce::Justification::centredLeft);
+        else if(page==1)
+        {
+            g.setColour(LibertyUI::Colour::textMuted);g.setFont(12.f);
+            g.drawText(juce::String::fromUTF8("PATTERN 16 PAS   •   4/4   •   1/16   •   ")+
+                juce::String(sampler.getPatternTempo(),1)+" BPM",14,90,getWidth()-28,26,juce::Justification::centredLeft);
+            g.setColour(LibertyUI::Colour::textMuted);g.setFont(11.f);
+            g.drawFittedText(juce::String::fromUTF8("Clic : ON/OFF     Maj + clic : vélocité     Glisser : dessiner"),
+                {14,getHeight()-130,getWidth()-28,25},juce::Justification::centredLeft,1);
+            g.setColour(LibertyUI::Colour::accentLight);g.setFont(12.f);
+            g.drawText(targetInstrumentLane>=0
+                ?juce::String::fromUTF8("DESTINATION : INSTRUMENT ")+juce::String(targetInstrumentLane+1)
+                :juce::String::fromUTF8("CHOISISSEZ UNE PISTE INSTRUMENT"),
+                14,getHeight()-55,getWidth()-28,20,juce::Justification::centredLeft);
+        }
+        else
+        {
+            g.setColour(LibertyUI::Colour::textMuted);g.setFont(11.f);
+            g.drawText(juce::String::fromUTF8("FORME D'ONDE  •  START / END  •  ENVELOPPE  •  CHOKE"),
+                280,90,getWidth()-300,26,juce::Justification::centredRight);
+            g.setColour(LibertyUI::Colour::dividerSoft);
+            g.fillRect(14,304,getWidth()-28,1);
+        }
+        g.setColour(LibertyUI::Colour::textMuted);
+        g.setFont(juce::Font(11.f));
+        g.drawFittedText(status,{14,getHeight()-28,getWidth()-28,21},
+            juce::Justification::centredLeft,1);
     }
 private:
     void refreshPadColours()
@@ -1670,6 +1732,7 @@ private:
             pads[(size_t)i].setButtonText(sampler.hasSample(i) ? sampler.getPad(i).name
                                                                : "PAD " + juce::String(i + 1));
         }
+        patternGrid.repaint();
     }
     LibertyDrumSampler& sampler;
     std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
@@ -1686,5 +1749,14 @@ private:
     std::array<juce::Slider, 4> adsrSliders;
     std::array<juce::Label, 4> adsrLabels;
     int selectedPad = 0;
+    int page=0,targetInstrumentLane=-1;
+    std::function<bool(int)> insertPattern;
+    std::function<bool()> transportPlaying;
+    std::function<double()> projectTempo;
+    LibertyDrumPatternGrid patternGrid;
+    juce::TextButton pagePads,pagePattern,pageSample,previewPlay,previewStop;
+    juce::TextButton starterButton,clearPatternButton,insertButton;
+    juce::ComboBox samplePadSelector;
+    juce::String status=juce::String::fromUTF8("Prêt : choisissez un kit puis créez un pattern.");
     std::unique_ptr<juce::FileChooser> chooser, kitChooser;
 };
