@@ -153,8 +153,11 @@ int main()
         juce::MidiBuffer midi;
         for(const auto& note:arrangement.patternMidiNotes())
         {
-            const int frame=(int)std::llround(MidiEngine::tickToSeconds(
-                note.startTick,120.)*48000.);
+            // Headless smoke does not link MidiEngine.cpp. This is its
+            // mathematically identical ticks -> sample-time conversion.
+            const int frame=(int)std::llround(
+                (double)note.startTick*60.0*48000.0/
+                (120.0*(double)MidiEngine::ticksPerQuarterNote));
             midi.addEvent(juce::MidiMessage::noteOn(
                 (int)note.channel,(int)note.pitch,(juce::uint8)note.velocity),frame);
         }
