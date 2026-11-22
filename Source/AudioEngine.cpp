@@ -2344,20 +2344,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 masterMeterCorrelation,outputChannelData[0],outputChannelData[1],numSamples);
     };
     renderLibertyPerformAudio(this, outputChannelData, numOutputChannels, numSamples);
-    // Drum Sampler audition bus. Runs on the audio callback, even while
-    // arrangement transport is stopped. This is not yet track routing.
+    // Standalone fallback only for an unassigned sampler. Once assigned to
+    // an instrument lane, its preview and pad auditions MUST be rendered
+    // exactly once by that lane's normal instrument strip below. Otherwise,
+    // at stopped transport the sampler advances twice per callback and
+    // bypasses the track's gain, panorama, FX, one-knob and bus routing.
     if (auto sampler = std::atomic_load(&drumSampler))
     {
         // The standalone pattern preview is audible only when ARRANGE is stopped.
         // This prevents doubling the notes once its pattern has been inserted.
         sampler->allowPatternPreview(!playing.load(std::memory_order_relaxed)
             && stepPreviewTrack.load(std::memory_order_acquire)<0);
-        if ((!playing.load(std::memory_order_relaxed) ||
-             drumSamplerTrack.load(std::memory_order_acquire) < 0) &&
-            // The independent preview below renders its MIDI target itself.
-            !(stepPreviewTrack.load(std::memory_order_acquire) >= 0 &&
-              stepPreviewTrack.load(std::memory_order_acquire) ==
-                  drumSamplerTrack.load(std::memory_order_acquire)))
+        if (drumSamplerTrack.load(std::memory_order_acquire) < 0)
         {
         sampler->processAuditions();
         if (numOutputChannels > 0 && numSamples > 0)
@@ -2552,7 +2550,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             if(rendered)
             {
                 for(int slot=0;slot<LibertyPluginHost::effectSlotsPerTrack;++slot)
+                {
                     host.processInstrumentEffectSlot(instrumentTrack,slot,bus);
+                    oneKnob.process(100000 + instrumentTrack * 8 + slot,bus);
+                }
                 bus.applyGain(getLibertyPerformInstrumentMacro(this));
                 meterBus(state.meterPeak,state.meterPeakRight,
                          state.meterRmsLeft,state.meterRmsRight,state.meterCorrelation,bus);
@@ -2565,6 +2566,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         }
         flushBuses();
         processLibertyPerformFinalMix(this,outputChannelData,numOutputChannels,numSamples);
+        // Apply the same master-level stage in idle audition and ARRANGE.
+        // Without it changing master volume changes only the inserted clip.
+        const float auditionMaster=masterGain.load(std::memory_order_relaxed);
+        const float safeAuditionMaster=std::isfinite(auditionMaster)
+            ?juce::jlimit(0.f,4.f,auditionMaster):0.f;
+        for(int ch=0;ch<numOutputChannels;++ch)
+            if(outputChannelData[ch])
+                juce::FloatVectorOperations::multiply(
+                    outputChannelData[ch],safeAuditionMaster,numSamples);
         masterAnalysis.capture(outputChannelData,numOutputChannels,numSamples);
         meterIdleOutput();
         return;

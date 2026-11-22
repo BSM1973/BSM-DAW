@@ -256,3 +256,20 @@ assert 'libraryPatternSelector.setBounds(margin+208,87,330,31)' in drum
 assert 14+198 < 14+208
 assert 14+208+330 < 560
 print("PASS: 100 named rhythms, CC0 audio bundling, saved kits and fixed-size menu geometry")
+
+# Native drums are rendered by exactly one owner each audio callback.
+# With an instrument lane assigned, both idle preview and arrangement
+# pass through the same strip, effect slots, one-knob and master gain.
+engine=read("Source/AudioEngine.cpp")
+drum=read("Source/LibertyDrumSampler.h")
+assert "if (drumSamplerTrack.load(std::memory_order_acquire) < 0)" in engine
+assert "if ((!playing.load(std::memory_order_relaxed) ||" not in engine
+assert engine.count("oneKnob.process(100000 + instrumentTrack * 8 + slot")>=2
+assert "const float auditionMaster=masterGain.load" in engine
+assert "if(v>0)noteOn(36+pad,(float)v/127.f);" in drum
+assert "if(v>0)noteOn(36+pad,(float)v/127.f,true);" not in drum
+smoke=read("Tests/DrumSamplerSmoke.cpp")
+assert "maxDifference>1.0e-5f" in smoke
+assert "audition.renderMidi(auditionAudio,juce::MidiBuffer{});" in smoke
+assert "arrangement.renderMidi(arrangementAudio,midi);" in smoke
+print("PASS: Drum Sampler preview and arrangement use one DSP render, same FX and MIDI articulations")

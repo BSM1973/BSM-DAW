@@ -127,6 +127,51 @@ int main()
     groove.clearPattern();if(groove.hasPatternNotes())return fail(108);
     groove.loadStarterPattern();if(!groove.hasPatternNotes())return fail(109);
 
+    // A regression reproducer for the user-reported change of sound:
+    // native preview and the resulting MIDI arrangement notes must be
+    // sample-for-sample equivalent, including same-pad retriggers and
+    // the factory four-variation drum articulation cycle.
+    for(const int factoryStyle:{0,3,9})
+    {
+        LibertyDrumSampler audition,arrangement;
+        audition.prepare(48000.);
+        arrangement.prepare(48000.);
+        if(!audition.loadFactoryKit(factoryStyle)||
+           !arrangement.loadFactoryKit(factoryStyle))return fail(163);
+        if(!audition.loadFactoryPattern(factoryStyle,1)||
+           !arrangement.loadFactoryPattern(factoryStyle,1))return fail(164);
+        audition.setPatternTempo(120.);
+        arrangement.setPatternTempo(120.);
+        audition.setPatternPreviewPlaying(true);
+        constexpr int frameCount=96000;
+        juce::AudioBuffer<float> auditionAudio(2,frameCount);
+        juce::AudioBuffer<float> arrangementAudio(2,frameCount);
+        auditionAudio.clear();arrangementAudio.clear();
+        // One block is intentional: events are at 1/16-note offsets, not
+        // quantized to a simulated audio callback boundary.
+        audition.renderMidi(auditionAudio,juce::MidiBuffer{});
+        juce::MidiBuffer midi;
+        for(const auto& note:arrangement.patternMidiNotes())
+        {
+            const int frame=(int)std::llround(MidiEngine::tickToSeconds(
+                note.startTick,120.)*48000.);
+            midi.addEvent(juce::MidiMessage::noteOn(
+                (int)note.channel,(int)note.pitch,(juce::uint8)note.velocity),frame);
+        }
+        arrangement.renderMidi(arrangementAudio,midi);
+        float maxDifference=0.f,peak=0.f;
+        for(int channel=0;channel<2;++channel)
+            for(int frame=0;frame<frameCount;++frame)
+            {
+                const float a=auditionAudio.getSample(channel,frame);
+                const float b=arrangementAudio.getSample(channel,frame);
+                if(!std::isfinite(a)||!std::isfinite(b))return fail(165);
+                peak=juce::jmax(peak,std::abs(a));
+                maxDifference=juce::jmax(maxDifference,std::abs(a-b));
+            }
+        if(peak<.0001f||maxDifference>1.0e-5f)return fail(166);
+    }
+
     // Attack should ramp from silence toward the sample's nominal level.
     sounding.reset();
     sounding.setPadEnvelope(0, 4.0f, 0.0f, 1.0f, 8.0f);

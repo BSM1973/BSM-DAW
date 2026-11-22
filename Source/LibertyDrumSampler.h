@@ -808,7 +808,9 @@ public:
                     for(int pad=0;pad<padCount;++pad)
                     {
                         const int v=getPatternVelocity(pad,step);
-                        if(v>0)noteOn(36+pad,(float)v/127.f,true);
+                        // Identical retrigger/polyphony semantics as
+                        // renderMidi() for the inserted arrangement clip.
+                        if(v>0)noteOn(36+pad,(float)v/127.f);
                     }
                     nextPatternStep=(nextPatternStep+1)%patternSteps;
                     samplesUntilNextStep+=stepSamples;
