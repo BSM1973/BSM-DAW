@@ -2348,6 +2348,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     // arrangement transport is stopped. This is not yet track routing.
     if (auto sampler = std::atomic_load(&drumSampler))
     {
+        // The standalone pattern preview is audible only when ARRANGE is stopped.
+        // This prevents doubling the notes once its pattern has been inserted.
+        sampler->allowPatternPreview(!playing.load(std::memory_order_relaxed)
+            && stepPreviewTrack.load(std::memory_order_acquire)<0);
         if ((!playing.load(std::memory_order_relaxed) ||
              drumSamplerTrack.load(std::memory_order_acquire) < 0) &&
             // The independent preview below renders its MIDI target itself.

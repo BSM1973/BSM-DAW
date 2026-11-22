@@ -97,6 +97,35 @@ int main()
     sounding.renderMidi(audible, hit);
     if (!near(audible.getSample(0, 100), 0.5f, 0.003f)) { fixture.deleteFile(); return fail(12); }
 
+    // Pattern Studio: sample-accurate preview, deterministic MIDI export and
+    // persistence (this shares the real audio rendering path with the DAW).
+    LibertyDrumSampler groove;
+    groove.prepare(48000.0);
+    if(!groove.loadPad(0,fixture))return fail(101);
+    groove.setPatternTempo(120.);
+    groove.setPatternVelocity(0,0,127);
+    groove.setPatternVelocity(0,1,100);
+    if(groove.patternMidiNotes().size()!=2)return fail(102);
+    const auto events=groove.patternMidiNotes();
+    if(events[0].startTick!=0 || events[1].startTick!=MidiEngine::ticksPerQuarterNote/4
+       || events[0].pitch!=36 || events[1].velocity!=100)return fail(103);
+    const auto grooveKit=groove.createKitXml();
+    LibertyDrumSampler reloaded;
+    reloaded.prepare(48000.);
+    if(!reloaded.restoreKitXml(*grooveKit) || reloaded.getPatternVelocity(0,1)!=100)return fail(104);
+    groove.setPatternPreviewPlaying(true);
+    juce::AudioBuffer<float> preview(2,13000);
+    preview.clear();groove.renderMidi(preview,juce::MidiBuffer{});
+    if(!near(preview.getSample(0,100),.5f,.003f)
+       || std::abs(preview.getSample(0,5500))>.003f
+       || !near(preview.getSample(0,6100),.5f*(100.f/127.f),.005f)
+       || std::abs(preview.getSample(0,12100))>.003f)return fail(105);
+    if(groove.getPatternPreviewStep()!=2)return fail(106);
+    groove.allowPatternPreview(false);
+    if(groove.isPatternPreviewPlaying()||groove.getPatternPreviewStep()!=-1)return fail(107);
+    groove.clearPattern();if(groove.hasPatternNotes())return fail(108);
+    groove.loadStarterPattern();if(!groove.hasPatternNotes())return fail(109);
+
     // Attack should ramp from silence toward the sample's nominal level.
     sounding.reset();
     sounding.setPadEnvelope(0, 4.0f, 0.0f, 1.0f, 8.0f);

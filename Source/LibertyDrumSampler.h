@@ -1,5 +1,7 @@
 #pragma once
 #include "LibertyDesignSystem.h"
+#include "MidiEngine.h"
+#include <functional>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -292,6 +294,79 @@ public:
         pendingStopAll.store(true, std::memory_order_release);
         return true;
     }
+    // Pattern Studio: one bar, 16 instruments, 16 quantised steps.
+    // The UI publishes individual velocity cells atomically. Playback ticks
+    // and all sample voices remain exclusively on the audio thread.
+    static constexpr int patternSteps=16;
+    void setPatternVelocity(int pad,int step,int velocity) noexcept
+    {
+        if(pad<0||pad>=padCount||step<0||step>=patternSteps)return;
+        patternCells[(size_t)(pad*patternSteps+step)].store(
+            (unsigned char)juce::jlimit(0,127,velocity),std::memory_order_release);
+    }
+    int getPatternVelocity(int pad,int step) const noexcept
+    {
+        if(pad<0||pad>=padCount||step<0||step>=patternSteps)return 0;
+        return patternCells[(size_t)(pad*patternSteps+step)].load(std::memory_order_acquire);
+    }
+    bool hasPatternNotes() const noexcept
+    {
+        for(int pad=0;pad<padCount;++pad)
+            for(int step=0;step<patternSteps;++step)
+                if(getPatternVelocity(pad,step)>0)return true;
+        return false;
+    }
+    void clearPattern() noexcept
+    {
+        for(auto& cell:patternCells)cell.store(0,std::memory_order_release);
+    }
+    void loadStarterPattern() noexcept
+    {
+        clearPattern();
+        for(int step:{0,8})setPatternVelocity(0,step,118);
+        for(int step:{4,12})setPatternVelocity(1,step,105);
+        for(int step=0;step<patternSteps;step+=2)setPatternVelocity(3,step,step%4?66:91);
+    }
+    void setPatternTempo(double bpm) noexcept
+    {
+        if(std::isfinite(bpm))patternTempo.store(juce::jlimit(30.,300.,bpm),std::memory_order_release);
+    }
+    double getPatternTempo() const noexcept{return patternTempo.load(std::memory_order_acquire);}
+    void setPatternPreviewPlaying(bool playing) noexcept
+    {
+        if(previewPlaying.exchange(playing,std::memory_order_acq_rel)!=playing)
+            previewEpoch.fetch_add(1,std::memory_order_acq_rel);
+        if(!playing)previewStepVisual.store(-1,std::memory_order_release);
+    }
+    bool isPatternPreviewPlaying() const noexcept{return previewPlaying.load(std::memory_order_acquire);}
+    int getPatternPreviewStep() const noexcept{return previewStepVisual.load(std::memory_order_acquire);}
+    void allowPatternPreview(bool allowed) noexcept
+    {
+        if(!allowed)setPatternPreviewPlaying(false);
+    }
+    // Native MIDI clip, not a graphic/placeholder clip. Render only on UI thread.
+    std::vector<MidiEngine::NoteEvent> patternMidiNotes() const
+    {
+        std::vector<MidiEngine::NoteEvent> notes;
+        notes.reserve(padCount*patternSteps);
+        constexpr auto ticksPerStep=MidiEngine::ticksPerQuarterNote/4;
+        for(int step=0;step<patternSteps;++step)
+            for(int pad=0;pad<padCount;++pad)
+            {
+                const int v=getPatternVelocity(pad,step);
+                if(v<=0)continue;
+                MidiEngine::NoteEvent note;
+                note.startTick=(std::int64_t)step*ticksPerStep;
+                note.lengthTicks=ticksPerStep;
+                note.pitch=(std::uint8_t)(36+pad);
+                note.velocity=(std::uint8_t)v;
+                note.channel=1;
+                notes.push_back(note);
+            }
+        return notes;
+    }
+    static constexpr std::int64_t patternLengthTicks=MidiEngine::ticksPerQuarterNote*4;
+
     // Serializable kit description; sample audio remains in external WAV/AIFF files.
     std::unique_ptr<juce::XmlElement> createKitXml() const
     {
@@ -319,6 +394,17 @@ public:
             node->setAttribute("sustain", (double)pad.sustain.load());
             node->setAttribute("releaseMs", (double)pad.releaseMs.load());
         }
+        auto* sequence=kit->createNewChildElement("Pattern");
+        sequence->setAttribute("tempo",getPatternTempo());
+        for(int pad=0;pad<padCount;++pad)
+            for(int step=0;step<patternSteps;++step)
+                if(const int velocity=getPatternVelocity(pad,step);velocity>0)
+                {
+                    auto* hit=sequence->createNewChildElement("Hit");
+                    hit->setAttribute("pad",pad);
+                    hit->setAttribute("step",step);
+                    hit->setAttribute("velocity",velocity);
+                }
         return kit;
     }
     bool restoreKitXml(const juce::XmlElement& kit)
@@ -352,6 +438,25 @@ public:
                            (float)node->getDoubleAttribute("decayMs", 0.0),
                            (float)node->getDoubleAttribute("sustain", 1.0),
                            (float)node->getDoubleAttribute("releaseMs", 8.0));
+        }
+        clearPattern();
+        if(const auto* sequence=kit.getChildByName("Pattern"))
+        {
+            const double restoredTempo=sequence->getDoubleAttribute("tempo",120.);
+            if(!std::isfinite(restoredTempo)||restoredTempo<30.||restoredTempo>300.)return false;
+            setPatternTempo(restoredTempo);
+            size_t visited=0;
+            for(const auto* hit=sequence->getFirstChildElement();hit;hit=hit->getNextElement())
+            {
+                if(++visited>padCount*patternSteps)return false;
+                if(!hit->hasTagName("Hit"))continue;
+                const int pad=hit->getIntAttribute("pad",-1);
+                const int step=hit->getIntAttribute("step",-1);
+                const int velocity=hit->getIntAttribute("velocity",-1);
+                if(pad<0||pad>=padCount||step<0||step>=patternSteps||velocity<1||velocity>127)
+                    return false;
+                setPatternVelocity(pad,step,velocity);
+            }
         }
         return true;
     }
@@ -538,6 +643,12 @@ public:
             dst.sustain.store(src.sustain.load());
             dst.releaseMs.store(src.releaseMs.load());
         }
+        clearPattern();
+        for(int pad=0;pad<padCount;++pad)
+            for(int step=0;step<patternSteps;++step)
+                setPatternVelocity(pad,step,candidate.getPatternVelocity(pad,step));
+        setPatternTempo(candidate.getPatternTempo());
+        setPatternPreviewPlaying(false);
         // Existing voices retain their decoded audio and their original envelope.
         // Mark notes as released before switching kits so a later Note Off
         // cannot inadvertently release a newly-triggered voice.
@@ -755,7 +866,34 @@ public:
         if (output.getNumChannels() < 1 || count <= 0) return;
         const int end = juce::jmin(output.getNumSamples(), start + count);
         for (auto& position : playbackPositions) position.store(-1.0f, std::memory_order_relaxed);
+        const auto epoch=previewEpoch.load(std::memory_order_acquire);
+        if(epoch!=audioPreviewEpoch)
+        {
+            audioPreviewEpoch=epoch;
+            nextPatternStep=0;
+            samplesUntilNextStep=0.;
+        }
+        const bool preview=previewPlaying.load(std::memory_order_acquire);
+        const double bpm=patternTempo.load(std::memory_order_acquire);
+        const double stepSamples=outputRate*60.0/juce::jlimit(30.,300.,bpm)/4.0;
         for (int n = juce::jmax(0, start); n < end; ++n)
+        {
+            if(preview)
+            {
+                if(samplesUntilNextStep<=0.)
+                {
+                    const int step=nextPatternStep;
+                    previewStepVisual.store(step,std::memory_order_release);
+                    for(int pad=0;pad<padCount;++pad)
+                    {
+                        const int v=getPatternVelocity(pad,step);
+                        if(v>0)noteOn(36+pad,(float)v/127.f,true);
+                    }
+                    nextPatternStep=(nextPatternStep+1)%patternSteps;
+                    samplesUntilNextStep+=stepSamples;
+                }
+                samplesUntilNextStep-=1.;
+            }
             for (auto& voice : voices)
             {
                 if (!voice.active) continue;
@@ -870,6 +1008,7 @@ public:
                     * std::pow(2.0, ((double)voice.pitchSemitones
                         + (double)voice.pitchVariationSemitones) / 12.0);
             }
+        }
     }
     const Pad& getPad(int index) const noexcept { return pads[(size_t)juce::jlimit(0, padCount-1, index)]; }
 private:
@@ -917,6 +1056,14 @@ private:
     std::array<Pad, padCount> pads;
     std::array<Voice, 32> voices{};
     std::array<std::atomic<unsigned int>, padCount> factoryHitCounters {};
+    std::array<std::atomic<unsigned char>, padCount*patternSteps> patternCells {};
+    std::atomic<double> patternTempo {120.0};
+    std::atomic<bool> previewPlaying {false};
+    std::atomic<unsigned int> previewEpoch {0};
+    std::atomic<int> previewStepVisual {-1};
+    unsigned int audioPreviewEpoch=0;
+    int nextPatternStep=0;
+    double samplesUntilNextStep=0.;
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::atomic<bool> pendingStopAll { false };
