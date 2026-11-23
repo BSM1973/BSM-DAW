@@ -291,3 +291,24 @@ assert "return hasSample?effect:fallback[" in art
 assert "setResizable(false,false)" in main_drum
 assert "setScrollBarsShown(" not in drum
 print("PASS: 16 clickable Obsidian drum pad illustrations, kit-aware mapping, no scrollbars")
+
+# MIDI learn controls cannot intercept native drum patterns 36..51; the pad
+# buttons retain the custom Obsidian artwork and right-click no longer plays it.
+drum=read("Source/LibertyDrumSampler.h")
+art=read("Source/LibertyDrumPadArtwork.h")
+engine=read("Source/AudioEngine.cpp")
+main=read("Source/MainComponent.cpp")
+for needle in ("routeLearnedMidi(", "setPadMidiLearn(", "midiLearnBindings", "midiCcHigh",
+               'setAttribute("midiLearn"', "void openPadMidiMenu(int index)",
+               "button.onContextMenu=[this,i]"):
+    assert needle in drum,needle
+assert "if(e.mods.isPopupMenu())" in art
+assert "learnedDrumEvent=sampler->routeLearnedMidi(message)" in engine
+assert "!(learnedDrumEvent&&monitored==drumLane)" in engine
+assert "owner.getDrumMidiLearnEvent()" in main
+studio=read("Source/LibertyDrumFactoryCC0.h")
+assert "inline Supplement layer(int style,int pad)" in studio
+assert "const float gain=std::min(.88f/peak" in studio
+assert "if(style==1||style==7)" in studio
+assert "secondary.level*layerLow" in studio
+print("PASS MIDI Learn (16 pads, physical CC/note, persistence) and new genre-specific CC0 layering")

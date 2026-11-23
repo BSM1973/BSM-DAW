@@ -1114,6 +1114,64 @@ int main()
         }
     allFactoryKits.setPatternVelocity(0,2,94);
     if(allFactoryKits.getActivePatternPreset()!=-1)return fail(162);
+
+    // Physical MIDI Learn: note and CC, exact channel matching, duplicate
+    // bindings removed, persistence across factory kit and portable manifest.
+    LibertyDrumSampler mapped;
+    mapped.prepare(48000.);
+    if(!mapped.setPadMidiLearn(2,1,3,64)||
+       mapped.getPadMidiLearn(2)!=LibertyDrumSampler::packMidiLearn(1,3,64))
+        return fail(201);
+    if(!mapped.routeLearnedMidi(juce::MidiMessage::noteOn(3,64,(juce::uint8)111))||
+        mapped.routeLearnedMidi(juce::MidiMessage::noteOn(4,64,(juce::uint8)111)))
+        return fail(202);
+    if(!mapped.setPadMidiLearn(1,1,3,64)||mapped.getPadMidiLearn(2)!=0)
+        return fail(203);
+    if(!mapped.setPadMidiLearn(4,2,10,39)||
+       !mapped.routeLearnedMidi(juce::MidiMessage::controllerEvent(10,39,127))||
+       !mapped.routeLearnedMidi(juce::MidiMessage::controllerEvent(10,39,0)))
+        return fail(204);
+    if(!mapped.loadFactoryKit(9)||mapped.getPadMidiLearn(4)==0)return fail(205);
+    auto savedMidiLearn=mapped.createKitXml();
+    LibertyDrumSampler restoredLearn;restoredLearn.prepare(48000.);
+    if(!restoredLearn.restoreKitXml(*savedMidiLearn)||
+        restoredLearn.getPadMidiLearn(4)!=mapped.getPadMidiLearn(4)||
+        restoredLearn.getPadMidiLearn(1)!=mapped.getPadMidiLearn(1))
+        return fail(206);
+    restoredLearn.clearPadMidiLearn(4);
+    if(restoredLearn.getPadMidiLearn(4)!=0||
+        restoredLearn.routeLearnedMidi(juce::MidiMessage::controllerEvent(10,39,127)))
+        return fail(207);
+    if(mapped.setPadMidiLearn(0,2,17,0)||
+       mapped.setPadMidiLearn(0,1,1,128)||
+       mapped.setPadMidiLearn(-1,1,1,60))return fail(208);
+    // Stronger sound QA than merely having non-silent buffers. Each genre
+    // ships its own source/tone profile and a curated per-role layer.
+    if(LibertyDrumFactory::layer(1,0).source!=nullptr||
+       LibertyDrumFactory::layer(3,0).source==nullptr||
+       LibertyDrumFactory::layer(9,0).source==nullptr||
+       LibertyDrumFactory::layer(5,0).source==nullptr)return fail(209);
+    std::set<std::uint64_t> kickToneHashes;
+    for(int genre=0;genre<LibertyDrumFactory::styles;++genre)
+    {
+        if(!mapped.loadFactoryKit(genre))return fail(210);
+        const auto sample=std::atomic_load(&mapped.getPad(0).audio);
+        if(!sample||sample->getNumSamples()<200)return fail(211);
+        float maxPeak=0.f;double energy=0.;
+        std::uint64_t hash=1469598103934665603ULL;
+        const int length=std::min(sample->getNumSamples(),16000);
+        for(int n=0;n<length;++n)
+        {
+            const float v=sample->getSample(0,n);
+            if(!std::isfinite(v))return fail(212);
+            maxPeak=std::max(maxPeak,std::abs(v));
+            energy+=(double)v*v;
+            if(n%41==0){hash^=(std::uint32_t)std::lround(v*32768.f);hash*=1099511628211ULL;}
+        }
+        if(maxPeak>.882f||energy<.0001)return fail(213);
+        kickToneHashes.insert(hash);
+    }
+    if(kickToneHashes.size()<9)return fail(214);
     fixture.deleteFile();
 
     std::cout << "Drum Sampler smoke tests passed\\n";
