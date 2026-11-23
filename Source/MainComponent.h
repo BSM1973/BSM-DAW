@@ -84,6 +84,7 @@ public:
     double getAudioCurrentTimeSeconds() const noexcept { return audioEngine.getCurrentTimeSeconds(); }
     bool isAudioPlaying() const noexcept { return audioEngine.isPlaying(); }
     double getProjectTempoBpm() const noexcept {return tempoBpm;}
+    std::uint64_t getDrumMidiLearnEvent() const noexcept{return audioEngine.getPerformMidiLearnEvent();}
     void notifyInstrumentChanged() noexcept { audioEngine.notifyInstrumentChanged(); }
     double getMidiClipLengthSeconds() const noexcept { return midiClipLengthSeconds; }
     double getMidiClipStartSeconds(int track) const noexcept

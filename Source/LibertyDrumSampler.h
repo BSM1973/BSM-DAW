@@ -181,6 +181,68 @@ public:
         return true;
     }
     int getFactoryKit() const noexcept{return currentFactoryKit.load(std::memory_order_acquire);}
+
+    // External MIDI controller mappings are distinct from the fixed native
+    // 36..51 pattern pitches; only hardware messages use the learned binding.
+    static std::uint32_t packMidiLearn(int kind,int channel,int number) noexcept
+    {
+        if((kind!=1&&kind!=2)||channel<1||channel>16||number<0||number>127)return 0;
+        return (std::uint32_t)((kind<<16)|(channel<<8)|number);
+    }
+    bool setPadMidiLearn(int pad,int kind,int channel,int number) noexcept
+    {
+        if(pad<0||pad>=padCount)return false;
+        const auto binding=packMidiLearn(kind,channel,number);
+        if(binding==0)return false;
+        for(int i=0;i<padCount;++i)if(i!=pad &&
+            midiLearnBindings[(size_t)i].load(std::memory_order_acquire)==binding)
+        {
+            midiLearnBindings[(size_t)i].store(0,std::memory_order_release);
+            midiCcHigh[(size_t)i].store(false,std::memory_order_release);
+        }
+        midiCcHigh[(size_t)pad].store(false,std::memory_order_release);
+        midiLearnBindings[(size_t)pad].store(binding,std::memory_order_release);
+        return true;
+    }
+    void clearPadMidiLearn(int pad) noexcept
+    {
+        if(pad<0||pad>=padCount)return;
+        midiLearnBindings[(size_t)pad].store(0,std::memory_order_release);
+        midiCcHigh[(size_t)pad].store(false,std::memory_order_release);
+    }
+    std::uint32_t getPadMidiLearn(int pad) const noexcept
+    {
+        return pad>=0&&pad<padCount?
+            midiLearnBindings[(size_t)pad].load(std::memory_order_acquire):0;
+    }
+    // Called by the MIDI input thread. Only atomic triggers are published:
+    // voices, pitch and sample buffers remain owned by the audio callback.
+    bool routeLearnedMidi(const juce::MidiMessage& msg) noexcept
+    {
+        const bool note=msg.isNoteOnOrOff(),cc=msg.isController();
+        if(!note&&!cc)return false;
+        const auto binding=packMidiLearn(cc?2:1,msg.getChannel(),
+            cc?msg.getControllerNumber():msg.getNoteNumber());
+        bool consumed=false;
+        for(int i=0;i<padCount;++i)
+        {
+            if(midiLearnBindings[(size_t)i].load(std::memory_order_acquire)!=binding)continue;
+            consumed=true;
+            if(cc)
+            {
+                // CC buttons trigger only once on the low->high crossing,
+                // unlike continuous knobs that otherwise repeat each block.
+                const bool high=msg.getControllerValue()>=64;
+                const bool last=midiCcHigh[(size_t)i].exchange(high,std::memory_order_acq_rel);
+                if(high&&!last)auditionPad(i,(float)msg.getControllerValue()/127.f);
+                if(!high&&last&&pads[(size_t)i].gateMode.load())stopPad(i);
+            }
+            else if(msg.isNoteOn())auditionPad(i,msg.getFloatVelocity());
+            else if(msg.isNoteOff()&&pads[(size_t)i].gateMode.load())stopPad(i);
+        }
+        return consumed;
+    }
+
     // Pattern Studio: one bar, 16 instruments, 16 quantised steps.
     // The UI publishes individual velocity cells atomically. Playback ticks
     // and all sample voices remain exclusively on the audio thread.
@@ -303,6 +365,7 @@ public:
             node->setAttribute("decayMs", (double)pad.decayMs.load());
             node->setAttribute("sustain", (double)pad.sustain.load());
             node->setAttribute("releaseMs", (double)pad.releaseMs.load());
+            node->setAttribute("midiLearn",(int)getPadMidiLearn(i));
         }
         auto* sequence=kit->createNewChildElement("Pattern");
         sequence->setAttribute("tempo",getPatternTempo());
@@ -324,6 +387,7 @@ public:
         const int factoryKit=kit.getIntAttribute("factoryKit",-1);
         if(factoryKit<-1||factoryKit>=LibertyDrumFactory::styles)return false;
         if(factoryKit>=0&&!loadFactoryKit(factoryKit))return false;
+        for(int i=0;i<padCount;++i)clearPadMidiLearn(i);
         for (auto* node : kit.getChildIterator())
         {
             if (!node->hasTagName("Pad")) continue;
@@ -335,6 +399,13 @@ public:
             const auto restoredName = node->getStringAttribute("name");
             if (restoredName.isNotEmpty())
                 pads[(size_t)i].name = restoredName.substring(0, 80);
+
+            const int rawLearn=node->getIntAttribute("midiLearn",0);
+            if(rawLearn!=0)
+            {
+                if(rawLearn<0||rawLearn>0x3ffff||!setPadMidiLearn(i,
+                    (rawLearn>>16)&255,(rawLearn>>8)&255,rawLearn&255))return false;
+            }
             setPadGain(i, (float)node->getDoubleAttribute("gain", 1.0));
             setPadPan(i, (float)node->getDoubleAttribute("pan", 0.0));
             setPadPitch(i, (float)node->getDoubleAttribute("pitch", 0.0));
@@ -520,6 +591,15 @@ public:
             const double trimEnd = node->getDoubleAttribute("end", 1.0);
             if (trimEnd - trimStart < 0.01 - 1.0e-7)
                 return false;
+
+            if(node->hasAttribute("midiLearn"))
+            {
+                const auto value=node->getStringAttribute("midiLearn").trim();
+                if(value.isEmpty()||value.length()>6||!value.containsOnly("0123456789"))return false;
+                const int raw=node->getIntAttribute("midiLearn",0);
+                if(raw<0||raw>0x3ffff)return false;
+                if(raw!=0&&packMidiLearn((raw>>16)&255,(raw>>8)&255,raw&255)!=(std::uint32_t)raw)return false;
+            }
             for (const auto* attribute : { "chokeGroup", "gateMode" })
             {
                 if (!node->hasAttribute(attribute)) continue;
@@ -561,6 +641,8 @@ public:
             dst.decayMs.store(src.decayMs.load());
             dst.sustain.store(src.sustain.load());
             dst.releaseMs.store(src.releaseMs.load());
+            midiLearnBindings[(size_t)i].store(candidate.getPadMidiLearn(i),std::memory_order_release);
+            midiCcHigh[(size_t)i].store(false,std::memory_order_release);
         }
         clearPattern();
         for(int pad=0;pad<padCount;++pad)
@@ -988,6 +1070,8 @@ private:
     int nextPatternStep=0;
     double samplesUntilNextStep=0.;
     std::atomic<int> currentFactoryKit{-1},activePatternPreset{-1};
+    std::array<std::atomic<std::uint32_t>,padCount> midiLearnBindings{};
+    std::array<std::atomic<bool>,padCount> midiCcHigh{};
     std::atomic<unsigned int> pendingTriggers { 0 };
     std::atomic<unsigned int> pendingStops { 0 };
     std::atomic<bool> pendingStopAll { false };

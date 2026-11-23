@@ -1199,7 +1199,8 @@ public:
             [&owner,&sampler](int destination){
                 return owner.insertDrumPatternClip(sampler.patternMidiNotes(),destination);},
             [&owner]{return owner.isAudioPlaying();},
-            [&owner]{return owner.getProjectTempoBpm();},lane),true);
+            [&owner]{return owner.getProjectTempoBpm();},lane,
+            [&owner]{return owner.getDrumMidiLearnEvent();}),true);
         setResizable(false,false);
         centreWithSize(960,700);
     }

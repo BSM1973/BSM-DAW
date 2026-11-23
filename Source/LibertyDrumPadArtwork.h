@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
 #include <cmath>
+#include <functional>
 
 // Liberty Drum Studio — compact Obsidian instrument illustrations.
 // Unlike fixed pad-number art, the glyph follows the actual sample name.
@@ -241,6 +242,16 @@ public:
 class Button final:public juce::TextButton
 {
 public:
+    std::function<void()> onContextMenu;
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if(e.mods.isPopupMenu()){if(onContextMenu)onContextMenu();return;}
+        juce::TextButton::mouseDown(e);
+    }
+    void mouseUp(const juce::MouseEvent& e) override
+    {
+        if(!e.mods.isPopupMenu())juce::TextButton::mouseUp(e);
+    }
     void configure(const juce::String& label,int pad,bool hasSample)
     {
         const int newIcon=iconFor(label,pad,hasSample);

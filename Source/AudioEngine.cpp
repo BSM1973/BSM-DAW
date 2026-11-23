@@ -166,7 +166,14 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput* source, const juce:
     const juce::String sourceId = source != nullptr ? source->getIdentifier() : juce::String();
     const int monitored = monitoredInstrumentTrack.load(std::memory_order_acquire);
     const int capturing = midiCaptureTrack.load(std::memory_order_acquire);
-    if (monitored >= 0 && (getInstrumentMidiInput(monitored).isEmpty() || getInstrumentMidiInput(monitored) == sourceId))
+    const int drumLane=drumSamplerTrack.load(std::memory_order_acquire);
+    bool learnedDrumEvent=false;
+    if(drumLane>=0&&(getInstrumentMidiInput(drumLane).isEmpty()
+        ||getInstrumentMidiInput(drumLane)==sourceId))
+        if(auto sampler=std::atomic_load(&drumSampler))
+            learnedDrumEvent=sampler->routeLearnedMidi(message);
+    if (monitored >= 0 && (getInstrumentMidiInput(monitored).isEmpty() || getInstrumentMidiInput(monitored) == sourceId)
+        && !(learnedDrumEvent&&monitored==drumLane))
         liveMidiCollector.addMessageToQueue(message);
     if (capturing >= 0 && (getInstrumentMidiInput(capturing).isEmpty() || getInstrumentMidiInput(capturing) == sourceId)
         && (message.isNoteOn() || message.isNoteOff()))
