@@ -1112,6 +1112,7 @@ private:
 };
 
 #include "LibertyDrumPatternGrid.h"
+#include "LibertyDrumPadArtwork.h"
 
 class LibertyDrumSamplerPanel final : public juce::Component, public juce::FileDragAndDropTarget, private juce::Timer
 {
@@ -1203,7 +1204,7 @@ public:
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
         {
             auto& button = pads[(size_t)i];
-            button.setButtonText("PAD " + juce::String(i + 1));
+            button.configure("PAD " + juce::String(i + 1),i,false);
             button.setColour(juce::TextButton::buttonColourId, juce::Colour((juce::uint32)sampler.getPad(i).colourArgb.load()));
             button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9f3f5));
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
@@ -1676,12 +1677,8 @@ public:
         {
             g.setColour(LibertyUI::Colour::textMuted);g.setFont(11.f);
             g.drawText(juce::String::fromUTF8("16 PADS  •  KITS  •  JOUER AU CLIC"),14,91,480,30,juce::Justification::centredLeft);
-            for(int i=0;i<LibertyDrumSampler::padCount;++i)
-            {
-                const auto r=pads[(size_t)i].getBounds().toFloat();
-                if(r.isEmpty())continue;
-                LibertyUI::fillPanel(g,r.expanded(2.f),i==selectedPad,9.f);
-            }
+            // The 16 clickable pad buttons paint their own artwork and
+            // selection state; no duplicate overlay obscures their icons.
         }
         else if(page==1)
         {
@@ -1737,6 +1734,9 @@ private:
     }
     void updateControls()
     {
+        // One visual selection state across PADS, PATTERN and SAMPLE.
+        for(int i=0;i<LibertyDrumSampler::padCount;++i)
+            pads[(size_t)i].setPadSelected(i==selectedPad);
         const auto& pad = sampler.getPad(selectedPad);
         loopButton.setToggleState(pad.loopEnabled.load(), juce::dontSendNotification);
         gainSlider.setValue(pad.gain.load(), juce::dontSendNotification);
@@ -1756,13 +1756,14 @@ private:
         refreshPadColours();
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
         {
-            pads[(size_t)i].setButtonText(sampler.hasSample(i) ? sampler.getPad(i).name
-                                                               : "PAD " + juce::String(i + 1));
+            const bool loaded=sampler.hasSample(i);
+            pads[(size_t)i].configure(loaded?sampler.getPad(i).name
+                :"PAD "+juce::String(i+1),i,loaded);
         }
         patternGrid.repaint();
     }
     LibertyDrumSampler& sampler;
-    std::array<juce::TextButton, LibertyDrumSampler::padCount> pads;
+    std::array<LibertyDrumArt::Button, LibertyDrumSampler::padCount> pads;
     juce::TextButton loadButton, stopButton, exportButton, importButton, loopButton, colourButton;
     juce::ComboBox factorySelector;
     LibertyDrumWaveform waveform;

@@ -175,6 +175,31 @@ int main()
         if(peak<.0001f||maxDifference>1.0e-5f)return fail(166);
     }
 
+    // Icon identity follows instrument names in ALL 10 factory kits and
+    // user-loaded samples, not a fixed pad index.
+    using namespace LibertyDrumArt;
+    if(iconFor("KICK",0,true)!=kick || iconFor("SNARE",1,true)!=snare
+       || iconFor("CLOSED HAT",3,true)!=closedHat
+       || iconFor("OPEN HAT",4,true)!=openHat
+       || iconFor("HAND CLAP",2,true)!=clap
+       || iconFor("RIM SIDE STICK",8,true)!=rim
+       || iconFor("TOM FLOOR",5,true)!=tomLow
+       || iconFor("TOM ELECTRONIC",6,true)!=tomMid
+       || iconFor("TOM HIGH",7,true)!=tomHigh
+       || iconFor("CRASH",12,true)!=crash
+       || iconFor("RIDE",13,true)!=ride
+       || iconFor("SHAKER",9,true)!=shaker
+       || iconFor("TAMBOURINE",9,true)!=tambourine
+       || iconFor("COWBELL",10,true)!=cowbell
+       || iconFor("CONGA LOW",0,true)!=percussion
+       || iconFor("BONGO HIGH",1,true)!=percussion
+       || iconFor("808 LONG",0,true)!=kick
+       || iconFor("IMPACT BOOM",14,true)!=effect
+       || iconFor("mystery.wav",0,true)!=effect
+       || iconFor("PAD 1",0,false)!=kick)return fail(167);
+    for(int n=0;n<iconCount;++n)
+        if(juce::String::fromUTF8(LibertyDrumArt::name(n)).isEmpty())return fail(168);
+
     // Attack should ramp from silence toward the sample's nominal level.
     sounding.reset();
     sounding.setPadEnvelope(0, 4.0f, 0.0f, 1.0f, 8.0f);

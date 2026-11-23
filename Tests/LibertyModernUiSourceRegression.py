@@ -273,3 +273,21 @@ assert "maxDifference>1.0e-5f" in smoke
 assert "audition.renderMidi(auditionAudio,juce::MidiBuffer{});" in smoke
 assert "arrangement.renderMidi(arrangementAudio,midi);" in smoke
 print("PASS: Drum Sampler preview and arrangement use one DSP render, same FX and MIDI articulations")
+
+# Approved Obsidian drum-pad icon designs are rendered as native vectors,
+# and classified by actual audio sample name, not just by fixed slot.
+art=read("Source/LibertyDrumPadArtwork.h")
+drum=read("Source/LibertyDrumSampler.h")
+assert "class Button final:public juce::TextButton" in art
+assert "void paintButton(juce::Graphics& g,bool mouseOver,bool mouseDown) override" in art
+assert "std::array<LibertyDrumArt::Button, LibertyDrumSampler::padCount> pads;" in drum
+assert "pads[(size_t)i].configure(" in drum
+assert "pads[(size_t)i].setPadSelected(i==selectedPad)" in drum
+assert "sampler.auditionPad(i, 1.0f)" in drum
+for role in ("closedHat","openHat","clap","rim","tomLow","tomMid","tomHigh",
+             "crash","ride","shaker","tambourine","cowbell","percussion","effect"):
+    assert role in art,role
+assert "return hasSample?effect:fallback[" in art
+assert "setResizable(false,false)" in main_drum
+assert "setScrollBarsShown(" not in drum
+print("PASS: 16 clickable Obsidian drum pad illustrations, kit-aware mapping, no scrollbars")
