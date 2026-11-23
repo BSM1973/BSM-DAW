@@ -266,6 +266,11 @@ public:
     {
         if(selected==next)return;selected=next;repaint();
     }
+    void setMidiLearnAssigned(bool assigned)
+    {
+        if(midiAssigned==assigned)return;
+        midiAssigned=assigned;repaint();
+    }
     int getIconIndex() const noexcept{return icon;}
     bool getPadSelected() const noexcept{return selected;}
     void paintButton(juce::Graphics& g,bool mouseOver,bool mouseDown) override
@@ -285,6 +290,18 @@ public:
         {
             g.setColour(juce::Colour(0x225fe8ef));
             g.fillRoundedRectangle(area.reduced(3.f),7.f);
+        }
+        if(midiAssigned)
+        {
+            const auto tag=juce::Rectangle<float>(area.getRight()-52.f,
+                area.getY()+7.f,43.f,18.f);
+            g.setColour(juce::Colour(0xff214b65));
+            g.fillRoundedRectangle(tag,5.f);
+            g.setColour(juce::Colour(0xff63e7f0));
+            g.drawRoundedRectangle(tag,5.f,1.f);
+            g.setFont(juce::Font(9.f,juce::Font::bold));
+            g.drawFittedText("MIDI",tag.toNearestInt(),
+                juce::Justification::centred,1);
         }
         const float side=juce::jlimit(28.f,65.f,area.getHeight()*.60f);
         const float posX=area.getCentreX()-side*.5f;
@@ -306,5 +323,6 @@ public:
 private:
     int icon=effect;
     bool selected=false;
+    bool midiAssigned=false;
 };
 } // namespace LibertyDrumArt

@@ -1859,6 +1859,7 @@ private:
         for(int i=0;i<LibertyDrumSampler::padCount;++i)
         {
             const auto raw=sampler.getPadMidiLearn(i);
+            pads[(size_t)i].setMidiLearnAssigned(raw!=0);
             if(raw)
                 pads[(size_t)i].setTooltip(
                     juce::String::fromUTF8("MIDI LEARN : ")+

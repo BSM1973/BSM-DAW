@@ -312,3 +312,10 @@ assert "const float gain=std::min(.88f/peak" in studio
 assert "if(style==1||style==7)" in studio
 assert "secondary.level*layerLow" in studio
 print("PASS MIDI Learn (16 pads, physical CC/note, persistence) and new genre-specific CC0 layering")
+
+art=read("Source/LibertyDrumPadArtwork.h")
+drum=read("Source/LibertyDrumSampler.h")
+assert "void setMidiLearnAssigned(bool assigned)" in art
+assert "pads[(size_t)i].setMidiLearnAssigned(raw!=0);" in drum
+assert 'g.drawFittedText("MIDI",tag.toNearestInt(),' in art
+print("PASS: MIDI Learn assignment indicator preserves icon and pad labels")
