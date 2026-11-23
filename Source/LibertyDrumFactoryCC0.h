@@ -3,6 +3,7 @@
 #include "LibertyFactoryDrumData.h"
 #include <array>
 #include <cmath>
+#include <algorithm>
 #include <memory>
 
 // Curated, redistributable CC0 recordings and drum-machine hits.
@@ -60,45 +61,164 @@ inline bool getData(const char* filename,const char*& bytes,int& size) noexcept
     }
     return false;
 }
+
+struct Supplement
+{
+    const char* source=nullptr;
+    float level=0.f,highPassHz=0.f,lowPassHz=20000.f;
+};
+// The primary one-shot always remains the leading sound. Curated secondary
+// CC0 material adds genuinely different attack/body according to the genre,
+// without creating a synthetic replacement for the acoustic recordings.
+inline Supplement layer(int style,int pad) noexcept
+{
+    switch(style)
+    {
+        case 0: if(pad==0)return {"Kick Deep.flac",.27f,0.f,170.f};
+                if(pad==1)return {"Clap Studio.flac",.23f,330.f,12000.f};
+                break;
+        case 1: return {}; // Acoustic: preserve the real mic recording.
+        case 2: if(pad==0)return {"Kick Tight.flac",.34f,650.f,16000.f};
+                if(pad==1)return {"Snare Acoustic.flac",.24f,150.f,13500.f};
+                break;
+        case 3: if(pad==0)return {"Kick Tight.flac",.42f,1100.f,19000.f};
+                if(pad==1)return {"Snare Rimshot.flac",.38f,450.f,18500.f};
+                if(pad==12)return {"Crash Electronic.flac",.14f,1900.f,20000.f};
+                break;
+        case 4: if(pad==0)return {"808 Short G.flac",.28f,0.f,150.f};
+                if(pad==2)return {"Clap Finger.flac",.24f,300.f,15500.f};
+                break;
+        case 5: if(pad==0)return {"Sub Bass C.flac",.28f,0.f,105.f};
+                if(pad==8)return {"Claves.flac",.15f,500.f,12500.f};
+                break;
+        case 6: if(pad==0)return {"Kick Acoustic.flac",.24f,110.f,7000.f};
+                if(pad==1)return {"Clap Studio.flac",.22f,410.f,17000.f};
+                break;
+        case 7: if(pad==0)return {"Bongo Low.flac",.20f,85.f,15000.f};
+                if(pad==2)return {"Tambourine.flac",.12f,1100.f,17000.f};
+                break;
+        case 8: if(pad==0)return {"Kick Acoustic.flac",.19f,180.f,8500.f};
+                if(pad==1)return {"Rim Side Stick.flac",.22f,700.f,15000.f};
+                break;
+        case 9: if(pad==0)return {"808 Punchy C.flac",.32f,240.f,12500.f};
+                if(pad==1)return {"Clap Electronic.flac",.24f,350.f,15000.f};
+                if(pad==3)return {"Hat Closed Tight.flac",.14f,3500.f,20000.f};
+                break;
+    }
+    return {};
+}
+inline std::unique_ptr<juce::AudioBuffer<float>> decode(
+    juce::AudioFormatManager& formats,const char* filename,double& rate)
+{
+    const char* bytes=nullptr;int size=0;
+    if(!getData(filename,bytes,size))return {};
+    auto source=std::make_unique<juce::MemoryInputStream>(bytes,(size_t)size,false);
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(std::move(source)));
+    if(!reader||reader->lengthInSamples<=0||reader->lengthInSamples>48000LL*8||
+       reader->numChannels<1||reader->numChannels>2||
+       !std::isfinite(reader->sampleRate)||reader->sampleRate<8000.)return {};
+    rate=reader->sampleRate;
+    auto audio=std::make_unique<juce::AudioBuffer<float>>((int)reader->numChannels,
+        (int)reader->lengthInSamples);
+    if(!reader->read(audio.get(),0,audio->getNumSamples(),0,true,true))return {};
+    return audio;
+}
 inline std::shared_ptr<const juce::AudioBuffer<float>> render(
     juce::AudioFormatManager& formats,int style,int pad,double& sourceRate)
 {
     if(style<0||style>=styles||pad<0||pad>=pads)return {};
-    const char* bytes=nullptr;int size=0;
-    if(!getData(names[style][pad],bytes,size))return {};
-    auto stream=std::make_unique<juce::MemoryInputStream>(bytes,(size_t)size,false);
-    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(std::move(stream)));
-    if(!reader||reader->lengthInSamples<=0||reader->lengthInSamples>48000LL*8||
-       reader->numChannels<1||reader->numChannels>2)return {};
-    sourceRate=reader->sampleRate;
-    const int frames=(int)reader->lengthInSamples;
-    juce::AudioBuffer<float> audio((int)reader->numChannels,frames);
-    if(!reader->read(&audio,0,frames,0,true,true))return {};
-    const auto& profile=profiles[(std::size_t)style];
-    const float level=pad==0?.79f:pad==1?.71f:pad==2?.59f:
-        (pad==3||pad==9)?.36f:pad==4?.40f:
-        (pad==12||pad==13)?.35f:pad==15?.70f:.58f;
-    const float cutoff=(pad>=3&&pad<=4)?std::min(18500.f,profile.lowPass*1.45f):profile.lowPass;
-    const float alpha=1.f-std::exp(-2.f*3.141592654f*cutoff/(float)sourceRate);
-    const int fadeSamples=std::min(frames/4,(int)(sourceRate*.012));
-    for(int channel=0;channel<audio.getNumChannels();++channel)
+    auto audio=decode(formats,names[style][pad],sourceRate);
+    if(!audio)return {};
+    const auto secondary=layer(style,pad);
+    double secondaryRate=0.;
+    auto second=secondary.source?decode(formats,secondary.source,secondaryRate):nullptr;
+    // A secondary missing from the pinned source pack must never silently
+    // change a supposedly complete kit to a different sound.
+    if(secondary.source&&!second)return {};
+    const auto& profile=profiles[(size_t)style];
+    const int count=audio->getNumSamples(),channels=audio->getNumChannels();
+    const float cutoff=(pad>=3&&pad<=4)?std::min(19000.f,profile.lowPass*1.3f):profile.lowPass;
+    const float lowAlpha=1.f-std::exp(-6.283185307f*cutoff/(float)sourceRate);
+    const bool lowInstrument=pad==0||pad==15||style==7;
+    const float highCut=lowInstrument?(style==9?16.f:22.f):pad==1?65.f:pad>=3&&pad<=4?370.f:90.f;
+    const float highAlpha=1.f-std::exp(-6.283185307f*highCut/(float)sourceRate);
+    const float secondaryHighAlpha=secondary.highPassHz>0.f?
+        1.f-std::exp(-6.283185307f*secondary.highPassHz/(float)sourceRate):0.f;
+    const float secondaryLowAlpha=1.f-std::exp(-6.283185307f*
+        secondary.lowPassHz/(float)sourceRate);
+    // All gain, EQ, layering and normalisation are computed off the audio
+    // callback, and published as a complete immutable sample buffer.
+    const int fadeCount=std::min(count/4,(int)(sourceRate*.007));
+    for(int ch=0;ch<channels;++ch)
     {
-        float low=0.f;auto* samples=audio.getWritePointer(channel);
-        for(int n=0;n<frames;++n)
+        float low=0.f,dc=0.f,layerHigh=0.f,layerLow=0.f;
+        auto* dst=audio->getWritePointer(ch);
+        const float* other=second?second->getReadPointer(std::min(ch,second->getNumChannels()-1)):nullptr;
+        for(int n=0;n<count;++n)
         {
-            const float dry=std::isfinite(samples[n])?samples[n]:0.f;
-            low+=alpha*(dry-low);
-            float x=(low*(1.f-profile.brightness)+dry*profile.brightness);
-            x=std::tanh(x*profile.drive)/std::tanh(profile.drive);
-            if(n<sourceRate*.007)
-                x*=1.f+(profile.transient-1.f)*(1.f-(float)n/(float)(sourceRate*.007));
-            if(profile.tail<1.f)
-                x*=std::pow(profile.tail,(float)n/(float)sourceRate*4.f);
-            if(fadeSamples>0&&n>=frames-fadeSamples)
-                x*=juce::jlimit(0.f,1.f,(float)(frames-1-n)/(float)fadeSamples);
-            samples[n]=juce::jlimit(-.97f,.97f,x*level);
+            const float raw=std::isfinite(dst[n])?dst[n]:0.f;
+            low+=lowAlpha*(raw-low);
+            dc+=highAlpha*(low-dc);
+            float x=(low-dc)*(1.f-profile.brightness)+
+                (raw-dc)*profile.brightness;
+            // Character is not a uniform distortion preset across all kits.
+            if(style==1||style==7)
+                x=raw*.85f+x*.15f; // natural acoustic/hand-percussion
+            else
+                x=std::tanh(x*profile.drive)/
+                    std::tanh(profile.drive);
+            if(other)
+            {
+                const double frame=(double)n*secondaryRate/sourceRate;
+                const int at=(int)frame;
+                if(at+1<second->getNumSamples())
+                {
+                    const float v=other[at]+(other[at+1]-other[at])*(float)(frame-at);
+                    layerHigh+=secondaryHighAlpha*(v-layerHigh);
+                    const float high=secondary.highPassHz>0.f?v-layerHigh:v;
+                    layerLow+=secondaryLowAlpha*(high-layerLow);
+                    x+=secondary.level*layerLow;
+                }
+            }
+            const float t=(float)n/(float)sourceRate;
+            if(style==3&&(pad==0||pad==1))
+                x*=std::exp(-t*(pad==0?2.1f:1.6f)); // metal: tight decay
+            else if(style==8&&(pad==0||pad==1))
+                x*=std::exp(-t*1.65f); // funk: shorter, drier
+            else if(style==5&&pad==0)
+                x*=std::exp(-t*.12f); // reggae: preserve the sub tail
+            else if(profile.tail<1.f)
+                x*=std::pow(profile.tail,t*4.f);
+            if(t<.008f)
+            {
+                const float attack=1.f+(profile.transient-1.f)*(1.f-t/.008f);
+                x*=attack;
+            }
+            if(fadeCount>0&&n>=count-fadeCount)
+                x*=juce::jlimit(0.f,1.f,(float)(count-1-n)/(float)fadeCount);
+            dst[n]=std::isfinite(x)?x:0.f;
         }
     }
-    return std::make_shared<const juce::AudioBuffer<float>>(std::move(audio));
+    // Equal perceived punch between source recordings while preserving a
+    // conservative -1 dBFS sample peak ceiling. No hard digital clipping.
+    double rmsEnergy=0.;float peak=0.f;
+    const int early=std::min(count,(int)(sourceRate*.16));
+    for(int ch=0;ch<channels;++ch)
+    {
+        const float* p=audio->getReadPointer(ch);
+        for(int n=0;n<count;++n)
+        {
+            const float a=std::abs(p[n]);peak=std::max(peak,a);
+            if(n<early)rmsEnergy+=(double)p[n]*p[n];
+        }
+    }
+    if(peak<.0000001f||early<1)return {};
+    const float rms=(float)std::sqrt(rmsEnergy/(double)(early*channels));
+    const float target=(pad==0||pad==15)? .165f :
+        pad==1?.14f:pad==2?.11f:pad==3?.078f:pad==4?.077f:
+        pad>=12&&pad<=13?.070f:.105f;
+    const float gain=std::min(.88f/peak,std::clamp(target/std::max(rms,.00001f),.35f,3.f));
+    audio->applyGain(gain);
+    return std::shared_ptr<const juce::AudioBuffer<float>>(std::move(audio));
 }
 }
