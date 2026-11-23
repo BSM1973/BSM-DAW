@@ -1204,10 +1204,12 @@ public:
     explicit LibertyDrumSamplerPanel(LibertyDrumSampler& engine,
         std::function<bool(int)> insertClip={},
         std::function<bool()> isArrangementPlaying={},
-        std::function<double()> readProjectTempo={},int instrumentLane=-1)
+        std::function<double()> readProjectTempo={},int instrumentLane=-1,
+        std::function<std::uint64_t()> readMidiLearnEvent={})
         :sampler(engine),waveform(engine),targetInstrumentLane(instrumentLane),
          insertPattern(std::move(insertClip)),transportPlaying(std::move(isArrangementPlaying)),
-         projectTempo(std::move(readProjectTempo)),patternGrid(engine)
+         projectTempo(std::move(readProjectTempo)),patternGrid(engine),
+         hardwareLearnEvent(std::move(readMidiLearnEvent))
     {
         for(auto* button:{&pagePads,&pagePattern,&pageSample,&previewPlay,&previewStop,
                           &starterButton,&clearPatternButton,&insertButton})
@@ -1293,6 +1295,7 @@ public:
             button.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffd9f3f5));
             button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff23535d));
             button.setColour(juce::TextButton::textColourOnId, juce::Colour(0xffeffcfd));
+            button.onContextMenu=[this,i]{openPadMidiMenu(i);};
             button.onClick = [this, i] { selectedPad = i; updateControls(); waveform.selectPad(i); patternGrid.setSelectedPad(i); samplePadSelector.setSelectedId(i+1,juce::dontSendNotification); sampler.auditionPad(i, 1.0f); repaint(); };
             addAndMakeVisible(button);
         }
@@ -1573,7 +1576,7 @@ public:
         setSize(960,700);
         setPage(0);
     }
-    ~LibertyDrumSamplerPanel() override{stopTimer();sampler.setPatternPreviewPlaying(false);}
+    ~LibertyDrumSamplerPanel() override{stopTimer();learningPad=-1;sampler.setPatternPreviewPlaying(false);}
     void setTargetInstrumentLane(int lane){targetInstrumentLane=lane;repaint();}
     void stopPreview(bool closingWindow=false)
     {
@@ -1586,6 +1589,26 @@ public:
     }
     void timerCallback() override
     {
+        if(learningPad>=0&&hardwareLearnEvent)
+        {
+            const std::uint64_t event=hardwareLearnEvent();
+            const auto serial=(std::uint32_t)(event>>32);
+            if(serial!=learnBaseline)
+            {
+                learnBaseline=serial;
+                const int kind=(int)((event>>24)&255);
+                const int channel=(int)((event>>16)&255);
+                const int number=(int)((event>>8)&255);
+                if(kind==learningKind&&sampler.setPadMidiLearn(learningPad,kind,channel,number))
+                {
+                    const int assigned=learningPad;learningPad=-1;
+                    status=juce::String::fromUTF8("MIDI LEARN : PAD ")+
+                        juce::String(assigned+1)+" / "+(kind==1?"NOTE ":"CC ")+
+                        juce::String(number)+" / CH "+juce::String(channel);
+                    updatePadMidiTooltips();repaint();
+                }
+            }
+        }
         if(transportPlaying&&transportPlaying()&&sampler.isPatternPreviewPlaying())stopPreview();
         if(projectTempo)sampler.setPatternTempo(projectTempo());
         const int preset=sampler.getActivePatternPreset();
@@ -1792,6 +1815,60 @@ public:
             juce::Justification::centredLeft,1);
     }
 private:
+    void openPadMidiMenu(int index)
+    {
+        selectedPad=index;waveform.selectPad(index);
+        samplePadSelector.setSelectedId(index+1,juce::dontSendNotification);
+        updateControls();
+        juce::PopupMenu menu;
+        menu.addSectionHeader("MIDI LEARN - PAD "+juce::String(index+1));
+        menu.addItem(1,"APPRENDRE UNE NOTE MIDI");
+        menu.addItem(2,"APPRENDRE UN CC MIDI");
+        menu.addSeparator();
+        menu.addItem(3,"EFFACER L'AFFECTATION",sampler.getPadMidiLearn(index)!=0);
+        menu.addItem(4,"ANNULER L'APPRENTISSAGE",learningPad==index);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&pads[(size_t)index]),
+            [safe=juce::Component::SafePointer<LibertyDrumSamplerPanel>(this),index](int choice)
+            {
+                if(!safe)return;
+                if(choice==1||choice==2)
+                {
+                    safe->learningPad=index;safe->learningKind=choice;
+                    safe->learnBaseline=safe->hardwareLearnEvent?
+                        (std::uint32_t)(safe->hardwareLearnEvent()>>32):0;
+                    safe->status=juce::String::fromUTF8("MIDI LEARN : jouez ")+
+                        (choice==1?"UNE NOTE":"UN CC")+" sur votre contrôleur pour le PAD "+
+                        juce::String(index+1);
+                }
+                else if(choice==3)
+                {
+                    safe->sampler.clearPadMidiLearn(index);
+                    safe->status=juce::String::fromUTF8("MIDI LEARN : affectation effacée.");
+                    safe->updatePadMidiTooltips();
+                }
+                else if(choice==4)
+                {
+                    safe->learningPad=-1;
+                    safe->status=juce::String::fromUTF8("MIDI LEARN : annulé.");
+                }
+                safe->repaint();
+            });
+    }
+    void updatePadMidiTooltips()
+    {
+        for(int i=0;i<LibertyDrumSampler::padCount;++i)
+        {
+            const auto raw=sampler.getPadMidiLearn(i);
+            if(raw)
+                pads[(size_t)i].setTooltip(
+                    juce::String::fromUTF8("MIDI LEARN : ")+
+                    (((raw>>16)&255)==1?"NOTE ":"CC ")+juce::String(raw&255)+
+                    " / CH "+juce::String((raw>>8)&255)+
+                    juce::String::fromUTF8(" — clic droit pour modifier"));
+            else pads[(size_t)i].setTooltip(juce::String::fromUTF8(
+                "Clic droit : APPRENDRE NOTE / CC MIDI"));
+        }
+    }
     void refreshPadColours()
     {
         for (int i = 0; i < LibertyDrumSampler::padCount; ++i)
@@ -1844,6 +1921,7 @@ private:
             pads[(size_t)i].configure(loaded?sampler.getPad(i).name
                 :"PAD "+juce::String(i+1),i,loaded);
         }
+        updatePadMidiTooltips();
         patternGrid.repaint();
     }
     LibertyDrumSampler& sampler;
@@ -1866,6 +1944,9 @@ private:
     std::function<bool()> transportPlaying;
     std::function<double()> projectTempo;
     LibertyDrumPatternGrid patternGrid;
+    std::function<std::uint64_t()> hardwareLearnEvent;
+    int learningPad=-1,learningKind=1;
+    std::uint32_t learnBaseline=0;
     juce::TextButton pagePads,pagePattern,pageSample,previewPlay,previewStop;
     juce::TextButton starterButton,clearPatternButton,insertButton;
     juce::ComboBox samplePadSelector,libraryStyleSelector,libraryPatternSelector;
