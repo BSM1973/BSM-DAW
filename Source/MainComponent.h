@@ -1,19 +1,26 @@
-#include <map>
 #pragma once
+
+// Legacy controllers expose project internals while including this header.
+// Keep their access macro out of JUCE and the C++ standard library.
+#pragma push_macro("private")
+#undef private
+#include <map>
 class MainComponent;
 void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <array>
+#include <vector>
+#include <functional>
+#include <cmath>
+#pragma pop_macro("private")
+
 #include "AudioEngine.h"
 #include "NoOverlapLayout.h"
 #include "MidiEngine.h"
 #include "StepSequencer.h"
 #include "PolyphonicStepGridEditing.h"
-#include <array>
-#include <vector>
-#include <functional>
-#include <cmath>
 
 int getLibertyTrackRowHeight() noexcept;
 juce::String getLibertyTrackName(int);
@@ -36,6 +43,17 @@ class MainComponent final : public juce::Component,
 public:
     MainComponent();
     ~MainComponent() override;
+
+    // Shared by arrangement, browser, transport and project controllers.
+    void rebuildWaveformCache(int);
+    bool saveProjectToFile(const juce::File&);
+    bool loadProjectFromFile(const juce::File&);
+    void openAudioSettings();
+    int getAudioTrackAtPosition(juce::Point<int>) const;
+    bool isPointInsideAudioClip(int, juce::Point<int>) const;
+    void applyTempoBpm(double value);
+    void openProject();
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseMove(const juce::MouseEvent& event) override;
@@ -198,6 +216,8 @@ public:
         if (logical < getAudioTrackCount() + getMidiTrackCount()) return "MIDI " + juce::String(logical - getAudioTrackCount() + 1);
         return "Instrument " + juce::String(logical - getAudioTrackCount() - getMidiTrackCount() + 1);
     }
+    const AudioEngine& getTrackAudioEngine() const noexcept { return audioEngine; }
+    void selectArrangeTrack(int track) noexcept { selectedTrack = track; }
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }
@@ -1332,7 +1352,7 @@ private:
         double dragStartSeconds = 0.0;
         double dragStartLengthSeconds = 0.0;
     };
-    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool resetDockMixerFaderOnDoubleClick(const juce::MouseEvent&); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&);  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
+    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void editTempo(); void editTimeSignature(); bool resetDockMixerFaderOnDoubleClick(const juce::MouseEvent&); bool handleMixerMouse(const juce::MouseEvent&); void showProjectMenu(); void newProject(); void saveProject(); void saveProjectAs();  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
     struct PendingAudioWarpState
     {
         bool enabled = false;

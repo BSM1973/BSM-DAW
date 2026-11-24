@@ -1,6 +1,4 @@
-#define private public
 #include "MainComponent.h"
-#undef private
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <array>
@@ -232,10 +230,10 @@ public:
                 g.fillRect(header.getX(), header.getY(), 5, header.getHeight());
                 g.fillRect(header.getX(), header.getY(), header.getWidth(), 3);
 
-                if (i < owner.getAudioTrackCount() && owner.audioEngine.hasAudioFile(i))
+                if (i < owner.getAudioTrackCount() && owner.getTrackAudioEngine().hasAudioFile(i))
                 {
-                    const int clipX = headerW + (int)std::round(owner.audioEngine.getTrackStartSeconds(i) * pixelsPerSecond);
-                    const int clipW = juce::jmax(1, (int)std::round(owner.audioEngine.getAudioFileLengthSeconds(i) * pixelsPerSecond));
+                    const int clipX = headerW + (int)std::round(owner.getTrackAudioEngine().getTrackStartSeconds(i) * pixelsPerSecond);
+                    const int clipW = juce::jmax(1, (int)std::round(owner.getTrackAudioEngine().getAudioFileLengthSeconds(i) * pixelsPerSecond));
                     const auto clip = juce::Rectangle<int>(clipX, rowY + 4, clipW, rowH - 8);
                     g.setColour(colour.withAlpha(0.20f));
                     g.fillRoundedRectangle(clip.toFloat(), 5.0f);
@@ -361,7 +359,7 @@ private:
         const int totalTracks=owner.getTotalArrangeTrackCount(); ensureTrackMetadata(totalTracks);
         if (track < 0 || track >= totalTracks) return;
 
-        owner.selectedTrack=track;
+        owner.selectArrangeTrack(track);
         owner.repaint();
 
         juce::Component::SafePointer<MainComponent> safeOwner(&owner);
@@ -472,7 +470,7 @@ void showLibertyTrackHeaderColourMenu(MainComponent& owner, juce::Point<int> scr
     const int total = owner.getTotalArrangeTrackCount();
     if (track < 0 || track >= total) return;
     ensureTrackMetadata(total);
-    owner.selectedTrack = track;
+    owner.selectArrangeTrack(track);
     owner.repaint();
     juce::Component::SafePointer<MainComponent> safeOwner(&owner);
     showColourGrid(screenPoint, colourIds[(size_t)track],
