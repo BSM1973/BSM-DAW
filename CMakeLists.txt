@@ -100,7 +100,7 @@ if(LIBERTY_NATIVE_PREVIEW)
 
   juce_add_console_app(LibertyNativeFreeSpiritSmoke PRODUCT_NAME "Liberty Native FreeSpirit Smoke")
   target_sources(LibertyNativeFreeSpiritSmoke PRIVATE
-    Tests/LibertyNativeFreeSpiritSmoke.cpp Source/PluginHost.cpp ${FSD_NATIVE_SOURCES})
+    Tests/LibertyNativeFreeSpiritSmoke.cpp Source/PluginHost.cpp Source/OneKnobEffects.cpp ${FSD_NATIVE_SOURCES})
   target_include_directories(LibertyNativeFreeSpiritSmoke PRIVATE Source "${FSD_SOURCE}")
   target_compile_definitions(LibertyNativeFreeSpiritSmoke PRIVATE LIBERTY_NATIVE_PREVIEW=1
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1)

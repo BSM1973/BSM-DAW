@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "PluginHost.h"
+#include "OneKnobEffects.h"
 #include "Plugin.h"
 #include "LibertyManufacturerGrouping.h"
 #include "LibertyBrowserIntelligence.h"
@@ -70,6 +71,13 @@ int main()
     check(host.insertNativeChain(false,2,chain,error),"atomic chain insertion");
     check(host.hasEffectForTrackSlot(2,0)&&host.hasEffectForTrackSlot(2,3)&&!host.hasEffectForTrackSlot(2,1),"exact chain positions");
     check(!host.insertNativeChain(false,2,chain,error),"occupied destination rejected");
+    auto& oneKnob=LibertyOneKnobManager::instance();
+    oneKnob.setEffect(4*8,LibertyOneKnobRack::Type::delay);
+    check(!host.insertNativeChain(false,4,chain,error),"One Knob destination protected");
+    check(oneKnob.hasEffect(4*8)&&!host.hasEffectForTrackSlot(4,0),"existing One Knob preserved");
+    LibertyPluginHost::NativeChain blocked;
+    check(!host.captureNativeChain(false,4,blocked,error)&&blocked.empty(),"unsupported One Knob capture rejected");
+    oneKnob.clearAllEffects();
     auto broken=chain;broken[1].state.reset();
     check(!host.insertNativeChain(false,3,broken,error)&&!host.hasEffectForTrackSlot(3,0),"invalid chain never partially published");
     check(host.insertNativeChain(true,2,chain,error),"instrument track FX chain");
