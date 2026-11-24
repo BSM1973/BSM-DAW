@@ -1,6 +1,9 @@
 #include <JuceHeader.h>
 #include "PluginHost.h"
 #include "Plugin.h"
+#include "LibertyManufacturerGrouping.h"
+#include <algorithm>
+#include <vector>
 #include <cmath>
 #include <iostream>
 #include <cstdlib>
@@ -11,12 +14,23 @@ static void check(bool ok,const char* what)
 int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    using LibertyManufacturerGrouping::canonicalName;
+    check(canonicalName("Liberty")=="Liberty Music Software","legacy Liberty folder alias");
+    check(canonicalName("  LIBERTY  ")=="Liberty Music Software","case and whitespace alias");
+    check(canonicalName("Liberty Music Software")=="Liberty Music Software","canonical manufacturer");
+    check(canonicalName("Liberty Audio")=="Liberty Audio","unrelated manufacturer unchanged");
+    check(canonicalName("Steinberg")=="Steinberg","third party unchanged");
+    std::vector<juce::String> makers{"Liberty", "Liberty Audio", "Liberty Music Software"};
+    std::sort(makers.begin(),makers.end(),[](const auto& a,const auto& b)
+        {return canonicalName(a).compareNatural(canonicalName(b),false)<0;});
+    check(canonicalName(makers[1])==canonicalName(makers[2]),"canonical sorting keeps aliases adjacent");
     auto& host=LibertyPluginHost::instance();
     host.initialise(48000,128);
     host.setNativeTempo(96);
     juce::PluginDescription d;
     check(host.findKnownPluginByIdentifier("liberty.native.freespirit-delay",d),"native lookup without scan");
     check(d.pluginFormatName=="Liberty Native" && !d.isInstrument,"native identity");
+    check(canonicalName(d.manufacturerName)=="Liberty Music Software","FreeSpirit native grouped under official brand");
     int found=0;
     for(const auto& candidate:host.getPluginDescriptions())
         if(candidate.fileOrIdentifier==d.fileOrIdentifier)++found;

@@ -7,6 +7,7 @@
 #endif
 #include "OneKnobEffects.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyManufacturerGrouping.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -5861,14 +5862,13 @@ private:
 
     static juce::String normalisedManufacturer(const juce::PluginDescription& d)
     {
-        const auto name = d.manufacturerName.trim();
-        return name.isEmpty() ? "AUTRES" : name;
+        return LibertyManufacturerGrouping::canonicalName(d.manufacturerName);
     }
 
     bool matchesPluginMetadata(const juce::PluginDescription& d) const
     {
         if (selectedManufacturer.isNotEmpty()
-            && !normalisedManufacturer(d).equalsIgnoreCase(selectedManufacturer))
+            && !normalisedManufacturer(d).equalsIgnoreCase(LibertyManufacturerGrouping::canonicalName(selectedManufacturer)))
             return false;
 
         const auto format = d.pluginFormatName.trim();
@@ -6452,8 +6452,8 @@ private:
         pluginRoot = std::make_unique<PluginTreeItem>(PluginTreeItem::Kind::root, "ROOT");
         std::sort(pluginDescriptions.begin(), pluginDescriptions.end(), [](const auto& a, const auto& b)
         {
-            auto am = a.manufacturerName.trim(); if (am.isEmpty()) am = "Other";
-            auto bm = b.manufacturerName.trim(); if (bm.isEmpty()) bm = "Other";
+            const auto am = normalisedManufacturer(a);
+            const auto bm = normalisedManufacturer(b);
             const int c = am.compareNatural(bm, false);
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
@@ -6465,6 +6465,7 @@ private:
             if (missingPluginsOnly) return false;
             const bool searchMatches = query.isEmpty() || d.name.containsIgnoreCase(query)
                 || d.manufacturerName.containsIgnoreCase(query)
+                || normalisedManufacturer(d).containsIgnoreCase(query)
                 || d.pluginFormatName.containsIgnoreCase(query);
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
             if (pluginUsageFilter != PluginUsage::all
