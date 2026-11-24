@@ -64,6 +64,16 @@ int main()
     juce::MemoryBlock rejected;check(!host.loadEffectForTrackSlot(1,0,d,error,&rejected),"invalid preset rejected before replacement");
     check(host.hasEffectForTrackSlot(1,0),"invalid preset preserves instance");
     check(!host.getNativeFactoryPresetState(d.fileOrIdentifier,100,rejected),"invalid factory index");
+    LibertyPluginHost::NativeChain chain;
+    check(host.captureNativeChain(false,1,chain,error)&&chain.size()==1,"capture native chain");
+    auto second=chain.front();second.slot=3;chain.push_back(second);
+    check(host.insertNativeChain(false,2,chain,error),"atomic chain insertion");
+    check(host.hasEffectForTrackSlot(2,0)&&host.hasEffectForTrackSlot(2,3)&&!host.hasEffectForTrackSlot(2,1),"exact chain positions");
+    check(!host.insertNativeChain(false,2,chain,error),"occupied destination rejected");
+    auto broken=chain;broken[1].state.reset();
+    check(!host.insertNativeChain(false,3,broken,error)&&!host.hasEffectForTrackSlot(3,0),"invalid chain never partially published");
+    check(host.insertNativeChain(true,2,chain,error),"instrument track FX chain");
+    check(host.hasEffectForInstrumentTrackSlot(2,3),"instrument slot restored");
     for(int i=0;i<100;++i)
     {
         original.loadPreset(i);

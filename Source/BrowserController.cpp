@@ -13,6 +13,7 @@
 #include "LibertySampleLab.h"
 #include "LibertySoundMatch.h"
 #include "LibertyPresetCenter.h"
+#include "LibertyDeviceChains.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -977,7 +978,10 @@ public:
         presetCenter=std::make_unique<LibertyPresetCenter::Panel>(favouritesFile().getSiblingFile("NativePresetCenter.xml"),[this](const auto& entry){insertNativePreset(entry);},[this]{captureNativePreset();});
         addAndMakeVisible(*presetCenter);presetCenter->setVisible(false);
         presetCenterToggle.setButtonText("LIBERTY");presetCenterToggle.setClickingTogglesState(true);presetCenterToggle.setToggleState(true,juce::dontSendNotification);
-        presetCenterToggle.onClick=[this]{updatePresetCenterVisibility();resized();};addAndMakeVisible(presetCenterToggle);presetCenterToggle.setVisible(false);
+        presetCenterToggle.onClick=[this]{if(presetCenterToggle.getToggleState())chainToggle.setToggleState(false,juce::dontSendNotification);updatePresetCenterVisibility();resized();};addAndMakeVisible(presetCenterToggle);presetCenterToggle.setVisible(false);
+        chainCenter=std::make_unique<LibertyDeviceChains::Panel>(favouritesFile().getSiblingFile("NativeDeviceChains.xml"),[this](const auto& e){insertChain(e);},[this]{captureChain();});
+        addAndMakeVisible(*chainCenter);chainCenter->setVisible(false);
+        chainToggle.setButtonText("CHAINS");chainToggle.setClickingTogglesState(true);chainToggle.onClick=[this]{if(chainToggle.getToggleState())presetCenterToggle.setToggleState(false,juce::dontSendNotification);updatePresetCenterVisibility();resized();};addAndMakeVisible(chainToggle);chainToggle.setVisible(false);
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
         spliceButton.onClick = [this] { setCategory(Category::splice); };
 
@@ -1397,13 +1401,14 @@ public:
             auto band=juce::Rectangle<int>(10,76,juce::jmax(0,getWidth()-20),23);
             quickSearchButton.setBounds(band.removeFromRight(juce::jmin(36,band.getWidth())));
             band.removeFromRight(juce::jmin(5,band.getWidth()));
-            if(category==Category::presets){presetCenterToggle.setBounds(band.removeFromRight(juce::jmin(76,band.getWidth())));band.removeFromRight(juce::jmin(5,band.getWidth()));}
+            if(category==Category::presets){presetCenterToggle.setBounds(band.removeFromRight(juce::jmin(66,band.getWidth())));band.removeFromRight(juce::jmin(5,band.getWidth()));chainToggle.setBounds(band.removeFromRight(juce::jmin(66,band.getWidth())));band.removeFromRight(juce::jmin(5,band.getWidth()));}
             else presetCenterToggle.setBounds(0,0,0,0);
             pluginSearch.setBounds(band);
             pluginFiltersButton.setBounds(0, 0, 0, 0);
             pluginGroupingButton.setBounds(0, 0, 0, 0);
         }
         if(presetCenter)presetCenter->setBounds(8,104,juce::jmax(0,getWidth()-16),juce::jmax(0,getHeight()-114));
+        if(chainCenter)chainCenter->setBounds(8,104,juce::jmax(0,getWidth()-16),juce::jmax(0,getHeight()-114));
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
         importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
@@ -7289,9 +7294,24 @@ private:
     void updatePresetCenterVisibility()
     {
         if(!presetCenter)return;
-        const bool tab=category==Category::presets, native=tab&&presetCenterToggle.getToggleState();
-        presetCenterToggle.setVisible(tab);presetCenter->setVisible(native);
-        if(tab){fileTree.setVisible(!native);homeButton.setVisible(!native);parentFolderButton.setVisible(!native);chooseLibraryButton.setVisible(!native);pluginSearch.setVisible(!native);if(native)presetCenter->toFront(false);}
+        const bool tab=category==Category::presets, chains=tab&&chainToggle.getToggleState(),native=tab&&!chains&&presetCenterToggle.getToggleState();
+        presetCenterToggle.setVisible(tab);chainToggle.setVisible(tab);presetCenter->setVisible(native);if(chainCenter)chainCenter->setVisible(chains);
+        if(tab){const bool files=!native&&!chains;fileTree.setVisible(files);homeButton.setVisible(files);parentFolderButton.setVisible(files);chooseLibraryButton.setVisible(files);pluginSearch.setVisible(files);if(native)presetCenter->toFront(false);if(chains&&chainCenter)chainCenter->toFront(false);}
+    }
+    void insertChain(const LibertyDeviceChains::Entry& entry)
+    {
+        const int instrument=selectedInstrumentTrack(),audio=selectedAudioTrack();juce::String error;
+        if(instrument<0&&audio<0)error=juce::String::fromUTF8("Sélectionnez une piste Audio ou Instrument.");
+        else if(LibertyPluginHost::instance().insertNativeChain(instrument>=0,instrument>=0?instrument:audio,entry.devices,error)){refreshPluginStatus();refreshLibertyMixConsole(&owner);owner.repaint();return;}
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Device Chains",error);
+    }
+    void captureChain()
+    {
+        const int instrument=selectedInstrumentTrack(),audio=selectedAudioTrack();juce::String error;LibertyDeviceChains::Entry e;
+        if(!LibertyPluginHost::instance().captureNativeChain(instrument>=0,instrument>=0?instrument:audio,e.devices,error)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Device Chains",error);return;}
+        auto dlg=std::make_shared<juce::AlertWindow>("Device Chains",juce::String::fromUTF8("Sauvegarder la chaîne et ses réglages."),juce::AlertWindow::NoIcon);
+        dlg->addTextEditor("name",juce::String::fromUTF8("Ma chaîne"),"Nom");dlg->addTextEditor("category","Mixage",juce::String::fromUTF8("Catégorie / style"));dlg->addButton("Enregistrer",1);dlg->addButton("Annuler",0);
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);dlg->enterModalState(true,juce::ModalCallbackFunction::create([safe,dlg,e](int n)mutable{if(!safe||safe->stopped.load()||n!=1||!safe->chainCenter)return;e.name=dlg->getTextEditorContents("name");e.category=dlg->getTextEditorContents("category");safe->chainCenter->addCaptured(std::move(e));}),false);
     }
     void insertNativePreset(const LibertyPresetCenter::Entry& entry)
     {
@@ -7857,6 +7877,8 @@ private:
     PluginGroupingButton pluginGroupingButton;
     juce::TextButton quickSearchButton,presetCenterToggle;
     std::unique_ptr<LibertyPresetCenter::Panel> presetCenter;
+    juce::TextButton chainToggle;
+    std::unique_ptr<LibertyDeviceChains::Panel> chainCenter;
     juce::Component::SafePointer<LibertyBrowserIntelligence::Panel> quickSearchPanel;
     std::thread quickIndexThread;
     bool quickIndexRunning=false, tagsReadOnly=false;

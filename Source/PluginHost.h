@@ -35,6 +35,15 @@ public:
     std::vector<NativePreset> getNativeFactoryPresets() const;
     bool getNativeFactoryPresetState(const juce::String& deviceId,int index,juce::MemoryBlock& state) const;
     bool validateNativePresetState(const juce::String& deviceId,const juce::MemoryBlock& state) const;
+    struct ChainDevice
+    {
+        int slot=-1; // -1 is the instrument, 0..7 are exact insert positions.
+        juce::String deviceId;
+        juce::MemoryBlock state;
+    };
+    using NativeChain = std::vector<ChainDevice>;
+    bool captureNativeChain(bool instrument,int lane,NativeChain& out,juce::String& error) const;
+    bool insertNativeChain(bool instrument,int lane,const NativeChain& chain,juce::String& error);
     void shutdown();
     void clearProjectPlugins();
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});

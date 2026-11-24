@@ -3,6 +3,7 @@
 #undef private
 #include "PluginHost.h"
 #include "LibertyPresetCenter.h"
+#include "LibertyDeviceChains.h"
 #include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -48,6 +49,20 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
     return std::nullopt;
 }
 
+std::optional<LibertyDeviceChains::Entry> resolveChain(juce::Component* component)
+{
+    for(auto* c=component;c;c=c->getParentComponent())if(auto* tree=dynamic_cast<juce::TreeView*>(c))
+        if(auto* item=dynamic_cast<LibertyDeviceChains::Item*>(tree->getSelectedItem(0)))return item->entry;
+    return std::nullopt;
+}
+int chainDropTrack(MainComponent& main,juce::Point<int> local,bool needsInstrument)
+{
+    const int audio=main.getAudioTrackCount(),first=audio+main.getMidiTrackCount(),end=first+main.getInstrumentTrackCount();
+    int row=-1;
+    if(isLibertyMixConsoleVisible(&main)){const int target=getLibertyMixConsolePluginDropTrack(&main,local,false);if(target>=1000000)row=(target-1000000)/8;}
+    else if(local.y>=main.getArrangeTop()&&local.y<main.getMixerTop())row=main.getArrangeTrackAtY(local.y);
+    return (row>=first&&row<end)||(!needsInstrument&&row>=0&&row<audio)?row:-1;
+}
 std::optional<LibertyOneKnobRack::Type> resolveOneKnob(juce::Component* eventComponent)
 {
     auto match = [](juce::Component* c) -> std::optional<LibertyOneKnobRack::Type>
@@ -181,7 +196,7 @@ private:
     {
         if (!event.mods.isLeftButtonDown()) return;
         resetLibertyDragCursors();
-        oneKnobCandidate.reset();presetCandidate.reset();
+        oneKnobCandidate.reset();presetCandidate.reset();chainCandidate=resolveChain(event.eventComponent);
         oneKnobCandidate = resolveOneKnob(event.eventComponent);
         candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent,presetCandidate);
         dragStartScreen = event.getScreenPosition();
@@ -194,9 +209,10 @@ private:
 
         if (!oneKnobCandidate.has_value())
             oneKnobCandidate = resolveOneKnob(event.eventComponent);
-        if (!oneKnobCandidate.has_value() && !candidate.has_value())
+        if(!chainCandidate&&!oneKnobCandidate&&!candidate)chainCandidate=resolveChain(event.eventComponent);
+        if (!chainCandidate && !oneKnobCandidate.has_value() && !candidate.has_value())
             candidate = resolveSelectedPlugin(event.eventComponent,presetCandidate);
-        if (!oneKnobCandidate.has_value() && !candidate.has_value())
+        if (!chainCandidate && !oneKnobCandidate.has_value() && !candidate.has_value())
             return;
 
         const auto delta = event.getScreenPosition() - dragStartScreen;
@@ -208,7 +224,7 @@ private:
         if (auto* main = findMainComponentAtScreenPoint(event.getScreenPosition()))
         {
             const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
-            const int target = oneKnobCandidate.has_value()
+            const int target = chainCandidate?chainDropTrack(*main,local,chainCandidate->needsInstrument()):oneKnobCandidate.has_value()
                 ? oneKnobDropTrack(*main, local)
                 : pluginDropTrack(*main, local, candidate->isInstrument);
             main->setMouseCursor(target >= 0 ? juce::MouseCursor::DraggingHandCursor
@@ -222,13 +238,14 @@ private:
 
     void mouseUp(const juce::MouseEvent& event) override
     {
+        auto chain=std::move(chainCandidate);chainCandidate.reset();
         auto plugin = candidate;
         auto preset = std::move(presetCandidate);presetCandidate.reset();
         auto oneKnob = oneKnobCandidate;
         candidate.reset();
         oneKnobCandidate.reset();
 
-        if (!dragging || (!plugin.has_value() && !oneKnob.has_value()))
+        if (!dragging || (!chain && !plugin.has_value() && !oneKnob.has_value()))
         {
             dragging = false;
             resetLibertyDragCursors();
@@ -245,6 +262,15 @@ private:
         main->setMouseCursor(juce::MouseCursor::NormalCursor);
 
         const auto local = main->getLocalPoint(nullptr, event.getScreenPosition());
+        if(chain)
+        {
+            const int row=chainDropTrack(*main,local,chain->needsInstrument());if(row<0)return;
+            const int first=main->getAudioTrackCount()+main->getMidiTrackCount();const bool instrument=row>=first;juce::String error;
+            if(LibertyPluginHost::instance().insertNativeChain(instrument,instrument?row-first:row,chain->devices,error))
+            {main->selectedTrack=row;if(chain->needsInstrument())main->notifyInstrumentChanged();refreshLibertyMixConsole(main);main->repaint();}
+            else juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Device Chains",error);
+            return;
+        }
         const int target = oneKnob.has_value()
             ? oneKnobDropTrack(*main, local)
             : pluginDropTrack(*main, local, plugin->isInstrument);
@@ -348,6 +374,7 @@ private:
 
     std::optional<juce::PluginDescription> candidate;
     std::optional<LibertyPresetCenter::Entry> presetCandidate;
+    std::optional<LibertyDeviceChains::Entry> chainCandidate;
     std::optional<LibertyOneKnobRack::Type> oneKnobCandidate;
     juce::Point<int> dragStartScreen;
     bool dragging = false;

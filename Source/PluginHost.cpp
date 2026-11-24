@@ -475,6 +475,58 @@ bool LibertyPluginHost::validateNativePresetState(const juce::String& id,const j
     juce::ignoreUnused(id,state);return false;
 #endif
 }
+bool LibertyPluginHost::captureNativeChain(bool instrument,int lane,NativeChain& out,juce::String& error) const
+{
+    const juce::ScopedLock guard(lock);
+    out.clear();NativeChain staged;
+    if(lane<0){error="Piste invalide.";return false;}
+    const auto capture=[&](const Slot* slot,int position)
+    {
+        if(slot==nullptr||!slot->processor)return true;
+        if(slot->description.pluginFormatName!="Liberty Native"){error=juce::String::fromUTF8("La chaîne contient un plugin externe non pris en charge.");return false;}
+        ChainDevice item;item.slot=position;item.deviceId=slot->description.fileOrIdentifier;slot->processor->getStateInformation(item.state);
+        if(!validateNativePresetState(item.deviceId,item.state)){error="Etat natif incompatible.";return false;}
+        staged.push_back(std::move(item));return true;
+    };
+    if(instrument&&lane<(int)instruments.size()&&!capture(instruments[(size_t)lane].get(),-1))return false;
+    const auto& effects=instrument?instrumentEffects:trackEffects;
+    for(int i=0;i<effectSlotsPerTrack;++i)
+    {
+        if(LibertyOneKnobManager::instance().hasEffect(instrument?100000+lane*8+i:lane*8+i)){error="One Knob non pris en charge dans cette version.";return false;}
+        if(lane<(int)effects.size()&&!capture(effects[(size_t)lane][(size_t)i].get(),i))return false;
+    }
+    if(staged.empty()){error=juce::String::fromUTF8("Aucun appareil natif à sauvegarder.");return false;}
+    out=std::move(staged);return true;
+}
+bool LibertyPluginHost::insertNativeChain(bool instrument,int lane,const NativeChain& chain,juce::String& error)
+{
+    if(lane<0||lane>4096||chain.empty()||chain.size()>9){error=juce::String::fromUTF8("Chaîne invalide.");return false;}
+    const juce::ScopedLock guard(lock);
+    auto& effects=instrument?instrumentEffects:trackEffects;
+    for(int i=0;i<effectSlotsPerTrack;++i)
+        if(LibertyOneKnobManager::instance().hasEffect(instrument?100000+lane*8+i:lane*8+i)
+            ||(lane<(int)effects.size()&&effects[(size_t)lane][(size_t)i]&&effects[(size_t)lane][(size_t)i]->processor))
+        {error=juce::String::fromUTF8("Les huit slots FX doivent être libres.");return false;}
+    std::array<std::unique_ptr<Slot>,effectSlotsPerTrack> staged{};
+    std::unique_ptr<Slot> stagedInstrument;
+    const auto releaseStaged=[&]{for(auto& x:staged)if(x&&x->processor)x->processor->releaseResources();if(stagedInstrument&&stagedInstrument->processor)stagedInstrument->processor->releaseResources();};
+    for(const auto& item:chain)
+    {
+        if(item.slot<-1||item.slot>=effectSlotsPerTrack||(item.slot==-1&&!instrument)){error="Position incompatible.";releaseStaged();return false;}
+        if(item.slot==-1&&lane<(int)instruments.size()&&instruments[(size_t)lane]&&instruments[(size_t)lane]->processor){error=juce::String::fromUTF8("La piste possède déjà un instrument.");releaseStaged();return false;}
+        auto& dest=item.slot==-1?stagedInstrument:staged[(size_t)item.slot];
+        juce::PluginDescription desc;
+        if(dest||!findKnownPluginByIdentifier(item.deviceId,desc)||desc.pluginFormatName!="Liberty Native"||desc.isInstrument!=(item.slot==-1)||!validateNativePresetState(item.deviceId,item.state))
+        {error="Appareil, position ou preset incompatible.";releaseStaged();return false;}
+        dest=std::make_unique<Slot>();
+        if(!loadIntoSlot(*dest,desc,error,item.slot==-1,&item.state)){releaseStaged();return false;}
+    }
+    // Publish only after every processor has been resolved, prepared and validated.
+    while((int)effects.size()<=lane)effects.emplace_back();
+    for(int i=0;i<effectSlotsPerTrack;++i)if(staged[(size_t)i])effects[(size_t)lane][(size_t)i]=std::move(staged[(size_t)i]);
+    if(stagedInstrument){ensureInstrumentSlot(lane);instruments[(size_t)lane]=std::move(stagedInstrument);}
+    return true;
+}
 bool LibertyPluginHost::loadIntoSlot(Slot& slot,
                                      const juce::PluginDescription& description,
                                      juce::String& error,
