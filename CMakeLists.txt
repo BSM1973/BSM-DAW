@@ -61,7 +61,7 @@ target_sources(BSM_DAW PRIVATE
  Source/Editing.cpp Source/Project.cpp Source/TransportSettings.cpp Source/AudioRecordingController.cpp Source/TrackColourInteraction.cpp Source/MultiMidiClipController.cpp Source/GridSnapController.cpp Source/TrackHeaderMixControls.cpp Source/TrackPluginInsertControls.cpp Source/PluginDragDropController.cpp
  Source/MixConsoleController.cpp Source/PerformController.cpp Source/PageModeCoordinator.cpp Source/UISymbolCleaner.cpp Source/SpliceBrowserController.cpp Source/BrowserResizeController.cpp Source/UILayerCoordinator.cpp Source/AudioSettingsRelocator.cpp Source/LanguageController.cpp Source/ToolPaletteController.cpp
  Source/LibertyAIController.cpp Source/LibertyAIAdvancedController.cpp Source/AIRenderController.cpp Source/AINoveltyController.cpp Source/AIArrangerController.cpp Source/AISongIntelligenceController.cpp Source/AIComposer2Controller.cpp
- Source/OneKnobEffects.cpp Source/DynamicTrackController.cpp Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/PluginHost.cpp)
+ Source/OneKnobEffects.cpp Source/DynamicTrackController.cpp Source/ZoomController.cpp Source/AudioClipWarpView.cpp Source/AudioClipResizeEngine.cpp Source/AudioClipResizeInteraction.cpp Source/MetronomeController.cpp Source/BrowserController.cpp Source/LibertySampleStretch.cpp Source/PluginHost.cpp)
 if(APPLE)
   target_sources(BSM_DAW PRIVATE Source/NativePluginCapture.mm)
   set_source_files_properties(Source/NativePluginCapture.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")

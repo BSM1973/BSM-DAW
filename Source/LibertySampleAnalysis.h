@@ -21,7 +21,8 @@ inline void fft(std::vector<std::complex<double>>& a){
 inline Result analyse(const std::vector<float>& s,double rate){
  Result r;if(s.empty()||rate<8000)return r;r.duration=s.size()/rate;
  double energy=0;for(size_t i=0;i<s.size();++i){const double e=double(s[i])*s[i];energy+=e;r.envelope[std::min<size_t>(15,i*16/s.size())]+=e;}
- for(auto& v:r.envelope)v=energy>0?std::sqrt(v/energy):0;r.rms=std::sqrt(energy/s.size());if(r.rms<1.e-6)return r;
+ for(auto& v:r.envelope){v=energy>0?std::sqrt(v/energy):0;}
+ r.rms=std::sqrt(energy/s.size());if(r.rms<1.e-6)return r;
  constexpr int N=4096;const int hop=std::max(1,int(rate/100));
  std::vector<std::complex<double>> a(N);std::vector<double> prev(N/2),flux;
  std::array<double,N> hann{};for(int i=0;i<N;++i)hann[size_t(i)]=.5-.5*std::cos(2*pi*i/(N-1));

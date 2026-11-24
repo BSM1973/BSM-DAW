@@ -342,3 +342,13 @@ assert 'file!=juce::File::getSpecialLocation(juce::File::userHomeDirectory)' in 
 assert 'if(++scanned>12000)' in browser
 assert 'setSize(760,510)' in intelligence
 print("PASS: Browser Intelligence scoped worker, tags, smart collections and paged search")
+
+# macOS SDK typedefs must never be exposed after JUCE's global namespace import.
+lab=read("Source/LibertySampleLab.h")
+stretch=read("Source/LibertySampleStretch.cpp")
+assert "signalsmith-stretch/signalsmith-stretch.h" not in lab
+assert '#include "LibertySampleStretch.h"' in lab
+assert '#include <signalsmith-stretch/signalsmith-stretch.h>' in stretch
+assert "juce::" not in stretch and "JuceHeader.h" not in stretch
+assert "Source/LibertySampleStretch.cpp" in read("CMakeLists.txt")
+print("PASS: Signalsmith DSP is isolated from JUCE and Apple SDK namespace collisions")

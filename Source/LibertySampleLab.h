@@ -2,7 +2,7 @@
 #include "LibertySampleAnalysis.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_extra/juce_gui_extra.h>
-#include <signalsmith-stretch/signalsmith-stretch.h>
+#include "LibertySampleStretch.h"
 #include <cstdint>
 #include <atomic>
 #include <map>
@@ -41,8 +41,7 @@ inline std::unique_ptr<juce::AudioBuffer<float>> preview(const juce::File& file,
  juce::AudioBuffer<float> in;if(!read(file,in,rate,20)||ratio<.5||ratio>2||std::abs(pitch)>6||in.getNumSamples()<1024)return {};
  int n=in.getNumSamples(),channels=in.getNumChannels(),length=juce::jmax(1,(int)std::lround(n/ratio));
  auto out=std::make_unique<juce::AudioBuffer<float>>(channels,length);out->clear();
- signalsmith::stretch::SignalsmithStretch<float> stretch;stretch.presetDefault(channels,(float)rate);stretch.setTransposeSemitones((float)pitch);
- auto inputs=in.getArrayOfReadPointers();auto outputs=out->getArrayOfWritePointers();stretch.process(inputs,n,outputs,length);
+ if(!renderStretch(in.getArrayOfReadPointers(),n,out->getArrayOfWritePointers(),length,channels,rate,pitch))return {};
  for(int c=0;c<channels;++c)for(int i=0;i<length;++i){float v=out->getSample(c,i);if(!std::isfinite(v))return {};out->setSample(c,i,juce::jlimit(-1.f,1.f,v));}
  return out;
 }
@@ -63,7 +62,7 @@ inline juce::String index(const juce::File& root,const juce::File& destination,c
   if(stop.load())return "Indexation interrompue.";
   if(++scanned>12000){limited=true;break;}
   const auto file=entry.getFile();if(!file.hasFileExtension("wav;aif;aiff;mp3;flac"))continue;
-  auto* item=xml.createNewChildElement("Sample");item->setAttribute("path",file.getFullPathName());item->setAttribute("size",file.getSize());item->setAttribute("modified",file.getLastModificationTime().toMilliseconds());++count;
+  auto* item=xml.createNewChildElement("Sample");item->setAttribute("path",file.getFullPathName());item->setAttribute("size",juce::String(file.getSize()));item->setAttribute("modified",juce::String(file.getLastModificationTime().toMilliseconds()));++count;
   if(file.getSize()>32*1024*1024||bytes+file.getSize()>512ll*1024*1024)continue;
   bytes+=file.getSize();auto hash=fingerprint(file);if(hash.isEmpty())continue;++hashed;item->setAttribute("hash",hash);
   auto key=juce::String(file.getSize())+":"+hash;auto old=seen.find(key);
