@@ -44,6 +44,13 @@ public:
     using NativeChain = std::vector<ChainDevice>;
     bool captureNativeChain(bool instrument,int lane,NativeChain& out,juce::String& error) const;
     bool insertNativeChain(bool instrument,int lane,const NativeChain& chain,juce::String& error);
+    struct AuditionResult
+    {
+        juce::AudioBuffer<float> dry,wet;
+        double sampleRate=48000.,cpuPercent=0.,matchGain=1.;
+        int latencySamples=0;
+    };
+    bool renderNativeAudition(const NativeChain&,const juce::AudioBuffer<float>& source,double rate,double tempo,AuditionResult&,juce::String& error,const std::atomic<bool>& cancel) const;
     void shutdown();
     void clearProjectPlugins();
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});

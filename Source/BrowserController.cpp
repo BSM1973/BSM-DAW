@@ -14,6 +14,7 @@
 #include "LibertySoundMatch.h"
 #include "LibertyPresetCenter.h"
 #include "LibertyDeviceChains.h"
+#include "LibertyPluginAudition.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -952,6 +953,7 @@ public:
         pluginGroupingButton.onClick = [this] { groupByUsage = !groupByUsage; rebuildPluginTree(); };
         addAndMakeVisible(pluginGroupingButton);
         pluginGroupingButton.setVisible(false);
+        auditionButton.setButtonText("A/B");auditionButton.setTooltip(juce::String::fromUTF8("Préécouter un effet Liberty natif"));auditionButton.onClick=[this]{if(auto* d=selectedPluginDescription()){if(d->pluginFormatName=="Liberty Native"&&!d->isInstrument)openAudition(d->name,{{0,d->fileOrIdentifier,{}}});else juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Plugin Audition",juce::String::fromUTF8("Seuls les effets Liberty natifs sont disponibles actuellement."));}};addAndMakeVisible(auditionButton);auditionButton.setVisible(false);
         quickSearchButton.setButtonText("PRO");
         quickSearchButton.setTooltip(juce::String::fromUTF8("Recherche universelle et inspecteur (Cmd/Ctrl + K)"));
         quickSearchButton.onClick=[this]{showIntelligence();};
@@ -975,11 +977,11 @@ public:
         audioButton.onClick = [this] { setCategory(Category::audio); };
         midiButton.onClick = [this] { setCategory(Category::midi); };
         presetsButton.onClick = [this] { setCategory(Category::presets); };
-        presetCenter=std::make_unique<LibertyPresetCenter::Panel>(favouritesFile().getSiblingFile("NativePresetCenter.xml"),[this](const auto& entry){insertNativePreset(entry);},[this]{captureNativePreset();});
+        presetCenter=std::make_unique<LibertyPresetCenter::Panel>(favouritesFile().getSiblingFile("NativePresetCenter.xml"),[this](const auto& entry){insertNativePreset(entry);},[this]{captureNativePreset();},[this](const auto& entry){juce::MemoryBlock state;if(entry.getState(state))openAudition(entry.name,{{0,entry.deviceId,state}});});
         addAndMakeVisible(*presetCenter);presetCenter->setVisible(false);
         presetCenterToggle.setButtonText("LIBERTY");presetCenterToggle.setClickingTogglesState(true);presetCenterToggle.setToggleState(true,juce::dontSendNotification);
         presetCenterToggle.onClick=[this]{if(presetCenterToggle.getToggleState())chainToggle.setToggleState(false,juce::dontSendNotification);updatePresetCenterVisibility();resized();};addAndMakeVisible(presetCenterToggle);presetCenterToggle.setVisible(false);
-        chainCenter=std::make_unique<LibertyDeviceChains::Panel>(favouritesFile().getSiblingFile("NativeDeviceChains.xml"),[this](const auto& e){insertChain(e);},[this]{captureChain();});
+        chainCenter=std::make_unique<LibertyDeviceChains::Panel>(favouritesFile().getSiblingFile("NativeDeviceChains.xml"),[this](const auto& e){insertChain(e);},[this]{captureChain();},[this](const auto& entry){openAudition(entry.name,entry.devices);});
         addAndMakeVisible(*chainCenter);chainCenter->setVisible(false);
         chainToggle.setButtonText("CHAINS");chainToggle.setClickingTogglesState(true);chainToggle.onClick=[this]{if(chainToggle.getToggleState())presetCenterToggle.setToggleState(false,juce::dontSendNotification);updatePresetCenterVisibility();resized();};addAndMakeVisible(chainToggle);chainToggle.setVisible(false);
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
@@ -1238,6 +1240,7 @@ public:
         if(quickIndexThread.joinable())quickIndexThread.join();
         if(labThread.joinable())labThread.join();
         if(matchThread.joinable())matchThread.join();
+        auditionCancel.store(true);if(auditionThread.joinable())auditionThread.join();
         previewTransport.stop();
         owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
         previewPlayer.setSource(nullptr);
@@ -1388,7 +1391,8 @@ public:
         {
             // Allocate right to left from a bounded rectangle: no overlapping controls.
             auto band = juce::Rectangle<int>(10, 76, juce::jmax(0, getWidth()-20), 23);
-            pluginFiltersButton.setBounds(band.removeFromRight(juce::jmin(87, band.getWidth())));
+            auditionButton.setBounds(band.removeFromRight(juce::jmin(36,band.getWidth())));band.removeFromRight(juce::jmin(3,band.getWidth()));
+            pluginFiltersButton.setBounds(band.removeFromRight(juce::jmin(76, band.getWidth())));
             band.removeFromRight(juce::jmin(5, band.getWidth()));
             pluginGroupingButton.setBounds(band.removeFromRight(juce::jmin(28, band.getWidth())));
             band.removeFromRight(juce::jmin(5, band.getWidth()));
@@ -6136,6 +6140,7 @@ private:
         }
         pluginTree.setVisible(pluginMode);
         pluginFiltersButton.setVisible(pluginMode);
+        auditionButton.setVisible(pluginMode);
         pluginGroupingButton.setVisible(pluginMode);
         quickSearchButton.setVisible(!spliceMode);
         artworkStatsLabel.setVisible(pluginMode && getHeight() >= 540);
@@ -7298,6 +7303,45 @@ private:
         presetCenterToggle.setVisible(tab);chainToggle.setVisible(tab);presetCenter->setVisible(native);if(chainCenter)chainCenter->setVisible(chains);
         if(tab){const bool files=!native&&!chains;fileTree.setVisible(files);homeButton.setVisible(files);parentFolderButton.setVisible(files);chooseLibraryButton.setVisible(files);pluginSearch.setVisible(files);if(native)presetCenter->toFront(false);if(chains&&chainCenter)chainCenter->toFront(false);}
     }
+    void openAudition(juce::String name,LibertyPluginHost::NativeChain chain)
+    {
+        if(stopped.load()||auditionRunning||labRunning||matchRunning)return;
+        if(std::any_of(chain.begin(),chain.end(),[](const auto& item){return item.slot<0;})){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Plugin Audition",juce::String::fromUTF8("La préécoute MIDI des instruments sera ajoutée après leur intégration."));return;}
+        auto dialog=std::make_shared<juce::AlertWindow>("PLUGIN AUDITION",name,juce::AlertWindow::NoIcon);
+        dialog->addComboBox("source",juce::StringArray{juce::String::fromUTF8("Batterie synthétique"),juce::String::fromUTF8("Basse synthétique"),juce::String::fromUTF8("Clavier synthétique"),juce::String::fromUTF8("Synthé arpège"),"Fichier audio personnel"},"Source");
+        dialog->getComboBoxComponent("source")->setSelectedItemIndex(0,juce::dontSendNotification);dialog->addButton("Analyser",1);dialog->addButton("Annuler",0);
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,name,chain](int n){
+            if(!safe||safe->stopped.load()||n!=1)return;int choice=dialog->getComboBoxComponent("source")->getSelectedItemIndex();
+            if(choice==4){safe->auditionChooser=std::make_unique<juce::FileChooser>(juce::String::fromUTF8("Source de préécoute"),juce::File{},"*.wav;*.aif;*.aiff;*.flac;*.mp3");safe->auditionChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe,name,chain](const juce::FileChooser& fc){if(safe&&fc.getResult().existsAsFile())safe->renderAudition(name,chain,4,fc.getResult());});}
+            else safe->renderAudition(name,chain,choice,{});
+        }),false);
+    }
+    void renderAudition(juce::String name,LibertyPluginHost::NativeChain chain,int source,juce::File file)
+    {
+        if(stopped.load()||auditionRunning||labRunning||matchRunning)return;
+        if(auditionThread.joinable())auditionThread.join();auditionRunning=true;auditionCancel.store(false);auditionButton.setEnabled(false);previewTransport.stop();
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);double tempo=owner.getProjectTempoBpm();
+        auditionThread=std::thread([this,safe,name,chain,source,file,tempo]{
+            auto result=std::make_shared<LibertyPluginHost::AuditionResult>();juce::AudioBuffer<float> audio;double rate=48000.;juce::String error;
+            bool valid=true;if(source==4){valid=LibertyPluginAudition::readSource(file,audio,rate);if(!valid)error="Source illisible ou incompatible (96 kHz maximum).";}else audio=LibertyPluginAudition::reference(source,tempo,rate);
+            if(valid)valid=LibertyPluginHost::instance().renderNativeAudition(chain,audio,rate,tempo,*result,error,auditionCancel);
+            juce::MessageManager::callAsync([safe,result,name,valid,error]{if(!safe||safe->stopped.load())return;safe->auditionRunning=false;safe->auditionButton.setEnabled(true);if(valid)safe->showAudition(name,result);else if(error.isNotEmpty())juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Plugin Audition",error);});
+        });
+    }
+    void showAudition(juce::String name,std::shared_ptr<LibertyPluginHost::AuditionResult> result,int volume=1)
+    {
+        auto info=name+juce::String::fromUTF8("\nCPU hors ligne : ")+juce::String(result->cpuPercent,2)+" %"+juce::String::fromUTF8("\nLatence déclarée : ")+juce::String(result->latencySamples)+" samples"+juce::String::fromUTF8("\nCompensation RMS : ")+juce::String(20*std::log10(result->matchGain),1)+" dB";
+        auto dlg=std::make_shared<juce::AlertWindow>("PLUGIN AUDITION - A/B",info,juce::AlertWindow::NoIcon);
+        dlg->addComboBox("volume",juce::StringArray{"-24 dB","-12 dB","-6 dB","0 dB"},"Volume");dlg->getComboBoxComponent("volume")->setSelectedItemIndex(volume,juce::dontSendNotification);
+        dlg->addButton("A - Original",1);dlg->addButton(juce::String::fromUTF8("B - Traité"),2);dlg->addButton("Stop",3);dlg->addButton("Fermer",0);
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);
+        dlg->enterModalState(true,juce::ModalCallbackFunction::create([safe,dlg,name,result](int n){
+            if(!safe||safe->stopped.load())return;safe->previewTransport.stop();if(n==0)return;const int volume=juce::jlimit(0,3,dlg->getComboBoxComponent("volume")->getSelectedItemIndex());
+            if(n==1||n==2){safe->previewTransport.setSource(nullptr);safe->previewReader.reset();safe->labPreview.reset();auto& audio=n==1?result->dry:result->wet;safe->labPreview=std::make_unique<juce::MemoryAudioSource>(audio,true,false);safe->previewTransport.setSource(safe->labPreview.get(),0,nullptr,result->sampleRate);const float db[]={-24.f,-12.f,-6.f,0.f};safe->previewTransport.setGain(juce::Decibels::decibelsToGain(db[volume]));safe->previewTransport.start();}
+            juce::MessageManager::callAsync([safe,name,result,volume]{if(safe&&!safe->stopped.load())safe->showAudition(name,result,volume);});
+        }),false);
+    }
     void insertChain(const LibertyDeviceChains::Entry& entry)
     {
         const int instrument=selectedInstrumentTrack(),audio=selectedAudioTrack();juce::String error;
@@ -7879,6 +7923,7 @@ private:
     std::unique_ptr<LibertyPresetCenter::Panel> presetCenter;
     juce::TextButton chainToggle;
     std::unique_ptr<LibertyDeviceChains::Panel> chainCenter;
+    juce::TextButton auditionButton;std::thread auditionThread;std::atomic<bool> auditionCancel{false};bool auditionRunning=false;std::unique_ptr<juce::FileChooser> auditionChooser;
     juce::Component::SafePointer<LibertyBrowserIntelligence::Panel> quickSearchPanel;
     std::thread quickIndexThread;
     bool quickIndexRunning=false, tagsReadOnly=false;

@@ -527,6 +527,61 @@ bool LibertyPluginHost::insertNativeChain(bool instrument,int lane,const NativeC
     if(stagedInstrument){ensureInstrumentSlot(lane);instruments[(size_t)lane]=std::move(stagedInstrument);}
     return true;
 }
+bool LibertyPluginHost::renderNativeAudition(const NativeChain& chain,const juce::AudioBuffer<float>& source,double rate,double tempo,AuditionResult& out,juce::String& error,const std::atomic<bool>& cancel) const
+{
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    if(chain.empty()||chain.size()>8||rate<8000||rate>96000||source.getNumChannels()!=2||source.getNumSamples()<1||source.getNumSamples()>rate*12)
+    {error="Source ou chaine invalide.";return false;}
+    NativePlayHead head;head.bpm.store(juce::jlimit(20.,400.,tempo));
+    std::vector<std::unique_ptr<juce::AudioProcessor>> processors;
+    const auto release=[&]{for(auto& p:processors)p->releaseResources();};
+    auto sorted=chain;std::sort(sorted.begin(),sorted.end(),[](const auto& a,const auto& b){return a.slot<b.slot;});
+    int latency=0,last=-1;constexpr int block=256;
+    for(const auto& device:sorted)
+    {
+        if(cancel.load()){release();return false;}
+        if(device.slot<0||device.slot>7||device.slot==last){error="Position FX invalide.";release();return false;}last=device.slot;
+        juce::PluginDescription description;
+        if(!findKnownPluginByIdentifier(device.deviceId,description)||description.pluginFormatName!="Liberty Native"||description.isInstrument)
+        {error=juce::String::fromUTF8("Appareil natif indisponible pour la préécoute.");release();return false;}
+        auto p=nativeDevices.create(LibertyEditions::Edition::Standard,device.deviceId.toStdString());
+        if(!p){error="Creation impossible.";release();return false;}
+        if(device.state.getSize()>0){if(!validateNativePresetState(device.deviceId,device.state)){error="Preset incompatible.";release();return false;}p->setStateInformation(device.state.getData(),(int)device.state.getSize());}
+        p->setPlayHead(&head);p->setRateAndBufferSizeDetails(rate,block);p->prepareToPlay(rate,block);
+        latency+=juce::jmax(0,p->getLatencySamples());processors.push_back(std::move(p));
+        if(latency>rate*2){error="Latence excessive.";release();return false;}
+    }
+    const int length=source.getNumSamples()+(int)(rate*2),total=length+latency;
+    AuditionResult result;result.sampleRate=rate;result.latencySamples=latency;result.dry.setSize(2,length);result.dry.clear();result.wet.setSize(2,length);result.wet.clear();
+    for(int ch=0;ch<2;++ch)result.dry.copyFrom(ch,0,source,ch,0,source.getNumSamples());
+    double elapsed=0.;juce::AudioBuffer<float> work(2,block);juce::MidiBuffer midi;
+    for(int pos=0;pos<total;pos+=block)
+    {
+        if(cancel.load()){release();return false;}
+        int n=juce::jmin(block,total-pos);work.setSize(2,n,false,false,true);work.clear();
+        const int available=juce::jlimit(0,n,source.getNumSamples()-pos);
+        for(int ch=0;ch<2;++ch)if(available>0)work.copyFrom(ch,0,source,ch,pos,available);
+        const auto start=juce::Time::getMillisecondCounterHiRes();
+        for(auto& p:processors){midi.clear();p->processBlock(work,midi);}
+        elapsed+=juce::Time::getMillisecondCounterHiRes()-start;
+        for(int i=0;i<n;++i)if(pos+i>=latency&&pos+i-latency<length)
+            for(int ch=0;ch<2;++ch){const float v=work.getSample(ch,i);if(!std::isfinite(v)){error="Sortie DSP non finie.";release();return false;}result.wet.setSample(ch,pos+i-latency,v);}
+    }
+    release();
+    double dry=0.,wet=0.;float peak=0.f;
+    for(int ch=0;ch<2;++ch)for(int i=0;i<length;++i){const auto a=result.dry.getSample(ch,i),v=result.wet.getSample(ch,i);dry+=double(a)*a;wet+=double(v)*v;peak=juce::jmax(peak,std::abs(v));}
+    result.matchGain=wet>1.e-12?juce::jlimit(.25,4.,std::sqrt(dry/wet)):1.;
+    // Match RMS with bounded gain; attenuate both equally if headroom requires it.
+    const float dryPeak=juce::jmax(result.dry.getMagnitude(0,length),.000001f);
+    const float safety=juce::jmin(1.f,.89f/juce::jmax(dryPeak,peak*(float)result.matchGain));
+    result.dry.applyGain(safety);result.wet.applyGain(safety*(float)result.matchGain);
+    const int fade=juce::jmin(128,length/2);
+    for(int ch=0;ch<2;++ch){result.dry.applyGainRamp(ch,0,fade,0.f,1.f);result.wet.applyGainRamp(ch,0,fade,0.f,1.f);result.dry.applyGainRamp(ch,length-fade,fade,1.f,0.f);result.wet.applyGainRamp(ch,length-fade,fade,1.f,0.f);}
+    result.cpuPercent=elapsed/(1000.*total/rate)*100.;out=std::move(result);return true;
+#else
+    juce::ignoreUnused(chain,source,rate,tempo,out,cancel);error=juce::String::fromUTF8("Préécoute native indisponible dans cette édition.");return false;
+#endif
+}
 bool LibertyPluginHost::loadIntoSlot(Slot& slot,
                                      const juce::PluginDescription& description,
                                      juce::String& error,

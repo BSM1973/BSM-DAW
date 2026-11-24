@@ -82,6 +82,14 @@ int main()
     check(!host.insertNativeChain(false,3,broken,error)&&!host.hasEffectForTrackSlot(3,0),"invalid chain never partially published");
     check(host.insertNativeChain(true,2,chain,error),"instrument track FX chain");
     check(host.hasEffectForInstrumentTrackSlot(2,3),"instrument slot restored");
+    juce::AudioBuffer<float> auditionInput(2,4800);auditionInput.clear();
+    for(int ch=0;ch<2;++ch)auditionInput.setSample(ch,100,.25f);
+    LibertyPluginHost::AuditionResult audition;std::atomic<bool> cancel{false};
+    juce::MemoryBlock beforeAudition,afterAudition;check(host.getEffectStateForTrackSlot(2,0,beforeAudition),"snapshot before audition");
+    check(host.renderNativeAudition(chain,auditionInput,48000.,120.,audition,error,cancel),"isolated audition render");
+    check(audition.dry.getNumSamples()==audition.wet.getNumSamples()&&audition.wet.getMagnitude(0,audition.wet.getNumSamples())>0.f,"audible aligned A/B");
+    check(host.getEffectStateForTrackSlot(2,0,afterAudition)&&beforeAudition==afterAudition,"audition preserves project plugin state");
+    cancel.store(true);check(!host.renderNativeAudition(chain,auditionInput,48000.,120.,audition,error,cancel),"cancelled audition rejected");
     for(int i=0;i<100;++i)
     {
         original.loadPreset(i);

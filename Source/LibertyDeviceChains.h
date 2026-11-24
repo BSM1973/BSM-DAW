@@ -51,20 +51,21 @@ class Root final:public juce::TreeViewItem{public:bool mightContainSubItems()ove
 class Panel final:public juce::Component{
 public:
  using Apply=std::function<void(const Entry&)>;using Capture=std::function<void()>;
- Panel(juce::File file,Apply a,Capture c):storage(std::move(file)),apply(std::move(a)),capture(std::move(c)){
+ Panel(juce::File file,Apply a,Capture c,Apply audition={}):storage(std::move(file)),apply(std::move(a)),capture(std::move(c)),onAudition(std::move(audition)){
   addAndMakeVisible(search);search.setTextToShowWhenEmpty(juce::String::fromUTF8("Rechercher une chaîne..."),LibertyUI::Colour::textMuted);search.onTextChange=[this]{refresh();};
   addAndMakeVisible(filter);filter.addItem("Toutes",1);filter.addItem("Usine",2);filter.addItem("Personnelles",3);filter.addItem("Favoris",4);filter.setSelectedId(1,juce::dontSendNotification);filter.onChange=[this]{refresh();};
   addAndMakeVisible(tree);tree.setRootItemVisible(false);tree.setMultiSelectEnabled(false);tree.setColour(juce::TreeView::backgroundColourId,LibertyUI::Colour::canvasDeep);
   addAndMakeVisible(status);status.setFont(juce::Font(11.f));status.setColour(juce::Label::textColourId,LibertyUI::Colour::textMuted);
-  for(auto* b:{&load,&save,&edit,&importButton,&exportButton,&details})addAndMakeVisible(*b);
+  for(auto* b:{&load,&save,&edit,&importButton,&exportButton,&details, &auditionButton})addAndMakeVisible(*b);
   load.setButtonText(juce::String::fromUTF8("Insérer"));save.setButtonText("Capturer");edit.setButtonText("Tags / note");importButton.setButtonText("Importer");exportButton.setButtonText("Exporter");details.setButtonText(juce::String::fromUTF8("Détails"));
+  auditionButton.setButtonText("A/B");auditionButton.setTooltip(juce::String::fromUTF8("Préécouter sans modifier le projet"));auditionButton.onClick=[this]{if(auto* e=selected();e&&onAudition)onAudition(*e);};
   load.onClick=[this]{if(auto* e=selected())apply(*e);};save.onClick=[this]{capture();};edit.onClick=[this]{editSelected();};details.onClick=[this]{showDetails();};importButton.onClick=[this]{chooseImport();};exportButton.onClick=[this]{chooseExport();};
   loadStorage();refresh();
  }
  ~Panel()override{tree.setRootItem(nullptr);}
  void resized()override{
   auto r=getLocalBounds().reduced(6);search.setBounds(r.removeFromTop(25));r.removeFromTop(4);filter.setBounds(r.removeFromTop(25));r.removeFromTop(4);status.setBounds(r.removeFromBottom(22));
-  row(r.removeFromBottom(29),{&importButton,&exportButton,&save});r.removeFromBottom(4);row(r.removeFromBottom(29),{&load,&details,&edit});r.removeFromBottom(4);tree.setBounds(r);
+  row(r.removeFromBottom(29),{&importButton,&exportButton,&save});r.removeFromBottom(4);row(r.removeFromBottom(29),{&load,&auditionButton,&details,&edit});r.removeFromBottom(4);tree.setBounds(r);
  }
  void addCaptured(Entry e){if(readOnly||e.name.trim().isEmpty()||e.devices.empty()||entries.size()>=500)return;e.name=e.name.trim().substring(0,80);e.id="user:"+juce::Uuid().toString();e.factory=false;entries.push_back(e);if(!persist()){entries.pop_back();return;}refresh(e.id);}
 private:
@@ -103,6 +104,6 @@ private:
   auto* e=selected();if(!e)return;auto copy=*e;chooser=std::make_unique<juce::FileChooser>("Exporter Device Chain",juce::File{},"*.libertychain");auto safe=juce::Component::SafePointer<Panel>(this);
   chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,copy](const juce::FileChooser& fc){if(!safe||fc.getResult()==juce::File{})return;auto file=fc.getResult().withFileExtension("libertychain");if(!file.replaceWithText(encode(copy)->toString()))juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Device Chains","Export impossible.");});
  }
- juce::File storage;Apply apply;Capture capture;bool readOnly=false;std::vector<Entry> entries;juce::TextEditor search;juce::ComboBox filter;juce::TreeView tree;std::unique_ptr<Root> root;juce::Label status;juce::TextButton load,save,edit,importButton,exportButton,details;std::unique_ptr<juce::FileChooser> chooser;
+ juce::File storage;Apply apply;Capture capture;Apply onAudition;bool readOnly=false;std::vector<Entry> entries;juce::TextEditor search;juce::ComboBox filter;juce::TreeView tree;std::unique_ptr<Root> root;juce::Label status;juce::TextButton auditionButton,load,save,edit,importButton,exportButton,details;std::unique_ptr<juce::FileChooser> chooser;
 };
 }

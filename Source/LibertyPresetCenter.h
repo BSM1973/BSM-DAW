@@ -47,13 +47,14 @@ class Panel final:public juce::Component {
 public:
  using Apply=std::function<void(const Entry&)>;
  using Capture=std::function<void()>;
- Panel(juce::File file,Apply apply,Capture capture):storage(std::move(file)),onApply(std::move(apply)),onCapture(std::move(capture)){
-  for(auto* button:{&load,&save,&importButton,&exportButton,&favourite,&rateButton,&tagButton})addAndMakeVisible(*button);
+ Panel(juce::File file,Apply apply,Capture capture,Apply audition={}):storage(std::move(file)),onApply(std::move(apply)),onCapture(std::move(capture)),onAudition(std::move(audition)){
+  for(auto* button:{&load,&save,&importButton,&exportButton,&favourite,&rateButton,&tagButton, &auditionButton})addAndMakeVisible(*button);
   load.setButtonText(juce::String::fromUTF8("Insérer"));save.setButtonText("Sauver slot");importButton.setButtonText("Importer");exportButton.setButtonText("Exporter");favourite.setButtonText("Favori");rateButton.setButtonText("Note");tagButton.setButtonText("Tags");
   addAndMakeVisible(search);search.setTextToShowWhenEmpty("Nom, famille, tags...",LibertyUI::Colour::textMuted);search.onTextChange=[this]{refresh();};
   addAndMakeVisible(filter);filter.addItem("Tous les presets",1);filter.addItem("Usine",2);filter.addItem("Personnels",3);filter.addItem("Favoris",4);filter.setSelectedId(1,juce::dontSendNotification);filter.onChange=[this]{refresh();};
   addAndMakeVisible(tree);tree.setRootItemVisible(false);tree.setMultiSelectEnabled(false);tree.setColour(juce::TreeView::backgroundColourId,LibertyUI::Colour::canvasDeep);
   addAndMakeVisible(status);status.setFont(juce::Font(11.f));status.setColour(juce::Label::textColourId,LibertyUI::Colour::textMuted);
+  auditionButton.setButtonText("A/B");auditionButton.setTooltip(juce::String::fromUTF8("Préécouter sans modifier le projet"));auditionButton.onClick=[this]{if(auto* e=selected();e&&onAudition)onAudition(*e);};
   load.onClick=[this]{if(auto* e=selected())onApply(*e);};
   save.onClick=[this]{onCapture();};
   favourite.onClick=[this]{edit([](Entry& e){e.favourite=!e.favourite;});};
@@ -65,7 +66,7 @@ public:
  ~Panel()override{tree.setRootItem(nullptr);}
  void resized()override{
   auto r=getLocalBounds().reduced(6);search.setBounds(r.removeFromTop(25));r.removeFromTop(4);filter.setBounds(r.removeFromTop(25));r.removeFromTop(4);
-  status.setBounds(r.removeFromBottom(22));auto footer=r.removeFromBottom(29);layoutRow(footer,{&importButton,&exportButton,&save});r.removeFromBottom(4);auto actions=r.removeFromBottom(29);layoutRow(actions,{&load,&favourite,&rateButton,&tagButton});r.removeFromBottom(4);tree.setBounds(r);
+  status.setBounds(r.removeFromBottom(22));auto footer=r.removeFromBottom(29);layoutRow(footer,{&importButton,&exportButton,&save});r.removeFromBottom(4);auto actions=r.removeFromBottom(29);layoutRow(actions,{&load,&auditionButton,&favourite,&rateButton,&tagButton});r.removeFromBottom(4);tree.setBounds(r);
  }
  void addCaptured(juce::String device,juce::MemoryBlock state,juce::String name){
   if(readOnly||!LibertyPluginHost::instance().validateNativePresetState(device,state))return;
@@ -119,8 +120,8 @@ private:
   auto safe=juce::Component::SafePointer<Panel>(this);
   chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,copy](const juce::FileChooser& fc){if(!safe||fc.getResult()==juce::File{})return;auto file=fc.getResult().withFileExtension("libertypreset");if(!file.replaceWithText(toXml(copy)->toString()))juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Preset Center","Export impossible.");});
  }
- juce::File storage;Apply onApply;Capture onCapture;bool readOnly=false;std::vector<Entry> entries;
+ juce::File storage;Apply onApply;Capture onCapture;Apply onAudition;bool readOnly=false;std::vector<Entry> entries;
  juce::TextEditor search;juce::ComboBox filter;juce::TreeView tree;std::unique_ptr<Root> root;juce::Label status;
- juce::TextButton load,save,importButton,exportButton,favourite,rateButton,tagButton;std::unique_ptr<juce::FileChooser> chooser;
+ juce::TextButton auditionButton,load,save,importButton,exportButton,favourite,rateButton,tagButton;std::unique_ptr<juce::FileChooser> chooser;
 };
 }
