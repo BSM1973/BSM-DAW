@@ -122,6 +122,53 @@ static bool libertySavePluginArtwork(const juce::File& source,
     return true;
 }
 
+// Vector icons: no font-dependent symbols; one click changes grouping.
+class PluginGroupingButton final : public juce::Button
+{
+public:
+    PluginGroupingButton() : juce::Button("Classement des plugins") {}
+    void setByType(bool value)
+    {
+        byType = value;
+        setTooltip(value
+            ? juce::String::fromUTF8("Classement par type. Cliquer pour classer par fabricant.")
+            : juce::String::fromUTF8("Classement par fabricant. Cliquer pour classer par type."));
+        setTitle(getTooltip());
+        repaint();
+    }
+    void paintButton(juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced(0.5f);
+        if (r.getWidth() < 4.f || r.getHeight() < 4.f) return;
+        g.setColour(juce::Colour(down ? 0xff244d5a : over ? 0xff315263 : 0xff203746));
+        g.fillRoundedRectangle(r, 4.f);
+        g.setColour(juce::Colour(0xff507383));
+        g.drawRoundedRectangle(r, 4.f, 1.f);
+        const float x = r.getCentreX(), y = r.getCentreY();
+        g.setColour(byType ? juce::Colour(0xffb9e7ec) : juce::Colour(0xffe6c478));
+        if (byType)
+        {
+            for (int i=0; i<3; ++i)
+            {
+                const float yy=y-5.f+5.f*i;
+                g.fillRoundedRectangle(x-7.f, yy-1.5f, 3.f, 3.f, .8f);
+                g.drawLine(x-2.f, yy, x+7.f, yy, 1.4f);
+            }
+        }
+        else
+        {
+            juce::Path folder;
+            folder.startNewSubPath(x-7.f,y-4.f);folder.lineTo(x-3.f,y-4.f);
+            folder.lineTo(x-1.f,y-2.f);folder.lineTo(x+7.f,y-2.f);
+            folder.lineTo(x+7.f,y+6.f);folder.lineTo(x-7.f,y+6.f);
+            folder.closeSubPath();
+            g.strokePath(folder,juce::PathStrokeType(1.4f));
+        }
+    }
+private:
+    bool byType=true;
+};
+
 class PluginTreeItem final : public juce::TreeViewItem
 {
 public:
@@ -178,7 +225,8 @@ public:
         const float x = icon.getX(), y = icon.getY();
         const auto turquoise = juce::Colour(0xff80cbd4);
         const bool favourites = label == "FAVORIS";
-        g.setColour(favourites ? juce::Colour(0xffffc857)
+        const bool pinned = stableTreeId == "LibertyPinnedManufacturer";
+        g.setColour((favourites || pinned) ? juce::Colour(0xffffc857)
                               : (isMouseOver ? juce::Colours::white : turquoise));
         if (label == "INSTRUMENTS")
         {
@@ -206,6 +254,18 @@ public:
             g.drawEllipse(x + 2.0f, y + 2.0f, 14.0f, 14.0f, 1.5f);
             g.drawLine(x + 9.0f, y + 5.0f, x + 9.0f, y + 9.0f, 1.4f);
             g.drawLine(x + 9.0f, y + 9.0f, x + 12.0f, y + 11.0f, 1.4f);
+        }
+        else if (pinned)
+        {
+            // Gold pushpin drawn as vector geometry.
+            juce::Path pin;
+            pin.startNewSubPath(x+5.f,y+2.f);pin.lineTo(x+13.f,y+2.f);
+            pin.lineTo(x+11.f,y+4.f);pin.lineTo(x+11.f,y+8.f);
+            pin.lineTo(x+14.f,y+11.f);pin.lineTo(x+4.f,y+11.f);
+            pin.lineTo(x+7.f,y+8.f);pin.lineTo(x+7.f,y+4.f);
+            pin.closeSubPath();
+            g.strokePath(pin,juce::PathStrokeType(1.2f));
+            g.drawLine(x+9.f,y+11.f,x+9.f,y+17.f,1.4f);
         }
         else if (favourites)
         {
@@ -274,7 +334,7 @@ public:
         }
         if (kind == Kind::manufacturer)
         {
-            const bool fav = label == "FAVORIS";
+            const bool fav = label == "FAVORIS" || stableTreeId == "LibertyPinnedManufacturer";
             // Obsidian graphite manufacturer headers; preserve the gold-toned favourites surface.
             g.setColour(fav ? juce::Colour(0xff2a2415) : juce::Colour(0xff1b2833));
             g.fillRect(0, 0, width, height);
@@ -877,6 +937,10 @@ public:
         pluginFiltersButton.onClick = [this] { showPluginFiltersMenu(); };
         addAndMakeVisible(pluginFiltersButton);
         pluginFiltersButton.setVisible(false);
+        pluginGroupingButton.setByType(groupByUsage);
+        pluginGroupingButton.onClick = [this] { groupByUsage = !groupByUsage; rebuildPluginTree(); };
+        addAndMakeVisible(pluginGroupingButton);
+        pluginGroupingButton.setVisible(false);
         spliceButton.setButtonText("SPLICE");
         for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
@@ -1287,16 +1351,19 @@ public:
         // reducing the thumbnail/list vertical space.
         if (category == Category::plugins)
         {
-            constexpr int filterWidth = 87;
-            constexpr int gap = 7;
-            pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20 - filterWidth - gap), 23);
-            pluginFiltersButton.setBounds(juce::jmax(10, getWidth() - 10 - filterWidth),
-                                          76, filterWidth, 23);
+            // Allocate right to left from a bounded rectangle: no overlapping controls.
+            auto band = juce::Rectangle<int>(10, 76, juce::jmax(0, getWidth()-20), 23);
+            pluginFiltersButton.setBounds(band.removeFromRight(juce::jmin(87, band.getWidth())));
+            band.removeFromRight(juce::jmin(5, band.getWidth()));
+            pluginGroupingButton.setBounds(band.removeFromRight(juce::jmin(28, band.getWidth())));
+            band.removeFromRight(juce::jmin(5, band.getWidth()));
+            pluginSearch.setBounds(band);
         }
         else
         {
             pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
             pluginFiltersButton.setBounds(0, 0, 0, 0);
+            pluginGroupingButton.setBounds(0, 0, 0, 0);
         }
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
@@ -5749,6 +5816,7 @@ private:
         }
         pluginTree.setVisible(pluginMode);
         pluginFiltersButton.setVisible(pluginMode);
+        pluginGroupingButton.setVisible(pluginMode);
         artworkStatsLabel.setVisible(pluginMode && getHeight() >= 540);
         thumbnailModeButton.setVisible(pluginMode);
         importThumbnailButton.setVisible(pluginMode);
@@ -5937,6 +6005,8 @@ private:
                 manufacturers.add(name);
         }
         manufacturers.sort(true);
+        const int pinnedIndex = manufacturers.indexOf("Liberty Music Software", true);
+        if (pinnedIndex > 0) { auto name = manufacturers[pinnedIndex]; manufacturers.remove(pinnedIndex); manufacturers.insert(0, name); }
 
         juce::PopupMenu menu;
         menu.addSectionHeader(juce::String::fromUTF8("FILTRES DE PLUGINS"));
@@ -6392,6 +6462,7 @@ private:
         // Any explicit rebuild (filter, refresh, keyboard action) supersedes a
         // scheduled keystroke rebuild, avoiding a duplicate expensive pass.
         pluginSearchPending = false;
+        pluginGroupingButton.setByType(groupByUsage);
         // Status and filter are based on the same exact JUCE identifiers that
         // the existing PNG importer uses. AU and VST3 variants are independent.
         const auto folder = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
@@ -6454,7 +6525,7 @@ private:
         {
             const auto am = normalisedManufacturer(a);
             const auto bm = normalisedManufacturer(b);
-            const int c = am.compareNatural(bm, false);
+            const int c = LibertyManufacturerGrouping::compareManufacturers(am, bm);
             return c != 0 ? c < 0 : a.name.compareNatural(b.name, false) < 0;
         });
 
@@ -6502,6 +6573,27 @@ private:
                             ++visibleCount;
         }
         refreshPluginFiltersButton(visibleCount);
+
+        // The pinned manufacturer's folder precedes even favourites and recents.
+        // In type view it is a shortcut; in manufacturer view it is the only
+        // primary group for Liberty. The real plugin identifiers are unchanged.
+        PluginTreeItem* pinnedLiberty = nullptr;
+        if (!missingPluginsOnly)
+            for (const auto& d : pluginDescriptions)
+            {
+                if (!LibertyManufacturerGrouping::isPinned(d.manufacturerName) || !matches(d)) continue;
+                if (pinnedLiberty == nullptr)
+                {
+                    pinnedLiberty = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
+                        "Liberty Music Software", nullptr, {}, {}, {}, false, {}, {}, false, {},
+                        "LibertyPinnedManufacturer");
+                    pluginRoot->addSubItem(pinnedLiberty);
+                }
+                auto* item = makePluginItem(d);
+                pinnedLiberty->addSubItem(item);
+                if (!groupByUsage && quickView == QuickView::all && selectedCollection.isEmpty())
+                    keyboardResults.push_back(item);
+            }
 
         PluginTreeItem* fav = nullptr;
         if (!missingPluginsOnly)
@@ -6647,79 +6739,76 @@ private:
         // plugins as MIDI effects without reliable plugin metadata.
         PluginTreeItem* instruments = nullptr;
         PluginTreeItem* audioEffects = nullptr;
-        if (!missingPluginsOnly)
+        if (!missingPluginsOnly && groupByUsage)
         {
             instruments = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "INSTRUMENTS");
             audioEffects = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, "EFFETS AUDIO");
             pluginRoot->addSubItem(instruments);
             pluginRoot->addSubItem(audioEffects);
         }
-        for (int family = 0; family < (missingPluginsOnly ? 0 : 2); ++family)
+        for (int family = 0; family < ((!missingPluginsOnly && groupByUsage) ? 2 : 0); ++family)
         {
             auto* parent = family == 0 ? instruments : audioEffects;
-            // Keep the original manufacturer-first hierarchy available.
-            // Function-first creates category -> manufacturer -> plugin.
-            if (groupByUsage)
-            {
-                std::vector<PluginUsage> available;
-                if (family == 0)
-                    available.insert(available.end(), instrumentUsages().begin(), instrumentUsages().end());
-                else
-                    available.insert(available.end(), effectUsages().begin(), effectUsages().end());
-                available.push_back(PluginUsage::unclassified);
-                for (const auto usage : available)
-                {
-                    PluginTreeItem* usageGroup = nullptr;
-                    juce::String current;
-                    PluginTreeItem* manufacturerGroup = nullptr;
-                    for (const auto& d : pluginDescriptions)
-                    {
-                        if (d.isInstrument != (family == 0) || !matches(d)
-                            || effectivePluginUsage(d) != usage) continue;
-                        if (usageGroup == nullptr)
-                        {
-                            usageGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
-                                usageLabel(usage));
-                            parent->addSubItem(usageGroup);
-                        }
-                        const auto manufacturer = normalisedManufacturer(d);
-                        if (manufacturer != current)
-                        {
-                            current = manufacturer;
-                            manufacturerGroup = new PluginTreeItem(
-                                PluginTreeItem::Kind::manufacturer, manufacturer);
-                            usageGroup->addSubItem(manufacturerGroup);
-                        }
-                        auto* item = makePluginItem(d);
-                        manufacturerGroup->addSubItem(item);
-                        if (quickView == QuickView::all && selectedCollection.isEmpty())
-                            keyboardResults.push_back(item);
-                    }
-                }
-            }
+            // Type-first view retains the existing categories and classification.
+            std::vector<PluginUsage> available;
+            if (family == 0)
+                available.insert(available.end(), instrumentUsages().begin(), instrumentUsages().end());
             else
+                available.insert(available.end(), effectUsages().begin(), effectUsages().end());
+            available.push_back(PluginUsage::unclassified);
+            for (const auto usage : available)
             {
+                PluginTreeItem* usageGroup = nullptr;
                 juce::String current;
-                PluginTreeItem* group = nullptr;
+                PluginTreeItem* manufacturerGroup = nullptr;
                 for (const auto& d : pluginDescriptions)
                 {
-                    if (d.isInstrument != (family == 0) || !matches(d)) continue;
+                    if (d.isInstrument != (family == 0) || !matches(d)
+                        || effectivePluginUsage(d) != usage) continue;
+                    if (usageGroup == nullptr)
+                    {
+                        usageGroup = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
+                            usageLabel(usage));
+                        parent->addSubItem(usageGroup);
+                    }
                     const auto manufacturer = normalisedManufacturer(d);
                     if (manufacturer != current)
                     {
                         current = manufacturer;
-                        group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer,
-                                                   manufacturer);
-                        parent->addSubItem(group);
+                        manufacturerGroup = new PluginTreeItem(
+                            PluginTreeItem::Kind::manufacturer, manufacturer);
+                        usageGroup->addSubItem(manufacturerGroup);
                     }
-                    if (group != nullptr)
-                    {
-                        auto* item = makePluginItem(d);
-                        group->addSubItem(item);
-                        if (quickView == QuickView::all && selectedCollection.isEmpty())
-                            keyboardResults.push_back(item);
-                    }
+                    auto* item = makePluginItem(d);
+                    manufacturerGroup->addSubItem(item);
+                    if (quickView == QuickView::all && selectedCollection.isEmpty())
+                        keyboardResults.push_back(item);
                 }
+            }
+        }
+
+        // Manufacturer-first means one root folder per actual vendor, not
+        // duplicated instrument/effect vendor folders.
+        std::vector<PluginTreeItem*> vendorGroups;
+        if (!missingPluginsOnly && !groupByUsage)
+        {
+            juce::String current;
+            PluginTreeItem* group = nullptr;
+            for (const auto& d : pluginDescriptions)
+            {
+                if (!matches(d) || LibertyManufacturerGrouping::isPinned(d.manufacturerName)) continue;
+                const auto manufacturer = normalisedManufacturer(d);
+                if (group == nullptr || !manufacturer.equalsIgnoreCase(current))
+                {
+                    current = manufacturer;
+                    group = new PluginTreeItem(PluginTreeItem::Kind::manufacturer, manufacturer);
+                    pluginRoot->addSubItem(group);
+                    vendorGroups.push_back(group);
+                }
+                auto* item = makePluginItem(d);
+                group->addSubItem(item);
+                if (quickView == QuickView::all && selectedCollection.isEmpty())
+                    keyboardResults.push_back(item);
             }
         }
         // During a search, reveal matching manufacturers without requiring
@@ -6757,6 +6846,8 @@ private:
             || pluginUsageFilter != PluginUsage::all
             || selectedCollection.isNotEmpty()
             || artworkView != ArtworkView::all;
+        if (pinnedLiberty != nullptr) pinnedLiberty->setOpen(revealMatches);
+        for (auto* vendor : vendorGroups) vendor->setOpen(revealMatches);
         if (fav != nullptr) fav->setOpen(revealMatches);
         if (recentGroup != nullptr) recentGroup->setOpen(revealMatches);
         if (collectionsRoot != nullptr) collectionsRoot->setOpen(revealMatches);
@@ -7374,6 +7465,7 @@ private:
     juce::FileTreeComponent fileTree;
     juce::TreeView pluginTree;
     juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton, pluginFiltersButton;
+    PluginGroupingButton pluginGroupingButton;
     LibertyPluginSearchEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;

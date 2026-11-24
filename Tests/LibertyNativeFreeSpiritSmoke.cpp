@@ -24,6 +24,14 @@ int main()
     std::sort(makers.begin(),makers.end(),[](const auto& a,const auto& b)
         {return canonicalName(a).compareNatural(canonicalName(b),false)<0;});
     check(canonicalName(makers[1])==canonicalName(makers[2]),"canonical sorting keeps aliases adjacent");
+    makers = {"Steinberg","Native Instruments","Liberty","Arturia","Liberty Music Software"};
+    std::sort(makers.begin(),makers.end(),[](const auto& a,const auto& b)
+        {return LibertyManufacturerGrouping::compareManufacturers(a,b)<0;});
+    check(LibertyManufacturerGrouping::isPinned(makers[0]) &&
+          LibertyManufacturerGrouping::isPinned(makers[1]),"Liberty aliases pinned first");
+    check(makers[2]=="Arturia" && makers[3]=="Native Instruments" && makers[4]=="Steinberg",
+          "remaining manufacturers alphabetic");
+    check(!LibertyManufacturerGrouping::isPinned("Liberty Audio"),"unrelated brand never pinned");
     auto& host=LibertyPluginHost::instance();
     host.initialise(48000,128);
     host.setNativeTempo(96);
