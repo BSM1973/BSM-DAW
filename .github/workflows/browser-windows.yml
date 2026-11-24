@@ -1,0 +1,25 @@
+name: Browser PRO Windows x64
+on:
+  push:
+    branches: ['validation/browser-pro-v7-1-windows']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-preview:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure native preview
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DLIBERTY_NATIVE_PREVIEW=ON
+      - name: Compile Liberty and FreeSpirit regression tests
+        run: cmake --build build --config Release --parallel 3 --target BSM_DAW LibertyNativeFreeSpiritSmoke LibertyFreeSpiritOriginalCoreTests
+      - name: Test native presets and original DSP
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R 'LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Native-FreeSpirit-Preview-Windows-x64
+          path: build/BSM_DAW_artefacts/Release/Liberty.exe
+          if-no-files-found: error
