@@ -1,5 +1,9 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
+#if defined(LIBERTY_NATIVE_PREVIEW)
+#include "Plugin.h"
+#include <cmath>
+#endif
 
 namespace
 {
@@ -56,6 +60,11 @@ bool LibertyPluginHost::runSingleVST3ScanHelper(const juce::String& pluginIdenti
 LibertyPluginHost::LibertyPluginHost()
 {
     formatManager.addDefaultFormats();
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    nativeDevices.registerFactory("liberty.native.freespirit-delay",
+        []() -> std::unique_ptr<juce::AudioProcessor>
+        { return std::make_unique<FreeSpiritProcessor>(); });
+#endif
     loadCachedPluginList();
     recoverCrashedPluginsFromDeadMansPedal();
     loadPersistentBlacklist();
@@ -375,10 +384,46 @@ void LibertyPluginHost::scanInstalledPlugins(const ScanProgressCallback& progres
     if (progressCallback) progressCallback({}, {}, 1.0f);
 }
 
+#if defined(LIBERTY_NATIVE_PREVIEW)
+void LibertyPluginHost::setNativeTempo(double bpm) noexcept
+{
+    if (std::isfinite(bpm))
+        nativePlayHead.bpm.store(juce::jlimit(20.0, 400.0, bpm), std::memory_order_relaxed);
+}
+
+juce::Array<juce::PluginDescription> LibertyPluginHost::nativeDescriptions() const
+{
+    juce::Array<juce::PluginDescription> descriptions;
+    // Standard is an entitlement allow-list here, not a released edition.
+    for (const auto& device : LibertyEditions::catalogue)
+    {
+        if (!nativeDevices.isAvailable(LibertyEditions::Edition::Standard, device.id)) continue;
+        juce::PluginDescription d;
+        d.name = juce::String::fromUTF8(device.name.data(), (int)device.name.size());
+        d.descriptiveName = d.name;
+        d.fileOrIdentifier = juce::String::fromUTF8(device.id.data(), (int)device.id.size());
+        d.pluginFormatName = "Liberty Native";
+        d.manufacturerName = "Liberty Music Software";
+        d.category = "Delay";
+        d.version = "0.2.1";
+        d.uniqueId = d.fileOrIdentifier.hashCode();
+        d.isInstrument = device.kind == LibertyEditions::Kind::Instrument;
+        d.numInputChannels = d.isInstrument ? 0 : 2;
+        d.numOutputChannels = 2;
+        descriptions.add(d);
+    }
+    return descriptions;
+}
+#endif
+
 juce::Array<juce::PluginDescription> LibertyPluginHost::getPluginDescriptions() const
 {
     const juce::ScopedLock scoped(lock);
-    return knownPlugins.getTypes();
+    auto result = knownPlugins.getTypes();
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    result.addArray(nativeDescriptions());
+#endif
+    return result;
 }
 
 void LibertyPluginHost::prepareSlot(Slot& slot)
@@ -404,16 +449,43 @@ bool LibertyPluginHost::loadIntoSlot(Slot& slot,
         return false;
     }
 
-    auto instance = formatManager.createPluginInstance(description,
-                                                       currentSampleRate,
-                                                       currentBlockSize,
-                                                       error);
-    if (!instance) return false;
+    std::unique_ptr<juce::AudioProcessor> instance;
+    auto resolvedDescription = description;
+    if (description.fileOrIdentifier.startsWith("liberty.native.")
+        || description.pluginFormatName == "Liberty Native")
+    {
+#if defined(LIBERTY_NATIVE_PREVIEW)
+        for (const auto& native : nativeDescriptions())
+        {
+            if (native.fileOrIdentifier != description.fileOrIdentifier
+                || native.isInstrument != requireInstrument) continue;
+            instance = nativeDevices.create(LibertyEditions::Edition::Standard,
+                native.fileOrIdentifier.toStdString());
+            if (instance)
+            {
+                instance->setPlayHead(&nativePlayHead);
+                resolvedDescription = native;
+            }
+            break;
+        }
+#endif
+        if (!instance)
+        {
+            error = "Appareil Liberty natif indisponible dans cette édition.";
+            return false;
+        }
+    }
+    else
+    {
+        instance = formatManager.createPluginInstance(description, currentSampleRate,
+                                                      currentBlockSize, error);
+        if (!instance) return false;
+    }
 
     closeEditor(slot);
     if (slot.processor) slot.processor->releaseResources();
     slot.processor = std::move(instance);
-    slot.description = description;
+    slot.description = resolvedDescription;
     prepareSlot(slot);
     return true;
 }
@@ -555,6 +627,10 @@ bool LibertyPluginHost::setInstrumentStateForTrack(int t,const juce::MemoryBlock
 bool LibertyPluginHost::findKnownPluginByIdentifier(const juce::String& id, juce::PluginDescription& out) const
 {
     if(id.isEmpty())return false;
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    for(const auto& d:nativeDescriptions())if(d.fileOrIdentifier==id){out=d;return true;}
+#endif
+    if(id.startsWith("liberty.native."))return false;
     for(const auto& d:knownPlugins.getTypes())if(d.fileOrIdentifier==id){out=d;return true;}
     return false;
 }

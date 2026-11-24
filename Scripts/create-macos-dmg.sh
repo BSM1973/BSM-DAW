@@ -10,6 +10,8 @@ fi
 
 app="$1"
 output="$2"
+app_name="$(basename "$app")"
+volume_name="${app_name%.app}"
 if [[ ! -d "$app" || ! -f "$app/Contents/MacOS/Liberty" ]]; then
   echo "Liberty.app is missing or its executable was not built: $app" >&2
   exit 1
@@ -28,12 +30,12 @@ cleanup() {
 trap cleanup EXIT
 
 # Use ditto to preserve the existing signed application bundle intact.
-ditto "$app" "$staging/Liberty.app"
+ditto "$app" "$staging/$app_name"
 ln -s /Applications "$staging/Applications"
 test -L "$staging/Applications"
 
 hdiutil create -quiet \
-  -volname "Liberty" \
+  -volname "$volume_name" \
   -srcfolder "$staging" \
   -format UDZO \
   -imagekey zlib-level=9 \
@@ -44,12 +46,12 @@ hdiutil verify -quiet "$output"
 hdiutil attach -quiet -readonly -nobrowse -mountpoint "$mountpoint" "$output"
 mounted=true
 
-test -d "$mountpoint/Liberty.app"
-test -f "$mountpoint/Liberty.app/Contents/MacOS/Liberty"
+test -d "$mountpoint/$app_name"
+test -f "$mountpoint/$app_name/Contents/MacOS/Liberty"
 test -L "$mountpoint/Applications"
 test "$(readlink "$mountpoint/Applications")" = "/Applications"
-codesign --verify --deep --strict "$mountpoint/Liberty.app"
-lipo "$mountpoint/Liberty.app/Contents/MacOS/Liberty" -verify_arch arm64
+codesign --verify --deep --strict "$mountpoint/$app_name"
+lipo "$mountpoint/$app_name/Contents/MacOS/Liberty" -verify_arch arm64
 
 hdiutil detach -quiet "$mountpoint"
 mounted=false

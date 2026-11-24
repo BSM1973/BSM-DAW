@@ -84,3 +84,28 @@ Prochaine étape : porter ECHO 86 et FreeSpirit Delay en natif, avec les
 moteurs UI/presets, puis reprendre le routage d'insertion dans Liberty.
 Intégrer ensuite les autres produits et préparer trois DMG authentiques,
 sans perte de fonctions de l'édition Base.
+
+## Aperçu natif FreeSpirit (en cours de validation)
+
+L'option interne LIBERTY_NATIVE_PREVIEW=ON lie les trois unités de compilation
+d'origine de FreeSpirit Delay, leurs en-têtes et leurs 100 presets au DAW,
+depuis le commit faf06fb0c99d2915df7e3118462e31db1c8b5ea7, sans appeler
+le projet CMake du plugin ni produire de format AU/VST3. L'option est désactivée
+par défaut; les éditions commerciales Standard et Ultimate restent bloquées.
+
+Le registre expose uniquement liberty.native.freespirit-delay, au format
+d'affichage Liberty Native, via le navigateur existant. Le gestionnaire
+d'inserts accepte AudioProcessor et AudioPluginInstance par leur base commune.
+Le chemin de chargement natif ne passe ni par le scanner ni par un wrapper.
+Les états utilisent l'identifiant stable et la sauvegarde d'inserts existante.
+Le tempo temps réel est transmis via le playhead natif. Les tests CI doivent
+vérifier les 100 presets, l'éditeur d'origine, les deux chaînes d'inserts,
+la parité audio avec le processeur d'origine et la restauration d'état.
+
+L'artefact de test macOS a un nom de bundle et un identifiant séparés.
+Ce n'est PAS une édition Standard achetable. MIDI Learn des effets (les inserts
+reçoivent actuellement un buffer MIDI vide), automation DAW, export hors ligne,
+préservation des états en édition inférieure et validation visuelle restent
+à finaliser; ne pas utiliser les seuls tests comme preuve de ces fonctionnalités.
+Tester sur un projet de copie, pas sur les originaux. Aucun AU/VST3 n'est inclus
+pour cet appareil; la version boutique est indépendante.

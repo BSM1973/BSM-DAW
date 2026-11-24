@@ -8,6 +8,9 @@
 #include <functional>
 #include <memory>
 #include <array>
+#if defined(LIBERTY_NATIVE_PREVIEW)
+#include "LibertyNativeDeviceRegistry.h"
+#endif
 
 class LibertyPluginHost final
 {
@@ -21,6 +24,9 @@ public:
                                         const juce::File& resultFile);
 
     void initialise(double sampleRate, int blockSize);
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    void setNativeTempo(double bpm) noexcept;
+#endif
     void shutdown();
     void clearProjectPlugins();
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});
@@ -100,7 +106,7 @@ private:
 
     struct Slot
     {
-        std::unique_ptr<juce::AudioPluginInstance> processor;
+        std::unique_ptr<juce::AudioProcessor> processor;
         juce::PluginDescription description;
         juce::AudioBuffer<float> baseline;
         juce::AudioBuffer<float> work;
@@ -126,6 +132,21 @@ private:
     void ensureAudioTrackSlot(int trackIndex);
     void ensureInstrumentSlot(int instrumentTrack);
 
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    struct NativePlayHead final : juce::AudioPlayHead
+    {
+        std::atomic<double> bpm { 120.0 };
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo result;
+            result.setBpm(bpm.load(std::memory_order_relaxed));
+            return result;
+        }
+    };
+    NativePlayHead nativePlayHead;
+    LibertyEditions::NativeDeviceRegistry nativeDevices;
+    juce::Array<juce::PluginDescription> nativeDescriptions() const;
+#endif
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
     std::vector<std::array<std::unique_ptr<Slot>, effectSlotsPerTrack>> trackEffects;

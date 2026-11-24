@@ -12,6 +12,12 @@ if(NOT LIBERTY_DAW_EDITION STREQUAL "BASE")
   message(FATAL_ERROR "Liberty ${LIBERTY_DAW_EDITION} is not releasable yet: native DSP engines are not linked. AU/VST3 wrappers are not substitutes.")
 endif()
 
+option(LIBERTY_NATIVE_PREVIEW "Internal FreeSpirit native preview (not a retail edition)" OFF)
+set(LIBERTY_APP_BUNDLE_ID "${LIBERTY_APP_BUNDLE_ID}")
+if(LIBERTY_NATIVE_PREVIEW)
+  set(LIBERTY_APP_BUNDLE_ID "com.bsm.liberty.nativepreview")
+endif()
+
 if(APPLE)
   enable_language(OBJCXX)
 endif()
@@ -74,6 +80,38 @@ target_compile_definitions(BSM_DAW PRIVATE JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JU
 target_link_libraries(BSM_DAW PRIVATE LibertyFactoryDrumAssets)
 target_link_libraries(BSM_DAW PRIVATE juce::juce_audio_basics juce::juce_audio_devices juce::juce_audio_formats juce::juce_audio_processors juce::juce_audio_utils juce::juce_dsp juce::juce_core juce::juce_data_structures juce::juce_events juce::juce_graphics juce::juce_gui_basics juce::juce_gui_extra signalsmith-stretch)
 juce_generate_juce_header(BSM_DAW)
+# Native preview only. Fetch the original source revision; do NOT invoke its
+# CMake project, create an AU/VST3 target, or build a separate plugin wrapper.
+if(LIBERTY_NATIVE_PREVIEW)
+  FetchContent_Declare(liberty_freespirit
+    GIT_REPOSITORY https://github.com/BSM1973/Liberty-FreeSpirit-Delay.git
+    GIT_TAG faf06fb0c99d2915df7e3118462e31db1c8b5ea7
+    GIT_SHALLOW FALSE
+    SOURCE_SUBDIR _no_standalone_plugin_build)
+  FetchContent_MakeAvailable(liberty_freespirit)
+  set(FSD_SOURCE "${liberty_freespirit_SOURCE_DIR}/Source")
+  set(FSD_NATIVE_SOURCES "${FSD_SOURCE}/Plugin.cpp" "${FSD_SOURCE}/Editor.cpp" "${FSD_SOURCE}/Presets.cpp")
+  # Isolate the legacy factory symbol without modifying the upstream DSP/UI.
+  set_source_files_properties("${FSD_SOURCE}/Plugin.cpp" PROPERTIES
+    COMPILE_DEFINITIONS "createPluginFilter=libertyUnusedFreeSpiritStandaloneFactory")
+  target_sources(BSM_DAW PRIVATE ${FSD_NATIVE_SOURCES})
+  target_include_directories(BSM_DAW PRIVATE "${FSD_SOURCE}")
+  target_compile_definitions(BSM_DAW PRIVATE LIBERTY_NATIVE_PREVIEW=1)
+
+  juce_add_console_app(LibertyNativeFreeSpiritSmoke PRODUCT_NAME "Liberty Native FreeSpirit Smoke")
+  target_sources(LibertyNativeFreeSpiritSmoke PRIVATE
+    Tests/LibertyNativeFreeSpiritSmoke.cpp Source/PluginHost.cpp ${FSD_NATIVE_SOURCES})
+  target_include_directories(LibertyNativeFreeSpiritSmoke PRIVATE Source "${FSD_SOURCE}")
+  target_compile_definitions(LibertyNativeFreeSpiritSmoke PRIVATE LIBERTY_NATIVE_PREVIEW=1
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1)
+  target_link_libraries(LibertyNativeFreeSpiritSmoke PRIVATE
+    juce::juce_audio_utils juce::juce_dsp juce::juce_gui_extra)
+  juce_generate_juce_header(LibertyNativeFreeSpiritSmoke)
+  add_executable(LibertyFreeSpiritOriginalCoreTests "${liberty_freespirit_SOURCE_DIR}/Tests/CoreTests.cpp")
+  target_include_directories(LibertyFreeSpiritOriginalCoreTests PRIVATE "${FSD_SOURCE}")
+  add_test(NAME LibertyNativeFreeSpiritSmoke COMMAND LibertyNativeFreeSpiritSmoke)
+  add_test(NAME LibertyFreeSpiritOriginalCoreTests COMMAND LibertyFreeSpiritOriginalCoreTests)
+endif()
 # Pure C++ edition catalogue guard: no fake native devices in product builds.
 add_executable(LibertyEditionCatalogSmoke Tests/LibertyEditionCatalogSmoke.cpp)
 target_include_directories(LibertyEditionCatalogSmoke PRIVATE Source)

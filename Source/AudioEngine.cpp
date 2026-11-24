@@ -2258,6 +2258,9 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
+    #if defined(LIBERTY_NATIVE_PREVIEW)
+    LibertyPluginHost::instance().setNativeTempo(metronomeBpm.load(std::memory_order_relaxed));
+    #endif
     processLibertyRecordingInput(this, inputChannelData, numInputChannels, numSamples);
     for (int channel = 0; channel < numOutputChannels; ++channel) if (outputChannelData[channel] != nullptr) juce::FloatVectorOperations::clear(outputChannelData[channel], numSamples);
     // All sample peaks and RMS are measured post-FX; RMS uses actual sample

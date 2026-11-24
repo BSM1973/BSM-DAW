@@ -292,6 +292,7 @@ jobs:
           rm -rf build-fast
           cmake -S . -B build-fast -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DLIBERTY_NATIVE_PREVIEW=${{ github.ref == 'refs/heads/feature/liberty-daw-three-editions' && 'ON' || 'OFF' }} \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -307,6 +308,10 @@ jobs:
         run: |
           cmake --build build-fast --parallel $(sysctl -n hw.ncpu)
           ccache --show-stats
+
+      - name: Validate original FreeSpirit DSP and native insert roundtrip
+        if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+        run: ctest --test-dir build-fast --output-on-failure -R 'LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests'
 
       - name: Test audio clip playback and fade preservation (5 independent launches)
         shell: bash
@@ -510,20 +515,29 @@ jobs:
           APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
           rm -rf dist-fast
           mkdir -p dist-fast
+          if [[ "$GITHUB_REF" == "refs/heads/feature/liberty-daw-three-editions" ]]; then
+            PREVIEW_APP="$(dirname "$APP")/Liberty Native Preview.app"
+            mv "$APP" "$PREVIEW_APP"
+            APP="$PREVIEW_APP"
+            echo "Internal FreeSpirit preview; not Base, Standard or Ultimate retail." > dist-fast/PREVIEW-STATUS.txt
+          fi
+          echo "LIBERTY_PACKAGE_APP=$APP" >> "$GITHUB_ENV"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "dist-fast/Liberty-macOS-arm64-Diagnostic.zip"
 
       - name: Upload diagnostic app
         uses: actions/upload-artifact@v4
         with:
-          name: Liberty-macOS-arm64-Diagnostic
-          path: dist-fast/Liberty-macOS-arm64-Diagnostic.zip
+          name: ${{ github.ref == 'refs/heads/feature/liberty-daw-three-editions' && 'Liberty-Native-FreeSpirit-Preview-arm64-ZIP' || 'Liberty-macOS-arm64-Diagnostic' }}
+          path: |
+            dist-fast/Liberty-macOS-arm64-Diagnostic.zip
+            dist-fast/PREVIEW-STATUS.txt
           if-no-files-found: error
           retention-days: 7
 
       - name: Package and verify Liberty DMG installer
         run: |
           bash Scripts/create-macos-dmg.sh \
-            "build-fast/BSM_DAW_artefacts/Release/Liberty.app" \
+            "$LIBERTY_PACKAGE_APP" \
             "dist-fast/Liberty-macOS-arm64.dmg"
 
       - name: Generate and verify Liberty DMG SHA-256 checksum
@@ -535,7 +549,7 @@ jobs:
       - name: Upload Liberty DMG installer
         uses: actions/upload-artifact@v4
         with:
-          name: Liberty-macOS-arm64-DMG
+          name: ${{ github.ref == 'refs/heads/feature/liberty-daw-three-editions' && 'Liberty-Native-FreeSpirit-Preview-arm64-DMG' || 'Liberty-macOS-arm64-DMG' }}
           path: |
             dist-fast/Liberty-macOS-arm64.dmg
             dist-fast/Liberty-macOS-arm64.dmg.sha256
