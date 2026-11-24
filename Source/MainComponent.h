@@ -1,19 +1,26 @@
-#include <map>
 #pragma once
+
+// Legacy controllers expose project internals while including this header.
+// Keep their access macro out of JUCE and the C++ standard library.
+#pragma push_macro("private")
+#undef private
+#include <map>
 class MainComponent;
 void refreshLibertyMixConsole(MainComponent*);
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <array>
+#include <vector>
+#include <functional>
+#include <cmath>
+#pragma pop_macro("private")
+
 #include "AudioEngine.h"
 #include "NoOverlapLayout.h"
 #include "MidiEngine.h"
 #include "StepSequencer.h"
 #include "PolyphonicStepGridEditing.h"
-#include <array>
-#include <vector>
-#include <functional>
-#include <cmath>
 
 int getLibertyTrackRowHeight() noexcept;
 juce::String getLibertyTrackName(int);
