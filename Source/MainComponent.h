@@ -198,6 +198,8 @@ public:
         if (logical < getAudioTrackCount() + getMidiTrackCount()) return "MIDI " + juce::String(logical - getAudioTrackCount() + 1);
         return "Instrument " + juce::String(logical - getAudioTrackCount() - getMidiTrackCount() + 1);
     }
+    const AudioEngine& getTrackAudioEngine() const noexcept { return audioEngine; }
+    void selectArrangeTrack(int track) noexcept { selectedTrack = track; }
     int getAudioTrackCount() const noexcept { return audioEngine.getAudioTrackCount(); }
     int getMidiTrackCount() const noexcept { return dynamicMidiTrackCount; }
     int getInstrumentTrackCount() const noexcept { return dynamicInstrumentTrackCount; }

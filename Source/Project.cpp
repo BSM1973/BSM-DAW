@@ -1313,9 +1313,9 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
     juce::String missingFiles;
     juce::String missingPlugins;
     juce::String pluginStateWarnings;
-    constexpr int maxProjectDiagnosticChars = 32768;
     const auto appendProjectDiagnostic = [](juce::String& target, const juce::String& message)
     {
+        constexpr int maxProjectDiagnosticChars = 32768;
         static constexpr auto omitted = "... additional messages omitted\n";
         if (target.endsWith(omitted)) return;
         if (target.length() + message.length() + 1 <= maxProjectDiagnosticChars)
