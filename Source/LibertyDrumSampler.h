@@ -1205,11 +1205,12 @@ public:
         std::function<bool(int)> insertClip={},
         std::function<bool()> isArrangementPlaying={},
         std::function<double()> readProjectTempo={},int instrumentLane=-1,
-        std::function<std::uint64_t()> readMidiLearnEvent={})
+        std::function<std::uint64_t()> readMidiLearnEvent={},
+        std::function<void(std::shared_ptr<const juce::AudioBuffer<float>>,double,juce::String,juce::File,std::function<void(const juce::File&)>)> match={})
         :sampler(engine),waveform(engine),targetInstrumentLane(instrumentLane),
          insertPattern(std::move(insertClip)),transportPlaying(std::move(isArrangementPlaying)),
          projectTempo(std::move(readProjectTempo)),patternGrid(engine),
-         hardwareLearnEvent(std::move(readMidiLearnEvent))
+         hardwareLearnEvent(std::move(readMidiLearnEvent)),soundMatch(std::move(match))
     {
         for(auto* button:{&pagePads,&pagePattern,&pageSample,&previewPlay,&previewStop,
                           &starterButton,&clearPatternButton,&insertButton})
@@ -1827,10 +1828,12 @@ private:
         menu.addSeparator();
         menu.addItem(3,"EFFACER L'AFFECTATION",sampler.getPadMidiLearn(index)!=0);
         menu.addItem(4,"ANNULER L'APPRENTISSAGE",learningPad==index);
+        menu.addSeparator();menu.addItem(5,"SOUND MATCH - SONS SIMILAIRES",bool(soundMatch)&&sampler.hasSample(index));
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&pads[(size_t)index]),
             [safe=juce::Component::SafePointer<LibertyDrumSamplerPanel>(this),index](int choice)
             {
                 if(!safe)return;
+                if(choice==5){safe->matchPad(index);return;}
                 if(choice==1||choice==2)
                 {
                     safe->learningPad=index;safe->learningKind=choice;
@@ -1853,6 +1856,20 @@ private:
                 }
                 safe->repaint();
             });
+    }
+    void matchPad(int index)
+    {
+        if(!soundMatch||!sampler.hasSample(index))return;
+        const auto& pad=sampler.getPad(index);auto snapshot=std::atomic_load(&pad.audio);
+        if(!snapshot)return;
+        juce::File source;if(juce::File::isAbsolutePath(pad.sourcePath))source=juce::File(pad.sourcePath);
+        auto safe=juce::Component::SafePointer<LibertyDrumSamplerPanel>(this);
+        soundMatch(snapshot,pad.sourceRate.load(),pad.name,source,[safe,index,snapshot](const juce::File& file){
+            if(safe==nullptr||!safe->isShowing())return;
+            // Never overwrite a pad changed during the asynchronous search.
+            if(std::atomic_load(&safe->sampler.getPad(index).audio)!=snapshot){safe->status=juce::String::fromUTF8("Pad modifié : relancez la recherche.");safe->repaint();return;}
+            if(safe->sampler.loadPad(index,file)){safe->refreshLabels();safe->updateControls();safe->waveform.repaint();safe->status=juce::String::fromUTF8("Sample remplacé.");safe->repaint();}
+        });
     }
     void updatePadMidiTooltips()
     {
@@ -1946,6 +1963,7 @@ private:
     std::function<double()> projectTempo;
     LibertyDrumPatternGrid patternGrid;
     std::function<std::uint64_t()> hardwareLearnEvent;
+    std::function<void(std::shared_ptr<const juce::AudioBuffer<float>>,double,juce::String,juce::File,std::function<void(const juce::File&)>)> soundMatch;
     int learningPad=-1,learningKind=1;
     std::uint32_t learnBaseline=0;
     juce::TextButton pagePads,pagePattern,pageSample,previewPlay,previewStop;

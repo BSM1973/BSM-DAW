@@ -10,7 +10,8 @@ constexpr double pi=3.14159265358979323846;
 struct Result {
  double duration=0,bpm=0,beatConfidence=0,keyConfidence=0,centroid=0,flatness=0,rms=0;
  int key=-1;bool minor=false;
- std::vector<double> onsets;std::array<double,12> chroma{};
+ std::vector<double> onsets;std::array<double,12> chroma{},spectrum{};
+ std::array<double,16> envelope{};
 };
 inline void fft(std::vector<std::complex<double>>& a){
  const size_t n=a.size();
@@ -19,7 +20,8 @@ inline void fft(std::vector<std::complex<double>>& a){
 }
 inline Result analyse(const std::vector<float>& s,double rate){
  Result r;if(s.empty()||rate<8000)return r;r.duration=s.size()/rate;
- double energy=0;for(float v:s)energy+=double(v)*v;r.rms=std::sqrt(energy/s.size());if(r.rms<1.e-6)return r;
+ double energy=0;for(size_t i=0;i<s.size();++i){const double e=double(s[i])*s[i];energy+=e;r.envelope[std::min<size_t>(15,i*16/s.size())]+=e;}
+ for(auto& v:r.envelope)v=energy>0?std::sqrt(v/energy):0;r.rms=std::sqrt(energy/s.size());if(r.rms<1.e-6)return r;
  constexpr int N=4096;const int hop=std::max(1,int(rate/100));
  std::vector<std::complex<double>> a(N);std::vector<double> prev(N/2),flux;
  std::array<double,N> hann{};for(int i=0;i<N;++i)hann[size_t(i)]=.5-.5*std::cos(2*pi*i/(N-1));
@@ -27,7 +29,7 @@ inline Result analyse(const std::vector<float>& s,double rate){
  for(size_t start=0;start<s.size();start+=size_t(hop)){
   for(int i=0;i<N;++i){auto n=start+size_t(i);a[size_t(i)]=(n<s.size()?s[n]:0)*hann[size_t(i)];}
   fft(a);double weight=0,hzSum=0,logs=0,change=0;
-  for(int k=1;k<N/2;++k){double v=std::abs(a[size_t(k)]);weight+=v;hzSum+=v*k*rate/N;logs+=std::log(v+1.e-10);change+=std::max(0.,v-prev[size_t(k)]);prev[size_t(k)]=v;}
+  for(int k=1;k<N/2;++k){double v=std::abs(a[size_t(k)]);weight+=v;hzSum+=v*k*rate/N;logs+=std::log(v+1.e-10);change+=std::max(0.,v-prev[size_t(k)]);prev[size_t(k)]=v;const int band=std::clamp(int(std::log2(std::max(1.,k*rate/N/25.))*1.5),0,11);r.spectrum[size_t(band)]+=v*v;}
   flux.push_back(change);if(weight<1.e-5)continue;
   total+=weight;r.centroid+=hzSum;flat+=std::exp(logs/(N/2-1))/(weight/(N/2-1)+1.e-10);++valid;
   for(int k=2;k<N/2-1;++k){double v=prev[size_t(k)],hz=k*rate/N;if(hz<55||hz>5000||v<weight*.012||v<prev[size_t(k-1)]||v<prev[size_t(k+1)])continue;
@@ -37,6 +39,7 @@ inline Result analyse(const std::vector<float>& s,double rate){
   }
  }
  r.centroid=total?r.centroid/total:0;r.flatness=valid?flat/valid:0;
+ const double spectralEnergy=std::accumulate(r.spectrum.begin(),r.spectrum.end(),0.);for(auto& v:r.spectrum)v=spectralEnergy>0?std::sqrt(v/spectralEnergy):0;
  const double mean=std::accumulate(flux.begin(),flux.end(),0.)/flux.size(),peak=*std::max_element(flux.begin(),flux.end());
  for(size_t i=1;i+1<flux.size();++i)if(flux[i]>std::max(mean*1.6,peak*.08)&&flux[i]>=flux[i-1]&&flux[i]>flux[i+1]){
   double at=i*hop/rate;if(r.onsets.empty()||at-r.onsets.back()>.055)r.onsets.push_back(at);}
@@ -55,6 +58,20 @@ inline Result analyse(const std::vector<float>& s,double rate){
   if(notes>=3&&best>.5&&best-second>.035){r.key=root;r.minor=mode;r.keyConfidence=std::clamp((best-second)*4.,0.,1.);}
  }
  return r;
+}
+// Bounded perceptual heuristic; 100 denotes identical feature vectors, not
+// a probability or a guarantee of identical sound.
+template<size_t N> inline double featureDistance(const std::array<double,N>& a,const std::array<double,N>& b){
+ double d=0;for(size_t i=0;i<N;++i)d+=(a[i]-b[i])*(a[i]-b[i]);return std::clamp(std::sqrt(d*.5),0.,1.);
+}
+inline double similarity(const Result& a,const Result& b){
+ if(a.rms<1.e-6||b.rms<1.e-6||a.duration<=0||b.duration<=0)return 0;
+ const auto duration=std::min(1.,std::abs(std::log(a.duration/b.duration))/2.);
+ const auto centroid=std::min(1.,std::abs(std::log((a.centroid+50)/(b.centroid+50)))/2.);
+ const double onsetA=a.onsets.size()/a.duration,onsetB=b.onsets.size()/b.duration;
+ const double transients=std::min(1.,std::abs(std::log((onsetA+1)/(onsetB+1))));
+ const double d=.45*featureDistance(a.spectrum,b.spectrum)+.25*featureDistance(a.envelope,b.envelope)+.12*centroid+.10*duration+.08*transients;
+ return 100*std::clamp(1-d,0.,1.);
 }
 inline int pitchDelta(int from,int to){return from<0||from>11||to<0||to>11?0:(to-from+18)%12-6;}
 }

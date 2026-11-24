@@ -21,6 +21,7 @@ constexpr juce::uint32 libertyTrackPalette[33] = {
 #include "LibertyDesignSystem.h"
 void closeFloatingStepSequencerWindow();
 void closeFloatingDrumSamplerWindow();
+void showLibertySoundMatchForPad(MainComponent*,std::shared_ptr<const juce::AudioBuffer<float>>,double,juce::String,juce::File,std::function<void(const juce::File&)>);
 void showFloatingDrumSamplerWindow(AudioEngine&,MainComponent&,int);
 void resizeLibertyDynamicTrackController(MainComponent*);
 void ensureLibertyPageModeCoordinator(MainComponent*);
@@ -1200,7 +1201,8 @@ public:
                 return owner.insertDrumPatternClip(sampler.patternMidiNotes(),destination);},
             [&owner]{return owner.isAudioPlaying();},
             [&owner]{return owner.getProjectTempoBpm();},lane,
-            [&owner]{return owner.getDrumMidiLearnEvent();}),true);
+            [&owner]{return owner.getDrumMidiLearnEvent();},
+            [&owner](auto audio,double rate,juce::String name,juce::File source,auto replace){showLibertySoundMatchForPad(&owner,std::move(audio),rate,name,source,std::move(replace));}),true);
         setResizable(false,false);
         centreWithSize(960,700);
     }

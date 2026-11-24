@@ -11,6 +11,7 @@
 #include "LibertyManufacturerGrouping.h"
 #include "LibertyBrowserIntelligence.h"
 #include "LibertySampleLab.h"
+#include "LibertySoundMatch.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -733,6 +734,8 @@ public:
         toggleButton.toFront(false);
     }
     bool isOpenForMixer() const noexcept {return browserOpen;}
+    void soundMatchForPad(std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String label,juce::File source,std::function<void(const juce::File&)> replace)
+    {startSoundMatch(source,std::move(audio),rate,label,std::move(replace));}
 
     void openForEffectSlot(bool instrument,int lane,int slot)
     {
@@ -1225,6 +1228,7 @@ public:
             if(auto* window=panel->findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);
         if(quickIndexThread.joinable())quickIndexThread.join();
         if(labThread.joinable())labThread.join();
+        if(matchThread.joinable())matchThread.join();
         previewTransport.stop();
         owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
         previewPlayer.setSource(nullptr);
@@ -4905,6 +4909,87 @@ private:
 
     void toggleSelectedFavourite() { if (const auto* d = selectedPluginDescription()) toggleFavourite(*d); }
 
+    static juce::File soundMatchCache(){return favouritesFile().getSiblingFile("SoundMatchAcousticIndex.xml");}
+    void startSoundMatch(juce::File reference,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String name,std::function<void(const juce::File&)> replace)
+    {
+        if(stopped.load()||matchRunning||labRunning)return;
+        const auto root=findInstalledSampleLibrary();
+        if(!root.isDirectory()||root==juce::File::getSpecialLocation(juce::File::userHomeDirectory)||root.getParentDirectory()==root)
+        {juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Sound Match",juce::String::fromUTF8("Configurez d'abord un dossier dans SAMPLES."));return;}
+        if(matchThread.joinable())matchThread.join();
+        matchRunning=true;sampleLabButton.setEnabled(false);
+        samplePackInfo.setText("SOUND MATCH - Analyse...",juce::dontSendNotification);
+        const auto cache=soundMatchCache();juce::Component::SafePointer<BrowserPanel> safe(this);
+        matchThread=std::thread([this,safe,root,cache,reference,audio,rate,name,replace]{
+            auto features=audio?LibertySoundMatch::analyseBuffer(*audio,rate):LibertySoundMatch::analyseFile(reference);
+            auto result=std::make_shared<LibertySoundMatch::Catalog>();
+            if(features.rms>1.e-6)*result=LibertySoundMatch::search(root,cache,reference,features,stopped);
+            juce::MessageManager::callAsync([safe,result,features,reference,audio,rate,name,replace]{
+                if(safe==nullptr||safe->stopped.load())return;
+                safe->matchRunning=false;safe->sampleLabButton.setEnabled(true);
+                if(features.rms<1.e-6){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Sound Match",juce::String::fromUTF8("Référence silencieuse ou illisible."));return;}
+                safe->showMatchResults(result,features,reference,audio,rate,name,replace,false,false,false);
+            });
+        });
+    }
+    void playMatchReference(const juce::File& file,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate)
+    {
+        previewTransport.stop();previewTransport.setSource(nullptr);previewReader.reset();labPreview.reset();
+        if(audio&&audio->getNumSamples()>0&&rate>0)
+        {
+            // MemoryAudioSource copies the immutable pad snapshot. No pad or
+            // arrangement changes and no second drum render path.
+            auto copy=juce::AudioBuffer<float>(*audio);
+            labPreview=std::make_unique<juce::MemoryAudioSource>(copy,true,false);
+            previewTransport.setSource(labPreview.get(),0,nullptr,rate);
+        }
+        else
+        {
+            auto reader=std::unique_ptr<juce::AudioFormatReader>(previewFormats.createReaderFor(file));
+            if(!reader)return;
+            rate=reader->sampleRate;previewReader=std::make_unique<juce::AudioFormatReaderSource>(reader.release(),true);
+            previewTransport.setSource(previewReader.get(),0,nullptr,rate);
+        }
+        previewTransport.setGain((float)previewVolume.getValue());previewTransport.start();
+    }
+    void showMatchResults(std::shared_ptr<LibertySoundMatch::Catalog> result,LibertySoundMatch::Result features,juce::File reference,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String name,std::function<void(const juce::File&)> replace,bool duration,bool bpm,bool key)
+    {
+        auto hits=std::make_shared<std::vector<LibertySoundMatch::Hit>>();
+        for(const auto& h:result->hits){
+            if(duration&&std::abs(std::log(h.result.duration/features.duration))>std::log(1.25))continue;
+            if(bpm&&(features.bpm<=0||h.result.bpm<=0||std::abs(h.result.bpm-features.bpm)>5))continue;
+            if(key&&(features.key<0||h.result.key!=features.key||h.result.minor!=features.minor))continue;
+            hits->push_back(h);if(hits->size()==20)break;
+        }
+        juce::String info=juce::String::fromUTF8("Référence : ")+name+"\n"+juce::String((int)hits->size())+" / 20 | "+juce::String(result->cached)+juce::String::fromUTF8(" en cache, ")+juce::String(result->analysed)+juce::String::fromUTF8(" analysés, ")+juce::String(result->pending)+juce::String::fromUTF8(" à analyser.");
+        if(result->limited)info+=juce::String::fromUTF8("\nLimite de parcours atteinte.");
+        if(!result->saved)info+=juce::String::fromUTF8("\nCache non enregistré.");
+        auto dialog=std::make_shared<juce::AlertWindow>("LIBERTY SOUND MATCH",info,juce::AlertWindow::InfoIcon);
+        juce::StringArray names;for(const auto& h:*hits)names.add(juce::String(h.score,1)+" %  |  "+h.file.getFileName());
+        if(names.isEmpty())names.add(juce::String::fromUTF8("Aucun résultat"));
+        dialog->addComboBox("hit",names,"Son similaire");if(auto* box=dialog->getComboBoxComponent("hit"))box->setSelectedItemIndex(0,juce::dontSendNotification);
+        juce::StringArray filters{"Tous",juce::String::fromUTF8("Durée +/-25 %"),"BPM +/-5",juce::String::fromUTF8("Même tonalité"),juce::String::fromUTF8("Durée + BPM + tonalité")};
+        dialog->addComboBox("filter",filters,"Filtres");
+        if(auto* box=dialog->getComboBoxComponent("filter"))box->setSelectedItemIndex(duration&&bpm&&key?4:duration?1:bpm?2:key?3:0,juce::dontSendNotification);
+        dialog->addButton("A - Original",1);
+        if(!hits->empty()){dialog->addButton("B - Similaire",2);dialog->addButton(replace?"Remplacer PAD":"Afficher",3);}
+        dialog->addButton("Filtrer",4);dialog->addButton("Fermer",0);
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,result,features,reference,audio,rate,name,replace,hits,duration,bpm,key](int n) mutable {
+            if(safe==nullptr||safe->stopped.load())return;
+            int row=dialog->getComboBoxComponent("hit")->getSelectedItemIndex(),filter=dialog->getComboBoxComponent("filter")->getSelectedItemIndex();
+            bool valid=row>=0&&row<(int)hits->size();
+            if(n==0){safe->previewTransport.stop();return;}
+            if(n==3&&valid){safe->previewTransport.stop();const auto file=(*hits)[(size_t)row].file;
+                if(replace){replace(file);return;}
+                safe->setCategory(Category::audio);safe->toggleButton.setToggleState(true,juce::dontSendNotification);safe->setBrowserOpen(true);safe->setRoot(file.getParentDirectory());safe->fileTree.setSelectedFile(file);safe->loadSamplePreview(file);return;
+            }
+            if(n==1)safe->playMatchReference(reference,audio,rate);
+            if(n==2&&valid)safe->playMatchReference((*hits)[(size_t)row].file,{},0);
+            if(n==4){duration=filter==1||filter==4;bpm=filter==2||filter==4;key=filter==3||filter==4;}
+            juce::MessageManager::callAsync([safe,result,features,reference,audio,rate,name,replace,duration,bpm,key]{if(safe!=nullptr&&!safe->stopped.load())safe->showMatchResults(result,features,reference,audio,rate,name,replace,duration,bpm,key);});
+        }),false);
+    }
     static juce::File labIndexFile(){return favouritesFile().getSiblingFile("SampleLabIndex.xml");}
     void showLab(){
         static LibertyUI::ObsidianMenuStyle style;juce::PopupMenu menu;menu.setLookAndFeel(&style);
@@ -4912,9 +4997,10 @@ private:
         menu.addItem(1,"Analyser le sample",labFile.existsAsFile()&&!labRunning);
         menu.addItem(2,juce::String::fromUTF8("Indexer / détecter les doublons"),!labRunning);
         menu.addItem(3,juce::String::fromUTF8("Consulter l'index enregistré"),labIndexFile().existsAsFile());
+        menu.addSeparator();menu.addItem(4,"SOUND MATCH - Sons similaires",labFile.existsAsFile()&&!matchRunning&&!labRunning);
         juce::Component::SafePointer<BrowserPanel> safe(this);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&sampleLabButton),[safe](int n){
-            if(safe==nullptr||safe->stopped.load())return;if(n==1)safe->analyseLab();if(n==2)safe->indexLab();if(n==3)safe->showLabIndex();
+            if(safe==nullptr||safe->stopped.load())return;if(n==1)safe->analyseLab();if(n==2)safe->indexLab();if(n==3)safe->showLabIndex();if(n==4)safe->startSoundMatch(safe->labFile,{},0,safe->labFile.getFileName(),{});
         });
     }
     void showLabIndex(){
@@ -7743,6 +7829,7 @@ private:
     juce::ToggleButton previewAuto;
     juce::Label previewInfo, samplePackInfo;
     juce::TextButton browsePacksButton, musicFilterButton, sampleLabButton;
+    std::thread matchThread;bool matchRunning=false;
     juce::File labFile;std::thread labThread;bool labRunning=false;unsigned labGeneration=0;
     std::unique_ptr<juce::MemoryAudioSource> labPreview;
     juce::TextEditor sampleNameSearch;
@@ -7873,4 +7960,12 @@ void showLibertyEffectBrowserForSlot(MainComponent* owner,bool instrument,int la
 void shutdownLibertyBrowserController()
 {
     bootstrap.shutdown();
+}
+
+void showLibertySoundMatchForPad(MainComponent* owner,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String name,juce::File source,std::function<void(const juce::File&)> replace)
+{
+    if(owner==nullptr||!audio)return;
+    ensureLibertyBrowserController(owner);
+    const auto it=browsers.find(owner);
+    if(it!=browsers.end()&&it->second)it->second->soundMatchForPad(std::move(audio),rate,name,source,std::move(replace));
 }

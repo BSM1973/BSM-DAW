@@ -2,7 +2,8 @@
 #include "LibertySampleAnalysis.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_extra/juce_gui_extra.h>
-#include <signalsmith-stretch.h>
+#include <signalsmith-stretch/signalsmith-stretch.h>
+#include <cstdint>
 #include <atomic>
 #include <map>
 namespace LibertySampleLab {

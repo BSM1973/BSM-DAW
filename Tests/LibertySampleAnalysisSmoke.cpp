@@ -11,5 +11,8 @@ int main(){
  auto r=analyse(s,rate);check(r.onsets.size()>=4,"periodic transients");check(r.bpm>=65&&r.bpm<=190&&r.beatConfidence>.24,"periodic tempo");
  check(r.centroid>0&&r.rms>0&&std::isfinite(r.flatness),"spectral features");
  check(pitchDelta(11,0)==1&&pitchDelta(0,11)==-1,"pitch mapping");
+ const auto identical=similarity(r,r);check(identical>99.99,"identity score");
+ std::vector<float> bright(96000);for(size_t i=0;i<bright.size();++i)bright[i]=float(.4*std::sin(2*pi*3900*i/rate));
+ auto other=analyse(bright,rate);check(similarity(r,other)<identical-10,"different spectrum and envelope");check(similarity(r,quiet)==0,"silent reference rejected");
  std::cout<<"PASS: sample analysis\n";
 }
