@@ -3,7 +3,7 @@
 namespace LibertySoundMatch {
 using Result=LibertySampleAnalysis::Result;
 struct Hit{juce::File file;Result result;double score=0;};
-struct Catalog{std::vector<Hit> hits;int cached=0,analysed=0,pending=0;bool limited=false,saved=false;};
+struct Catalog{std::vector<Hit> hits;int cached=0,analysed=0,pending=0,unreadable=0;bool limited=false,saved=false;};
 inline Result analyseBuffer(const juce::AudioBuffer<float>& a,double rate){
  if(rate<8000||rate>192000||a.getNumChannels()==0)return {};
  const int n=juce::jmin(a.getNumSamples(),int(rate*8)),stride=juce::jmax(1,int(rate/12000));
@@ -23,7 +23,7 @@ inline bool read(const juce::XmlElement& x,Result& r){
  return std::isfinite(r.duration)&&r.duration>0&&r.duration<=8.1&&std::isfinite(r.rms)&&r.rms>=0&&std::isfinite(r.centroid)&&r.centroid>=0&&std::isfinite(r.bpm)&&r.bpm>=0&&r.key>=-1&&r.key<12&&decode(x.getStringAttribute("spectrum"),r.spectrum)&&decode(x.getStringAttribute("envelope"),r.envelope);
 }
 inline Catalog search(const juce::File& root,const juce::File& cache,const juce::File& referenceFile,const Result& reference,const std::atomic<bool>& stop){
- Catalog out;auto old=juce::XmlDocument::parse(cache);
+ Catalog out;std::unique_ptr<juce::XmlElement> old;if(cache.existsAsFile()&&cache.getSize()<=32000000)old=juce::XmlDocument::parse(cache);
  std::map<juce::String,const juce::XmlElement*> entries;
  if(old&&old->hasTagName("LibertyAcousticIndex")&&old->getIntAttribute("version")==1&&old->getStringAttribute("root")==root.getFullPathName())
   for(auto* item:old->getChildIterator())entries[item->getStringAttribute("path")]=item;
@@ -35,16 +35,21 @@ inline Catalog search(const juce::File& root,const juce::File& cache,const juce:
   const auto file=item.getFile();if(!file.hasFileExtension("wav;aif;aiff;mp3;flac"))continue;
   const auto path=file.getFullPathName();const auto modified=file.getLastModificationTime().toMilliseconds(),size=file.getSize();
   Result r;auto found=entries.find(path);
-  bool valid=found!=entries.end()&&found->second->getStringAttribute("size").getLargeIntValue()==size&&found->second->getStringAttribute("modified").getLargeIntValue()==modified&&read(*found->second,r);
-  if(valid)++out.cached;else{
+  const bool unchanged=found!=entries.end()&&found->second->getStringAttribute("size").getLargeIntValue()==size&&found->second->getStringAttribute("modified").getLargeIntValue()==modified;
+  bool unreadable=unchanged&&found->second->getBoolAttribute("unreadable");
+  const bool valid=unchanged&&!unreadable&&read(*found->second,r);
+  if(valid)++out.cached;else if(!unreadable){
    if(out.analysed>=128){++out.pending;continue;}
-   ++out.analysed;r=analyseFile(file);if(r.duration<=0)continue;
-   if(file.getSize()!=size||file.getLastModificationTime().toMilliseconds()!=modified)continue;
+   ++out.analysed;r=analyseFile(file);
+   if(file.getSize()!=size||file.getLastModificationTime().toMilliseconds()!=modified){++out.pending;continue;}
+   unreadable=!(r.duration>0&&std::isfinite(r.duration)&&std::isfinite(r.rms)&&std::isfinite(r.centroid));
   }
-  auto* node=next.createNewChildElement("Sample");node->setAttribute("path",path);node->setAttribute("size",juce::String(size));node->setAttribute("modified",juce::String(modified));write(*node,r);
+  auto* node=next.createNewChildElement("Sample");node->setAttribute("path",path);node->setAttribute("size",juce::String(size));node->setAttribute("modified",juce::String(modified));
+  if(unreadable){node->setAttribute("unreadable",true);++out.unreadable;continue;}
+  write(*node,r);
   if(file!=referenceFile&&r.rms>1.e-6&&reference.rms>1.e-6)out.hits.push_back({file,r,LibertySampleAnalysis::similarity(reference,r)});
  }
- if(!stop.load()){juce::TemporaryFile temp(cache);out.saved=temp.getFile().replaceWithText(next.toString())&&temp.overwriteTargetFileWithTemporary();}
+ if(!stop.load()){auto xml=next.toString();if(xml.getNumBytesAsUTF8()<=32000000){juce::TemporaryFile temp(cache);out.saved=temp.getFile().replaceWithText(xml)&&temp.overwriteTargetFileWithTemporary();}}
  std::sort(out.hits.begin(),out.hits.end(),[](const Hit& a,const Hit& b){return a.score==b.score?a.file.getFullPathName()<b.file.getFullPathName():a.score>b.score;});
  return out;
 }

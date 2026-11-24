@@ -4,6 +4,9 @@
 #include "Plugin.h"
 #include "LibertyManufacturerGrouping.h"
 #include "LibertyBrowserIntelligence.h"
+#include "LibertyPresetCenter.h"
+#include "LibertyDeviceChains.h"
+#include <limits>
 #include <algorithm>
 #include <vector>
 #include <cmath>
@@ -90,11 +93,27 @@ int main()
     check(audition.dry.getNumSamples()==audition.wet.getNumSamples()&&audition.wet.getMagnitude(0,audition.wet.getNumSamples())>0.f,"audible aligned A/B");
     check(host.getEffectStateForTrackSlot(2,0,afterAudition)&&beforeAudition==afterAudition,"audition preserves project plugin state");
     cancel.store(true);check(!host.renderNativeAudition(chain,auditionInput,48000.,120.,audition,error,cancel),"cancelled audition rejected");
+    const auto searchStart=juce::Time::getMillisecondCounterHiRes();
+    int matches=0;for(int i=0;i<1800;++i)if(LibertyBrowserIntelligence::matches("Liberty Music Software Delay "+juce::String(i),"liberty delay"))++matches;
+    check(matches==1800,"1800 synthetic search entries");
+    std::cout<<"1800 search matches ms: "<<juce::Time::getMillisecondCounterHiRes()-searchStart<<'\n';
     for(int i=0;i<100;++i)
     {
-        original.loadPreset(i);
-        check(original.presetName.isNotEmpty(),"named preset");
+        original.loadPreset(i);check(original.presetName.isNotEmpty(),"named preset");
+        juce::MemoryBlock raw;check(host.getNativeFactoryPresetState(d.fileOrIdentifier,i,raw),"factory state roundtrip");
+        LibertyPresetCenter::Entry e;e.id="user:test";e.name=original.presetName;e.deviceId=d.fileOrIdentifier;e.category="Test";e.state=raw;
+        auto xml=LibertyPresetCenter::toXml(e);LibertyPresetCenter::Entry decoded;
+        check(LibertyPresetCenter::userFromXml(*xml,decoded)&&decoded.state==raw&&decoded.name==e.name,"preset XML roundtrip");
+        cancel.store(false);LibertyPluginHost::NativeChain single{{0,d.fileOrIdentifier,raw}};
+        check(host.renderNativeAudition(single,auditionInput,48000.,120.,audition,error,cancel),"all factory presets DSP render");
+        check(std::isfinite(audition.cpuPercent)&&audition.wet.getMagnitude(0,audition.wet.getNumSamples())<=.891f,"finite bounded factory audition");
     }
+    LibertyDeviceChains::Entry entry;entry.name="QC";entry.devices=chain;auto chainXml=LibertyDeviceChains::encode(entry);LibertyDeviceChains::Entry parsed;
+    check(LibertyDeviceChains::decode(*chainXml,parsed)&&parsed.devices.size()==2&&parsed.devices[1].slot==3&&parsed.devices[1].state==chain[1].state,"chain XML roundtrip");
+    chainXml->getFirstChildElement()->setAttribute("slot",-1);LibertyDeviceChains::Entry bad;
+    check(!LibertyDeviceChains::decode(*chainXml,bad),"effect cannot occupy instrument position");
+    auditionInput.setSample(1,100,std::numeric_limits<float>::quiet_NaN());
+    cancel.store(false);check(!host.renderNativeAudition(chain,auditionInput,48000.,120.,audition,error,cancel),"nonfinite input rejected");
     {
         std::unique_ptr<juce::AudioProcessorEditor> editor(original.createEditorIfNeeded());
         check(editor && editor->getWidth()>0 && editor->getHeight()>0,"original editor");

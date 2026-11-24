@@ -4929,7 +4929,7 @@ private:
     static juce::File soundMatchCache(){return favouritesFile().getSiblingFile("SoundMatchAcousticIndex.xml");}
     void startSoundMatch(juce::File reference,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String name,std::function<void(const juce::File&)> replace)
     {
-        if(stopped.load()||matchRunning||labRunning)return;
+        if(stopped.load()||matchRunning||labRunning||auditionRunning||auditionDialogOpen)return;
         const auto root=findInstalledSampleLibrary();
         if(!root.isDirectory()||root==juce::File::getSpecialLocation(juce::File::userHomeDirectory)||root.getParentDirectory()==root)
         {juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Sound Match",juce::String::fromUTF8("Configurez d'abord un dossier dans SAMPLES."));return;}
@@ -4978,7 +4978,7 @@ private:
             if(key&&(features.key<0||h.result.key!=features.key||h.result.minor!=features.minor))continue;
             hits->push_back(h);if(hits->size()==20)break;
         }
-        juce::String info=juce::String::fromUTF8("Référence : ")+name+"\n"+juce::String((int)hits->size())+" / 20 | "+juce::String(result->cached)+juce::String::fromUTF8(" en cache, ")+juce::String(result->analysed)+juce::String::fromUTF8(" analysés, ")+juce::String(result->pending)+juce::String::fromUTF8(" à analyser.");
+        juce::String info=juce::String::fromUTF8("Référence : ")+name+"\n"+juce::String((int)hits->size())+" / 20 | "+juce::String(result->cached)+juce::String::fromUTF8(" en cache, ")+juce::String(result->analysed)+juce::String::fromUTF8(" analysés, ")+juce::String(result->pending)+juce::String::fromUTF8(" à analyser, ")+juce::String(result->unreadable)+juce::String::fromUTF8(" illisibles.");
         if(result->limited)info+=juce::String::fromUTF8("\nLimite de parcours atteinte.");
         if(!result->saved)info+=juce::String::fromUTF8("\nCache non enregistré.");
         auto dialog=std::make_shared<juce::AlertWindow>("LIBERTY SOUND MATCH",info,juce::AlertWindow::InfoIcon);
@@ -5027,13 +5027,13 @@ private:
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Sample Lab",juce::String(count)+juce::String::fromUTF8(" fichiers indexés / ")+juce::String(duplicates)+juce::String::fromUTF8(" doublons lors du dernier scan.\n")+report);
     }
     void indexLab(){
-        if(labRunning)return;auto root=findInstalledSampleLibrary();if(!root.isDirectory()||root==juce::File::getSpecialLocation(juce::File::userHomeDirectory)||root.getParentDirectory()==root)return;
+        if(labRunning||matchRunning||auditionRunning||auditionDialogOpen)return;auto root=findInstalledSampleLibrary();if(!root.isDirectory()||root==juce::File::getSpecialLocation(juce::File::userHomeDirectory)||root.getParentDirectory()==root)return;
         if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);
         auto destination=labIndexFile();juce::Component::SafePointer<BrowserPanel> safe(this);
         labThread=std::thread([this,safe,root,destination]{auto report=LibertySampleLab::index(root,destination,stopped);juce::MessageManager::callAsync([safe,report]{if(safe==nullptr||safe->stopped.load())return;safe->labRunning=false;safe->sampleLabButton.setEnabled(true);juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Sample Lab",report);});});
     }
     void analyseLab(){
-        if(labRunning||!labFile.existsAsFile())return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);
+        if(labRunning||matchRunning||auditionRunning||auditionDialogOpen||!labFile.existsAsFile())return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);
         auto file=labFile;auto generation=labGeneration;juce::Component::SafePointer<BrowserPanel> safe(this);
         labThread=std::thread([safe,file,generation]{auto result=LibertySampleLab::analyseFile(file);juce::MessageManager::callAsync([safe,file,generation,result]{
             if(safe==nullptr||safe->stopped.load())return;safe->labRunning=false;safe->sampleLabButton.setEnabled(true);
@@ -5057,7 +5057,7 @@ private:
         }),false);
     }
     void renderLabPreview(const juce::File& file,double ratio,int pitch,unsigned generation){
-        if(labRunning)return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);juce::Component::SafePointer<BrowserPanel> safe(this);
+        if(labRunning||matchRunning||auditionRunning||auditionDialogOpen)return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);juce::Component::SafePointer<BrowserPanel> safe(this);
         labThread=std::thread([safe,file,ratio,pitch,generation]{
             double rate=0;auto buffer=std::shared_ptr<juce::AudioBuffer<float>>(LibertySampleLab::preview(file,ratio,pitch,rate));
             juce::MessageManager::callAsync([safe,buffer,rate,generation]{
@@ -5106,6 +5106,7 @@ private:
     {
         if(!shouldOpen)
         {
+            auditionCancel.store(true);++auditionGeneration;
             ++labGeneration;
             previewTransport.stop();
             targetEffectSlot=-1;
@@ -6080,6 +6081,7 @@ private:
             targetEffectLane=-1;
         }
         if (newCategory != Category::audio) { previewTransport.stop(); ++labGeneration; }
+        if(category!=newCategory){auditionCancel.store(true);++auditionGeneration;previewTransport.stop();}
         category = newCategory;
         homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
         chooseLibraryButton.setVisible(category == Category::audio
@@ -7305,7 +7307,7 @@ private:
     }
     void openAudition(juce::String name,LibertyPluginHost::NativeChain chain)
     {
-        if(stopped.load()||auditionRunning||labRunning||matchRunning)return;
+        if(stopped.load()||auditionRunning||auditionDialogOpen||labRunning||matchRunning)return;
         if(std::any_of(chain.begin(),chain.end(),[](const auto& item){return item.slot<0;})){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Plugin Audition",juce::String::fromUTF8("La préécoute MIDI des instruments sera ajoutée après leur intégration."));return;}
         auto dialog=std::make_shared<juce::AlertWindow>("PLUGIN AUDITION",name,juce::AlertWindow::NoIcon);
         dialog->addComboBox("source",juce::StringArray{juce::String::fromUTF8("Batterie synthétique"),juce::String::fromUTF8("Basse synthétique"),juce::String::fromUTF8("Clavier synthétique"),juce::String::fromUTF8("Synthé arpège"),"Fichier audio personnel"},"Source");
@@ -7319,27 +7321,28 @@ private:
     }
     void renderAudition(juce::String name,LibertyPluginHost::NativeChain chain,int source,juce::File file)
     {
-        if(stopped.load()||auditionRunning||labRunning||matchRunning)return;
+        if(stopped.load()||auditionRunning||auditionDialogOpen||labRunning||matchRunning)return;
         if(auditionThread.joinable())auditionThread.join();auditionRunning=true;auditionCancel.store(false);auditionButton.setEnabled(false);previewTransport.stop();
-        auto safe=juce::Component::SafePointer<BrowserPanel>(this);double tempo=owner.getProjectTempoBpm();
-        auditionThread=std::thread([this,safe,name,chain,source,file,tempo]{
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);double tempo=owner.getProjectTempoBpm();const auto generation=++auditionGeneration;
+        auditionThread=std::thread([this,safe,name,chain,source,file,tempo,generation]{
             auto result=std::make_shared<LibertyPluginHost::AuditionResult>();juce::AudioBuffer<float> audio;double rate=48000.;juce::String error;
             bool valid=true;if(source==4){valid=LibertyPluginAudition::readSource(file,audio,rate);if(!valid)error="Source illisible ou incompatible (96 kHz maximum).";}else audio=LibertyPluginAudition::reference(source,tempo,rate);
             if(valid)valid=LibertyPluginHost::instance().renderNativeAudition(chain,audio,rate,tempo,*result,error,auditionCancel);
-            juce::MessageManager::callAsync([safe,result,name,valid,error]{if(!safe||safe->stopped.load())return;safe->auditionRunning=false;safe->auditionButton.setEnabled(true);if(valid)safe->showAudition(name,result);else if(error.isNotEmpty())juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Plugin Audition",error);});
+            juce::MessageManager::callAsync([safe,result,name,valid,error,generation]{if(!safe||safe->stopped.load())return;safe->auditionRunning=false;safe->auditionButton.setEnabled(true);if(generation!=safe->auditionGeneration||safe->auditionCancel.load()||!safe->browserOpen)return;if(valid)safe->showAudition(name,result);else if(error.isNotEmpty())juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Plugin Audition",error);});
         });
     }
     void showAudition(juce::String name,std::shared_ptr<LibertyPluginHost::AuditionResult> result,int volume=1)
     {
+        if(!browserOpen||stopped.load()||auditionCancel.load()){auditionDialogOpen=false;return;}auditionDialogOpen=true;const auto generation=auditionGeneration;
         auto info=name+juce::String::fromUTF8("\nCPU hors ligne : ")+juce::String(result->cpuPercent,2)+" %"+juce::String::fromUTF8("\nLatence déclarée : ")+juce::String(result->latencySamples)+" samples"+juce::String::fromUTF8("\nCompensation RMS : ")+juce::String(20*std::log10(result->matchGain),1)+" dB";
         auto dlg=std::make_shared<juce::AlertWindow>("PLUGIN AUDITION - A/B",info,juce::AlertWindow::NoIcon);
         dlg->addComboBox("volume",juce::StringArray{"-24 dB","-12 dB","-6 dB","0 dB"},"Volume");dlg->getComboBoxComponent("volume")->setSelectedItemIndex(volume,juce::dontSendNotification);
         dlg->addButton("A - Original",1);dlg->addButton(juce::String::fromUTF8("B - Traité"),2);dlg->addButton("Stop",3);dlg->addButton("Fermer",0);
         auto safe=juce::Component::SafePointer<BrowserPanel>(this);
-        dlg->enterModalState(true,juce::ModalCallbackFunction::create([safe,dlg,name,result](int n){
-            if(!safe||safe->stopped.load())return;safe->previewTransport.stop();if(n==0)return;const int volume=juce::jlimit(0,3,dlg->getComboBoxComponent("volume")->getSelectedItemIndex());
+        dlg->enterModalState(true,juce::ModalCallbackFunction::create([safe,dlg,name,result,generation](int n){
+            if(!safe||safe->stopped.load())return;safe->auditionDialogOpen=false;safe->previewTransport.stop();safe->previewTransport.setGain((float)safe->previewVolume.getValue());if(n==0||generation!=safe->auditionGeneration||safe->auditionCancel.load())return;const int volume=juce::jlimit(0,3,dlg->getComboBoxComponent("volume")->getSelectedItemIndex());
             if(n==1||n==2){safe->previewTransport.setSource(nullptr);safe->previewReader.reset();safe->labPreview.reset();auto& audio=n==1?result->dry:result->wet;safe->labPreview=std::make_unique<juce::MemoryAudioSource>(audio,true,false);safe->previewTransport.setSource(safe->labPreview.get(),0,nullptr,result->sampleRate);const float db[]={-24.f,-12.f,-6.f,0.f};safe->previewTransport.setGain(juce::Decibels::decibelsToGain(db[volume]));safe->previewTransport.start();}
-            juce::MessageManager::callAsync([safe,name,result,volume]{if(safe&&!safe->stopped.load())safe->showAudition(name,result,volume);});
+            juce::MessageManager::callAsync([safe,name,result,volume,generation]{if(safe&&!safe->stopped.load()&&generation==safe->auditionGeneration)safe->showAudition(name,result,volume);});
         }),false);
     }
     void insertChain(const LibertyDeviceChains::Entry& entry)
@@ -7923,7 +7926,7 @@ private:
     std::unique_ptr<LibertyPresetCenter::Panel> presetCenter;
     juce::TextButton chainToggle;
     std::unique_ptr<LibertyDeviceChains::Panel> chainCenter;
-    juce::TextButton auditionButton;std::thread auditionThread;std::atomic<bool> auditionCancel{false};bool auditionRunning=false;std::unique_ptr<juce::FileChooser> auditionChooser;
+    juce::TextButton auditionButton;std::thread auditionThread;std::atomic<bool> auditionCancel{false};bool auditionRunning=false,auditionDialogOpen=false;unsigned auditionGeneration=0;std::unique_ptr<juce::FileChooser> auditionChooser;
     juce::Component::SafePointer<LibertyBrowserIntelligence::Panel> quickSearchPanel;
     std::thread quickIndexThread;
     bool quickIndexRunning=false, tagsReadOnly=false;

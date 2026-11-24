@@ -22,6 +22,7 @@ inline bool decode(const juce::XmlElement& x,Entry& e){
   if(!n->hasTagName("Device")||e.devices.size()>=9)return false;
   LibertyPluginHost::ChainDevice d;d.slot=n->getIntAttribute("slot",-2);d.deviceId=n->getStringAttribute("id");auto state=n->getStringAttribute("state");
   if(d.slot<-1||d.slot>7||used[(size_t)(d.slot+1)]||state.length()>1500000||!d.state.fromBase64Encoding(state)||!LibertyPluginHost::instance().validateNativePresetState(d.deviceId,d.state))return false;
+  juce::PluginDescription desc;if(!LibertyPluginHost::instance().findKnownPluginByIdentifier(d.deviceId,desc)||desc.pluginFormatName!="Liberty Native"||desc.isInstrument!=(d.slot==-1))return false;
   used[(size_t)(d.slot+1)]=true;e.devices.push_back(std::move(d));
  }
  std::sort(e.devices.begin(),e.devices.end(),[](const auto& a,const auto& b){return a.slot<b.slot;});
@@ -87,7 +88,7 @@ private:
    else{Entry e;if(!decode(*n,e)||entries.size()>=500){readOnly=true;continue;}if(!e.id.startsWith("user:"))e.id="user:"+juce::Uuid().toString();if(std::none_of(entries.begin(),entries.end(),[&](const Entry& old){return old.id==e.id;}))entries.push_back(std::move(e));}
   }
  }
- bool persist(){if(readOnly)return false;juce::XmlElement xml("LibertyDeviceChains");xml.setAttribute("version",1);for(const auto& e:entries){auto x=encode(e);if(e.factory)x->deleteAllChildElements();xml.addChildElement(x.release());}juce::TemporaryFile temp(storage);return temp.getFile().replaceWithText(xml.toString())&&temp.overwriteTargetFileWithTemporary();}
+ bool persist(){if(readOnly)return false;juce::XmlElement xml("LibertyDeviceChains");xml.setAttribute("version",1);for(const auto& e:entries){auto x=encode(e);if(e.factory)x->deleteAllChildElements();xml.addChildElement(x.release());}auto data=xml.toString();if(data.getNumBytesAsUTF8()>64000000)return false;juce::TemporaryFile temp(storage);return temp.getFile().replaceWithText(data)&&temp.overwriteTargetFileWithTemporary();}
  void showDetails(){
   if(auto* e=selected()){juce::String text=e->name+"\n";for(const auto& d:e->devices){juce::PluginDescription desc;LibertyPluginHost::instance().findKnownPluginByIdentifier(d.deviceId,desc);text+=(d.slot<0?juce::String("Instrument"):"FX "+juce::String(d.slot+1))+" : "+desc.name+"\n";}juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Device Chains",text);}
  }

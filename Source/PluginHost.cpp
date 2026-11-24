@@ -530,8 +530,9 @@ bool LibertyPluginHost::insertNativeChain(bool instrument,int lane,const NativeC
 bool LibertyPluginHost::renderNativeAudition(const NativeChain& chain,const juce::AudioBuffer<float>& source,double rate,double tempo,AuditionResult& out,juce::String& error,const std::atomic<bool>& cancel) const
 {
 #if defined(LIBERTY_NATIVE_PREVIEW)
-    if(chain.empty()||chain.size()>8||rate<8000||rate>96000||source.getNumChannels()!=2||source.getNumSamples()<1||source.getNumSamples()>rate*12)
+    if(chain.empty()||chain.size()>8||!std::isfinite(rate)||!std::isfinite(tempo)||rate<8000||rate>96000||source.getNumChannels()!=2||source.getNumSamples()<1||source.getNumSamples()>rate*12)
     {error="Source ou chaine invalide.";return false;}
+    for(int ch=0;ch<2;++ch)for(int i=0;i<source.getNumSamples();++i)if(!std::isfinite(source.getSample(ch,i))){error="Source audio non finie.";return false;}
     NativePlayHead head;head.bpm.store(juce::jlimit(20.,400.,tempo));
     std::vector<std::unique_ptr<juce::AudioProcessor>> processors;
     const auto release=[&]{for(auto& p:processors)p->releaseResources();};
@@ -577,6 +578,7 @@ bool LibertyPluginHost::renderNativeAudition(const NativeChain& chain,const juce
     result.dry.applyGain(safety);result.wet.applyGain(safety*(float)result.matchGain);
     const int fade=juce::jmin(128,length/2);
     for(int ch=0;ch<2;++ch){result.dry.applyGainRamp(ch,0,fade,0.f,1.f);result.wet.applyGainRamp(ch,0,fade,0.f,1.f);result.dry.applyGainRamp(ch,length-fade,fade,1.f,0.f);result.wet.applyGainRamp(ch,length-fade,fade,1.f,0.f);}
+    if(cancel.load())return false;
     result.cpuPercent=elapsed/(1000.*total/rate)*100.;out=std::move(result);return true;
 #else
     juce::ignoreUnused(chain,source,rate,tempo,out,cancel);error=juce::String::fromUTF8("Préécoute native indisponible dans cette édition.");return false;
