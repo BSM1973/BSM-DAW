@@ -319,3 +319,13 @@ assert "void setMidiLearnAssigned(bool assigned)" in art
 assert "pads[(size_t)i].setMidiLearnAssigned(raw!=0);" in drum
 assert 'g.drawFittedText("MIDI",tag.toNearestInt(),' in art
 print("PASS: MIDI Learn assignment indicator preserves icon and pad labels")
+
+# Browser filters must use the established Obsidian look on every menu level.
+filters=browser.split("void showPluginFiltersMenu()",1)[1].split("juce::Component::SafePointer<BrowserPanel> safe(this);",1)[0]
+assert "static LibertyUI::ObsidianMenuStyle filterMenuStyle;" in filters
+assert "popup.setLookAndFeel(&filterMenuStyle);" in filters
+for name in ("menu","accessMenu","collectionsMenu","targetedRepairMenu","missingMenu","renameMenu","deleteMenu","manufacturerMenu","letterMenu","formatMenu","typeMenu","usageMenu","instrumentMenu","effectMenu","layoutMenu","backupMenu"):
+    assert f"auto {name} = makeFilterMenu();" in filters, name
+assert "letterMenu = makeFilterMenu();" in filters
+assert "letterMenu = juce::PopupMenu();" not in filters
+print("PASS: existing Obsidian painter applied explicitly to browser filter menu and all nested menus")

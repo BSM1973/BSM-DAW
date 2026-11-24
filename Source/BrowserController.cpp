@@ -7,6 +7,7 @@
 #endif
 #include "OneKnobEffects.h"
 #include "LibertyDesignSystem.h"
+#include "LibertyObsidianMenuStyle.h"
 #include "LibertyManufacturerGrouping.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
@@ -6008,10 +6009,21 @@ private:
         const int pinnedIndex = manufacturers.indexOf("Liberty Music Software", true);
         if (pinnedIndex > 0) { auto name = manufacturers[pinnedIndex]; manufacturers.remove(pinnedIndex); manufacturers.insert(0, name); }
 
-        juce::PopupMenu menu;
+        // Explicitly use the existing Obsidian painter instead of inheriting
+        // whichever LookAndFeel the browser or parent currently exposes.
+        // Static lifetime is required because PopupMenu::showMenuAsync copies
+        // menu models but retains a non-owning LookAndFeel pointer.
+        static LibertyUI::ObsidianMenuStyle filterMenuStyle;
+        const auto makeFilterMenu = []()
+        {
+            juce::PopupMenu popup;
+            popup.setLookAndFeel(&filterMenuStyle);
+            return popup;
+        };
+        auto menu = makeFilterMenu();
         menu.addSectionHeader(juce::String::fromUTF8("FILTRES DE PLUGINS"));
 
-        juce::PopupMenu accessMenu;
+        auto accessMenu = makeFilterMenu();
         accessMenu.addItem(700, juce::String::fromUTF8("TOUS LES PLUGINS"), true,
                            quickView == QuickView::all && !missingPluginsOnly);
         accessMenu.addItem(701, juce::String::fromUTF8("FAVORIS UNIQUEMENT"), true,
@@ -6024,7 +6036,7 @@ private:
         menu.addSubMenu(juce::String::fromUTF8("ACCÈS RAPIDE"), accessMenu);
 
         juce::StringArray collectionNames;
-        juce::PopupMenu collectionsMenu;
+        auto collectionsMenu = makeFilterMenu();
         collectionsMenu.addItem(5000, juce::String::fromUTF8("TOUS LES PLUGINS"),
                                  true, selectedCollection.isEmpty());
         const auto installedIdentifiers = installedPluginIdentifiers();
@@ -6087,7 +6099,7 @@ private:
             juce::String::fromUTF8("RÉPARER UNE SÉLECTION DE PLUGINS..."),
             !missingRepairProposals().empty() && !collectionsReadOnly && !scanning.load());
         const auto targetedRepairs = missingRepairProposals();
-        juce::PopupMenu targetedRepairMenu;
+        auto targetedRepairMenu = makeFilterMenu();
         const int targetedLimit = juce::jmin(40, (int)targetedRepairs.size());
         for (int i = 0; i < targetedLimit; ++i)
         {
@@ -6109,7 +6121,7 @@ private:
                 : juce::String::fromUTF8(
                     "FICHIER PRINCIPAL ILLISIBLE - RESTAURATION CONSEILLÉE"));
         juce::StringArray missingCollectionNames;
-        juce::PopupMenu missingMenu;
+        auto missingMenu = makeFilterMenu();
         for (const auto& group : pluginCollections)
         {
             const int missing = group.second.size()
@@ -6123,7 +6135,7 @@ private:
             collectionsMenu.addSubMenu(juce::String::fromUTF8("PLUGINS MANQUANTS"), missingMenu);
         if (!collectionNames.isEmpty())
         {
-            juce::PopupMenu renameMenu, deleteMenu;
+            auto renameMenu = makeFilterMenu(); auto deleteMenu = makeFilterMenu();
             for (int i = 0; i < collectionNames.size(); ++i)
             {
                 renameMenu.addItem(5200 + i, collectionNames[i], !collectionsReadOnly);
@@ -6134,7 +6146,7 @@ private:
         }
         menu.addSubMenu("COLLECTIONS", collectionsMenu);
 
-        juce::PopupMenu manufacturerMenu;
+        auto manufacturerMenu = makeFilterMenu();
         manufacturerMenu.addItem(300, juce::String::fromUTF8("TOUS LES FABRICANTS"),
                                  true, selectedManufacturer.isEmpty());
         manufacturerMenu.addSeparator();
@@ -6142,7 +6154,7 @@ private:
         // Alphabetical submenus avoid opening a 200+-row manufacturer list.
         // Each item ID maps to the stable manufacturers snapshot in callback.
         juce::String letter;
-        juce::PopupMenu letterMenu;
+        auto letterMenu = makeFilterMenu();
         for (int i = 0; i < manufacturers.size(); ++i)
         {
             auto prefix = manufacturers[i].substring(0, 1).toUpperCase();
@@ -6153,7 +6165,7 @@ private:
                 if (letter.isNotEmpty())
                     manufacturerMenu.addSubMenu(letter, letterMenu);
                 letter = prefix;
-                letterMenu = juce::PopupMenu();
+                letterMenu = makeFilterMenu();
             }
             letterMenu.addItem(1000 + i, manufacturers[i], true,
                 manufacturers[i].equalsIgnoreCase(selectedManufacturer));
@@ -6162,7 +6174,7 @@ private:
             manufacturerMenu.addSubMenu(letter, letterMenu);
         menu.addSubMenu(juce::String::fromUTF8("FABRICANT"), manufacturerMenu);
 
-        juce::PopupMenu formatMenu;
+        auto formatMenu = makeFilterMenu();
         formatMenu.addItem(400, "TOUS LES FORMATS", true,
                            pluginFormatFilter == PluginFormatFilter::all);
         formatMenu.addItem(401, "AUDIO UNIT (AU)", true,
@@ -6171,7 +6183,7 @@ private:
                            pluginFormatFilter == PluginFormatFilter::vst3);
         menu.addSubMenu("FORMAT", formatMenu);
 
-        juce::PopupMenu typeMenu;
+        auto typeMenu = makeFilterMenu();
         typeMenu.addItem(500, "TOUS LES TYPES", true,
                          pluginTypeFilter == PluginTypeFilter::all);
         typeMenu.addItem(501, "INSTRUMENTS", true,
@@ -6189,10 +6201,10 @@ private:
             if (index > 0 && index < (int)categoryCounts.size())
                 ++categoryCounts[(size_t)index];
         }
-        juce::PopupMenu usageMenu;
+        auto usageMenu = makeFilterMenu();
         usageMenu.addItem(800, juce::String::fromUTF8("TOUTES LES FAMILLES"), true,
                           pluginUsageFilter == PluginUsage::all);
-        juce::PopupMenu instrumentMenu, effectMenu;
+        auto instrumentMenu = makeFilterMenu(); auto effectMenu = makeFilterMenu();
         for (auto usage : instrumentUsages())
         {
             const auto count = categoryCounts[(size_t)(int)usage];
@@ -6218,12 +6230,12 @@ private:
             true, pluginUsageFilter == PluginUsage::unclassified);
         menu.addSubMenu(juce::String::fromUTF8("FAMILLE SONORE / FONCTION"), usageMenu);
 
-        juce::PopupMenu layoutMenu;
+        auto layoutMenu = makeFilterMenu();
         layoutMenu.addItem(900, "PAR FONCTION", true, groupByUsage);
         layoutMenu.addItem(901, "PAR FABRICANT", true, !groupByUsage);
         menu.addSubMenu("ORGANISATION", layoutMenu);
 
-        juce::PopupMenu backupMenu;
+        auto backupMenu = makeFilterMenu();
         backupMenu.addSectionHeader(juce::String::fromUTF8("CATÉGORIES PERSONNALISÉES"));
         backupMenu.addItem(950, juce::String::fromUTF8("EXPORTER LES CLASSEMENTS..."),
                            !pluginFamilyOverrides.empty());
