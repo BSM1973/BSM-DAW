@@ -433,10 +433,52 @@ void LibertyPluginHost::prepareSlot(Slot& slot)
     slot.processor->prepareToPlay(currentSampleRate, currentBlockSize);
 }
 
+std::vector<LibertyPluginHost::NativePreset> LibertyPluginHost::getNativeFactoryPresets() const
+{
+    std::vector<NativePreset> result;
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    for(const auto& d:nativeDescriptions())
+        if(d.fileOrIdentifier=="liberty.native.freespirit-delay")
+        {
+            FreeSpiritProcessor original;
+            for(int i=0;i<(int)original.presets.size();++i)
+            {
+                const auto& p=original.presets[(size_t)i];
+                result.push_back({d.fileOrIdentifier+":factory:"+juce::String(i),p.name,p.category,d.fileOrIdentifier,i});
+            }
+        }
+#endif
+    return result;
+}
+bool LibertyPluginHost::getNativeFactoryPresetState(const juce::String& id,int index,juce::MemoryBlock& out) const
+{
+    out.reset();
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    juce::PluginDescription d;
+    if(id=="liberty.native.freespirit-delay"&&findKnownPluginByIdentifier(id,d))
+    {
+        FreeSpiritProcessor original;
+        if(index<0||index>=(int)original.presets.size())return false;
+        original.loadPreset(index);original.getStateInformation(out);
+        return validateNativePresetState(id,out);
+    }
+#endif
+    return false;
+}
+bool LibertyPluginHost::validateNativePresetState(const juce::String& id,const juce::MemoryBlock& state) const
+{
+#if defined(LIBERTY_NATIVE_PREVIEW)
+    if(id!="liberty.native.freespirit-delay"||state.getSize()==0||state.getSize()>1024*1024)return false;
+    auto xml=juce::AudioProcessor::getXmlFromBinary(state.getData(),(int)state.getSize());
+    return xml!=nullptr&&xml->hasTagName("FreeSpirit");
+#else
+    juce::ignoreUnused(id,state);return false;
+#endif
+}
 bool LibertyPluginHost::loadIntoSlot(Slot& slot,
                                      const juce::PluginDescription& description,
                                      juce::String& error,
-                                     bool requireInstrument)
+                                     bool requireInstrument, const juce::MemoryBlock* presetState)
 {
     if (requireInstrument && !description.isInstrument)
     {
@@ -482,6 +524,11 @@ bool LibertyPluginHost::loadIntoSlot(Slot& slot,
         if (!instance) return false;
     }
 
+    if(presetState!=nullptr)
+    {
+        if(!validateNativePresetState(resolvedDescription.fileOrIdentifier,*presetState)){error="Preset natif incompatible.";return false;}
+        instance->setStateInformation(presetState->getData(),(int)presetState->getSize());
+    }
     closeEditor(slot);
     if (slot.processor) slot.processor->releaseResources();
     slot.processor = std::move(instance);
@@ -502,20 +549,20 @@ void LibertyPluginHost::ensureInstrumentSlot(int instrumentTrack)
 
 bool LibertyPluginHost::loadEffectForTrack(int trackIndex, const juce::PluginDescription& description, juce::String& error)
 { return loadEffectForTrackSlot(trackIndex, 0, description, error); }
-bool LibertyPluginHost::loadEffectForTrackSlot(int trackIndex, int slotIndex, const juce::PluginDescription& description, juce::String& error)
+bool LibertyPluginHost::loadEffectForTrackSlot(int trackIndex, int slotIndex, const juce::PluginDescription& description, juce::String& error, const juce::MemoryBlock* presetState)
 {
     if (!validTrack(trackIndex) || slotIndex < 0 || slotIndex >= effectSlotsPerTrack) { error = "Slot FX invalide."; return false; }
     const juce::ScopedLock scoped(lock); ensureAudioTrackSlot(trackIndex);
-    return loadIntoSlot(*trackEffects[(size_t)trackIndex][(size_t)slotIndex], description, error, false);
+    return loadIntoSlot(*trackEffects[(size_t)trackIndex][(size_t)slotIndex], description, error, false, presetState);
 }
 
 bool LibertyPluginHost::loadInstrument(const juce::PluginDescription& description, juce::String& error)
 { return loadInstrumentForTrack(0, description, error); }
-bool LibertyPluginHost::loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error)
+bool LibertyPluginHost::loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error, const juce::MemoryBlock* presetState)
 {
     if (instrumentTrack < 0) { error = "Piste Instrument invalide."; return false; }
     const juce::ScopedLock scoped(lock); ensureInstrumentSlot(instrumentTrack);
-    return loadIntoSlot(*instruments[(size_t)instrumentTrack], description, error, true);
+    return loadIntoSlot(*instruments[(size_t)instrumentTrack], description, error, true, presetState);
 }
 
 void LibertyPluginHost::closeEditor(Slot& slot)
@@ -766,11 +813,11 @@ bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>
 
 bool LibertyPluginHost::loadEffectForInstrumentTrack(int t, const juce::PluginDescription& d, juce::String& error)
 { return loadEffectForInstrumentTrackSlot(t, 0, d, error); }
-bool LibertyPluginHost::loadEffectForInstrumentTrackSlot(int t,int si,const juce::PluginDescription& d,juce::String& error)
+bool LibertyPluginHost::loadEffectForInstrumentTrackSlot(int t,int si,const juce::PluginDescription& d,juce::String& error, const juce::MemoryBlock* presetState)
 {
     if(t<0||si<0||si>=effectSlotsPerTrack||d.isInstrument){error="Slot FX instrument invalide.";return false;}
     const juce::ScopedLock scoped(lock);while((int)instrumentEffects.size()<=t)instrumentEffects.emplace_back();
-    auto& slot=instrumentEffects[(size_t)t][(size_t)si];if(!slot)slot=std::make_unique<Slot>();return loadIntoSlot(*slot,d,error,false);
+    auto& slot=instrumentEffects[(size_t)t][(size_t)si];if(!slot)slot=std::make_unique<Slot>();return loadIntoSlot(*slot,d,error,false,presetState);
 }
 void LibertyPluginHost::unloadEffectForInstrumentTrack(int t){unloadEffectForInstrumentTrackSlot(t,0);}
 void LibertyPluginHost::unloadEffectForInstrumentTrackSlot(int t,int si){const juce::ScopedLock scoped(lock);if(t<0||si<0||si>=effectSlotsPerTrack||t>=(int)instrumentEffects.size()||!instrumentEffects[(size_t)t][(size_t)si])return;auto&x=*instrumentEffects[(size_t)t][(size_t)si];closeEditor(x);if(x.processor)x.processor->releaseResources();x.processor.reset();x.description={};}

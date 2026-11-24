@@ -57,6 +57,13 @@ int main()
     check(host.hasEffectForTrackSlot(0,0),"failed load preserves current effect");
     FreeSpiritProcessor original;
     check(original.presets.size()==100,"all 100 original presets");
+    const auto catalogue=host.getNativeFactoryPresets();check(catalogue.size()==100,"native preset center exact catalogue");
+    juce::MemoryBlock preset;check(host.getNativeFactoryPresetState(d.fileOrIdentifier,0,preset),"factory preset state");
+    check(host.validateNativePresetState(d.fileOrIdentifier,preset),"validated factory state");
+    check(host.loadEffectForTrackSlot(1,0,d,error,&preset),"atomic preset insert");
+    juce::MemoryBlock rejected;check(!host.loadEffectForTrackSlot(1,0,d,error,&rejected),"invalid preset rejected before replacement");
+    check(host.hasEffectForTrackSlot(1,0),"invalid preset preserves instance");
+    check(!host.getNativeFactoryPresetState(d.fileOrIdentifier,100,rejected),"invalid factory index");
     for(int i=0;i<100;++i)
     {
         original.loadPreset(i);

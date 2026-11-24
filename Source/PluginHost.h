@@ -27,6 +27,14 @@ public:
 #if defined(LIBERTY_NATIVE_PREVIEW)
     void setNativeTempo(double bpm) noexcept;
 #endif
+    struct NativePreset
+    {
+        juce::String id, name, category, deviceId;
+        int factoryIndex=-1;
+    };
+    std::vector<NativePreset> getNativeFactoryPresets() const;
+    bool getNativeFactoryPresetState(const juce::String& deviceId,int index,juce::MemoryBlock& state) const;
+    bool validateNativePresetState(const juce::String& deviceId,const juce::MemoryBlock& state) const;
     void shutdown();
     void clearProjectPlugins();
     void scanInstalledPlugins(const ScanProgressCallback& progressCallback = {});
@@ -38,9 +46,9 @@ public:
 
     static constexpr int effectSlotsPerTrack = 8;
     bool loadEffectForTrack(int trackIndex, const juce::PluginDescription& description, juce::String& error);
-    bool loadEffectForTrackSlot(int trackIndex, int slotIndex, const juce::PluginDescription& description, juce::String& error);
+    bool loadEffectForTrackSlot(int trackIndex, int slotIndex, const juce::PluginDescription& description, juce::String& error, const juce::MemoryBlock* presetState = nullptr);
     bool loadInstrument(const juce::PluginDescription& description, juce::String& error);
-    bool loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
+    bool loadInstrumentForTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error, const juce::MemoryBlock* presetState = nullptr);
     void unloadEffectForTrack(int trackIndex);
     void unloadEffectForTrackSlot(int trackIndex, int slotIndex);
     void unloadInstrument();
@@ -72,7 +80,7 @@ public:
     bool processInstrumentForTrack(int instrumentTrack, float* const* outputChannelData, int numOutputChannels, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
     bool renderInstrumentForTrack(int instrumentTrack, juce::AudioBuffer<float>& destination, int numSamples, juce::MidiBuffer& midi, float gain = 1.0f, float pan = 0.0f);
     bool loadEffectForInstrumentTrack(int instrumentTrack, const juce::PluginDescription& description, juce::String& error);
-    bool loadEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex, const juce::PluginDescription& description, juce::String& error);
+    bool loadEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex, const juce::PluginDescription& description, juce::String& error, const juce::MemoryBlock* presetState = nullptr);
     void unloadEffectForInstrumentTrack(int instrumentTrack);
     void unloadEffectForInstrumentTrackSlot(int instrumentTrack, int slotIndex);
     bool hasEffectForInstrumentTrack(int instrumentTrack) const;
@@ -113,7 +121,7 @@ private:
         std::unique_ptr<juce::DocumentWindow> editorWindow;
     };
 
-    bool loadIntoSlot(Slot& slot, const juce::PluginDescription& description, juce::String& error, bool requireInstrument);
+    bool loadIntoSlot(Slot& slot, const juce::PluginDescription& description, juce::String& error, bool requireInstrument, const juce::MemoryBlock* presetState = nullptr);
     void prepareSlot(Slot& slot);
     void closeEditor(Slot& slot);
     void showEditor(Slot& slot, const juce::String& title);

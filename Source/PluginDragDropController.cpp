@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #undef private
 #include "PluginHost.h"
+#include "LibertyPresetCenter.h"
 #include "OneKnobEffects.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -15,7 +16,7 @@ void refreshLibertyMixConsole(MainComponent* owner);
 
 namespace
 {
-std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* eventComponent)
+std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* eventComponent, std::optional<LibertyPresetCenter::Entry>& preset)
 {
     juce::TreeView* tree = nullptr;
     for (auto* c = eventComponent; c != nullptr; c = c->getParentComponent())
@@ -31,6 +32,10 @@ std::optional<juce::PluginDescription> resolveSelectedPlugin(juce::Component* ev
     if (item == nullptr)
         return std::nullopt;
 
+    if(auto* native=dynamic_cast<LibertyPresetCenter::Item*>(item)){
+        juce::PluginDescription desc;if(!LibertyPluginHost::instance().findKnownPluginByIdentifier(native->entry.deviceId,desc))return std::nullopt;
+        preset=native->entry;return desc;
+    }
     const auto identifier = item->getUniqueName();
     if (identifier.isEmpty())
         return std::nullopt;
@@ -176,9 +181,9 @@ private:
     {
         if (!event.mods.isLeftButtonDown()) return;
         resetLibertyDragCursors();
-        oneKnobCandidate.reset();
+        oneKnobCandidate.reset();presetCandidate.reset();
         oneKnobCandidate = resolveOneKnob(event.eventComponent);
-        candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent);
+        candidate = oneKnobCandidate.has_value() ? std::nullopt : resolveSelectedPlugin(event.eventComponent,presetCandidate);
         dragStartScreen = event.getScreenPosition();
         dragging = false;
     }
@@ -190,7 +195,7 @@ private:
         if (!oneKnobCandidate.has_value())
             oneKnobCandidate = resolveOneKnob(event.eventComponent);
         if (!oneKnobCandidate.has_value() && !candidate.has_value())
-            candidate = resolveSelectedPlugin(event.eventComponent);
+            candidate = resolveSelectedPlugin(event.eventComponent,presetCandidate);
         if (!oneKnobCandidate.has_value() && !candidate.has_value())
             return;
 
@@ -218,6 +223,7 @@ private:
     void mouseUp(const juce::MouseEvent& event) override
     {
         auto plugin = candidate;
+        auto preset = std::move(presetCandidate);presetCandidate.reset();
         auto oneKnob = oneKnobCandidate;
         candidate.reset();
         oneKnobCandidate.reset();
@@ -283,12 +289,14 @@ private:
         auto& host = LibertyPluginHost::instance();
         juce::String error;
         bool loaded = false;
+        juce::MemoryBlock presetState;const juce::MemoryBlock* state=nullptr;
+        if(preset){if(!preset->getState(presetState))return;state=&presetState;}
 
         if (plugin->isInstrument)
         {
             main->selectedTrack = target;
             const int lane = target - main->getAudioTrackCount() - main->getMidiTrackCount();
-            loaded = host.loadInstrumentForTrack(lane, *plugin, error);
+            loaded = host.loadInstrumentForTrack(lane, *plugin, error, state);
             if (loaded)
             {
                 main->notifyInstrumentChanged();
@@ -308,7 +316,7 @@ private:
                 main->selectedTrack = logicalTrack;
                 if (logicalTrack < audioCount)
                 {
-                    loaded = host.loadEffectForTrackSlot(logicalTrack, insertSlot, *plugin, error);
+                    loaded = host.loadEffectForTrackSlot(logicalTrack, insertSlot, *plugin, error, state);
                     if (loaded)
                     {
                         LibertyOneKnobManager::instance().clearEffect(logicalTrack * 8 + insertSlot);
@@ -318,7 +326,7 @@ private:
                 else if (logicalTrack >= firstInstrument)
                 {
                     const int lane = logicalTrack - firstInstrument;
-                    loaded = host.loadEffectForInstrumentTrackSlot(lane, insertSlot, *plugin, error);
+                    loaded = host.loadEffectForInstrumentTrackSlot(lane, insertSlot, *plugin, error, state);
                     if (loaded)
                     {
                         LibertyOneKnobManager::instance().clearEffect(100000 + lane * 8 + insertSlot);
@@ -339,6 +347,7 @@ private:
     }
 
     std::optional<juce::PluginDescription> candidate;
+    std::optional<LibertyPresetCenter::Entry> presetCandidate;
     std::optional<LibertyOneKnobRack::Type> oneKnobCandidate;
     juce::Point<int> dragStartScreen;
     bool dragging = false;

@@ -12,6 +12,7 @@
 #include "LibertyBrowserIntelligence.h"
 #include "LibertySampleLab.h"
 #include "LibertySoundMatch.h"
+#include "LibertyPresetCenter.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -973,6 +974,10 @@ public:
         audioButton.onClick = [this] { setCategory(Category::audio); };
         midiButton.onClick = [this] { setCategory(Category::midi); };
         presetsButton.onClick = [this] { setCategory(Category::presets); };
+        presetCenter=std::make_unique<LibertyPresetCenter::Panel>(favouritesFile().getSiblingFile("NativePresetCenter.xml"),[this](const auto& entry){insertNativePreset(entry);},[this]{captureNativePreset();});
+        addAndMakeVisible(*presetCenter);presetCenter->setVisible(false);
+        presetCenterToggle.setButtonText("LIBERTY");presetCenterToggle.setClickingTogglesState(true);presetCenterToggle.setToggleState(true,juce::dontSendNotification);
+        presetCenterToggle.onClick=[this]{updatePresetCenterVisibility();resized();};addAndMakeVisible(presetCenterToggle);presetCenterToggle.setVisible(false);
         pluginsButton.onClick = [this] { setCategory(Category::plugins); };
         spliceButton.onClick = [this] { setCategory(Category::splice); };
 
@@ -1392,10 +1397,13 @@ public:
             auto band=juce::Rectangle<int>(10,76,juce::jmax(0,getWidth()-20),23);
             quickSearchButton.setBounds(band.removeFromRight(juce::jmin(36,band.getWidth())));
             band.removeFromRight(juce::jmin(5,band.getWidth()));
+            if(category==Category::presets){presetCenterToggle.setBounds(band.removeFromRight(juce::jmin(76,band.getWidth())));band.removeFromRight(juce::jmin(5,band.getWidth()));}
+            else presetCenterToggle.setBounds(0,0,0,0);
             pluginSearch.setBounds(band);
             pluginFiltersButton.setBounds(0, 0, 0, 0);
             pluginGroupingButton.setBounds(0, 0, 0, 0);
         }
+        if(presetCenter)presetCenter->setBounds(8,104,juce::jmax(0,getWidth()-16),juce::jmax(0,getHeight()-114));
         const int thumbnailW = juce::jmax(0, (getWidth() - 24) / 2);
         thumbnailModeButton.setBounds(10, 343, thumbnailW, 26);
         importThumbnailButton.setBounds(14 + thumbnailW, 343, thumbnailW, 26);
@@ -6131,6 +6139,7 @@ private:
         pluginSearch.setVisible(!spliceMode);
         pluginSearch.setTextToShowWhenEmpty(pluginMode ? "Rechercher un plugin ou fabricant..."
                                                    : "Rechercher un fichier...", juce::Colour(0xff8da6b1));
+        updatePresetCenterVisibility();
         filter.category = category == Category::audio ? 1 : category == Category::midi ? 2
                           : category == Category::presets ? 3 : category == Category::files ? 4 : 0;
         filter.query = pluginSearch.getText().trim();
@@ -7277,7 +7286,39 @@ private:
 
     void clearBlacklist() { LibertyPluginHost::instance().clearBlacklist(); refreshPluginStatus(); }
 
-    void loadPluginDescription(const juce::PluginDescription& d)
+    void updatePresetCenterVisibility()
+    {
+        if(!presetCenter)return;
+        const bool tab=category==Category::presets, native=tab&&presetCenterToggle.getToggleState();
+        presetCenterToggle.setVisible(tab);presetCenter->setVisible(native);
+        if(tab){fileTree.setVisible(!native);homeButton.setVisible(!native);parentFolderButton.setVisible(!native);chooseLibraryButton.setVisible(!native);pluginSearch.setVisible(!native);if(native)presetCenter->toFront(false);}
+    }
+    void insertNativePreset(const LibertyPresetCenter::Entry& entry)
+    {
+        juce::PluginDescription d;juce::MemoryBlock state;
+        if(!LibertyPluginHost::instance().findKnownPluginByIdentifier(entry.deviceId,d)||!entry.getState(state))return;
+        loadPluginDescription(d,&state);
+    }
+    void captureNativePreset()
+    {
+        auto& host=LibertyPluginHost::instance();
+        const int instrument=selectedInstrumentTrack(),audio=selectedAudioTrack();
+        if(instrument<0&&audio<0){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Preset Center",juce::String::fromUTF8("Sélectionnez une piste Audio ou Instrument."));return;}
+        auto dialog=std::make_shared<juce::AlertWindow>("Preset Center",juce::String::fromUTF8("Choisissez le slot natif à sauvegarder."),juce::AlertWindow::NoIcon);
+        juce::StringArray names;std::vector<int> slots;
+        for(int i=0;i<LibertyPluginHost::effectSlotsPerTrack;++i){juce::PluginDescription d;const bool ok=instrument>=0?host.getEffectDescriptionForInstrumentTrackSlot(instrument,i,d):host.getEffectDescriptionForTrackSlot(audio,i,d);if(ok&&d.pluginFormatName=="Liberty Native"){names.add("FX "+juce::String(i+1)+" - "+d.name);slots.push_back(i);}}
+        if(names.isEmpty()){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Preset Center","Aucun effet natif sur cette piste.");return;}
+        dialog->addComboBox("slot",names,"Slot");dialog->getComboBoxComponent("slot")->setSelectedItemIndex(0,juce::dontSendNotification);
+        dialog->addTextEditor("name","Mon preset","Nom");dialog->addButton("Enregistrer",1);dialog->addButton("Annuler",0);
+        auto safe=juce::Component::SafePointer<BrowserPanel>(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,slots,instrument,audio](int n){
+            if(!safe||safe->stopped.load()||n!=1)return;const auto selected=dialog->getComboBoxComponent("slot")->getSelectedItemIndex();if(selected<0||selected>=(int)slots.size())return;
+            const auto slot=slots[(size_t)selected];auto& host=LibertyPluginHost::instance();juce::PluginDescription d;juce::MemoryBlock state;
+            const bool ok=instrument>=0?(host.getEffectDescriptionForInstrumentTrackSlot(instrument,slot,d)&&host.getEffectStateForInstrumentTrackSlot(instrument,slot,state)):(host.getEffectDescriptionForTrackSlot(audio,slot,d)&&host.getEffectStateForTrackSlot(audio,slot,state));
+            if(ok&&d.pluginFormatName=="Liberty Native"&&safe->presetCenter)safe->presetCenter->addCaptured(d.fileOrIdentifier,state,dialog->getTextEditorContents("name"));
+        }),false);
+    }
+    void loadPluginDescription(const juce::PluginDescription& d,const juce::MemoryBlock* presetState=nullptr)
     {
         if (scanning.load()) return;
         if(targetEffectSlot>=0)
@@ -7309,8 +7350,8 @@ private:
             }
             juce::String error;
             const bool ok=instrument
-                ?host.loadEffectForInstrumentTrackSlot(lane,slot,d,error)
-                :host.loadEffectForTrackSlot(lane,slot,d,error);
+                ?host.loadEffectForInstrumentTrackSlot(lane,slot,d,error,presetState)
+                :host.loadEffectForTrackSlot(lane,slot,d,error,presetState);
             if(!ok)
             {
                 juce::AlertWindow::showMessageBoxAsync(
@@ -7339,7 +7380,7 @@ private:
                                                        "Sélectionne une piste Instrument pour charger cet instrument.", "OK");
                 return;
             }
-            ok = host.loadInstrumentForTrack(instrumentLane, d, error);
+            ok = host.loadInstrumentForTrack(instrumentLane, d, error,presetState);
             if (ok) host.showInstrumentEditorForTrack(instrumentLane);
         }
         else
@@ -7353,7 +7394,7 @@ private:
                 if (slot < 0) { error = "Les 8 slots FX de cette piste Instrument sont occupés."; }
                 else
                 {
-                    ok = host.loadEffectForInstrumentTrackSlot(instrumentLane, slot, d, error);
+                    ok = host.loadEffectForInstrumentTrackSlot(instrumentLane, slot, d, error,presetState);
                     if (ok) host.showEffectEditorForInstrumentTrackSlot(instrumentLane, slot);
                 }
             }
@@ -7372,7 +7413,7 @@ private:
                 if (slot < 0) { error = "Les 8 slots FX de cette piste Audio sont occupés."; }
                 else
                 {
-                    ok = host.loadEffectForTrackSlot(track, slot, d, error);
+                    ok = host.loadEffectForTrackSlot(track, slot, d, error,presetState);
                     if (ok) host.showEditorForTrackSlot(track, slot);
                 }
             }
@@ -7814,7 +7855,8 @@ private:
     juce::TreeView pluginTree;
     juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton, pluginFiltersButton;
     PluginGroupingButton pluginGroupingButton;
-    juce::TextButton quickSearchButton;
+    juce::TextButton quickSearchButton,presetCenterToggle;
+    std::unique_ptr<LibertyPresetCenter::Panel> presetCenter;
     juce::Component::SafePointer<LibertyBrowserIntelligence::Panel> quickSearchPanel;
     std::thread quickIndexThread;
     bool quickIndexRunning=false, tagsReadOnly=false;
