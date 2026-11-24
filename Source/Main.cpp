@@ -1,4 +1,6 @@
 #include "LibertyPrecisionUI.h"
+#include "LibertyDAWEditions.h"
+#include "LibertyNativeDeviceRegistry.h" // Compile native factory interface; none registered yet.
 #include "LibertyObsidianMenuStyle.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cstdlib>

@@ -1,5 +1,17 @@
 cmake_minimum_required(VERSION 3.24)
 project(BSM_DAW VERSION 0.1.0 LANGUAGES C CXX)
+# Edition selection is conservative: Base remains the current working DAW.
+# Standard/Ultimate may not be packaged until every promised native DSP
+# factory, preset pack and user interface is linked and regression tested.
+set(LIBERTY_DAW_EDITION "BASE" CACHE STRING "Liberty DAW: BASE, STANDARD, ULTIMATE")
+set_property(CACHE LIBERTY_DAW_EDITION PROPERTY STRINGS BASE STANDARD ULTIMATE)
+if(NOT LIBERTY_DAW_EDITION MATCHES "^(BASE|STANDARD|ULTIMATE)$")
+  message(FATAL_ERROR "Invalid LIBERTY_DAW_EDITION: ${LIBERTY_DAW_EDITION}")
+endif()
+if(NOT LIBERTY_DAW_EDITION STREQUAL "BASE")
+  message(FATAL_ERROR "Liberty ${LIBERTY_DAW_EDITION} is not releasable yet: native DSP engines are not linked. AU/VST3 wrappers are not substitutes.")
+endif()
+
 if(APPLE)
   enable_language(OBJCXX)
 endif()
@@ -57,10 +69,20 @@ if(MSVC)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(BSM_DAW PRIVATE -finput-charset=UTF-8)
 endif()
+target_compile_definitions(BSM_DAW PRIVATE LIBERTY_DAW_EDITION_BASE=1)
 target_compile_definitions(BSM_DAW PRIVATE JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=1 SIGNALSMITH_USE_ACCELERATE=1)
 target_link_libraries(BSM_DAW PRIVATE LibertyFactoryDrumAssets)
 target_link_libraries(BSM_DAW PRIVATE juce::juce_audio_basics juce::juce_audio_devices juce::juce_audio_formats juce::juce_audio_processors juce::juce_audio_utils juce::juce_dsp juce::juce_core juce::juce_data_structures juce::juce_events juce::juce_graphics juce::juce_gui_basics juce::juce_gui_extra signalsmith-stretch)
 juce_generate_juce_header(BSM_DAW)
+# Pure C++ edition catalogue guard: no fake native devices in product builds.
+add_executable(LibertyEditionCatalogSmoke Tests/LibertyEditionCatalogSmoke.cpp)
+target_include_directories(LibertyEditionCatalogSmoke PRIVATE Source)
+target_compile_features(LibertyEditionCatalogSmoke PRIVATE cxx_std_17)
+if(MSVC)
+  target_compile_options(LibertyEditionCatalogSmoke PRIVATE /UNDEBUG)
+else()
+  target_compile_options(LibertyEditionCatalogSmoke PRIVATE -UNDEBUG)
+endif()
 # Lightweight headless regression coverage for the Drum Sampler.
 juce_add_console_app(LibertyDrumSamplerSmoke PRODUCT_NAME "Liberty Drum Sampler Smoke")
 target_sources(LibertyDrumSamplerSmoke PRIVATE Tests/DrumSamplerSmoke.cpp)
@@ -73,6 +95,7 @@ target_link_libraries(LibertyDrumSamplerSmoke PRIVATE
     juce::juce_core juce::juce_events juce::juce_graphics)
 enable_testing()
 add_test(NAME DrumSamplerSmoke COMMAND LibertyDrumSamplerSmoke)
+add_test(NAME LibertyEditionCatalogSmoke COMMAND LibertyEditionCatalogSmoke)
 
 # Arrangement clip note partitioning, independent of devices and GUI.
 add_executable(LibertyMidiClipEditingSmoke Tests/MidiClipEditingSmoke.cpp)
