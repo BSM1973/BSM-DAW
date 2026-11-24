@@ -10,6 +10,7 @@
 #include "LibertyObsidianMenuStyle.h"
 #include "LibertyManufacturerGrouping.h"
 #include "LibertyBrowserIntelligence.h"
+#include "LibertySampleLab.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -1056,7 +1057,7 @@ public:
         }
         previewPlay.onClick = [this]
         {
-            if (previewReader == nullptr) return;
+            if (previewReader == nullptr && labPreview == nullptr) return;
             if (previewTransport.hasStreamFinished()) previewTransport.setPosition(0.0);
             previewTransport.start();
         };
@@ -1103,6 +1104,10 @@ public:
             sampleSearchChangedAt = juce::Time::getMillisecondCounter();
         };
         addAndMakeVisible(sampleNameSearch);
+        sampleLabButton.setButtonText("LAB");
+        sampleLabButton.setTooltip(juce::String::fromUTF8("Sample Lab : analyse, préécoute et index."));
+        sampleLabButton.onClick=[this]{showLab();};
+        addAndMakeVisible(sampleLabButton);
         const auto savedSampleFilters = juce::StringArray::fromLines(sampleFilterPreferenceFile().loadFileAsString());
         if (savedSampleFilters.size() > 0) sampleFilterMask = savedSampleFilters[0].getIntValue() & 31;
         if (savedSampleFilters.size() > 1)
@@ -1219,11 +1224,13 @@ public:
         if(auto* panel=quickSearchPanel.getComponent())
             if(auto* window=panel->findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);
         if(quickIndexThread.joinable())quickIndexThread.join();
+        if(labThread.joinable())labThread.join();
         previewTransport.stop();
         owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
         previewPlayer.setSource(nullptr);
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        labPreview.reset();
         if (artworkThread.joinable()) artworkThread.join();
         if (batchArtworkThread.joinable()) batchArtworkThread.join();
         if (captureThread.joinable()) captureThread.join();
@@ -1335,7 +1342,9 @@ public:
         samplePackInfo.setBounds(14, 165, juce::jmax(0, getWidth() - 190), 22);
         browsePacksButton.setBounds(juce::jmax(10, getWidth() - 160), 165, 70, 22);
         musicFilterButton.setBounds(juce::jmax(10, getWidth() - 86), 165, 76, 22);
-        sampleNameSearch.setBounds(14, 190, juce::jmax(0, getWidth() - 28), 24);
+        auto sampleBand=juce::Rectangle<int>(14,190,juce::jmax(0,getWidth()-28),24);
+        sampleLabButton.setBounds(sampleBand.removeFromRight(juce::jmin(46,sampleBand.getWidth())));
+        sampleBand.removeFromRight(juce::jmin(5,sampleBand.getWidth()));sampleNameSearch.setBounds(sampleBand);
         samplePackInfo.setFont(juce::Font(10.0f));
         previewInfo.setFont(juce::Font(11.0f, juce::Font::bold));
         fileTree.setBounds(10, category == Category::audio ? 230 : 136,
@@ -4896,14 +4905,80 @@ private:
 
     void toggleSelectedFavourite() { if (const auto* d = selectedPluginDescription()) toggleFavourite(*d); }
 
+    static juce::File labIndexFile(){return favouritesFile().getSiblingFile("SampleLabIndex.xml");}
+    void showLab(){
+        static LibertyUI::ObsidianMenuStyle style;juce::PopupMenu menu;menu.setLookAndFeel(&style);
+        menu.addSectionHeader("LIBERTY SAMPLE LAB");
+        menu.addItem(1,"Analyser le sample",labFile.existsAsFile()&&!labRunning);
+        menu.addItem(2,juce::String::fromUTF8("Indexer / détecter les doublons"),!labRunning);
+        menu.addItem(3,juce::String::fromUTF8("Consulter l'index enregistré"),labIndexFile().existsAsFile());
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&sampleLabButton),[safe](int n){
+            if(safe==nullptr||safe->stopped.load())return;if(n==1)safe->analyseLab();if(n==2)safe->indexLab();if(n==3)safe->showLabIndex();
+        });
+    }
+    void showLabIndex(){
+        auto xml=juce::XmlDocument::parse(labIndexFile());if(!xml)return;
+        int count=0,duplicates=0;juce::String report;
+        for(auto* item:xml->getChildIterator()){++count;if(item->hasAttribute("duplicateOf")){++duplicates;if(duplicates<=10)report+=juce::File(item->getStringAttribute("path")).getFileName()+" = "+juce::File(item->getStringAttribute("duplicateOf")).getFileName()+"\n";}}
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Sample Lab",juce::String(count)+juce::String::fromUTF8(" fichiers indexés / ")+juce::String(duplicates)+juce::String::fromUTF8(" doublons lors du dernier scan.\n")+report);
+    }
+    void indexLab(){
+        if(labRunning)return;auto root=findInstalledSampleLibrary();if(!root.isDirectory()||root==juce::File::getSpecialLocation(juce::File::userHomeDirectory)||root.getParentDirectory()==root)return;
+        if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);
+        auto destination=labIndexFile();juce::Component::SafePointer<BrowserPanel> safe(this);
+        labThread=std::thread([this,safe,root,destination]{auto report=LibertySampleLab::index(root,destination,stopped);juce::MessageManager::callAsync([safe,report]{if(safe==nullptr||safe->stopped.load())return;safe->labRunning=false;safe->sampleLabButton.setEnabled(true);juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,"Sample Lab",report);});});
+    }
+    void analyseLab(){
+        if(labRunning||!labFile.existsAsFile())return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);
+        auto file=labFile;auto generation=labGeneration;juce::Component::SafePointer<BrowserPanel> safe(this);
+        labThread=std::thread([safe,file,generation]{auto result=LibertySampleLab::analyseFile(file);juce::MessageManager::callAsync([safe,file,generation,result]{
+            if(safe==nullptr||safe->stopped.load())return;safe->labRunning=false;safe->sampleLabButton.setEnabled(true);
+            if(safe->labGeneration==generation&&safe->category==Category::audio&&safe->browserOpen)safe->showLabResult(file,result);
+        });});
+    }
+    void showLabResult(const juce::File& file,const LibertySampleLab::Result& r){
+        auto dialog=std::make_shared<juce::AlertWindow>("LIBERTY SAMPLE LAB",LibertySampleLab::describe(file,r),juce::AlertWindow::InfoIcon);
+        juce::StringArray keys;keys.add("Original");for(int i=0;i<12;++i)keys.add(LibertySampleLab::note(i));
+        dialog->addComboBox("key",keys,juce::String::fromUTF8("Tonalité cible (manuelle)"));
+        if(auto* box=dialog->getComboBoxComponent("key"))box->setEnabled(r.key>=0);
+        dialog->addButton("Original",1);if(r.bpm>0)dialog->addButton("SYNC BPM",2);if(r.key>=0)dialog->addButton("SYNC KEY",3);if(r.bpm>0&&r.key>=0)dialog->addButton("BPM + KEY",4);dialog->addButton("Fermer",0);
+        auto generation=labGeneration;juce::Component::SafePointer<BrowserPanel> safe(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,file,r,generation](int n){
+            if(safe==nullptr||safe->stopped.load()||safe->labGeneration!=generation||safe->category!=Category::audio||!safe->browserOpen||n==0)return;
+            if(n==1){safe->loadSamplePreview(file);safe->previewTransport.start();return;}
+            const auto* box=dialog->getComboBoxComponent("key");int key=box?box->getSelectedItemIndex()-1:-1;
+            int pitch=(n==3||n==4)&&key>=0?LibertySampleAnalysis::pitchDelta(r.key,key):0;
+            double ratio=(n==2||n==4)&&r.bpm>0?safe->owner.getProjectTempoBpm()/r.bpm:1.;
+            safe->renderLabPreview(file,ratio,pitch,generation);
+        }),false);
+    }
+    void renderLabPreview(const juce::File& file,double ratio,int pitch,unsigned generation){
+        if(labRunning)return;if(labThread.joinable())labThread.join();labRunning=true;sampleLabButton.setEnabled(false);juce::Component::SafePointer<BrowserPanel> safe(this);
+        labThread=std::thread([safe,file,ratio,pitch,generation]{
+            double rate=0;auto buffer=std::shared_ptr<juce::AudioBuffer<float>>(LibertySampleLab::preview(file,ratio,pitch,rate));
+            juce::MessageManager::callAsync([safe,buffer,rate,generation]{
+                if(safe==nullptr||safe->stopped.load())return;safe->labRunning=false;safe->sampleLabButton.setEnabled(true);
+                if(safe->labGeneration!=generation||safe->category!=Category::audio||!safe->browserOpen)return;
+                if(!buffer){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Sample Lab",juce::String::fromUTF8("Préécoute indisponible : sample ou rapport hors limites."));return;}
+                safe->previewTransport.stop();safe->previewTransport.setSource(nullptr);safe->previewReader.reset();safe->labPreview.reset();
+                safe->labPreview=std::make_unique<juce::MemoryAudioSource>(*buffer,true,false);safe->previewTransport.setSource(safe->labPreview.get(),0,nullptr,rate);
+                safe->previewInfo.setText("SAMPLE LAB - SYNC",juce::dontSendNotification);safe->previewTransport.setGain((float)safe->previewVolume.getValue());safe->previewTransport.start();
+            });
+        });
+    }
+
     void selectionChanged() override {}
-    void fileClicked(const juce::File& file, const juce::MouseEvent&) override
+    void fileClicked(const juce::File& file, const juce::MouseEvent&) override { loadSamplePreview(file); }
+    void loadSamplePreview(const juce::File& file)
     {
         if (category != Category::audio || !file.existsAsFile()) return;
+        labFile=file;++labGeneration;
         updateSamplePackInfo(file);
         previewTransport.stop();
         previewTransport.setSource(nullptr);
         previewReader.reset();
+        labPreview.reset();
         previewThumbnail.clear();
         previewInfo.setText("Aucun sample sélectionné", juce::dontSendNotification);
         auto reader = std::unique_ptr<juce::AudioFormatReader>(previewFormats.createReaderFor(file));
@@ -4928,6 +5003,7 @@ private:
     {
         if(!shouldOpen)
         {
+            ++labGeneration;
             previewTransport.stop();
             targetEffectSlot=-1;
             targetEffectLane=-1;
@@ -5900,7 +5976,7 @@ private:
             targetEffectSlot=-1;
             targetEffectLane=-1;
         }
-        if (newCategory != Category::audio) previewTransport.stop();
+        if (newCategory != Category::audio) { previewTransport.stop(); ++labGeneration; }
         category = newCategory;
         homeButton.setButtonText(category == Category::audio ? "LIBRARY" : "HOME");
         chooseLibraryButton.setVisible(category == Category::audio
@@ -5913,6 +5989,7 @@ private:
         browsePacksButton.setVisible(category == Category::audio);
         musicFilterButton.setVisible(category == Category::audio);
         sampleNameSearch.setVisible(category == Category::audio);
+        sampleLabButton.setVisible(category == Category::audio);
         resized();
         if (category == Category::files || category == Category::midi
             || category == Category::presets)
@@ -7665,7 +7742,9 @@ private:
     juce::Slider previewVolume;
     juce::ToggleButton previewAuto;
     juce::Label previewInfo, samplePackInfo;
-    juce::TextButton browsePacksButton, musicFilterButton;
+    juce::TextButton browsePacksButton, musicFilterButton, sampleLabButton;
+    juce::File labFile;std::thread labThread;bool labRunning=false;unsigned labGeneration=0;
+    std::unique_ptr<juce::MemoryAudioSource> labPreview;
     juce::TextEditor sampleNameSearch;
     juce::String sampleNameQuery;
     juce::Array<juce::File> sampleIndex;

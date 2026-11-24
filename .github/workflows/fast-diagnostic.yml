@@ -27,6 +27,11 @@ jobs:
           /tmp/liberty-editions-catalog
           grep -F 'Liberty ${LIBERTY_DAW_EDITION} is not releasable yet' CMakeLists.txt
 
+      - name: Sample Lab analysis regression
+        run: |
+          c++ -O2 -std=c++17 -Wall -Wextra -Werror -I Source Tests/LibertySampleAnalysisSmoke.cpp -o /tmp/liberty-sample-lab
+          /tmp/liberty-sample-lab
+
       - name: Reject corrupted French UI text (UTF-8)
         run: python3 Tests/FrenchTextRegression.py
 
