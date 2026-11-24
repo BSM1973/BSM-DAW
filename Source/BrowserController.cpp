@@ -9,6 +9,7 @@
 #include "LibertyDesignSystem.h"
 #include "LibertyObsidianMenuStyle.h"
 #include "LibertyManufacturerGrouping.h"
+#include "LibertyBrowserIntelligence.h"
 #include "PageNavigationLayout.h"
 void refreshLibertyMixConsole(MainComponent*);
 void requestLibertySpliceSampleScan(MainComponent* owner);
@@ -721,7 +722,8 @@ public:
 
 class BrowserPanel final : public juce::Component,
                            private juce::Timer,
-                           private juce::FileBrowserListener
+                           private juce::FileBrowserListener,
+                           private juce::KeyListener
 {
 public:
     void ensureToggleVisible()
@@ -762,6 +764,8 @@ public:
         loadRecentPlugins();
         loadPluginFamilyOverrides();
         loadPluginCollections();
+        loadIntelligenceTags();
+        owner.addKeyListener(this);
 
         toggleButton.setButtonText("NAVIGATEUR");
         toggleButton.setAlwaysOnTop(true);
@@ -942,6 +946,10 @@ public:
         pluginGroupingButton.onClick = [this] { groupByUsage = !groupByUsage; rebuildPluginTree(); };
         addAndMakeVisible(pluginGroupingButton);
         pluginGroupingButton.setVisible(false);
+        quickSearchButton.setButtonText("PRO");
+        quickSearchButton.setTooltip(juce::String::fromUTF8("Recherche universelle et inspecteur (Cmd/Ctrl + K)"));
+        quickSearchButton.onClick=[this]{showIntelligence();};
+        addAndMakeVisible(quickSearchButton);
         spliceButton.setButtonText("SPLICE");
         for (auto* b : { &filesButton, &audioButton, &midiButton, &presetsButton, &pluginsButton, &spliceButton })
         {
@@ -1207,6 +1215,10 @@ public:
         if (stopped.exchange(true)) return;
         batchArtworkCancel.store(true);
         stopTimer();
+        owner.removeKeyListener(this);
+        if(auto* panel=quickSearchPanel.getComponent())
+            if(auto* window=panel->findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);
+        if(quickIndexThread.joinable())quickIndexThread.join();
         previewTransport.stop();
         owner.audioEngine.getDeviceManager().removeAudioCallback(&previewPlayer);
         previewPlayer.setSource(nullptr);
@@ -1358,11 +1370,16 @@ public:
             band.removeFromRight(juce::jmin(5, band.getWidth()));
             pluginGroupingButton.setBounds(band.removeFromRight(juce::jmin(28, band.getWidth())));
             band.removeFromRight(juce::jmin(5, band.getWidth()));
+            quickSearchButton.setBounds(band.removeFromRight(juce::jmin(36,band.getWidth())));
+            band.removeFromRight(juce::jmin(5,band.getWidth()));
             pluginSearch.setBounds(band);
         }
         else
         {
-            pluginSearch.setBounds(10, 76, juce::jmax(0, getWidth() - 20), 23);
+            auto band=juce::Rectangle<int>(10,76,juce::jmax(0,getWidth()-20),23);
+            quickSearchButton.setBounds(band.removeFromRight(juce::jmin(36,band.getWidth())));
+            band.removeFromRight(juce::jmin(5,band.getWidth()));
+            pluginSearch.setBounds(band);
             pluginFiltersButton.setBounds(0, 0, 0, 0);
             pluginGroupingButton.setBounds(0, 0, 0, 0);
         }
@@ -4527,6 +4544,7 @@ private:
 
         juce::PopupMenu menu;
         menu.addSectionHeader(description.name);
+        menu.addItem(2999,juce::String::fromUTF8("INSPECTEUR / TAGS"));
         menu.addItem(3000,
             isFavouritePlugin(description)
                 ? juce::String::fromUTF8("RETIRER DES FAVORIS")
@@ -4619,6 +4637,7 @@ private:
                     safe->togglePluginCollection(description, collectionNames[chosen - 6000]);
                     return;
                 }
+                if(chosen==2999){safe->showIntelligence(favouriteKey(description));return;}
                 if (chosen == 3000)
                 {
                     safe->toggleFavourite(description);
@@ -4692,6 +4711,130 @@ private:
 
     void saveFavourites() { favouritesFile().replaceWithText(favouriteKeys.joinIntoString("\n")); }
     bool isFavouritePlugin(const juce::PluginDescription& d) const { return favouriteKeys.contains(favouriteKey(d)); }
+
+    static juce::File intelligenceTagsFile(){return favouritesFile().getSiblingFile("PluginIntelligenceTags.xml");}
+    void loadIntelligenceTags()
+    {
+        const auto file=intelligenceTagsFile();
+        if(!file.existsAsFile())return;
+        const auto root=juce::XmlDocument::parse(file);
+        if(!root||!root->hasTagName("LibertyPluginTags")){tagsReadOnly=true;return;}
+        for(auto* child:root->getChildIterator())
+        {
+            if(!child->hasTagName("Plugin"))continue;
+            const auto id=child->getStringAttribute("id");
+            if(id.isNotEmpty())intelligenceTags[id]=LibertyBrowserIntelligence::parseTags(child->getStringAttribute("tags"));
+        }
+    }
+    juce::StringArray tagsFor(const juce::PluginDescription& d) const
+    {
+        const auto it=intelligenceTags.find(favouriteKey(d));
+        return it==intelligenceTags.end()?juce::StringArray{}:it->second;
+    }
+    bool saveIntelligenceTags(const juce::String& id,const juce::StringArray& tags)
+    {
+        if(tagsReadOnly||id.isEmpty())return false;
+        auto next=intelligenceTags;
+        if(tags.isEmpty())next.erase(id);else next[id]=tags;
+        juce::XmlElement root("LibertyPluginTags");
+        for(const auto& item:next){auto* child=root.createNewChildElement("Plugin");child->setAttribute("id",item.first);child->setAttribute("tags",item.second.joinIntoString(", "));}
+        const auto file=intelligenceTagsFile();
+        juce::TemporaryFile temporary(file);
+        if(!temporary.getFile().replaceWithText(root.toString())||!temporary.overwriteTargetFileWithTemporary())return false;
+        intelligenceTags=std::move(next);rebuildPluginTree();return true;
+    }
+    bool keyPressed(const juce::KeyPress& key,juce::Component*) override
+    {
+        if(stopped.load()||!key.getModifiers().isCommandDown()||key.getModifiers().isShiftDown()||key.getModifiers().isAltDown())return false;
+        if(key.getKeyCode()!='K'&&key.getKeyCode()!='k')return false;
+        if(juce::ModalComponentManager::getInstance()->getNumModalComponents()>0)return false;
+        showIntelligence();return true;
+    }
+    void showIntelligence(const juce::String& initial={})
+    {
+        if(stopped.load()||scanning.load())return;
+        if(auto* existing=quickSearchPanel.getComponent())
+        {
+            if(initial.isNotEmpty())existing->setInitialPlugin(initial);
+            if(auto* window=existing->findParentComponentOfClass<juce::DialogWindow>())window->toFront(true);
+            return;
+        }
+        using Entry=LibertyBrowserIntelligence::Entry;
+        std::vector<Entry> entries;
+        for(const auto& d:pluginDescriptions)
+        {
+            Entry e;e.title=d.name;e.type=d.isInstrument?"INSTRUMENT":"EFFET";
+            e.detail=normalisedManufacturer(d)+" / "+d.pluginFormatName;
+            e.searchText=usageLabel(effectivePluginUsage(d))+" / "+d.category+" / "+d.version;
+            e.id=favouriteKey(d);e.plugin=d;e.tags=tagsFor(d);e.isPlugin=true;
+            entries.push_back(std::move(e));
+        }
+        juce::Component::SafePointer<BrowserPanel> safe(this);
+        auto* panel=new LibertyBrowserIntelligence::Panel(std::move(entries),
+            [safe](const Entry& e)
+            {
+                if(safe==nullptr||safe->stopped.load()||safe->scanning.load())return;
+                if(e.isPlugin)
+                {
+                    for(const auto& d:safe->pluginDescriptions)if(favouriteKey(d)==e.id)
+                    {const auto copy=d;safe->loadPluginDescription(copy);return;}
+                    return;
+                }
+                if(!e.file.existsAsFile())return;
+                const auto cat=e.type=="SAMPLE"?Category::audio:e.type=="MIDI"?Category::midi:e.type=="PRESET"?Category::presets:Category::files;
+                safe->setCategory(cat);safe->toggleButton.setToggleState(true,juce::dontSendNotification);safe->setBrowserOpen(true);
+                safe->pluginSearch.clear();safe->setRoot(e.file.getParentDirectory());safe->fileTree.setSelectedFile(e.file);
+                // Reveal only: never load a project or replace audio without explicit user action.
+                safe->pluginStatus.setText(e.file.getFileName(),juce::dontSendNotification);
+            },
+            [safe](const juce::String& id,const juce::StringArray& tags){return safe!=nullptr&&!safe->stopped.load()&&safe->saveIntelligenceTags(id,tags);},!tagsReadOnly);
+        quickSearchPanel=panel;
+        if(initial.isNotEmpty())panel->setInitialPlugin(initial);
+        juce::DialogWindow::LaunchOptions options;
+        options.content.setOwned(panel);options.dialogTitle="Liberty Browser Intelligence";
+        options.dialogBackgroundColour=LibertyUI::Colour::canvasDeep;options.useNativeTitleBar=true;
+        options.escapeKeyTriggersCloseButton=true;options.resizable=false;options.componentToCentreAround=&owner;
+        options.launchAsync();
+        // Only configured library roots; never recursively index the home folder.
+        if(quickIndexRunning){panel->setIndexing();return;}
+        if(quickIndexThread.joinable())quickIndexThread.join();
+        std::vector<std::pair<juce::File,juce::String>> roots;
+        const auto addRoot=[&](const juce::File& file,const juce::String& type)
+        {
+            if(file.isDirectory()&&file!=juce::File::getSpecialLocation(juce::File::userHomeDirectory)&&file.getParentDirectory()!=file)roots.emplace_back(file,type);
+        };
+        addRoot(findInstalledSampleLibrary(),"SAMPLE");
+        for(auto cat:{Category::midi,Category::presets,Category::files})
+        {
+            const auto path=categoryFolderPreferenceFile(cat).loadFileAsString().trim();
+            if(path.isNotEmpty()&&juce::File::isAbsolutePath(path))
+                addRoot(juce::File(path),cat==Category::midi?"MIDI":cat==Category::presets?"PRESET":"PROJET");
+        }
+        quickIndexRunning=true;panel->setIndexing();
+        quickIndexThread=std::thread([this,safe,roots]
+        {
+            std::vector<Entry> files;bool limited=false;
+            for(const auto& root:roots)
+            {
+                int scanned=0;
+                for(const auto& item:juce::RangedDirectoryIterator(root.first,true,"*",juce::File::findFiles))
+                {
+                    if(stopped.load())return;
+                    if(++scanned>12000){limited=true;break;}
+                    auto file=item.getFile();const auto type=root.second;
+                    const auto extensions=type=="SAMPLE"?"wav;aif;aiff;mp3;flac":type=="MIDI"?"mid;midi":type=="PRESET"?"xml;fxp;vstpreset;aupreset;fspreset":"bsmproj";
+                    if(!file.hasFileExtension(extensions))continue;
+                    Entry e;e.title=file.getFileName();e.type=type;e.detail=file.getParentDirectory().getFileName();e.searchText=file.getFullPathName();e.file=file;files.push_back(std::move(e));
+                }
+            }
+            juce::MessageManager::callAsync([safe,files=std::move(files),limited]() mutable
+            {
+                if(safe==nullptr||safe->stopped.load())return;
+                safe->quickIndexRunning=false;
+                if(auto* active=safe->quickSearchPanel.getComponent())active->addFiles(std::move(files),limited);
+            });
+        });
+    }
 
     static juce::File recentPluginsFile()
     {
@@ -5818,6 +5961,7 @@ private:
         pluginTree.setVisible(pluginMode);
         pluginFiltersButton.setVisible(pluginMode);
         pluginGroupingButton.setVisible(pluginMode);
+        quickSearchButton.setVisible(!spliceMode);
         artworkStatsLabel.setVisible(pluginMode && getHeight() >= 540);
         thumbnailModeButton.setVisible(pluginMode);
         importThumbnailButton.setVisible(pluginMode);
@@ -6549,7 +6693,8 @@ private:
             const bool searchMatches = query.isEmpty() || d.name.containsIgnoreCase(query)
                 || d.manufacturerName.containsIgnoreCase(query)
                 || normalisedManufacturer(d).containsIgnoreCase(query)
-                || d.pluginFormatName.containsIgnoreCase(query);
+                || d.pluginFormatName.containsIgnoreCase(query)
+                || LibertyBrowserIntelligence::matches(d.name+" "+usageLabel(effectivePluginUsage(d))+" "+tagsFor(d).joinIntoString(" "),query);
             if (!searchMatches || !matchesPluginMetadata(d)) return false;
             if (pluginUsageFilter != PluginUsage::all
                 && effectivePluginUsage(d) != pluginUsageFilter) return false;
@@ -6622,6 +6767,33 @@ private:
                 }
         }
 
+        // Automatically derived collections; never instantiate a plugin to classify it.
+        PluginTreeItem* smartRoot=nullptr;
+        if(!missingPluginsOnly)
+        {
+            const auto addSmart=[&](const juce::String& label, auto predicate)
+            {
+                PluginTreeItem* group=nullptr;
+                for(const auto& d:pluginDescriptions)
+                {
+                    if(!matches(d)||!predicate(d))continue;
+                    if(group==nullptr)
+                    {
+                        if(smartRoot==nullptr){smartRoot=new PluginTreeItem(PluginTreeItem::Kind::manufacturer,juce::String::fromUTF8("COLLECTIONS INTELLIGENTES"));pluginRoot->addSubItem(smartRoot);}
+                        group=new PluginTreeItem(PluginTreeItem::Kind::manufacturer,label);smartRoot->addSubItem(group);
+                    }
+                    group->addSubItem(makePluginItem(d));
+                }
+            };
+            addSmart("Mixage / Mastering",[&](const auto& d){const auto u=effectivePluginUsage(d);return !d.isInstrument&&(u==PluginUsage::equalizer||u==PluginUsage::compressor||u==PluginUsage::dynamics||u==PluginUsage::utility);});
+            addSmart("Beatmaking",[&](const auto& d){const auto u=effectivePluginUsage(d);return d.isInstrument&&(u==PluginUsage::drums||u==PluginUsage::sampler||u==PluginUsage::bass);});
+            addSmart("Spatialisation",[&](const auto& d){const auto u=effectivePluginUsage(d);return !d.isInstrument&&(u==PluginUsage::reverb||u==PluginUsage::delay||u==PluginUsage::modulation);});
+            addSmart(juce::String::fromUTF8("Synthétiseurs"),[&](const auto& d){return effectivePluginUsage(d)==PluginUsage::synthesizer;});
+            juce::StringArray distinct;
+            for(const auto& d:pluginDescriptions)for(const auto& tag:tagsFor(d))if(!distinct.contains(tag,true))distinct.add(tag);
+            distinct.sort(true);
+            for(int i=0;i<juce::jmin(24,distinct.size());++i){const auto tag=distinct[i];addSmart("Tag : "+tag,[&](const auto& d){return tagsFor(d).contains(tag,true);});}
+        }
         // Most-recently loaded plugins are displayed in actual usage order.
         // This is a second view of installed descriptions, not a plugin rescan.
         PluginTreeItem* recentGroup = nullptr;
@@ -6859,6 +7031,7 @@ private:
             || selectedCollection.isNotEmpty()
             || artworkView != ArtworkView::all;
         if (pinnedLiberty != nullptr) pinnedLiberty->setOpen(revealMatches);
+        if(smartRoot!=nullptr)smartRoot->setOpen(false);
         for (auto* vendor : vendorGroups) vendor->setOpen(revealMatches);
         if (fav != nullptr) fav->setOpen(revealMatches);
         if (recentGroup != nullptr) recentGroup->setOpen(revealMatches);
@@ -7478,6 +7651,11 @@ private:
     juce::TreeView pluginTree;
     juce::TextButton thumbnailModeButton, importThumbnailButton, chooseLibraryButton, saveFolderButton, openFavouriteButton, pluginFiltersButton;
     PluginGroupingButton pluginGroupingButton;
+    juce::TextButton quickSearchButton;
+    juce::Component::SafePointer<LibertyBrowserIntelligence::Panel> quickSearchPanel;
+    std::thread quickIndexThread;
+    bool quickIndexRunning=false, tagsReadOnly=false;
+    std::map<juce::String,juce::StringArray> intelligenceTags;
     LibertyPluginSearchEditor pluginSearch;
     std::unique_ptr<PluginTreeItem> pluginRoot;
     juce::Array<juce::PluginDescription> pluginDescriptions;

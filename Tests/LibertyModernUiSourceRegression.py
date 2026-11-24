@@ -329,3 +329,16 @@ for name in ("menu","accessMenu","collectionsMenu","targetedRepairMenu","missing
 assert "letterMenu = makeFilterMenu();" in filters
 assert "letterMenu = juce::PopupMenu();" not in filters
 print("PASS: existing Obsidian painter applied explicitly to browser filter menu and all nested menus")
+
+# Browser Intelligence: real descriptions, local scoped index, explicit insertion,
+# exact-ID tag persistence and non-overlapping paged results.
+intelligence=read("Source/LibertyBrowserIntelligence.h")
+for token in ('quickSearchButton.onClick','owner.addKeyListener(this)','owner.removeKeyListener(this)','quickIndexThread=std::thread','quickIndexThread.join()','PluginIntelligenceTags.xml','temporary.overwriteTargetFileWithTemporary()','COLLECTIONS INTELLIGENTES','safe->loadPluginDescription(copy)','fileTree.setSelectedFile(e.file)'):
+    assert token in browser,token
+for token in ('parseTags','page*6','search.onTextChange','saveTags(e.id,values)','actionButton.onClick','PluginArtworkCatalogue'):
+    assert token in intelligence,token
+assert 'juce::RangedDirectoryIterator(root.first,true' in browser
+assert 'file!=juce::File::getSpecialLocation(juce::File::userHomeDirectory)' in browser
+assert 'if(++scanned>12000)' in browser
+assert 'setSize(760,510)' in intelligence
+print("PASS: Browser Intelligence scoped worker, tags, smart collections and paged search")

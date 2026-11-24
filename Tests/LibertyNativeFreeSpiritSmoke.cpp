@@ -2,6 +2,7 @@
 #include "PluginHost.h"
 #include "Plugin.h"
 #include "LibertyManufacturerGrouping.h"
+#include "LibertyBrowserIntelligence.h"
 #include <algorithm>
 #include <vector>
 #include <cmath>
@@ -14,6 +15,10 @@ static void check(bool ok,const char* what)
 int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    const auto tags=LibertyBrowserIntelligence::parseTags("Tape, vintage; TAPE ; vocal");
+    check(tags.size()==3&&tags.contains("tape",true),"tag normalization and duplicate rejection");
+    check(LibertyBrowserIntelligence::matches("FreeSpirit Delay Tape Vintage","delay vintage"),"multi-token search");
+    check(!LibertyBrowserIntelligence::matches("FreeSpirit Delay","delay piano"),"all terms required");
     using LibertyManufacturerGrouping::canonicalName;
     check(canonicalName("Liberty")=="Liberty Music Software","legacy Liberty folder alias");
     check(canonicalName("  LIBERTY  ")=="Liberty Music Software","case and whitespace alias");
