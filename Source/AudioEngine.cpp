@@ -1940,8 +1940,58 @@ void AudioEngine::consumeOfflinePdcPlan() noexcept
     }
 }
 
+void AudioEngine::prepareHardwarePdc(double rate,int channels)
+{
+    hardwarePdcPrepared=hardwarePdcBlock=false;hardwarePdcExpectedPosition=-1;
+    hardwarePdcPublished.store(false,std::memory_order_release);
+    hardwarePdcReportedLatency.store(0,std::memory_order_relaxed);
+    if(!hardwarePdcRequested.load(std::memory_order_acquire)||channels!=2||
+       !std::isfinite(rate)||rate<=0.0||rate>384000.0)return;
+    if(!collectPdcPlan(hardwarePlan)||hardwarePlan.latency<=0)return;
+    hardwarePdcAudioCount=(int)tracks.size();
+    hardwarePdcInstrumentCount=(int)instrumentPlayback.size();
+    hardwarePdcBusCount=getMixerBusCount();
+    if(!hardwarePdc.prepare(hardwarePlan,hardwarePdcAudioCount+hardwarePdcInstrumentCount,
+                            hardwarePdcBusCount,hardwarePlan.latency,128))return;
+    hardwarePdcPrepared=true;
+}
+
+void AudioEngine::beginHardwarePdcBlock(int channels) noexcept
+{
+    hardwarePdcBlock=false;
+    if(!hardwarePdcPrepared)return;
+    // Fixed-plan experiment. No mutex or host query in this function.
+    // Stop compensation on route/count change until next device preparation.
+    const int n=(int)tracks.size(),m=(int)instrumentPlayback.size(),b=getMixerBusCount();
+    bool compatible=n==hardwarePdcAudioCount&&m==hardwarePdcInstrumentCount&&b==hardwarePdcBusCount;
+    const auto check=[&](int i,int route){
+        const int bus=LibertyMixerBusRouting::destination(route,b);
+        const int successor=bus<0?hardwarePlan.master:2*(n+m)+bus;
+        return hardwarePlan.nodes[2*i+1].successor==successor;
+    };
+    if(compatible){
+        for(int i=0;i<n;++i)compatible=compatible&&check(i,tracks[(size_t)i]->mixerBusRoute.load());
+        for(int i=0;i<m;++i)compatible=compatible&&check(n+i,instrumentPlayback[(size_t)i]->mixerBusRoute.load());
+    }
+    if(!compatible)hardwarePdcPrepared=false;
+    // Low latency fallback for idle audition, input monitoring and MIDI capture.
+    // Full audio-recording state integration remains a separate validation task.
+    const bool enabled=compatible&&channels==2&&playing.load(std::memory_order_relaxed)&&
+        !inputMonitoringEnabled.load(std::memory_order_acquire)&&
+        midiCaptureTrack.load(std::memory_order_acquire)<0&&
+        monitoredInstrumentTrack.load(std::memory_order_acquire)<0;
+    const auto position=transportSamples.load(std::memory_order_relaxed);
+    if(!enabled||position!=hardwarePdcExpectedPosition)hardwarePdc.resetHistory();
+    hardwarePdcBlock=enabled;
+    hardwarePdcPublished.store(enabled,std::memory_order_release);
+    hardwarePdcReportedLatency.store(enabled?hardwarePlan.latency:0,std::memory_order_relaxed);
+}
+
 void AudioEngine::compensateOfflineLane(int index,juce::AudioBuffer<float>& b,int frames) noexcept
 {
+    if(hardwarePdcBlock&&b.getNumChannels()>0){
+        hardwarePdc.lane(index,b.getWritePointer(0),b.getNumChannels()>1?b.getWritePointer(1):nullptr,frames);
+    }
     if(offlinePdcActive&&b.getNumChannels()>0){
         auto* l=b.getWritePointer(0);auto* r=b.getNumChannels()>1?b.getWritePointer(1):nullptr;
         if(dynamicPdcRequested)dynamicPdc.lane(index,l,r,frames);
@@ -2090,6 +2140,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     outputLatencySamples.store(juce::jmax(0,device->getOutputLatencyInSamples()));
     LibertyPluginHost::instance().initialise(newRate,frames);
     LibertyOneKnobManager::instance().prepare(newRate,frames);
+    prepareHardwarePdc(newRate,outputChannels.load());
     deviceStarts.fetch_add(1,std::memory_order_relaxed);
     deviceRunning.store(true,std::memory_order_release);
 }
@@ -2469,6 +2520,8 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
     consumeOfflinePdcPlan();
+    beginHardwarePdcBlock(numOutputChannels);
+    if(hardwarePdcBlock)hardwarePdcExpectedPosition=transportSamples.load(std::memory_order_relaxed)+numSamples;
     if(numSamples>preparedScratchFrames.load(std::memory_order_relaxed))
         oversizedCallbacks.fetch_add(1,std::memory_order_relaxed);
     // Prevent subnormal DSP tails from consuming disproportionate CPU time.
@@ -2545,6 +2598,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 bus.applyGain(1,0,numSamples,LibertyMixerBusRouting::rightGain(gain,pan));
             meterBus(state.peakLeft,state.peakRight,state.rmsLeft,state.rmsRight,
                      state.correlation,bus);
+            if(hardwarePdcBlock)hardwarePdc.bus(i,bus.getWritePointer(0),busChannels>1?bus.getWritePointer(1):nullptr,numSamples);
             if(offlinePdcActive&&playing.load(std::memory_order_relaxed)){
                 auto* l=bus.getWritePointer(0);auto* r=busChannels>1?bus.getWritePointer(1):nullptr;
                 if(dynamicPdcRequested)dynamicPdc.bus(i,l,r,numSamples);
@@ -3164,6 +3218,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
 
 void AudioEngine::audioDeviceStopped()
 {
+    hardwarePdcPrepared=hardwarePdcBlock=false;hardwarePdcExpectedPosition=-1;
+    hardwarePdcPublished.store(false,std::memory_order_release);
+    hardwarePdcReportedLatency.store(0,std::memory_order_relaxed);
     if(deviceRunning.exchange(false,std::memory_order_acq_rel)) deviceStops.fetch_add(1,std::memory_order_relaxed);
     inputLatencySamples.store(0,std::memory_order_relaxed);
     outputLatencySamples.store(0,std::memory_order_relaxed);

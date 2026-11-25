@@ -164,6 +164,12 @@ public:
         }catch(...){return false;}
         plan=p;laneCount=n;busCount=b;ready=true;return true;
     }
+    // Audio-thread only, constant-time per line, no memory clearing.
+    void resetHistory() noexcept {
+        if(!ready)return;
+        for(int i=0;i<laneCount;++i)lanes[i].reset(plan.compensation[i]);
+        for(int i=0;i<LibertyRealtime::maxBuses;++i)buses[i].reset(i<busCount?plan.busCompensation[i]:0);
+    }
     // Single coordinator between callbacks. No allocations; invalid plans
     // are rejected in their entirety. Routing changes invalidate old history.
     bool update(const LibertyRealtime::Plan& p,int n,int b,bool discontinuity,bool& changed) noexcept {

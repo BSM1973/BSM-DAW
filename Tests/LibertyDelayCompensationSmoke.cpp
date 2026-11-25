@@ -55,6 +55,10 @@ int main(){
     lanes[0].bus=-1;assert(plan.build(lanes,3,1));
     assert(dynamic.update(plan,3,1,false,changed)&&changed);
     assert(dynamic.update(plan,3,1,true,changed)&&changed);
+    dynamic.resetHistory();
+    std::array<float,128> resetL{},resetR{};
+    dynamic.lane(1,resetL.data(),resetR.data(),128);
+    for(float v:resetL)assert(v==0.f);
     lanes[0].declaredLatency=129;assert(plan.build(lanes,3,1));
     assert(!dynamic.update(plan,3,1,false,changed));
     lanes[0]={0,32};assert(plan.build(lanes,3,1));
