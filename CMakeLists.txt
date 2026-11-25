@@ -69,6 +69,11 @@ if(APPLE)
 endif()
 target_include_directories(BSM_DAW PRIVATE Source)
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
+# Match the macOS main-thread stack reserve for Windows diagnostics and startup.
+# Reserve address space only; committed stack pages still grow on demand.
+if(MSVC)
+  target_link_options(BSM_DAW PRIVATE /STACK:8388608)
+endif()
 # Keep French UI literals consistently encoded on all supported compilers.
 if(MSVC)
   target_compile_options(BSM_DAW PRIVATE /utf-8 /Zc:lambda)

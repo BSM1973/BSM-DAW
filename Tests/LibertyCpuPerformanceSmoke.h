@@ -7,7 +7,13 @@
 inline bool runLibertyCpuPerformanceSmoke()
 {
     try {
-        AudioEngine engine;
+        // Keep the large analysis ring and engine state off the Windows thread stack.
+        std::fprintf(stderr,"CPU benchmark: constructing engine (size=%zu bytes)\n",sizeof(AudioEngine));
+        std::fflush(stderr);
+        auto ownedEngine=std::make_unique<AudioEngine>();
+        auto& engine=*ownedEngine;
+        std::fprintf(stderr,"CPU benchmark: engine constructed\n");
+        std::fflush(stderr);
         auto source=std::make_shared<juce::AudioBuffer<float>>(1,48000);
         for(int i=0;i<48000;++i)source->setSample(0,i,.12f*std::sin(2.0*juce::MathConstants<double>::pi*440.0*i/48000.0));
         AudioEngine::AudioClipMetadata clip;
@@ -16,6 +22,8 @@ inline bool runLibertyCpuPerformanceSmoke()
         std::printf("rate,frames,blocks,average_percent,peak_percent,deadline_overruns,track0_percent,uninstrumented_wall_ms,instrumented_wall_ms,max_difference\n");
         for(const double rate:{44100.0,48000.0,96000.0,192000.0})
             for(const int frames:{32,128,512,1024}){
+                std::fprintf(stderr,"CPU benchmark: %.0f Hz / %d frames\n",rate,frames);
+                std::fflush(stderr);
                 const int count=static_cast<int>(rate/4.0);
                 juce::AudioBuffer<float> reference(2,count),measured(2,count);
                 engine.setCpuProfiling(false);engine.resetCpuPerformanceWhileStopped();
@@ -39,6 +47,9 @@ inline bool runLibertyCpuPerformanceSmoke()
                 if(diff>0.000002f||measured.getMagnitude(0,count)<.01f)throw std::runtime_error("signal parity");
                 std::printf("%.0f,%d,%llu,%.4f,%.4f,%llu,%.4f,%.4f,%.4f,%.9f\n",rate,frames,(unsigned long long)total.blocks,total.averagePercent(),total.peakPercent(),(unsigned long long)total.overruns,track.averagePercent(),refMs,measuredMs,diff);
             }
+        std::fflush(stdout);
+        std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");
+        std::fflush(stderr);
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"CPU performance: %s\n",e.what());return false;}
 }
