@@ -69,7 +69,7 @@ public:
   status.setBounds(r.removeFromBottom(22));auto footer=r.removeFromBottom(29);layoutRow(footer,{&importButton,&exportButton,&save});r.removeFromBottom(4);auto actions=r.removeFromBottom(29);layoutRow(actions,{&load,&auditionButton,&favourite,&rateButton,&tagButton});r.removeFromBottom(4);tree.setBounds(r);
  }
  void addCaptured(juce::String device,juce::MemoryBlock state,juce::String name){
-  if(readOnly||entries.size()>=1100||!LibertyPluginHost::instance().validateNativePresetState(device,state))return;
+  if(readOnly||entries.size()>=1200||!LibertyPluginHost::instance().validateNativePresetState(device,state))return;
   Entry e;e.id="user:"+juce::Uuid().toString();e.deviceId=device;e.name=name.trim().substring(0,80);e.category="Personnel";e.state=std::move(state);
   if(e.name.isEmpty())return;entries.push_back(e);if(!persist()){entries.pop_back();return;}refresh(e.id);
  }
@@ -99,7 +99,7 @@ private:
   for(auto* x:xml->getChildIterator()){
    auto id=x->getStringAttribute("id");auto found=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return e.id==id;});
    if(found!=entries.end()&&found->factoryIndex>=0){found->tags=LibertyBrowserIntelligence::parseTags(x->getStringAttribute("tags")).joinIntoString(", ");found->rating=juce::jlimit(0,5,x->getIntAttribute("rating"));found->favourite=x->getBoolAttribute("favourite");}
-   else{Entry e;if(userFromXml(*x,e)&&entries.size()<1100){if(!e.id.startsWith("user:"))e.id="user:"+juce::Uuid().toString();if(std::none_of(entries.begin(),entries.end(),[&](const Entry& old){return old.id==e.id;}))entries.push_back(std::move(e));}else{readOnly=true;}}
+   else{Entry e;if(userFromXml(*x,e)&&entries.size()<1200){if(!e.id.startsWith("user:"))e.id="user:"+juce::Uuid().toString();if(std::none_of(entries.begin(),entries.end(),[&](const Entry& old){return old.id==e.id;}))entries.push_back(std::move(e));}else{readOnly=true;}}
   }
  }
  bool persist(){
@@ -112,7 +112,7 @@ private:
   if(readOnly)return;
   chooser=std::make_unique<juce::FileChooser>("Importer preset Liberty",juce::File{},"*.libertypreset");
   auto safe=juce::Component::SafePointer<Panel>(this);
-  chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& fc){if(!safe||safe->readOnly||safe->entries.size()>=1100)return;auto file=fc.getResult();if(!file.existsAsFile()||file.getSize()>2000000)return;auto xml=juce::XmlDocument::parse(file);Entry e;if(!xml||!userFromXml(*xml,e)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Preset Center","Preset incompatible.");return;}e.id="user:"+juce::Uuid().toString();safe->entries.push_back(e);if(!safe->persist())safe->entries.pop_back();safe->refresh(e.id);});
+  chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& fc){if(!safe||safe->readOnly||safe->entries.size()>=1200)return;auto file=fc.getResult();if(!file.existsAsFile()||file.getSize()>2000000)return;auto xml=juce::XmlDocument::parse(file);Entry e;if(!xml||!userFromXml(*xml,e)){juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,"Preset Center","Preset incompatible.");return;}e.id="user:"+juce::Uuid().toString();safe->entries.push_back(e);if(!safe->persist())safe->entries.pop_back();safe->refresh(e.id);});
  }
  void chooseExport(){
   auto* e=selected();if(!e)return;auto copy=*e;juce::MemoryBlock state;if(!copy.getState(state))return;copy.state=state;copy.factoryIndex=-1;

@@ -108,14 +108,25 @@ if(LIBERTY_NATIVE_PREVIEW)
   # Isolate the legacy factory symbol without modifying the upstream DSP/UI.
   set_source_files_properties("${FSD_SOURCE}/Plugin.cpp" PROPERTIES
     COMPILE_DEFINITIONS "createPluginFilter=libertyUnusedFreeSpiritStandaloneFactory")
-  target_sources(BSM_DAW PRIVATE ${FSD_NATIVE_SOURCES})
+  FetchContent_Declare(liberty_loveeq
+    GIT_REPOSITORY https://github.com/BSM1973/Liberty-LOVE-EQ.git
+    GIT_TAG 9f50644307197eca9c87955cd191d25091502a45
+    GIT_SHALLOW FALSE
+    SOURCE_SUBDIR _no_standalone_plugin_build)
+  FetchContent_MakeAvailable(liberty_loveeq)
+  set(LOVE_EQ_SOURCE "${liberty_loveeq_SOURCE_DIR}/Source")
+  set(LOVE_EQ_NATIVE_SOURCES "${LOVE_EQ_SOURCE}/PluginProcessor.cpp" "${LOVE_EQ_SOURCE}/PluginEditor.cpp")
+  set_source_files_properties("${LOVE_EQ_SOURCE}/PluginProcessor.cpp" PROPERTIES
+    COMPILE_DEFINITIONS "createPluginFilter=libertyUnusedLoveEQStandaloneFactory")
+  target_sources(BSM_DAW PRIVATE ${FSD_NATIVE_SOURCES} ${LOVE_EQ_NATIVE_SOURCES})
+  target_include_directories(BSM_DAW PRIVATE "${LOVE_EQ_SOURCE}")
   target_include_directories(BSM_DAW PRIVATE "${FSD_SOURCE}")
   target_compile_definitions(BSM_DAW PRIVATE LIBERTY_NATIVE_PREVIEW=1)
 
   juce_add_console_app(LibertyNativeFreeSpiritSmoke PRODUCT_NAME "Liberty Native FreeSpirit Smoke")
   target_sources(LibertyNativeFreeSpiritSmoke PRIVATE
-    Tests/LibertyNativeFreeSpiritSmoke.cpp Source/PluginHost.cpp Source/OneKnobEffects.cpp ${FSD_NATIVE_SOURCES})
-  target_include_directories(LibertyNativeFreeSpiritSmoke PRIVATE Source "${FSD_SOURCE}")
+    Tests/LibertyNativeFreeSpiritSmoke.cpp Source/PluginHost.cpp Source/OneKnobEffects.cpp ${FSD_NATIVE_SOURCES} ${LOVE_EQ_NATIVE_SOURCES})
+  target_include_directories(LibertyNativeFreeSpiritSmoke PRIVATE Source "${FSD_SOURCE}" "${LOVE_EQ_SOURCE}")
   target_compile_definitions(LibertyNativeFreeSpiritSmoke PRIVATE LIBERTY_NATIVE_PREVIEW=1
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_AU=$<BOOL:${APPLE}> JUCE_PLUGINHOST_VST3=1)
   if(MSVC)

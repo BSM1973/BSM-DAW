@@ -2,6 +2,8 @@
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #include "Plugin.h"
+#include "PluginProcessor.h"
+#include "FactoryPresets.h"
 #include "LibertyManufacturerGrouping.h"
 #include "LibertyBrowserIntelligence.h"
 #include "LibertyPresetCenter.h"
@@ -61,7 +63,7 @@ int main()
     check(host.hasEffectForTrackSlot(0,0),"failed load preserves current effect");
     FreeSpiritProcessor original;
     check(original.presets.size()==100,"all 100 original presets");
-    const auto catalogue=host.getNativeFactoryPresets();check(catalogue.size()==100,"native preset center exact catalogue");
+    const auto catalogue=host.getNativeFactoryPresets();check(catalogue.size()==200,"native preset center exact catalogue");
     juce::MemoryBlock preset;check(host.getNativeFactoryPresetState(d.fileOrIdentifier,0,preset),"factory preset state");
     check(host.validateNativePresetState(d.fileOrIdentifier,preset),"validated factory state");
     check(host.loadEffectForTrackSlot(1,0,d,error,&preset),"atomic preset insert");
@@ -112,6 +114,30 @@ int main()
     check(LibertyDeviceChains::decode(*chainXml,parsed)&&parsed.devices.size()==2&&parsed.devices[1].slot==3&&parsed.devices[1].state==chain[1].state,"chain XML roundtrip");
     chainXml->getFirstChildElement()->setAttribute("slot",-1);LibertyDeviceChains::Entry bad;
     check(!LibertyDeviceChains::decode(*chainXml,bad),"effect cannot occupy instrument position");
+    juce::PluginDescription eqDesc;const juce::String eqId="liberty.native.love-eq";
+    check(host.findKnownPluginByIdentifier(eqId,eqDesc)&&eqDesc.category=="EQ"&&!eqDesc.isInstrument,"LOVE EQ native identity");
+    juce::MemoryBlock eqState;
+    check(host.getNativeFactoryPresetState(eqId,0,eqState)&&host.validateNativePresetState(eqId,eqState),"LOVE EQ original factory state");
+    check(!host.validateNativePresetState(d.fileOrIdentifier,eqState)&&!host.validateNativePresetState(eqId,preset),"cross-device states rejected");
+    check(host.loadEffectForTrackSlot(5,0,eqDesc,error,&eqState),"LOVE EQ audio insert");
+    check(host.loadEffectForInstrumentTrackSlot(5,0,eqDesc,error,&eqState),"LOVE EQ instrument FX insert");
+    LoveEQAudioProcessor eqOriginal;
+    {std::unique_ptr<juce::AudioProcessorEditor> editor(eqOriginal.createEditorIfNeeded());check(editor&&editor->getWidth()>0&&editor->getHeight()>0,"LOVE EQ original editor");}
+    for(int i=0;i<100;++i)
+    {
+        juce::MemoryBlock raw;check(host.getNativeFactoryPresetState(eqId,i,raw),"LOVE EQ factory state");
+        LibertyPluginHost::NativeChain single{{0,eqId,raw}};
+        cancel.store(false);check(host.renderNativeAudition(single,auditionInput,48000.,120.,audition,error,cancel),"LOVE EQ preset DSP audition");
+        check(std::isfinite(audition.cpuPercent)&&audition.wet.getMagnitude(0,audition.wet.getNumSamples())<=.891f,"LOVE EQ finite bounded output");
+    }
+    LibertyPluginHost::NativeChain mixed{{0,eqId,eqState},{2,d.fileOrIdentifier,preset}};
+    check(host.insertNativeChain(false,6,mixed,error),"mixed EQ and delay chain");
+    LibertyPluginHost::NativeChain restoredMixed;
+    check(host.captureNativeChain(false,6,restoredMixed,error)&&restoredMixed.size()==2,"mixed chain capture");
+    check(host.renderNativeAudition(restoredMixed,auditionInput,48000.,120.,audition,error,cancel),"mixed chain isolated audition");
+    if(auto* param=eqOriginal.parameters.getParameter("relationship_active"))param->setValueNotifyingHost(1.f);
+    juce::MemoryBlock relational;eqOriginal.getStateInformation(relational);
+    check(!host.renderNativeAudition({{0,eqId,relational}},auditionInput,48000.,120.,audition,error,cancel),"live relationship audition rejected");
     auditionInput.setSample(1,100,std::numeric_limits<float>::quiet_NaN());
     cancel.store(false);check(!host.renderNativeAudition(chain,auditionInput,48000.,120.,audition,error,cancel),"nonfinite input rejected");
     {

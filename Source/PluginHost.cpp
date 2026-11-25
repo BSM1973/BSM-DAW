@@ -2,6 +2,8 @@
 #include "OneKnobEffects.h"
 #if defined(LIBERTY_NATIVE_PREVIEW)
 #include "Plugin.h"
+#include "PluginProcessor.h"
+#include "FactoryPresets.h"
 #include <cmath>
 #endif
 
@@ -64,6 +66,9 @@ LibertyPluginHost::LibertyPluginHost()
     nativeDevices.registerFactory("liberty.native.freespirit-delay",
         []() -> std::unique_ptr<juce::AudioProcessor>
         { return std::make_unique<FreeSpiritProcessor>(); });
+    nativeDevices.registerFactory("liberty.native.love-eq",
+        []() -> std::unique_ptr<juce::AudioProcessor>
+        { return std::make_unique<LoveEQAudioProcessor>(); });
 #endif
     loadCachedPluginList();
     recoverCrashedPluginsFromDeadMansPedal();
@@ -404,7 +409,7 @@ juce::Array<juce::PluginDescription> LibertyPluginHost::nativeDescriptions() con
         d.fileOrIdentifier = juce::String::fromUTF8(device.id.data(), (int)device.id.size());
         d.pluginFormatName = "Liberty Native";
         d.manufacturerName = "Liberty Music Software";
-        d.category = "Delay";
+        d.category = device.id=="liberty.native.love-eq" ? "EQ" : "Delay";
         d.version = "0.2.1";
         d.uniqueId = d.fileOrIdentifier.hashCode();
         d.isInstrument = device.kind == LibertyEditions::Kind::Instrument;
@@ -447,6 +452,15 @@ std::vector<LibertyPluginHost::NativePreset> LibertyPluginHost::getNativeFactory
                 result.push_back({d.fileOrIdentifier+":factory:"+juce::String(i),p.name,p.category,d.fileOrIdentifier,i});
             }
         }
+        else if(d.fileOrIdentifier=="liberty.native.love-eq")
+        {
+            const auto& presets=loveeq::factoryPresets();
+            for(int i=0;i<(int)presets.size();++i)
+            {
+                const auto& p=presets[(size_t)i];
+                result.push_back({d.fileOrIdentifier+":factory:"+juce::String(i),juce::String::fromUTF8(p.name),juce::String::fromUTF8(p.category),d.fileOrIdentifier,i});
+            }
+        }
 #endif
     return result;
 }
@@ -462,15 +476,24 @@ bool LibertyPluginHost::getNativeFactoryPresetState(const juce::String& id,int i
         original.loadPreset(index);original.getStateInformation(out);
         return validateNativePresetState(id,out);
     }
+    if(id=="liberty.native.love-eq"&&findKnownPluginByIdentifier(id,d))
+    {
+        if(index<0||index>=(int)loveeq::factoryPresets().size())return false;
+        LoveEQAudioProcessor original;original.loadFactoryPreset((size_t)index);original.getStateInformation(out);
+        return validateNativePresetState(id,out);
+    }
 #endif
     return false;
 }
 bool LibertyPluginHost::validateNativePresetState(const juce::String& id,const juce::MemoryBlock& state) const
 {
 #if defined(LIBERTY_NATIVE_PREVIEW)
-    if(id!="liberty.native.freespirit-delay"||state.getSize()==0||state.getSize()>1024*1024)return false;
+    if(state.getSize()==0||state.getSize()>1024*1024)return false;
     auto xml=juce::AudioProcessor::getXmlFromBinary(state.getData(),(int)state.getSize());
-    return xml!=nullptr&&xml->hasTagName("FreeSpirit");
+    if(!xml)return false;
+    if(id=="liberty.native.freespirit-delay")return xml->hasTagName("FreeSpirit");
+    if(id=="liberty.native.love-eq")return xml->hasTagName("LOVE_EQ_STATE");
+    return false;
 #else
     juce::ignoreUnused(id,state);return false;
 #endif
@@ -548,6 +571,15 @@ bool LibertyPluginHost::renderNativeAudition(const NativeChain& chain,const juce
         auto p=nativeDevices.create(LibertyEditions::Edition::Standard,device.deviceId.toStdString());
         if(!p){error="Creation impossible.";release();return false;}
         if(device.state.getSize()>0){if(!validateNativePresetState(device.deviceId,device.state)){error="Preset incompatible.";release();return false;}p->setStateInformation(device.state.getData(),(int)device.state.getSize());}
+        // A/B must not participate in the live project's shared Relationship EQ registry.
+        // Reject relationship-dependent states instead of silently changing their sound.
+        if(auto* eq=dynamic_cast<LoveEQAudioProcessor*>(p.get()))
+        {
+            const auto active=eq->parameters.getRawParameterValue("relationship_active");
+            if(active&&active->load()>0.5f){error=juce::String::fromUTF8("Relationship EQ actif : préécoute isolée indisponible.");release();return false;}
+            for(const auto* id:{"relationship_role","relationship_group"})
+                if(auto* param=eq->parameters.getParameter(id))param->setValueNotifyingHost(param->convertTo0to1(0.f));
+        }
         p->setPlayHead(&head);p->setRateAndBufferSizeDetails(rate,block);p->prepareToPlay(rate,block);
         latency+=juce::jmax(0,p->getLatencySamples());processors.push_back(std::move(p));
         if(latency>rate*2){error="Latence excessive.";release();return false;}
