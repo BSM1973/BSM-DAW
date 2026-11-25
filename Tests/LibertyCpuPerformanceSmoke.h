@@ -311,6 +311,41 @@ inline bool runLibertyCpuPerformanceSmoke()
            host.tryGetLaneLatencies(257,0,hostLatency.data())||host.tryGetLaneLatencies(4,1,nullptr))
             throw std::runtime_error("realtime latency snapshot");
         trace << "dynamic_pdc,host_processor,37,95,2,pass" << std::endl;
+        // Exercise the exact experimental hardware PDC path through the
+        // callback without opening a physical device. Real hosted delay DSP.
+        auto hardwareEngine=std::make_unique<AudioEngine>();
+        if(!hardwareEngine->requestExperimentalHardwarePdc(true))throw std::runtime_error("hardware QA opt-in");
+        for(int lane=0;lane<2;++lane){
+            auto wave=std::make_shared<juce::AudioBuffer<float>>(2,8192);wave->clear();
+            for(int i:{17,3000,6000}){
+                wave->setSample(0,i,.125f);wave->setSample(1,i,-.125f);
+            }
+            AudioEngine::AudioClipMetadata item;
+            item.id=juce::String("hardware-qa-")+juce::String(lane);item.sourceBuffer=wave;
+            item.sourceSampleRate=48000;item.lengthSeconds=8192/48000.0;
+            if(!hardwareEngine->replaceAudioClips(lane,{item}))throw std::runtime_error("hardware QA clip");
+        }
+        for(int frames:{32,64,128,256,512,1024}){
+            fx->changeLatency(37);
+            juce::AudioBuffer<float> out(2,8192);
+            const auto change=[](AudioEngine&,int offset,void* ctx){
+                if(offset==2048)static_cast<LibertyPdcTestProcessor*>(ctx)->changeLatency(95);
+            };
+            hardwareEngine->resetCpuPerformanceWhileStopped();
+            if(!hardwareEngine->renderOfflineForTesting(out,48000,frames,false,change,fx)||
+               hardwareEngine->getExperimentalHardwarePdcRevisions()<2||
+               hardwareEngine->getExperimentalHardwarePdcFallbacks()!=0)
+                throw std::runtime_error("hardware PDC QA revisions/fallback");
+            for(int i=0;i<8192;++i){
+                const float expected=(i==54||i==3095||i==6095)?.25f:0.f;
+                const float a=out.getSample(0,i),b=out.getSample(1,i);
+                if(!std::isfinite(a)||!std::isfinite(b)||std::abs(a-expected)>0.00002f||
+                   std::abs(b+expected)>0.00002f)throw std::runtime_error("hardware PDC QA alignment");
+            }
+            const auto perf=hardwareEngine->getCpuPerformance();
+            trace << "hardware_pdc_qa," << frames << ',' << perf.averagePercent() << ','
+                  << perf.peakPercent() << ',' << perf.overruns << std::endl;
+        }
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

@@ -2065,6 +2065,13 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     liveMidiCollector.reset(renderSampleRate);
     pianoPreviewCollector.reset(renderSampleRate);
     prepareCallbackScratch(blockSamples);
+    // Headless QA can opt into the exact experimental hardware PDC path.
+    // Never run two compensation banks on the same signal.
+    if(hardwarePdcRequested.load(std::memory_order_acquire)){
+        if(offlinePdcRequested)return false;
+        prepareHardwarePdc(renderSampleRate,destination.getNumChannels());
+        if(!hardwarePdcPrepared)return false;
+    }
     const bool eligible=!allowSpectralCache&&tracks.size()>=16
         &&tracks.size()<=maxParallelTracks&&destination.getNumChannels()==2;
     const unsigned wanted=!eligible?0u:offlineAdaptive?
@@ -2129,6 +2136,9 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     }
     playing.store(false, std::memory_order_relaxed);
     offlineParallelActive=false;offlinePdcActive=false;
+    hardwarePdcPrepared=hardwarePdcBlock=false;
+    hardwarePdcPublished.store(false,std::memory_order_release);
+    hardwarePdcReportedLatency.store(0,std::memory_order_relaxed);
     skipSpectralCacheForOfflineTest.store(false, std::memory_order_release);
     return dynamicOk;
 }
