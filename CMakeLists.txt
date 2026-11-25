@@ -74,7 +74,15 @@ if(MSVC)
   target_compile_options(BSM_DAW PRIVATE /utf-8 /Zc:lambda)
   # Legacy controllers expose MainComponent internals with a scoped private macro.
   # Preload the standard library and JUCE outside that macro on MSVC.
-  target_compile_options(BSM_DAW PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/FI${CMAKE_CURRENT_SOURCE_DIR}/Source/LibertyMsvcPrelude.h>")
+  # Apply only to our own C++ translation units. JUCE's module implementation
+  # files must not see their own module headers before their inclusion guards.
+  get_target_property(LIBERTY_OWN_SOURCES BSM_DAW SOURCES)
+  foreach(LIBERTY_SOURCE IN LISTS LIBERTY_OWN_SOURCES)
+    if(LIBERTY_SOURCE MATCHES "^Source/.*[.]cpp$")
+      set_property(SOURCE "${LIBERTY_SOURCE}" APPEND PROPERTY COMPILE_OPTIONS
+        "/FI${CMAKE_CURRENT_SOURCE_DIR}/Source/LibertyMsvcPrelude.h")
+    endif()
+  endforeach()
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(BSM_DAW PRIVATE -finput-charset=UTF-8)
 endif()
