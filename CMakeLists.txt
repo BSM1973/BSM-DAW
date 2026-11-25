@@ -71,7 +71,10 @@ target_include_directories(BSM_DAW PRIVATE Source)
 target_compile_features(BSM_DAW PRIVATE cxx_std_17)
 # Keep French UI literals consistently encoded on all supported compilers.
 if(MSVC)
-  target_compile_options(BSM_DAW PRIVATE /utf-8)
+  target_compile_options(BSM_DAW PRIVATE /utf-8 /Zc:lambda)
+  # Legacy controllers expose MainComponent internals with a scoped private macro.
+  # Preload the standard library and JUCE outside that macro on MSVC.
+  target_compile_options(BSM_DAW PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/FI${CMAKE_CURRENT_SOURCE_DIR}/Source/LibertyMsvcPrelude.h>")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   target_compile_options(BSM_DAW PRIVATE -finput-charset=UTF-8)
 endif()

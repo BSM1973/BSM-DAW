@@ -356,7 +356,17 @@ jobs:
         run: |
           app="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
           for attempt in 1 2 3; do
-            "$app" --step-sequencer-phase5-test
+            echo "Step Sequencer project roundtrip launch ${attempt}/3"
+            if "$app" --step-sequencer-phase5-test; then
+              continue
+            else
+              code=$?
+              echo "::error::Step Sequencer roundtrip failed on launch ${attempt}, exit ${code}"
+              mkdir -p build-fast/riche-fixtures
+              # Preserve the failure and collect a native backtrace on a fresh launch.
+              lldb --batch -o run -o "thread backtrace all" -- "$app" --step-sequencer-phase5-test > build-fast/riche-fixtures/step-sequencer-crash.txt 2>&1 || true
+              exit "$code"
+            fi
           done
 
       - name: Measure spectral track edit latency (5 fresh launches)
