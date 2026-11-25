@@ -42,6 +42,11 @@ jobs:
           c++ -std=c++17 -pthread -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyRealtimePlanSmoke.cpp -o /tmp/liberty-realtime-plan
           /tmp/liberty-realtime-plan
 
+      - name: Verify preallocated PDC delay lines
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDelayCompensationSmoke.cpp -o /tmp/liberty-pdc
+          /tmp/liberty-pdc
+
       - name: CPU meter arithmetic regression
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyCpuMeterSmoke.cpp -o /tmp/liberty-cpu-meter
@@ -378,7 +383,7 @@ jobs:
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
 
       - name: Run Drum Sampler regression tests
-        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke|LibertyRealtimePlanSmoke'
+        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke|LibertyRealtimePlanSmoke|LibertyDelayCompensationSmoke'
 
       - name: Test real Step Sequencer project XML roundtrip (3 fresh launches)
         shell: bash
@@ -614,7 +619,7 @@ jobs:
       - name: Compile application and regression executables
         run: cmake --build build-win --config Release --parallel 2
       - name: Run native DSP and browser regressions
-        run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke|LibertyRealtimePlanSmoke"
+        run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke|LibertyRealtimePlanSmoke|LibertyDelayCompensationSmoke"
       - name: Benchmark real audio callback (Windows)
         id: cpu-benchmark-win
         shell: pwsh

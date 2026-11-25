@@ -185,6 +185,63 @@ inline bool runLibertyCpuPerformanceSmoke()
         if(!engine.buildRealtimePlanForTesting(plan)||plan.size<257||plan.master!=plan.size-1)
             throw std::runtime_error("engine realtime dependency plan");
         trace << "realtime_plan," << plan.size << ',' << plan.latency << std::endl;
+        // Actual arrangement callback, with synthetic impulses representing
+        // plugin-delayed lane output. Includes two buses and direct Master.
+        auto pdcEngine=std::make_unique<AudioEngine>();
+        if(pdcEngine->addMixerBus()!=0||pdcEngine->addMixerBus()!=1)throw std::runtime_error("PDC buses");
+        pdcEngine->setTrackMixerBus(1,0);pdcEngine->setTrackMixerBus(2,0);pdcEngine->setTrackMixerBus(3,1);
+        constexpr int pdcCount=1024, impulse=17;
+        for(double rate:{44100.0,48000.0,96000.0,192000.0}){
+            for(const auto latencies:{std::array<int,4>{0,37,0,95},std::array<int,4>{23,0,71,8}}){
+                const int maxLatency=*std::max_element(latencies.begin(),latencies.end());
+                const std::vector<int> declared(latencies.begin(),latencies.end());
+                for(int lane=0;lane<4;++lane){
+                    auto wave=std::make_shared<juce::AudioBuffer<float>>(2,pdcCount);
+                    wave->clear();
+                    wave->setSample(0,impulse+latencies[lane],0.125f);
+                    wave->setSample(1,impulse+latencies[lane],-0.125f);
+                    AudioEngine::AudioClipMetadata item;
+                    item.id=juce::String("pdc-")+juce::String(lane);
+                    item.sourceBuffer=wave;item.sourceSampleRate=rate;item.lengthSeconds=pdcCount/rate;
+                    if(!pdcEngine->replaceAudioClips(lane,{item}))throw std::runtime_error("PDC fixture");
+                }
+                for(int frames:{32,64,128,512}){
+                    juce::AudioBuffer<float> aligned(2,pdcCount),bypass(2,pdcCount);
+                    if(!pdcEngine->configureOfflinePdcForTesting(true,false,declared)||
+                       !pdcEngine->renderOfflineForTesting(aligned,rate,frames,false))throw std::runtime_error("PDC render");
+                    if(pdcEngine->getOfflinePdcLatencyForTesting()!=maxLatency||
+                       pdcEngine->getOfflinePdcBlocksForTesting()!=static_cast<std::uint64_t>(pdcCount/frames))
+                        throw std::runtime_error("PDC accounting");
+                    if(!pdcEngine->configureOfflinePdcForTesting(true,true,declared)||
+                       !pdcEngine->renderOfflineForTesting(bypass,rate,frames,false))throw std::runtime_error("PDC bypass");
+                    if(pdcEngine->getOfflinePdcLatencyForTesting()!=0||pdcEngine->getOfflinePdcBlocksForTesting()!=0)
+                        throw std::runtime_error("PDC bypass accounting");
+                    for(int i=0;i<pdcCount;++i){
+                        float expectedBypass=0.f;
+                        for(int latency:latencies)if(i==impulse+latency)expectedBypass+=0.125f;
+                        const float expected=i==impulse+maxLatency?0.5f:0.f;
+                        for(int ch=0;ch<2;++ch){
+                            const float sign=ch==0?1.f:-1.f;
+                            const float a=aligned.getSample(ch,i),b=bypass.getSample(ch,i);
+                            if(!std::isfinite(a)||!std::isfinite(b)||std::abs(a-sign*expected)>0.00002f||
+                               std::abs(b-sign*expectedBypass)>0.00002f)throw std::runtime_error("PDC impulse alignment");
+                        }
+                    }
+                    trace << "pdc_alignment," << rate << ',' << frames << ',' << maxLatency << ",pass" << std::endl;
+                }
+            }
+        }
+        // Normal host-reported plan, no simulated latencies and no loaded plugins.
+        if(!pdcEngine->configureOfflinePdcForTesting(true)||pdcEngine->getOfflinePdcLatencyForTesting()!=0)
+            throw std::runtime_error("PDC automatic configuration");
+        juce::AudioBuffer<float> automatic(2,pdcCount),uncompensated(2,pdcCount);
+        if(!pdcEngine->renderOfflineForTesting(automatic,192000,64,false)||
+           pdcEngine->getOfflinePdcLatencyForTesting()!=0||
+           !pdcEngine->configureOfflinePdcForTesting(false)||
+           !pdcEngine->renderOfflineForTesting(uncompensated,192000,64,false))
+            throw std::runtime_error("PDC zero latency");
+        for(int ch=0;ch<2;++ch)for(int i=0;i<pdcCount;++i)
+            if(automatic.getSample(ch,i)!=uncompensated.getSample(ch,i))throw std::runtime_error("PDC zero latency parity");
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

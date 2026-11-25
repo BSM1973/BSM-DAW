@@ -5,6 +5,7 @@
 #include "LibertyCpuMeter.h"
 #include "LibertyOfflinePool.h"
 #include "LibertyRealtimePlan.h"
+#include "LibertyDelayCompensation.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -60,6 +61,11 @@ public:
     unsigned getSelectedWorkersForTesting() const noexcept {return selectedOfflineWorkers;}
     // Stopped dedicated engine only; snapshots hosted latencies outside callback.
     bool buildRealtimePlanForTesting(LibertyRealtime::Plan&) const;
+    // Experimental offline PDC. Test latencies model delayed audio fixtures,
+    // never override real plugin reports in the hardware callback.
+    bool configureOfflinePdcForTesting(bool enabled,bool bypass=false,const std::vector<int>& simulatedAudioLatencies={});
+    int getOfflinePdcLatencyForTesting() const noexcept {return offlinePdcLatency;}
+    std::uint64_t getOfflinePdcBlocksForTesting() const noexcept {return offlinePdcBlocks;}
     // Headless diagnostic only: confirms that the worker published an FFT
     // result for this track's current generation (never used in audio callback).
     bool isSpectralCacheReadyForTesting(int trackIndex);
@@ -676,6 +682,13 @@ private:
         void prepare(int frames);
     } callbackScratch;
     void prepareCallbackScratch(int frames);
+    LibertyPdc::Bank offlinePdc;
+    bool offlinePdcRequested=false,offlinePdcBypass=false,offlinePdcActive=false;
+    int offlinePdcLatency=0;
+    std::uint64_t offlinePdcBlocks=0;
+    std::vector<int> offlinePdcSimulated;
+    bool prepareOfflinePdc(double rate,int channels);
+    void compensateOfflineLane(int index,juce::AudioBuffer<float>& b,int frames) noexcept;
     static constexpr int maxParallelTracks=128;
     std::unique_ptr<LibertyMulticore::OfflinePool> offlinePool;
     std::vector<juce::AudioBuffer<float>> offlineTrackBuffers;
