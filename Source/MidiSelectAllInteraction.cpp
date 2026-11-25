@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include "MidiEngine.h"
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -111,5 +112,5 @@ private:
     juce::Component* attachedContent = nullptr;
 };
 
-MidiSelectAllKeyListener midiSelectAllKeyListener;
+LibertyDeferredUi::Deferred<MidiSelectAllKeyListener> midiSelectAllKeyListener{true};
 }

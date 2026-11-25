@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -381,10 +382,10 @@ private:
     bool registered = true;
 };
 
-PluginDragDropController controller;
+LibertyDeferredUi::Deferred<PluginDragDropController> controller;
 }
 
 void shutdownLibertyPluginDragDropController()
 {
-    controller.shutdown();
+    controller->shutdown();
 }

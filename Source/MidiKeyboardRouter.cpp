@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <set>
@@ -55,9 +56,9 @@ private:
     std::set<juce::Component*> attached;
 };
 
-MidiKeyboardRouter globalMidiKeyboardRouter;
+LibertyDeferredUi::Deferred<MidiKeyboardRouter> globalMidiKeyboardRouter;
 
 void shutdownLibertyMidiKeyboardRouter()
 {
-    globalMidiKeyboardRouter.shutdown();
+    globalMidiKeyboardRouter->shutdown();
 }

@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -42,8 +43,8 @@ private:
     MainComponent& owner;
     std::unique_ptr<SongBrainWindow> window;
 };
-std::map<MainComponent*,std::unique_ptr<Controller>>controllers;class Bootstrap:private juce::Timer{public:Bootstrap(){startTimerHz(4);}~Bootstrap(){shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};Bootstrap bootstrap;}
-void shutdownLibertyAISongIntelligenceController(){bootstrap.shutdown();}
+std::map<MainComponent*,std::unique_ptr<Controller>>controllers;class Bootstrap:private juce::Timer{public:Bootstrap(){startTimerHz(4);}~Bootstrap(){shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};LibertyDeferredUi::Deferred<Bootstrap> bootstrap;}
+void shutdownLibertyAISongIntelligenceController(){bootstrap->shutdown();}
 
 void showLibertyAISongBrain(MainComponent& owner)
 {

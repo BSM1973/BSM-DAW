@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #include "LibertyDesignSystem.h"
@@ -626,10 +627,10 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 void shutdownLibertyAudioClipWarpView()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }

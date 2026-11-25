@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -257,7 +258,7 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 void ensureLibertyPageModeCoordinator(MainComponent* owner)
@@ -277,5 +278,5 @@ void setLibertyMixConsoleVisible(MainComponent* owner, bool shouldShow)
 
 void shutdownLibertyPageModeCoordinator()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }

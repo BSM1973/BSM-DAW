@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MidiMarqueeOverlay.h"
 #include "MainComponent.h"
 #include <memory>
@@ -73,5 +74,5 @@ private:
     }
 };
 
-MidiMarqueeManager midiMarqueeManager;
+LibertyDeferredUi::Deferred<MidiMarqueeManager> midiMarqueeManager{true};
 }

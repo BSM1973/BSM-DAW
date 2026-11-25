@@ -54,6 +54,10 @@ inline bool runLibertyCpuPerformanceSmoke()
                     diff=(std::max)(diff,std::abs(a-b));
                 }
                 if(diff>0.000002f||measured.getMagnitude(0,count)<.01f)throw std::runtime_error("signal parity");
+                trace << "metrics," << rate << ',' << frames << ',' << total.blocks << ','
+                      << total.averagePercent() << ',' << total.peakPercent() << ',' << total.overruns
+                      << ',' << track.averagePercent() << ',' << refMs << ',' << measuredMs << ',' << diff
+                      << std::endl;
                 trace << "scenario passed" << std::endl;
                 std::printf("%.0f,%d,%llu,%.4f,%.4f,%llu,%.4f,%.4f,%.4f,%.9f\n",rate,frames,(unsigned long long)total.blocks,total.averagePercent(),total.peakPercent(),(unsigned long long)total.overruns,track.averagePercent(),refMs,measuredMs,diff);
             }

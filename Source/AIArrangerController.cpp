@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -169,9 +170,9 @@ private:
 };
 std::map<MainComponent*,std::unique_ptr<Controller>> controllers;
 class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(5);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(controllers.find(m)==controllers.end()){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
-void shutdownLibertyAIArrangerController(){bootstrap.shutdown();}
+void shutdownLibertyAIArrangerController(){bootstrap->shutdown();}
 
 void showLibertyAIArranger(MainComponent& owner)
 {

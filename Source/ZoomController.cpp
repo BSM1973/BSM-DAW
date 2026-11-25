@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 #include <cmath>
@@ -264,7 +265,7 @@ private:
     float initialZoom = 1.0f;
 };
 
-ZoomMouseListener zoomMouseListener;
+LibertyDeferredUi::Deferred<ZoomMouseListener> zoomMouseListener;
 }
 
 double getLibertyTimelinePixelsPerSecond() noexcept
@@ -316,5 +317,5 @@ float getLibertyPianoVerticalZoom() noexcept
 
 void shutdownLibertyZoomController()
 {
-    zoomMouseListener.shutdown();
+    zoomMouseListener->shutdown();
 }

@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include "MidiEngine.h"
 #include <algorithm>
@@ -188,8 +189,8 @@ private:
     bool pendingAdditiveSelectionActive = false;
 };
 
-MidiNoteSelectionInteraction midiNoteSelectionInteraction;
+LibertyDeferredUi::Deferred<MidiNoteSelectionInteraction> midiNoteSelectionInteraction;
 }
 
-bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key) { return midiNoteSelectionInteraction.handleKeyPress(key); }
-void shutdownLibertyMidiNoteSelectionInteraction() { midiNoteSelectionInteraction.shutdown(); }
+bool handleLibertyMidiNoteSelectionKeyPress(const juce::KeyPress& key) { return midiNoteSelectionInteraction->handleKeyPress(key); }
+void shutdownLibertyMidiNoteSelectionInteraction() { midiNoteSelectionInteraction->shutdown(); }

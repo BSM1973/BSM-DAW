@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -41,8 +42,8 @@ private:
     MainComponent& owner;
     std::unique_ptr<ComposerWindow> window;
 };
-std::map<MainComponent*,std::unique_ptr<Controller>>cs;class Boot:private juce::Timer{public:Boot(){startTimerHz(3);}~Boot(){shutdown();}void shutdown(){stopTimer();cs.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(!cs.count(m)){cs.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}}boot;}
-void shutdownLibertyAIComposer2Controller(){boot.shutdown();}
+std::map<MainComponent*,std::unique_ptr<Controller>>cs;class Boot:private juce::Timer{public:Boot(){startTimerHz(3);}~Boot(){shutdown();}void shutdown(){stopTimer();cs.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int childIndex=-1;childIndex<content->getNumChildComponents();++childIndex)if(auto*m=dynamic_cast<MainComponent*>(childIndex<0?content:content->getChildComponent(childIndex)))if(!cs.count(m)){cs.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};LibertyDeferredUi::Deferred<Boot> boot;}
+void shutdownLibertyAIComposer2Controller(){boot->shutdown();}
 
 void showLibertyAIComposer2(MainComponent& owner)
 {

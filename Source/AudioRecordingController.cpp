@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "LibertyDesignSystem.h"
 #define private public
 #include "MainComponent.h"
@@ -968,35 +969,35 @@ private:
     std::map<MainComponent*, std::unique_ptr<LibertyAudioRecordingController>> controllers;
 };
 
-static LibertyAudioRecordingBootstrap libertyAudioRecordingBootstrap;
+static LibertyDeferredUi::Deferred<LibertyAudioRecordingBootstrap> libertyAudioRecordingBootstrap;
 
 void processLibertyRecordingInput(AudioEngine* engine, const float* const* inputs, int numInputs, int numSamples)
 {
-    libertyAudioRecordingBootstrap.processInput(engine, inputs, numInputs, numSamples);
+    libertyAudioRecordingBootstrap->processInput(engine, inputs, numInputs, numSamples);
 }
 
 void prepareLibertyAudioRecordingForProjectReset(MainComponent* owner)
 {
     if (owner != nullptr)
-        libertyAudioRecordingBootstrap.prepareForProjectReset(owner);
+        libertyAudioRecordingBootstrap->prepareForProjectReset(owner);
 }
 
 void shutdownLibertyAudioRecordingController()
 {
-    libertyAudioRecordingBootstrap.shutdown();
+    libertyAudioRecordingBootstrap->shutdown();
 }
 
 void ensureLibertyAudioRecordingController(MainComponent* owner)
 {
-    libertyAudioRecordingBootstrap.ensureAttached(owner);
+    libertyAudioRecordingBootstrap->ensureAttached(owner);
 }
 
 void refreshLibertyRecordingTrackLayout(MainComponent* owner)
 {
-    if (owner != nullptr) libertyAudioRecordingBootstrap.refreshTrackLayout(owner);
+    if (owner != nullptr) libertyAudioRecordingBootstrap->refreshTrackLayout(owner);
 }
 
 void triggerLibertyPunchRecording(MainComponent* owner)
 {
-    if (owner != nullptr) libertyAudioRecordingBootstrap.triggerPunch(owner);
+    if (owner != nullptr) libertyAudioRecordingBootstrap->triggerPunch(owner);
 }

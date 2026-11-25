@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include "NoOverlapLayout.h"
 #include "LibertyDesignSystem.h"
@@ -146,7 +147,7 @@ private:
                     }
     }
 };
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap{true};
 }
 
 void resizeLibertyDynamicTrackController(MainComponent* owner)

@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -229,7 +230,7 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 int getLibertyPreferredBrowserWidth(MainComponent* owner)
@@ -263,5 +264,5 @@ void resizeLibertyBrowserResizeController(MainComponent* owner)
 
 void shutdownLibertyBrowserResizeController()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }

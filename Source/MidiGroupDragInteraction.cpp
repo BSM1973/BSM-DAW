@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include "MidiEngine.h"
 #include <algorithm>
@@ -239,10 +240,10 @@ private:
     std::unique_ptr<MidiGroupDragOverlay> overlay;
 };
 
-MidiGroupDragManager groupDragManager;
+LibertyDeferredUi::Deferred<MidiGroupDragManager> groupDragManager;
 }
 
 void shutdownLibertyMidiGroupDragInteraction()
 {
-    groupDragManager.shutdown();
+    groupDragManager->shutdown();
 }

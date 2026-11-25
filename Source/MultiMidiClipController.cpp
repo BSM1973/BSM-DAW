@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "LibertyPrecisionUI.h"
 #define private public
 #include "MainComponent.h"
@@ -618,7 +619,7 @@ private:
             }
         }
     }
-};Bootstrap bootstrap;}
+};LibertyDeferredUi::Deferred<Bootstrap> bootstrap;}
 void synchronizeLibertyPianoRollPlayback(MainComponent& o)
 {
     auto it = controllers.find(&o);
@@ -670,7 +671,7 @@ void loadLibertyMultiMidiClips(MainComponent&o,const juce::XmlElement&root){if(a
     return true;
 }
 void resizeLibertyMultiMidiClipController(MainComponent*o){if(o&&activeController&&activeController->owns(*o)){activeController->setBounds(o->getLocalBounds());activeController->toFront(false);}}void resetLibertyMultiMidiProject(MainComponent&o){if(activeController&&activeController->owns(o))activeController->resetProjectClips();}void syncLibertyMultiMidiPlayback(MainComponent&o){if(activeController&&activeController->owns(o))activeController->resyncPlayback();}void scaleLibertyMultiMidiClipsForTempoChange(MainComponent&o,double ratio){if(activeController&&activeController->owns(o))activeController->scaleClipsForTempoChange(ratio);}bool isLibertyActiveMidiClipInstrument(MainComponent&o){return activeController&&activeController->owns(o)&&activeController->activeClipIsInstrument();}int getLibertyActiveInstrumentClipLane(MainComponent&o){return activeController&&activeController->owns(o)?activeController->activeInstrumentClipLane():-1;}
-void shutdownLibertyMultiMidiClipController(){bootstrap.shutdown();}
+void shutdownLibertyMultiMidiClipController(){bootstrap->shutdown();}
 
 juce::String getLibertyMultiMidiStateSignature(const MainComponent& owner)
 {

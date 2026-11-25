@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -8034,7 +8035,7 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 void ensureLibertyBrowserController(MainComponent* main)
@@ -8071,7 +8072,7 @@ void showLibertyEffectBrowserForSlot(MainComponent* owner,bool instrument,int la
 
 void shutdownLibertyBrowserController()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }
 
 void showLibertySoundMatchForPad(MainComponent* owner,std::shared_ptr<const juce::AudioBuffer<float>> audio,double rate,juce::String name,juce::File source,std::function<void(const juce::File&)> replace)

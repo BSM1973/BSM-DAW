@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "MainComponent.h"
 #include "MidiEngine.h"
 #include <cmath>
@@ -182,5 +183,5 @@ private:
     inline static juce::Component* pianoRoll = nullptr;
 };
 
-VelocityMouseListener velocityMouseListener;
+LibertyDeferredUi::Deferred<VelocityMouseListener> velocityMouseListener{true};
 }

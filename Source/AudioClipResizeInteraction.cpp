@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -316,10 +317,10 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap{true};
 }
 
 void shutdownLibertyAudioClipResizeInteraction()
 {
-    bootstrap.shutdown();
+    if (bootstrap.operator->() != nullptr) bootstrap->shutdown();
 }

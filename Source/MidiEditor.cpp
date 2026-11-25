@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include "LibertyPrecisionUI.h"
 #include "MidiEditor.h"
 #include "LibertyDesignSystem.h"
@@ -5561,7 +5562,7 @@ public:
 private: bool registered = true;
 };
 
-MidiEditorMouseListener globalMidiEditorMouseListener;
+LibertyDeferredUi::Deferred<MidiEditorMouseListener> globalMidiEditorMouseListener;
 std::vector<std::unique_ptr<MidiEditorWindow>> midiEditorWindows;
 std::unique_ptr<PianoRoll> dockPianoRoll;
 MainComponent* dockPianoRollOwner = nullptr;
@@ -5600,7 +5601,7 @@ void shutdownLibertyMidiEditor()
     midiEditorWindows.clear();
     dockPianoRoll.reset();
     dockPianoRollOwner = nullptr;
-    globalMidiEditorMouseListener.shutdown();
+    globalMidiEditorMouseListener->shutdown();
 }
 
 void layoutLibertyPianoRollDock(MainComponent& owner, juce::Rectangle<int> bounds, bool visible)

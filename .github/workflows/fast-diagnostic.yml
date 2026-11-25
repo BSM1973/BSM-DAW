@@ -27,6 +27,11 @@ jobs:
           /tmp/liberty-editions-catalog
           grep -F 'Liberty ${LIBERTY_DAW_EDITION} is not releasable yet' CMakeLists.txt
 
+      - name: Verify deferred UI startup lifecycle
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDeferredUiSmoke.cpp -o /tmp/liberty-ui-lifecycle
+          /tmp/liberty-ui-lifecycle
+
       - name: CPU meter arithmetic regression
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyCpuMeterSmoke.cpp -o /tmp/liberty-cpu-meter

@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -52,7 +53,7 @@ private:
     LibertyAIPanel panel;
     std::atomic<bool> stopped { false };
 };
-std::map<MainComponent*,std::unique_ptr<Controller>>controllers;class Bootstrap:private juce::Timer{public:Bootstrap(){startTimerHz(4);}~Bootstrap(){shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int j=-1;j<content->getNumChildComponents();++j)if(auto*m=dynamic_cast<MainComponent*>(j<0?content:content->getChildComponent(j)))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};Bootstrap bootstrap;}
+std::map<MainComponent*,std::unique_ptr<Controller>>controllers;class Bootstrap:private juce::Timer{public:Bootstrap(){startTimerHz(4);}~Bootstrap(){shutdown();}void shutdown(){stopTimer();for(auto&i:controllers)if(i.second)i.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*content=w->getContentComponent())for(int j=-1;j<content->getNumChildComponents();++j)if(auto*m=dynamic_cast<MainComponent*>(j<0?content:content->getChildComponent(j)))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<Controller>(*m));stopTimer();return;}}};LibertyDeferredUi::Deferred<Bootstrap> bootstrap;}
 void showLibertyAIMusicPanel(MainComponent& owner)
 {
     auto it = controllers.find(&owner);
@@ -60,4 +61,4 @@ void showLibertyAIMusicPanel(MainComponent& owner)
         it = controllers.emplace(&owner, std::make_unique<Controller>(owner)).first;
     it->second->openPanel();
 }
-void shutdownLibertyAIController(){bootstrap.shutdown();}
+void shutdownLibertyAIController(){bootstrap->shutdown();}

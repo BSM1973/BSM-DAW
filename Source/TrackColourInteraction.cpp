@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -452,7 +453,7 @@ private:
     }
 };
 
-TrackColourBootstrap trackColourBootstrap;
+LibertyDeferredUi::Deferred<TrackColourBootstrap> trackColourBootstrap;
 }
 
 int getLibertyTrackColourId(int track)
@@ -522,5 +523,5 @@ void showLibertyMixerColourPalette(juce::Point<int> screenPoint,int selectedId,
 
 void shutdownLibertyTrackColourInteraction()
 {
-    trackColourBootstrap.shutdown();
+    trackColourBootstrap->shutdown();
 }

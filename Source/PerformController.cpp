@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -3471,7 +3472,7 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 void renderLibertyPerformAudio(AudioEngine* engine, float* const* outputs, int numOutputs, int numSamples)
@@ -3562,5 +3563,5 @@ void setLibertyPerformVisible(MainComponent* owner, bool shouldShow)
 
 void shutdownLibertyPerformController()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }

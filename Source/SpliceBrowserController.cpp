@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #undef private
@@ -693,7 +694,7 @@ private:
     }
 };
 
-Bootstrap bootstrap;
+LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
 
 void requestLibertySpliceSampleScan(MainComponent* owner)
@@ -708,5 +709,5 @@ void requestLibertySpliceSampleScan(MainComponent* owner)
 
 void shutdownLibertySpliceBrowserController()
 {
-    bootstrap.shutdown();
+    bootstrap->shutdown();
 }

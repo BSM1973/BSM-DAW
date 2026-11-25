@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <atomic>
 
@@ -122,10 +123,10 @@ private:
     std::atomic<bool> stopped { false };
 };
 
-UISymbolCleaner cleaner;
+LibertyDeferredUi::Deferred<UISymbolCleaner> cleaner;
 }
 
 void shutdownLibertyUISymbolCleaner()
 {
-    cleaner.shutdown();
+    cleaner->shutdown();
 }

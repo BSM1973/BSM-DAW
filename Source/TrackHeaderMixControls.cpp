@@ -1,3 +1,4 @@
+#include "LibertyDeferredUi.h"
 #define private public
 #include "MainComponent.h"
 #include "PluginHost.h"
@@ -353,9 +354,9 @@ for(int i=0;i<(int)controls.size();++i){auto&c=controls[(size_t)i];int t=i-owner
 std::map<MainComponent*,std::unique_ptr<TrackHeaderMixControls>>controllers;
 void ensureTrackControls(MainComponent* owner){if(owner!=nullptr&&!controllers.count(owner))controllers.emplace(owner,std::make_unique<TrackHeaderMixControls>(*owner));}
 void refreshTrackControls(MainComponent* owner){ensureTrackControls(owner);auto it=controllers.find(owner);if(it!=controllers.end()&&it->second)it->second->refreshTrackLayout();}
-class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(10);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&p:controllers)if(p.second)p.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<TrackHeaderMixControls>(*m));stopTimer();return;}}};Bootstrap bootstrap;
+class Bootstrap final:private juce::Timer{public:Bootstrap(){startTimerHz(10);}~Bootstrap()override{shutdown();}void shutdown(){stopTimer();for(auto&p:controllers)if(p.second)p.second->shutdown();controllers.clear();}private:void timerCallback()override{auto&d=juce::Desktop::getInstance();for(int i=0;i<d.getNumComponents();++i)if(auto*w=dynamic_cast<juce::DocumentWindow*>(d.getComponent(i)))if(auto*m=dynamic_cast<MainComponent*>(w->getContentComponent()))if(!controllers.count(m)){controllers.emplace(m,std::make_unique<TrackHeaderMixControls>(*m));stopTimer();return;}}};LibertyDeferredUi::Deferred<Bootstrap> bootstrap;
 }
-void shutdownLibertyTrackHeaderMixControls(){bootstrap.shutdown();}
+void shutdownLibertyTrackHeaderMixControls(){bootstrap->shutdown();}
 void toggleLibertyMidiInstrumentMute(MainComponent&owner){int logical=owner.selectedTrack-owner.getAudioTrackCount()-owner.getMidiTrackCount();if(logical>=0&&logical<owner.getInstrumentTrackCount())owner.audioEngine.setInstrumentTrackMuted(logical,!owner.audioEngine.isInstrumentTrackMuted(logical));owner.repaint();}
 
 void refreshLibertyTrackHeaderMixLayout(MainComponent* owner)
