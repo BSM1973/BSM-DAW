@@ -32,6 +32,11 @@ jobs:
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDeferredUiSmoke.cpp -o /tmp/liberty-ui-lifecycle
           /tmp/liberty-ui-lifecycle
 
+      - name: Verify offline multicore job ownership
+        run: |
+          c++ -std=c++17 -pthread -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyOfflinePoolSmoke.cpp -o /tmp/liberty-offline-pool
+          /tmp/liberty-offline-pool
+
       - name: CPU meter arithmetic regression
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyCpuMeterSmoke.cpp -o /tmp/liberty-cpu-meter

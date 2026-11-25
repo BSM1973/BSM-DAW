@@ -87,6 +87,47 @@ inline bool runLibertyCpuPerformanceSmoke()
                       << ',' << stats.peakPercent() << ',' << stats.overruns << ',' << diff << std::endl;
             }
         }
+        // Compare actual engine callback output using 16..128 independent lanes.
+        // Low gain prevents clipping from obscuring differences in summation.
+        const unsigned workers=(std::min)(4u,(std::max)(1u,std::thread::hardware_concurrency()>1?std::thread::hardware_concurrency()-1:1u));
+        for(int lanes:{16,32,64,128}){
+            while(engine.getAudioTrackCount()<lanes){
+                const int lane=engine.addAudioTrack();
+                if(lane<0)throw std::runtime_error("multicore add lane");
+                auto next=clip;next.id=juce::String("mc-")+juce::String(lane);
+                if(!engine.replaceAudioClips(lane,{next}))throw std::runtime_error("multicore fixture");
+            }
+            for(int lane=0;lane<lanes;++lane)engine.setTrackGain(lane,1.0f/float(lanes));
+            for(int frames:{32,64,128,512}){
+                const int count=4800;
+                juce::AudioBuffer<float> serial(2,count),parallel(2,count);
+                engine.setCpuProfiling(true,false);
+                if(!engine.configureOfflineMulticoreForTesting(0))throw std::runtime_error("serial configure");
+                engine.resetCpuPerformanceWhileStopped();
+                if(!engine.renderOfflineForTesting(serial,48000,frames,false))throw std::runtime_error("serial render");
+                const auto serialStats=engine.getCpuPerformance();
+                if(!engine.configureOfflineMulticoreForTesting(workers))throw std::runtime_error("parallel configure");
+                engine.resetCpuPerformanceWhileStopped();
+                if(!engine.renderOfflineForTesting(parallel,48000,frames,false))throw std::runtime_error("parallel render");
+                const auto parallelStats=engine.getCpuPerformance();
+                float diff=0;
+                for(int ch=0;ch<2;++ch)for(int i=0;i<count;++i){
+                    const float x=serial.getSample(ch,i),y=parallel.getSample(ch,i);
+                    if(!std::isfinite(x)||!std::isfinite(y))throw std::runtime_error("multicore nonfinite");
+                    diff=(std::max)(diff,std::abs(x-y));
+                }
+                const auto expected=static_cast<std::uint64_t>((count+frames-1)/frames);
+                if(diff>0.00002f||serial.getMagnitude(0,count)<.01f||engine.getParallelBlocksForTesting()!=expected||
+                   engine.getParallelFallbacksForTesting()!=0||parallelStats.blocks!=expected||serialStats.blocks!=expected)
+                    throw std::runtime_error("multicore parity/accounting");
+                trace << "multicore," << lanes << ',' << frames << ',' << workers << ','
+                      << serialStats.averagePercent() << ',' << parallelStats.averagePercent() << ','
+                      << serialStats.peakPercent() << ',' << parallelStats.peakPercent() << ','
+                      << serialStats.overruns << ',' << parallelStats.overruns << ','
+                      << engine.getWorkerJobsForTesting() << ',' << diff << std::endl;
+            }
+        }
+        engine.configureOfflineMulticoreForTesting(0);
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

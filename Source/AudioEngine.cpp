@@ -1852,6 +1852,36 @@ void AudioEngine::prepareCallbackScratch(int frames)
     preparedScratchFrames.store(capacity,std::memory_order_relaxed);
 }
 
+bool AudioEngine::configureOfflineMulticoreForTesting(unsigned workers)
+{
+    if(initialised.load(std::memory_order_acquire)||isAudioDeviceRunning()||playing.load())return false;
+    offlinePool.reset();offlineTrackBuffers.clear();
+    parallelBlocks=parallelWorkerJobs=parallelFallbacks=0;
+    if(workers==0)return true;
+    try {
+        offlinePool=std::make_unique<LibertyMulticore::OfflinePool>(juce::jlimit(1u,8u,workers));
+        offlineTrackBuffers.resize(maxParallelTracks);
+        return true;
+    }catch(...){offlinePool.reset();offlineTrackBuffers.clear();return false;}
+}
+
+void AudioEngine::renderOfflineTrack(void* ctx,int index) noexcept
+{
+    juce::ScopedNoDenormals noDenormals;
+    auto& batch=*static_cast<OfflineTrackBatch*>(ctx);
+    auto& engine=*batch.engine;
+    auto& buffer=engine.offlineTrackBuffers[(size_t)index];
+    buffer.clear();
+    if(!engine.offlineAudible[(size_t)index])return;
+    auto& track=*engine.tracks[(size_t)index];
+    const auto gain=track.gain.load(),pan=track.pan.load();
+    auto* data=buffer.getArrayOfWritePointers();
+    engine.mixAudioVoice(track,gain,pan,batch.rate,batch.position,data,batch.channels,batch.frames);
+    if(const auto voices=std::atomic_load(&track.regionVoices))
+        for(const auto& voice:*voices)
+            engine.mixAudioVoice(*voice,gain,pan,batch.rate,batch.position,data,batch.channels,batch.frames);
+}
+
 bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                           double renderSampleRate, int blockSamples,
                                           bool allowSpectralCache)
@@ -1871,6 +1901,12 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     liveMidiCollector.reset(renderSampleRate);
     pianoPreviewCollector.reset(renderSampleRate);
     prepareCallbackScratch(blockSamples);
+    offlineParallelActive=offlinePool!=nullptr && !allowSpectralCache && tracks.size()>=16
+        && tracks.size()<=maxParallelTracks && destination.getNumChannels()==2;
+    if(offlinePool&&!offlineParallelActive)++parallelFallbacks;
+    if(offlineParallelActive)
+        for(size_t i=0;i<tracks.size();++i)
+            offlineTrackBuffers[i].setSize(2,blockSamples,false,false,true);
     bufferSize.store(blockSamples, std::memory_order_relaxed);
     outputChannels.store(destination.getNumChannels(), std::memory_order_relaxed);
     transportSamples.store(0, std::memory_order_relaxed);
@@ -1886,6 +1922,7 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
         audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
     }
     playing.store(false, std::memory_order_relaxed);
+    offlineParallelActive=false;
     skipSpectralCacheForOfflineTest.store(false, std::memory_order_release);
     return true;
 }
@@ -2652,6 +2689,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const bool panicInstruments = instrumentPanicPending.exchange(false, std::memory_order_acq_rel);
     const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
 
+    // The offline pool only renders independent clip voices. All inserts,
+    // channel dynamics, routing, bus summation and Master stay ordered.
+    const bool parallel=offlineParallelActive && offlinePool!=nullptr;
+    if(parallel)
+    {
+        for(size_t i=0;i<tracks.size();++i)
+            offlineAudible[i]=!tracks[i]->muted.load()&&(!anyPlaybackSolo||tracks[i]->solo.load());
+        OfflineTrackBatch batch{this,rate,position,numSamples,2};
+        parallelWorkerJobs+=static_cast<std::uint64_t>(offlinePool->run((int)tracks.size(),&AudioEngine::renderOfflineTrack,&batch));
+        ++parallelBlocks;
+    }
     for(int trackIndex=0;trackIndex<(int)tracks.size();++trackIndex){
         LibertyCpu::Scope trackCpu(measureTracks&&trackIndex<cpuProfileTrackCapacity?&cpuAudio[(size_t)trackIndex]:nullptr,cpuBudget);
         auto& track=*tracks[(size_t)trackIndex];
@@ -2719,10 +2767,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         };
 
 
+        if(parallel)
+        {
+            const auto& rendered=offlineTrackBuffers[(size_t)trackIndex];
+            for(int ch=0;ch<insertChannels;++ch)
+                if(outputChannelData[ch])juce::FloatVectorOperations::add(outputChannelData[ch],rendered.getReadPointer(ch),numSamples);
+        }
+        else
+        {
         mixAudioVoice(track,track.gain.load(),track.pan.load(),rate,position,outputChannelData,numOutputChannels,numSamples);
         if(const auto voices=std::atomic_load(&track.regionVoices))
             for(const auto& voice:*voices)
                 mixAudioVoice(*voice,track.gain.load(),track.pan.load(),rate,position,outputChannelData,numOutputChannels,numSamples);
+        }
         processTrackInsertChain();
     }
 

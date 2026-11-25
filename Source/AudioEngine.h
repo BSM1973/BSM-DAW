@@ -3,6 +3,7 @@
 #include "LibertyImmersiveAnalysis.h"
 #include "MixerBusRouting.h"
 #include "LibertyCpuMeter.h"
+#include "LibertyOfflinePool.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -49,6 +50,11 @@ public:
     bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                  double renderSampleRate, int blockSamples,
                                  bool allowSpectralCache = true);
+    // Dedicated stopped offline engines only; never enabled by hardware.
+    bool configureOfflineMulticoreForTesting(unsigned workers);
+    std::uint64_t getParallelBlocksForTesting() const noexcept {return parallelBlocks;}
+    std::uint64_t getWorkerJobsForTesting() const noexcept {return parallelWorkerJobs;}
+    std::uint64_t getParallelFallbacksForTesting() const noexcept {return parallelFallbacks;}
     // Headless diagnostic only: confirms that the worker published an FFT
     // result for this track's current generation (never used in audio callback).
     bool isSpectralCacheReadyForTesting(int trackIndex);
@@ -665,6 +671,19 @@ private:
         void prepare(int frames);
     } callbackScratch;
     void prepareCallbackScratch(int frames);
+    static constexpr int maxParallelTracks=128;
+    std::unique_ptr<LibertyMulticore::OfflinePool> offlinePool;
+    std::vector<juce::AudioBuffer<float>> offlineTrackBuffers;
+    std::array<bool,maxParallelTracks> offlineAudible{};
+    bool offlineParallelActive=false;
+    std::uint64_t parallelBlocks=0,parallelWorkerJobs=0,parallelFallbacks=0;
+    struct OfflineTrackBatch {
+        AudioEngine* engine;
+        double rate;
+        std::int64_t position;
+        int frames,channels;
+    };
+    static void renderOfflineTrack(void*,int) noexcept;
     std::atomic<int> preparedScratchFrames{0},inputLatencySamples{0},outputLatencySamples{0};
     std::atomic<std::uint64_t> oversizedCallbacks{0},deviceStarts{0},deviceStops{0};
     std::atomic<bool> deviceRunning{false};
