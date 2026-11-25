@@ -2258,6 +2258,8 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
+    // Prevent subnormal DSP tails from consuming disproportionate CPU time.
+    juce::ScopedNoDenormals noDenormals;
     #if defined(LIBERTY_NATIVE_PREVIEW)
     LibertyPluginHost::instance().setNativeTempo(metronomeBpm.load(std::memory_order_relaxed));
     #endif
@@ -2373,7 +2375,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         sampler->processAuditions();
         if (numOutputChannels > 0 && numSamples > 0)
         {
-            juce::AudioBuffer<float> drumBus(juce::jmin(2, numOutputChannels), numSamples);
+            // Retain scratch capacity across callbacks; always clear before rendering.
+            thread_local juce::AudioBuffer<float> drumBus;
+            drumBus.setSize(juce::jmin(2, numOutputChannels), numSamples, false, false, true);
             drumBus.clear();
             sampler->render(drumBus, 0, numSamples);
             for (int ch = 0; ch < drumBus.getNumChannels(); ++ch)
@@ -2606,13 +2610,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         auto& track=*tracks[(size_t)trackIndex];
         if(track.muted.load() || (anyPlaybackSolo&&!track.solo.load()))continue;
         const int insertChannels = juce::jlimit(1, 2, numOutputChannels);
-        juce::AudioBuffer<float> preInsertBaseline(insertChannels, numSamples);
+        // Tracks are processed serially; reuse scratch storage across tracks and blocks.
+        thread_local juce::AudioBuffer<float> preInsertBaseline;
+        preInsertBaseline.setSize(insertChannels, numSamples, false, false, true);
         for (int ch = 0; ch < insertChannels; ++ch)
             if (outputChannelData[ch] != nullptr) preInsertBaseline.copyFrom(ch, 0, outputChannelData[ch], numSamples);
             else preInsertBaseline.clear(ch, 0, numSamples);
         auto processTrackInsertChain = [&]()
         {
-            juce::AudioBuffer<float> trackBus(insertChannels, numSamples);
+            thread_local juce::AudioBuffer<float> trackBus;
+            trackBus.setSize(insertChannels, numSamples, false, false, true);
             for (int ch = 0; ch < insertChannels; ++ch)
             {
                 if (outputChannelData[ch] == nullptr) { trackBus.clear(ch, 0, numSamples); continue; }
@@ -2630,6 +2637,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const float hpAlpha=hp>0.f?std::exp(-6.2831853f*hp/(float)rate):0.f;
             const float lowAlpha=std::exp(-6.2831853f*250.f/(float)rate);
             const float highAlpha=std::exp(-6.2831853f*4000.f/(float)rate);
+            const float release=std::exp(-1.f/(.080f*(float)rate));
             for(int n=0;n<numSamples;++n){
                 float peak=0.f;
                 for(int ch=0;ch<insertChannels;++ch){
@@ -2640,7 +2648,6 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                         v=lo*low+(hiBase-lo)*mid+(v-hiBase)*high;}
                     trackBus.setSample(ch,n,v);peak=juce::jmax(peak,std::abs(v));
                 }
-                const float release=std::exp(-1.f/(.080f*(float)rate));
                 track.channelDynamicsEnvelope=juce::jmax(peak,track.channelDynamicsEnvelope*release);
                 const float levelDb=juce::Decibels::gainToDecibels(juce::jmax(1.e-9f,track.channelDynamicsEnvelope));
                 float gain=1.f;
