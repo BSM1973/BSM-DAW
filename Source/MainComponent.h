@@ -48,6 +48,16 @@ public:
     void mouseUp(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
     void performMainMenuAction(int commandId);
+    // Controller-facing operations must have consistent access in every translation unit.
+    // MSVC encodes access in decorated member function names.
+    void rebuildWaveformCache(int);
+    bool saveProjectToFile(const juce::File&);
+    bool loadProjectFromFile(const juce::File&);
+    void openAudioSettings();
+    int getAudioTrackAtPosition(juce::Point<int>) const;
+    bool isPointInsideAudioClip(int, juce::Point<int>) const;
+    void applyTempoBpm(double value);
+    void openProject();
     void auditionPianoKey(int lane, int pitch, bool on) { audioEngine.sendPianoPreviewMidi(lane, on ? juce::MidiMessage::noteOn(1, pitch, (juce::uint8)100) : juce::MidiMessage::noteOff(1, pitch)); }
     int getSelectedPianoInstrumentLane() const noexcept { return selectedTrack - getAudioTrackCount() - getMidiTrackCount(); }
     void openRecentProject(const juce::File& file, std::function<void()> onOpened);
@@ -1332,7 +1342,7 @@ private:
         double dragStartSeconds = 0.0;
         double dragStartLengthSeconds = 0.0;
     };
-    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>); void openAudioSettings(); void editTempo(); void applyTempoBpm(double value); void editTimeSignature(); void rebuildWaveformCache(int); bool resetDockMixerFaderOnDoubleClick(const juce::MouseEvent&); bool handleMixerMouse(const juce::MouseEvent&); int getAudioTrackAtPosition(juce::Point<int>) const; bool isPointInsideAudioClip(int, juce::Point<int>) const; void showProjectMenu(); void newProject(); void openProject(); void saveProject(); void saveProjectAs(); bool saveProjectToFile(const juce::File&); bool loadProjectFromFile(const juce::File&);  bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
+    void timerCallback() override; void drawTransport(juce::Graphics&, juce::Rectangle<int>); void drawTrackArea(juce::Graphics&, juce::Rectangle<int>); void drawStepSequencerDock(juce::Graphics&, juce::Rectangle<int>); void drawMixer(juce::Graphics&, juce::Rectangle<int>);  void editTempo();  void editTimeSignature();  bool resetDockMixerFaderOnDoubleClick(const juce::MouseEvent&); bool handleMixerMouse(const juce::MouseEvent&);   void showProjectMenu(); void newProject();  void saveProject(); void saveProjectAs();    bool resetProjectState(); void initializeProjectTracking(); juce::String getProjectStateSignature() const; void markProjectClean(); void confirmBeforeProjectAction(std::function<void()> action);
     struct PendingAudioWarpState
     {
         bool enabled = false;
