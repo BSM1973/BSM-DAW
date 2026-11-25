@@ -595,7 +595,45 @@ jobs:
       - name: Run native DSP and browser regressions
         run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke"
       - name: Benchmark real audio callback (Windows)
-        run: ctest --test-dir build-win -C Release -V --output-on-failure -R "^LibertyCpuPerformanceSmoke$"
+        id: cpu-benchmark-win
+        shell: pwsh
+        run: |
+          ctest --test-dir build-win -C Release -V --output-on-failure -R "^LibertyCpuPerformanceSmoke$"
+          $code = $LASTEXITCODE
+          if (Test-Path 'build-win/liberty-cpu-benchmark-trace.txt') {
+            Get-Content 'build-win/liberty-cpu-benchmark-trace.txt'
+          } else { Write-Host 'No benchmark trace: failure may precede test entry.' }
+          exit $code
+      - name: Capture Windows crash stack (diagnostic only)
+        if: failure() && steps.cpu-benchmark-win.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $app = (Resolve-Path 'build-win/BSM_DAW_artefacts/Release/Liberty.exe').Path
+          $symbols = (Resolve-Path 'build-win/symbols').Path
+          $debugger = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\Debuggers\x64\cdb.exe'
+          if (-not (Test-Path $debugger)) {
+            $found = Get-Command cdb.exe -ErrorAction SilentlyContinue
+            if ($found) { $debugger = $found.Source }
+          }
+          if (Test-Path $debugger) {
+            $log = Join-Path (Get-Location) 'build-win\cpu-crash-stack.txt'
+            # Preserve the original failed test; this replay is for stack diagnosis only.
+            & $debugger -logo $log -y "$symbols;$(Split-Path $app)" -c 'sxd av; g; .lastevent; .ecxr; kv; lm; q' $app --cpu-performance-test
+            if (Test-Path $log) { Get-Content $log }
+          } else {
+            Write-Warning 'Windows SDK debugger unavailable; reading application crash events.'
+          }
+          Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddMinutes(-15)} -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Liberty.exe' } | Select-Object -First 5 | Format-List TimeCreated,Id,Message
+      - name: Upload Windows CPU crash evidence
+        if: failure() && steps.cpu-benchmark-win.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Windows-CPU-Crash-Diagnostics
+          path: |
+            build-win/liberty-cpu-benchmark-trace.txt
+            build-win/cpu-crash-stack.txt
+          if-no-files-found: warn
       - name: Verify preview executable
         shell: pwsh
         run: |

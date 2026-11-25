@@ -1845,6 +1845,10 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     // and normal offline renders continue to use spectral crossfading.
     skipSpectralCacheForOfflineTest.store(!allowSpectralCache, std::memory_order_release);
     sampleRate.store(renderSampleRate, std::memory_order_relaxed);
+    // A headless engine never calls initialise(); prepare both MIDI collectors
+    // before driving the real callback, just as the hardware path does.
+    liveMidiCollector.reset(renderSampleRate);
+    pianoPreviewCollector.reset(renderSampleRate);
     bufferSize.store(blockSamples, std::memory_order_relaxed);
     outputChannels.store(destination.getNumChannels(), std::memory_order_relaxed);
     transportSamples.store(0, std::memory_order_relaxed);
