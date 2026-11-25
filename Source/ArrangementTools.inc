@@ -178,7 +178,7 @@ AudioKey crossfadeAt(juce::Point<int> p)const {
 class AudioClipEditPanel final : public juce::Component {
 public:
     AudioClipEditPanel(const AudioClip& initial,
-                       std::function<void(const AudioClip&)> onApply)
+                       std::function<bool(const AudioClip&)> onApply)
        : original(initial),apply(std::move(onApply))
     {
         setSize(560,495);
@@ -224,8 +224,7 @@ public:
         }
         confirm.onClick=[this]{
             const auto current=values();
-            if(apply)apply(current);
-            closeDialog();
+            if(apply&&apply(current))closeDialog();
         };
         cancel.onClick=[this]{closeDialog();};
     }
@@ -313,7 +312,7 @@ private:
             w->exitModalState(0);
     }
     AudioClip original;
-    std::function<void(const AudioClip&)> apply;
+    std::function<bool(const AudioClip&)> apply;
     juce::Slider gain,pitch,fadeIn,fadeOut;
     juce::ToggleButton reverse,muted;
     juce::TextButton confirm,cancel;
@@ -321,25 +320,46 @@ private:
 
 // All editor settings reach the existing audio engine. Never change media,
 // warp markers, clip placement, source offset, or crossfade preferences here.
-bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& proposed){
+bool applyAudioClipEdit(int track,const juce::String& id,const AudioClip& proposed,const AudioClip* opened=nullptr){
     if(track<0||track>=owner.getAudioTrackCount())return false;
     auto clips=owner.audioEngine.getArrangementAudioClips(track);
     auto it=std::find_if(clips.begin(),clips.end(),
                          [&](const AudioClip& c){return c.id==id;});
     if(it==clips.end())return false;
-    if(it->clipGain==proposed.clipGain
-       &&it->pitchSemitones==proposed.pitchSemitones
-       &&it->fadeInSeconds==proposed.fadeInSeconds
-       &&it->fadeOutSeconds==proposed.fadeOutSeconds
-       &&it->reverse==proposed.reverse
-       &&it->muted==proposed.muted)return false;
+    AudioClip merged=proposed;
+    if(opened){
+        // A dialog can remain open while another edit changes the timeline.
+        // Never overwrite changed media, geometry or conflicting parameters.
+        if(it->sourceBuffer!=opened->sourceBuffer||it->sourcePath!=opened->sourcePath||
+           it->sourceSampleRate!=opened->sourceSampleRate||
+           it->startSeconds!=opened->startSeconds||it->lengthSeconds!=opened->lengthSeconds||
+           it->offsetSeconds!=opened->offsetSeconds||it->trimStartFraction!=opened->trimStartFraction||
+           it->trimEndFraction!=opened->trimEndFraction)return false;
+        const auto merge=[](auto original,auto current,auto requested,auto& result){
+            if(requested==original){result=current;return true;}
+            if(current!=original&&current!=requested)return false;
+            result=requested;return true;
+        };
+        if(!merge(opened->clipGain,it->clipGain,proposed.clipGain,merged.clipGain)||
+           !merge(opened->pitchSemitones,it->pitchSemitones,proposed.pitchSemitones,merged.pitchSemitones)||
+           !merge(opened->fadeInSeconds,it->fadeInSeconds,proposed.fadeInSeconds,merged.fadeInSeconds)||
+           !merge(opened->fadeOutSeconds,it->fadeOutSeconds,proposed.fadeOutSeconds,merged.fadeOutSeconds)||
+           !merge(opened->reverse,it->reverse,proposed.reverse,merged.reverse)||
+           !merge(opened->muted,it->muted,proposed.muted,merged.muted))return false;
+    }
+    if(it->clipGain==merged.clipGain
+       &&it->pitchSemitones==merged.pitchSemitones
+       &&it->fadeInSeconds==merged.fadeInSeconds
+       &&it->fadeOutSeconds==merged.fadeOutSeconds
+       &&it->reverse==merged.reverse
+       &&it->muted==merged.muted)return false;
     auto edited=*it;
-    edited.clipGain=proposed.clipGain;
-    edited.pitchSemitones=proposed.pitchSemitones;
-    edited.fadeInSeconds=proposed.fadeInSeconds;
-    edited.fadeOutSeconds=proposed.fadeOutSeconds;
-    edited.reverse=proposed.reverse;
-    edited.muted=proposed.muted;
+    edited.clipGain=merged.clipGain;
+    edited.pitchSemitones=merged.pitchSemitones;
+    edited.fadeInSeconds=merged.fadeInSeconds;
+    edited.fadeOutSeconds=merged.fadeOutSeconds;
+    edited.reverse=merged.reverse;
+    edited.muted=merged.muted;
     if(!AudioEngine::validAudioClip(edited)
        ||edited.fadeInSeconds>edited.lengthSeconds
        ||edited.fadeOutSeconds>edited.lengthSeconds)return false;
@@ -364,8 +384,17 @@ bool showAudioClipEditor(juce::Point<int> p){
         [&](const AudioClip& c){return c.id==id;});
     if(it==clips.end())return false;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
-    auto* panel=new AudioClipEditPanel(*it,[safe,track,id](const AudioClip& values){
-        if(safe)safe->applyAudioClipEdit(track,id,values);
+    auto* panel=new AudioClipEditPanel(*it,[safe,track,id,opened=*it](const AudioClip& values){
+        if(!safe)return false;
+        if(safe->applyAudioClipEdit(track,id,values,&opened))return true;
+        // No-op closes normally, but a conflicting edit requires reopening.
+        if(values.clipGain==opened.clipGain&&values.pitchSemitones==opened.pitchSemitones&&
+           values.fadeInSeconds==opened.fadeInSeconds&&values.fadeOutSeconds==opened.fadeOutSeconds&&
+           values.reverse==opened.reverse&&values.muted==opened.muted)return true;
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+            juce::String::fromUTF8("Édition du clip audio"),
+            juce::String::fromUTF8("Le clip a changé ou les réglages sont invalides. Annulez puis rouvrez son éditeur."));
+        return false;
     });
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle=juce::String::fromUTF8("LIBERTY - ÉDITION AUDIO");
@@ -749,7 +778,7 @@ bool runArrangementTests(){
         int audioApplyCallbacks=0;
         AudioClip proposedAudio=c;
         AudioClipEditPanel cancelledAudio(c,[&](const AudioClip& v){
-            ++audioApplyCallbacks;proposedAudio=v;
+            ++audioApplyCallbacks;proposedAudio=v;return true;
         });
         require(cancelledAudio.getWidth()==560&&cancelledAudio.getHeight()==495
             &&cancelledAudio.controlsWithinBoundsForTest()
@@ -759,7 +788,7 @@ bool runArrangementTests(){
             &&audioApplyCallbacks==0,
             "audio editor blue JUCE window has accessible controls and cancel is inert");
         AudioClipEditPanel audioEditor(c,[&](const AudioClip& v){
-            ++audioApplyCallbacks;proposedAudio=v;
+            ++audioApplyCallbacks;proposedAudio=v;return true;
         });
         audioEditor.setValuesForTest(45,-7,.125,.205,false,true);
         const auto preparedAudio=audioEditor.values();
@@ -841,6 +870,22 @@ bool runArrangementTests(){
         require(owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==c.clipGain
             &&owner.audioEngine.getArrangementAudioClips(0)[0].sourceBuffer==source,
             "invalid audio edits never damage the original buffer");
+        clearArrangementHistory();
+        // Independent changes made while the editor is open must survive.
+        auto concurrent=c;concurrent.muted=true;
+        require(applyAudioClipEdit(0,c.id,concurrent),"concurrent mute");
+        auto requested=c;requested.clipGain=.5f;
+        require(applyAudioClipEdit(0,c.id,requested,&c),"merge independent editor change");
+        auto merged=owner.audioEngine.getArrangementAudioClips(0);
+        require(merged[0].muted&&merged[0].clipGain==.5f&&merged[0].sourceBuffer==source,
+            "stale editor preserves independent changes and source");
+        auto conflict=c;conflict.clipGain=.2f;
+        require(!applyAudioClipEdit(0,c.id,conflict,&c),"reject conflicting gain edit");
+        require(owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==.5f,
+            "conflict does not overwrite current gain");
+        require(undoArrangement(false)&&undoArrangement(false),"undo merged and concurrent edits");
+        require(owner.audioEngine.getArrangementAudioClips(0)[0].clipGain==c.clipGain&&
+            !owner.audioEngine.getArrangementAudioClips(0)[0].muted,"restore original after merge test");
         clearArrangementHistory();
 
         const double px=getLibertyTimelinePixelsPerSecond();
