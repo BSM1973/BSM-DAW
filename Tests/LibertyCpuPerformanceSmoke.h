@@ -28,7 +28,7 @@ inline bool runLibertyCpuPerformanceSmoke()
         trace << "fixture published" << std::endl;
         std::printf("rate,frames,blocks,average_percent,peak_percent,deadline_overruns,track0_percent,uninstrumented_wall_ms,instrumented_wall_ms,max_difference\n");
         for(const double rate:{44100.0,48000.0,96000.0,192000.0})
-            for(const int frames:{32,128,512,1024}){
+            for(const int frames:{32,64,128,512,1024}){
                 std::fprintf(stderr,"CPU benchmark: %.0f Hz / %d frames\n",rate,frames);
                 std::fflush(stderr);
                 trace << rate << " Hz / " << frames << " frames: begin" << std::endl;
@@ -36,6 +36,7 @@ inline bool runLibertyCpuPerformanceSmoke()
                 juce::AudioBuffer<float> reference(2,count),measured(2,count);
                 engine.setCpuProfiling(false);engine.resetCpuPerformanceWhileStopped();
                 if(!engine.renderOfflineForTesting(reference,rate,frames,false))throw std::runtime_error("warmup");
+                if(engine.getPreparedScratchFrames()<frames||engine.getOversizedCallbackCount()!=0||engine.isAudioDeviceRunning())throw std::runtime_error("scratch or device state");
                 trace << "warmup passed" << std::endl;
                 auto start=LibertyCpu::Clock::now();
                 if(!engine.renderOfflineForTesting(reference,rate,frames,false))throw std::runtime_error("reference");
@@ -61,6 +62,31 @@ inline bool runLibertyCpuPerformanceSmoke()
                 trace << "scenario passed" << std::endl;
                 std::printf("%.0f,%d,%llu,%.4f,%.4f,%llu,%.4f,%.4f,%.4f,%.9f\n",rate,frames,(unsigned long long)total.blocks,total.averagePercent(),total.peakPercent(),(unsigned long long)total.overruns,track.averagePercent(),refMs,measuredMs,diff);
             }
+        // Four independent audio lanes, two rates, two low-latency block sizes.
+        for(int lane=1;lane<4;++lane){
+            auto next=clip;next.id=juce::String("cpu-lane-")+juce::String(lane);
+            if(!engine.replaceAudioClips(lane,{next}))throw std::runtime_error("multitrack fixture");
+        }
+        for(const double rate:{44100.0,48000.0}){
+            const int count=static_cast<int>(rate/2.0);
+            juce::AudioBuffer<float> ref(2,count),out(2,count);
+            if(!engine.renderOfflineForTesting(ref,rate,512,false))throw std::runtime_error("multitrack reference");
+            for(const int frames:{32,64}){
+                engine.resetCpuPerformanceWhileStopped();
+                if(!engine.renderOfflineForTesting(out,rate,frames,false))throw std::runtime_error("multitrack low latency");
+                float diff=0;
+                for(int ch=0;ch<2;++ch)for(int i=0;i<count;++i){
+                    const float x=out.getSample(ch,i),y=ref.getSample(ch,i);
+                    if(!std::isfinite(x)||!std::isfinite(y))throw std::runtime_error("multitrack nonfinite");
+                    diff=(std::max)(diff,std::abs(x-y));
+                }
+                if(diff>0.00002f||out.getMagnitude(0,count)<.01f||engine.getOversizedCallbackCount()!=0)
+                    throw std::runtime_error("multitrack parity");
+                const auto stats=engine.getCpuPerformance();
+                trace << "low_latency_4_tracks," << rate << ',' << frames << ',' << stats.averagePercent()
+                      << ',' << stats.peakPercent() << ',' << stats.overruns << ',' << diff << std::endl;
+            }
+        }
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

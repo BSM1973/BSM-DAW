@@ -90,6 +90,14 @@ public:
     juce::String getDeviceName() const;
     double getSampleRate() const noexcept { return sampleRate.load(std::memory_order_relaxed); }
     int getBufferSize() const noexcept { return bufferSize.load(std::memory_order_relaxed); }
+    // Driver-reported latency, not a physical loopback measurement.
+    bool isAudioDeviceRunning() const noexcept { return deviceRunning.load(std::memory_order_acquire); }
+    int getInputLatencySamples() const noexcept { return inputLatencySamples.load(std::memory_order_relaxed); }
+    int getOutputLatencySamples() const noexcept { return outputLatencySamples.load(std::memory_order_relaxed); }
+    std::uint64_t getDeviceStartCount() const noexcept { return deviceStarts.load(std::memory_order_relaxed); }
+    std::uint64_t getDeviceStopCount() const noexcept { return deviceStops.load(std::memory_order_relaxed); }
+    int getPreparedScratchFrames() const noexcept { return preparedScratchFrames.load(std::memory_order_relaxed); }
+    std::uint64_t getOversizedCallbackCount() const noexcept { return oversizedCallbacks.load(std::memory_order_relaxed); }
     int getOutputChannels() const noexcept { return outputChannels.load(std::memory_order_relaxed); }
     juce::String getLastError() const;
 
@@ -649,6 +657,17 @@ private:
     std::array<MixerBusState,maxMixerBuses> mixerBuses{};
     std::atomic<bool> cpuProfiling{true},cpuTrackProfiling{false};
     LibertyCpu::Meter cpuTotal;
+    struct CallbackScratch
+    {
+        std::array<juce::AudioBuffer<float>,maxMixerBuses> buses;
+        juce::AudioBuffer<float> drum, instrument, panic, baseline, track;
+        juce::MidiBuffer live, piano, notes, panicNotes;
+        void prepare(int frames);
+    } callbackScratch;
+    void prepareCallbackScratch(int frames);
+    std::atomic<int> preparedScratchFrames{0},inputLatencySamples{0},outputLatencySamples{0};
+    std::atomic<std::uint64_t> oversizedCallbacks{0},deviceStarts{0},deviceStops{0};
+    std::atomic<bool> deviceRunning{false};
     std::array<LibertyCpu::Meter,cpuProfileTrackCapacity> cpuAudio{},cpuInstrument{};
     LibertyImmersive::Tap masterAnalysis;
     std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
