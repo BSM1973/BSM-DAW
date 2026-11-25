@@ -560,3 +560,30 @@ jobs:
             dist-fast/Liberty-macOS-arm64.dmg.sha256
           if-no-files-found: error
           retention-days: 14
+
+  windows-native-validation:
+    name: Browser PRO Windows x64 native validation
+    if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify UTF-8 source text
+        run: python Tests/FrenchTextRegression.py
+      - name: Configure MSVC x64 native preview
+        run: cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DLIBERTY_NATIVE_PREVIEW=ON
+      - name: Compile application and regression executables
+        run: cmake --build build-win --config Release --parallel 2
+      - name: Run native DSP and browser regressions
+        run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke"
+      - name: Verify preview executable
+        shell: pwsh
+        run: |
+          $app = Get-Item 'build-win/BSM_DAW_artefacts/Release/Liberty.exe' -ErrorAction Stop
+          if ($app.Length -le 0) { throw 'Empty executable' }
+      - name: Upload Windows x64 development preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Native-FreeSpirit-Preview-windows-x64-ZIP
+          path: build-win/BSM_DAW_artefacts/Release/
+          if-no-files-found: error
