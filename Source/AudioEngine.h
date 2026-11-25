@@ -2,6 +2,7 @@
 #include "MixConsoleMeter.h"
 #include "LibertyImmersiveAnalysis.h"
 #include "MixerBusRouting.h"
+#include "LibertyCpuMeter.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -67,6 +68,13 @@ public:
         return spectralRemoveLockAcquisitionNs.load(std::memory_order_relaxed);
     }
 
+    // Wall time relative to block deadline, not operating-system CPU or hardware xruns.
+    static constexpr int cpuProfileTrackCapacity=128;
+    void setCpuProfiling(bool enabled,bool perTrack=false) noexcept {cpuProfiling.store(enabled,std::memory_order_relaxed);cpuTrackProfiling.store(perTrack,std::memory_order_relaxed);}
+    LibertyCpu::Snapshot getCpuPerformance() const noexcept {return cpuTotal.snapshot();}
+    LibertyCpu::Snapshot getTrackCpuPerformance(int index,bool instrument) const noexcept {return index>=0&&index<cpuProfileTrackCapacity?(instrument?cpuInstrument:cpuAudio)[(size_t)index].snapshot():LibertyCpu::Snapshot{};}
+    // Only on a quiescent engine (no hardware callback).
+    void resetCpuPerformanceWhileStopped() noexcept {cpuTotal.reset();for(auto& x:cpuAudio)x.reset();for(auto& x:cpuInstrument)x.reset();}
     bool isInitialised() const noexcept { return initialised.load(std::memory_order_relaxed); }
     // Select a physical MIDI input independently of the audio output device.
     void selectMidiInput(const juce::String& identifier);
@@ -639,6 +647,9 @@ private:
     };
     std::atomic<int> mixerBusCount{0};
     std::array<MixerBusState,maxMixerBuses> mixerBuses{};
+    std::atomic<bool> cpuProfiling{true},cpuTrackProfiling{false};
+    LibertyCpu::Meter cpuTotal;
+    std::array<LibertyCpu::Meter,cpuProfileTrackCapacity> cpuAudio{},cpuInstrument{};
     LibertyImmersive::Tap masterAnalysis;
     std::atomic<float> masterMeterPeak { 0.0f }; // post-master left
     std::atomic<float> masterMeterPeakRight { 0.0f }; // post-master right

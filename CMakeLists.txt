@@ -260,6 +260,8 @@ endif()
 add_test(NAME DockMixerDbScaleSmoke COMMAND LibertyDockMixerDbScaleSmoke)
 
 add_test(NAME AudioClipPlaybackSmoke COMMAND BSM_DAW --audio-clip-playback-test)
+add_test(NAME LibertyCpuPerformanceSmoke COMMAND BSM_DAW --cpu-performance-test)
+set_tests_properties(LibertyCpuPerformanceSmoke PROPERTIES TIMEOUT 120)
 
 add_test(NAME ArrangementToolsSmoke COMMAND BSM_DAW --arrangement-tools-test)
 set_tests_properties(ArrangementToolsSmoke PROPERTIES TIMEOUT 60)

@@ -2259,6 +2259,10 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
     // Prevent subnormal DSP tails from consuming disproportionate CPU time.
+    const auto cpuBudget=LibertyCpu::budgetFor(sampleRate.load(std::memory_order_relaxed),numSamples);
+    const bool measureCpu=cpuProfiling.load(std::memory_order_relaxed);
+    const bool measureTracks=measureCpu&&cpuTrackProfiling.load(std::memory_order_relaxed);
+    LibertyCpu::Scope callbackCpu(measureCpu?&cpuTotal:nullptr,cpuBudget);
     juce::ScopedNoDenormals noDenormals;
     #if defined(LIBERTY_NATIVE_PREVIEW)
     LibertyPluginHost::instance().setNativeTempo(metronomeBpm.load(std::memory_order_relaxed));
@@ -2416,7 +2420,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto snapshot = std::atomic_load(&state.noteSnapshot);
             const double cycle = state.clipLengthSeconds.load(std::memory_order_relaxed);
             const auto position = stepPreviewSamples.load(std::memory_order_relaxed);
-            juce::MidiBuffer midi;
+            thread_local juce::MidiBuffer midi;
+            midi.clear();
             if (panic)
                 for (int channel = 1; channel <= 16; ++channel)
                 {
@@ -2463,7 +2468,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                                           juce::jlimit(0, numSamples - 1, (int) std::llround((end - blockStart) * rate)));
                     }
                 }
-                juce::AudioBuffer<float> bus;
+                thread_local juce::AudioBuffer<float> bus;
                 bool rendered = false;
                 if (nativeDrums != nullptr)
                 {
@@ -2507,9 +2512,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         return;
     }
 
-    juce::MidiBuffer liveMidi;
+    thread_local juce::MidiBuffer liveMidi;
+    liveMidi.clear();
     liveMidiCollector.removeNextBlockOfMessages(liveMidi, numSamples);
-    juce::MidiBuffer pianoPreviewMidi;
+    thread_local juce::MidiBuffer pianoPreviewMidi;
+    pianoPreviewMidi.clear();
     pianoPreviewCollector.removeNextBlockOfMessages(pianoPreviewMidi, numSamples);
     const int pianoPreviewLane = pianoPreviewTrack.load(std::memory_order_acquire);
     const int liveTrack = monitoredInstrumentTrack.load(std::memory_order_acquire);
@@ -2522,13 +2529,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             for (int instrumentTrack = 0; instrumentTrack < (int) instrumentPlayback.size(); ++instrumentTrack)
             {
                 if (!pluginHost.hasInstrumentForTrack(instrumentTrack)) continue;
-                juce::MidiBuffer panicMidi;
+                thread_local juce::MidiBuffer panicMidi;
+                panicMidi.clear();
                 for (int channel = 1; channel <= 16; ++channel)
                 {
                     panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
                     panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
                 }
-                juce::AudioBuffer<float> panicBuffer;
+                thread_local juce::AudioBuffer<float> panicBuffer;
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
         }
@@ -2537,17 +2545,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         auto& host = LibertyPluginHost::instance();
         for(int instrumentTrack=0;instrumentTrack<(int)instrumentPlayback.size();++instrumentTrack)
         {
+            LibertyCpu::Scope trackCpu(measureTracks&&instrumentTrack<cpuProfileTrackCapacity?&cpuInstrument[(size_t)instrumentTrack]:nullptr,cpuBudget);
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
             const auto nativeDrums=instrumentTrack==drumSamplerTrack.load(std::memory_order_acquire)
                 ?std::atomic_load(&drumSampler):std::shared_ptr<LibertyDrumSampler>{};
             if(state.muted.load(std::memory_order_relaxed)
                 || (!host.hasInstrumentForTrack(instrumentTrack) && nativeDrums==nullptr))
                 continue;
-            juce::MidiBuffer midi;
+            thread_local juce::MidiBuffer midi;
+            midi.clear();
             if(instrumentTrack==liveTrack)midi.addEvents(liveMidi,0,numSamples,0);
             if(instrumentTrack==pianoPreviewLane)midi.addEvents(pianoPreviewMidi,0,numSamples,0);
             appendLibertyPerformMidi(this,instrumentTrack,midi,numSamples);
-            juce::AudioBuffer<float> bus;
+            thread_local juce::AudioBuffer<float> bus;
             bool rendered=false;
             if(nativeDrums!=nullptr)
             {
@@ -2607,6 +2617,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     const bool resumeInstruments = instrumentResumePending.exchange(false, std::memory_order_acq_rel);
 
     for(int trackIndex=0;trackIndex<(int)tracks.size();++trackIndex){
+        LibertyCpu::Scope trackCpu(measureTracks&&trackIndex<cpuProfileTrackCapacity?&cpuAudio[(size_t)trackIndex]:nullptr,cpuBudget);
         auto& track=*tracks[(size_t)trackIndex];
         if(track.muted.load() || (anyPlaybackSolo&&!track.solo.load()))continue;
         const int insertChannels = juce::jlimit(1, 2, numOutputChannels);
@@ -2685,6 +2696,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     {
         for (int instrumentTrack=0; instrumentTrack<(int)instrumentPlayback.size(); ++instrumentTrack)
         {
+            LibertyCpu::Scope trackCpu(measureTracks&&instrumentTrack<cpuProfileTrackCapacity?&cpuInstrument[(size_t)instrumentTrack]:nullptr,cpuBudget);
             auto& state=*instrumentPlayback[(size_t)instrumentTrack];
             const bool trackMuted = midiLaneMuted || state.muted.load(std::memory_order_relaxed);
             const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
@@ -2695,13 +2707,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 nativeDrums->reset();
             if (panicInstruments && nativeDrums == nullptr && hasInstrument)
             {
-                juce::MidiBuffer panicMidi;
+                thread_local juce::MidiBuffer panicMidi;
+                panicMidi.clear();
                 for (int channel = 1; channel <= 16; ++channel)
                 {
                     panicMidi.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
                     panicMidi.addEvent(juce::MidiMessage::allSoundOff(channel), 0);
                 }
-                juce::AudioBuffer<float> panicBuffer;
+                thread_local juce::AudioBuffer<float> panicBuffer;
                 pluginHost.renderInstrumentForTrack(instrumentTrack, panicBuffer, numSamples, panicMidi, 0.0f, 0.0f);
             }
             if (trackMuted || (anyPlaybackSolo && !trackSolo)) continue;
@@ -2720,7 +2733,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             // queued pad auditions even in blocks with no scheduled MIDI notes.
             // Process even without arrangement notes: plugin GUI keyboards and release tails need audio callbacks.
 
-            juce::MidiBuffer midi;
+            thread_local juce::MidiBuffer midi;
+            midi.clear();
             if (instrumentTrack == liveTrack)
                 midi.addEvents(liveMidi, 0, numSamples, 0);
             if (instrumentTrack == pianoPreviewLane)
@@ -2784,7 +2798,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                     midi.addEvent(message, juce::jlimit(0, numSamples - 1,
                         (int)std::llround((absoluteSeconds - blockStart) * rate)));
                 }
-            juce::AudioBuffer<float> instrumentBus;
+            thread_local juce::AudioBuffer<float> instrumentBus;
             bool instrumentRendered = false;
             if (nativeDrums != nullptr)
             {

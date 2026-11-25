@@ -27,6 +27,11 @@ jobs:
           /tmp/liberty-editions-catalog
           grep -F 'Liberty ${LIBERTY_DAW_EDITION} is not releasable yet' CMakeLists.txt
 
+      - name: CPU meter arithmetic regression
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyCpuMeterSmoke.cpp -o /tmp/liberty-cpu-meter
+          /tmp/liberty-cpu-meter
+
       - name: Sample Lab analysis regression
         run: |
           c++ -O2 -std=c++17 -Wall -Wextra -Werror -I Source Tests/LibertySampleAnalysisSmoke.cpp -o /tmp/liberty-sample-lab
@@ -342,6 +347,264 @@ jobs:
             fi
           done
 
+      - name: Benchmark real audio callback (macOS)
+        run: ctest --test-dir build-fast -V --output-on-failure -R '^LibertyCpuPerformanceSmoke
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test
+
+      - name: Test arrangement clip edits and fade Undo/Redo
+        run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --arrangement-tools-test
+
+      - name: Run Drum Sampler regression tests
+        run: ctest --test-dir build-fast --output-on-failure -R 'DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke'
+
+      - name: Test real Step Sequencer project XML roundtrip (3 fresh launches)
+        shell: bash
+        run: |
+          app="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for attempt in 1 2 3; do
+            echo "Step Sequencer project roundtrip launch ${attempt}/3"
+            if "$app" --step-sequencer-phase5-test; then
+              continue
+            else
+              code=$?
+              echo "::error::Step Sequencer roundtrip failed on launch ${attempt}, exit ${code}"
+              mkdir -p build-fast/riche-fixtures
+              # Preserve the failure and collect a native backtrace on a fresh launch.
+              lldb --batch -o run -o "thread backtrace all" -- "$app" --step-sequencer-phase5-test > build-fast/riche-fixtures/step-sequencer-crash.txt 2>&1 || true
+              exit "$code"
+            fi
+          done
+
+      - name: Measure spectral track edit latency (5 fresh launches)
+        run: |
+          python3 Tests/GenerateRicheFixtures.py build-fast/riche-fixtures
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import re
+          import subprocess
+          import sys
+
+          app = "build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          sample = "build-fast/riche-fixtures/guitar.wav"
+          pattern = re.compile(
+              r"SPECTRAL_TRACK_LATENCY add_p95_ms=([0-9.]+) "
+              r"add_max_ms=([0-9.]+) remove_p95_ms=([0-9.]+) "
+              r"remove_max_ms=([0-9.]+) operations=120 fft_starts=([0-9]+) "
+              r"add_lock_max_ms=([0-9.]+) remove_lock_max_ms=([0-9.]+)")
+          records = []
+          for attempt in range(1, 6):
+              print(f"Spectral track latency test {attempt}/5", flush=True)
+              try:
+                  result = subprocess.run(
+                      [app, "--spectral-track-lifetime-test", sample],
+                      timeout=90, check=False, capture_output=True, text=True)
+              except subprocess.TimeoutExpired:
+                  print(f"::error::Spectral lifetime test timed out on launch {attempt}", flush=True)
+                  sys.exit(124)
+              if result.returncode != 0:
+                  print(result.stdout, result.stderr, flush=True)
+                  print(f"::error::Spectral lifetime test failed on launch {attempt}: "
+                        f"exit={result.returncode}", flush=True)
+                  sys.exit(1)
+              match = pattern.search(result.stdout)
+              if match is None:
+                  print(result.stdout, result.stderr, flush=True)
+                  print(f"::error::Missing spectral latency metrics on launch {attempt}", flush=True)
+                  sys.exit(1)
+              fft_starts = int(match[5])
+              # Four persistent spectral tracks are invalidated together
+              # during editing; all must resume spectral rendering.
+              if fft_starts < 4:
+                  print(f"::error::Insufficient multi-track FFT activity on launch {attempt}: "
+                        f"{fft_starts} starts, expected at least 4", flush=True)
+                  sys.exit(1)
+              record = dict(attempt=attempt,
+                            add_p95_ms=float(match[1]), add_max_ms=float(match[2]),
+                            remove_p95_ms=float(match[3]), remove_max_ms=float(match[4]),
+                            fft_starts=fft_starts,
+                            add_lock_max_ms=float(match[6]),
+                            remove_lock_max_ms=float(match[7]))
+              records.append(record)
+              print("  " + json.dumps(record), flush=True)
+          output = Path("build-fast/riche-fixtures/spectral-track-latency.json")
+          output.write_text(json.dumps(records, indent=2) + "\n")
+          print(f"Spectral 5/5 passed; worst add={max(r['add_max_ms'] for r in records):.3f} ms; "
+                f"worst remove={max(r['remove_max_ms'] for r in records):.3f} ms", flush=True)
+          PY
+
+      - name: Render and measure real Riche engine fixtures
+        run: |
+          python3 Tests/GenerateRicheFixtures.py build-fast/riche-fixtures
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty"
+          for kind in drums voice guitar; do
+            for ratio in 0.75 1.5; do
+              for block in 64 256 1024; do
+                input="build-fast/riche-fixtures/${kind}.wav"
+                output="build-fast/riche-fixtures/${kind}-${ratio}-${block}.wav"
+                echo "RICHE case: kind=$kind ratio=$ratio block=$block"
+                # Keep the diagnostic bounded: a crashed audio renderer must not
+                # trigger an unbounded LLDB replay on a hosted macOS runner.
+                # Python propagates the signal as a non-zero exit status.
+                if python3 - "$APP" "$input" "$output" "$ratio" "$block" <<'PY'
+          import subprocess
+          import sys
+          app, source, destination, ratio, block = sys.argv[1:]
+          try:
+              result = subprocess.run(
+                  [app, "--render-riche-test", source, destination, ratio, block],
+                  timeout=60, check=False)
+          except subprocess.TimeoutExpired:
+              print(f"::error::RICHE renderer timed out: ratio={ratio} block={block}", flush=True)
+              sys.exit(124)
+          if result.returncode != 0:
+              print(f"::error::RICHE renderer failed: ratio={ratio} block={block} exit={result.returncode}", flush=True)
+              sys.exit(1)
+          PY
+                then
+                  echo "RICHE render OK: $kind $ratio $block"
+                else
+                  echo "::error::RICHE failed: kind=$kind ratio=$ratio block=$block"
+                  exit 1
+                fi
+                python3 Tests/RicheAudioValidation.py --reference "$input" --render "$output" --ratio "$ratio" --boundary "$block" --json "build-fast/riche-fixtures/${kind}-${ratio}-${block}.json" > /dev/null
+              done
+            done
+          done
+
+      - name: Stress-test RICHE guitar short blocks in fresh processes (12 launches)
+        run: |
+          # Exercise the exact intermittent SIGSEGV scenario using fresh
+          # application processes. Every run must pass; never retry failures.
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          app = Path("build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty")
+          source = Path("build-fast/riche-fixtures/guitar.wav")
+          output_dir = Path("build-fast/riche-fixtures/stress")
+          output_dir.mkdir(parents=True, exist_ok=True)
+          if not app.is_file() or not source.is_file():
+              print("::error::RICHE stress setup missing binary or guitar fixture", flush=True)
+              sys.exit(1)
+          for attempt in range(1, 13):
+              output = output_dir / f"guitar-075-64-{attempt:02d}.wav"
+              print(f"RICHE fresh-process guitar 0.75 / 64: launch {attempt}/12", flush=True)
+              try:
+                  result = subprocess.run(
+                      [str(app), "--render-riche-test", str(source),
+                       str(output), "0.75", "64"],
+                      timeout=60, check=False)
+              except subprocess.TimeoutExpired:
+                  print(f"::error::RICHE guitar stress timed out on launch {attempt}", flush=True)
+                  sys.exit(124)
+              if result.returncode != 0 or not output.is_file() or output.stat().st_size < 44:
+                  print(f"::error::RICHE guitar stress failed on launch {attempt}: "
+                        f"exit={result.returncode}", flush=True)
+                  sys.exit(1)
+          print("RICHE guitar short-block stress: 12/12 launches passed", flush=True)
+          PY
+
+      - name: Archive Riche WAV diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Riche-Audio-Diagnostics
+          path: |
+            build-fast/riche-fixtures/*.json
+            build-fast/riche-fixtures/*.wav
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Verify application bundle
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          test -d "$APP"
+          test -f "$APP/Contents/MacOS/Liberty"
+          file "$APP/Contents/MacOS/Liberty"
+
+      - name: Sign application for local macOS execution
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          xattr -cr "$APP"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package fast diagnostic app
+        run: |
+          APP="build-fast/BSM_DAW_artefacts/Release/Liberty.app"
+          rm -rf dist-fast
+          mkdir -p dist-fast
+          if [[ "$GITHUB_REF" == "refs/heads/feature/liberty-daw-three-editions" ]]; then
+            PREVIEW_APP="$(dirname "$APP")/Liberty Native Preview.app"
+            mv "$APP" "$PREVIEW_APP"
+            APP="$PREVIEW_APP"
+            echo "Internal FreeSpirit preview; not Base, Standard or Ultimate retail." > dist-fast/PREVIEW-STATUS.txt
+          fi
+          echo "LIBERTY_PACKAGE_APP=$APP" >> "$GITHUB_ENV"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "dist-fast/Liberty-macOS-arm64-Diagnostic.zip"
+
+      - name: Upload diagnostic app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref == 'refs/heads/feature/liberty-daw-three-editions' && 'Liberty-Native-FreeSpirit-Preview-arm64-ZIP' || 'Liberty-macOS-arm64-Diagnostic' }}
+          path: |
+            dist-fast/Liberty-macOS-arm64-Diagnostic.zip
+            dist-fast/PREVIEW-STATUS.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Package and verify Liberty DMG installer
+        run: |
+          bash Scripts/create-macos-dmg.sh \
+            "$LIBERTY_PACKAGE_APP" \
+            "dist-fast/Liberty-macOS-arm64.dmg"
+
+      - name: Generate and verify Liberty DMG SHA-256 checksum
+        run: |
+          cd dist-fast
+          shasum -a 256 Liberty-macOS-arm64.dmg > Liberty-macOS-arm64.dmg.sha256
+          shasum -a 256 -c Liberty-macOS-arm64.dmg.sha256
+
+      - name: Upload Liberty DMG installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref == 'refs/heads/feature/liberty-daw-three-editions' && 'Liberty-Native-FreeSpirit-Preview-arm64-DMG' || 'Liberty-macOS-arm64-DMG' }}
+          path: |
+            dist-fast/Liberty-macOS-arm64.dmg
+            dist-fast/Liberty-macOS-arm64.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-native-validation:
+    name: Browser PRO Windows x64 native validation
+    if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify UTF-8 source text
+        run: python Tests/FrenchTextRegression.py
+      - name: Configure MSVC x64 native preview
+        run: cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DLIBERTY_NATIVE_PREVIEW=ON
+      - name: Compile application and regression executables
+        run: cmake --build build-win --config Release --parallel 2
+      - name: Run native DSP and browser regressions
+        run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke"
+      - name: Verify preview executable
+        shell: pwsh
+        run: |
+          $app = Get-Item 'build-win/BSM_DAW_artefacts/Release/Liberty.exe' -ErrorAction Stop
+          if ($app.Length -le 0) { throw 'Empty executable' }
+      - name: Upload Windows x64 development preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Native-FreeSpirit-Preview-windows-x64-ZIP
+          path: build-win/BSM_DAW_artefacts/Release/
+          if-no-files-found: error
+
+
       - name: Test CANAL settings, neutral project reset and project XML roundtrip
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test
 
@@ -586,6 +849,8 @@ jobs:
         run: cmake --build build-win --config Release --parallel 2
       - name: Run native DSP and browser regressions
         run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke"
+      - name: Benchmark real audio callback (Windows)
+        run: ctest --test-dir build-win -C Release -V --output-on-failure -R "^LibertyCpuPerformanceSmoke$"
       - name: Verify preview executable
         shell: pwsh
         run: |
