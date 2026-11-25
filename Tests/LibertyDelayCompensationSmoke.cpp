@@ -1,8 +1,31 @@
 #include "LibertyDelayCompensation.h"
 #include <array>
 #include <cassert>
+#include <thread>
 using namespace LibertyPdc;
 int main(){
+    PlanMailbox mailbox;
+    PlanMessage m;
+    for(unsigned i=1;i<=3;++i){m.generation=i;assert(mailbox.publish(m));}
+    assert(!mailbox.publish(m));
+    for(unsigned i=1;i<=3;++i){assert(mailbox.consume(m));assert(m.generation==i);}
+    assert(!mailbox.consume(m));
+    // Concurrent producer/consumer, verify complete coherent payloads.
+    constexpr unsigned count=20000;
+    std::thread producer([&]{
+        PlanMessage p;
+        for(unsigned i=1;i<=count;++i){
+            p.generation=i;p.plan.latency=static_cast<int>(i);
+            p.plan.compensation[255]=static_cast<int>(i*2);
+            while(!mailbox.publish(p))std::this_thread::yield();
+        }
+    });
+    for(unsigned i=1;i<=count;++i){
+        while(!mailbox.consume(m))std::this_thread::yield();
+        assert(m.generation==i&&m.plan.latency==static_cast<int>(i)&&m.plan.compensation[255]==static_cast<int>(2*i));
+    }
+    producer.join();assert(!mailbox.consume(m));
+
     for(int delay:{0,1,31,32,63,128,513}){
         Delay line;line.prepare(delay);
         std::array<float,1024> l{},r{};

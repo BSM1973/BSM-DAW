@@ -44,7 +44,7 @@ jobs:
 
       - name: Verify preallocated PDC delay lines
         run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDelayCompensationSmoke.cpp -o /tmp/liberty-pdc
+          c++ -std=c++17 -pthread -Wall -Wextra -Werror -UNDEBUG -I Source Tests/LibertyDelayCompensationSmoke.cpp -o /tmp/liberty-pdc
           /tmp/liberty-pdc
 
       - name: CPU meter arithmetic regression

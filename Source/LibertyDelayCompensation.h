@@ -5,6 +5,39 @@
 #include <algorithm>
 
 namespace LibertyPdc {
+struct PlanMessage {
+    LibertyRealtime::Plan plan{};
+    int lanes=0,buses=0;
+    bool discontinuity=false;
+    std::uint64_t generation=0;
+};
+// Single producer, single consumer. Both indices wrap in a fixed array.
+// Producer owns only free slots; consumer copies before releasing its slot.
+class PlanMailbox {
+    static constexpr unsigned slots=4;
+    std::array<PlanMessage,slots> queue{};
+    std::atomic<unsigned> write{0},read{0};
+public:
+    static_assert(std::atomic<unsigned>::is_always_lock_free,"PDC mailbox requires lock-free indices");
+    bool publish(const PlanMessage& message) noexcept {
+        const auto w=write.load(std::memory_order_relaxed);
+        const auto next=(w+1)%slots;
+        if(next==read.load(std::memory_order_acquire))return false;
+        queue[w]=message;
+        write.store(next,std::memory_order_release);
+        return true;
+    }
+    bool consume(PlanMessage& message) noexcept {
+        const auto r=read.load(std::memory_order_relaxed);
+        if(r==write.load(std::memory_order_acquire))return false;
+        message=queue[r];
+        read.store((r+1)%slots,std::memory_order_release);
+        return true;
+    }
+    // Only while producer and consumer are both stopped.
+    void reset() noexcept {read.store(0,std::memory_order_relaxed);write.store(0,std::memory_order_relaxed);}
+};
+
 // Fixed stereo ring, prepared/reset outside the audio callback.
 // Zero delay is a true bypass. No allocation or lock in process().
 class Delay {

@@ -1909,7 +1909,7 @@ bool AudioEngine::prepareOfflinePdc(double rate,int channels)
             lanes[tracks.size()+i]={getInstrumentMixerBus((int)i),host.getDeclaredLaneLatency((int)i,true)};
         if(!plan.build(lanes.data(),(int)(tracks.size()+instrumentPlayback.size()),buses))return false;
     }else if(!buildRealtimePlanForTesting(plan))return false;
-    dynamicPdcUpdates=0;
+    dynamicPdcUpdates=0;pdcGeneration=pdcAppliedGeneration=0;pdcPlanRejected=false;pdcMailbox.reset();
     if(dynamicPdcRequested){
         if(!dynamicPdc.prepare(plan,(int)(tracks.size()+instrumentPlayback.size()),getMixerBusCount(),
                                dynamicPdcCapacity,dynamicPdcTransition))return false;
@@ -1919,6 +1919,25 @@ bool AudioEngine::prepareOfflinePdc(double rate,int channels)
     if(!offlinePdc.prepare(plan,(int)(tracks.size()+instrumentPlayback.size()),getMixerBusCount(),(int)(2.0*rate)))return false;
     offlinePdcLatency=plan.latency;offlinePdcActive=true;
     return true;
+}
+
+void AudioEngine::consumeOfflinePdcPlan() noexcept
+{
+    if(!offlinePdcActive||!dynamicPdcRequested)return;
+    LibertyPdc::PlanMessage message;
+    // Bounded queue: process at most three messages per audio block.
+    for(int i=0;i<3&&pdcMailbox.consume(message);++i){
+        bool changed=false;
+        if(message.generation<=pdcAppliedGeneration||
+           message.lanes!=(int)(tracks.size()+instrumentPlayback.size())||
+           message.buses!=getMixerBusCount()||
+           !dynamicPdc.update(message.plan,message.lanes,message.buses,message.discontinuity,changed)){
+            pdcPlanRejected=true;offlinePdcActive=false;return;
+        }
+        pdcAppliedGeneration=message.generation;
+        offlinePdcLatency=message.plan.latency;
+        if(changed)++dynamicPdcUpdates;
+    }
 }
 
 void AudioEngine::compensateOfflineLane(int index,juce::AudioBuffer<float>& b,int frames) noexcept
@@ -2011,14 +2030,15 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
         if(beforeBlock)beforeBlock(*this,offset,hookContext);
         // Experimental control/coordinator polling: outside the real audio callback.
         if(dynamicPdcRequested&&offlinePdcActive){
-            LibertyRealtime::Plan updated;bool changed=false;
+            LibertyPdc::PlanMessage message;
             const auto actual=transportSamples.load(std::memory_order_relaxed);
-            if(!collectPdcPlan(updated)||!dynamicPdc.update(updated,(int)(tracks.size()+instrumentPlayback.size()),
-                getMixerBusCount(),actual!=expectedPosition,changed)){
+            message.lanes=(int)(tracks.size()+instrumentPlayback.size());
+            message.buses=getMixerBusCount();
+            message.discontinuity=actual!=expectedPosition;
+            message.generation=++pdcGeneration;
+            if(!collectPdcPlan(message.plan)||!pdcMailbox.publish(message)){
                 dynamicOk=false;break;
             }
-            if(changed)++dynamicPdcUpdates;
-            offlinePdcLatency=updated.latency;
         }
         const int count = juce::jmin(blockSamples, destination.getNumSamples() - offset);
         float* channels[2] = { nullptr, nullptr };
@@ -2033,6 +2053,7 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
         const auto before=transportSamples.load(std::memory_order_relaxed);
         audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
         expectedPosition=before+count;
+        if(pdcPlanRejected){dynamicOk=false;break;}
         if(usedParallel&&offlineAdaptive){
             const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(LibertyCpu::Clock::now()-started).count();
             offlineCooldown.observe(static_cast<std::uint64_t>(elapsed),LibertyCpu::budgetFor(renderSampleRate,count));
@@ -2447,6 +2468,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData, int numInputChannels, float* const* outputChannelData, int numOutputChannels, int numSamples, const juce::AudioIODeviceCallbackContext&)
 {
+    consumeOfflinePdcPlan();
     if(numSamples>preparedScratchFrames.load(std::memory_order_relaxed))
         oversizedCallbacks.fetch_add(1,std::memory_order_relaxed);
     // Prevent subnormal DSP tails from consuming disproportionate CPU time.

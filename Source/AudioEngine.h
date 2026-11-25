@@ -687,6 +687,10 @@ private:
     void prepareCallbackScratch(int frames);
     LibertyPdc::Bank offlinePdc;
     LibertyPdc::DynamicBank dynamicPdc;
+    LibertyPdc::PlanMailbox pdcMailbox;
+    std::uint64_t pdcGeneration=0,pdcAppliedGeneration=0;
+    bool pdcPlanRejected=false;
+    void consumeOfflinePdcPlan() noexcept;
     bool dynamicPdcRequested=false;
     int dynamicPdcCapacity=0,dynamicPdcTransition=128;
     std::uint64_t dynamicPdcUpdates=0;
