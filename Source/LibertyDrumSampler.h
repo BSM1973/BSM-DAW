@@ -1305,8 +1305,9 @@ public:
         {
             const int padIndex = selectedPad;
             chooser = std::make_unique<juce::FileChooser>("Charger un sample de batterie", juce::File{}, "*.wav;*.aif;*.aiff");
+            const auto safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this);
             chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this), padIndex](const juce::FileChooser& dialog)
+                [safe, padIndex](const juce::FileChooser& dialog)
                 {
                     if (safe == nullptr) return;
                     if (safe->sampler.loadPad(padIndex, dialog.getResult()))
@@ -1335,8 +1336,9 @@ public:
             for (int i = 0; i < (int)palette.size(); ++i)
                 menu.addItem(i + 1, names[i], true,
                     (juce::uint32)sampler.getPad(padIndex).colourArgb.load() == palette[(size_t)i]);
+            const auto safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this);
             menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&colourButton),
-                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this), padIndex, palette](int choice)
+                [safe, padIndex, palette](int choice)
                 {
                     if (safe == nullptr || choice < 1 || choice > (int)palette.size()) return;
                     safe->sampler.setPadColour(padIndex, (int)palette[(size_t)(choice - 1)]);
@@ -1368,10 +1370,11 @@ public:
             kitChooser = std::make_unique<juce::FileChooser>("Exporter le kit Liberty",
                 juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("LibertyDrumKit.xml"),
                 "*.xml");
+            const auto safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this);
             kitChooser->launchAsync(juce::FileBrowserComponent::saveMode
                                        | juce::FileBrowserComponent::canSelectFiles
                                        | juce::FileBrowserComponent::warnAboutOverwriting,
-                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this)](const juce::FileChooser& chooser)
+                [safe](const juce::FileChooser& chooser)
                 {
                     if (safe == nullptr) return;
                     const auto target = chooser.getResult();
@@ -1389,9 +1392,10 @@ public:
         importButton.onClick = [this]
         {
             kitChooser = std::make_unique<juce::FileChooser>("Importer un kit Liberty", juce::File{}, "*.xml");
+            const auto safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this);
             kitChooser->launchAsync(juce::FileBrowserComponent::openMode
                                        | juce::FileBrowserComponent::canSelectFiles,
-                [safe = juce::Component::SafePointer<LibertyDrumSamplerPanel>(this)](const juce::FileChooser& chooser)
+                [safe](const juce::FileChooser& chooser)
                 {
                     if (safe == nullptr) return;
                     const auto target = chooser.getResult();

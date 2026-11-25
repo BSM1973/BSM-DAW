@@ -15,8 +15,3 @@
 #include <sstream>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "AudioEngine.h"
-#include "MidiEngine.h"
-#include "StepSequencer.h"
-#include "NoOverlapLayout.h"
-#include "PolyphonicStepGridEditing.h"

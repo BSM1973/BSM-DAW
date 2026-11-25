@@ -136,6 +136,9 @@ target_sources(LibertyDrumSamplerSmoke PRIVATE Tests/DrumSamplerSmoke.cpp)
 target_include_directories(LibertyDrumSamplerSmoke PRIVATE Source)
 target_compile_features(LibertyDrumSamplerSmoke PRIVATE cxx_std_17)
 target_compile_definitions(LibertyDrumSamplerSmoke PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+if(MSVC)
+  target_compile_options(LibertyDrumSamplerSmoke PRIVATE /utf-8 /Zc:lambda)
+endif()
 target_link_libraries(LibertyDrumSamplerSmoke PRIVATE LibertyFactoryDrumAssets)
 target_link_libraries(LibertyDrumSamplerSmoke PRIVATE
     juce::juce_audio_basics juce::juce_audio_formats juce::juce_gui_basics
