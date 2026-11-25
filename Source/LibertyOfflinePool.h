@@ -1,11 +1,32 @@
 #pragma once
 #include <atomic>
+#include <algorithm>
+#include <cstdint>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 namespace LibertyMulticore {
+// Conservative offline admission heuristic from phase 1.4 benchmarks.
+// Not a calibrated CPU topology or realtime scheduling guarantee.
+inline unsigned recommendedWorkers(unsigned logical,int tracks,int frames,unsigned limit=8) noexcept
+{
+    if(logical<2||tracks<16||frames<128||limit==0)return 0;
+    if(static_cast<std::int64_t>(tracks)*frames<8192)return 0;
+    const unsigned byWork=static_cast<unsigned>(tracks/16);
+    return (std::min)({logical-1,byWork,limit,8u});
+}
+struct Cooldown {
+    unsigned remaining=0;
+    bool admit() noexcept {
+        if(!remaining)return true;
+        --remaining;return false;
+    }
+    void observe(std::uint64_t elapsed,std::uint64_t budget) noexcept {
+        if(budget&&elapsed>budget)remaining=32;
+    }
+};
 // Offline executor only. Live audio never waits on this barrier.
 class OfflinePool {
     using Task=void(*)(void*,int) noexcept;
@@ -13,18 +34,21 @@ class OfflinePool {
     std::mutex mutex;
     std::condition_variable wake,done;
     std::atomic<int> next{0},workerJobs{0};
-    int count=0,remaining=0;
+    int count=0,remaining=0,chunk=1;
     unsigned long long generation=0;
     bool stopping=false;
     Task task=nullptr;
     void* context=nullptr;
     void drain(bool worker) noexcept {
+        int local=0;
         for(;;){
-            const int i=next.fetch_add(1,std::memory_order_relaxed);
-            if(i>=count)break;
-            task(context,i);
-            if(worker)workerJobs.fetch_add(1,std::memory_order_relaxed);
+            const int begin=next.fetch_add(chunk,std::memory_order_relaxed);
+            if(begin>=count)break;
+            const int end=(std::min)(count,begin+chunk);
+            for(int i=begin;i<end;++i)task(context,i);
+            local+=end-begin;
         }
+        if(worker&&local>0)workerJobs.fetch_add(local,std::memory_order_relaxed);
     }
     void workerLoop() {
         unsigned long long seen=0;
@@ -51,10 +75,10 @@ public:
     OfflinePool(const OfflinePool&)=delete;
     OfflinePool& operator=(const OfflinePool&)=delete;
     // Single coordinator. Independent jobs are dynamically claimed once.
-    int run(int n,Task fn,void* ctx) {
+    int run(int n,Task fn,void* ctx,int jobsPerClaim=1) {
         {
             std::lock_guard<std::mutex> lock(mutex);
-            count=n;task=fn;context=ctx;next.store(0,std::memory_order_relaxed);
+            count=n;chunk=(std::max)(1,jobsPerClaim);task=fn;context=ctx;next.store(0,std::memory_order_relaxed);
             workerJobs.store(0,std::memory_order_relaxed);
             remaining=static_cast<int>(workers.size());++generation;
         }

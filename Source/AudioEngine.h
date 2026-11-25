@@ -51,10 +51,12 @@ public:
                                  double renderSampleRate, int blockSamples,
                                  bool allowSpectralCache = true);
     // Dedicated stopped offline engines only; never enabled by hardware.
-    bool configureOfflineMulticoreForTesting(unsigned workers);
+    bool configureOfflineMulticoreForTesting(unsigned workers,bool adaptive=false);
     std::uint64_t getParallelBlocksForTesting() const noexcept {return parallelBlocks;}
     std::uint64_t getWorkerJobsForTesting() const noexcept {return parallelWorkerJobs;}
     std::uint64_t getParallelFallbacksForTesting() const noexcept {return parallelFallbacks;}
+    std::uint64_t getAdaptiveSerialBlocksForTesting() const noexcept {return adaptiveSerialBlocks;}
+    unsigned getSelectedWorkersForTesting() const noexcept {return selectedOfflineWorkers;}
     // Headless diagnostic only: confirms that the worker published an FFT
     // result for this track's current generation (never used in audio callback).
     bool isSpectralCacheReadyForTesting(int trackIndex);
@@ -675,7 +677,10 @@ private:
     std::unique_ptr<LibertyMulticore::OfflinePool> offlinePool;
     std::vector<juce::AudioBuffer<float>> offlineTrackBuffers;
     std::array<bool,maxParallelTracks> offlineAudible{};
-    bool offlineParallelActive=false;
+    bool offlineParallelActive=false,offlineAdaptive=false;
+    unsigned requestedOfflineWorkers=0,selectedOfflineWorkers=0;
+    std::uint64_t adaptiveSerialBlocks=0;
+    LibertyMulticore::Cooldown offlineCooldown;
     std::uint64_t parallelBlocks=0,parallelWorkerJobs=0,parallelFallbacks=0;
     struct OfflineTrackBatch {
         AudioEngine* engine;

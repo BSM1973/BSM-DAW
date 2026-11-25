@@ -1852,17 +1852,15 @@ void AudioEngine::prepareCallbackScratch(int frames)
     preparedScratchFrames.store(capacity,std::memory_order_relaxed);
 }
 
-bool AudioEngine::configureOfflineMulticoreForTesting(unsigned workers)
+bool AudioEngine::configureOfflineMulticoreForTesting(unsigned workers,bool adaptive)
 {
     if(initialised.load(std::memory_order_acquire)||isAudioDeviceRunning()||playing.load())return false;
     offlinePool.reset();offlineTrackBuffers.clear();
-    parallelBlocks=parallelWorkerJobs=parallelFallbacks=0;
-    if(workers==0)return true;
-    try {
-        offlinePool=std::make_unique<LibertyMulticore::OfflinePool>(juce::jlimit(1u,8u,workers));
-        offlineTrackBuffers.resize(maxParallelTracks);
-        return true;
-    }catch(...){offlinePool.reset();offlineTrackBuffers.clear();return false;}
+    requestedOfflineWorkers=juce::jmin(8u,workers);
+    selectedOfflineWorkers=0;offlineAdaptive=adaptive;
+    parallelBlocks=parallelWorkerJobs=parallelFallbacks=adaptiveSerialBlocks=0;
+    offlineCooldown={};
+    return true;
 }
 
 void AudioEngine::renderOfflineTrack(void* ctx,int index) noexcept
@@ -1901,9 +1899,24 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
     liveMidiCollector.reset(renderSampleRate);
     pianoPreviewCollector.reset(renderSampleRate);
     prepareCallbackScratch(blockSamples);
-    offlineParallelActive=offlinePool!=nullptr && !allowSpectralCache && tracks.size()>=16
-        && tracks.size()<=maxParallelTracks && destination.getNumChannels()==2;
-    if(offlinePool&&!offlineParallelActive)++parallelFallbacks;
+    const bool eligible=!allowSpectralCache&&tracks.size()>=16
+        &&tracks.size()<=maxParallelTracks&&destination.getNumChannels()==2;
+    const unsigned wanted=!eligible?0u:offlineAdaptive?
+        LibertyMulticore::recommendedWorkers(std::thread::hardware_concurrency(),(int)tracks.size(),blockSamples,requestedOfflineWorkers):
+        requestedOfflineWorkers;
+    offlineCooldown={};
+    if(wanted!=selectedOfflineWorkers)
+    {
+        offlinePool.reset();offlineTrackBuffers.clear();selectedOfflineWorkers=0;
+        if(wanted>0)
+            try {
+                offlinePool=std::make_unique<LibertyMulticore::OfflinePool>(wanted);
+                offlineTrackBuffers.resize(maxParallelTracks);
+                selectedOfflineWorkers=wanted;
+            }catch(...){offlinePool.reset();offlineTrackBuffers.clear();}
+    }
+    offlineParallelActive=offlinePool!=nullptr;
+    if(requestedOfflineWorkers&&!offlineParallelActive)++parallelFallbacks;
     if(offlineParallelActive)
         for(size_t i=0;i<tracks.size();++i)
             offlineTrackBuffers[i].setSize(2,blockSamples,false,false,true);
@@ -1919,7 +1932,16 @@ bool AudioEngine::renderOfflineForTesting(juce::AudioBuffer<float>& destination,
         const int n = juce::jmin(2, destination.getNumChannels());
         for (int ch = 0; ch < n; ++ch)
             channels[ch] = destination.getWritePointer(ch, offset);
+        const bool configured=offlinePool!=nullptr;
+        offlineParallelActive=configured&&(!offlineAdaptive||offlineCooldown.admit());
+        const bool usedParallel=offlineParallelActive;
+        if(offlineAdaptive&&requestedOfflineWorkers&&!usedParallel)++adaptiveSerialBlocks;
+        const auto started=usedParallel&&offlineAdaptive?LibertyCpu::Clock::now():LibertyCpu::Clock::time_point{};
         audioDeviceIOCallbackWithContext(nullptr, 0, channels, n, count, context);
+        if(usedParallel&&offlineAdaptive){
+            const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(LibertyCpu::Clock::now()-started).count();
+            offlineCooldown.observe(static_cast<std::uint64_t>(elapsed),LibertyCpu::budgetFor(renderSampleRate,count));
+        }
     }
     playing.store(false, std::memory_order_relaxed);
     offlineParallelActive=false;
@@ -2697,7 +2719,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         for(size_t i=0;i<tracks.size();++i)
             offlineAudible[i]=!tracks[i]->muted.load()&&(!anyPlaybackSolo||tracks[i]->solo.load());
         OfflineTrackBatch batch{this,rate,position,numSamples,2};
-        parallelWorkerJobs+=static_cast<std::uint64_t>(offlinePool->run((int)tracks.size(),&AudioEngine::renderOfflineTrack,&batch));
+        parallelWorkerJobs+=static_cast<std::uint64_t>(offlinePool->run((int)tracks.size(),&AudioEngine::renderOfflineTrack,&batch,numSamples<=128?4:2));
         ++parallelBlocks;
     }
     for(int trackIndex=0;trackIndex<(int)tracks.size();++trackIndex){

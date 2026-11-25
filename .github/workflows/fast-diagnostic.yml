@@ -358,7 +358,13 @@ jobs:
           done
 
       - name: Benchmark real audio callback (macOS)
-        run: ctest --test-dir build-fast -V --output-on-failure -R '^LibertyCpuPerformanceSmoke$'
+        run: |
+          status=0
+          ctest --test-dir build-fast -V --output-on-failure -R '^LibertyCpuPerformanceSmoke$' || status=$?
+          if [ -f build-fast/liberty-cpu-benchmark-trace.txt ]; then
+            cat build-fast/liberty-cpu-benchmark-trace.txt
+          fi
+          exit "$status"
 
       - name: Test CANAL settings, neutral project reset and project XML roundtrip
         run: build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --channel-processing-test

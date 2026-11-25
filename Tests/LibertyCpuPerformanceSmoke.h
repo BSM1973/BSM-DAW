@@ -127,6 +127,59 @@ inline bool runLibertyCpuPerformanceSmoke()
                       << engine.getWorkerJobsForTesting() << ',' << diff << std::endl;
             }
         }
+        // Verify adaptive admission retains the serial path at 32/64 frames.
+        for(int frames:{32,64}){
+            juce::AudioBuffer<float> reference(2,4800),adaptive(2,4800);
+            if(!engine.configureOfflineMulticoreForTesting(0)||!engine.renderOfflineForTesting(reference,48000,frames,false))
+                throw std::runtime_error("adaptive serial reference");
+            if(!engine.configureOfflineMulticoreForTesting(8,true)||!engine.renderOfflineForTesting(adaptive,48000,frames,false))
+                throw std::runtime_error("adaptive small block");
+            if(engine.getSelectedWorkersForTesting()!=0||engine.getParallelBlocksForTesting()!=0||
+               engine.getAdaptiveSerialBlocksForTesting()!=static_cast<std::uint64_t>((4800+frames-1)/frames))
+                throw std::runtime_error("adaptive admission");
+            for(int ch=0;ch<2;++ch)for(int i=0;i<4800;++i)
+                if(std::abs(reference.getSample(ch,i)-adaptive.getSample(ch,i))>0.00002f)
+                    throw std::runtime_error("adaptive serial parity");
+        }
+        // 60 seconds of actual non-silent audio per render, not a wall-clock sleep.
+        constexpr int stressRate=48000,stressFrames=128,stressSamples=60*stressRate;
+        auto longSource=std::make_shared<juce::AudioBuffer<float>>(1,stressSamples);
+        for(int i=0;i<stressSamples;++i)longSource->setSample(0,i,source->getSample(0,i%48000));
+        for(int lane=0;lane<128;++lane){
+            auto next=clip;next.id=juce::String("long-")+juce::String(lane);
+            next.lengthSeconds=60.0;next.sourceBuffer=longSource;
+            if(!engine.replaceAudioClips(lane,{next}))throw std::runtime_error("stress fixture");
+        }
+        trace << "stress 128 tracks 60 seconds serial begin" << std::endl;
+        juce::AudioBuffer<float> stressReference(2,stressSamples),stressAdaptive(2,stressSamples);
+        if(!engine.configureOfflineMulticoreForTesting(0))throw std::runtime_error("stress serial configure");
+        engine.resetCpuPerformanceWhileStopped();
+        if(!engine.renderOfflineForTesting(stressReference,stressRate,stressFrames,false))throw std::runtime_error("stress serial");
+        const auto stressSerial=engine.getCpuPerformance();
+        trace << "stress 128 tracks 60 seconds adaptive begin" << std::endl;
+        if(!engine.configureOfflineMulticoreForTesting(8,true))throw std::runtime_error("stress adaptive configure");
+        engine.resetCpuPerformanceWhileStopped();
+        if(!engine.renderOfflineForTesting(stressAdaptive,stressRate,stressFrames,false))throw std::runtime_error("stress adaptive");
+        const auto stressParallel=engine.getCpuPerformance();
+        const auto expectedStress=static_cast<std::uint64_t>(stressSamples/stressFrames);
+        if(stressSerial.blocks!=expectedStress||stressParallel.blocks!=expectedStress||
+            engine.getParallelBlocksForTesting()+engine.getAdaptiveSerialBlocksForTesting()!=expectedStress||
+            std::abs(engine.getCurrentTimeSeconds()-60.0)>0.001)
+            throw std::runtime_error("stress accounting");
+        float stressDiff=0;
+        for(int ch=0;ch<2;++ch)for(int i=0;i<stressSamples;++i){
+            const float a=stressReference.getSample(ch,i),b=stressAdaptive.getSample(ch,i);
+            if(!std::isfinite(a)||!std::isfinite(b))throw std::runtime_error("stress nonfinite");
+            stressDiff=(std::max)(stressDiff,std::abs(a-b));
+        }
+        if(stressDiff>0.00002f||stressAdaptive.getMagnitude(0,stressSamples-stressRate,stressRate)<.01f)
+            throw std::runtime_error("stress parity or truncated audio");
+        trace << "stress60,128,128," << engine.getSelectedWorkersForTesting() << ','
+              << stressSerial.averagePercent() << ',' << stressParallel.averagePercent() << ','
+              << stressSerial.peakPercent() << ',' << stressParallel.peakPercent() << ','
+              << stressSerial.overruns << ',' << stressParallel.overruns << ','
+              << engine.getParallelBlocksForTesting() << ',' << engine.getAdaptiveSerialBlocksForTesting() << ','
+              << engine.getWorkerJobsForTesting() << ',' << stressDiff << std::endl;
         engine.configureOfflineMulticoreForTesting(0);
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
