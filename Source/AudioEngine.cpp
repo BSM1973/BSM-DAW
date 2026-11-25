@@ -1956,7 +1956,7 @@ void AudioEngine::prepareHardwarePdc(double rate,int channels)
     const int memoryCap=static_cast<int>((64ull*1024*1024)/(2*sizeof(float)*(count+LibertyRealtime::maxBuses)))-1;
     hardwarePdcCapacity=juce::jmin(memoryCap,juce::jmax(hardwarePlan.latency,(int)(rate*0.25)));
     if(!hardwarePdc.prepare(hardwarePlan,count,hardwarePdcBusCount,hardwarePdcCapacity,128))return;
-    hardwarePdcWasEnabled=false;
+    hardwarePdcWasEnabled=hardwarePdcWasRunning=false;
     hardwarePdcRevisions.store(0);hardwarePdcFallbacks.store(0);
     hardwarePdcPrepared=true;
 }
@@ -1973,7 +1973,7 @@ void AudioEngine::beginHardwarePdcBlock(int channels) noexcept
     const bool monitoring=inputMonitoringEnabled.load(std::memory_order_acquire)||
         midiCaptureTrack.load(std::memory_order_acquire)>=0||
         monitoredInstrumentTrack.load(std::memory_order_acquire)>=0;
-    const bool running=channels==2&&playing.load(std::memory_order_relaxed)&&!monitoring;
+    const bool running=channels==2&&playing.load(std::memory_order_relaxed);
     if(compatible&&running){
         std::array<int,LibertyRealtime::maxLanes> latency{};
         std::array<LibertyRealtime::Lane,LibertyRealtime::maxLanes> lanes{};
@@ -1984,7 +1984,7 @@ void AudioEngine::beginHardwarePdcBlock(int channels) noexcept
             LibertyRealtime::Plan next;
             bool changed=false;
             compatible=next.build(lanes.data(),n+m,b)&&hardwarePdc.update(next,n+m,b,
-                !hardwarePdcWasEnabled||position!=hardwarePdcExpectedPosition,changed);
+                !hardwarePdcWasRunning||position!=hardwarePdcExpectedPosition,changed);
             if(compatible){
                 hardwarePlan=next;hardwarePdcBusCount=b;
                 if(changed)hardwarePdcRevisions.fetch_add(1,std::memory_order_relaxed);
@@ -1992,10 +1992,15 @@ void AudioEngine::beginHardwarePdcBlock(int channels) noexcept
         }
         if(!compatible)hardwarePdcFallbacks.fetch_add(1,std::memory_order_relaxed);
     }
-    const bool enabled=compatible&&running;
-    if(!enabled&&hardwarePdcWasEnabled)hardwarePdc.resetHistory();
+    // Monitoring requests crossfade to dry, keeping the ring warm.
+    // Incompatible plans still require immediate fallback, never stale routing.
+    const bool enabled=compatible&&running&&!monitoring;
+    const bool process=compatible&&running;
+    if(!process&&hardwarePdcWasRunning)hardwarePdc.resetHistory();
+    if(process)hardwarePdc.setBypass(!enabled);
+    hardwarePdcWasRunning=process;
     hardwarePdcWasEnabled=enabled;
-    hardwarePdcBlock=enabled;
+    hardwarePdcBlock=process;
     hardwarePdcPublished.store(enabled,std::memory_order_release);
     hardwarePdcReportedLatency.store(enabled?hardwarePlan.latency:0,std::memory_order_relaxed);
 }

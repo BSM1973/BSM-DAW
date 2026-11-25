@@ -102,7 +102,8 @@ class DynamicDelay {
     float read(const std::vector<float>& ring,int delay,float input) const noexcept {
         if(delay==0)return input;
         if(static_cast<std::size_t>(delay)>valid)return 0.f;
-        return ring[(cursor+ring.size()-static_cast<std::size_t>(delay))%ring.size()];
+        const auto distance=static_cast<std::size_t>(delay);
+        return ring[cursor>=distance?cursor-distance:cursor+ring.size()-distance];
     }
     void begin(int delay,int frames) noexcept {
         from=to;to=delay;progress=0;fade=frames;
@@ -142,7 +143,7 @@ class DynamicBank {
     std::vector<DynamicDelay> lanes,buses;
     LibertyRealtime::Plan plan{};
     int laneCount=0,busCount=0,capacity=0,transition=128;
-    bool ready=false;
+    bool ready=false,bypassed=false;
     bool validPlan(const LibertyRealtime::Plan& p,int n,int b) const noexcept {
         if(n<0||n>LibertyRealtime::maxLanes||b<0||b>LibertyRealtime::maxBuses||
            p.size!=2*n+b+1||p.master!=p.size-1||p.latency<0||p.latency>capacity)return false;
@@ -162,13 +163,20 @@ public:
             for(int i=0;i<LibertyRealtime::maxBuses;++i)bs[i].prepare(capacity,i<b?p.busCompensation[i]:0);
             lanes.swap(l);buses.swap(bs);
         }catch(...){return false;}
-        plan=p;laneCount=n;busCount=b;ready=true;return true;
+        plan=p;laneCount=n;busCount=b;ready=true;bypassed=false;return true;
+    }
+    // Audio-thread only: transition to zero compensation while retaining history.
+    void setBypass(bool enabled) noexcept {
+        if(!ready||enabled==bypassed)return;
+        bypassed=enabled;
+        for(int i=0;i<laneCount;++i)lanes[i].retarget(enabled?0:plan.compensation[i],transition);
+        for(int i=0;i<LibertyRealtime::maxBuses;++i)buses[i].retarget(enabled||i>=busCount?0:plan.busCompensation[i],transition);
     }
     // Audio-thread only, constant-time per line, no memory clearing.
     void resetHistory() noexcept {
         if(!ready)return;
-        for(int i=0;i<laneCount;++i)lanes[i].reset(plan.compensation[i]);
-        for(int i=0;i<LibertyRealtime::maxBuses;++i)buses[i].reset(i<busCount?plan.busCompensation[i]:0);
+        for(int i=0;i<laneCount;++i)lanes[i].reset(bypassed?0:plan.compensation[i]);
+        for(int i=0;i<LibertyRealtime::maxBuses;++i)buses[i].reset(bypassed||i>=busCount?0:plan.busCompensation[i]);
     }
     // Single coordinator between callbacks. No allocations; invalid plans
     // are rejected in their entirety. Routing changes invalidate old history.
@@ -185,11 +193,12 @@ public:
         changed=routing||delays||discontinuity;
         if(!changed)return true;
         for(int i=0;i<n;++i){
-            if(routing||discontinuity)lanes[i].reset(p.compensation[i]);
-            else lanes[i].retarget(p.compensation[i],transition);
+            const int delay=bypassed?0:p.compensation[i];
+            if(routing||discontinuity)lanes[i].reset(delay);
+            else lanes[i].retarget(delay,transition);
         }
         for(int i=0;i<LibertyRealtime::maxBuses;++i){
-            const int delay=i<b?p.busCompensation[i]:0;
+            const int delay=!bypassed&&i<b?p.busCompensation[i]:0;
             if(routing||discontinuity)buses[i].reset(delay);
             else buses[i].retarget(delay,transition);
         }

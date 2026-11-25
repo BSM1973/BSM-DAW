@@ -59,6 +59,32 @@ int main(){
     std::array<float,128> resetL{},resetR{};
     dynamic.lane(1,resetL.data(),resetR.data(),128);
     for(float v:resetL)assert(v==0.f);
+    // Bypass transitions on a primed constant stream remain unity.
+    std::array<float,512> warmL{},warmR{};warmL.fill(1.f);warmR.fill(-1.f);
+    dynamic.lane(1,warmL.data(),warmR.data(),256);
+    dynamic.setBypass(true);dynamic.lane(1,warmL.data()+256,warmR.data()+256,128);
+    dynamic.setBypass(false);dynamic.lane(1,warmL.data()+384,warmR.data()+384,128);
+    for(int i=256;i<512;++i){assert(warmL[i]==1.f);assert(warmR[i]==-1.f);}
+    // 128 lanes, 60 seconds of samples at 48 kHz, all delays active.
+    // Exercise bank only (not physical device or full engine).
+    {
+        std::array<LibertyRealtime::Lane,128> many{};
+        for(int i=0;i<128;++i)many[i]={-1,i+1};
+        LibertyRealtime::Plan longPlan;assert(longPlan.build(many.data(),128,0));
+        DynamicBank stress;assert(stress.prepare(longPlan,128,0,256,128));
+        std::array<float,1024> a{},b{};
+        for(int frames:{32,64,128,256,512,1024}){
+            stress.resetHistory();
+            for(int offset=0;offset<480000;offset+=frames){
+                const int n=(std::min)(frames,480000-offset);
+                for(int lane=0;lane<128;++lane){
+                    std::fill_n(a.data(),n,1.f);std::fill_n(b.data(),n,-1.f);
+                    stress.lane(lane,a.data(),b.data(),n);
+                    if(offset>=256)for(int k=0;k<n;++k){assert(a[k]==1.f);assert(b[k]==-1.f);}
+                }
+            }
+        }
+    }
     lanes[0].declaredLatency=129;assert(plan.build(lanes,3,1));
     assert(!dynamic.update(plan,3,1,false,changed));
     lanes[0]={0,32};assert(plan.build(lanes,3,1));

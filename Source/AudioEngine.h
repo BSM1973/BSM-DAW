@@ -704,7 +704,7 @@ private:
     int hardwarePdcAudioCount=0,hardwarePdcInstrumentCount=0,hardwarePdcBusCount=0;
     std::int64_t hardwarePdcExpectedPosition=-1;
     std::atomic<std::uint64_t> hardwarePdcRevisions{0},hardwarePdcFallbacks{0};
-    bool hardwarePdcWasEnabled=false;
+    bool hardwarePdcWasEnabled=false,hardwarePdcWasRunning=false;
     int hardwarePdcCapacity=0;
     void prepareHardwarePdc(double rate,int channels);
     void beginHardwarePdcBlock(int channels) noexcept;
