@@ -181,6 +181,10 @@ inline bool runLibertyCpuPerformanceSmoke()
               << engine.getParallelBlocksForTesting() << ',' << engine.getAdaptiveSerialBlocksForTesting() << ','
               << engine.getWorkerJobsForTesting() << ',' << stressDiff << std::endl;
         engine.configureOfflineMulticoreForTesting(0);
+        LibertyRealtime::Plan plan;
+        if(!engine.buildRealtimePlanForTesting(plan)||plan.size<257||plan.master!=plan.size-1)
+            throw std::runtime_error("engine realtime dependency plan");
+        trace << "realtime_plan," << plan.size << ',' << plan.latency << std::endl;
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

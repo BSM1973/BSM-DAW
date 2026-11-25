@@ -1852,6 +1852,21 @@ void AudioEngine::prepareCallbackScratch(int frames)
     preparedScratchFrames.store(capacity,std::memory_order_relaxed);
 }
 
+bool AudioEngine::buildRealtimePlanForTesting(LibertyRealtime::Plan& plan) const
+{
+    if(initialised.load(std::memory_order_acquire)||playing.load())return false;
+    const auto count=tracks.size()+instrumentPlayback.size();
+    if(count>LibertyRealtime::maxLanes)return false;
+    std::array<LibertyRealtime::Lane,LibertyRealtime::maxLanes> lanes{};
+    auto& host=LibertyPluginHost::instance();
+    const int buses=getMixerBusCount();
+    for(size_t i=0;i<tracks.size();++i)
+        lanes[i]={LibertyMixerBusRouting::destination(getTrackMixerBus((int)i),buses),host.getDeclaredLaneLatency((int)i,false)};
+    for(size_t i=0;i<instrumentPlayback.size();++i)
+        lanes[tracks.size()+i]={LibertyMixerBusRouting::destination(getInstrumentMixerBus((int)i),buses),host.getDeclaredLaneLatency((int)i,true)};
+    return plan.build(lanes.data(),(int)count,buses);
+}
+
 bool AudioEngine::configureOfflineMulticoreForTesting(unsigned workers,bool adaptive)
 {
     if(initialised.load(std::memory_order_acquire)||isAudioDeviceRunning()||playing.load())return false;
@@ -2526,7 +2541,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto nativeDrums = previewTrack == drumSamplerTrack.load(std::memory_order_acquire)
                 ? std::atomic_load(&drumSampler) : std::shared_ptr<LibertyDrumSampler>{};
             if (snapshot != nullptr && cycle > 0.0 &&
-                (host.hasInstrumentForTrack(previewTrack) || nativeDrums != nullptr))
+                (host.hasInstrumentForTrackRealtime(previewTrack) || nativeDrums != nullptr))
             {
                 const double blockStart = (double) position / rate;
                 const double blockEnd = (double) (position + numSamples) / rate;
@@ -2623,7 +2638,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             auto& pluginHost = LibertyPluginHost::instance();
             for (int instrumentTrack = 0; instrumentTrack < (int) instrumentPlayback.size(); ++instrumentTrack)
             {
-                if (!pluginHost.hasInstrumentForTrack(instrumentTrack)) continue;
+                if (!pluginHost.hasInstrumentForTrackRealtime(instrumentTrack)) continue;
                 auto& panicMidi=callbackScratch.panicNotes;
                 panicMidi.clear();
                 for (int channel = 1; channel <= 16; ++channel)
@@ -2645,7 +2660,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const auto nativeDrums=instrumentTrack==drumSamplerTrack.load(std::memory_order_acquire)
                 ?std::atomic_load(&drumSampler):std::shared_ptr<LibertyDrumSampler>{};
             if(state.muted.load(std::memory_order_relaxed)
-                || (!host.hasInstrumentForTrack(instrumentTrack) && nativeDrums==nullptr))
+                || (!host.hasInstrumentForTrackRealtime(instrumentTrack) && nativeDrums==nullptr))
                 continue;
             auto& midi=callbackScratch.notes;
             midi.clear();
@@ -2817,7 +2832,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             const bool trackSolo = midiLaneSolo || state.solo.load(std::memory_order_relaxed);
             const auto nativeDrums = instrumentTrack == drumSamplerTrack.load(std::memory_order_acquire)
                 ? std::atomic_load(&drumSampler) : std::shared_ptr<LibertyDrumSampler>{};
-            const bool hasInstrument = nativeDrums != nullptr || pluginHost.hasInstrumentForTrack(instrumentTrack);
+            const bool hasInstrument = nativeDrums != nullptr || pluginHost.hasInstrumentForTrackRealtime(instrumentTrack);
             if (panicInstruments && nativeDrums != nullptr)
                 nativeDrums->reset();
             if (panicInstruments && nativeDrums == nullptr && hasInstrument)

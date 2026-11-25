@@ -4,6 +4,7 @@
 #include "MixerBusRouting.h"
 #include "LibertyCpuMeter.h"
 #include "LibertyOfflinePool.h"
+#include "LibertyRealtimePlan.h"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -57,6 +58,8 @@ public:
     std::uint64_t getParallelFallbacksForTesting() const noexcept {return parallelFallbacks;}
     std::uint64_t getAdaptiveSerialBlocksForTesting() const noexcept {return adaptiveSerialBlocks;}
     unsigned getSelectedWorkersForTesting() const noexcept {return selectedOfflineWorkers;}
+    // Stopped dedicated engine only; snapshots hosted latencies outside callback.
+    bool buildRealtimePlanForTesting(LibertyRealtime::Plan&) const;
     // Headless diagnostic only: confirms that the worker published an FFT
     // result for this track's current generation (never used in audio callback).
     bool isSpectralCacheReadyForTesting(int trackIndex);

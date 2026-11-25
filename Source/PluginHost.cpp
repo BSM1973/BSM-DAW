@@ -1,3 +1,5 @@
+#include <limits>
+#include <cstdint>
 #include "PluginHost.h"
 #include "OneKnobEffects.h"
 #if defined(LIBERTY_NATIVE_PREVIEW)
@@ -135,6 +137,7 @@ void LibertyPluginHost::clearProjectPlugins()
     trackEffects.clear();
     instrumentEffects.clear();
     instruments.clear();
+    for(auto& present:realtimeInstrumentPresent)present.store(false,std::memory_order_release);
 }
 
 juce::File LibertyPluginHost::pluginListFile() const
@@ -547,7 +550,7 @@ bool LibertyPluginHost::insertNativeChain(bool instrument,int lane,const NativeC
     // Publish only after every processor has been resolved, prepared and validated.
     while((int)effects.size()<=lane)effects.emplace_back();
     for(int i=0;i<effectSlotsPerTrack;++i)if(staged[(size_t)i])effects[(size_t)lane][(size_t)i]=std::move(staged[(size_t)i]);
-    if(stagedInstrument){ensureInstrumentSlot(lane);instruments[(size_t)lane]=std::move(stagedInstrument);}
+    if(stagedInstrument){ensureInstrumentSlot(lane);instruments[(size_t)lane]=std::move(stagedInstrument);publishInstrumentPresence(lane);}
     return true;
 }
 bool LibertyPluginHost::renderNativeAudition(const NativeChain& chain,const juce::AudioBuffer<float>& source,double rate,double tempo,AuditionResult& out,juce::String& error,const std::atomic<bool>& cancel) const
@@ -703,7 +706,9 @@ bool LibertyPluginHost::loadInstrumentForTrack(int instrumentTrack, const juce::
 {
     if (instrumentTrack < 0) { error = "Piste Instrument invalide."; return false; }
     const juce::ScopedLock scoped(lock); ensureInstrumentSlot(instrumentTrack);
-    return loadIntoSlot(*instruments[(size_t)instrumentTrack], description, error, true, presetState);
+    const bool ok=loadIntoSlot(*instruments[(size_t)instrumentTrack], description, error, true, presetState);
+    publishInstrumentPresence(instrumentTrack);
+    return ok;
 }
 
 void LibertyPluginHost::closeEditor(Slot& slot)
@@ -734,6 +739,7 @@ void LibertyPluginHost::unloadInstrumentForTrack(int instrumentTrack)
     if (instrumentTrack < 0 || instrumentTrack >= (int)instruments.size() || !instruments[(size_t)instrumentTrack]) return;
     auto& slot=*instruments[(size_t)instrumentTrack]; closeEditor(slot);
     if(slot.processor)slot.processor->releaseResources(); slot.processor.reset(); slot.description={};
+    publishInstrumentPresence(instrumentTrack);
 }
 
 bool LibertyPluginHost::hasEffectForTrack(int trackIndex) const
@@ -744,6 +750,38 @@ bool LibertyPluginHost::hasEffectForTrack(int trackIndex) const
 }
 
 bool LibertyPluginHost::hasInstrument() const { return hasInstrumentForTrack(0); }
+void LibertyPluginHost::publishInstrumentPresence(int t) noexcept
+{
+    if(t>=0&&t<realtimePresenceCapacity)
+        realtimeInstrumentPresent[(size_t)t].store(t<(int)instruments.size()&&instruments[(size_t)t]&&instruments[(size_t)t]->processor!=nullptr,std::memory_order_release);
+}
+
+bool LibertyPluginHost::hasInstrumentForTrackRealtime(int t) const noexcept
+{
+    if(t<0)return false;
+    if(t<realtimePresenceCapacity)return realtimeInstrumentPresent[(size_t)t].load(std::memory_order_acquire);
+    // Unusual projects beyond the cache: don't invent an absent instrument
+    // on contention. Rendering already uses a nonblocking try-lock.
+    if(!lock.tryEnter()){realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return true;}
+    const bool present=t<(int)instruments.size()&&instruments[(size_t)t]&&instruments[(size_t)t]->processor!=nullptr;
+    lock.exit();return present;
+}
+
+int LibertyPluginHost::getDeclaredLaneLatency(int t,bool instrument) const
+{
+    if(t<0)return 0;
+    const juce::ScopedLock scoped(lock);
+    std::int64_t sum=0;
+    const auto add=[&](const std::unique_ptr<Slot>& slot){
+        if(slot&&slot->processor)sum+=juce::jmax(0,slot->processor->getLatencySamples());
+    };
+    if(instrument){
+        if(t<(int)instruments.size())add(instruments[(size_t)t]);
+        if(t<(int)instrumentEffects.size())for(const auto& slot:instrumentEffects[(size_t)t])add(slot);
+    }else if(t<(int)trackEffects.size())for(const auto& slot:trackEffects[(size_t)t])add(slot);
+    return static_cast<int>((std::min)(sum,static_cast<std::int64_t>((std::numeric_limits<int>::max)())));
+}
+
 bool LibertyPluginHost::hasInstrumentForTrack(int t) const
 {
     const juce::ScopedLock scoped(lock);
@@ -892,7 +930,7 @@ bool LibertyPluginHost::processInstrumentForTrack(int t,float* const* outputChan
 {
     if(numSamples<=0||numOutputChannels<=0||t<0)return false;
     if(offlineInstrumentTrack.load(std::memory_order_acquire)==t)return true;
-    if(!lock.tryEnter())return false;
+    if(!lock.tryEnter()){realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return false;}
     if(t>=(int)instruments.size()||!instruments[(size_t)t]||!instruments[(size_t)t]->processor){lock.exit();return false;}
     auto& instrument=*instruments[(size_t)t];const int channels=juce::jlimit(1,2,numOutputChannels);
     instrument.work.setSize(juce::jmax(2,channels),numSamples,false,false,true);instrument.work.clear();
@@ -939,7 +977,7 @@ bool LibertyPluginHost::renderInstrumentForTrack(int t, juce::AudioBuffer<float>
 {
     if (n <= 0 || t < 0) return false;
     if (offlineInstrumentTrack.load(std::memory_order_acquire) == t) return false;
-    if (!lock.tryEnter()) return false;
+    if (!lock.tryEnter()) {realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return false;}
     if (t >= (int) instruments.size() || !instruments[(size_t)t] || !instruments[(size_t)t]->processor) { lock.exit(); return false; }
     auto& instrument = *instruments[(size_t)t];
     destination.setSize(2, n, false, false, true);
@@ -972,7 +1010,8 @@ void LibertyPluginHost::processInstrumentEffect(int t,juce::AudioBuffer<float>& 
 
 void LibertyPluginHost::processAudioEffectSlot(int t,int si,juce::AudioBuffer<float>& buffer)
 {
-    if(t<0||si<0||si>=effectSlotsPerTrack||!lock.tryEnter())return;
+    if(t<0||si<0||si>=effectSlotsPerTrack)return;
+    if(!lock.tryEnter()){realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return;}
     if(t<(int)trackEffects.size()&&trackEffects[(size_t)t][(size_t)si]&&trackEffects[(size_t)t][(size_t)si]->processor)
     {
         juce::MidiBuffer empty;
@@ -982,7 +1021,8 @@ void LibertyPluginHost::processAudioEffectSlot(int t,int si,juce::AudioBuffer<fl
 }
 void LibertyPluginHost::processInstrumentEffectSlot(int t,int si,juce::AudioBuffer<float>& buffer)
 {
-    if(t<0||si<0||si>=effectSlotsPerTrack||!lock.tryEnter())return;
+    if(t<0||si<0||si>=effectSlotsPerTrack)return;
+    if(!lock.tryEnter()){realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return;}
     if(t<(int)instrumentEffects.size()&&instrumentEffects[(size_t)t][(size_t)si]&&instrumentEffects[(size_t)t][(size_t)si]->processor)
     {
         juce::MidiBuffer empty;

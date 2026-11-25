@@ -73,6 +73,12 @@ public:
     bool hasEffectForTrackSlot(int trackIndex, int slotIndex) const;
     bool hasInstrument() const;
     bool hasInstrumentForTrack(int instrumentTrack) const;
+    // Audio callback query never waits on the host lock. Cached presence
+    // is published by load/unload on the control thread.
+    bool hasInstrumentForTrackRealtime(int instrumentTrack) const noexcept;
+    std::uint64_t getRealtimeLockMisses() const noexcept {return realtimeLockMisses.load(std::memory_order_relaxed);}
+    // Control thread only: sum plugin-reported latencies in one lane.
+    int getDeclaredLaneLatency(int track,bool instrument) const;
     juce::String getEffectName(int trackIndex) const;
     juce::String getEffectNameForTrackSlot(int trackIndex, int slotIndex) const;
     juce::String getInstrumentName() const;
@@ -181,6 +187,10 @@ private:
     mutable juce::CriticalSection lock;
     std::atomic<bool> shutdownCompleted { false };
     std::atomic<int> offlineInstrumentTrack { -1 };
+    static constexpr int realtimePresenceCapacity=1024;
+    std::array<std::atomic<bool>,realtimePresenceCapacity> realtimeInstrumentPresent{};
+    mutable std::atomic<std::uint64_t> realtimeLockMisses{0};
+    void publishInstrumentPresence(int track) noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibertyPluginHost)
 };
