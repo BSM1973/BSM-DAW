@@ -79,6 +79,8 @@ public:
     std::uint64_t getRealtimeLockMisses() const noexcept {return realtimeLockMisses.load(std::memory_order_relaxed);}
     // Control thread only: sum plugin-reported latencies in one lane.
     int getDeclaredLaneLatency(int track,bool instrument) const;
+    // Coherent snapshot under a single nonblocking acquisition.
+    bool tryGetLaneLatencies(int audioCount,int instrumentCount,int* output) const noexcept;
     // Dedicated headless tests only. Never replaces an occupied slot.
     bool installAudioEffectForTesting(int track,int slot,std::unique_ptr<juce::AudioProcessor>,double rate,int frames);
     juce::String getEffectName(int trackIndex) const;
@@ -193,6 +195,7 @@ private:
     std::array<std::atomic<bool>,realtimePresenceCapacity> realtimeInstrumentPresent{};
     mutable std::atomic<std::uint64_t> realtimeLockMisses{0};
     void publishInstrumentPresence(int track) noexcept;
+    int declaredLaneLatencyLocked(int track,bool instrument) const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LibertyPluginHost)
 };

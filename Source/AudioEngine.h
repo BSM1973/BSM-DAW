@@ -44,13 +44,15 @@ public:
     int getDrumSamplerTrack() const noexcept { return drumSamplerTrack.load(std::memory_order_acquire); }
     bool initialise();
     // Experimental hardware PDC: opt in before opening/restarting the device.
-    // No UI or default behaviour change. Fixed plan until next device restart.
+    // No UI or default behaviour change. Bounded dynamic plan; still experimental.
     bool requestExperimentalHardwarePdc(bool enabled) noexcept {
         if(isInitialised()||isAudioDeviceRunning())return false;
         hardwarePdcRequested.store(enabled,std::memory_order_release);return true;
     }
     bool isExperimentalHardwarePdcActive() const noexcept {return hardwarePdcPublished.load(std::memory_order_acquire);}
     int getExperimentalHardwarePdcLatency() const noexcept {return hardwarePdcReportedLatency.load(std::memory_order_relaxed);}
+    std::uint64_t getExperimentalHardwarePdcRevisions() const noexcept {return hardwarePdcRevisions.load(std::memory_order_relaxed);}
+    std::uint64_t getExperimentalHardwarePdcFallbacks() const noexcept {return hardwarePdcFallbacks.load(std::memory_order_relaxed);}
     void shutdown();
 
     // Headless regression entry point: render the existing audio callback
@@ -701,6 +703,9 @@ private:
     bool hardwarePdcPrepared=false,hardwarePdcBlock=false;
     int hardwarePdcAudioCount=0,hardwarePdcInstrumentCount=0,hardwarePdcBusCount=0;
     std::int64_t hardwarePdcExpectedPosition=-1;
+    std::atomic<std::uint64_t> hardwarePdcRevisions{0},hardwarePdcFallbacks{0};
+    bool hardwarePdcWasEnabled=false;
+    int hardwarePdcCapacity=0;
     void prepareHardwarePdc(double rate,int channels);
     void beginHardwarePdcBlock(int channels) noexcept;
     LibertyPdc::DynamicBank dynamicPdc;

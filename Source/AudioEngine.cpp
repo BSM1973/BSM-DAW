@@ -1947,12 +1947,17 @@ void AudioEngine::prepareHardwarePdc(double rate,int channels)
     hardwarePdcReportedLatency.store(0,std::memory_order_relaxed);
     if(!hardwarePdcRequested.load(std::memory_order_acquire)||channels!=2||
        !std::isfinite(rate)||rate<=0.0||rate>384000.0)return;
-    if(!collectPdcPlan(hardwarePlan)||hardwarePlan.latency<=0)return;
+    if(!collectPdcPlan(hardwarePlan))return;
     hardwarePdcAudioCount=(int)tracks.size();
     hardwarePdcInstrumentCount=(int)instrumentPlayback.size();
     hardwarePdcBusCount=getMixerBusCount();
-    if(!hardwarePdc.prepare(hardwarePlan,hardwarePdcAudioCount+hardwarePdcInstrumentCount,
-                            hardwarePdcBusCount,hardwarePlan.latency,128))return;
+    const int count=hardwarePdcAudioCount+hardwarePdcInstrumentCount;
+    // Reserve up to 250 ms, bounded by the 64 MiB bank budget.
+    const int memoryCap=static_cast<int>((64ull*1024*1024)/(2*sizeof(float)*(count+LibertyRealtime::maxBuses)))-1;
+    hardwarePdcCapacity=juce::jmin(memoryCap,juce::jmax(hardwarePlan.latency,(int)(rate*0.25)));
+    if(!hardwarePdc.prepare(hardwarePlan,count,hardwarePdcBusCount,hardwarePdcCapacity,128))return;
+    hardwarePdcWasEnabled=false;
+    hardwarePdcRevisions.store(0);hardwarePdcFallbacks.store(0);
     hardwarePdcPrepared=true;
 }
 
@@ -1960,28 +1965,36 @@ void AudioEngine::beginHardwarePdcBlock(int channels) noexcept
 {
     hardwarePdcBlock=false;
     if(!hardwarePdcPrepared)return;
-    // Fixed-plan experiment. No mutex or host query in this function.
-    // Stop compensation on route/count change until next device preparation.
+    // Bounded snapshot, no waiting and no allocation. Host contention
+    // bypasses PDC for this block rather than applying stale compensation.
     const int n=(int)tracks.size(),m=(int)instrumentPlayback.size(),b=getMixerBusCount();
-    bool compatible=n==hardwarePdcAudioCount&&m==hardwarePdcInstrumentCount&&b==hardwarePdcBusCount;
-    const auto check=[&](int i,int route){
-        const int bus=LibertyMixerBusRouting::destination(route,b);
-        const int successor=bus<0?hardwarePlan.master:2*(n+m)+bus;
-        return hardwarePlan.nodes[2*i+1].successor==successor;
-    };
-    if(compatible){
-        for(int i=0;i<n;++i)compatible=compatible&&check(i,tracks[(size_t)i]->mixerBusRoute.load());
-        for(int i=0;i<m;++i)compatible=compatible&&check(n+i,instrumentPlayback[(size_t)i]->mixerBusRoute.load());
-    }
-    if(!compatible)hardwarePdcPrepared=false;
-    // Low latency fallback for idle audition, input monitoring and MIDI capture.
-    // Full audio-recording state integration remains a separate validation task.
-    const bool enabled=compatible&&channels==2&&playing.load(std::memory_order_relaxed)&&
-        !inputMonitoringEnabled.load(std::memory_order_acquire)&&
-        midiCaptureTrack.load(std::memory_order_acquire)<0&&
-        monitoredInstrumentTrack.load(std::memory_order_acquire)<0;
+    bool compatible=n==hardwarePdcAudioCount&&m==hardwarePdcInstrumentCount;
     const auto position=transportSamples.load(std::memory_order_relaxed);
-    if(!enabled||position!=hardwarePdcExpectedPosition)hardwarePdc.resetHistory();
+    const bool monitoring=inputMonitoringEnabled.load(std::memory_order_acquire)||
+        midiCaptureTrack.load(std::memory_order_acquire)>=0||
+        monitoredInstrumentTrack.load(std::memory_order_acquire)>=0;
+    const bool running=channels==2&&playing.load(std::memory_order_relaxed)&&!monitoring;
+    if(compatible&&running){
+        std::array<int,LibertyRealtime::maxLanes> latency{};
+        std::array<LibertyRealtime::Lane,LibertyRealtime::maxLanes> lanes{};
+        compatible=LibertyPluginHost::instance().tryGetLaneLatencies(n,m,latency.data());
+        if(compatible){
+            for(int i=0;i<n;++i)lanes[i]={LibertyMixerBusRouting::destination(tracks[(size_t)i]->mixerBusRoute.load(),b),latency[i]};
+            for(int i=0;i<m;++i)lanes[n+i]={LibertyMixerBusRouting::destination(instrumentPlayback[(size_t)i]->mixerBusRoute.load(),b),latency[n+i]};
+            LibertyRealtime::Plan next;
+            bool changed=false;
+            compatible=next.build(lanes.data(),n+m,b)&&hardwarePdc.update(next,n+m,b,
+                !hardwarePdcWasEnabled||position!=hardwarePdcExpectedPosition,changed);
+            if(compatible){
+                hardwarePlan=next;hardwarePdcBusCount=b;
+                if(changed)hardwarePdcRevisions.fetch_add(1,std::memory_order_relaxed);
+            }
+        }
+        if(!compatible)hardwarePdcFallbacks.fetch_add(1,std::memory_order_relaxed);
+    }
+    const bool enabled=compatible&&running;
+    if(!enabled&&hardwarePdcWasEnabled)hardwarePdc.resetHistory();
+    hardwarePdcWasEnabled=enabled;
     hardwarePdcBlock=enabled;
     hardwarePdcPublished.store(enabled,std::memory_order_release);
     hardwarePdcReportedLatency.store(enabled?hardwarePlan.latency:0,std::memory_order_relaxed);

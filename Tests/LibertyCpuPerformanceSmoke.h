@@ -306,6 +306,10 @@ inline bool runLibertyCpuPerformanceSmoke()
             if(std::abs(dynamicOut.getSample(0,i)-expected)>0.00002f||
                std::abs(dynamicOut.getSample(1,i)+expected)>0.00002f)throw std::runtime_error("dynamic PDC alignment");
         }
+        std::array<int,LibertyRealtime::maxLanes> hostLatency{};
+        if(!host.tryGetLaneLatencies(4,1,hostLatency.data())||hostLatency[0]!=0||hostLatency[1]!=95||
+           host.tryGetLaneLatencies(257,0,hostLatency.data())||host.tryGetLaneLatencies(4,1,nullptr))
+            throw std::runtime_error("realtime latency snapshot");
         trace << "dynamic_pdc,host_processor,37,95,2,pass" << std::endl;
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);

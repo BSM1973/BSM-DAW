@@ -782,8 +782,22 @@ bool LibertyPluginHost::installAudioEffectForTesting(int t,int si,std::unique_pt
 
 int LibertyPluginHost::getDeclaredLaneLatency(int t,bool instrument) const
 {
-    if(t<0)return 0;
     const juce::ScopedLock scoped(lock);
+    return declaredLaneLatencyLocked(t,instrument);
+}
+
+bool LibertyPluginHost::tryGetLaneLatencies(int audioCount,int instrumentCount,int* output) const noexcept
+{
+    if(!output||audioCount<0||instrumentCount<0||audioCount>256||instrumentCount>256-audioCount)return false;
+    if(!lock.tryEnter()){realtimeLockMisses.fetch_add(1,std::memory_order_relaxed);return false;}
+    for(int i=0;i<audioCount;++i)output[i]=declaredLaneLatencyLocked(i,false);
+    for(int i=0;i<instrumentCount;++i)output[audioCount+i]=declaredLaneLatencyLocked(i,true);
+    lock.exit();return true;
+}
+
+int LibertyPluginHost::declaredLaneLatencyLocked(int t,bool instrument) const noexcept
+{
+    if(t<0)return 0;
     std::int64_t sum=0;
     const auto add=[&](const std::unique_ptr<Slot>& slot){
         if(slot&&slot->processor)sum+=juce::jmax(0,slot->processor->getLatencySamples());
