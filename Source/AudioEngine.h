@@ -51,7 +51,8 @@ public:
     // transitions when checking sample-by-sample parity between clip paths.
     bool renderOfflineForTesting(juce::AudioBuffer<float>& destination,
                                  double renderSampleRate, int blockSamples,
-                                 bool allowSpectralCache = true);
+                                 bool allowSpectralCache = true,
+                                 void (*beforeBlock)(AudioEngine&,int,void*)=nullptr,void* context=nullptr);
     // Dedicated stopped offline engines only; never enabled by hardware.
     bool configureOfflineMulticoreForTesting(unsigned workers,bool adaptive=false);
     std::uint64_t getParallelBlocksForTesting() const noexcept {return parallelBlocks;}
@@ -64,6 +65,8 @@ public:
     // Experimental offline PDC. Test latencies model delayed audio fixtures,
     // never override real plugin reports in the hardware callback.
     bool configureOfflinePdcForTesting(bool enabled,bool bypass=false,const std::vector<int>& simulatedAudioLatencies={});
+    bool configureDynamicOfflinePdcForTesting(int capacity,int transitionFrames=128);
+    std::uint64_t getDynamicPdcUpdatesForTesting() const noexcept {return dynamicPdcUpdates;}
     int getOfflinePdcLatencyForTesting() const noexcept {return offlinePdcLatency;}
     std::uint64_t getOfflinePdcBlocksForTesting() const noexcept {return offlinePdcBlocks;}
     // Headless diagnostic only: confirms that the worker published an FFT
@@ -683,6 +686,11 @@ private:
     } callbackScratch;
     void prepareCallbackScratch(int frames);
     LibertyPdc::Bank offlinePdc;
+    LibertyPdc::DynamicBank dynamicPdc;
+    bool dynamicPdcRequested=false;
+    int dynamicPdcCapacity=0,dynamicPdcTransition=128;
+    std::uint64_t dynamicPdcUpdates=0;
+    bool collectPdcPlan(LibertyRealtime::Plan&) const;
     bool offlinePdcRequested=false,offlinePdcBypass=false,offlinePdcActive=false;
     int offlinePdcLatency=0;
     std::uint64_t offlinePdcBlocks=0;

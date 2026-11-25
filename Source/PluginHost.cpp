@@ -767,6 +767,19 @@ bool LibertyPluginHost::hasInstrumentForTrackRealtime(int t) const noexcept
     lock.exit();return present;
 }
 
+bool LibertyPluginHost::installAudioEffectForTesting(int t,int si,std::unique_ptr<juce::AudioProcessor> processor,double rate,int frames)
+{
+    if(t<0||si<0||si>=effectSlotsPerTrack||!processor||rate<=0||frames<=0)return false;
+    const juce::ScopedLock scoped(lock);
+    ensureAudioTrackSlot(t);
+    auto& slot=*trackEffects[(size_t)t][(size_t)si];
+    if(slot.processor)return false;
+    processor->setRateAndBufferSizeDetails(rate,frames);
+    processor->prepareToPlay(rate,frames);
+    slot.processor=std::move(processor);
+    return true;
+}
+
 int LibertyPluginHost::getDeclaredLaneLatency(int t,bool instrument) const
 {
     if(t<0)return 0;

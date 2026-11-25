@@ -59,4 +59,108 @@ public:
         if(i>=0&&static_cast<std::size_t>(i)<buses.size())buses[i].process(l,r,frames);
     }
 };
+
+// Variable delay with preallocated history and bounded linear tap transitions.
+// Reset invalidates history in O(1), preventing stale samples after seeking.
+class DynamicDelay {
+    std::vector<float> left,right;
+    std::size_t cursor=0,valid=0;
+    int from=0,to=0,requested=0,progress=0,fade=0;
+    float read(const std::vector<float>& ring,int delay,float input) const noexcept {
+        if(delay==0)return input;
+        if(static_cast<std::size_t>(delay)>valid)return 0.f;
+        return ring[(cursor+ring.size()-static_cast<std::size_t>(delay))%ring.size()];
+    }
+    void begin(int delay,int frames) noexcept {
+        from=to;to=delay;progress=0;fade=frames;
+    }
+public:
+    void prepare(int capacity,int delay) {
+        left.assign(static_cast<std::size_t>(capacity)+1,0.f);
+        right.assign(left.size(),0.f);
+        from=to=requested=delay;cursor=valid=0;progress=fade=0;
+    }
+    void reset(int delay) noexcept {
+        from=to=requested=delay;cursor=valid=0;progress=fade=0;
+    }
+    void retarget(int delay,int frames) noexcept {
+        requested=delay;
+        if(fade==0&&to!=requested)begin(requested,frames);
+    }
+    void process(float* l,float* r,int frames,int transitionFrames) noexcept {
+        if(left.empty()||frames<=0)return;
+        for(int i=0;i<frames;++i){
+            const float x=l?l[i]:0.f,y=r?r[i]:0.f;
+            const float mix=fade>0?static_cast<float>(progress+1)/static_cast<float>(fade):1.f;
+            const float a=read(left,from,x),b=read(right,from,y);
+            if(l)l[i]=fade>0?a+(read(left,to,x)-a)*mix:read(left,to,x);
+            if(r)r[i]=fade>0?b+(read(right,to,y)-b)*mix:read(right,to,y);
+            left[cursor]=x;right[cursor]=y;
+            if(++cursor==left.size())cursor=0;
+            if(valid<left.size()-1)++valid;
+            if(fade>0&&++progress>=fade){
+                from=to;fade=progress=0;
+                if(requested!=to)begin(requested,transitionFrames);
+            }
+        }
+    }
+};
+class DynamicBank {
+    std::vector<DynamicDelay> lanes,buses;
+    LibertyRealtime::Plan plan{};
+    int laneCount=0,busCount=0,capacity=0,transition=128;
+    bool ready=false;
+    bool validPlan(const LibertyRealtime::Plan& p,int n,int b) const noexcept {
+        if(n<0||n>LibertyRealtime::maxLanes||b<0||b>LibertyRealtime::maxBuses||
+           p.size!=2*n+b+1||p.master!=p.size-1||p.latency<0||p.latency>capacity)return false;
+        for(int i=0;i<n;++i)if(p.compensation[i]<0||p.compensation[i]>capacity)return false;
+        for(int i=0;i<b;++i)if(p.busCompensation[i]<0||p.busCompensation[i]>capacity)return false;
+        return true;
+    }
+public:
+    bool prepare(const LibertyRealtime::Plan& p,int n,int b,int maxDelay,int fadeFrames) {
+        if(maxDelay<0||fadeFrames<1||n<0||n>LibertyRealtime::maxLanes)return false;
+        if((static_cast<std::uint64_t>(n)+LibertyRealtime::maxBuses)*(static_cast<std::uint64_t>(maxDelay)+1)*2*sizeof(float)>64ull*1024*1024)return false;
+        ready=false;capacity=maxDelay;transition=fadeFrames;
+        if(!validPlan(p,n,b))return false;
+        try{
+            std::vector<DynamicDelay> l(static_cast<std::size_t>(n)),bs(LibertyRealtime::maxBuses);
+            for(int i=0;i<n;++i)l[i].prepare(capacity,p.compensation[i]);
+            for(int i=0;i<LibertyRealtime::maxBuses;++i)bs[i].prepare(capacity,i<b?p.busCompensation[i]:0);
+            lanes.swap(l);buses.swap(bs);
+        }catch(...){return false;}
+        plan=p;laneCount=n;busCount=b;ready=true;return true;
+    }
+    // Single coordinator between callbacks. No allocations; invalid plans
+    // are rejected in their entirety. Routing changes invalidate old history.
+    bool update(const LibertyRealtime::Plan& p,int n,int b,bool discontinuity,bool& changed) noexcept {
+        changed=false;
+        if(!ready||n!=laneCount||!validPlan(p,n,b))return false;
+        bool routing=b!=busCount;
+        bool delays=p.latency!=plan.latency;
+        for(int i=0;i<n;++i){
+            routing=routing||p.nodes[2*i+1].successor!=plan.nodes[2*i+1].successor;
+            delays=delays||p.compensation[i]!=plan.compensation[i];
+        }
+        for(int i=0;i<b;++i)delays=delays||p.busCompensation[i]!=plan.busCompensation[i];
+        changed=routing||delays||discontinuity;
+        if(!changed)return true;
+        for(int i=0;i<n;++i){
+            if(routing||discontinuity)lanes[i].reset(p.compensation[i]);
+            else lanes[i].retarget(p.compensation[i],transition);
+        }
+        for(int i=0;i<LibertyRealtime::maxBuses;++i){
+            const int delay=i<b?p.busCompensation[i]:0;
+            if(routing||discontinuity)buses[i].reset(delay);
+            else buses[i].retarget(delay,transition);
+        }
+        plan=p;busCount=b;return true;
+    }
+    void lane(int i,float* l,float* r,int frames) noexcept {
+        if(ready&&i>=0&&i<laneCount)lanes[i].process(l,r,frames,transition);
+    }
+    void bus(int i,float* l,float* r,int frames) noexcept {
+        if(ready&&i>=0&&i<busCount)buses[i].process(l,r,frames,transition);
+    }
+};
 }

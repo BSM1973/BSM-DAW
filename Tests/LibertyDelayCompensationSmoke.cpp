@@ -13,8 +13,28 @@ int main(){
         for(float v:l)assert(v==0.f);
         for(float v:r)assert(v==0.f);
     }
+    // Changing taps preserves constant signal after history is primed.
+    DynamicDelay variable;variable.prepare(128,0);
+    std::array<float,512> dl{},dr{};dl.fill(1.f);dr.fill(-1.f);
+    variable.process(dl.data(),dr.data(),256,64);
+    variable.retarget(95,64);variable.process(dl.data()+256,dr.data()+256,32,64);
+    variable.retarget(17,64);variable.process(dl.data()+288,dr.data()+288,224,64);
+    for(int i=0;i<512;++i){assert(dl[i]==1.f);assert(dr[i]==-1.f);}
+    variable.reset(17);dl.fill(0.f);dr.fill(0.f);dl[0]=1.f;
+    variable.process(dl.data(),dr.data(),512,64);
+    for(int i=0;i<512;++i)assert(dl[i]==(i==17?1.f:0.f));
     LibertyRealtime::Lane lanes[]={{0,32},{0,0},{-1,64}};
     LibertyRealtime::Plan plan;assert(plan.build(lanes,3,1));
+    DynamicBank dynamic;assert(dynamic.prepare(plan,3,1,128,64));
+    bool changed=false;assert(dynamic.update(plan,3,1,false,changed)&&!changed);
+    lanes[0].declaredLatency=72;assert(plan.build(lanes,3,1));
+    assert(dynamic.update(plan,3,1,false,changed)&&changed);
+    lanes[0].bus=-1;assert(plan.build(lanes,3,1));
+    assert(dynamic.update(plan,3,1,false,changed)&&changed);
+    assert(dynamic.update(plan,3,1,true,changed)&&changed);
+    lanes[0].declaredLatency=129;assert(plan.build(lanes,3,1));
+    assert(!dynamic.update(plan,3,1,false,changed));
+    lanes[0]={0,32};assert(plan.build(lanes,3,1));
     Bank bank;assert(bank.prepare(plan,3,1,128));
     assert(!bank.prepare(plan,3,1,32));
     std::array<float,128> l{},r{},busL{},busR{};

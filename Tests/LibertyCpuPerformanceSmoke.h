@@ -1,5 +1,34 @@
 #pragma once
 #include "AudioEngine.h"
+#include "PluginHost.h"
+
+// Actual JUCE processor fixture, with sample delay and host-reported latency.
+// Not an AU/VST3 binary and not a factory/native product.
+class LibertyPdcTestProcessor final:public juce::AudioProcessor {
+    LibertyPdc::DynamicDelay line;
+    int samples=37;
+public:
+    LibertyPdcTestProcessor():juce::AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)){setLatencySamples(samples);}
+    const juce::String getName() const override{return "PDC Test Processor";}
+    void prepareToPlay(double,int) override{line.prepare(256,samples);}
+    void releaseResources() override{}
+    void reset() override{line.reset(samples);}
+    void changeLatency(int n){samples=n;line.reset(n);setLatencySamples(n);}
+    void processBlock(juce::AudioBuffer<float>& b,juce::MidiBuffer&) override{line.process(b.getWritePointer(0),b.getNumChannels()>1?b.getWritePointer(1):nullptr,b.getNumSamples(),128);}
+    bool acceptsMidi() const override{return false;}
+    bool producesMidi() const override{return false;}
+    double getTailLengthSeconds() const override{return 0.0;}
+    bool hasEditor() const override{return false;}
+    juce::AudioProcessorEditor* createEditor() override{return nullptr;}
+    int getNumPrograms() override{return 1;}
+    int getCurrentProgram() override{return 0;}
+    void setCurrentProgram(int) override{}
+    const juce::String getProgramName(int) override{return {};}
+    void changeProgramName(int,const juce::String&) override{}
+    void getStateInformation(juce::MemoryBlock&) override{}
+    void setStateInformation(const void*,int) override{}
+};
+
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -242,6 +271,42 @@ inline bool runLibertyCpuPerformanceSmoke()
             throw std::runtime_error("PDC zero latency");
         for(int ch=0;ch<2;++ch)for(int i=0;i<pdcCount;++i)
             if(automatic.getSample(ch,i)!=uncompensated.getSample(ch,i))throw std::runtime_error("PDC zero latency parity");
+        // Dynamic latency from a real hosted processor, not simulated clip offsets.
+        // Impulses before and after transition/routing change must sum exactly.
+        auto dynamicEngine=std::make_unique<AudioEngine>();
+        auto& host=LibertyPluginHost::instance();
+        auto processor=std::make_unique<LibertyPdcTestProcessor>();
+        auto* fx=processor.get();
+        if(!host.installAudioEffectForTesting(1,0,std::move(processor),48000,64))throw std::runtime_error("PDC test processor");
+        struct Cleanup {LibertyPluginHost& host;~Cleanup(){host.unloadEffectForTrackSlot(1,0);}} cleanup{host};
+        if(dynamicEngine->addMixerBus()!=0)throw std::runtime_error("dynamic bus");
+        constexpr int dynamicCount=2048;
+        for(int lane=0;lane<2;++lane){
+            auto wave=std::make_shared<juce::AudioBuffer<float>>(2,dynamicCount);wave->clear();
+            for(int i:{17,800,1500}){
+                wave->setSample(0,i,.125f);wave->setSample(1,i,-.125f);
+            }
+            AudioEngine::AudioClipMetadata item;
+            item.id=juce::String("dynamic-")+juce::String(lane);item.sourceBuffer=wave;
+            item.sourceSampleRate=48000;item.lengthSeconds=dynamicCount/48000.0;
+            if(!dynamicEngine->replaceAudioClips(lane,{item}))throw std::runtime_error("dynamic clip");
+        }
+        if(!dynamicEngine->configureDynamicOfflinePdcForTesting(256,128))throw std::runtime_error("dynamic configure");
+        juce::AudioBuffer<float> dynamicOut(2,dynamicCount);
+        const auto hook=[](AudioEngine& e,int offset,void* ctx){
+            if(offset==512)static_cast<LibertyPdcTestProcessor*>(ctx)->changeLatency(95);
+            if(offset==1152)e.setTrackMixerBus(1,0);
+        };
+        if(!dynamicEngine->renderOfflineForTesting(dynamicOut,48000,64,false,hook,fx)||
+           dynamicEngine->getDynamicPdcUpdatesForTesting()!=2||
+           dynamicEngine->getOfflinePdcLatencyForTesting()!=95||
+           host.getDeclaredLaneLatency(1,false)!=95)throw std::runtime_error("dynamic PDC update");
+        for(int i=0;i<dynamicCount;++i){
+            const float expected=(i==54||i==895||i==1595)?.25f:0.f;
+            if(std::abs(dynamicOut.getSample(0,i)-expected)>0.00002f||
+               std::abs(dynamicOut.getSample(1,i)+expected)>0.00002f)throw std::runtime_error("dynamic PDC alignment");
+        }
+        trace << "dynamic_pdc,host_processor,37,95,2,pass" << std::endl;
         trace << "all scenarios completed" << std::endl;
         std::fflush(stdout);
         std::fprintf(stderr,"CPU benchmark: all scenarios completed\n");

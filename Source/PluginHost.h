@@ -79,6 +79,8 @@ public:
     std::uint64_t getRealtimeLockMisses() const noexcept {return realtimeLockMisses.load(std::memory_order_relaxed);}
     // Control thread only: sum plugin-reported latencies in one lane.
     int getDeclaredLaneLatency(int track,bool instrument) const;
+    // Dedicated headless tests only. Never replaces an occupied slot.
+    bool installAudioEffectForTesting(int track,int slot,std::unique_ptr<juce::AudioProcessor>,double rate,int frames);
     juce::String getEffectName(int trackIndex) const;
     juce::String getEffectNameForTrackSlot(int trackIndex, int slotIndex) const;
     juce::String getInstrumentName() const;
