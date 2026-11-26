@@ -4,6 +4,9 @@
 #include <stdexcept>
 #include <string>
 #include <chrono>
+#include <cstdlib>
+#include <cstdint>
+#include <fstream>
 inline bool runLibertyAudioClipPlaybackSmoke()
 {
     try {
@@ -469,6 +472,68 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             std::fprintf(stderr,"warp_ultimate_stereo,%.2f,%.9f,%.9f\n",
                 ratio,maxDelta,channelDelta);
         }
+        // Phase 2.3.9: a neutral fourfold stretch must preserve harmonic
+        // energy without relying on diagnostic gain or a limiter.
+        const auto extreme=AudioEngine::renderSpectralWarpOffline(*harmonic,4,0,0);
+        if(extreme.getNumSamples()!=192000)throw std::runtime_error("perfection extreme length");
+        double extremeEnergy=0,extremePeak=0;
+        for(int i=0;i<extreme.getNumSamples();++i){
+            const double x=extreme.getSample(0,i);
+            if(!std::isfinite(x))throw std::runtime_error("perfection extreme nonfinite");
+            extremeEnergy+=x*x;extremePeak=std::max(extremePeak,std::abs(x));
+        }
+        const double extremeRms=std::sqrt(extremeEnergy/extreme.getNumSamples());
+        const double lossDb=20*std::log10(extremeRms/dryRms);
+        if(!std::isfinite(lossDb)||std::abs(lossDb)>1.0||extremePeak>.8)
+            throw std::runtime_error("perfection extreme energy or peak");
+        std::fprintf(stderr,"warp_perfection_x4,%.6f,%.6f,%.4f\n",extremeRms,extremePeak,lossDb);
+        // Export actual engine renders when the caller supplies a directory.
+        // Both files use the same headroom factor after RMS matching; no clipper.
+        if(const char* exportDir=std::getenv("LIBERTY_WARP_WAV_DIR")){
+            const double match=dryRms/extremeRms;
+            const double headroom=std::min(1.0,.95/std::max((double)harmonic->getMagnitude(0,48000),extremePeak*match));
+            auto wav=[&](const char* name,const juce::AudioBuffer<float>& buffer,double gain){
+                std::ofstream f(std::string(exportDir)+"/"+name,std::ios::binary|std::ios::trunc);
+                auto u16=[&](std::uint16_t v){f.put(char(v&255));f.put(char((v>>8)&255));};
+                auto u32=[&](std::uint32_t v){u16(std::uint16_t(v));u16(std::uint16_t(v>>16));};
+                const auto bytes=std::uint32_t(buffer.getNumSamples()*2);
+                f.write("RIFF",4);u32(36+bytes);f.write("WAVEfmt ",8);u32(16);
+                u16(1);u16(1);u32(48000);u32(96000);u16(2);u16(16);
+                f.write("data",4);u32(bytes);
+                for(int i=0;i<buffer.getNumSamples();++i){
+                    const auto sample=std::lround(buffer.getSample(0,i)*gain*32767);
+                    if(sample < -32767 || sample > 32767)throw std::runtime_error("perfection WAV clipped");
+                    u16(static_cast<std::uint16_t>(static_cast<std::int16_t>(sample)));
+                }
+                f.close();if(!f)throw std::runtime_error("perfection WAV write");
+            };
+            wav("warp_dry.wav",*harmonic,headroom);
+            wav("warp_x4_rms_matched.wav",extreme,match*headroom);
+        }
+        // Opt-in extended render: 60 seconds of stereo OUTPUT at 48 kHz.
+        // Report offline elapsed time and buffer bytes, not live callback CPU/RSS.
+        if(std::getenv("LIBERTY_WARP_EXTENDED")){
+            juce::AudioBuffer<float> longSource(2,720000);
+            for(int i=0;i<longSource.getNumSamples();++i){
+                const auto x=harmonic->getSample(0,i%48000);
+                longSource.setSample(0,i,x);longSource.setSample(1,i,x);
+            }
+            const auto started=std::chrono::steady_clock::now();
+            const auto longWet=AudioEngine::renderSpectralWarpOffline(longSource,4,0,0);
+            if(longWet.getNumChannels()!=2||longWet.getNumSamples()!=2880000)
+                throw std::runtime_error("perfection extended length");
+            double energy=0,peak=0;
+            for(int ch=0;ch<2;++ch)for(int i=0;i<longWet.getNumSamples();++i){
+                const double x=longWet.getSample(ch,i);
+                if(!std::isfinite(x))throw std::runtime_error("perfection extended nonfinite");
+                energy+=x*x;peak=std::max(peak,std::abs(x));
+            }
+            const double rms=std::sqrt(energy/(2.*longWet.getNumSamples()));
+            if(rms<.1||rms>.2||peak>.8)throw std::runtime_error("perfection extended energy");
+            std::fprintf(stderr,"warp_perfection_extended,60,%.4f,%.6f,%.6f,%zu\n",
+                std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count(),
+                rms,peak,(size_t)longWet.getNumSamples()*2*sizeof(float));
+        }
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
@@ -515,6 +580,40 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             const auto perf=engine.getCpuPerformance();
             std::fprintf(stderr,"warp_quality,%d,%.4f,%.4f,%llu,%.6f,%.6f\n",mode,perf.averagePercent(),perf.peakPercent(),
                 (unsigned long long)perf.overruns,std::sqrt(energy/72000),double(peak));
+        }
+        // Multi-marker metadata roundtrip and deterministic audio comparison.
+        // This exercises clip XML, not a complete saved project with media.
+        AudioEngine::AudioClipMetadata multi;
+        if(!engine.prepareQuantizedArrangementClip(groove,.25,1.0,multi))
+            throw std::runtime_error("perfection marker preparation");
+        juce::XmlElement multiXml("Clip");
+        AudioEngine::writeAudioClipProperties(multiXml,multi);
+        auto multiRestored=AudioEngine::readAudioClipProperties(multiXml);
+        if(multiRestored.warp.count!=multi.warp.count||
+           multiRestored.warp.mode!=multi.warp.mode||
+           multiRestored.warp.enabled!=multi.warp.enabled)
+            throw std::runtime_error("perfection marker metadata");
+        for(int i=0;i<multi.warp.count;++i){
+            if(std::abs(multiRestored.warp.source[i]-multi.warp.source[i])>1.e-8||
+               std::abs(multiRestored.warp.target[i]-multi.warp.target[i])>1.e-8)
+                throw std::runtime_error("perfection marker coordinate");
+        }
+        multiRestored.sourceBuffer=multi.sourceBuffer;
+        multiRestored.sourceSampleRate=multi.sourceSampleRate;
+        juce::AudioBuffer<float> markerA(2,192000),markerB(2,192000);
+        if(!engine.replaceArrangementAudioClips(0,{multi})||
+           !engine.renderOfflineForTesting(markerA,48000,128,false)||
+           !engine.replaceArrangementAudioClips(0,{multiRestored})||
+           !engine.renderOfflineForTesting(markerB,48000,128,false))
+            throw std::runtime_error("perfection marker playback");
+        for(int ch=0;ch<2;++ch)for(int i=0;i<192000;++i)
+            near(markerA.getSample(ch,i),markerB.getSample(ch,i));
+        for(int i=1;i<multi.warp.count-1;++i){
+            const int center=(int)std::llround(multi.warp.target[i]*48000);
+            double jump=0;
+            for(int j=std::max(1,center-128);j<std::min(192000,center+128);++j)
+                jump=std::max(jump,std::abs(double(markerA.getSample(0,j))-markerA.getSample(0,j-1)));
+            std::fprintf(stderr,"warp_perfection_junction,%d,%.6f\n",i,jump);
         }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"AudioClipPlaybackSmoke: %s\n",e.what());return false;}
