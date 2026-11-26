@@ -109,6 +109,24 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         if(!engine.replaceArrangementAudioClips(0,split))throw std::runtime_error("redo snapshot");
         engine.renderOfflineForTesting(after,48000,128);
         for(int i=0;i<count;++i)near(before.getSample(0,i),after.getSample(0,i));
+        // Rhythmic analysis: regular synthetic pulses, silence and source preservation.
+        auto beatSource=std::make_shared<juce::AudioBuffer<float>>(1,48000*4);
+        beatSource->clear();
+        for(int onset=0;onset<beatSource->getNumSamples();onset+=24000)
+            for(int i=0;i<480;++i)beatSource->setSample(0,onset+i,.5f);
+        AudioEngine::AudioClipMetadata beat;beat.id="beat-analysis";beat.sourceBuffer=beatSource;
+        beat.sourceSampleRate=48000;beat.lengthSeconds=4;
+        const auto rhythm=engine.analyseArrangementClipRhythm(beat);
+        if(rhythm.transients.size()!=8||std::abs(rhythm.bpm-120)>1||rhythm.confidence<.8)
+            throw std::runtime_error("rhythmic analysis regular pulse");
+        auto silent=std::make_shared<juce::AudioBuffer<float>>(1,48000*4);silent->clear();
+        auto silentClip=beat;silentClip.sourceBuffer=silent;
+        if(engine.analyseArrangementClipRhythm(silentClip).bpm!=0)throw std::runtime_error("rhythmic analysis silence");
+        AudioEngine::AudioClipMetadata prepared;
+        if(!engine.prepareStretchedArrangementClip(beat,2,prepared)||prepared.id!=beat.id||
+            prepared.sourceBuffer==beatSource||prepared.sourceBuffer->getNumSamples()!=96000||
+            beatSource->getNumSamples()!=192000||engine.prepareStretchedArrangementClip(beat,-1,prepared))
+            throw std::runtime_error("staged stretch");
         // Signalsmith must change duration while preserving the frequency.
         auto tone=std::make_shared<juce::AudioBuffer<float>>(1,48000);
         for(int i=0;i<48000;++i)tone->setSample(0,i,.25f*std::sin(2*juce::MathConstants<double>::pi*440*i/48000));

@@ -603,7 +603,10 @@ void paintAudioFades(juce::Graphics& g){
 // Audio source ownership and all non-targeted MIDI note properties are retained.
 bool applyGroupClipOperation(int command,double value=0.0){
     if(selectedAudio.size()+selectedClipIds.size()<2||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>17)return false;
+    if(!std::isfinite(value)||command<0||command>19)return false;
+    if(command==18&&(value<25||value>400))return false;
+    if(command==19&&(value<60||value>200||!std::isfinite(owner.tempoBpm)||owner.tempoBpm<=0))return false;
+    if(command>=18&&selectedAudio.empty())return false;
     if(command==14&&(value<0||value>86400))return false;
     if(command==15&&(value<-60||value>12))return false;
     if(command==16&&(value<-48||value>48||std::floor(value)!=value))return false;
@@ -654,10 +657,24 @@ bool applyGroupClipOperation(int command,double value=0.0){
         }
     };
     visitMidi(midi,owner.getMidiTrackCount());visitMidi(instruments,owner.getInstrumentTrackCount());
+    std::uint64_t stretchBytes=0;
     for(int lane=0;lane<(int)audio.size();++lane)
         for(auto& clip:audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
             positions.push_back({clip.startSeconds,clip.lengthSeconds});starts.push_back(&clip.startSeconds);
             collectSpan(clip.startSeconds,clip.lengthSeconds);
+            if(command==18||command==19){
+                const double ratio=command==18?value/100.0:value/owner.tempoBpm;
+                const double seconds=clip.lengthSeconds*ratio;
+                if(!clip.sourceBuffer||ratio<.25||ratio>4||!std::isfinite(seconds)||seconds<=0)return false;
+                const double bytes=seconds*clip.sourceSampleRate*2*sizeof(float);
+                if(!std::isfinite(bytes)||bytes>128ull*1024*1024||stretchBytes+bytes>128ull*1024*1024)return false;
+                stretchBytes+=static_cast<std::uint64_t>(std::ceil(bytes));
+                if(std::abs(ratio-1.0)>1.e-9){
+                    AudioClip replacement;
+                    if(!owner.audioEngine.prepareStretchedArrangementClip(clip,seconds,replacement))return false;
+                    clip=std::move(replacement);touchedAudio.insert(lane);changed=true;
+                }
+            }
             if(vertical){
                 if(lane+laneDelta<0||lane+laneDelta>=(int)audio.size())valid=false;
             }
@@ -778,9 +795,9 @@ bool toggleGroupClipSelection(juce::Point<int> p){
 }
 void showGroupValueDialog(int command){
     const bool gain=command==15,transpose=command==16;
-    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":"Durée du fondu en secondes");
+    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==18?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":"Durée du fondu en secondes");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("ÉDITION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
-    dialog->addTextEditor("value",gain?"0":transpose?"0":"0.05");
+    dialog->addTextEditor("value",gain?"0":transpose?"0":command==18?"150":command==19?"120":"0.05");
     dialog->addButton(juce::String::fromUTF8("Appliquer"),1,juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton(juce::String::fromUTF8("Annuler"),0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
@@ -830,13 +847,33 @@ bool showGroupClipMenu(juce::Point<int> p){
     advanced.addItem(16,juce::String::fromUTF8("Gain audio personnalisé…"),!selectedAudio.empty());
     advanced.addItem(17,juce::String::fromUTF8("Transposition personnalisée…"));
     menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
+    juce::PopupMenu warp;
+    warp.addItem(19,juce::String::fromUTF8("Étirement collectif (%)…"),!selectedAudio.empty());
+    warp.addItem(20,juce::String::fromUTF8("Synchroniser au tempo du projet…"),!selectedAudio.empty());
+    warp.addItem(21,juce::String::fromUTF8("Analyser les transitoires et le tempo"),!selectedAudio.empty());
+    menu.addSubMenu(juce::String::fromUTF8("Warp et étirement"),warp);
     const auto screen=localPointToGlobal(p);
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection](int choice){
-            if(!safe||choice<1||choice>18)return;
+            if(!safe||choice<1||choice>21)return;
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice==21){
+                juce::String report;int count=0;
+                for(const auto& key:audioSelection){
+                    if(++count>12){report+=juce::String::fromUTF8("\nAnalyse limitée aux 12 premiers clips.");break;}
+                    const auto clips=safe->owner.audioEngine.getArrangementAudioClips(key.first);
+                    for(const auto& clip:clips)if(clip.id==key.second){
+                        const auto result=safe->owner.audioEngine.analyseArrangementClipRhythm(clip);
+                        report+=clip.sourceName+" : "+juce::String((int)result.transients.size())+juce::String::fromUTF8(" transitoires — ");
+                        report+=result.bpm>0?juce::String(result.bpm,1)+" BPM":juce::String::fromUTF8("tempo incertain");
+                        report+="\n";
+                    }
+                }
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,juce::String::fromUTF8("Analyse rythmique"),report);
+                return;
+            }
             if(choice>=15){safe->showGroupValueDialog(choice-1);return;}
             if(!safe->applyGroupClipOperation(choice-1)){
                 safe->operationMessage=juce::String::fromUTF8("Aucune modification collective possible");safe->repaint();

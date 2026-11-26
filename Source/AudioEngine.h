@@ -435,6 +435,10 @@ public:
     bool splitArrangementAudioClip(int trackIndex,const juce::String& id,double seconds);
     bool promoteAudioClip(int trackIndex,const juce::String& id);
     bool stretchArrangementAudioClip(int trackIndex,const juce::String& id,double seconds);
+    // Prepare a replacement without publishing it. Original buffers remain owned by Undo.
+    bool prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result);
+    struct ClipRhythmAnalysis { double bpm=0.0,confidence=0.0;std::vector<double> transients; };
+    ClipRhythmAnalysis analyseArrangementClipRhythm(const AudioClipMetadata& clip);
     std::shared_ptr<juce::AudioBuffer<float>> renderArrangementAudioClip(const AudioClipMetadata& clip);
     bool loadAudioClipSource(int trackIndex, const juce::String& clipId,
                              const juce::File& sourceFile, juce::String& error);

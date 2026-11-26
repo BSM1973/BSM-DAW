@@ -230,38 +230,81 @@ std::shared_ptr<juce::AudioBuffer<float>> AudioEngine::renderArrangementAudioCli
         return output;
     }catch(...){return {};}
 }
+bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result)
+{
+    if(!validAudioClip(clip)||!std::isfinite(seconds)||seconds<=0)return false;
+    if(!clip.sourceBuffer){auto copy=clip;copy.lengthSeconds=seconds;if(!validAudioClip(copy))return false;result=std::move(copy);return true;}
+    const double rate=clip.sourceSampleRate;
+    if(!std::isfinite(seconds*rate)||seconds*rate>32000000||seconds*rate<0.5)return false;
+    // Render neutral region, leaving independent clip controls editable.
+    auto neutral=clip;neutral.clipGain=1.f;neutral.pitchSemitones=0.0;neutral.reverse=false;
+    neutral.fadeInSeconds=neutral.fadeOutSeconds=0;neutral.spectralCache.reset();
+    auto source=renderArrangementAudioClip(neutral);
+    if(!source)return false;
+    try{
+        auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(seconds*rate));
+        if(output->getNumSamples()<1)return false;
+        signalsmith::stretch::SignalsmithStretch<float> stretch;stretch.presetDefault(2,rate);
+        stretch.setTransposeFactor(1.0);
+        stretch.process(source->getArrayOfReadPointers(),source->getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
+        auto copy=clip;
+        copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;copy.offsetSeconds=0;
+        copy.envelopeLengthSeconds=0;copy.trimStartFraction=0;copy.trimEndFraction=1;copy.warp={};copy.spectralCache.reset();
+        if(!validAudioClip(copy))return false;
+        result=std::move(copy);return true;
+    }catch(...){return false;}
+}
+
 bool AudioEngine::stretchArrangementAudioClip(int track,const juce::String& id,double seconds)
 {
-    if(!std::isfinite(seconds)||seconds<=0)return false;
     auto clips=getArrangementAudioClips(track);
-    for(auto& c:clips){
-        if(c.id!=id)continue;
-        if(!c.sourceBuffer){c.lengthSeconds=seconds;return replaceArrangementAudioClips(track,clips);}
-        // Stretch the neutral signal so gain, pitch, reverse and fades remain
-        // editable clip properties instead of being baked into the samples.
-        auto neutral=c;
-        neutral.clipGain=1.0f;
-        neutral.pitchSemitones=0.0;
-        neutral.reverse=false;
-        neutral.fadeInSeconds=0.0;
-        neutral.fadeOutSeconds=0.0;
-        neutral.autoCrossfadeInStart=neutral.autoCrossfadeInEnd=-1.0;
-        neutral.autoCrossfadeOutStart=neutral.autoCrossfadeOutEnd=-1.0;
-        neutral.autoCrossfadeCurve=0;
-        auto source=renderArrangementAudioClip(neutral);
-        if(!source||seconds*c.sourceSampleRate>32000000)return false;
-        try {
-            auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(seconds*c.sourceSampleRate));
-            if(output->getNumSamples()<1)return false;
-            signalsmith::stretch::SignalsmithStretch<float> stretch;stretch.presetDefault(2,c.sourceSampleRate);
-            stretch.setTransposeFactor(1.0);
-            stretch.process(source->getArrayOfReadPointers(),source->getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
-            c.sourceBuffer=output;c.sourcePath.clear();c.lengthSeconds=seconds;c.offsetSeconds=0;
-            // The source region and Warp mapping are baked into the new buffer.
-            // Keep independent, user-editable clip controls unchanged.
-            c.envelopeLengthSeconds=0;c.trimStartFraction=0;c.trimEndFraction=1;c.warp={};c.spectralCache.reset();
-            return replaceArrangementAudioClips(track,clips);
-        }catch(...){return false;}
+    for(auto& clip:clips)if(clip.id==id){
+        AudioClipMetadata replacement;
+        if(!prepareStretchedArrangementClip(clip,seconds,replacement))return false;
+        clip=std::move(replacement);return replaceArrangementAudioClips(track,clips);
     }
     return false;
+}
+
+AudioEngine::ClipRhythmAnalysis AudioEngine::analyseArrangementClipRhythm(const AudioClipMetadata& clip)
+{
+    ClipRhythmAnalysis result;
+    // Intended for rhythmic loops; limit work on the UI thread.
+    if(!validAudioClip(clip)||!clip.sourceBuffer||clip.lengthSeconds<1.5||clip.lengthSeconds>60.0)return result;
+    auto neutral=clip;neutral.clipGain=1.f;neutral.pitchSemitones=0;neutral.reverse=false;
+    neutral.fadeInSeconds=neutral.fadeOutSeconds=0;neutral.spectralCache.reset();
+    auto source=renderArrangementAudioClip(neutral);
+    if(!source)return result;
+    const double rate=clip.sourceSampleRate;
+    const int hop=juce::jmax(1,(int)std::llround(rate*.005));
+    const int size=source->getNumSamples();
+    std::vector<double> envelope;
+    for(int start=0;start<size;start+=hop){
+        double energy=0;const int end=juce::jmin(size,start+hop);
+        for(int ch=0;ch<source->getNumChannels();++ch)
+            for(int i=start;i<end;++i){const double x=source->getSample(ch,i);if(!std::isfinite(x))return {};energy+=x*x;}
+        envelope.push_back(std::sqrt(energy/((end-start)*source->getNumChannels())));
+    }
+    if(envelope.size()<4)return result;
+    const double peak=*std::max_element(envelope.begin(),envelope.end());
+    if(peak<.0001)return result;
+    double previous=0,last=-1;
+    for(size_t i=0;i<envelope.size();++i){
+        const double current=envelope[i],time=i*hop/rate;
+        if(current>=peak*.10&&current-previous>=peak*.08&&(last<0||time-last>=.12)){
+            result.transients.push_back(time);last=time;
+        }
+        previous=current;
+    }
+    if(result.transients.size()<4)return result;
+    std::vector<double> intervals;
+    for(size_t i=1;i<result.transients.size();++i)intervals.push_back(result.transients[i]-result.transients[i-1]);
+    auto sorted=intervals;std::sort(sorted.begin(),sorted.end());
+    const double median=sorted[sorted.size()/2];
+    if(median<.30||median>1.0)return result;
+    size_t matching=0;double sum=0;
+    for(double interval:intervals)if(std::abs(interval-median)<=.035*median){++matching;sum+=interval;}
+    result.confidence=double(matching)/intervals.size();
+    if(result.confidence>=.80&&matching>=3)result.bpm=60.0/(sum/matching);
+    return result;
 }
