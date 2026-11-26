@@ -545,8 +545,10 @@ public:
         playA.onClick=[this]{startPreview(true);};playB.onClick=[this]{startPreview(false);};
         stopPreviewButton.onClick=[this]{stopPreview();};
         loopPreview.onClick=[this]{stopPreview();};
+        adaptivePreview.setButtonText(juce::String::fromUTF8("Corrélation (écoute B)"));
+        addAndMakeVisible(adaptivePreview);adaptivePreview.onClick=[this]{stopPreview();if(adaptivePreview.getToggleState())matchRms.setToggleState(false,juce::dontSendNotification);};
         matchRms.setButtonText(juce::String::fromUTF8("A/B à niveau RMS égal"));
-        addAndMakeVisible(matchRms);matchRms.onClick=[this]{stopPreview();};
+        addAndMakeVisible(matchRms);matchRms.onClick=[this]{stopPreview();if(matchRms.getToggleState())adaptivePreview.setToggleState(false,juce::dontSendNotification);};
         savePreset.setButtonText(juce::String::fromUTF8("Mémoriser"));
         loadPreset.setButtonText(juce::String::fromUTF8("Rappeler"));
         addAndMakeVisible(savePreset);addAndMakeVisible(loadPreset);
@@ -573,7 +575,7 @@ public:
         addAndMakeVisible(exportPreset);addAndMakeVisible(importPreset);
         exportPreset.onClick=[this]{choosePresetFile(true);};importPreset.onClick=[this]{choosePresetFile(false);};
         loadPreset.onClick=[this]{restorePersonalPreset();};
-        if(mappedWarp)signalReport.setText(juce::String::fromUTF8("Warp : préécoute du moteur sans cache spectral"),juce::dontSendNotification);
+        if(mappedWarp)signalReport.setText(juce::String::fromUTF8("Warp : aperçu avec cache existant si disponible"),juce::dontSendNotification);
     }
     ~CrossfadeStudioPanel()override{stopPreview();}
     AudioClip values()const{
@@ -596,6 +598,7 @@ public:
         signalReport.setBounds(18,500,584,42);
         matchRms.setBounds(18,548,290,28);
         savePreset.setBounds(326,548,130,28);loadPreset.setBounds(466,548,134,28);
+        adaptivePreview.setBounds(414,366,186,28);
         snapZero.setBounds(18,590,210,32);
         cancel.setBounds(342,590,120,32);confirm.setBounds(480,590,120,32);
     }
@@ -728,24 +731,22 @@ private:
             if(until-from>12.||until<=from){report(juce::String::fromUTF8("Durée de préécoute maximale : 12 secondes."));return;}
             const double firstSample=std::floor(from*rate);
             const double seek=firstSample/rate;
-            const int frames=(int)std::ceil(until*rate-firstSample),offset=0;
+            const int frames=(int)std::ceil(until*rate-firstSample);
             if(frames<2)return;
             auto renderer=std::make_unique<AudioEngine>();
             auto renderWindow=[&](juce::AudioBuffer<float>& destination){
                 double position=seek;
-                return renderer->renderOfflineForTesting(destination,rate,256,false,
+                return renderer->renderOfflineForTesting(destination,rate,256,mappedWarp,
                     [](AudioEngine& engine,int offset,void* context){
                         if(offset==0)engine.setCurrentTimeSeconds(*static_cast<double*>(context));
                     },&position);
             };
-            juce::AudioBuffer<float> rendered(2,frames);
+            juce::AudioBuffer<float> excerpt(2,frames);
             if(!renderer->replaceArrangementAudioClips(0,{left,right})||
-               !renderWindow(rendered)){
+               !renderWindow(excerpt)){
                 report(juce::String::fromUTF8("Échec du rendu de préécoute."));return;
             }
-            const int count=frames-offset;
-            juce::AudioBuffer<float> excerpt(2,count);
-            for(int ch=0;ch<2;++ch)excerpt.copyFrom(ch,0,rendered,ch,offset,count);
+            const int count=frames;
             const auto l=LibertyAudioCrossfade::measureSignal(excerpt.getReadPointer(0),count);
             const auto r=LibertyAudioCrossfade::measureSignal(excerpt.getReadPointer(1),count);
             if(!std::isfinite(l.peak)||!std::isfinite(r.peak)){report(juce::String::fromUTF8("Signal invalide."));return;}
@@ -806,6 +807,20 @@ private:
             // Protect audition boundaries without changing the measured signal.
             const int ramp=juce::jmin(count/2,(int)(rate*.005));
             if(ramp>0){excerpt.applyGainRamp(0,ramp,0.f,1.f);excerpt.applyGainRamp(count-ramp,ramp,1.f,0.f);}
+            if(!initial&&adaptivePreview.getToggleState()&&!matchRms.getToggleState()&&right.crossfadeEnergy){
+                const int outgoingCurve=right.crossfadeOutCurve<0?right.crossfadeCurve:right.crossfadeOutCurve;
+                const double fadeStart=overlap+right.crossfadeCenter*(limit-len);
+                for(int i=0;i<count;++i){
+                    const double t=seek+i/rate;
+                    if(t<fadeStart||t>fadeStart+len)continue;
+                    const double p=juce::jlimit(0.,1.,(t-fadeStart)/juce::jmax(1.e-9,len));
+                    const double gi=LibertyAudioCrossfade::studioLevel(right.crossfadeCurve,outgoingCurve,p,true);
+                    const double go=LibertyAudioCrossfade::studioLevel(outgoingCurve,right.crossfadeCurve,p,false);
+                    const float g=(float)LibertyAudioCrossfade::correlationAttenuation(gi,go,correlation);
+                    for(int ch=0;ch<2;++ch)excerpt.setSample(ch,i,excerpt.getSample(ch,i)*g);
+                }
+                report(info+" | "+juce::String::fromUTF8("Écoute corrigée"));
+            }
             const double peak=juce::jmax(l.peak,r.peak);
             if(matchRms.getToggleState())excerpt.applyGain((float)matchingGain);
             else if(peak>.95)excerpt.applyGain((float)(.95/peak));
@@ -856,7 +871,7 @@ private:
     AudioClip original,leftClip;AudioEngine& live;std::function<bool(const AudioClip&)> apply;double limit;
     juce::AudioSourcePlayer previewPlayer;std::unique_ptr<juce::MemoryAudioSource> previewSource;
     bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.,rmsA=-1.,rmsB=-1.;
-    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview,matchRms;juce::TextButton savePreset,loadPreset,snapZero,importPreset,exportPreset;
+    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview,matchRms,adaptivePreview;juce::TextButton savePreset,loadPreset,snapZero,importPreset,exportPreset;
     std::unique_ptr<juce::FileChooser> presetChooser;juce::ComboBox personalSlots;juce::Label signalReport;
     double zeroCenter=-1.;AudioClip zeroValues;
     std::array<float,160> waveLeft{},waveRight{};

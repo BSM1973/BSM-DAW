@@ -340,6 +340,17 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             LibertyAudioCrossfade::validPreset(1,0,1.1,.2)||
             LibertyAudioCrossfade::validPreset(1,0,.5,-1.))
              throw std::runtime_error("crossfade final QC validation");}
+        // Final lock: bounded correlation-dependent attenuation.
+        for(int i=0;i<=1000;++i){
+            const double p=i/1000.,a=std::sqrt(p),b=std::sqrt(1.-p);
+            for(double rho:{-1.,-.5,0.,.5,1.}){
+                const double g=LibertyAudioCrossfade::correlationAttenuation(a,b,rho);
+                if(!std::isfinite(g)||g<.70710678||g>1.0000000001||
+                   (rho<=0.&&g!=1.)||
+                   (rho>0.&&std::abs(g*g*LibertyAudioCrossfade::predictedPower(a,b,rho)-1.)>1.e-10))
+                    throw std::runtime_error("final lock correlation attenuation");
+            }
+        }
         // Studio PRO: energy invariant for different curve pairs, and bounded
         // theoretical gain-step diagnostic (not a signal-based click detector).
         for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){

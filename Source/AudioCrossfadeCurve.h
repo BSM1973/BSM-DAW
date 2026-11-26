@@ -173,4 +173,13 @@ inline bool validPreset(int in,int out,double center,double duration) noexcept
     return validCurve(in)&&validCurve(out)&&std::isfinite(center)&&center>=0.&&center<=1.
         &&std::isfinite(duration)&&duration>=0.&&duration<=86400.;
 }
+// Positive correlation can raise the level of an equal-power fade.
+// Attenuation only: never boost anti-phase cancellation. Audition opt-in.
+inline double correlationAttenuation(double in,double out,double rho) noexcept
+{
+    if(!std::isfinite(rho)||!std::isfinite(in)||!std::isfinite(out))return 1.;
+    const double base=in*in+out*out;
+    if(base<=1.e-12||rho<=0.)return 1.;
+    return std::sqrt(base/std::max(base,predictedPower(in,out,rho)));
+}
 }
