@@ -377,6 +377,12 @@ jobs:
           export LIBERTY_WARP_EXTENDED=1
           /usr/bin/time -l build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --audio-clip-playback-test 2>&1 | tee build-fast/warp-master/results.txt
 
+      - name: Independently validate native Warp WAVs (macOS)
+        if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+        run: |
+          set -o pipefail
+          python3 Tests/WarpMasterWavValidation.py build-fast/warp-master | tee build-fast/warp-master/wav-validation.txt
+
       - name: Archive native Warp master diagnostics (macOS)
         if: always() && github.ref == 'refs/heads/feature/liberty-daw-three-editions'
         uses: actions/upload-artifact@v4
@@ -649,6 +655,12 @@ jobs:
           $p = Start-Process -FilePath $app -ArgumentList '--audio-clip-playback-test' -PassThru -Wait -RedirectStandardOutput (Join-Path $dir 'stdout.txt') -RedirectStandardError (Join-Path $dir 'results.txt')
           Get-Content (Join-Path $dir 'results.txt')
           if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      - name: Independently validate native Warp WAVs (Windows)
+        shell: pwsh
+        run: |
+          python Tests/WarpMasterWavValidation.py build-win/warp-master | Tee-Object -FilePath build-win/warp-master/wav-validation.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Archive native Warp master diagnostics (Windows)
         if: always()
