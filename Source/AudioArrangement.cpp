@@ -419,3 +419,27 @@ bool AudioEngine::prepareTonalArrangementClip(const AudioClipMetadata& clip,doub
         result=std::move(copy);return true;
     }catch(...){return false;}
 }
+
+bool AudioEngine::prepareMelodicArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,
+    const std::atomic<bool>* cancel,double* vibratoHz,double* vibratoDepthCents)
+{
+    if(!canRenderRawStretch(clip)||clip.sourceBuffer->getNumChannels()!=1||clip.lengthSeconds>20||
+       !std::isfinite(seconds)||seconds<=0||seconds/clip.lengthSeconds<.25||seconds/clip.lengthSeconds>4)return false;
+    const double count=seconds*clip.sourceSampleRate;
+    if(!std::isfinite(count)||count<1||count>16000000)return false;
+    try{
+        const auto& input=*clip.sourceBuffer;
+        const auto contour=LibertyTonal::track(input.getReadPointer(0),input.getNumSamples(),clip.sourceSampleRate,cancel);
+        if(contour.periods.empty())return false;
+        auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(count));
+        if(!LibertyTonal::renderMelody(input.getReadPointer(0),input.getNumSamples(),output->getWritePointer(0),
+            output->getNumSamples(),contour,cancel))return false;
+        output->copyFrom(1,0,*output,0,0,output->getNumSamples());
+        auto copy=clip;copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;
+        copy.envelopeLengthSeconds=0;copy.warp={};copy.spectralCache.reset();
+        if(!validAudioClip(copy))return false;
+        if(vibratoHz)*vibratoHz=contour.vibratoHz;
+        if(vibratoDepthCents)*vibratoDepthCents=contour.vibratoDepthCents;
+        result=std::move(copy);return true;
+    }catch(...){return false;}
+}

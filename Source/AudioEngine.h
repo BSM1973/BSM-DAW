@@ -443,6 +443,8 @@ public:
     static bool prepareRawStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result);
     static bool prepareTonalArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,
         const std::atomic<bool>* cancel=nullptr,double* fundamental=nullptr);
+    static bool prepareMelodicArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,
+        const std::atomic<bool>* cancel=nullptr,double* vibratoHz=nullptr,double* vibratoDepthCents=nullptr);
     struct ClipRhythmAnalysis { double bpm=0.0,confidence=0.0;std::vector<double> transients; };
     ClipRhythmAnalysis analyseArrangementClipRhythm(const AudioClipMetadata& clip);
     static ClipRhythmAnalysis analyseRawClipRhythm(const AudioClipMetadata& clip);

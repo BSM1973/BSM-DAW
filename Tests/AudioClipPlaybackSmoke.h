@@ -345,20 +345,50 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         auto silenceTonal=tonalClip;silenceTonal.sourceBuffer=silent;silenceTonal.lengthSeconds=4;
         if(AudioEngine::prepareTonalArrangementClip(silenceTonal,6,tonalOut))
             throw std::runtime_error("tonal silence rejected");
+        // Dynamic tracking and variable-period reconstruction on synthetic vibrato.
+        auto vibrato=std::make_shared<juce::AudioBuffer<float>>(1,48000*2);
+        double phaseV=0;
+        for(int i=0;i<vibrato->getNumSamples();++i){
+            const double f=220*std::pow(2.0,45*std::sin(2*juce::MathConstants<double>::pi*5*i/48000)/1200);
+            phaseV+=2*juce::MathConstants<double>::pi*f/48000;
+            vibrato->setSample(0,i,float(.2*std::sin(phaseV)+.04*std::sin(2*phaseV)));
+        }
+        auto melody=tonalClip;melody.sourceBuffer=vibrato;melody.lengthSeconds=2;
+        AudioEngine::AudioClipMetadata melodicOut;
+        double vibratoRate=0,vibratoDepth=0;
+        const auto melodicStart=std::chrono::steady_clock::now();
+        if(!AudioEngine::prepareMelodicArrangementClip(melody,3,melodicOut,nullptr,&vibratoRate,&vibratoDepth)||
+           melodicOut.sourceBuffer->getNumSamples()!=144000||melody.sourceBuffer!=vibrato||
+           std::abs(vibratoRate-5)>.6||vibratoDepth<15||vibratoDepth>65)
+            throw std::runtime_error("melodic vibrato tracking");
+        int melodyCrossings=0;double melodyEnergy=0;
+        for(int i=48001;i<96001;++i){
+            const float x=melodicOut.sourceBuffer->getSample(0,i);
+            if(!std::isfinite(x))throw std::runtime_error("melody nonfinite");
+            if(melodicOut.sourceBuffer->getSample(0,i-1)<=0&&x>0)++melodyCrossings;
+            melodyEnergy+=double(x)*x;
+        }
+        if(std::abs(melodyCrossings-220)>8||melodyEnergy/48000<.005)
+            throw std::runtime_error("melodic pitch or energy");
+        std::fprintf(stderr,"melodic_quality,%.4f,%.4f,%d,%.6f,%.4f\n",vibratoRate,vibratoDepth,melodyCrossings,
+            std::sqrt(melodyEnergy/48000),std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-melodicStart).count());
+        if(AudioEngine::prepareMelodicArrangementClip(melody,3,melodicOut,&cancelled))
+            throw std::runtime_error("melodic cancellation");
         // Compare spectral offline timings separately from callback CPU.
         const auto spectralStart=std::chrono::steady_clock::now();
         auto spectral=AudioEngine::renderSpectralWarpOffline(*harmonic,1.5,0,0);
         if(spectral.getNumSamples()!=72000)throw std::runtime_error("spectral length");
-        double spectralEnergy=0;
+        double spectralEnergy=0,spectralPeak=0;
         for(int i=0;i<spectral.getNumSamples();++i){
             const double x=spectral.getSample(0,i);
             if(!std::isfinite(x))throw std::runtime_error("spectral nonfinite");
-            spectralEnergy+=x*x;
+            spectralEnergy+=x*x;spectralPeak=std::max(spectralPeak,std::abs(x));
         }
         if(spectralEnergy<.001)throw std::runtime_error("spectral silence");
         std::fprintf(stderr,"spectral_quality,%.4f,%.6f\n",
             std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-spectralStart).count(),
             std::sqrt(spectralEnergy/spectral.getNumSamples()));
+        std::fprintf(stderr,"spectral_peak_rms,%.6f,%.6f\n",spectralPeak,std::sqrt(spectralEnergy/spectral.getNumSamples()));
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
