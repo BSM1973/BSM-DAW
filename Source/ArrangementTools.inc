@@ -816,7 +816,7 @@ bool cancelAsyncStretch(){
     asyncStretchCancel->store(true,std::memory_order_release);
     operationMessage=juce::String::fromUTF8("Annulation du rendu demandée…");repaint();return true;
 }
-bool startAsyncStretch(double percent){
+bool startAsyncStretch(double percent,bool tonal=false){
     if(asyncStretchCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>12||
        !std::isfinite(percent)||percent<25||percent>400||percent==100)return false;
     const auto before=captureArrangement();
@@ -836,12 +836,15 @@ bool startAsyncStretch(double percent){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     operationMessage=juce::String::fromUTF8("Rendu Time Stretch : 0/")+juce::String((int)jobs.size())+
         juce::String::fromUTF8(" — Échap pour annuler");repaint();
-    stretchRenderPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),percent]() mutable{
+    stretchRenderPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),percent,tonal]() mutable{
         bool ok=true;int done=0;const int total=(int)jobs.size();
         for(auto& job:jobs){
             if(cancel->load(std::memory_order_acquire)){ok=false;break;}
             AudioClip rendered;
-            if(!AudioEngine::prepareRawStretchedArrangementClip(job.second,job.second.lengthSeconds*percent/100,rendered)){ok=false;break;}
+            const double seconds=job.second.lengthSeconds*percent/100;
+            const bool renderedOk=tonal?AudioEngine::prepareTonalArrangementClip(job.second,seconds,rendered,cancel.get())
+                :AudioEngine::prepareRawStretchedArrangementClip(job.second,seconds,rendered);
+            if(!renderedOk){ok=false;break;}
             job.second=std::move(rendered);++done;
             juce::MessageManager::callAsync([safe,cancel,done,total]{
                 if(!safe||safe->asyncStretchCancel!=cancel||cancel->load())return;
@@ -879,9 +882,9 @@ bool startAsyncStretch(double percent){
 }
 void showGroupValueDialog(int command){
     const bool gain=command==15,transpose=command==16;
-    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":(command==18||command==24)?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
+    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==25?"TONAL : durée relative (25 à 400 %), notes stables":(command==18||command==24)?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("ÉDITION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
-    dialog->addTextEditor("value",gain?"0":transpose?"0":(command==18||command==24)?"150":command==19?"120":command==20?"75":(command==22||command==23)?"0":"0.05");
+    dialog->addTextEditor("value",gain?"0":transpose?"0":(command==18||command==24||command==25)?"150":command==19?"120":command==20?"75":(command==22||command==23)?"0":"0.05");
     dialog->addButton(juce::String::fromUTF8("Appliquer"),1,juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton(juce::String::fromUTF8("Annuler"),0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
@@ -894,7 +897,7 @@ void showGroupValueDialog(int command){
             try{
                 const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
                 size_t used=0;const double value=std::stod(input,&used);
-                if(used==input.size())applied=command==24?safe->startAsyncStretch(value):safe->applyGroupClipOperation(command,value);
+                if(used==input.size())applied=(command==24||command==25)?safe->startAsyncStretch(value,command==25):safe->applyGroupClipOperation(command,value);
             }catch(...){}
             if(!applied){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible");safe->repaint();}
         }),false);
@@ -933,7 +936,7 @@ void analyseSelectionAsync(const std::set<AudioKey>& selection){
     });
 }
 bool showGroupClipMenu(juce::Point<int> p){
-    if(inlineMidiMode||selectedAudio.size()+selectedClipIds.size()<2)return false;
+    if(inlineMidiMode||(selectedAudio.empty()&&selectedClipIds.size()<2))return false;
     const int track=audioLaneAt(p);
     bool hit=track>=0&&selectedAudio.count({track,audioAt(p)})!=0;
     if(track<0){
@@ -942,6 +945,8 @@ bool showGroupClipMenu(juce::Point<int> p){
     }
     if(!hit)return false;
     juce::PopupMenu menu;
+    const bool group=selectedAudio.size()+selectedClipIds.size()>=2;
+    if(group){
     menu.addSectionHeader(juce::String::fromUTF8("ÉDITION COLLECTIVE"));
     menu.addItem(1,juce::String::fromUTF8("Quantifier les positions"),isLibertySnapEnabled()&&getLibertySnapSeconds(owner.tempoBpm)>0);
     menu.addItem(2,juce::String::fromUTF8("Aligner les débuts"));
@@ -964,9 +969,10 @@ bool showGroupClipMenu(juce::Point<int> p){
     advanced.addItem(16,juce::String::fromUTF8("Gain audio personnalisé…"),!selectedAudio.empty());
     advanced.addItem(17,juce::String::fromUTF8("Transposition personnalisée…"));
     menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
+    }else menu.addItem(29,juce::String::fromUTF8("Éditer le clip audio…"));
     juce::PopupMenu warp;
-    warp.addItem(19,juce::String::fromUTF8("Étirement collectif (%)…"),!selectedAudio.empty());
-    warp.addItem(20,juce::String::fromUTF8("Synchroniser au tempo du projet…"),!selectedAudio.empty());
+    warp.addItem(19,juce::String::fromUTF8("Étirement collectif (%)…"),group&&!selectedAudio.empty());
+    warp.addItem(20,juce::String::fromUTF8("Synchroniser au tempo du projet…"),group&&!selectedAudio.empty());
     warp.addItem(21,juce::String::fromUTF8("Analyser les transitoires et le tempo"),!selectedAudio.empty());
     warp.addItem(22,juce::String::fromUTF8("Quantifier les transitoires (%)…"),!selectedAudio.empty()&&isLibertySnapEnabled());
     warp.addItem(23,juce::String::fromUTF8("Synchroniser automatiquement"),!selectedAudio.empty());
@@ -974,18 +980,20 @@ bool showGroupClipMenu(juce::Point<int> p){
     warp.addItem(25,juce::String::fromUTF8("Pitch Shift vocal — formants…"),!selectedAudio.empty());
     warp.addSeparator();
     warp.addItem(26,juce::String::fromUTF8("Étirement en arrière-plan (%)…"),!selectedAudio.empty()&&!asyncStretchCancel);
+    warp.addItem(28,juce::String::fromUTF8("TONAL — étirement des notes stables (%)…"),!selectedAudio.empty()&&!asyncStretchCancel);
     warp.addItem(27,juce::String::fromUTF8("Annuler le rendu"),asyncStretchCancel!=nullptr);
     menu.addSubMenu(juce::String::fromUTF8("Warp et étirement"),warp);
     const auto screen=localPointToGlobal(p);
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
-        [safe,audioSelection,midiSelection](int choice){
-            if(!safe||choice<1||choice>27)return;
+        [safe,audioSelection,midiSelection,p](int choice){
+            if(!safe||choice<1||choice>29)return;
             if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice==29){safe->showAudioClipEditor(p);return;}
             if(choice==21){safe->analyseSelectionAsync(audioSelection);return;}
-            if(choice==26){safe->showGroupValueDialog(24);return;}
+            if(choice==26||choice==28){safe->showGroupValueDialog(choice==26?24:25);return;}
             if(choice==22||choice==24||choice==25){safe->showGroupValueDialog(choice==22?20:choice==24?22:23);return;}
             if(choice==23){
                 if(!safe->applyGroupClipOperation(21)){

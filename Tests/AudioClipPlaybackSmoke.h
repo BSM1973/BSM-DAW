@@ -3,6 +3,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <chrono>
 inline bool runLibertyAudioClipPlaybackSmoke()
 {
     try {
@@ -313,6 +314,51 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         if(AudioEngine::prepareRawStretchedArrangementClip(editedRaw,1.5,workerResult)||
            AudioEngine::prepareRawStretchedArrangementClip(stretched,10,workerResult))
             throw std::runtime_error("worker raw stretch geometry");
+        // Stable harmonic signal, cancellation and pitch-synchronous render.
+        auto harmonic=std::make_shared<juce::AudioBuffer<float>>(1,48000);
+        for(int i=0;i<48000;++i){
+            const double phase=2*juce::MathConstants<double>::pi*220*i/48000;
+            harmonic->setSample(0,i,float(.18*std::sin(phase)+.07*std::sin(2*phase)+.03*std::sin(3*phase)));
+        }
+        auto tonalClip=stretched;tonalClip.sourceBuffer=harmonic;
+        AudioEngine::AudioClipMetadata tonalOut;
+        double f0=0;
+        const auto tonalStart=std::chrono::steady_clock::now();
+        if(!AudioEngine::prepareTonalArrangementClip(tonalClip,1.5,tonalOut,nullptr,&f0)||
+           std::abs(f0-220)>2||tonalOut.sourceBuffer->getNumSamples()!=72000||tonalClip.sourceBuffer!=harmonic)
+            throw std::runtime_error("tonal render");
+        int tonalCrossings=0;double aEnergy=0,bEnergy=0;
+        for(int i=24001;i<48001;++i){
+            const double x=tonalOut.sourceBuffer->getSample(0,i);
+            if(!std::isfinite(x))throw std::runtime_error("tonal nonfinite");
+            if(tonalOut.sourceBuffer->getSample(0,i-1)<=0&&x>0)++tonalCrossings;
+            bEnergy+=x*x;
+            const double original=harmonic->getSample(0,i-12000);aEnergy+=original*original;
+        }
+        if(std::abs(tonalCrossings*2-220)>4||bEnergy<.001||
+           std::abs(10*std::log10(bEnergy/aEnergy))>1)throw std::runtime_error("tonal pitch or level");
+        std::fprintf(stderr,"tonal_quality,%.4f,%.4f,%.4f\n",f0,10*std::log10(bEnergy/aEnergy),
+            std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-tonalStart).count());
+        std::atomic<bool> cancelled{true};const auto savedBuffer=tonalOut.sourceBuffer;
+        if(AudioEngine::prepareTonalArrangementClip(tonalClip,1.5,tonalOut,&cancelled)||
+           tonalOut.sourceBuffer!=savedBuffer)throw std::runtime_error("tonal cancelled transaction");
+        auto silenceTonal=tonalClip;silenceTonal.sourceBuffer=silent;silenceTonal.lengthSeconds=4;
+        if(AudioEngine::prepareTonalArrangementClip(silenceTonal,6,tonalOut))
+            throw std::runtime_error("tonal silence rejected");
+        // Compare spectral offline timings separately from callback CPU.
+        const auto spectralStart=std::chrono::steady_clock::now();
+        auto spectral=AudioEngine::renderSpectralWarpOffline(*harmonic,1.5,0,0);
+        if(spectral.getNumSamples()!=72000)throw std::runtime_error("spectral length");
+        double spectralEnergy=0;
+        for(int i=0;i<spectral.getNumSamples();++i){
+            const double x=spectral.getSample(0,i);
+            if(!std::isfinite(x))throw std::runtime_error("spectral nonfinite");
+            spectralEnergy+=x*x;
+        }
+        if(spectralEnergy<.001)throw std::runtime_error("spectral silence");
+        std::fprintf(stderr,"spectral_quality,%.4f,%.6f\n",
+            std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-spectralStart).count(),
+            std::sqrt(spectralEnergy/spectral.getNumSamples()));
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.

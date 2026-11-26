@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <numeric>
 #include "AudioEngine.h"
+#include "LibertyTonalStretch.h"
 #include <signalsmith-stretch/signalsmith-stretch.h>
 #include <cmath>
 #include <stdexcept>
@@ -388,6 +389,33 @@ bool AudioEngine::prepareRawStretchedArrangementClip(const AudioClipMetadata& cl
         auto copy=clip;copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;
         copy.envelopeLengthSeconds=0;copy.warp={};copy.spectralCache.reset();
         if(!validAudioClip(copy))return false;
+        result=std::move(copy);return true;
+    }catch(...){return false;}
+}
+
+bool AudioEngine::prepareTonalArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,
+    const std::atomic<bool>* cancel,double* fundamental)
+{
+    if(!canRenderRawStretch(clip)||!std::isfinite(seconds)||seconds<=0||
+       seconds/clip.lengthSeconds<.25||seconds/clip.lengthSeconds>4)return false;
+    const double count=seconds*clip.sourceSampleRate;
+    if(!std::isfinite(count)||count<1||count>16000000)return false;
+    try{
+        const auto& source=*clip.sourceBuffer;
+        const auto detected=LibertyTonal::estimate(source.getReadPointer(0),source.getNumSamples(),clip.sourceSampleRate,cancel);
+        if(detected.samples<=0)return false;
+        if(source.getNumChannels()==2){
+            const auto right=LibertyTonal::estimate(source.getReadPointer(1),source.getNumSamples(),clip.sourceSampleRate,cancel);
+            if(right.samples<=0||std::abs(right.samples-detected.samples)>.015*detected.samples)return false;
+        }
+        const float* inputs[]={source.getReadPointer(0),source.getReadPointer(source.getNumChannels()-1)};
+        auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(count));
+        if(!LibertyTonal::render(inputs,source.getNumSamples(),output->getArrayOfWritePointers(),
+            output->getNumSamples(),2,detected.samples,cancel))return false;
+        auto copy=clip;copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;
+        copy.envelopeLengthSeconds=0;copy.warp={};copy.spectralCache.reset();
+        if(!validAudioClip(copy))return false;
+        if(fundamental)*fundamental=clip.sourceSampleRate/detected.samples;
         result=std::move(copy);return true;
     }catch(...){return false;}
 }
