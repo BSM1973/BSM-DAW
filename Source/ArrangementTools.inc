@@ -456,8 +456,9 @@ bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,boo
         (choice>=103&&choice<=100+LibertyAudioCrossfade::maxCurve?choice-100:-1);
     if(curveChoice>=0){
         int& curve=cross?entry->crossfadeCurve:(incoming?entry->fadeInCurve:entry->fadeOutCurve);
-        if(curve==curveChoice)return false;
+        if(curve==curveChoice&&(!cross||entry->crossfadeOutCurve<0))return false;
         curve=curveChoice;
+        if(cross)entry->crossfadeOutCurve=-1;
     }else{
         const double duration=professionalFadePreset(choice);
         const double limit=cross?entry->autoCrossfadeOverlapEnd-entry->autoCrossfadeOverlapStart:entry->lengthSeconds;
@@ -476,6 +477,135 @@ bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,boo
     finishArrangementEdit();
     return applied;
 }
+class CrossfadeStudioPanel final : public juce::Component {
+public:
+    CrossfadeStudioPanel(const AudioClip& left,const AudioClip& right,std::function<bool(const AudioClip&)> callback)
+        : original(right),apply(std::move(callback)),limit(right.autoCrossfadeOverlapEnd-right.autoCrossfadeOverlapStart)
+    {
+        setSize(620,458);
+        auto initSlider=[&](juce::Slider& s,double lo,double hi,double value,double step,const juce::String& suffix){
+            s.setSliderStyle(juce::Slider::LinearHorizontal);s.setRange(lo,hi,step);
+            s.setTextBoxStyle(juce::Slider::TextBoxRight,false,86,24);s.setTextValueSuffix(suffix);
+            s.setValue(value,juce::dontSendNotification);s.onValueChange=[this]{repaint();};addAndMakeVisible(s);
+        };
+        initSlider(duration,0,limit,original.autoCrossfadeInEnd-original.autoCrossfadeInStart,.001," s");
+        initSlider(center,0,100,original.crossfadeCenter*100,1," %");
+        const char* names[]={"Linéaire","Puissance égale","Courbe en S","Logarithmique","Exponentielle","Sinusoïdale","S douce","S prononcée","Cubique progressive","Cubique rapide","Personnalisée"};
+        auto initCurve=[&](juce::ComboBox& combo,juce::Slider& s,int c){
+            for(int i=0;i<11;++i)combo.addItem(juce::String::fromUTF8(names[i]),i+1);
+            combo.setSelectedId(c>=10?11:c+1,juce::dontSendNotification);
+            const double percent=c>=31?c-131:c>=10?(c-20)*10:0;
+            initSlider(s,-100,100,percent,1," %");
+            s.setEnabled(c>=10);
+            combo.onChange=[this,&combo,&s]{s.setEnabled(combo.getSelectedId()==11);repaint();};
+            addAndMakeVisible(combo);
+        };
+        initCurve(incoming,inBias,right.crossfadeCurve);
+        initCurve(outgoing,outBias,right.crossfadeOutCurve<0?right.crossfadeCurve:right.crossfadeOutCurve);
+        energy.setButtonText(juce::String::fromUTF8("Compensation énergétique"));energy.setToggleState(right.crossfadeEnergy,juce::dontSendNotification);
+        energy.onClick=[this]{repaint();};addAndMakeVisible(energy);
+        originalView.setButtonText(juce::String::fromUTF8("Comparer au réglage initial (visuel)"));
+        originalView.onClick=[this]{repaint();};addAndMakeVisible(originalView);
+        confirm.setButtonText(juce::String::fromUTF8("APPLIQUER"));cancel.setButtonText(juce::String::fromUTF8("ANNULER"));
+        addAndMakeVisible(confirm);addAndMakeVisible(cancel);
+        confirm.onClick=[this]{if(apply&&apply(values()))close();};cancel.onClick=[this]{close();};
+        // Bounded source overview, not a post-Warp or timeline-aligned waveform.
+        overview(left,waveLeft);overview(right,waveRight);
+    }
+    AudioClip values()const{
+        auto c=original;
+        c.crossfadeCurve=selected(incoming,inBias);c.crossfadeOutCurve=selected(outgoing,outBias);
+        c.crossfadeCenter=center.getValue()/100.;c.crossfadeEnergy=energy.getToggleState();
+        c.crossfadeDurationSeconds=duration.getValue()>=limit-1.e-9?0.0:juce::jlimit(juce::jmin(.01,limit),limit,duration.getValue());
+        return c;
+    }
+    void resized()override{
+        duration.setBounds(150,202,450,26);center.setBounds(150,234,450,26);
+        incoming.setBounds(150,266,210,26);inBias.setBounds(368,266,232,26);
+        outgoing.setBounds(150,298,210,26);outBias.setBounds(368,298,232,26);
+        energy.setBounds(18,334,280,28);originalView.setBounds(18,366,400,28);
+        cancel.setBounds(342,410,120,32);confirm.setBounds(480,410,120,32);
+    }
+    void paint(juce::Graphics& g)override{
+        g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffe9f6ff));
+        g.setFont(15.f);
+        g.drawText(juce::String::fromUTF8("Sources audio — aperçu non aligné"),18,8,584,22,juce::Justification::centredLeft);
+        auto wave=[&](const std::array<float,160>& w,int y,juce::Colour colour){
+            g.setColour(juce::Colour(0xff182f42));g.fillRect(18,y,584,28);
+            g.setColour(colour);
+            for(size_t i=0;i<w.size();++i){const float x=18.f+584.f*float(i)/float(w.size());g.drawVerticalLine((int)x,y+14.f-13.f*w[i],y+14.f+13.f*w[i]);}
+        };
+        wave(waveLeft,32,juce::Colour(0xffffd48f));wave(waveRight,64,juce::Colour(0xff69c6ef));
+        const auto v=originalView.getToggleState()?original:values();
+        const int out=v.crossfadeOutCurve<0?v.crossfadeCurve:v.crossfadeOutCurve;
+        const double len=v.crossfadeDurationSeconds>0?v.crossfadeDurationSeconds:limit;
+        const double start=v.crossfadeCenter*(limit-len);
+        g.setColour(juce::Colour(0xff182f42));g.fillRect(18,98,584,88);
+        for(bool in:{false,true}){
+            juce::Path path;
+            for(int i=0;i<=200;++i){
+                const double p=juce::jlimit(0.,1.,(limit*i/200.-start)/juce::jmax(1.e-9,len));
+                const double gain=LibertyAudioCrossfade::studioLevel(in?v.crossfadeCurve:out,v.crossfadeEnergy?(in?out:v.crossfadeCurve):-1,p,in);
+                const float x=18.f+584.f*i/200.f,y=185.f-86.f*(float)gain;
+                if(i==0)path.startNewSubPath(x,y);else path.lineTo(x,y);
+            }
+            g.setColour(in?juce::Colour(0xff69c6ef):juce::Colour(0xffffd48f));g.strokePath(path,juce::PathStrokeType(2.f));
+        }
+        g.setColour(juce::Colour(0xffe9f6ff));
+        g.drawText(juce::String::fromUTF8("Durée"),18,202,125,26,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Position"),18,234,125,26,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Entrée"),18,266,125,26,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Sortie"),18,298,125,26,juce::Justification::centredLeft);
+    }
+private:
+    static int selected(const juce::ComboBox& c,const juce::Slider& s){return c.getSelectedId()==11?131+(int)std::lround(s.getValue()):juce::jmax(0,c.getSelectedId()-1);}
+    static void overview(const AudioClip& c,std::array<float,160>& w){
+        if(!c.sourceBuffer)return;
+        const int n=c.sourceBuffer->getNumSamples();
+        for(size_t i=0;i<w.size();++i){
+            const int a=(int)(i*(int64_t)n/w.size()),b=(int)((i+1)*(int64_t)n/w.size());
+            for(int j=a;j<b;j+=juce::jmax(1,(b-a)/32))
+                w[i]=juce::jmax(w[i],juce::jmin(1.f,std::abs(c.sourceBuffer->getSample(0,j))));
+        }
+    }
+    void close(){if(auto* window=findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);}
+    AudioClip original;std::function<bool(const AudioClip&)> apply;double limit;
+    std::array<float,160> waveLeft{},waveRight{};
+    juce::Slider duration,center,inBias,outBias;juce::ComboBox incoming,outgoing;
+    juce::ToggleButton energy,originalView;juce::TextButton confirm,cancel;
+};
+bool openCrossfadeStudio(int track,const juce::String& id){
+    const auto clips=owner.audioEngine.getArrangementAudioClips(track);
+    const auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==id;});
+    if(it==clips.end()||it->autoCrossfadeInEnd<=it->autoCrossfadeInStart)return false;
+    const auto left=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id!=id&&
+        c.autoCrossfadeOutStart==it->autoCrossfadeInStart&&c.autoCrossfadeOutEnd==it->autoCrossfadeInEnd;});
+    if(left==clips.end())return false;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    auto* panel=new CrossfadeStudioPanel(*left,*it,[safe,track,id,opened=*it](const AudioClip& v){
+        if(!safe)return false;
+        auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
+        auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
+        if(entry==current.end()||entry->autoCrossfadeOverlapStart!=opened.autoCrossfadeOverlapStart||
+           entry->autoCrossfadeOverlapEnd!=opened.autoCrossfadeOverlapEnd||
+           entry->crossfadeCurve!=opened.crossfadeCurve||entry->crossfadeOutCurve!=opened.crossfadeOutCurve||
+           entry->crossfadeCenter!=opened.crossfadeCenter||entry->crossfadeEnergy!=opened.crossfadeEnergy||
+           entry->crossfadeDurationSeconds!=opened.crossfadeDurationSeconds)return false;
+        safe->beginArrangementEdit();
+        entry->crossfadeCurve=v.crossfadeCurve;entry->crossfadeOutCurve=v.crossfadeOutCurve;
+        entry->crossfadeCenter=v.crossfadeCenter;entry->crossfadeEnergy=v.crossfadeEnergy;
+        entry->crossfadeDurationSeconds=v.crossfadeDurationSeconds;
+        const bool ok=safe->owner.audioEngine.replaceArrangementAudioClips(track,current);
+        safe->finishArrangementEdit();
+        if(ok){safe->owner.repaint();safe->repaint();}
+        return ok;
+    });
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle=juce::String::fromUTF8("LIBERTY — CROSSFADE STUDIO");
+    options.dialogBackgroundColour=juce::Colour(0xff101c2b);options.useNativeTitleBar=false;
+    options.escapeKeyTriggersCloseButton=true;options.resizable=false;options.componentToCentreAround=&owner;
+    options.content.setOwned(panel);options.launchAsync();return true;
+}
 bool showAudioCrossfadeMenu(juce::Point<int> p){
     const auto hit=crossfadeAt(p);
     if(hit.first<0)return false;
@@ -483,6 +613,8 @@ bool showAudioCrossfadeMenu(juce::Point<int> p){
     const auto it=std::find_if(clips.begin(),clips.end(),[&](const auto& c){return c.id==hit.second;});
     if(it==clips.end())return false;
     juce::PopupMenu menu;
+    menu.addItem(999,juce::String::fromUTF8("Ouvrir CROSSFADE STUDIO…"));
+    menu.addSeparator();
     menu.addSectionHeader(juce::String::fromUTF8("COURBE DE FONDU CROISÉ"));
     menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,it->crossfadeCurve==0);
     menu.addItem(2,juce::String::fromUTF8("Puissance égale"),true,it->crossfadeCurve==1);
@@ -494,7 +626,7 @@ bool showAudioCrossfadeMenu(juce::Point<int> p){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
                        [safe,track=hit.first,id=hit.second](int choice){
-        if(safe)safe->applyProfessionalFadeChoice(track,id,choice,true,true);
+        if(safe){if(choice==999)safe->openCrossfadeStudio(track,id);else safe->applyProfessionalFadeChoice(track,id,choice,true,true);}
     });
     return true;
 }
@@ -584,7 +716,9 @@ void paintAudioFades(juce::Graphics& g){
             for(int step=0;step<=24;++step){
                 const double progress=(double)step/24.0;
                 const float x=x1+(float)progress*(x2-x1);
-                const float level=(float)LibertyAudioCrossfade::level(c.autoCrossfadeCurve,progress,increasing);
+                const int derived=increasing?c.autoCrossfadeInCurve:c.autoCrossfadeOutCurve;
+                const int peer=increasing?c.autoCrossfadeInPeer:c.autoCrossfadeOutPeer;
+                const float level=(float)LibertyAudioCrossfade::studioLevel(derived<0?c.autoCrossfadeCurve:derived,peer,progress,increasing);
                 const float y=y2-level*(y2-y1);
                 if(step==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);
             }

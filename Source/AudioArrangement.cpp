@@ -22,6 +22,8 @@ bool AudioEngine::validAudioClip(const AudioClipMetadata& c)
        || !LibertyAudioCrossfade::validCurve(c.fadeInCurve)
        || !LibertyAudioCrossfade::validCurve(c.fadeOutCurve)
        || !LibertyAudioCrossfade::validCurve(c.crossfadeCurve)
+       || (c.crossfadeOutCurve!=-1&&!LibertyAudioCrossfade::validCurve(c.crossfadeOutCurve))
+       || !std::isfinite(c.crossfadeCenter)||c.crossfadeCenter<0.0||c.crossfadeCenter>1.0
        || !std::isfinite(c.crossfadeDurationSeconds) || c.crossfadeDurationSeconds<0
        || c.crossfadeDurationSeconds>86400.0
        || !std::isfinite(c.offsetSeconds) || c.offsetSeconds<0
@@ -53,6 +55,13 @@ std::shared_ptr<AudioEngine::AudioTrackState> AudioEngine::prepareAudioVoice(con
     v->autoCrossfadeCurve.store(c.autoCrossfadeCurve);
     v->crossfadeCurve.store(c.crossfadeCurve);
     v->crossfadeDurationSeconds.store(c.crossfadeDurationSeconds);
+    v->crossfadeCenter.store(c.crossfadeCenter);
+    v->crossfadeOutCurve.store(c.crossfadeOutCurve);
+    v->crossfadeEnergy.store(c.crossfadeEnergy);
+    v->autoCrossfadeInCurve.store(c.autoCrossfadeInCurve);
+    v->autoCrossfadeOutCurve.store(c.autoCrossfadeOutCurve);
+    v->autoCrossfadeInPeer.store(c.autoCrossfadeInPeer);
+    v->autoCrossfadeOutPeer.store(c.autoCrossfadeOutPeer);
     v->autoCrossfadeOverlapStart.store(c.autoCrossfadeOverlapStart);
     v->autoCrossfadeOverlapEnd.store(c.autoCrossfadeOverlapEnd);
     v->clipEnvelopeLength.store(c.envelopeLengthSeconds);v->warpFormant.store(c.formant);
@@ -86,6 +95,13 @@ std::vector<AudioEngine::AudioClipMetadata> AudioEngine::getArrangementAudioClip
         c.autoCrossfadeOverlapStart=t.autoCrossfadeOverlapStart.load();
         c.autoCrossfadeOverlapEnd=t.autoCrossfadeOverlapEnd.load();
         c.crossfadeDurationSeconds=t.crossfadeDurationSeconds.load();
+        c.crossfadeCenter=t.crossfadeCenter.load();
+        c.crossfadeOutCurve=t.crossfadeOutCurve.load();
+        c.crossfadeEnergy=t.crossfadeEnergy.load();
+        c.autoCrossfadeInCurve=t.autoCrossfadeInCurve.load();
+        c.autoCrossfadeOutCurve=t.autoCrossfadeOutCurve.load();
+        c.autoCrossfadeInPeer=t.autoCrossfadeInPeer.load();
+        c.autoCrossfadeOutPeer=t.autoCrossfadeOutPeer.load();
         c.crossfadeCurve=t.crossfadeCurve.load();
         c.autoCrossfadeCurve=t.autoCrossfadeCurve.load();
         c.warp=getTrackWarpSnapshot(index);c.formant=t.warpFormant.load();c.spectralCache=std::atomic_load(&t.spectralCache);
@@ -110,6 +126,8 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
             c.autoCrossfadeOutStart=c.autoCrossfadeOutEnd=-1.0;
             c.autoCrossfadeOverlapStart=c.autoCrossfadeOverlapEnd=-1.0;
             c.autoCrossfadeCurve=0;
+            c.autoCrossfadeInCurve=c.autoCrossfadeOutCurve=-1;
+            c.autoCrossfadeInPeer=c.autoCrossfadeOutPeer=-1;
         }
         std::vector<size_t> chronological(extras.size());
         std::iota(chronological.begin(),chronological.end(),size_t{0});
@@ -140,7 +158,7 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
                 ? juce::jlimit(juce::jmin(0.01,overlap),overlap,later.crossfadeDurationSeconds)
                 : overlap;
             // Keep the overlap centre fixed while changing only the fade length.
-            const double fadeStart=start+0.5*(overlap-wanted);
+            const double fadeStart=start+later.crossfadeCenter*(overlap-wanted);
             const double fadeEnd=fadeStart+wanted;
             earlier.autoCrossfadeOverlapStart=later.autoCrossfadeOverlapStart=start;
             earlier.autoCrossfadeOverlapEnd=later.autoCrossfadeOverlapEnd=end;
@@ -148,6 +166,11 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
             later.autoCrossfadeInStart=fadeStart;later.autoCrossfadeInEnd=fadeEnd;
             earlier.autoCrossfadeCurve=later.crossfadeCurve;
             later.autoCrossfadeCurve=later.crossfadeCurve;
+            const int outgoing=later.crossfadeOutCurve<0?later.crossfadeCurve:later.crossfadeOutCurve;
+            earlier.autoCrossfadeOutCurve=outgoing;
+            later.autoCrossfadeInCurve=later.crossfadeCurve;
+            earlier.autoCrossfadeOutPeer=later.crossfadeEnergy?later.crossfadeCurve:-1;
+            later.autoCrossfadeInPeer=later.crossfadeEnergy?outgoing:-1;
         }
         std::shared_ptr<AudioTrackState> primary;
         for(auto it=extras.begin();it!=extras.end();++it)
@@ -174,6 +197,13 @@ bool AudioEngine::replaceArrangementAudioClips(int index,const std::vector<Audio
         t.autoCrossfadeOverlapStart.store(primary->autoCrossfadeOverlapStart.load());
         t.autoCrossfadeOverlapEnd.store(primary->autoCrossfadeOverlapEnd.load());
         t.crossfadeDurationSeconds.store(primary->crossfadeDurationSeconds.load());
+        t.crossfadeCenter.store(primary->crossfadeCenter.load());
+        t.crossfadeOutCurve.store(primary->crossfadeOutCurve.load());
+        t.crossfadeEnergy.store(primary->crossfadeEnergy.load());
+        t.autoCrossfadeInCurve.store(primary->autoCrossfadeInCurve.load());
+        t.autoCrossfadeOutCurve.store(primary->autoCrossfadeOutCurve.load());
+        t.autoCrossfadeInPeer.store(primary->autoCrossfadeInPeer.load());
+        t.autoCrossfadeOutPeer.store(primary->autoCrossfadeOutPeer.load());
         t.crossfadeCurve.store(primary->crossfadeCurve.load());
         t.autoCrossfadeCurve.store(primary->autoCrossfadeCurve.load());
         t.warpEnabled.store(primary->warpEnabled.load());t.warpMode.store(primary->warpMode.load());

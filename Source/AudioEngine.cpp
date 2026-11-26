@@ -1412,6 +1412,9 @@ bool AudioEngine::loadAudioFileIntoTrack(int trackIndex, const juce::File& file,
     track.autoCrossfadeOutStart.store(-1);track.autoCrossfadeOutEnd.store(-1);
     track.crossfadeCurve.store(0);track.autoCrossfadeCurve.store(0);
     track.crossfadeDurationSeconds.store(0);
+    track.crossfadeCenter.store(.5);track.crossfadeOutCurve.store(-1);track.crossfadeEnergy.store(false);
+    track.autoCrossfadeInCurve.store(-1);track.autoCrossfadeOutCurve.store(-1);
+    track.autoCrossfadeInPeer.store(-1);track.autoCrossfadeOutPeer.store(-1);
     track.autoCrossfadeOverlapStart.store(-1);track.autoCrossfadeOverlapEnd.store(-1);
     track.clipTrimStart.store(0);track.clipTrimEnd.store(1);track.warpFormant.store(0);
     track.clipMetadata.clear();std::atomic_store(&track.regionVoices,std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>>{});
@@ -1668,6 +1671,9 @@ void AudioEngine::writeAudioClipProperties(juce::XmlElement& element,const Audio
     element.setAttribute("fadeOutCurve",clip.fadeOutCurve);
     element.setAttribute("crossfadeCurve",clip.crossfadeCurve);
     element.setAttribute("crossfadeDurationSeconds",clip.crossfadeDurationSeconds);
+    element.setAttribute("crossfadeCenter",clip.crossfadeCenter);
+    element.setAttribute("crossfadeOutCurve",clip.crossfadeOutCurve);
+    element.setAttribute("crossfadeEnergy",clip.crossfadeEnergy);
     element.setAttribute("offsetSeconds",clip.offsetSeconds);
     element.setAttribute("envelopeLengthSeconds",clip.envelopeLengthSeconds);
     element.setAttribute("formant",clip.formant);
@@ -1696,6 +1702,9 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.fadeOutCurve=juce::jlimit(0,LibertyAudioCrossfade::maxCurve,element.getIntAttribute("fadeOutCurve",0));
     clip.crossfadeCurve=element.getIntAttribute("crossfadeCurve",0);
     clip.crossfadeDurationSeconds=element.getDoubleAttribute("crossfadeDurationSeconds",0.0);
+    clip.crossfadeCenter=element.getDoubleAttribute("crossfadeCenter",.5);
+    clip.crossfadeOutCurve=element.getIntAttribute("crossfadeOutCurve",-1);
+    clip.crossfadeEnergy=element.getBoolAttribute("crossfadeEnergy",false);
     clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
     clip.envelopeLengthSeconds=element.getDoubleAttribute("envelopeLengthSeconds",0);
     clip.formant=element.getDoubleAttribute("formant",0);
@@ -2207,6 +2216,8 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const double crossOutStart=track.autoCrossfadeOutStart.load();
         const double crossOutEnd=track.autoCrossfadeOutEnd.load();
         const int crossCurve=track.autoCrossfadeCurve.load();
+        const int inCurve=track.autoCrossfadeInCurve.load(),outCurve=track.autoCrossfadeOutCurve.load();
+        const int inPeer=track.autoCrossfadeInPeer.load(),outPeer=track.autoCrossfadeOutPeer.load();
         const double fi=track.clipFadeIn.load(),fo=track.clipFadeOut.load();
         const int fadeInCurve=track.clipFadeInCurve.load();
         const int fadeOutCurve=track.clipFadeOutCurve.load();
@@ -2220,10 +2231,10 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             // The explicit per-clip fade controls remain independently editable.
             const double timelineSeconds=timelineStart+t-offsetSeconds;
             if(crossInEnd>crossInStart)
-                e*=LibertyAudioCrossfade::level(crossCurve,
+                e*=LibertyAudioCrossfade::studioLevel(inCurve<0?crossCurve:inCurve,inPeer,
                     (timelineSeconds-crossInStart)/(crossInEnd-crossInStart),true);
             if(crossOutEnd>crossOutStart)
-                e*=LibertyAudioCrossfade::level(crossCurve,
+                e*=LibertyAudioCrossfade::studioLevel(outCurve<0?crossCurve:outCurve,outPeer,
                     (timelineSeconds-crossOutStart)/(crossOutEnd-crossOutStart),false);
             return (float)juce::jlimit(0.0,1.0,e);
         };

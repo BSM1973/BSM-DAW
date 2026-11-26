@@ -8,7 +8,7 @@
 // 0: linear, 1: equal power, 2: smooth S (complementary levels).
 namespace LibertyAudioCrossfade
 {
-inline constexpr int customFirst=10, customLast=30, maxCurve=customLast;
+inline constexpr int customFirst=10, customLast=30, fineFirst=31, maxCurve=231;
 inline bool validCurve(int c) noexcept {return c>=0&&c<=maxCurve;}
 inline double advancedShape(int curve,double p) noexcept
 {
@@ -26,6 +26,10 @@ inline double advancedShape(int curve,double p) noexcept
             if(curve>=customFirst&&curve<=customLast){
                 const double bias=(curve-20)*.075;
                 // Monotonic rational response, bounded away from zero denominator.
+                return p*(1.0+bias)/(1.0+bias*(2.0*p-1.0));
+            }
+            if(curve>=fineFirst&&curve<=maxCurve){
+                const double bias=(curve-131)*.0075;
                 return p*(1.0+bias)/(1.0+bias*(2.0*p-1.0));
             }
             return p;
@@ -64,5 +68,14 @@ inline double level(int curve, double progress, bool incoming) noexcept
         return incoming ? smooth : 1.0 - smooth;
     }
     return incoming ? p : (1.0 - p);
+}
+// Optional constant sum-of-squares gain for independent curve pairs.
+inline double studioLevel(int curve,int peer,double progress,bool incoming) noexcept
+{
+    const double g=level(curve,progress,incoming);
+    if(peer<0)return g;
+    const double other=level(peer,progress,!incoming);
+    const double norm=std::sqrt(g*g+other*other);
+    return norm>1.e-12?g/norm:0.0;
 }
 }

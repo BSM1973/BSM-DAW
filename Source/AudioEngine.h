@@ -414,12 +414,17 @@ public:
         int crossfadeCurve = 0;
         // Zero uses the complete overlap; positive values narrow the transition.
         double crossfadeDurationSeconds = 0.0;
+        double crossfadeCenter = 0.5;
+        int crossfadeOutCurve = -1; // -1 links to incoming curve (legacy)
+        bool crossfadeEnergy = false;
         // Derived from neighbouring clips; never stored in project XML.
         // Use absolute timeline seconds so split clips retain their own offsets.
         double autoCrossfadeInStart = -1.0, autoCrossfadeInEnd = -1.0;
         double autoCrossfadeOutStart = -1.0, autoCrossfadeOutEnd = -1.0;
         double autoCrossfadeOverlapStart = -1.0, autoCrossfadeOverlapEnd = -1.0;
         int autoCrossfadeCurve = 0;
+        int autoCrossfadeInCurve = -1, autoCrossfadeOutCurve = -1;
+        int autoCrossfadeInPeer = -1, autoCrossfadeOutPeer = -1;
         // Decoded source prepared outside the real-time audio callback.
         std::shared_ptr<const juce::AudioBuffer<float>> sourceBuffer;
         double sourceSampleRate = 0.0;
@@ -514,7 +519,10 @@ private:
         std::atomic<double> autoCrossfadeInStart { -1.0 }, autoCrossfadeInEnd { -1.0 };
         std::atomic<double> autoCrossfadeOutStart { -1.0 }, autoCrossfadeOutEnd { -1.0 };
         std::atomic<int> autoCrossfadeCurve { 0 }, crossfadeCurve { 0 };
-        std::atomic<double> crossfadeDurationSeconds { 0.0 };
+        std::atomic<double> crossfadeDurationSeconds { 0.0 }, crossfadeCenter { 0.5 };
+        std::atomic<int> crossfadeOutCurve { -1 }, autoCrossfadeInCurve { -1 }, autoCrossfadeOutCurve { -1 };
+        std::atomic<int> autoCrossfadeInPeer { -1 }, autoCrossfadeOutPeer { -1 };
+        std::atomic<bool> crossfadeEnergy { false };
         std::atomic<double> autoCrossfadeOverlapStart { -1.0 }, autoCrossfadeOverlapEnd { -1.0 };
         std::atomic<double> clipTrimStart { 0.0 }, clipTrimEnd { 1.0 };
         std::shared_ptr<const std::vector<std::shared_ptr<AudioTrackState>>> regionVoices;

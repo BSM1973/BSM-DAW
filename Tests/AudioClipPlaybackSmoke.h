@@ -302,6 +302,32 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         auto badCurve=second;badCurve.crossfadeCurve=LibertyAudioCrossfade::maxCurve+1;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
+        // Studio: independent gain laws, moved shortened transition and optional
+        // sum-of-squares compensation, with legacy defaults preserved.
+        auto studio=second;studio.crossfadeCenter=.25;studio.crossfadeDurationSeconds=.2;
+        studio.crossfadeCurve=5;studio.crossfadeOutCurve=181;studio.crossfadeEnergy=true;
+        if(!engine.replaceArrangementAudioClips(0,{first,studio})||
+           !engine.renderOfflineForTesting(crossRender,48000,257,false))
+            throw std::runtime_error("studio crossfade render");
+        const auto studioClips=engine.getArrangementAudioClips(0);
+        if(std::abs(studioClips[1].autoCrossfadeInStart-.575)>1.e-9||
+           studioClips[0].autoCrossfadeOutCurve!=181||studioClips[1].autoCrossfadeInCurve!=5)
+            throw std::runtime_error("studio placement or independent curves");
+        for(int i:{27600,30000,32400,34800,37200}){
+            const double p=(i-27600)/9600.;
+            const double in=LibertyAudioCrossfade::studioLevel(5,181,p,true);
+            const double out=LibertyAudioCrossfade::studioLevel(181,5,p,false);
+            if(std::abs(in*in+out*out-1.)>1.e-10)throw std::runtime_error("studio energy");
+            near(crossRender.getSample(0,i),float(.25*out+.125*in));
+        }
+        juce::XmlElement studioXml("Clip");AudioEngine::writeAudioClipProperties(studioXml,studio);
+        const auto studioRestored=AudioEngine::readAudioClipProperties(studioXml);
+        if(studioRestored.crossfadeCenter!=.25||studioRestored.crossfadeOutCurve!=181||!studioRestored.crossfadeEnergy)
+            throw std::runtime_error("studio XML persistence");
+        juce::XmlElement oldStudioXml("Clip");
+        const auto legacyStudio=AudioEngine::readAudioClipProperties(oldStudioXml);
+        if(legacyStudio.crossfadeCenter!=.5||legacyStudio.crossfadeOutCurve!=-1||legacyStudio.crossfadeEnergy)
+            throw std::runtime_error("studio legacy defaults");
         // REPITCH 2:1 duration must halve frequency, not preserve pitch.
         auto repitched=stretched;repitched.warp.enabled=true;repitched.warp.mode=6;repitched.warp.count=2;
         repitched.warp.source[1]=1;repitched.warp.target[1]=2;repitched.lengthSeconds=2;
