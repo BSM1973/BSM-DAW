@@ -127,6 +127,24 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             prepared.sourceBuffer==beatSource||prepared.sourceBuffer->getNumSamples()!=96000||
             beatSource->getNumSamples()!=192000||engine.prepareStretchedArrangementClip(beat,-1,prepared))
             throw std::runtime_error("staged stretch");
+        // Fixed endpoints and preserved source, quantization strength 0/50/100.
+        auto offbeat=std::make_shared<juce::AudioBuffer<float>>(1,48000*4);offbeat->clear();
+        for(int onset=14400;onset<offbeat->getNumSamples();onset+=24000)
+            for(int i=0;i<480;++i)offbeat->setSample(0,onset+i,.5f);
+        auto groove=beat;groove.sourceBuffer=offbeat;
+        for(double strength:{0.0,.5,1.0}){
+            AudioEngine::AudioClipMetadata mapped;
+            if(!engine.prepareQuantizedArrangementClip(groove,.25,strength,mapped)||
+                mapped.sourceBuffer!=offbeat||mapped.lengthSeconds!=4||mapped.warp.count!=10||
+                mapped.warp.source[0]!=0||mapped.warp.target[9]!=4||
+                std::abs(mapped.warp.target[1]-(.30-.05*strength))>.006)
+                throw std::runtime_error("warp quantize strength");
+        }
+        AudioEngine::AudioClipMetadata rejected;
+        if(engine.prepareQuantizedArrangementClip(groove,0,1,rejected)||
+            engine.prepareQuantizedArrangementClip(groove,.25,1.5,rejected)||
+            engine.prepareQuantizedArrangementClip(groove,4,1,rejected))
+            throw std::runtime_error("warp invalid or collapsing grid");
         // Signalsmith must change duration while preserving the frequency.
         auto tone=std::make_shared<juce::AudioBuffer<float>>(1,48000);
         for(int i=0;i<48000;++i)tone->setSample(0,i,.25f*std::sin(2*juce::MathConstants<double>::pi*440*i/48000));
@@ -138,6 +156,14 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         int crossings=0;const auto* samples=result.sourceBuffer->getReadPointer(0);
         for(int i=24001;i<48000;++i)if(samples[i-1]<=0 && samples[i]>0)++crossings;
         if(std::abs(crossings*2-440)>4)throw std::runtime_error("stretch pitch");
+        AudioEngine::AudioClipMetadata shifted;
+        if(!engine.prepareStretchedArrangementClip(stretched,1.0,shifted,12)||
+            shifted.sourceBuffer->getNumSamples()!=48000||stretched.sourceBuffer!=tone)
+            throw std::runtime_error("constant length pitch shift");
+        int shiftedCrossings=0;
+        for(int i=12001;i<36001;++i)
+            if(shifted.sourceBuffer->getSample(0,i-1)<=0&&shifted.sourceBuffer->getSample(0,i)>0)++shiftedCrossings;
+        if(std::abs(shiftedCrossings*2-880)>12)throw std::runtime_error("constant length octave shift");
         // Stretch must not silently discard the clip's editable controls.
         auto configured=stretched;
         configured.id="stretch-properties";

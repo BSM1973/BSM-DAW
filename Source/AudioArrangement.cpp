@@ -230,9 +230,10 @@ std::shared_ptr<juce::AudioBuffer<float>> AudioEngine::renderArrangementAudioCli
         return output;
     }catch(...){return {};}
 }
-bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result)
+bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,double pitchShift)
 {
-    if(!validAudioClip(clip)||!std::isfinite(seconds)||seconds<=0)return false;
+    if(!validAudioClip(clip)||!std::isfinite(seconds)||seconds<=0||!std::isfinite(pitchShift)||std::abs(pitchShift)>12)return false;
+    if(pitchShift!=0.0&&!clip.sourceBuffer)return false;
     if(!clip.sourceBuffer){auto copy=clip;copy.lengthSeconds=seconds;if(!validAudioClip(copy))return false;result=std::move(copy);return true;}
     const double rate=clip.sourceSampleRate;
     if(!std::isfinite(seconds*rate)||seconds*rate>32000000||seconds*rate<0.5)return false;
@@ -245,7 +246,7 @@ bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,
         auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(seconds*rate));
         if(output->getNumSamples()<1)return false;
         signalsmith::stretch::SignalsmithStretch<float> stretch;stretch.presetDefault(2,rate);
-        stretch.setTransposeFactor(1.0);
+        stretch.setTransposeFactor(std::pow(2.0,pitchShift/12.0));
         stretch.process(source->getArrayOfReadPointers(),source->getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
         auto copy=clip;
         copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;copy.offsetSeconds=0;
@@ -307,4 +308,40 @@ AudioEngine::ClipRhythmAnalysis AudioEngine::analyseArrangementClipRhythm(const 
     result.confidence=double(matching)/intervals.size();
     if(result.confidence>=.80&&matching>=3)result.bpm=60.0/(sum/matching);
     return result;
+}
+
+bool AudioEngine::prepareQuantizedArrangementClip(const AudioClipMetadata& clip,double grid,double strength,AudioClipMetadata& result)
+{
+    if(!validAudioClip(clip)||!clip.sourceBuffer||!std::isfinite(grid)||grid<=0||
+       !std::isfinite(strength)||strength<0||strength>1||
+       clip.reverse||clip.offsetSeconds!=0||clip.trimStartFraction!=0||clip.trimEndFraction!=1||
+       clip.pitchSemitones!=0||clip.warp.enabled)return false;
+    const double sourceDuration=clip.sourceBuffer->getNumSamples()/clip.sourceSampleRate;
+    if(std::abs(sourceDuration-clip.lengthSeconds)>1.0/clip.sourceSampleRate)return false;
+    const auto analysis=analyseArrangementClipRhythm(clip);
+    WarpSnapshot map;
+    map.enabled=true;map.mode=1; // existing short-grain percussion mode
+    map.count=1;map.source[0]=map.target[0]=0;
+    constexpr double spacing=.01;
+    for(double onset:analysis.transients){
+        if(onset<spacing||onset>clip.lengthSeconds-spacing)continue;
+        // Do not silently discard a long phrase's markers at the fixed cap.
+        if(map.count>=maxWarpMarkers-1)return false;
+        const double absolute=clip.startSeconds+onset;
+        const double snapped=std::round(absolute/grid)*grid-clip.startSeconds;
+        const double target=onset+(snapped-onset)*strength;
+        const double sourceSpan=onset-map.source[(size_t)map.count-1];
+        const double targetSpan=target-map.target[(size_t)map.count-1];
+        if(!std::isfinite(target)||targetSpan<spacing||target>=clip.lengthSeconds-spacing||
+           targetSpan/sourceSpan<.25||targetSpan/sourceSpan>4)return false;
+        map.source[(size_t)map.count]=onset;map.target[(size_t)map.count]=target;++map.count;
+    }
+    if(map.count<2)return false;
+    const double sourceSpan=clip.lengthSeconds-map.source[(size_t)map.count-1];
+    const double targetSpan=clip.lengthSeconds-map.target[(size_t)map.count-1];
+    if(targetSpan<spacing||targetSpan/sourceSpan<.25||targetSpan/sourceSpan>4)return false;
+    map.source[(size_t)map.count]=map.target[(size_t)map.count]=clip.lengthSeconds;++map.count;
+    auto copy=clip;copy.warp=map;copy.spectralCache.reset();
+    if(!validAudioClip(copy))return false;
+    result=std::move(copy);return true;
 }
