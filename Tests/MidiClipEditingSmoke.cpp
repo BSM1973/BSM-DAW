@@ -55,5 +55,22 @@ int main() {
     LibertyMidiClipEditing::eraseSelectedClips(clips,{1,3});
     assert(clips.size()==1 && clips[0].id==2 && clips[0].startSeconds==10.0);
     LibertyMidiClipEditing::eraseSelectedClips(clips,{});assert(clips.size()==1);
+    using LibertyMidiClipEditing::ClipPosition;
+    using LibertyMidiClipEditing::PositionOperation;
+    using LibertyMidiClipEditing::groupPositions;
+    const std::vector<ClipPosition> initial{{3.1,1},{.1,2},{1.2,.5}};
+    auto positions=initial;
+    assert(groupPositions(positions,PositionOperation::Quantize,.25));
+    assert(positions[0].start==3&&positions[1].start==0&&positions[2].start==1.25);
+    positions=initial;assert(groupPositions(positions,PositionOperation::AlignStarts,0));
+    for(const auto& p:positions)assert(p.start==.1);
+    positions=initial;assert(groupPositions(positions,PositionOperation::AlignEnds,.25));
+    for(const auto& p:positions)assert(p.start+p.length==4.25);
+    positions=initial;assert(groupPositions(positions,PositionOperation::Distribute,.25));
+    assert(positions[0].start==3&&positions[1].start==0&&positions[2].start==1.5);
+    for(size_t i=0;i<positions.size();++i)assert(positions[i].length==initial[i].length);
+    assert(!groupPositions(positions,PositionOperation::Quantize,0));
+    positions[0].start=-1;assert(!groupPositions(positions,PositionOperation::AlignStarts,0));
+    assert(positions[0].start==-1);
     std::cout << "Découpe MIDI : tests réussis\n";
 }

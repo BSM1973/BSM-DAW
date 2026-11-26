@@ -599,6 +599,110 @@ void paintAudioFades(juce::Graphics& g){
         }
     }
 }
+// Multi-clip actions are staged before publishing anything to the engine.
+// Audio source ownership and all non-targeted MIDI note properties are retained.
+bool applyGroupClipOperation(int command){
+    if(selectedAudio.size()+selectedClipIds.size()<2||pendingEdit)return false;
+    syncActiveClip();
+    const auto before=captureArrangement();
+    auto midi=before.midi,instruments=before.instruments;
+    auto audio=before.audio;
+    std::vector<LibertyMidiClipEditing::ClipPosition> positions;
+    std::vector<double*> starts;
+    std::set<int> touchedAudio;
+    bool changed=false,valid=true;
+    auto visitMidi=[&](auto& clips){
+        for(auto& clip:clips)if(selectedClipIds.count(clip.id)){
+            positions.push_back({clip.startSeconds,clip.lengthSeconds});starts.push_back(&clip.startSeconds);
+            if(command==6||command==7){
+                const int delta=command==6?1:-1;
+                for(auto& note:clip.notes){
+                    const int pitch=(int)note.pitch+delta;
+                    if(pitch<0||pitch>127){valid=false;continue;}
+                    note.pitch=static_cast<std::uint8_t>(pitch);changed=true;
+                }
+            }
+        }
+    };
+    visitMidi(midi);visitMidi(instruments);
+    for(int lane=0;lane<(int)audio.size();++lane)
+        for(auto& clip:audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
+            positions.push_back({clip.startSeconds,clip.lengthSeconds});starts.push_back(&clip.startSeconds);
+            if(command==4||command==5){
+                const float gain=clip.clipGain*(command==4?1.41253754f:0.70794578f);
+                if(gain>4.f||!std::isfinite(gain)){valid=false;continue;}
+                changed=changed||gain!=clip.clipGain;clip.clipGain=gain;touchedAudio.insert(lane);
+            }
+            if(command==6||command==7){
+                clip.pitchSemitones+=command==6?1.0:-1.0;
+                changed=true;touchedAudio.insert(lane);
+            }
+        }
+    if(positions.size()!=selectedAudio.size()+selectedClipIds.size()||!valid)return false;
+    if(command>=0&&command<=3){
+        const double grid=isLibertySnapEnabled()?getLibertySnapSeconds(owner.tempoBpm):0.0;
+        if(!LibertyMidiClipEditing::groupPositions(positions,
+            static_cast<LibertyMidiClipEditing::PositionOperation>(command),grid))return false;
+        for(size_t i=0;i<starts.size();++i){
+            changed=changed||*starts[i]!=positions[i].start;*starts[i]=positions[i].start;
+        }
+        for(const auto& key:selectedAudio)touchedAudio.insert(key.first);
+    }else if(command<4||command>7)return false;
+    if(!changed)return false;
+    for(int lane:touchedAudio)for(const auto& clip:audio[(size_t)lane])
+        if(!AudioEngine::validAudioClip(clip))return false;
+    // One transaction, rollback the already-published lanes on failure.
+    beginArrangementEdit();
+    std::vector<int> published;
+    for(int lane:touchedAudio){
+        if(!owner.audioEngine.replaceArrangementAudioClips(lane,audio[(size_t)lane])){
+            for(int previous:published)owner.audioEngine.replaceArrangementAudioClips(previous,before.audio[(size_t)previous]);
+            for(int previous:published)refreshAudio(previous);
+            finishArrangementEdit();return false;
+        }
+        published.push_back(lane);
+    }
+    const int formerActive=activeIndex;const bool formerInstrument=activeInstrument;
+    activeIndex=-1;midiClips=std::move(midi);instrumentClips=std::move(instruments);
+    if(formerActive>=0)selectClip(formerInstrument,formerActive);
+    for(int lane:published)refreshAudio(lane);
+    syncPlayback();finishArrangementEdit();
+    operationMessage=juce::String::fromUTF8("Édition collective des clips appliquée");
+    owner.repaint();repaint();return true;
+}
+bool showGroupClipMenu(juce::Point<int> p){
+    if(inlineMidiMode||selectedAudio.size()+selectedClipIds.size()<2)return false;
+    const int track=audioLaneAt(p);
+    bool hit=track>=0&&selectedAudio.count({track,audioAt(p)})!=0;
+    if(track<0){
+        bool instrument=false;const int index=findClipAt(p,instrument);
+        if(index>=0)hit=selectedClipIds.count((instrument?instrumentClips:midiClips)[(size_t)index].id)!=0;
+    }
+    if(!hit)return false;
+    juce::PopupMenu menu;
+    menu.addSectionHeader(juce::String::fromUTF8("ÉDITION COLLECTIVE"));
+    menu.addItem(1,juce::String::fromUTF8("Quantifier les positions"),isLibertySnapEnabled()&&getLibertySnapSeconds(owner.tempoBpm)>0);
+    menu.addItem(2,juce::String::fromUTF8("Aligner les débuts"));
+    menu.addItem(3,juce::String::fromUTF8("Aligner les fins"));
+    menu.addItem(4,juce::String::fromUTF8("Distribuer les débuts"),selectedAudio.size()+selectedClipIds.size()>=3);
+    menu.addSeparator();
+    menu.addItem(5,juce::String::fromUTF8("Gain audio +3 dB"),!selectedAudio.empty());
+    menu.addItem(6,juce::String::fromUTF8("Gain audio -3 dB"),!selectedAudio.empty());
+    menu.addItem(7,juce::String::fromUTF8("Transposer +1 demi-ton"));
+    menu.addItem(8,juce::String::fromUTF8("Transposer -1 demi-ton"));
+    const auto screen=localPointToGlobal(p);
+    const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
+        [safe,audioSelection,midiSelection](int choice){
+            if(!safe||choice<1||choice>8)return;
+            if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(!safe->applyGroupClipOperation(choice-1)){
+                safe->operationMessage=juce::String::fromUTF8("Aucune modification collective possible");safe->repaint();
+            }
+        });
+    return true;
+}
 void eraseArrangementSelection(){
     syncActiveClip();activeIndex=-1;
     LibertyMidiClipEditing::eraseSelectedClips(midiClips,selectedClipIds);
@@ -1173,6 +1277,25 @@ bool runArrangementTests(){
         beginArrangementEdit();eraseArrangementSelection();finishArrangementEdit();
         require(midiClips.empty()&&owner.audioEngine.getArrangementAudioClips(0).empty(),"mixed erase");
         undoArrangement(false);require(midiClips.size()==1&&owner.audioEngine.getArrangementAudioClips(0).size()==2,"mixed undo");
+        // Real mixed audio/MIDI selection, single undo per collective operation.
+        const auto groupAudio=owner.audioEngine.getArrangementAudioClips(0);
+        const auto groupMidi=midiClips.front();
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(applyGroupClipOperation(6),"mixed transpose");
+        require(owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones==groupAudio.front().pitchSemitones+1&&
+                midiClips.front().notes[0].pitch==groupMidi.notes[0].pitch+1,"mixed transpose playback properties");
+        require(undoArrangement(false),"undo mixed transpose");
+        require(midiClips.front().notes[0].pitch==groupMidi.notes[0].pitch&&
+            owner.audioEngine.getArrangementAudioClips(0).front().sourceBuffer==source,"transpose undo preserves media");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(applyGroupClipOperation(1),"align mixed starts");
+        require(std::abs(midiClips.front().startSeconds-owner.audioEngine.getArrangementAudioClips(0).front().startSeconds)<1.e-9,"mixed starts aligned");
+        require(undoArrangement(false),"undo mixed alignment");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(applyGroupClipOperation(5),"collective audio gain");
+        require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-groupAudio.front().clipGain*.70794578f)<.00001f&&
+            midiClips.front().notes[0].velocity==groupMidi.notes[0].velocity,"gain applies only to audio");
+        require(undoArrangement(false),"undo group gain");
         // Naming uses the actual clip identities, without changing notes or media.
         syncClipNames();const auto audioKey="audio:"+owner.audioEngine.getArrangementAudioClips(0).front().id;
         const auto midiKey="midi:"+juce::String(midiClips.front().id);
