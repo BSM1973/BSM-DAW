@@ -361,3 +361,33 @@ bool AudioEngine::prepareQuantizedArrangementClip(const AudioClipMetadata& clip,
     if(!validAudioClip(copy))return false;
     result=std::move(copy);return true;
 }
+
+bool AudioEngine::canRenderRawStretch(const AudioClipMetadata& clip) noexcept
+{
+    return validAudioClip(clip)&&clip.sourceBuffer&&clip.sourceSampleRate>=8000&&clip.sourceSampleRate<=192000
+        &&clip.sourceBuffer->getNumChannels()<=2&&!clip.warp.enabled&&!clip.reverse
+        &&clip.offsetSeconds==0&&clip.trimStartFraction==0&&clip.trimEndFraction==1
+        &&clip.pitchSemitones==0
+        &&std::abs(clip.sourceBuffer->getNumSamples()/clip.sourceSampleRate-clip.lengthSeconds)<=1.0/clip.sourceSampleRate;
+}
+bool AudioEngine::prepareRawStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result)
+{
+    if(!canRenderRawStretch(clip)||!std::isfinite(seconds)||seconds<=0||
+       seconds/clip.lengthSeconds<.25||seconds/clip.lengthSeconds>4)return false;
+    const double count=seconds*clip.sourceSampleRate;
+    if(!std::isfinite(count)||count<1||count>16000000)return false;
+    try{
+        const auto& input=*clip.sourceBuffer;
+        const float* channels[]={input.getReadPointer(0),input.getReadPointer(input.getNumChannels()-1)};
+        auto output=std::make_shared<juce::AudioBuffer<float>>(2,(int)std::llround(count));
+        signalsmith::stretch::SignalsmithStretch<float> stretch;
+        stretch.presetDefault(2,clip.sourceSampleRate);stretch.setTransposeFactor(1.0);
+        stretch.process(channels,input.getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
+        for(int ch=0;ch<2;++ch)for(int i=0;i<output->getNumSamples();++i)
+            if(!std::isfinite(output->getSample(ch,i)))return false;
+        auto copy=clip;copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;
+        copy.envelopeLengthSeconds=0;copy.warp={};copy.spectralCache.reset();
+        if(!validAudioClip(copy))return false;
+        result=std::move(copy);return true;
+    }catch(...){return false;}
+}

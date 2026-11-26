@@ -300,6 +300,19 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         if(!engine.replaceArrangementAudioClips(0,{fast})||!engine.renderOfflineForTesting(fastOut,48000,128,false))
             throw std::runtime_error("repitch passband render");
         if(fastOut.getMagnitude(0,1000,22000)<.05f)throw std::runtime_error("repitch passband lost");
+        // Worker-safe stretch path: no AudioEngine instance or live state.
+        AudioEngine::AudioClipMetadata workerResult;
+        if(!AudioEngine::prepareRawStretchedArrangementClip(stretched,1.5,workerResult)||
+           workerResult.sourceBuffer->getNumSamples()!=72000||stretched.sourceBuffer!=tone)
+            throw std::runtime_error("worker raw stretch");
+        int workerCrossings=0;
+        for(int i=24001;i<48001;++i)
+            if(workerResult.sourceBuffer->getSample(0,i-1)<=0&&workerResult.sourceBuffer->getSample(0,i)>0)++workerCrossings;
+        if(std::abs(workerCrossings*2-440)>6)throw std::runtime_error("worker raw stretch frequency");
+        auto editedRaw=stretched;editedRaw.reverse=true;
+        if(AudioEngine::prepareRawStretchedArrangementClip(editedRaw,1.5,workerResult)||
+           AudioEngine::prepareRawStretchedArrangementClip(stretched,10,workerResult))
+            throw std::runtime_error("worker raw stretch geometry");
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.

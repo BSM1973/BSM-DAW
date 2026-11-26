@@ -54,6 +54,7 @@ public:
             std::vector<double> accumulatedPhase((size_t)bins + 1, 0.0);
             std::vector<double> magnitudes((size_t)bins + 1, 0.0);
             std::vector<double> frequencies((size_t)bins + 1, 0.0);
+            std::vector<double> envelopePrefix((size_t)bins + 2, 0.0);
             std::vector<double> normalisation((size_t)outputLength, 0.0);
             const float* source = input.getReadPointer(channel);
             float* target = output.getWritePointer(channel);
@@ -79,6 +80,16 @@ public:
                     frequencies[(size_t)k] = (expected + delta) / analysisHop;
                     previousPhase[(size_t)k] = phase;
                 }
+                // Prefix sum of magnitudes, preserving replicated edge bins.
+                envelopePrefix[0]=0;
+                for(int k=0;k<=bins;++k)envelopePrefix[(size_t)k+1]=envelopePrefix[(size_t)k]+magnitudes[(size_t)k];
+                auto envelopeAt=[&](int center){
+                    constexpr int radius=8;
+                    const int low=juce::jmax(0,center-radius),high=juce::jmin(bins,center+radius);
+                    return envelopePrefix[(size_t)high+1]-envelopePrefix[(size_t)low]
+                        +juce::jmax(0,radius-center)*magnitudes.front()
+                        +juce::jmax(0,center+radius-bins)*magnitudes.back();
+                };
                 // Spectral remapping changes pitch without altering the
                 // synthesis hop. A smoothed magnitude envelope is used for
                 // coarse formant compensation; detailed LPC/cepstral formant
@@ -94,14 +105,8 @@ public:
                         magnitudes[(size_t)lo], magnitudes[(size_t)hi]);
                     const int envelopeBin = juce::jlimit(0, bins,
                         (int)std::llround(sourceBin / formantRatio));
-                    const int radius = 8;
-                    double envelope = 0.0;
-                    double shiftedEnvelope = 0.0;
-                    for (int d = -radius; d <= radius; ++d)
-                    {
-                        envelope += magnitudes[(size_t)juce::jlimit(0, bins, lo+d)];
-                        shiftedEnvelope += magnitudes[(size_t)juce::jlimit(0, bins, envelopeBin+d)];
-                    }
+                    const double envelope=envelopeAt(lo);
+                    const double shiftedEnvelope=envelopeAt(envelopeBin);
                     const double formantGain = juce::jlimit(0.25, 4.0,
                         (shiftedEnvelope + 0.00001) / (envelope + 0.00001));
                     accumulatedPhase[(size_t)k] += frequencies[(size_t)lo]

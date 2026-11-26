@@ -439,6 +439,8 @@ public:
     bool prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,double pitchShift=0.0,bool preserveFormants=false);
     // Build a non-destructive map from raw-source transients. Reject ambiguous source geometry.
     bool prepareQuantizedArrangementClip(const AudioClipMetadata& clip,double grid,double strength,AudioClipMetadata& result);
+    static bool canRenderRawStretch(const AudioClipMetadata& clip) noexcept;
+    static bool prepareRawStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result);
     struct ClipRhythmAnalysis { double bpm=0.0,confidence=0.0;std::vector<double> transients; };
     ClipRhythmAnalysis analyseArrangementClipRhythm(const AudioClipMetadata& clip);
     static ClipRhythmAnalysis analyseRawClipRhythm(const AudioClipMetadata& clip);

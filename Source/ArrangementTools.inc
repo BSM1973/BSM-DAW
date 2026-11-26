@@ -12,6 +12,7 @@ struct ArrangementState {
 struct ArrangementEdit { ArrangementState before,after; };
 std::vector<ArrangementEdit> undoEdits,redoEdits;
 std::unique_ptr<ArrangementState> pendingEdit;
+std::shared_ptr<std::atomic<bool>> asyncStretchCancel;
 std::set<AudioKey> selectedAudio;
 std::map<AudioKey,double> audioOrigins;
 AudioClip audioClipboard,audioDragOriginal;
@@ -54,7 +55,7 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
+void clearArrangementHistory(){if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
     const auto previous=captureArrangement();
@@ -809,11 +810,78 @@ bool toggleGroupClipSelection(juce::Point<int> p){
     operationMessage=juce::String((int)(selectedAudio.size()+selectedClipIds.size()))+juce::String::fromUTF8(" clips sélectionnés");
     repaint();return true;
 }
+juce::ThreadPool stretchRenderPool{1};
+bool cancelAsyncStretch(){
+    if(!asyncStretchCancel)return false;
+    asyncStretchCancel->store(true,std::memory_order_release);
+    operationMessage=juce::String::fromUTF8("Annulation du rendu demandée…");repaint();return true;
+}
+bool startAsyncStretch(double percent){
+    if(asyncStretchCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>12||
+       !std::isfinite(percent)||percent<25||percent>400||percent==100)return false;
+    const auto before=captureArrangement();
+    std::vector<std::pair<AudioKey,AudioClip>> jobs;
+    double bytes=0;
+    for(const auto& key:selectedAudio){
+        if(key.first<0||key.first>=(int)before.audio.size())return false;
+        const auto& lane=before.audio[(size_t)key.first];
+        const auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& clip){return clip.id==key.second;});
+        if(it==lane.end()||!AudioEngine::canRenderRawStretch(*it))return false;
+        bytes+=it->lengthSeconds*percent/100*it->sourceSampleRate*2*sizeof(float);
+        if(!std::isfinite(bytes)||bytes>128ull*1024*1024)return false;
+        jobs.push_back({key,*it});
+    }
+    const auto cancel=std::make_shared<std::atomic<bool>>(false);asyncStretchCancel=cancel;
+    const auto signature=before.signature;const auto selection=selectedAudio;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    operationMessage=juce::String::fromUTF8("Rendu Time Stretch : 0/")+juce::String((int)jobs.size())+
+        juce::String::fromUTF8(" — Échap pour annuler");repaint();
+    stretchRenderPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),percent]() mutable{
+        bool ok=true;int done=0;const int total=(int)jobs.size();
+        for(auto& job:jobs){
+            if(cancel->load(std::memory_order_acquire)){ok=false;break;}
+            AudioClip rendered;
+            if(!AudioEngine::prepareRawStretchedArrangementClip(job.second,job.second.lengthSeconds*percent/100,rendered)){ok=false;break;}
+            job.second=std::move(rendered);++done;
+            juce::MessageManager::callAsync([safe,cancel,done,total]{
+                if(!safe||safe->asyncStretchCancel!=cancel||cancel->load())return;
+                safe->operationMessage=juce::String::fromUTF8("Rendu Time Stretch : ")+juce::String(done)+"/"+juce::String(total)+
+                    juce::String::fromUTF8(" — Échap pour annuler");safe->repaint();
+            });
+        }
+        juce::MessageManager::callAsync([safe,cancel,signature,selection,jobs=std::move(jobs),ok]() mutable{
+            if(!safe||safe->asyncStretchCancel!=cancel)return;
+            safe->asyncStretchCancel.reset();
+            if(!ok||cancel->load()||safe->pendingEdit||safe->selectedAudio!=selection||
+               safe->captureArrangement().signature!=signature){
+                safe->operationMessage=juce::String::fromUTF8("Rendu annulé ou arrangement modifié — clips conservés");safe->repaint();return;
+            }
+            const auto previous=safe->captureArrangement();auto audio=previous.audio;std::set<int> lanes;
+            for(auto& job:jobs){
+                auto& lane=audio[(size_t)job.first.first];
+                auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& clip){return clip.id==job.first.second;});
+                if(it==lane.end())return;
+                *it=std::move(job.second);lanes.insert(job.first.first);
+            }
+            safe->beginArrangementEdit();std::vector<int> published;bool applied=true;
+            for(int lane:lanes){
+                if(!safe->owner.audioEngine.replaceArrangementAudioClips(lane,audio[(size_t)lane])){applied=false;break;}
+                published.push_back(lane);
+            }
+            if(!applied)for(int lane:published)safe->owner.audioEngine.replaceArrangementAudioClips(lane,previous.audio[(size_t)lane]);
+            for(int lane:published)safe->refreshAudio(lane);
+            safe->syncPlayback();safe->finishArrangementEdit();
+            safe->operationMessage=juce::String::fromUTF8(applied?"Rendu Time Stretch terminé":"Rendu non appliqué — clips conservés");
+            safe->owner.repaint();safe->repaint();
+        });
+    });
+    return true;
+}
 void showGroupValueDialog(int command){
     const bool gain=command==15,transpose=command==16;
-    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==18?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
+    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":(command==18||command==24)?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("ÉDITION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
-    dialog->addTextEditor("value",gain?"0":transpose?"0":command==18?"150":command==19?"120":command==20?"75":(command==22||command==23)?"0":"0.05");
+    dialog->addTextEditor("value",gain?"0":transpose?"0":(command==18||command==24)?"150":command==19?"120":command==20?"75":(command==22||command==23)?"0":"0.05");
     dialog->addButton(juce::String::fromUTF8("Appliquer"),1,juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton(juce::String::fromUTF8("Annuler"),0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
@@ -826,7 +894,7 @@ void showGroupValueDialog(int command){
             try{
                 const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
                 size_t used=0;const double value=std::stod(input,&used);
-                if(used==input.size())applied=safe->applyGroupClipOperation(command,value);
+                if(used==input.size())applied=command==24?safe->startAsyncStretch(value):safe->applyGroupClipOperation(command,value);
             }catch(...){}
             if(!applied){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible");safe->repaint();}
         }),false);
@@ -904,15 +972,20 @@ bool showGroupClipMenu(juce::Point<int> p){
     warp.addItem(23,juce::String::fromUTF8("Synchroniser automatiquement"),!selectedAudio.empty());
     warp.addItem(24,juce::String::fromUTF8("Pitch Shift à durée constante…"),!selectedAudio.empty());
     warp.addItem(25,juce::String::fromUTF8("Pitch Shift vocal — formants…"),!selectedAudio.empty());
+    warp.addSeparator();
+    warp.addItem(26,juce::String::fromUTF8("Étirement en arrière-plan (%)…"),!selectedAudio.empty()&&!asyncStretchCancel);
+    warp.addItem(27,juce::String::fromUTF8("Annuler le rendu"),asyncStretchCancel!=nullptr);
     menu.addSubMenu(juce::String::fromUTF8("Warp et étirement"),warp);
     const auto screen=localPointToGlobal(p);
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection](int choice){
-            if(!safe||choice<1||choice>25)return;
+            if(!safe||choice<1||choice>27)return;
+            if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
             if(choice==21){safe->analyseSelectionAsync(audioSelection);return;}
+            if(choice==26){safe->showGroupValueDialog(24);return;}
             if(choice==22||choice==24||choice==25){safe->showGroupValueDialog(choice==22?20:choice==24?22:23);return;}
             if(choice==23){
                 if(!safe->applyGroupClipOperation(21)){

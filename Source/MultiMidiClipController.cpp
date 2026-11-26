@@ -184,6 +184,7 @@ void paintSelection(juce::Graphics& g) {
 }
 bool handleArrangementKey(const juce::KeyPress& key) {
     if(!arrangementFocus || !hasKeyboardFocus(false))return false;
+    if(key.getKeyCode()==juce::KeyPress::escapeKey&&cancelAsyncStretch())return true;
     if(key.getModifiers().isCommandDown()&&(key.getKeyCode()=='z'||key.getKeyCode()=='Z'))return undoArrangement(key.getModifiers().isShiftDown());
     if(key.getModifiers().isCommandDown()&&(key.getKeyCode()=='y'||key.getKeyCode()=='Y'))return undoArrangement(true);
     if(inlineMidiMode && key.getModifiers().isCommandDown()
