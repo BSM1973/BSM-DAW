@@ -1093,8 +1093,9 @@ void paintAudioFades(juce::Graphics& g){
 // Audio source ownership and all non-targeted MIDI note properties are retained.
 bool applyGroupClipOperation(int command,double value=0.0){
     if((command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty())||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>29)return false;
-    if(command>=24&&command<=26&&(value<-60||value>0))return false;
+    if(!std::isfinite(value)||command<0||command>34)return false;
+    if(command>=24&&command<=26&&(value<-60||value>(command==24?12.:0.)))return false;
+    if((command==33||command==34)&&(value<-60||value>0))return false;
     if(command==27&&(value<0||value>86400))return false;
     if(command==28&&(value<0||value>LibertyAudioCrossfade::maxCurve||std::floor(value)!=value))return false;
     if(command==29&&(value<0||value>LibertyAudioCrossfade::maxCurve||std::floor(value)!=value))return false;
@@ -1159,7 +1160,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
     // entire file. No mixer, crossfade or rendered-peak claim is made.
     std::map<AudioKey,double> peaks;
     double commonPeak=0.;std::uint64_t scanned=0;
-    if(command==25||command==26){
+    if(command==25||command==26||command==33||command==34){
         for(int lane=0;lane<(int)audio.size();++lane)
             for(const auto& clip:audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
                 if(!clip.sourceBuffer||clip.warp.enabled||clip.pitchSemitones!=0.||
@@ -1176,19 +1177,20 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 const int channels=juce::jmin(2,clip.sourceBuffer->getNumChannels());
                 scanned+=(std::uint64_t)(end-start)*channels;
                 if(scanned>20000000ull||channels<1||end<=start)return false;
-                double peak=0.;
+                double peak=0.,energy=0.;
                 for(int ch=0;ch<channels;++ch){
                     const auto* p=clip.sourceBuffer->getReadPointer(ch);
                     for(int i=start;i<end;++i){
                         if(!std::isfinite(p[i]))return false;
-                        peak=std::max(peak,std::abs((double)p[i]));
+                        peak=std::max(peak,std::abs((double)p[i]));energy+=(double)p[i]*p[i];
                     }
                 }
+                if(command==33||command==34)peak=std::sqrt(energy/(double(channels)*(end-start)));
                 if(peak<=1.e-9)return false;
                 peaks[{lane,clip.id}]=peak;
                 commonPeak=std::max(commonPeak,peak*clip.clipGain);
             }
-        if(command==26&&commonPeak<=1.e-9)return false;
+        if((command==26||command==34)&&commonPeak<=1.e-9)return false;
     }
     std::uint64_t stretchBytes=0;
     for(int lane=0;lane<(int)audio.size();++lane)
@@ -1234,9 +1236,18 @@ bool applyGroupClipOperation(int command,double value=0.0){
                     touchedAudio.insert(lane);
                 }
             }
-            if(command>=24&&command<=26){
+            if(command==30||command==31){
+                const bool muted=command==30;
+                changed=changed||clip.muted!=muted;clip.muted=muted;touchedAudio.insert(lane);
+            }
+            if(command==32){
+                // Reverse each selected source without rewriting its samples.
+                if(!clip.sourceBuffer||clip.warp.enabled){valid=false;continue;}
+                clip.reverse=!clip.reverse;changed=true;touchedAudio.insert(lane);
+            }
+            if((command>=24&&command<=26)||command==33||command==34){
                 const double target=std::pow(10.,value/20.);
-                const double gain=command==24?target:command==25?target/peaks.at({lane,clip.id}):clip.clipGain*target/commonPeak;
+                const double gain=command==24?target:(command==25||command==33)?target/peaks.at({lane,clip.id}):clip.clipGain*target/commonPeak;
                 if(!std::isfinite(gain)||gain>4.||gain<0.){valid=false;continue;}
                 changed=changed||clip.clipGain!=(float)gain;clip.clipGain=(float)gain;touchedAudio.insert(lane);
             }
@@ -1426,6 +1437,26 @@ bool startAsyncStretch(double percent,int tonal=0){
     });
     return true;
 }
+void showPrecisionValueDialog(int command){
+    const auto label=juce::String::fromUTF8(command==24?"Gain absolu en dB (-60 à +12)":command==27?"Durée de chaque fondu en secondes":command==33||command==34?"Cible RMS source en dBFS (-60 à 0)":"Cible Peak source en dBFS (-60 à 0)");
+    auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("PRÉCISION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
+    dialog->addTextEditor("value",command==24?"0":command==27?"0.01":command==33||command==34?"-18":"-1");
+    dialog->addButton("Appliquer",1,juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
+    const auto selection=selectedAudio;const auto midiSelection=selectedClipIds;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,command,selection,midiSelection](int result){
+        std::unique_ptr<juce::AlertWindow> owned(dialog);
+        if(result!=1||!safe||safe->selectedAudio!=selection||safe->selectedClipIds!=midiSelection)return;
+        bool ok=false;
+        try{
+            const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
+            size_t used=0;const double value=std::stod(input,&used);
+            if(used==input.size())ok=safe->applyGroupClipOperation(command,value);
+        }catch(...){}
+        if(!ok){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible — clips conservés");safe->repaint();}
+    }),false);
+}
 void showGroupValueDialog(int command){
     const bool gain=command==15,transpose=command==16;
     const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==26?"TONAL mélodique : durée relative (25 à 400 %), mono":command==25?"TONAL : durée relative (25 à 400 %), notes stables":(command==18||command==24)?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
@@ -1517,6 +1548,17 @@ bool showGroupClipMenu(juce::Point<int> p){
     menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
     }else menu.addItem(29,juce::String::fromUTF8("Éditer le clip audio…"));
     juce::PopupMenu precision;
+    precision.addItem(37,juce::String::fromUTF8("Gain absolu personnalisé…"),!selectedAudio.empty());
+    precision.addItem(38,juce::String::fromUTF8("Normalisation Peak individuelle…"),!selectedAudio.empty());
+    precision.addItem(39,juce::String::fromUTF8("Normalisation Peak collective…"),!selectedAudio.empty());
+    precision.addItem(40,juce::String::fromUTF8("Normalisation RMS individuelle…"),!selectedAudio.empty());
+    precision.addItem(41,juce::String::fromUTF8("Normalisation RMS collective…"),!selectedAudio.empty());
+    precision.addItem(42,juce::String::fromUTF8("Fondus symétriques personnalisés…"),!selectedAudio.empty());
+    precision.addSeparator();
+    precision.addItem(43,juce::String::fromUTF8("Désactiver les clips audio"),!selectedAudio.empty());
+    precision.addItem(44,juce::String::fromUTF8("Réactiver les clips audio"),!selectedAudio.empty());
+    precision.addItem(45,juce::String::fromUTF8("Inverser la lecture audio"),!selectedAudio.empty());
+    precision.addSeparator();
     precision.addItem(31,juce::String::fromUTF8("Gain absolu à 0 dB"),!selectedAudio.empty());
     precision.addItem(32,juce::String::fromUTF8("Normaliser les sources individuellement à -1 dBFS"),!selectedAudio.empty());
     precision.addItem(33,juce::String::fromUTF8("Normaliser les sources ensemble à -1 dBFS"),!selectedAudio.empty());
@@ -1543,9 +1585,18 @@ bool showGroupClipMenu(juce::Point<int> p){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection,p](int choice){
-            if(!safe||choice<1||choice>36)return;
+            if(!safe||choice<1||choice>45)return;
             if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice>=37&&choice<=42){
+                const int commands[]={24,25,26,33,34,27};
+                safe->showPrecisionValueDialog(commands[choice-37]);return;
+            }
+            if(choice>=43){
+                if(!safe->applyGroupClipOperation(choice-13)){
+                    safe->operationMessage=juce::String::fromUTF8("Opération impossible ou sans changement — clips conservés");safe->repaint();
+                }return;
+            }
             if(choice>=31){
                 const double value=choice==31?0.:choice<=33?-1.:choice==34?.01:2.;
                 if(!safe->applyGroupClipOperation(choice-7,value)){
@@ -2225,6 +2276,14 @@ bool runArrangementTests(){
         require(undoArrangement(false),"undo paired fades");
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
         require(!applyGroupClipOperation(27,86400),"reject oversized paired fades");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        const bool wasMuted=owner.audioEngine.getArrangementAudioClips(0).front().muted;
+        require(applyGroupClipOperation(wasMuted?31:30),"collective mute state");
+        require(owner.audioEngine.getArrangementAudioClips(0).front().muted!=wasMuted,"collective mute value");
+        require(undoArrangement(false),"undo collective mute");
+        require(owner.audioEngine.getArrangementAudioClips(0).front().muted==wasMuted,"restore mute value");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(!applyGroupClipOperation(24,13),"reject absolute gain overflow");
         // Naming uses the actual clip identities, without changing notes or media.
         syncClipNames();const auto audioKey="audio:"+owner.audioEngine.getArrangementAudioClips(0).front().id;
         const auto midiKey="midi:"+juce::String(midiClips.front().id);
