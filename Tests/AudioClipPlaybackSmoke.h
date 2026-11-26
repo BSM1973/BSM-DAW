@@ -1,5 +1,6 @@
 #pragma once
 #include "AudioEngine.h"
+#include "AudioCrossfadeCurve.h"
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -241,6 +242,40 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(loadedClip.crossfadeCurve!=curve)
                 throw std::runtime_error("crossfade curve XML persistence");
         }
+        // Phase 2.4.2: all added shapes are bounded, monotonic, complementary
+        // and identical in the rendered callback and the shared display law.
+        for(int curve=3;curve<=LibertyAudioCrossfade::maxCurve;++curve){
+            double last=-1;
+            for(int i=0;i<=1000;++i){
+                const double p=i/1000.;
+                const double in=LibertyAudioCrossfade::level(curve,p,true);
+                const double out=LibertyAudioCrossfade::level(curve,p,false);
+                if(!std::isfinite(in)||!std::isfinite(out)||in< -1.e-12||in>1.+1.e-12||
+                   in+1.e-12<last||std::abs(in+out-1.)>1.e-12||
+                   std::abs(in-LibertyAudioCrossfade::manualFadeLevel(curve,p,true))>1.e-12)
+                    throw std::runtime_error("advanced curve mathematical bounds");
+                last=in;
+            }
+            if(std::abs(LibertyAudioCrossfade::level(curve,0,true))>1.e-12||
+               std::abs(LibertyAudioCrossfade::level(curve,1,true)-1.)>1.e-12)
+                throw std::runtime_error("advanced curve endpoints");
+            second.crossfadeCurve=curve;
+            if(!engine.replaceArrangementAudioClips(0,{first,second})||
+               !engine.renderOfflineForTesting(crossRender,48000,257,false))
+                throw std::runtime_error("advanced crossfade render");
+            for(int i:{27000,30000,36000,42000,45000}){
+                const double p=(i-24000)/24000.;
+                const double g=LibertyAudioCrossfade::level(curve,p,true);
+                near(crossRender.getSample(0,i),float(.25*(1-g)+.125*g));
+            }
+            auto independent=second;independent.fadeInCurve=curve;
+            independent.fadeOutCurve=LibertyAudioCrossfade::maxCurve+3-curve;
+            juce::XmlElement xml("Clip");AudioEngine::writeAudioClipProperties(xml,independent);
+            const auto restored=AudioEngine::readAudioClipProperties(xml);
+            if(restored.fadeInCurve!=independent.fadeInCurve||
+               restored.fadeOutCurve!=independent.fadeOutCurve||restored.crossfadeCurve!=curve)
+                throw std::runtime_error("advanced curves XML roundtrip");
+        }
         // A shortened fade uses the entire overlap for routing, but not for its ramp.
         second.crossfadeCurve=0;second.crossfadeDurationSeconds=.2;
         if(!engine.replaceArrangementAudioClips(0,{first,second}))throw std::runtime_error("short crossfade setup");
@@ -264,7 +299,7 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         if(engine.replaceArrangementAudioClips(0,{first,badDuration}))throw std::runtime_error("NaN duration accepted");
         if(std::abs(engine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds-.2)>1.e-9)
             throw std::runtime_error("invalid crossfade modified state");
-        auto badCurve=second;badCurve.crossfadeCurve=4;
+        auto badCurve=second;badCurve.crossfadeCurve=LibertyAudioCrossfade::maxCurve+1;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
         // REPITCH 2:1 duration must halve frequency, not preserve pitch.

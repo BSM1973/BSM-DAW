@@ -433,16 +433,31 @@ static void addProfessionalFadeDurations(juce::PopupMenu& menu,double current,do
         menu.addItem(choice,label,seconds<=limit,std::abs(current-seconds)<1.e-8);
     }
 }
+static void addAdvancedFadeCurves(juce::PopupMenu& menu,int selected){
+    juce::PopupMenu advanced;
+    const char* names[]={"Logarithmique","Exponentielle progressive","Sinusoïdale","Courbe en S douce","Courbe en S prononcée","Cubique progressive","Cubique rapide"};
+    for(int c=3;c<=9;++c)advanced.addItem(100+c,juce::String::fromUTF8(names[c-3]),true,selected==c);
+    juce::PopupMenu custom;
+    for(int c=LibertyAudioCrossfade::customFirst;c<=LibertyAudioCrossfade::customLast;++c){
+        const int percent=(c-20)*10;
+        const auto label=(percent>0?juce::String("+"):juce::String())+juce::String(percent)+" %";
+        custom.addItem(100+c,label,true,selected==c);
+    }
+    advanced.addSubMenu(juce::String::fromUTF8("Courbure personnalisée"),custom);
+    menu.addSubMenu(juce::String::fromUTF8("Courbes avancées"),advanced);
+}
 bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,bool incoming,bool cross){
     if(track<0||id.isEmpty())return false;
     auto current=owner.audioEngine.getArrangementAudioClips(track);
     auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
     if(entry==current.end())return false;
     if(cross&&entry->autoCrossfadeInEnd<=entry->autoCrossfadeInStart)return false;
-    if(choice>=1&&choice<=3){
+    const int curveChoice=(choice>=1&&choice<=3)?choice-1:
+        (choice>=103&&choice<=100+LibertyAudioCrossfade::maxCurve?choice-100:-1);
+    if(curveChoice>=0){
         int& curve=cross?entry->crossfadeCurve:(incoming?entry->fadeInCurve:entry->fadeOutCurve);
-        if(curve==choice-1)return false;
-        curve=choice-1;
+        if(curve==curveChoice)return false;
+        curve=curveChoice;
     }else{
         const double duration=professionalFadePreset(choice);
         const double limit=cross?entry->autoCrossfadeOverlapEnd-entry->autoCrossfadeOverlapStart:entry->lengthSeconds;
@@ -454,7 +469,7 @@ bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,boo
     beginArrangementEdit();
     const bool applied=owner.audioEngine.replaceArrangementAudioClips(track,current);
     if(applied){
-        operationMessage=choice<=3?juce::String::fromUTF8("Courbe de fondu modifiée"):
+        operationMessage=curveChoice>=0?juce::String::fromUTF8("Courbe de fondu modifiée"):
             juce::String::fromUTF8("Durée du fondu modifiée");
         owner.repaint();repaint();
     }
@@ -472,6 +487,7 @@ bool showAudioCrossfadeMenu(juce::Point<int> p){
     menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,it->crossfadeCurve==0);
     menu.addItem(2,juce::String::fromUTF8("Puissance égale"),true,it->crossfadeCurve==1);
     menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,it->crossfadeCurve==2);
+    addAdvancedFadeCurves(menu,it->crossfadeCurve);
     addProfessionalFadeDurations(menu,it->crossfadeDurationSeconds,
         it->autoCrossfadeOverlapEnd-it->autoCrossfadeOverlapStart,true);
     const auto screen=localPointToGlobal(p);
@@ -499,6 +515,7 @@ bool showAudioManualFadeMenu(juce::Point<int> p){
     menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,curve==0);
     menu.addItem(2,juce::String::fromUTF8("Exponentielle"),true,curve==1);
     menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,curve==2);
+    addAdvancedFadeCurves(menu,curve);
     addProfessionalFadeDurations(menu,incoming?it->fadeInSeconds:it->fadeOutSeconds,it->lengthSeconds,false);
     const auto screen=localPointToGlobal(p);
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
@@ -1601,6 +1618,18 @@ bool runArrangementTests(){
             require(std::abs(manual[1].fadeInSeconds-.025)<1.e-9&&
                     manual[1].fadeOutSeconds==neighbour.fadeOutSeconds,
                     "professional independent manual fade");
+            require(applyProfessionalFadeChoice(0,neighbour.id,105,true,false),"advanced manual sine");
+            require(applyProfessionalFadeChoice(0,neighbour.id,130,false,false),"advanced custom outgoing");
+            const auto advanced=owner.audioEngine.getArrangementAudioClips(0);
+            require(advanced[1].fadeInCurve==5&&advanced[1].fadeOutCurve==30&&
+                    advanced[0].fadeInCurve==c.fadeInCurve&&advanced[0].fadeOutCurve==c.fadeOutCurve,
+                    "advanced independent curve selection");
+            require(undoArrangement(false),"advanced custom undo");
+            require(owner.audioEngine.getArrangementAudioClips(0)[1].fadeOutCurve==neighbour.fadeOutCurve,
+                    "advanced custom undo restored");
+            require(undoArrangement(true),"advanced custom redo");
+            require(owner.audioEngine.getArrangementAudioClips(0)[1].fadeOutCurve==30,
+                    "advanced custom redo restored");
             require(applyProfessionalFadeChoice(0,neighbour.id,10,true,false),"professional manual fade reset");
             require(owner.audioEngine.getArrangementAudioClips(0)[1].fadeInSeconds==0,
                     "professional manual fade reset duration");

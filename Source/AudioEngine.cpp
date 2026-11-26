@@ -1692,8 +1692,8 @@ AudioEngine::AudioClipMetadata AudioEngine::readAudioClipProperties(const juce::
     clip.muted=element.getBoolAttribute("muted",false);
     clip.fadeInSeconds=element.getDoubleAttribute("fadeInSeconds",0.0);
     clip.fadeOutSeconds=element.getDoubleAttribute("fadeOutSeconds",0.0);
-    clip.fadeInCurve=juce::jlimit(0,2,element.getIntAttribute("fadeInCurve",0));
-    clip.fadeOutCurve=juce::jlimit(0,2,element.getIntAttribute("fadeOutCurve",0));
+    clip.fadeInCurve=juce::jlimit(0,LibertyAudioCrossfade::maxCurve,element.getIntAttribute("fadeInCurve",0));
+    clip.fadeOutCurve=juce::jlimit(0,LibertyAudioCrossfade::maxCurve,element.getIntAttribute("fadeOutCurve",0));
     clip.crossfadeCurve=element.getIntAttribute("crossfadeCurve",0);
     clip.crossfadeDurationSeconds=element.getDoubleAttribute("crossfadeDurationSeconds",0.0);
     clip.offsetSeconds=element.getDoubleAttribute("offsetSeconds",0);
