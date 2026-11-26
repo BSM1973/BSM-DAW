@@ -152,4 +152,25 @@ inline double predictedPower(double in,double out,double rho) noexcept
 {
     return std::max(0.,in*in+out*out+2.*std::clamp(rho,-1.,1.)*in*out);
 }
+// Stereo alignment seeks a low-amplitude joint crossing. Never infer a
+// crossing from a mono sum, which could hide opposite-polarity channels.
+inline int nearestStereoZero(const float* l,const float* r,int count,int center,int radius) noexcept
+{
+    if(!l||!r||count<2||center<0||center>=count||radius<0)return -1;
+    int best=-1;double score=1.e30;
+    for(int i=std::max(1,center-radius);i<=std::min(count-1,center+radius);++i){
+        const auto crossing=[](float a,float b){return (a<=0&&b>=0)||(a>=0&&b<=0);};
+        if(!crossing(l[i-1],l[i])||!crossing(r[i-1],r[i]))continue;
+        const double v=std::max(std::abs(double(l[i])),std::abs(double(r[i])));
+        if(v>.05)continue;
+        const double cost=v+.01*std::abs(i-center)/std::max(1,radius);
+        if(cost<score){score=cost;best=i;}
+    }
+    return best;
+}
+inline bool validPreset(int in,int out,double center,double duration) noexcept
+{
+    return validCurve(in)&&validCurve(out)&&std::isfinite(center)&&center>=0.&&center<=1.
+        &&std::isfinite(duration)&&duration>=0.&&duration<=86400.;
+}
 }

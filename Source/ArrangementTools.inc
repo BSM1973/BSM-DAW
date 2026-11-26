@@ -552,7 +552,7 @@ public:
         addAndMakeVisible(savePreset);addAndMakeVisible(loadPreset);
         for(int i=1;i<=50;++i)personalSlots.addItem(juce::String::fromUTF8("Personnel ")+juce::String(i),i);
         personalSlots.setSelectedId(1,juce::dontSendNotification);addAndMakeVisible(personalSlots);
-        snapZero.setButtonText(juce::String::fromUTF8("Aligner sur zéro G"));
+        snapZero.setButtonText(juce::String::fromUTF8("Aligner sur zéro stéréo"));
         snapZero.setEnabled(false);addAndMakeVisible(snapZero);
         snapZero.onClick=[this]{
             const auto current=values();
@@ -568,6 +568,10 @@ public:
             signalReport.setText(juce::String::fromUTF8("Position ajustée : relancez B pour vérifier le résultat."),juce::dontSendNotification);
         };
         savePreset.onClick=[this]{storePersonalPreset();};
+        exportPreset.setButtonText(juce::String::fromUTF8("Exporter"));
+        importPreset.setButtonText(juce::String::fromUTF8("Importer"));
+        addAndMakeVisible(exportPreset);addAndMakeVisible(importPreset);
+        exportPreset.onClick=[this]{choosePresetFile(true);};importPreset.onClick=[this]{choosePresetFile(false);};
         loadPreset.onClick=[this]{restorePersonalPreset();};
         if(mappedWarp)signalReport.setText(juce::String::fromUTF8("Warp : préécoute du moteur sans cache spectral"),juce::dontSendNotification);
     }
@@ -584,6 +588,7 @@ public:
         incoming.setBounds(150,266,210,26);inBias.setBounds(368,266,232,26);
         outgoing.setBounds(150,298,210,26);outBias.setBounds(368,298,232,26);
         energy.setBounds(18,334,280,28);originalView.setBounds(18,366,400,28);
+        importPreset.setBounds(330,334,130,28);exportPreset.setBounds(470,334,130,28);
         presets.setBounds(18,402,300,28);
         personalSlots.setBounds(330,402,270,28);
         playA.setBounds(18,466,108,28);playB.setBounds(136,466,108,28);
@@ -640,24 +645,53 @@ private:
         return dir.getChildFile(slot==1?juce::String("CrossfadeStudioPreset.xml"):
             juce::String("CrossfadeStudioPreset-")+juce::String(slot)+".xml");
     }
-    void storePersonalPreset(){
+    bool writePreset(const juce::File& file){
         const auto c=values();juce::XmlElement xml("CrossfadeStudioPreset");
         xml.setAttribute("version",1);xml.setAttribute("incoming",c.crossfadeCurve);
         xml.setAttribute("outgoing",c.crossfadeOutCurve);xml.setAttribute("center",c.crossfadeCenter);
         xml.setAttribute("energy",c.crossfadeEnergy);xml.setAttribute("duration",c.crossfadeDurationSeconds);
-        const auto file=personalPresetFile();
-        const bool ok=file.getParentDirectory().createDirectory().wasOk()&&file.replaceWithText(xml.toString());
+        return file.getParentDirectory().createDirectory().wasOk()&&file.replaceWithText(xml.toString());
+    }
+    void storePersonalPreset(){
+        const bool ok=writePreset(personalPresetFile());
         signalReport.setText(juce::String::fromUTF8(ok?"Préréglage personnel mémorisé.":"Impossible de mémoriser le préréglage."),juce::dontSendNotification);
     }
-    void restorePersonalPreset(){
-        const auto xml=juce::XmlDocument::parse(personalPresetFile());
+    void restorePersonalPreset(){readPreset(personalPresetFile());}
+    void choosePresetFile(bool exporting){
+        if(presetChooser)return;
+        stopPreview();
+        presetChooser=std::make_unique<juce::FileChooser>(
+            juce::String::fromUTF8(exporting?"Exporter un préréglage":"Importer un préréglage"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*.xml");
+        const int flags=exporting?(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting):
+            (juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles);
+        juce::Component::SafePointer<CrossfadeStudioPanel> safe(this);
+        presetChooser->launchAsync(flags,[safe,exporting](const juce::FileChooser& chooser){
+            if(!safe)return;
+            const auto file=chooser.getResult();
+            if(file!=juce::File{}){
+                if(exporting){
+                    const bool ok=safe->writePreset(file.withFileExtension(".xml"));
+                    safe->signalReport.setText(juce::String::fromUTF8(ok?"Préréglage exporté.":"Échec de l'exportation."),juce::dontSendNotification);
+                }else safe->readPreset(file);
+            }
+            // Release the chooser after its callback returns.
+            juce::MessageManager::callAsync([safe]{if(safe)safe->presetChooser.reset();});
+        });
+    }
+    void readPreset(const juce::File& file){
+        if(!file.existsAsFile()||file.getSize()>65536){
+            signalReport.setText(juce::String::fromUTF8("Fichier de préréglage absent ou trop volumineux."),juce::dontSendNotification);return;
+        }
+        const auto xml=juce::XmlDocument::parse(file);
         if(!xml||!xml->hasTagName("CrossfadeStudioPreset")||xml->getIntAttribute("version")!=1){
             signalReport.setText(juce::String::fromUTF8("Aucun préréglage personnel valide."),juce::dontSendNotification);return;
         }
         const int in=xml->getIntAttribute("incoming",-1),out=xml->getIntAttribute("outgoing",-1);
         const double pos=xml->getDoubleAttribute("center",-1.),len=xml->getDoubleAttribute("duration",-1.);
-        if(!LibertyAudioCrossfade::validCurve(in)||!LibertyAudioCrossfade::validCurve(out)||
-            !std::isfinite(pos)||pos<0.||pos>1.||!std::isfinite(len)||len<0.)return;
+        if(!LibertyAudioCrossfade::validPreset(in,out,pos,len)){
+            signalReport.setText(juce::String::fromUTF8("Paramètres du préréglage invalides."),juce::dontSendNotification);return;
+        }
         stopPreview();setCurve(incoming,inBias,in);setCurve(outgoing,outBias,out);
         center.setValue(pos*100.,juce::dontSendNotification);
         duration.setValue(len>0?juce::jmin(len,limit):limit,juce::dontSendNotification);
@@ -753,7 +787,7 @@ private:
             const double len=right.crossfadeDurationSeconds>0?juce::jlimit(juce::jmin(.01,limit),limit,right.crossfadeDurationSeconds):limit;
             const double midpoint=overlap+right.crossfadeCenter*(limit-len)+len*.5;
             const int mid=juce::jlimit(0,count-1,(int)std::llround((midpoint-seek)*rate));
-            const int zero=LibertyAudioCrossfade::nearestZeroCrossing(excerpt.getReadPointer(0),count,mid,(int)(rate*.01));
+            const int zero=LibertyAudioCrossfade::nearestStereoZero(excerpt.getReadPointer(0),excerpt.getReadPointer(1),count,mid,(int)(rate*.01));
             juce::String info=juce::String(initial?"A":"B")+" | RMS "+juce::String(LibertyAudioCrossfade::rmsDb(rms),1)+" dBFS | "+
                 juce::String::fromUTF8("Crête ")+juce::String(juce::jmax(l.peak,r.peak),3)+
                 " | Corr. "+juce::String(correlation,2);
@@ -764,7 +798,7 @@ private:
                     zeroCenter=candidate;zeroValues=values();snapZero.setEnabled(true);
                 }
             }
-            if(zero>=0)info+=" | "+juce::String::fromUTF8("Zéro G : ")+juce::String((zero-mid)*1000./rate,2)+" ms";
+            if(zero>=0)info+=" | "+juce::String::fromUTF8("Zéro stéréo : ")+juce::String((zero-mid)*1000./rate,2)+" ms";
             if(correlation<-.7)info+=" | "+juce::String::fromUTF8("Risque de phase");
             if(matchRms.getToggleState())info+=" | RMS "+juce::String(LibertyAudioCrossfade::rmsDb(matchingGain),1)+" dB";
             if(rmsA>=0&&rmsB>=0)info+=" | B/A "+juce::String(LibertyAudioCrossfade::rmsDb(rmsB)-LibertyAudioCrossfade::rmsDb(rmsA),1)+" dB";
@@ -822,7 +856,8 @@ private:
     AudioClip original,leftClip;AudioEngine& live;std::function<bool(const AudioClip&)> apply;double limit;
     juce::AudioSourcePlayer previewPlayer;std::unique_ptr<juce::MemoryAudioSource> previewSource;
     bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.,rmsA=-1.,rmsB=-1.;
-    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview,matchRms;juce::TextButton savePreset,loadPreset,snapZero;juce::ComboBox personalSlots;juce::Label signalReport;
+    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview,matchRms;juce::TextButton savePreset,loadPreset,snapZero,importPreset,exportPreset;
+    std::unique_ptr<juce::FileChooser> presetChooser;juce::ComboBox personalSlots;juce::Label signalReport;
     double zeroCenter=-1.;AudioClip zeroValues;
     std::array<float,160> waveLeft{},waveRight{};
     bool mappedWarp=false;

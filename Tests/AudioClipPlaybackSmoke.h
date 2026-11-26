@@ -331,6 +331,15 @@ inline bool runLibertyAudioClipPlaybackSmoke()
            LibertyAudioCrossfade::predictedPower(.5,.5,-1.)>1.e-12||
            std::abs(LibertyAudioCrossfade::predictedPower(.5,.5,1.)-1.)>1.e-12)
             throw std::runtime_error("master audition gain and phase diagnostics");
+        // Final QC: stereo crossing rejects cancellation masquerading as zero.
+        {const float a[]={-.2f,-.1f,.01f,.1f}, b[]={-.2f,-.1f,.02f,.1f}, c[]={.2f,.2f,.2f,.2f};
+         if(LibertyAudioCrossfade::nearestStereoZero(a,b,4,2,2)!=2||
+            LibertyAudioCrossfade::nearestStereoZero(a,c,4,2,2)!=-1||
+            !LibertyAudioCrossfade::validPreset(231,0,.5,.2)||
+            LibertyAudioCrossfade::validPreset(232,0,.5,.2)||
+            LibertyAudioCrossfade::validPreset(1,0,1.1,.2)||
+            LibertyAudioCrossfade::validPreset(1,0,.5,-1.))
+             throw std::runtime_error("crossfade final QC validation");}
         // Studio PRO: energy invariant for different curve pairs, and bounded
         // theoretical gain-step diagnostic (not a signal-based click detector).
         for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){
