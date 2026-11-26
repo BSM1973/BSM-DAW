@@ -477,12 +477,12 @@ bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,boo
     finishArrangementEdit();
     return applied;
 }
-class CrossfadeStudioPanel final : public juce::Component {
+class CrossfadeStudioPanel final : public juce::Component, private juce::Timer {
 public:
-    CrossfadeStudioPanel(const AudioClip& left,const AudioClip& right,std::function<bool(const AudioClip&)> callback)
-        : original(right),apply(std::move(callback)),limit(right.autoCrossfadeOverlapEnd-right.autoCrossfadeOverlapStart)
+    CrossfadeStudioPanel(const AudioClip& left,const AudioClip& right,AudioEngine& liveEngine,std::function<bool(const AudioClip&)> callback)
+        : original(right),leftClip(left),live(liveEngine),apply(std::move(callback)),limit(right.autoCrossfadeOverlapEnd-right.autoCrossfadeOverlapStart)
     {
-        setSize(620,510);
+        setSize(620,600);
         auto initSlider=[&](juce::Slider& s,double lo,double hi,double value,double step,const juce::String& suffix){
             s.setSliderStyle(juce::Slider::LinearHorizontal);s.setRange(lo,hi,step);
             s.setTextBoxStyle(juce::Slider::TextBoxRight,false,86,24);s.setTextValueSuffix(suffix);
@@ -536,7 +536,19 @@ public:
         overview(left,waveLeft,right.autoCrossfadeOverlapStart,limit);
         overview(right,waveRight,right.autoCrossfadeOverlapStart,limit);
         mappedWarp=left.warp.enabled||right.warp.enabled;
+        playA.setButtonText("LECTURE A");playB.setButtonText("LECTURE B");stopPreviewButton.setButtonText("STOP");
+        loopPreview.setButtonText(juce::String::fromUTF8("Boucle"));
+        for(auto* button:{&playA,&playB,&stopPreviewButton})addAndMakeVisible(*button);
+        addAndMakeVisible(loopPreview);
+        addAndMakeVisible(signalReport);signalReport.setFont(12.f);
+        signalReport.setText(juce::String::fromUTF8("A : initial / B : modifié — préécoute isolée"),juce::dontSendNotification);
+        playA.onClick=[this]{startPreview(true);};playB.onClick=[this]{startPreview(false);};
+        stopPreviewButton.onClick=[this]{stopPreview();};
+        loopPreview.onClick=[this]{stopPreview();};
+        if(mappedWarp){playA.setEnabled(false);playB.setEnabled(false);
+            signalReport.setText(juce::String::fromUTF8("Préécoute Warp non disponible dans cette version"),juce::dontSendNotification);}
     }
+    ~CrossfadeStudioPanel()override{stopPreview();}
     AudioClip values()const{
         auto c=original;
         c.crossfadeCurve=selected(incoming,inBias);c.crossfadeOutCurve=selected(outgoing,outBias);
@@ -550,7 +562,10 @@ public:
         outgoing.setBounds(150,298,210,26);outBias.setBounds(368,298,232,26);
         energy.setBounds(18,334,280,28);originalView.setBounds(18,366,400,28);
         presets.setBounds(18,402,300,28);
-        cancel.setBounds(342,462,120,32);confirm.setBounds(480,462,120,32);
+        playA.setBounds(18,466,108,28);playB.setBounds(136,466,108,28);
+        stopPreviewButton.setBounds(254,466,80,28);loopPreview.setBounds(350,466,120,28);
+        signalReport.setBounds(18,500,584,42);
+        cancel.setBounds(342,552,120,32);confirm.setBounds(480,552,120,32);
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffe9f6ff));
@@ -590,6 +605,72 @@ public:
     void mouseDown(const juce::MouseEvent& e)override{dragGraph(e);}
     void mouseDrag(const juce::MouseEvent& e)override{dragGraph(e);}
 private:
+    void stopPreview(){
+        stopTimer();
+        if(previewAttached){live.getDeviceManager().removeAudioCallback(&previewPlayer);previewAttached=false;}
+        previewPlayer.setSource(nullptr);previewSource.reset();
+    }
+    void timerCallback()override{
+        auto* device=live.getDeviceManager().getCurrentAudioDevice();
+        if(!device||live.isPlaying()||std::abs(device->getCurrentSampleRate()-previewRate)>1.e-3||
+           (!previewLoop&&juce::Time::getMillisecondCounterHiRes()>=previewDeadline))stopPreview();
+    }
+    void startPreview(bool initial){
+        stopPreview();
+        auto report=[this](const juce::String& s){signalReport.setText(s,juce::dontSendNotification);};
+        auto* device=live.getDeviceManager().getCurrentAudioDevice();
+        if(!device||live.isPlaying()||mappedWarp){report(juce::String::fromUTF8("Arrêtez le transport ; préécoute non Warp uniquement."));return;}
+        const double rate=device->getCurrentSampleRate();
+        if(rate<8000||rate>192000){report(juce::String::fromUTF8("Fréquence audio non prise en charge."));return;}
+        try{
+            auto left=leftClip,right=initial?original:values();
+            const double origin=left.startSeconds;
+            left.startSeconds-=origin;right.startSeconds-=origin;
+            const double end=right.startSeconds+right.lengthSeconds;
+            const double overlap=original.autoCrossfadeOverlapStart-origin;
+            // Bound synchronous isolated rendering; never seek or modify the live project.
+            const double from=juce::jmax(0.,overlap-.1),until=juce::jmin(end,overlap+limit+.1);
+            if(until>12.||until<=from){report(juce::String::fromUTF8("Préécoute limitée aux transitions dans les 12 premières secondes du clip sortant."));return;}
+            auto renderer=std::make_unique<AudioEngine>();
+            const int frames=(int)std::ceil(until*rate),offset=(int)std::floor(from*rate);
+            juce::AudioBuffer<float> rendered(2,frames);
+            if(!renderer->replaceArrangementAudioClips(0,{left,right})||
+               !renderer->renderOfflineForTesting(rendered,rate,256,false)){
+                report(juce::String::fromUTF8("Échec du rendu de préécoute."));return;
+            }
+            const int count=frames-offset;
+            juce::AudioBuffer<float> excerpt(2,count);
+            for(int ch=0;ch<2;++ch)excerpt.copyFrom(ch,0,rendered,ch,offset,count);
+            const auto l=LibertyAudioCrossfade::measureSignal(excerpt.getReadPointer(0),count);
+            const auto r=LibertyAudioCrossfade::measureSignal(excerpt.getReadPointer(1),count);
+            if(!std::isfinite(l.peak)||!std::isfinite(r.peak)){report(juce::String::fromUTF8("Signal invalide."));return;}
+            // Measure source correlation with independent engine renders, excluding
+            // the automatic crossfade but retaining manual clip processing.
+            double correlation=0.;
+            juce::AudioBuffer<float> a(2,frames),b(2,frames);
+            if(renderer->replaceArrangementAudioClips(0,{left})&&renderer->renderOfflineForTesting(a,rate,256,false)&&
+               renderer->replaceArrangementAudioClips(0,{right})&&renderer->renderOfflineForTesting(b,rate,256,false)){
+                const int start=juce::jlimit(0,frames-1,(int)std::ceil(overlap*rate));
+                const int n=juce::jlimit(1,frames-start,(int)std::floor(limit*rate));
+                correlation=.5*(LibertyAudioCrossfade::signalCorrelation(a.getReadPointer(0,start),b.getReadPointer(0,start),n)+
+                    LibertyAudioCrossfade::signalCorrelation(a.getReadPointer(1,start),b.getReadPointer(1,start),n));
+            }
+            report(juce::String(initial?"A":"B")+" | "+juce::String::fromUTF8("Crête ")+juce::String(juce::jmax(l.peak,r.peak),3)+
+                " | "+juce::String::fromUTF8("Saut max. ")+juce::String(juce::jmax(l.maxStep,r.maxStep),3)+
+                " | "+juce::String::fromUTF8("Corr. ")+juce::String(correlation,2)+
+                " | "+juce::String::fromUTF8("Zéros ")+juce::String(l.zeroCrossings+r.zeroCrossings));
+            // Protect audition boundaries without changing the measured signal.
+            const int ramp=juce::jmin(count/2,(int)(rate*.005));
+            if(ramp>0){excerpt.applyGainRamp(0,ramp,0.f,1.f);excerpt.applyGainRamp(count-ramp,ramp,1.f,0.f);}
+            const double peak=juce::jmax(l.peak,r.peak);
+            if(peak>.95)excerpt.applyGain((float)(.95/peak));
+            previewSource=std::make_unique<juce::MemoryAudioSource>(excerpt,true);
+            previewLoop=loopPreview.getToggleState();previewSource->setLooping(previewLoop);
+            previewRate=rate;previewDeadline=juce::Time::getMillisecondCounterHiRes()+1000.*count/rate;
+            previewPlayer.setSource(previewSource.get());
+            live.getDeviceManager().addAudioCallback(&previewPlayer);previewAttached=true;startTimer(30);
+        }catch(...){stopPreview();report(juce::String::fromUTF8("Préécoute indisponible."));}
+    }
     void dragGraph(const juce::MouseEvent& e){
         if(!juce::Rectangle<int>(18,98,584,88).contains(e.getPosition()))return;
         const auto v=values();const double len=v.crossfadeDurationSeconds>0?v.crossfadeDurationSeconds:limit;
@@ -627,7 +708,10 @@ private:
         }
     }
     void close(){if(auto* window=findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);}
-    AudioClip original;std::function<bool(const AudioClip&)> apply;double limit;
+    AudioClip original,leftClip;AudioEngine& live;std::function<bool(const AudioClip&)> apply;double limit;
+    juce::AudioSourcePlayer previewPlayer;std::unique_ptr<juce::MemoryAudioSource> previewSource;
+    bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.;
+    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview;juce::Label signalReport;
     std::array<float,160> waveLeft{},waveRight{};
     bool mappedWarp=false;
     juce::Slider duration,center,inBias,outBias;juce::ComboBox incoming,outgoing,presets;
@@ -641,7 +725,7 @@ bool openCrossfadeStudio(int track,const juce::String& id){
         c.autoCrossfadeOutStart==it->autoCrossfadeInStart&&c.autoCrossfadeOutEnd==it->autoCrossfadeInEnd;});
     if(left==clips.end())return false;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
-    auto* panel=new CrossfadeStudioPanel(*left,*it,[safe,track,id,opened=*it](const AudioClip& v){
+    auto* panel=new CrossfadeStudioPanel(*left,*it,owner.audioEngine,[safe,track,id,opened=*it](const AudioClip& v){
         if(!safe)return false;
         auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
         auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});

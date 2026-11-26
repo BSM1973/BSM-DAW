@@ -302,6 +302,13 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         auto badCurve=second;badCurve.crossfadeCurve=LibertyAudioCrossfade::maxCurve+1;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
+        // Audio perfection: independent measurement fixtures.
+        {const float a[]={-1.f,-.5f,.5f,1.f},b[]={1.f,.5f,-.5f,-1.f};
+         const auto m=LibertyAudioCrossfade::measureSignal(a,4);
+         if(std::abs(m.peak-1.)>1.e-12||std::abs(m.maxStep-1.)>1.e-12||m.zeroCrossings!=1||
+            std::abs(LibertyAudioCrossfade::signalCorrelation(a,a,4)-1.)>1.e-12||
+            std::abs(LibertyAudioCrossfade::signalCorrelation(a,b,4)+1.)>1.e-12)
+             throw std::runtime_error("crossfade audio perfection metrics");}
         // Studio PRO: energy invariant for different curve pairs, and bounded
         // theoretical gain-step diagnostic (not a signal-based click detector).
         for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){

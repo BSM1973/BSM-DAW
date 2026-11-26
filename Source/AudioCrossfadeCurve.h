@@ -93,4 +93,34 @@ inline double studioGainStep(int incoming,int outgoing,bool energy,int samples) 
     }
     return peak;
 }
+// Diagnostic measures for actual sampled audio, not a click classifier.
+struct SignalMetrics {
+    double peak=0.,rms=0.,maxStep=0.;
+    int zeroCrossings=0;
+};
+inline SignalMetrics measureSignal(const float* data,int count) noexcept
+{
+    SignalMetrics m;
+    if(!data||count<=0)return m;
+    double energy=0.;
+    for(int i=0;i<count;++i){
+        const double x=data[i];
+        if(!std::isfinite(x)){m.peak=m.rms=m.maxStep=INFINITY;return m;}
+        m.peak=std::max(m.peak,std::abs(x));energy+=x*x;
+        if(i>0){
+            m.maxStep=std::max(m.maxStep,std::abs(x-data[i-1]));
+            if((data[i-1]<0&&x>=0)||(data[i-1]>0&&x<=0))++m.zeroCrossings;
+        }
+    }
+    m.rms=std::sqrt(energy/count);return m;
+}
+inline double signalCorrelation(const float* a,const float* b,int count) noexcept
+{
+    if(!a||!b||count<2)return 0.;
+    double aa=0.,bb=0.,ab=0.,sa=0.,sb=0.;
+    for(int i=0;i<count;++i){const double x=a[i],y=b[i];aa+=x*x;bb+=y*y;ab+=x*y;sa+=x;sb+=y;}
+    aa-=sa*sa/count;bb-=sb*sb/count;ab-=sa*sb/count;
+    if(aa<=1.e-20||bb<=1.e-20)return 0.;
+    return std::clamp(ab/std::sqrt(aa*bb),-1.,1.);
+}
 }
