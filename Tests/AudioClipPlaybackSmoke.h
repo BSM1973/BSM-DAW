@@ -415,6 +415,60 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(rms<.01||rms>.3||peak>.8)throw std::runtime_error("spectral extreme ratio safety");
             std::fprintf(stderr,"spectral_final,%.2f,%.6f,%.6f,%.6f,%.4f\n",ratio,rms,peak,jump,20*std::log10(dryRms/rms));
         }
+        // Phase 2.3.8: objective level-matched A/B and stereo repeatability.
+        // Keep production DSP unchanged: compensation is diagnostic only.
+        for(double ratio:{.25,.5,1.,1.5,2.,4.}){
+            auto wet=AudioEngine::renderSpectralWarpOffline(*harmonic,ratio,0,0);
+            if(wet.getNumSamples()!=(int)std::llround(48000*ratio))
+                throw std::runtime_error("ultimate AB duration");
+            double e=0;
+            for(int i=0;i<wet.getNumSamples();++i){
+                const double x=wet.getSample(0,i);e+=x*x;
+            }
+            if(!std::isfinite(e)||e<=0)throw std::runtime_error("ultimate AB energy");
+            const double gain=dryRms/std::sqrt(e/wet.getNumSamples());
+            double compensatedEnergy=0,compensatedPeak=0;int overFullScale=0;
+            for(int i=0;i<wet.getNumSamples();++i){
+                const double x=wet.getSample(0,i)*gain;
+                if(!std::isfinite(x))throw std::runtime_error("ultimate AB nonfinite");
+                compensatedEnergy+=x*x;compensatedPeak=std::max(compensatedPeak,std::abs(x));
+                if(std::abs(x)>1.0)++overFullScale;
+            }
+            const double matchedRms=std::sqrt(compensatedEnergy/wet.getNumSamples());
+            if(std::abs(matchedRms-dryRms)>1.e-6)
+                throw std::runtime_error("ultimate AB RMS mismatch");
+            // Clipping is a quality finding, not a reason to silently limit
+            // the comparison or claim that the raw algorithm passed listening.
+            std::fprintf(stderr,"warp_ultimate_ab,%.2f,%.6f,%.6f,%.6f,%d\n",
+                ratio,gain,matchedRms,compensatedPeak,overFullScale);
+        }
+        juce::AudioBuffer<float> stereoWarpFixture(2,48000);
+        for(int i=0;i<48000;++i){
+            const float x=harmonic->getSample(0,i);
+            stereoWarpFixture.setSample(0,i,x);
+            stereoWarpFixture.setSample(1,i,x);
+        }
+        for(double ratio:{.5,1.,1.5,4.}){
+            const auto a=AudioEngine::renderSpectralWarpOffline(stereoWarpFixture,ratio,0,0);
+            const auto b=AudioEngine::renderSpectralWarpOffline(stereoWarpFixture,ratio,0,0);
+            if(a.getNumChannels()!=2||b.getNumChannels()!=2||
+                a.getNumSamples()!=(int)std::llround(48000*ratio)||
+                b.getNumSamples()!=a.getNumSamples())
+                throw std::runtime_error("ultimate stereo dimensions");
+            double maxDelta=0,channelDelta=0;
+            for(int i=0;i<a.getNumSamples();++i){
+                const double l=a.getSample(0,i),rr=a.getSample(1,i);
+                const double bl=b.getSample(0,i),br=b.getSample(1,i);
+                if(!std::isfinite(l)||!std::isfinite(rr)||!std::isfinite(bl)||!std::isfinite(br))
+                    throw std::runtime_error("ultimate stereo nonfinite");
+                maxDelta=std::max(maxDelta,std::max(std::abs(l-bl),std::abs(rr-br)));
+                channelDelta=std::max(channelDelta,std::abs(l-rr));
+            }
+            if(maxDelta>1.e-5||channelDelta>1.e-5)
+                throw std::runtime_error("ultimate stereo repeatability");
+            std::fprintf(stderr,"warp_ultimate_stereo,%.2f,%.9f,%.9f\n",
+                ratio,maxDelta,channelDelta);
+        }
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
