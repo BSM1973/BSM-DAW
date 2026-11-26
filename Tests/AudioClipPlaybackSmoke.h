@@ -647,6 +647,52 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 jump=std::max(jump,std::abs(double(markerA.getSample(0,j))-markerA.getSample(0,j-1)));
             std::fprintf(stderr,"warp_perfection_junction,%d,%.6f\n",i,jump);
         }
+        // Phase 2.3.11: continuous, non-impulsive multi-marker fixture.
+        // Separate the junction discontinuities from genuine drum onsets.
+        // Keep this diagnostic off the production signal path.
+        if(std::getenv("LIBERTY_WARP_EXTENDED")){
+            auto certificationEngine=std::make_unique<AudioEngine>();
+            auto continuous=std::make_shared<juce::AudioBuffer<float>>(2,192000);
+            for(int i=0;i<192000;++i){
+                const double p=juce::MathConstants<double>::twoPi*i/48000.;
+                continuous->setSample(0,i,float(.12*std::sin(223*p)+.04*std::sin(447*p)));
+                continuous->setSample(1,i,float(.10*std::sin(227*p)+.03*std::sin(457*p)));
+            }
+            for(int mode=0;mode<=6;++mode){
+                auto c=multi;c.id="warp-cert-continuous";c.startSeconds=0;c.sourceBuffer=continuous;
+                c.sourceSampleRate=48000;c.lengthSeconds=4;c.warp.mode=mode;
+                c.trimStartFraction=0;c.trimEndFraction=1;c.offsetSeconds=0;
+                c.clipGain=1;c.pitchSemitones=0;c.formant=0;c.reverse=false;c.muted=false;
+                c.fadeInSeconds=c.fadeOutSeconds=0;c.spectralCache.reset();
+                if(!certificationEngine->replaceArrangementAudioClips(0,{c}))
+                    throw std::runtime_error("certification continuous publication");
+                juce::AudioBuffer<float> rendered(2,192000);
+                certificationEngine->resetCpuPerformanceWhileStopped();
+                if(!certificationEngine->renderOfflineForTesting(rendered,48000,128,false))
+                    throw std::runtime_error("certification continuous render");
+                const auto perf=certificationEngine->getCpuPerformance();
+                double energy=0,peak=0,interiorJump=0,junctionJump=0;
+                for(int ch=0;ch<2;++ch)for(int i=0;i<192000;++i){
+                    const double x=rendered.getSample(ch,i);
+                    if(!std::isfinite(x))throw std::runtime_error("certification continuous nonfinite");
+                    energy+=x*x;peak=std::max(peak,std::abs(x));
+                    if(i==0)continue;
+                    bool atMarker=false;
+                    for(int m=1;m<c.warp.count-1;++m)
+                        if(std::abs(i-(int)std::llround(c.warp.target[m]*48000))<=128){atMarker=true;break;}
+                    const double d=std::abs(x-rendered.getSample(ch,i-1));
+                    if(atMarker)junctionJump=std::max(junctionJump,d);
+                    else if(i>2048&&i<189952)interiorJump=std::max(interiorJump,d);
+                }
+                if(energy<.001||peak>1.)throw std::runtime_error("certification continuous signal bounds");
+                // Report the excess relative to non-junction samples. This is
+                // a diagnostic, not a listening-based certification threshold.
+                std::fprintf(stderr,"warp_cert_junction,%d,%.8f,%.8f,%.8f,%.6f,%.4f,%.4f,%llu\n",
+                    mode,junctionJump,interiorJump,junctionJump/std::max(1.e-12,interiorJump),
+                    std::sqrt(energy/384000.),perf.averagePercent(),perf.peakPercent(),
+                    (unsigned long long)perf.overruns);
+            }
+        }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"AudioClipPlaybackSmoke: %s\n",e.what());return false;}
 }
