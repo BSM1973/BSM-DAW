@@ -534,6 +534,38 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count(),
                 rms,peak,(size_t)longWet.getNumSamples()*2*sizeof(float));
         }
+        // Phase 2.3.10: retain the 48 kHz test above and add 44.1/96 kHz.
+        // 15 seconds of input at each rate gives 60 seconds of stereo output.
+        if(std::getenv("LIBERTY_WARP_EXTENDED")){
+            for(int rate:{44100,96000}){
+                juce::AudioBuffer<float> input(2,15*rate);
+                double dry=0;
+                for(int i=0;i<input.getNumSamples();++i){
+                    const double p=juce::MathConstants<double>::twoPi*220*i/rate;
+                    const float x=float(.18*std::sin(p)+.07*std::sin(2*p)+.03*std::sin(3*p));
+                    input.setSample(0,i,x);input.setSample(1,i,x);dry+=double(x)*x;
+                }
+                const auto begin=std::chrono::steady_clock::now();
+                const auto wet=AudioEngine::renderSpectralWarpOffline(input,4,0,0);
+                if(wet.getNumChannels()!=2||wet.getNumSamples()!=60*rate)
+                    throw std::runtime_error("master extended dimensions");
+                double energy=0,peak=0;int crossings=0;
+                for(int i=0;i<wet.getNumSamples();++i){
+                    const double l=wet.getSample(0,i),rr=wet.getSample(1,i);
+                    if(!std::isfinite(l)||!std::isfinite(rr)||std::abs(l-rr)>1.e-5)
+                        throw std::runtime_error("master extended stereo");
+                    energy+=l*l+rr*rr;peak=std::max(peak,std::max(std::abs(l),std::abs(rr)));
+                    if(i>rate*29&&i<=rate*30&&wet.getSample(0,i-1)<=0&&l>0)++crossings;
+                }
+                const double rms=std::sqrt(energy/(2.*wet.getNumSamples()));
+                const double delta=20*std::log10(rms/std::sqrt(dry/input.getNumSamples()));
+                if(!std::isfinite(delta)||std::abs(delta)>1.0||peak>.8||std::abs(crossings-220)>4)
+                    throw std::runtime_error("master extended level or pitch");
+                std::fprintf(stderr,"warp_master_extended,%d,60,%.4f,%.6f,%.6f,%.4f,%d,%zu\n",
+                    rate,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count(),
+                    rms,peak,delta,crossings,(size_t)wet.getNumSamples()*2*sizeof(float));
+            }
+        }
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
