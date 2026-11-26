@@ -384,11 +384,37 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(!std::isfinite(x))throw std::runtime_error("spectral nonfinite");
             spectralEnergy+=x*x;spectralPeak=std::max(spectralPeak,std::abs(x));
         }
-        if(spectralEnergy<.001)throw std::runtime_error("spectral silence");
+        const double spectralRms=std::sqrt(spectralEnergy/spectral.getNumSamples());
+        if(spectralRms<.07||spectralRms>.23||spectralPeak>.8)
+            throw std::runtime_error("spectral gain or peak regression");
         std::fprintf(stderr,"spectral_quality,%.4f,%.6f\n",
             std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-spectralStart).count(),
             std::sqrt(spectralEnergy/spectral.getNumSamples()));
         std::fprintf(stderr,"spectral_peak_rms,%.6f,%.6f\n",spectralPeak,std::sqrt(spectralEnergy/spectral.getNumSamples()));
+        // Unity parity and bounds at extreme ratios: no edge spikes, NaNs
+        // or silent results accepted. Log the RMS comparison, not a listening score.
+        auto spectralUnity=AudioEngine::renderSpectralWarpOffline(*harmonic,1,0,0);
+        if(spectralUnity.getNumSamples()!=48000)throw std::runtime_error("spectral unity duration");
+        double dryEnergy=0;
+        for(int i=0;i<48000;++i){
+            near(spectralUnity.getSample(0,i),harmonic->getSample(0,i));
+            const double x=harmonic->getSample(0,i);dryEnergy+=x*x;
+        }
+        const double dryRms=std::sqrt(dryEnergy/48000);
+        for(double ratio:{.25,.5,1.,1.5,2.,4.}){
+            auto wet=AudioEngine::renderSpectralWarpOffline(*harmonic,ratio,0,0);
+            if(wet.getNumSamples()!=(int)std::llround(48000*ratio))throw std::runtime_error("spectral ratio length");
+            double sum=0,peak=0,jump=0;
+            for(int i=0;i<wet.getNumSamples();++i){
+                const double x=wet.getSample(0,i);
+                if(!std::isfinite(x))throw std::runtime_error("spectral ratio nonfinite");
+                sum+=x*x;peak=std::max(peak,std::abs(x));
+                if(i>0)jump=std::max(jump,std::abs(x-wet.getSample(0,i-1)));
+            }
+            const double rms=std::sqrt(sum/wet.getNumSamples());
+            if(rms<.01||rms>.3||peak>.8)throw std::runtime_error("spectral extreme ratio safety");
+            std::fprintf(stderr,"spectral_final,%.2f,%.6f,%.6f,%.6f,%.4f\n",ratio,rms,peak,jump,20*std::log10(dryRms/rms));
+        }
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.

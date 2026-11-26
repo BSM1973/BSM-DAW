@@ -84,6 +84,7 @@ void AudioEngine::runSpectralWorker()
                 spectralFftStarts.fetch_add(1, std::memory_order_release);
                 auto result = std::make_shared<juce::AudioBuffer<float>>(
                     LibertySpectralWarp::render(*source, ratio, pitch, formant));
+                const bool validRender=result->getNumSamples()>1&&result->getNumChannels()==source->getNumChannels();
                 const juce::ScopedLock guard(spectralTrackListLock);
                 // An add/remove invalidates every snapshot, even if a new
                 // track happens to reuse the same memory address (ABA).
@@ -92,6 +93,9 @@ void AudioEngine::runSpectralWorker()
                 auto& track = *tracks[index];
                 if (generation != track.spectralGeneration.load(std::memory_order_acquire))
                     continue;
+                // Failed renders stay on the granular path. Mark this
+                // generation handled to avoid an endless expensive retry.
+                if(!validRender)result.reset();
                 std::atomic_store(&track.spectralCache, std::move(result));
                 track.spectralReadyGeneration.store(generation, std::memory_order_release);
             }
