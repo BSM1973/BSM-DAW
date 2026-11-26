@@ -428,6 +428,8 @@ void mouseDown(const juce::MouseEvent&e)override{
             repaint();return;
         }
     }
+    if(e.eventComponent==this&&e.mods.isLeftButtonDown()&&e.mods.isShiftDown()&&
+       e.getNumberOfClicks()==1&&toggleGroupClipSelection(ownerPoint))return;
     if(e.mods.isLeftButtonDown()&&nameKeyAt(ownerPoint).isNotEmpty()
        && !(e.eventComponent==this && e.mods.isAltDown()
             &&activeArrangeTool==0&&audioAt(ownerPoint).isNotEmpty())

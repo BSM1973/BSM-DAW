@@ -601,8 +601,13 @@ void paintAudioFades(juce::Graphics& g){
 }
 // Multi-clip actions are staged before publishing anything to the engine.
 // Audio source ownership and all non-targeted MIDI note properties are retained.
-bool applyGroupClipOperation(int command){
+bool applyGroupClipOperation(int command,double value=0.0){
     if(selectedAudio.size()+selectedClipIds.size()<2||pendingEdit)return false;
+    if(!std::isfinite(value)||command<0||command>17)return false;
+    if(command==14&&(value<0||value>86400))return false;
+    if(command==15&&(value<-60||value>12))return false;
+    if(command==16&&(value<-48||value>48||std::floor(value)!=value))return false;
+    if(command==17&&(value<0||value>86400))return false;
     syncActiveClip();
     const auto before=captureArrangement();
     auto midi=before.midi,instruments=before.instruments;
@@ -611,43 +616,127 @@ bool applyGroupClipOperation(int command){
     std::vector<double*> starts;
     std::set<int> touchedAudio;
     bool changed=false,valid=true;
-    auto visitMidi=[&](auto& clips){
+    const bool vertical=command==8||command==9;
+    const int laneDelta=command==8?-1:1;
+    const bool copying=command==10||command==11;
+    const int repeats=command==11?4:1;
+    const bool resizing=command==12||command==13;
+    const double grid=isLibertySnapEnabled()?getLibertySnapSeconds(owner.tempoBpm):0.0;
+    const double step=grid>0?grid:.1;
+    const auto resizeLength=[&](double length){
+        const double raw=length+(command==12?-step:step);
+        return grid>0?std::round(raw/grid)*grid:raw;
+    };
+    double first=std::numeric_limits<double>::max(),last=0.0;
+    auto collectSpan=[&](double start,double length){first=std::min(first,start);last=std::max(last,start+length);};
+    auto visitMidi=[&](auto& clips,int laneCount){
         for(auto& clip:clips)if(selectedClipIds.count(clip.id)){
             positions.push_back({clip.startSeconds,clip.lengthSeconds});starts.push_back(&clip.startSeconds);
-            if(command==6||command==7){
-                const int delta=command==6?1:-1;
+            collectSpan(clip.startSeconds,clip.lengthSeconds);
+            if(vertical){
+                const int dest=clip.trackLane+laneDelta;
+                if(dest<0||dest>=laneCount)valid=false;
+                else {clip.trackLane=dest;changed=true;}
+            }
+            if(resizing){
+                const double length=resizeLength(clip.lengthSeconds);
+                if(!std::isfinite(length)||length<.01)valid=false;
+                else {changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;clip.userLength=true;}
+            }
+            if(command==6||command==7||command==16){
+                const int delta=command==16?(int)value:(command==6?1:-1);
                 for(auto& note:clip.notes){
                     const int pitch=(int)note.pitch+delta;
                     if(pitch<0||pitch>127){valid=false;continue;}
-                    note.pitch=static_cast<std::uint8_t>(pitch);changed=true;
+                    changed=changed||pitch!=(int)note.pitch;note.pitch=static_cast<std::uint8_t>(pitch);
                 }
             }
         }
     };
-    visitMidi(midi);visitMidi(instruments);
+    visitMidi(midi,owner.getMidiTrackCount());visitMidi(instruments,owner.getInstrumentTrackCount());
     for(int lane=0;lane<(int)audio.size();++lane)
         for(auto& clip:audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
             positions.push_back({clip.startSeconds,clip.lengthSeconds});starts.push_back(&clip.startSeconds);
-            if(command==4||command==5){
-                const float gain=clip.clipGain*(command==4?1.41253754f:0.70794578f);
+            collectSpan(clip.startSeconds,clip.lengthSeconds);
+            if(vertical){
+                if(lane+laneDelta<0||lane+laneDelta>=(int)audio.size())valid=false;
+            }
+            if(resizing){
+                const double length=resizeLength(clip.lengthSeconds);
+                if(!std::isfinite(length)||length<.01)valid=false;
+                else {
+                    if(clip.envelopeLengthSeconds<=0)clip.envelopeLengthSeconds=clip.offsetSeconds+clip.lengthSeconds;
+                    changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;
+                    clip.fadeInSeconds=std::min(clip.fadeInSeconds,length);clip.fadeOutSeconds=std::min(clip.fadeOutSeconds,length);
+                    touchedAudio.insert(lane);
+                }
+            }
+            if(command==14||command==17){
+                if(value>clip.lengthSeconds){valid=false;continue;}
+                auto& fade=command==14?clip.fadeInSeconds:clip.fadeOutSeconds;
+                changed=changed||fade!=value;fade=value;touchedAudio.insert(lane);
+            }
+            if(command==4||command==5||command==15){
+                const float gain=clip.clipGain*(command==15?(float)std::pow(10.0,value/20.0):(command==4?1.41253754f:0.70794578f));
                 if(gain>4.f||!std::isfinite(gain)){valid=false;continue;}
                 changed=changed||gain!=clip.clipGain;clip.clipGain=gain;touchedAudio.insert(lane);
             }
-            if(command==6||command==7){
-                clip.pitchSemitones+=command==6?1.0:-1.0;
-                changed=true;touchedAudio.insert(lane);
+            if(command==6||command==7||command==16){
+                const double delta=command==16?value:(command==6?1.0:-1.0);
+                clip.pitchSemitones+=delta;
+                changed=changed||delta!=0;touchedAudio.insert(lane);
             }
         }
     if(positions.size()!=selectedAudio.size()+selectedClipIds.size()||!valid)return false;
+    // All moves stay within the same kind of track; reject the entire group at a boundary.
+    auto nextAudioSelection=selectedAudio;auto nextMidiSelection=selectedClipIds;
+    if(vertical){
+        nextAudioSelection.clear();
+        for(int lane=0;lane<(int)before.audio.size();++lane){
+            for(const auto& clip:before.audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
+                auto& from=audio[(size_t)lane];
+                from.erase(std::remove_if(from.begin(),from.end(),[&](const auto& c){return c.id==clip.id;}),from.end());
+                const int dest=lane+laneDelta;
+                audio[(size_t)dest].push_back(clip);touchedAudio.insert(lane);touchedAudio.insert(dest);
+                nextAudioSelection.insert({dest,clip.id});changed=true;
+            }
+        }
+    }
+    int candidateId=nextClipId;
+    if(copying){
+        const double span=last-first;
+        const double stride=grid>0?std::ceil(span/grid)*grid:span;
+        if(!std::isfinite(stride)||stride<=0||positions.size()>4096)return false;
+        nextAudioSelection.clear();nextMidiSelection.clear();
+        auto copies=[&](auto& clips,const auto& originals){
+            for(const auto& clip:originals)if(selectedClipIds.count(clip.id)){
+                for(int n=1;n<=repeats;++n){
+                    if(candidateId<=0||candidateId>=std::numeric_limits<int>::max()){valid=false;return;}
+                    auto copy=LibertyMidiClipEditing::copyClipAt(clip,candidateId++,clip.trackLane,clip.startSeconds+n*stride);
+                    if(!std::isfinite(copy.startSeconds+copy.lengthSeconds)){valid=false;return;}
+                    nextMidiSelection.insert(copy.id);clips.push_back(std::move(copy));changed=true;
+                }
+            }
+        };
+        copies(midi,before.midi);copies(instruments,before.instruments);
+        for(int lane=0;lane<(int)before.audio.size();++lane)
+            for(const auto& clip:before.audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
+                for(int n=1;n<=repeats;++n){
+                    auto copy=clip;copy.id=juce::Uuid().toString();copy.startSeconds+=n*stride;
+                    nextAudioSelection.insert({lane,copy.id});audio[(size_t)lane].push_back(std::move(copy));
+                    touchedAudio.insert(lane);changed=true;
+                }
+            }
+        if(!valid)return false;
+    }
     if(command>=0&&command<=3){
-        const double grid=isLibertySnapEnabled()?getLibertySnapSeconds(owner.tempoBpm):0.0;
         if(!LibertyMidiClipEditing::groupPositions(positions,
             static_cast<LibertyMidiClipEditing::PositionOperation>(command),grid))return false;
         for(size_t i=0;i<starts.size();++i){
             changed=changed||*starts[i]!=positions[i].start;*starts[i]=positions[i].start;
         }
         for(const auto& key:selectedAudio)touchedAudio.insert(key.first);
-    }else if(command<4||command>7)return false;
+    }
     if(!changed)return false;
     for(int lane:touchedAudio)for(const auto& clip:audio[(size_t)lane])
         if(!AudioEngine::validAudioClip(clip))return false;
@@ -665,10 +754,49 @@ bool applyGroupClipOperation(int command){
     const int formerActive=activeIndex;const bool formerInstrument=activeInstrument;
     activeIndex=-1;midiClips=std::move(midi);instrumentClips=std::move(instruments);
     if(formerActive>=0)selectClip(formerInstrument,formerActive);
+    nextClipId=candidateId;selectedAudio=std::move(nextAudioSelection);selectedClipIds=std::move(nextMidiSelection);
     for(int lane:published)refreshAudio(lane);
     syncPlayback();finishArrangementEdit();
     operationMessage=juce::String::fromUTF8("Édition collective des clips appliquée");
     owner.repaint();repaint();return true;
+}
+bool toggleGroupClipSelection(juce::Point<int> p){
+    if(inlineMidiMode||activeArrangeTool!=0)return false;
+    const int track=audioLaneAt(p);
+    if(track>=0){
+        const auto id=audioAt(p);if(id.isEmpty())return false;
+        const AudioKey key{track,id};
+        if(selectedAudio.count(key))selectedAudio.erase(key);else selectedAudio.insert(key);
+    }else{
+        bool instrument=false;const int index=findClipAt(p,instrument);if(index<0)return false;
+        const int id=(instrument?instrumentClips:midiClips)[(size_t)index].id;
+        if(selectedClipIds.count(id))selectedClipIds.erase(id);else selectedClipIds.insert(id);
+    }
+    arrangementFocus=true;grabKeyboardFocus();
+    operationMessage=juce::String((int)(selectedAudio.size()+selectedClipIds.size()))+juce::String::fromUTF8(" clips sélectionnés");
+    repaint();return true;
+}
+void showGroupValueDialog(int command){
+    const bool gain=command==15,transpose=command==16;
+    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":"Durée du fondu en secondes");
+    auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("ÉDITION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
+    dialog->addTextEditor("value",gain?"0":transpose?"0":"0.05");
+    dialog->addButton(juce::String::fromUTF8("Appliquer"),1,juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton(juce::String::fromUTF8("Annuler"),0,juce::KeyPress(juce::KeyPress::escapeKey));
+    const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    dialog->enterModalState(true,juce::ModalCallbackFunction::create(
+        [safe,dialog,command,audioSelection,midiSelection](int result){
+            std::unique_ptr<juce::AlertWindow> owned(dialog);
+            if(result!=1||!safe||safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            bool applied=false;
+            try{
+                const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
+                size_t used=0;const double value=std::stod(input,&used);
+                if(used==input.size())applied=safe->applyGroupClipOperation(command,value);
+            }catch(...){}
+            if(!applied){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible");safe->repaint();}
+        }),false);
 }
 bool showGroupClipMenu(juce::Point<int> p){
     if(inlineMidiMode||selectedAudio.size()+selectedClipIds.size()<2)return false;
@@ -690,13 +818,26 @@ bool showGroupClipMenu(juce::Point<int> p){
     menu.addItem(6,juce::String::fromUTF8("Gain audio -3 dB"),!selectedAudio.empty());
     menu.addItem(7,juce::String::fromUTF8("Transposer +1 demi-ton"));
     menu.addItem(8,juce::String::fromUTF8("Transposer -1 demi-ton"));
+    juce::PopupMenu advanced;
+    advanced.addItem(9,juce::String::fromUTF8("Monter d’une piste"));
+    advanced.addItem(10,juce::String::fromUTF8("Descendre d’une piste"));
+    advanced.addItem(11,juce::String::fromUTF8("Dupliquer le groupe"));
+    advanced.addItem(12,juce::String::fromUTF8("Répéter quatre fois"));
+    advanced.addItem(13,juce::String::fromUTF8("Raccourcir d’un pas"));
+    advanced.addItem(14,juce::String::fromUTF8("Allonger d’un pas"));
+    advanced.addItem(15,juce::String::fromUTF8("Fondu d’entrée…"),!selectedAudio.empty());
+    advanced.addItem(18,juce::String::fromUTF8("Fondu de sortie…"),!selectedAudio.empty());
+    advanced.addItem(16,juce::String::fromUTF8("Gain audio personnalisé…"),!selectedAudio.empty());
+    advanced.addItem(17,juce::String::fromUTF8("Transposition personnalisée…"));
+    menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
     const auto screen=localPointToGlobal(p);
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection](int choice){
-            if(!safe||choice<1||choice>8)return;
+            if(!safe||choice<1||choice>18)return;
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice>=15){safe->showGroupValueDialog(choice-1);return;}
             if(!safe->applyGroupClipOperation(choice-1)){
                 safe->operationMessage=juce::String::fromUTF8("Aucune modification collective possible");safe->repaint();
             }
@@ -1296,6 +1437,22 @@ bool runArrangementTests(){
         require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-groupAudio.front().clipGain*.70794578f)<.00001f&&
             midiClips.front().notes[0].velocity==groupMidi.notes[0].velocity,"gain applies only to audio");
         require(undoArrangement(false),"undo group gain");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(!applyGroupClipOperation(8),"reject vertical group at upper boundary");
+        require(applyGroupClipOperation(10),"duplicate mixed group");
+        require(midiClips.size()==2&&owner.audioEngine.getArrangementAudioClips(0).size()==3&&
+            selectedAudio.size()==1&&selectedClipIds.size()==1,"duplicate selects only copies");
+        require(undoArrangement(false)&&midiClips.size()==1&&owner.audioEngine.getArrangementAudioClips(0).size()==2,"undo duplicate");
+        require(undoArrangement(true)&&midiClips.size()==2,"redo duplicate");
+        require(undoArrangement(false),"restore duplicate fixture");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(applyGroupClipOperation(14,.01),"collective fade in");
+        require(owner.audioEngine.getArrangementAudioClips(0).front().fadeInSeconds==.01,"fade in value");
+        require(undoArrangement(false),"undo collective fade");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(applyGroupClipOperation(16,2),"custom transpose");
+        require(midiClips.front().notes[0].pitch==groupMidi.notes[0].pitch+2,"custom MIDI pitch");
+        require(undoArrangement(false),"undo custom transpose");
         // Naming uses the actual clip identities, without changing notes or media.
         syncClipNames();const auto audioKey="audio:"+owner.audioEngine.getArrangementAudioClips(0).front().id;
         const auto midiKey="midi:"+juce::String(midiClips.front().id);
