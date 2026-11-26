@@ -56,6 +56,9 @@ public:
                 if(!std::isfinite(input.getSample(ch,i)))return juce::AudioBuffer<float>(channels,0);
             return juce::AudioBuffer<float>(input);
         }
+        // Identity phase locking is used only for neutral pitch/formants.
+        // Remapped pitch/formant paths retain the existing algorithm.
+        const bool phaseLock=pitchSemitones==0.0&&formantSemitones==0.0;
         // The synthesis coverage is identical for both channels.
         std::vector<float> normalisation((size_t)outputLength,0.f);
         for (int channel = 0; channel < channels; ++channel)
@@ -67,6 +70,9 @@ public:
             std::vector<double> magnitudes((size_t)bins + 1, 0.0);
             std::vector<double> frequencies((size_t)bins + 1, 0.0);
             std::vector<double> envelopePrefix((size_t)bins + 2, 0.0);
+            std::vector<double> lockedPhase((size_t)bins+1,0.0);
+            std::vector<int> spectralPeaks;
+            spectralPeaks.reserve((size_t)bins+1);
             const float* source = input.getReadPointer(channel);
             float* target = output.getWritePointer(channel);
             float inputPeak=0;
@@ -103,6 +109,32 @@ public:
                     frequencies[(size_t)k] = (expected + delta) / analysisHop;
                     previousPhase[(size_t)k] = phase;
                 }
+                // Advance peak phases, then preserve the analysis phase
+                // offsets of their neighbouring bins. This avoids destructive
+                // interference between bins at large synthesis hops.
+                if(phaseLock){
+                    spectralPeaks.clear();
+                    const double threshold=*std::max_element(magnitudes.begin(),magnitudes.end())*.001;
+                    for(int k=0;k<=bins;++k){
+                        if(frame==0)accumulatedPhase[(size_t)k]=previousPhase[(size_t)k];
+                        else accumulatedPhase[(size_t)k]+=frequencies[(size_t)k]*actualHop;
+                        if(k>0&&k<bins&&magnitudes[(size_t)k]>threshold&&
+                           magnitudes[(size_t)k]>=magnitudes[(size_t)k-1]&&
+                           magnitudes[(size_t)k]>magnitudes[(size_t)k+1])
+                            spectralPeaks.push_back(k);
+                    }
+                    if(!spectralPeaks.empty()){
+                        size_t p=0;
+                        for(int k=0;k<=bins;++k){
+                            while(p+1<spectralPeaks.size()&&
+                                  k-spectralPeaks[p]>spectralPeaks[p+1]-k)++p;
+                            const int peak=spectralPeaks[p];
+                            lockedPhase[(size_t)k]=accumulatedPhase[(size_t)peak]
+                                +previousPhase[(size_t)k]-previousPhase[(size_t)peak];
+                        }
+                        accumulatedPhase.swap(lockedPhase);
+                    }
+                }
                 // Prefix sum of magnitudes, preserving replicated edge bins.
                 envelopePrefix[0]=0;
                 for(int k=0;k<=bins;++k)envelopePrefix[(size_t)k+1]=envelopePrefix[(size_t)k]+magnitudes[(size_t)k];
@@ -132,8 +164,10 @@ public:
                     const double shiftedEnvelope=envelopeAt(envelopeBin);
                     const double formantGain = juce::jlimit(0.25, 4.0,
                         (shiftedEnvelope + 0.00001) / (envelope + 0.00001));
-                    if(frame==0)accumulatedPhase[(size_t)k]=previousPhase[(size_t)lo];
-                    else accumulatedPhase[(size_t)k]+=frequencies[(size_t)lo]*actualHop*pitchRatio;
+                    if(!phaseLock){
+                        if(frame==0)accumulatedPhase[(size_t)k]=previousPhase[(size_t)lo];
+                        else accumulatedPhase[(size_t)k]+=frequencies[(size_t)lo]*actualHop*pitchRatio;
+                    }
                     const double angle = accumulatedPhase[(size_t)k];
                     inverseData[(size_t)2*k] = (float)(magnitude * formantGain * std::cos(angle));
                     inverseData[(size_t)2*k+1] = (k==0||k==bins)?0.f:(float)(magnitude*formantGain*std::sin(angle));
