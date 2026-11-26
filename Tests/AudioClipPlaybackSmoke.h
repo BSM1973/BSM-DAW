@@ -315,6 +315,22 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             LibertyAudioCrossfade::nearestZeroCrossing(z,6,3,0)!=-1||
             std::abs(LibertyAudioCrossfade::rmsDb(.5)+6.020599913)>1.e-8)
              throw std::runtime_error("crossfade intelligence metrics");}
+        // Master control: all stable curve identifiers, including fine presets.
+        for(int c=0;c<=LibertyAudioCrossfade::maxCurve;++c){
+            double last=0.;
+            for(int k=0;k<=1000;++k){
+                const double g=LibertyAudioCrossfade::level(c,k/1000.,true);
+                if(!std::isfinite(g)||g+1.e-12<last||g<0.||g>1.+1.e-12)
+                    throw std::runtime_error("master curve validation");
+                last=g;
+            }
+            if(std::abs(last-1.)>1.e-12)throw std::runtime_error("master curve endpoint");
+        }
+        if(std::abs(LibertyAudioCrossfade::auditionMatchGain(.4,.2,.8)-.5)>1.e-12||
+           std::abs(LibertyAudioCrossfade::auditionMatchGain(.4,.4,1.9)-.5)>1.e-12||
+           LibertyAudioCrossfade::predictedPower(.5,.5,-1.)>1.e-12||
+           std::abs(LibertyAudioCrossfade::predictedPower(.5,.5,1.)-1.)>1.e-12)
+            throw std::runtime_error("master audition gain and phase diagnostics");
         // Studio PRO: energy invariant for different curve pairs, and bounded
         // theoretical gain-step diagnostic (not a signal-based click detector).
         for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){

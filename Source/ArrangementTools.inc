@@ -482,7 +482,7 @@ public:
     CrossfadeStudioPanel(const AudioClip& left,const AudioClip& right,AudioEngine& liveEngine,std::function<bool(const AudioClip&)> callback)
         : original(right),leftClip(left),live(liveEngine),apply(std::move(callback)),limit(right.autoCrossfadeOverlapEnd-right.autoCrossfadeOverlapStart)
     {
-        setSize(620,600);
+        setSize(620,640);
         auto initSlider=[&](juce::Slider& s,double lo,double hi,double value,double step,const juce::String& suffix){
             s.setSliderStyle(juce::Slider::LinearHorizontal);s.setRange(lo,hi,step);
             s.setTextBoxStyle(juce::Slider::TextBoxRight,false,86,24);s.setTextValueSuffix(suffix);
@@ -545,6 +545,13 @@ public:
         playA.onClick=[this]{startPreview(true);};playB.onClick=[this]{startPreview(false);};
         stopPreviewButton.onClick=[this]{stopPreview();};
         loopPreview.onClick=[this]{stopPreview();};
+        matchRms.setButtonText(juce::String::fromUTF8("A/B à niveau RMS égal"));
+        addAndMakeVisible(matchRms);matchRms.onClick=[this]{stopPreview();};
+        savePreset.setButtonText(juce::String::fromUTF8("Mémoriser"));
+        loadPreset.setButtonText(juce::String::fromUTF8("Rappeler"));
+        addAndMakeVisible(savePreset);addAndMakeVisible(loadPreset);
+        savePreset.onClick=[this]{storePersonalPreset();};
+        loadPreset.onClick=[this]{restorePersonalPreset();};
         if(mappedWarp)signalReport.setText(juce::String::fromUTF8("Warp : préécoute du moteur sans cache spectral"),juce::dontSendNotification);
     }
     ~CrossfadeStudioPanel()override{stopPreview();}
@@ -564,7 +571,9 @@ public:
         playA.setBounds(18,466,108,28);playB.setBounds(136,466,108,28);
         stopPreviewButton.setBounds(254,466,80,28);loopPreview.setBounds(350,466,120,28);
         signalReport.setBounds(18,500,584,42);
-        cancel.setBounds(342,552,120,32);confirm.setBounds(480,552,120,32);
+        matchRms.setBounds(18,548,290,28);
+        savePreset.setBounds(326,548,130,28);loadPreset.setBounds(466,548,134,28);
+        cancel.setBounds(342,590,120,32);confirm.setBounds(480,590,120,32);
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffe9f6ff));
@@ -604,6 +613,34 @@ public:
     void mouseDown(const juce::MouseEvent& e)override{dragGraph(e);}
     void mouseDrag(const juce::MouseEvent& e)override{dragGraph(e);}
 private:
+    static juce::File personalPresetFile(){
+        return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Liberty Music Software").getChildFile("Liberty DAW").getChildFile("CrossfadeStudioPreset.xml");
+    }
+    void storePersonalPreset(){
+        const auto c=values();juce::XmlElement xml("CrossfadeStudioPreset");
+        xml.setAttribute("version",1);xml.setAttribute("incoming",c.crossfadeCurve);
+        xml.setAttribute("outgoing",c.crossfadeOutCurve);xml.setAttribute("center",c.crossfadeCenter);
+        xml.setAttribute("energy",c.crossfadeEnergy);xml.setAttribute("duration",c.crossfadeDurationSeconds);
+        const auto file=personalPresetFile();
+        const bool ok=file.getParentDirectory().createDirectory().wasOk()&&file.replaceWithText(xml.toString());
+        signalReport.setText(juce::String::fromUTF8(ok?"Préréglage personnel mémorisé.":"Impossible de mémoriser le préréglage."),juce::dontSendNotification);
+    }
+    void restorePersonalPreset(){
+        const auto xml=juce::XmlDocument::parse(personalPresetFile());
+        if(!xml||!xml->hasTagName("CrossfadeStudioPreset")||xml->getIntAttribute("version")!=1){
+            signalReport.setText(juce::String::fromUTF8("Aucun préréglage personnel valide."),juce::dontSendNotification);return;
+        }
+        const int in=xml->getIntAttribute("incoming",-1),out=xml->getIntAttribute("outgoing",-1);
+        const double pos=xml->getDoubleAttribute("center",-1.),len=xml->getDoubleAttribute("duration",-1.);
+        if(!LibertyAudioCrossfade::validCurve(in)||!LibertyAudioCrossfade::validCurve(out)||
+            !std::isfinite(pos)||pos<0.||pos>1.||!std::isfinite(len)||len<0.)return;
+        stopPreview();setCurve(incoming,inBias,in);setCurve(outgoing,outBias,out);
+        center.setValue(pos*100.,juce::dontSendNotification);
+        duration.setValue(len>0?juce::jmin(len,limit):limit,juce::dontSendNotification);
+        energy.setToggleState(xml->getBoolAttribute("energy"),juce::dontSendNotification);
+        repaint();signalReport.setText(juce::String::fromUTF8("Préréglage personnel rappelé."),juce::dontSendNotification);
+    }
     void stopPreview(){
         stopTimer();
         if(previewAttached){live.getDeviceManager().removeAudioCallback(&previewPlayer);previewAttached=false;}
@@ -668,6 +705,27 @@ private:
             }
 
             const double rms=std::sqrt(.5*(l.rms*l.rms+r.rms*r.rms));
+            double matchingGain=1.;
+            if(matchRms.getToggleState()){
+                // Render the other variant on the same sample window and use
+                // the quieter RMS target, constrained by both peak ceilings.
+                auto other=initial?values():original;other.startSeconds-=origin;
+                juce::AudioBuffer<float> comparison(2,frames);
+                if(!renderer->replaceArrangementAudioClips(0,{left,other})||!renderWindow(comparison)){
+                    report(juce::String::fromUTF8("Comparaison RMS indisponible."));return;
+                }
+                const auto cl=LibertyAudioCrossfade::measureSignal(comparison.getReadPointer(0),frames);
+                const auto cr=LibertyAudioCrossfade::measureSignal(comparison.getReadPointer(1),frames);
+                const double otherRms=std::sqrt(.5*(cl.rms*cl.rms+cr.rms*cr.rms));
+                const double peak=juce::jmax(l.peak,r.peak),otherPeak=juce::jmax(cl.peak,cr.peak);
+                if(!std::isfinite(otherRms)||!std::isfinite(otherPeak)||rms<=1.e-9||otherRms<=1.e-9){
+                    report(juce::String::fromUTF8("Comparaison RMS impossible : signal silencieux ou invalide."));return;
+                }
+                const double target=std::min({rms,otherRms,peak>0.? .95*rms/peak:rms,
+                    otherPeak>0.? .95*otherRms/otherPeak:otherRms});
+                matchingGain=LibertyAudioCrossfade::auditionMatchGain(rms,target,peak);
+                if(initial)rmsB=otherRms;else rmsA=otherRms;
+            }
             if(initial)rmsA=rms;else rmsB=rms;
             const double len=right.crossfadeDurationSeconds>0?juce::jlimit(juce::jmin(.01,limit),limit,right.crossfadeDurationSeconds):limit;
             const double midpoint=overlap+right.crossfadeCenter*(limit-len)+len*.5;
@@ -679,13 +737,15 @@ private:
             info+="\n"+juce::String::fromUTF8("Saut max. ")+juce::String(juce::jmax(l.maxStep,r.maxStep),3);
             if(zero>=0)info+=" | "+juce::String::fromUTF8("Zéro G : ")+juce::String((zero-mid)*1000./rate,2)+" ms";
             if(correlation<-.7)info+=" | "+juce::String::fromUTF8("Risque de phase");
+            if(matchRms.getToggleState())info+=" | RMS "+juce::String(LibertyAudioCrossfade::rmsDb(matchingGain),1)+" dB";
             if(rmsA>=0&&rmsB>=0)info+=" | B/A "+juce::String(LibertyAudioCrossfade::rmsDb(rmsB)-LibertyAudioCrossfade::rmsDb(rmsA),1)+" dB";
             report(info);
             // Protect audition boundaries without changing the measured signal.
             const int ramp=juce::jmin(count/2,(int)(rate*.005));
             if(ramp>0){excerpt.applyGainRamp(0,ramp,0.f,1.f);excerpt.applyGainRamp(count-ramp,ramp,1.f,0.f);}
             const double peak=juce::jmax(l.peak,r.peak);
-            if(peak>.95)excerpt.applyGain((float)(.95/peak));
+            if(matchRms.getToggleState())excerpt.applyGain((float)matchingGain);
+            else if(peak>.95)excerpt.applyGain((float)(.95/peak));
             previewSource=std::make_unique<juce::MemoryAudioSource>(excerpt,true);
             previewLoop=loopPreview.getToggleState();previewSource->setLooping(previewLoop);
             previewRate=rate;previewDeadline=juce::Time::getMillisecondCounterHiRes()+1000.*count/rate;
@@ -733,7 +793,7 @@ private:
     AudioClip original,leftClip;AudioEngine& live;std::function<bool(const AudioClip&)> apply;double limit;
     juce::AudioSourcePlayer previewPlayer;std::unique_ptr<juce::MemoryAudioSource> previewSource;
     bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.,rmsA=-1.,rmsB=-1.;
-    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview;juce::Label signalReport;
+    juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview,matchRms;juce::TextButton savePreset,loadPreset;juce::Label signalReport;
     std::array<float,160> waveLeft{},waveRight{};
     bool mappedWarp=false;
     juce::Slider duration,center,inBias,outBias;juce::ComboBox incoming,outgoing,presets;

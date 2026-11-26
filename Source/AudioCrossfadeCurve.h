@@ -140,4 +140,16 @@ inline int nearestZeroCrossing(const float* data,int count,int center,int radius
     }
     return best;
 }
+// Audition-only matching: attenuation only, with one common peak ceiling.
+inline double auditionMatchGain(double rms,double target,double peak) noexcept
+{
+    if(!std::isfinite(rms)||!std::isfinite(target)||!std::isfinite(peak)||rms<=1.e-9||target<0.||peak<0.)return 1.;
+    return std::min({1.,target/rms,peak>0.? .95/peak:1.});
+}
+// Predicted midpoint power with correlation, for diagnostic advice only.
+// Do not boost anti-phase material to compensate for cancellation.
+inline double predictedPower(double in,double out,double rho) noexcept
+{
+    return std::max(0.,in*in+out*out+2.*std::clamp(rho,-1.,1.)*in*out);
+}
 }
