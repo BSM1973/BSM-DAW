@@ -284,6 +284,22 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             vocalShift.sourceBuffer->getNumSamples()!=48000)throw std::runtime_error("formant shift render");
         for(int i=0;i<48000;++i)if(!std::isfinite(vocalShift.sourceBuffer->getSample(0,i)))
             throw std::runtime_error("formant shift nonfinite");
+        // Decimation of an 18 kHz tone at 2x speed must suppress its 12 kHz alias.
+        auto high=std::make_shared<juce::AudioBuffer<float>>(1,48000);
+        for(int i=0;i<48000;++i)high->setSample(0,i,.25f*std::sin(2*juce::MathConstants<double>::pi*18000*i/48000));
+        auto fast=repitched;fast.sourceBuffer=high;fast.lengthSeconds=.5;fast.warp.target[1]=.5;
+        if(!engine.replaceArrangementAudioClips(0,{fast}))throw std::runtime_error("repitch antialias setup");
+        juce::AudioBuffer<float> fastOut(2,24000);
+        if(!engine.renderOfflineForTesting(fastOut,48000,128,false))throw std::runtime_error("repitch antialias render");
+        double aliasEnergy=0;
+        for(int i=1000;i<23000;++i){const double x=fastOut.getSample(0,i);aliasEnergy+=x*x;}
+        if(!std::isfinite(aliasEnergy)||std::sqrt(aliasEnergy/22000)>.0125)
+            throw std::runtime_error("repitch alias rejection");
+        // Preserve an in-band tone at the same decimation ratio.
+        fast.sourceBuffer=tone;
+        if(!engine.replaceArrangementAudioClips(0,{fast})||!engine.renderOfflineForTesting(fastOut,48000,128,false))
+            throw std::runtime_error("repitch passband render");
+        if(fastOut.getMagnitude(0,1000,22000)<.05f)throw std::runtime_error("repitch passband lost");
         const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
         if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
@@ -301,6 +317,35 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             if(!engine.renderOfflineForTesting(extra,48000,128,false))
                 throw std::runtime_error("extra deterministic warp render");
             for(int i=0;i<60000;++i)near(primary.getSample(0,i),extra.getSample(0,i));
+        }
+        // Mixed harmonic and impulsive fixture, deterministic fallback renderer.
+        auto complex=std::make_shared<juce::AudioBuffer<float>>(2,48000);
+        for(int i=0;i<48000;++i){
+            const double phase=2*juce::MathConstants<double>::pi*i/48000;
+            const float pulse=i%12000<120?float(.1*(1.0-(i%12000)/120.0)):0.f;
+            complex->setSample(0,i,pulse+float(.08*std::sin(220*phase)+.05*std::sin(330*phase)+.03*std::sin(440*phase)));
+            complex->setSample(1,i,pulse+float(.08*std::sin(220*phase)+.05*std::sin(440*phase)+.03*std::sin(550*phase)));
+        }
+        for(int mode=0;mode<=6;++mode){
+            auto item=repitched;item.sourceBuffer=complex;item.warp.mode=mode;item.lengthSeconds=.75;item.warp.target[1]=.75;
+            juce::XmlElement xmlMode("Clip");AudioEngine::writeAudioClipProperties(xmlMode,item);
+            auto restoredMode=AudioEngine::readAudioClipProperties(xmlMode);
+            if(restoredMode.warp.mode!=mode||restoredMode.warp.target[1]!=.75)throw std::runtime_error("warp mode persistence");
+            restoredMode.sourceBuffer=complex;restoredMode.sourceSampleRate=48000;
+            if(!engine.replaceArrangementAudioClips(0,{restoredMode}))throw std::runtime_error("complex warp setup");
+            juce::AudioBuffer<float> out(2,36000);
+            engine.resetCpuPerformanceWhileStopped();
+            if(!engine.renderOfflineForTesting(out,48000,128,false))throw std::runtime_error("complex warp render");
+            double energy=0;float peak=0;
+            for(int ch=0;ch<2;++ch)for(int i=0;i<36000;++i){
+                const float x=out.getSample(ch,i);
+                if(!std::isfinite(x))throw std::runtime_error("complex warp nonfinite");
+                energy+=double(x)*x;peak=std::max(peak,std::abs(x));
+            }
+            if(energy<.001||peak>1.f)throw std::runtime_error("complex warp signal bounds");
+            const auto perf=engine.getCpuPerformance();
+            std::fprintf(stderr,"warp_quality,%d,%.4f,%.4f,%llu,%.6f,%.6f\n",mode,perf.averagePercent(),perf.peakPercent(),
+                (unsigned long long)perf.overruns,std::sqrt(energy/72000),double(peak));
         }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"AudioClipPlaybackSmoke: %s\n",e.what());return false;}

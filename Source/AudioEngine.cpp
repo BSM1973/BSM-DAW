@@ -2,6 +2,7 @@
 #include "AudioEngine.h"
 #include "PolyphonicStepGridTransport.h"
 #include "AudioCrossfadeCurve.h"
+#include "LibertyRepitchFilter.h"
 #include "MixConsoleMeter.h"
 
 // PERFORM contributes audio to this engine-owned hardware callback. It never
@@ -21,6 +22,7 @@ void processLibertyRecordingInput(AudioEngine*, const float* const*, int, int);
 
 AudioEngine::AudioEngine()
 {
+    (void)LibertyRepitch::filter(); // initialise coefficient table before any callback
     tracks.reserve(initialAudioTracks);
     for (int i = 0; i < initialAudioTracks; ++i)
         tracks.push_back(std::make_unique<AudioTrackState>());
@@ -2348,10 +2350,17 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             // change together, with cubic interpolation and no grain/FFT work.
             if(mode==6){
                 const float envelope=envelopeAt(targetSeconds);
+                const double speed=(sb-sa)/span*sourceRate/rate;
+                // Keep cubic interpolation for slowing down; filter before
+                // decimation when the source advances by more than one sample.
+                auto repitch=[&](int ch){
+                    return speed>1.0?LibertyRepitch::filter().read(audioBuffer->getReadPointer(ch),
+                        audioBuffer->getNumSamples(),sourceSamplePosition,speed):readWarpedSample(ch,sourceSamplePosition);
+                };
                 if(numOutputChannels>0&&outputChannelData[0])
-                    outputChannelData[0][outputOffset+s]+=readWarpedSample(0,sourceSamplePosition)*leftGain*envelope;
+                    outputChannelData[0][outputOffset+s]+=repitch(0)*leftGain*envelope;
                 if(numOutputChannels>1&&outputChannelData[1])
-                    outputChannelData[1][outputOffset+s]+=readWarpedSample(sourceChannels==1?0:1,sourceSamplePosition)*rightGain*envelope;
+                    outputChannelData[1][outputOffset+s]+=repitch(sourceChannels==1?0:1)*rightGain*envelope;
                 continue;
             }
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
