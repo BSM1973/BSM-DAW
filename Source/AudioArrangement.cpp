@@ -230,7 +230,7 @@ std::shared_ptr<juce::AudioBuffer<float>> AudioEngine::renderArrangementAudioCli
         return output;
     }catch(...){return {};}
 }
-bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,double pitchShift)
+bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,double seconds,AudioClipMetadata& result,double pitchShift,bool preserveFormants)
 {
     if(!validAudioClip(clip)||!std::isfinite(seconds)||seconds<=0||!std::isfinite(pitchShift)||std::abs(pitchShift)>12)return false;
     if(pitchShift!=0.0&&!clip.sourceBuffer)return false;
@@ -247,6 +247,7 @@ bool AudioEngine::prepareStretchedArrangementClip(const AudioClipMetadata& clip,
         if(output->getNumSamples()<1)return false;
         signalsmith::stretch::SignalsmithStretch<float> stretch;stretch.presetDefault(2,rate);
         stretch.setTransposeFactor(std::pow(2.0,pitchShift/12.0));
+        if(preserveFormants){stretch.setFormantFactor(1.0f,true);stretch.setFormantBase(0.0f);}
         stretch.process(source->getArrayOfReadPointers(),source->getNumSamples(),output->getArrayOfWritePointers(),output->getNumSamples());
         auto copy=clip;
         copy.sourceBuffer=output;copy.sourcePath.clear();copy.lengthSeconds=seconds;copy.offsetSeconds=0;
@@ -276,6 +277,21 @@ AudioEngine::ClipRhythmAnalysis AudioEngine::analyseArrangementClipRhythm(const 
     neutral.fadeInSeconds=neutral.fadeOutSeconds=0;neutral.spectralCache.reset();
     auto source=renderArrangementAudioClip(neutral);
     if(!source)return result;
+    auto rendered=neutral;rendered.sourceBuffer=source;rendered.lengthSeconds=source->getNumSamples()/clip.sourceSampleRate;
+    rendered.offsetSeconds=0;rendered.trimStartFraction=0;rendered.trimEndFraction=1;rendered.warp={};
+    return analyseRawClipRhythm(rendered);
+}
+
+AudioEngine::ClipRhythmAnalysis AudioEngine::analyseRawClipRhythm(const AudioClipMetadata& clip)
+{
+    ClipRhythmAnalysis result;
+    // Pure read-only source analysis: safe for a worker, no AudioEngine lifetime.
+    if(!validAudioClip(clip)||!clip.sourceBuffer||clip.lengthSeconds<1.5||clip.lengthSeconds>60.0||
+       clip.warp.enabled||clip.reverse||clip.pitchSemitones!=0||clip.offsetSeconds!=0||
+       clip.trimStartFraction!=0||clip.trimEndFraction!=1||
+       clip.sourceSampleRate<8000||clip.sourceSampleRate>384000||
+       std::abs(clip.sourceBuffer->getNumSamples()/clip.sourceSampleRate-clip.lengthSeconds)>1.0/clip.sourceSampleRate)return result;
+    const auto source=clip.sourceBuffer;
     const double rate=clip.sourceSampleRate;
     const int hop=juce::jmax(1,(int)std::llround(rate*.005));
     const int size=source->getNumSamples();

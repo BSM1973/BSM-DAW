@@ -116,7 +116,7 @@ public:
             const bool confirmed = juce::NativeMessageBox::showOkCancelBox(
                 juce::MessageBoxIconType::QuestionIcon,
                 "Liberty | Warp",
-                "Reinitialiser tous les marqueurs Warp de cette piste ?",
+                juce::String::fromUTF8("Réinitialiser tous les marqueurs Warp de cette piste ?"),
                 this, nullptr);
             if (confirmed)
             {
@@ -263,8 +263,10 @@ private:
             case 0: return "Brut";
             case 1: return "Fluide";
             case 2: return "Doux";
-            case 3: return "Precis";
+            case 3: return juce::String::fromUTF8("Précis");
             case 4: return "Riche";
+            case 5: return "Texture";
+            case 6: return "REPITCH";
             default: return "Brut";
         }
     }
@@ -555,7 +557,7 @@ private:
     void showModeMenu()
     {
         juce::PopupMenu menu;
-        const juce::StringArray modes { "Brut", "Fluide", "Doux", "Precis", "Riche" };
+        const juce::StringArray modes { "Brut", "Fluide", "Doux", juce::String::fromUTF8("Précis"), "Riche", "Texture", "REPITCH" };
         const int current = owner.audioEngine.getTrackWarpMode(selectedTrack);
         for (int i = 0; i < modes.size(); ++i)
             menu.addItem(i + 1, modes[i], true, current == i);

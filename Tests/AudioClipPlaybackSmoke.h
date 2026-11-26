@@ -263,8 +263,31 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         auto badCurve=second;badCurve.crossfadeCurve=4;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
+        // REPITCH 2:1 duration must halve frequency, not preserve pitch.
+        auto repitched=stretched;repitched.warp.enabled=true;repitched.warp.mode=6;repitched.warp.count=2;
+        repitched.warp.source[1]=1;repitched.warp.target[1]=2;repitched.lengthSeconds=2;
+        if(!engine.replaceArrangementAudioClips(0,{repitched})||engine.getTrackWarpMode(0)!=6||
+           engine.getTrackWarpSnapshot(0).mode!=6)throw std::runtime_error("repitch mode publication");
+        juce::XmlElement repitchXml("Clip");AudioEngine::writeAudioClipProperties(repitchXml,repitched);
+        if(AudioEngine::readAudioClipProperties(repitchXml).warp.mode!=6)throw std::runtime_error("repitch mode XML");
+        juce::AudioBuffer<float> repitchOut(2,96000);
+        if(!engine.renderOfflineForTesting(repitchOut,48000,257,false))throw std::runtime_error("repitch render");
+        int repitchCrossings=0;
+        for(int i=24001;i<72001;++i){
+            const float sample=repitchOut.getSample(0,i);
+            if(!std::isfinite(sample))throw std::runtime_error("repitch nonfinite");
+            if(repitchOut.getSample(0,i-1)<=0&&sample>0)++repitchCrossings;
+        }
+        if(std::abs(repitchCrossings-220)>3)throw std::runtime_error("repitch frequency");
+        AudioEngine::AudioClipMetadata vocalShift;
+        if(!engine.prepareStretchedArrangementClip(stretched,1.0,vocalShift,3,true)||
+            vocalShift.sourceBuffer->getNumSamples()!=48000)throw std::runtime_error("formant shift render");
+        for(int i=0;i<48000;++i)if(!std::isfinite(vocalShift.sourceBuffer->getSample(0,i)))
+            throw std::runtime_error("formant shift nonfinite");
+        const auto rawRhythm=AudioEngine::analyseRawClipRhythm(beat);
+        if(rawRhythm.transients.size()!=8||std::abs(rawRhythm.bpm-120)>1)throw std::runtime_error("raw async rhythm kernel");
         // The primary and additional paths must use the same Warp renderer.
-        for(int mode=0;mode<=5;++mode){
+        for(int mode=0;mode<=6;++mode){
             auto warped=stretched;warped.warp.enabled=true;warped.warp.mode=mode;warped.warp.count=2;
             warped.warp.source[1]=1;warped.warp.target[1]=1.25;warped.lengthSeconds=1.25;
             warped.clipGain=.6f;warped.fadeInSeconds=.02;warped.pitchSemitones=3;

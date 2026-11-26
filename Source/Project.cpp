@@ -1359,7 +1359,7 @@ bool MainComponent::loadProjectFromFile(const juce::File& file)
         if (projectVersion >= 16)
         {
             pendingWarp.enabled = track->getBoolAttribute("warpEnabled", false);
-            pendingWarp.mode = juce::jlimit(0, 4, track->getIntAttribute("warpMode", 0));
+            pendingWarp.mode = juce::jlimit(0, 6, track->getIntAttribute("warpMode", 0));
             if (auto* warpMarkers = track->getChildByName("WarpMarkers"))
             {
                 int visitedWarpMarkerElements = 0;

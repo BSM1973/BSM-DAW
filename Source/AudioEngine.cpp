@@ -994,7 +994,7 @@ void AudioEngine::setTrackWarpMode(int trackIndex, int mode) noexcept
     tracks[(size_t)trackIndex]->spectralGeneration.fetch_add(1, std::memory_order_release);
     std::atomic_store(&tracks[(size_t)trackIndex]->spectralCache, std::shared_ptr<juce::AudioBuffer<float>>{});
     auto& track = *tracks[(size_t)trackIndex];
-    const int clampedMode = juce::jlimit(0, 5, mode);
+    const int clampedMode = juce::jlimit(0, 6, mode);
     const auto current = std::atomic_load(&track.warpMarkerSnapshot);
     std::shared_ptr<WarpMarkerSnapshot> snapshot;
     if (current != nullptr)
@@ -1090,7 +1090,7 @@ bool AudioEngine::restoreTrackWarpState(int trackIndex, bool enabled, int mode,
     catch (...) { return false; }
 
     snapshot->enabled = enabled;
-    snapshot->mode = juce::jlimit(0, 4, mode);
+    snapshot->mode = juce::jlimit(0, 6, mode);
     snapshot->count = 2;
     snapshot->source[0] = 0.0;
     snapshot->target[0] = 0.0;
@@ -1256,7 +1256,7 @@ AudioEngine::WarpSnapshot AudioEngine::getTrackWarpSnapshot(int trackIndex) cons
     const auto snapshot = std::atomic_load(&tracks[(size_t)trackIndex]->warpMarkerSnapshot);
     if (snapshot == nullptr) return result;
     result.enabled = snapshot->enabled;
-    result.mode = juce::jlimit(0, 4, snapshot->mode);
+    result.mode = juce::jlimit(0, 6, snapshot->mode);
     result.count = juce::jlimit(0, maxWarpMarkers, snapshot->count);
     for (int i = 0; i < result.count; ++i)
     {
@@ -2280,7 +2280,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             targetMarkers[(size_t)marker] = warpSnapshot->target[(size_t)marker];
         }
 
-        const int mode = juce::jlimit(0, 5, warpSnapshot->mode);
+        const int mode = juce::jlimit(0, 6, warpSnapshot->mode);
         const int lastSample = juce::jmax(0, audioBuffer->getNumSamples() - 1);
 
         auto readWarpedSample = [&](int channel, double samplePosition) -> float
@@ -2301,7 +2301,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                 const int in = juce::jmin(lastSample, i2 + 1);
                 return 0.25f * data[ip] + 0.5f * linear + 0.25f * data[in];
             }
-            if (mode == 4)
+            if (mode == 4 || mode == 6)
             {
                 const int i0 = juce::jmax(0, i1 - 1);
                 const int i3 = juce::jmin(lastSample, i2 + 1);
@@ -2344,6 +2344,16 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             const double sourceSamplePosition = (clipReversed
                 ? juce::jmax(0.0, (double)lastSample / sourceRate - sourceSeconds)
                 : sourceSeconds) * sourceRate;
+            // REPITCH follows the source/target map directly: speed and pitch
+            // change together, with cubic interpolation and no grain/FFT work.
+            if(mode==6){
+                const float envelope=envelopeAt(targetSeconds);
+                if(numOutputChannels>0&&outputChannelData[0])
+                    outputChannelData[0][outputOffset+s]+=readWarpedSample(0,sourceSamplePosition)*leftGain*envelope;
+                if(numOutputChannels>1&&outputChannelData[1])
+                    outputChannelData[1][outputOffset+s]+=readWarpedSample(sourceChannels==1?0:1,sourceSamplePosition)*rightGain*envelope;
+                continue;
+            }
             // Riche: two 50%-overlapped Hann-windowed grains. Each grain
             // advances at native source rate; grain centres follow the Warp
             // mapping. No allocation or locking is performed in this loop.
@@ -2351,7 +2361,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
             // Keep extreme ratios on the established interpolation path.
             // The short-grain algorithm is intended for moderate stretches;
             // beyond this range it may repeat or skip attacks excessively.
-            const bool granular = !clipReversed && sourceRate > 0.0
+            const bool granular = mode != 6 && !clipReversed && sourceRate > 0.0
                 && std::isfinite(localRatio)
                 && localRatio >= 0.20 && localRatio <= 4.5
                 && (std::abs(localRatio - 1.0) > 0.005 || std::abs(clipPitchRatio - 1.0) > 0.005);

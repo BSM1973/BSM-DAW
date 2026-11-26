@@ -603,10 +603,10 @@ void paintAudioFades(juce::Graphics& g){
 // Audio source ownership and all non-targeted MIDI note properties are retained.
 bool applyGroupClipOperation(int command,double value=0.0){
     if((command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty())||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>22)return false;
+    if(!std::isfinite(value)||command<0||command>23)return false;
     if(command==20&&(value<0||value>100||!isLibertySnapEnabled()||getLibertySnapSeconds(owner.tempoBpm)<=0))return false;
     if(command==21&&(!std::isfinite(owner.tempoBpm)||owner.tempoBpm<=0))return false;
-    if(command==22&&(value<-12||value>12||std::floor(value)!=value))return false;
+    if((command==22||command==23)&&(value<-12||value>12||std::floor(value)!=value))return false;
     if(command==18&&(value<25||value>400))return false;
     if(command==19&&(value<60||value>200||!std::isfinite(owner.tempoBpm)||owner.tempoBpm<=0))return false;
     if(command>=18&&selectedAudio.empty())return false;
@@ -670,7 +670,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 if(!owner.audioEngine.prepareQuantizedArrangementClip(clip,grid,value/100.0,replacement))return false;
                 clip=std::move(replacement);touchedAudio.insert(lane);changed=true;
             }
-            if(command==18||command==19||command==21||command==22){
+            if(command==18||command==19||command==21||command==22||command==23){
                 double ratio=command==18?value/100.0:command==19?value/owner.tempoBpm:1.0;
                 if(command==21){
                     const auto rhythm=owner.audioEngine.analyseArrangementClipRhythm(clip);
@@ -679,15 +679,15 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 }
                 // Rendered pitch shift is separate from the legacy varispeed
                 // control. Do not combine it with a nonzero existing pitch.
-                if(command==22&&clip.pitchSemitones!=0)return false;
+                if((command==22||command==23)&&clip.pitchSemitones!=0)return false;
                 const double seconds=clip.lengthSeconds*ratio;
                 if(!clip.sourceBuffer||ratio<.25||ratio>4||!std::isfinite(seconds)||seconds<=0)return false;
                 const double bytes=seconds*clip.sourceSampleRate*2*sizeof(float);
                 if(!std::isfinite(bytes)||bytes>128ull*1024*1024||stretchBytes+bytes>128ull*1024*1024)return false;
                 stretchBytes+=static_cast<std::uint64_t>(std::ceil(bytes));
-                if(std::abs(ratio-1.0)>1.e-9||(command==22&&value!=0)){
+                if(std::abs(ratio-1.0)>1.e-9||((command==22||command==23)&&value!=0)){
                     AudioClip replacement;
-                    if(!owner.audioEngine.prepareStretchedArrangementClip(clip,seconds,replacement,command==22?value:0.0))return false;
+                    if(!owner.audioEngine.prepareStretchedArrangementClip(clip,seconds,replacement,(command==22||command==23)?value:0.0,command==23))return false;
                     clip=std::move(replacement);touchedAudio.insert(lane);changed=true;
                 }
             }
@@ -811,9 +811,9 @@ bool toggleGroupClipSelection(juce::Point<int> p){
 }
 void showGroupValueDialog(int command){
     const bool gain=command==15,transpose=command==16;
-    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==18?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
+    const auto label=juce::String::fromUTF8(gain?"Gain relatif en dB (-60 à +12)":transpose?"Demi-tons entiers (-48 à +48)":command==18?"Durée relative en pourcentage (25 à 400)":command==19?"Tempo source commun en BPM (60 à 200)":command==20?"Intensité de quantification (0 à 100 %)":command==23?"Pitch Shift vocal, formants préservés (-12 à +12)":command==22?"Pitch Shift en demi-tons (-12 à +12)":"Durée du fondu en secondes");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("ÉDITION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
-    dialog->addTextEditor("value",gain?"0":transpose?"0":command==18?"150":command==19?"120":command==20?"75":command==22?"0":"0.05");
+    dialog->addTextEditor("value",gain?"0":transpose?"0":command==18?"150":command==19?"120":command==20?"75":(command==22||command==23)?"0":"0.05");
     dialog->addButton(juce::String::fromUTF8("Appliquer"),1,juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton(juce::String::fromUTF8("Annuler"),0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
@@ -830,6 +830,39 @@ void showGroupValueDialog(int command){
             }catch(...){}
             if(!applied){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible");safe->repaint();}
         }),false);
+}
+juce::ThreadPool rhythmAnalysisPool{1};
+bool rhythmAnalysisPending=false;
+void analyseSelectionAsync(const std::set<AudioKey>& selection){
+    if(rhythmAnalysisPending)return;
+    std::vector<AudioClip> clips;
+    for(const auto& key:selection){
+        if(clips.size()>=12)break;
+        for(const auto& clip:owner.audioEngine.getArrangementAudioClips(key.first))
+            if(clip.id==key.second){clips.push_back(clip);break;}
+    }
+    if(clips.empty())return;
+    rhythmAnalysisPending=true;
+    operationMessage=juce::String::fromUTF8("Analyse rythmique en cours…");repaint();
+    const bool truncated=selection.size()>clips.size();
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    rhythmAnalysisPool.addJob([safe,clips=std::move(clips),truncated]{
+        juce::String report;
+        try{
+            for(const auto& clip:clips){
+                const auto result=AudioEngine::analyseRawClipRhythm(clip);
+                report+=clip.sourceName+" : "+juce::String((int)result.transients.size())+juce::String::fromUTF8(" transitoires — ");
+                report+=result.bpm>0?juce::String(result.bpm,1)+" BPM":juce::String::fromUTF8("tempo incertain ou clip édité");
+                report+="\n";
+            }
+            if(truncated)report+=juce::String::fromUTF8("Analyse limitée aux 12 premiers clips.");
+        }catch(...){report=juce::String::fromUTF8("Analyse impossible.");}
+        juce::MessageManager::callAsync([safe,report]{
+            if(!safe)return;
+            safe->rhythmAnalysisPending=false;safe->operationMessage.clear();safe->repaint();
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,juce::String::fromUTF8("Analyse rythmique"),report);
+        });
+    });
 }
 bool showGroupClipMenu(juce::Point<int> p){
     if(inlineMidiMode||selectedAudio.size()+selectedClipIds.size()<2)return false;
@@ -870,30 +903,17 @@ bool showGroupClipMenu(juce::Point<int> p){
     warp.addItem(22,juce::String::fromUTF8("Quantifier les transitoires (%)…"),!selectedAudio.empty()&&isLibertySnapEnabled());
     warp.addItem(23,juce::String::fromUTF8("Synchroniser automatiquement"),!selectedAudio.empty());
     warp.addItem(24,juce::String::fromUTF8("Pitch Shift à durée constante…"),!selectedAudio.empty());
+    warp.addItem(25,juce::String::fromUTF8("Pitch Shift vocal — formants…"),!selectedAudio.empty());
     menu.addSubMenu(juce::String::fromUTF8("Warp et étirement"),warp);
     const auto screen=localPointToGlobal(p);
     const auto audioSelection=selectedAudio;const auto midiSelection=selectedClipIds;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection](int choice){
-            if(!safe||choice<1||choice>24)return;
+            if(!safe||choice<1||choice>25)return;
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
-            if(choice==21){
-                juce::String report;int count=0;
-                for(const auto& key:audioSelection){
-                    if(++count>12){report+=juce::String::fromUTF8("\nAnalyse limitée aux 12 premiers clips.");break;}
-                    const auto clips=safe->owner.audioEngine.getArrangementAudioClips(key.first);
-                    for(const auto& clip:clips)if(clip.id==key.second){
-                        const auto result=safe->owner.audioEngine.analyseArrangementClipRhythm(clip);
-                        report+=clip.sourceName+" : "+juce::String((int)result.transients.size())+juce::String::fromUTF8(" transitoires — ");
-                        report+=result.bpm>0?juce::String(result.bpm,1)+" BPM":juce::String::fromUTF8("tempo incertain");
-                        report+="\n";
-                    }
-                }
-                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,juce::String::fromUTF8("Analyse rythmique"),report);
-                return;
-            }
-            if(choice==22||choice==24){safe->showGroupValueDialog(choice==22?20:22);return;}
+            if(choice==21){safe->analyseSelectionAsync(audioSelection);return;}
+            if(choice==22||choice==24||choice==25){safe->showGroupValueDialog(choice==22?20:choice==24?22:23);return;}
             if(choice==23){
                 if(!safe->applyGroupClipOperation(21)){
                     safe->operationMessage=juce::String::fromUTF8("Tempo incertain ou synchronisation impossible — clips conservés");safe->repaint();
