@@ -408,6 +408,59 @@ bool showAudioClipEditor(juce::Point<int> p){
     options.launchAsync();
     return true;
 }
+// Phase 2.4: exact duration presets share the existing edit/undo path.
+static double professionalFadePreset(int choice) noexcept {
+    switch(choice){
+        case 10:return 0.0;
+        case 11:return .010;
+        case 12:return .025;
+        case 13:return .050;
+        case 14:return .100;
+        case 15:return .250;
+        case 16:return .500;
+        case 17:return 1.000;
+        default:return -1.0;
+    }
+}
+static void addProfessionalFadeDurations(juce::PopupMenu& menu,double current,double limit,bool cross){
+    menu.addSeparator();
+    menu.addSectionHeader(juce::String::fromUTF8("DURÉE DU FONDU"));
+    menu.addItem(10,cross?juce::String::fromUTF8("Automatique (chevauchement complet)"):
+                          juce::String::fromUTF8("Supprimer le fondu"),true,current==0.0);
+    for(int choice=11;choice<=17;++choice){
+        const double seconds=professionalFadePreset(choice);
+        const juce::String label=juce::String((int)std::lround(seconds*1000.0))+" ms";
+        menu.addItem(choice,label,seconds<=limit,std::abs(current-seconds)<1.e-8);
+    }
+}
+bool applyProfessionalFadeChoice(int track,const juce::String& id,int choice,bool incoming,bool cross){
+    if(track<0||id.isEmpty())return false;
+    auto current=owner.audioEngine.getArrangementAudioClips(track);
+    auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
+    if(entry==current.end())return false;
+    if(cross&&entry->autoCrossfadeInEnd<=entry->autoCrossfadeInStart)return false;
+    if(choice>=1&&choice<=3){
+        int& curve=cross?entry->crossfadeCurve:(incoming?entry->fadeInCurve:entry->fadeOutCurve);
+        if(curve==choice-1)return false;
+        curve=choice-1;
+    }else{
+        const double duration=professionalFadePreset(choice);
+        const double limit=cross?entry->autoCrossfadeOverlapEnd-entry->autoCrossfadeOverlapStart:entry->lengthSeconds;
+        if(duration<0.0||!std::isfinite(limit)||limit<=0.0||duration>limit)return false;
+        double& selected=cross?entry->crossfadeDurationSeconds:(incoming?entry->fadeInSeconds:entry->fadeOutSeconds);
+        if(std::abs(selected-duration)<1.e-10)return false;
+        selected=duration;
+    }
+    beginArrangementEdit();
+    const bool applied=owner.audioEngine.replaceArrangementAudioClips(track,current);
+    if(applied){
+        operationMessage=choice<=3?juce::String::fromUTF8("Courbe de fondu modifiée"):
+            juce::String::fromUTF8("Durée du fondu modifiée");
+        owner.repaint();repaint();
+    }
+    finishArrangementEdit();
+    return applied;
+}
 bool showAudioCrossfadeMenu(juce::Point<int> p){
     const auto hit=crossfadeAt(p);
     if(hit.first<0)return false;
@@ -419,22 +472,13 @@ bool showAudioCrossfadeMenu(juce::Point<int> p){
     menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,it->crossfadeCurve==0);
     menu.addItem(2,juce::String::fromUTF8("Puissance égale"),true,it->crossfadeCurve==1);
     menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,it->crossfadeCurve==2);
+    addProfessionalFadeDurations(menu,it->crossfadeDurationSeconds,
+        it->autoCrossfadeOverlapEnd-it->autoCrossfadeOverlapStart,true);
     const auto screen=localPointToGlobal(p);
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
                        [safe,track=hit.first,id=hit.second](int choice){
-        if(!safe || choice<1 || choice>3)return;
-        auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
-        auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
-        if(entry==current.end() || entry->autoCrossfadeInEnd<=entry->autoCrossfadeInStart)return;
-        if(entry->crossfadeCurve==choice-1)return;
-        safe->beginArrangementEdit();
-        entry->crossfadeCurve=choice-1;
-        if(safe->owner.audioEngine.replaceArrangementAudioClips(track,current)){
-            safe->operationMessage=juce::String::fromUTF8("Courbe de fondu croisé modifiée");
-            safe->owner.repaint();safe->repaint();
-        }
-        safe->finishArrangementEdit();
+        if(safe)safe->applyProfessionalFadeChoice(track,id,choice,true,true);
     });
     return true;
 }
@@ -455,23 +499,12 @@ bool showAudioManualFadeMenu(juce::Point<int> p){
     menu.addItem(1,juce::String::fromUTF8("Linéaire"),true,curve==0);
     menu.addItem(2,juce::String::fromUTF8("Exponentielle"),true,curve==1);
     menu.addItem(3,juce::String::fromUTF8("Courbe en S"),true,curve==2);
+    addProfessionalFadeDurations(menu,incoming?it->fadeInSeconds:it->fadeOutSeconds,it->lengthSeconds,false);
     const auto screen=localPointToGlobal(p);
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
                        [safe,track,id,incoming](int choice){
-        if(!safe || choice<1 || choice>3)return;
-        auto current=safe->owner.audioEngine.getArrangementAudioClips(track);
-        auto entry=std::find_if(current.begin(),current.end(),[&](const auto& c){return c.id==id;});
-        if(entry==current.end())return;
-        int& selected=incoming?entry->fadeInCurve:entry->fadeOutCurve;
-        if(selected==choice-1)return;
-        safe->beginArrangementEdit();
-        selected=choice-1;
-        if(safe->owner.audioEngine.replaceArrangementAudioClips(track,current)){
-            safe->operationMessage=juce::String::fromUTF8("Courbe de fondu audio modifiée");
-            safe->owner.repaint();safe->repaint();
-        }
-        safe->finishArrangementEdit();
+        if(safe)safe->applyProfessionalFadeChoice(track,id,choice,incoming,false);
     });
     return true;
 }
@@ -1548,6 +1581,29 @@ bool runArrangementTests(){
             require(undoArrangement(true),"crossfade redo command");
             require(std::abs(owner.audioEngine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds-wanted)<1.e-8,
                     "crossfade redo restored duration");
+            // Exact 50 ms preset uses the same action as the context menu.
+            require(applyProfessionalFadeChoice(0,neighbour.id,13,true,true),"professional crossfade preset");
+            const auto preset=owner.audioEngine.getArrangementAudioClips(0);
+            require(std::abs(preset[1].crossfadeDurationSeconds-.05)<1.e-9&&
+                    preset[1].startSeconds==.5&&preset[0].startSeconds==0,
+                    "professional crossfade duration and placement");
+            require(!applyProfessionalFadeChoice(0,neighbour.id,17,true,true),
+                    "professional oversized crossfade rejected");
+            require(undoArrangement(false),"professional crossfade undo");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds-wanted)<1.e-8,
+                    "professional crossfade undo duration");
+            require(undoArrangement(true),"professional crossfade redo");
+            require(applyProfessionalFadeChoice(0,neighbour.id,10,true,true),"professional automatic crossfade");
+            require(owner.audioEngine.getArrangementAudioClips(0)[1].crossfadeDurationSeconds==0,
+                    "professional automatic preference");
+            require(applyProfessionalFadeChoice(0,neighbour.id,12,true,false),"professional manual fade preset");
+            const auto manual=owner.audioEngine.getArrangementAudioClips(0);
+            require(std::abs(manual[1].fadeInSeconds-.025)<1.e-9&&
+                    manual[1].fadeOutSeconds==neighbour.fadeOutSeconds,
+                    "professional independent manual fade");
+            require(applyProfessionalFadeChoice(0,neighbour.id,10,true,false),"professional manual fade reset");
+            require(owner.audioEngine.getArrangementAudioClips(0)[1].fadeInSeconds==0,
+                    "professional manual fade reset duration");
             require(owner.audioEngine.replaceArrangementAudioClips(0,{c}),"crossfade fixture cleanup");
             clearArrangementHistory();
         }
