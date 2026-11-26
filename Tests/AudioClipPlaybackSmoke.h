@@ -302,6 +302,20 @@ inline bool runLibertyAudioClipPlaybackSmoke()
         auto badCurve=second;badCurve.crossfadeCurve=LibertyAudioCrossfade::maxCurve+1;
         if(engine.replaceArrangementAudioClips(0,{first,badCurve}))
             throw std::runtime_error("invalid crossfade curve accepted");
+        // Studio PRO: energy invariant for different curve pairs, and bounded
+        // theoretical gain-step diagnostic (not a signal-based click detector).
+        for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){
+            for(int k=0;k<=1000;++k){
+                const double p=k/1000.;
+                const double x=LibertyAudioCrossfade::studioLevel(in,out,p,true);
+                const double y=LibertyAudioCrossfade::studioLevel(out,in,p,false);
+                if(!std::isfinite(x)||!std::isfinite(y)||std::abs(x*x+y*y-1.)>1.e-10)
+                    throw std::runtime_error("studio pro energy invariant");
+            }
+        }
+        if(LibertyAudioCrossfade::studioGainStep(0,0,false,480)>.003||
+           LibertyAudioCrossfade::studioGainStep(0,0,false,2)<.49)
+            throw std::runtime_error("studio pro gain step diagnostic");
         // Studio: independent gain laws, moved shortened transition and optional
         // sum-of-squares compensation, with legacy defaults preserved.
         auto studio=second;studio.crossfadeCenter=.25;studio.crossfadeDurationSeconds=.2;

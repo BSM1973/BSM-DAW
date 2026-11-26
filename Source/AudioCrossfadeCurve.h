@@ -78,4 +78,19 @@ inline double studioLevel(int curve,int peer,double progress,bool incoming) noex
     const double norm=std::sqrt(g*g+other*other);
     return norm>1.e-12?g/norm:0.0;
 }
+// Diagnostic only: worst adjacent gain change over a bounded transition.
+inline double studioGainStep(int incoming,int outgoing,bool energy,int samples) noexcept
+{
+    if(samples<2)return 1.;
+    double peak=0.,lastIn=0.,lastOut=1.;
+    const int count=std::min(samples,4096);
+    for(int i=1;i<=count;++i){
+        const double p=double(i)/count;
+        const double in=studioLevel(incoming,energy?outgoing:-1,p,true);
+        const double out=studioLevel(outgoing,energy?incoming:-1,p,false);
+        peak=std::max(peak,std::max(std::abs(in-lastIn),std::abs(out-lastOut)));
+        lastIn=in;lastOut=out;
+    }
+    return peak;
+}
 }

@@ -482,7 +482,7 @@ public:
     CrossfadeStudioPanel(const AudioClip& left,const AudioClip& right,std::function<bool(const AudioClip&)> callback)
         : original(right),apply(std::move(callback)),limit(right.autoCrossfadeOverlapEnd-right.autoCrossfadeOverlapStart)
     {
-        setSize(620,458);
+        setSize(620,510);
         auto initSlider=[&](juce::Slider& s,double lo,double hi,double value,double step,const juce::String& suffix){
             s.setSliderStyle(juce::Slider::LinearHorizontal);s.setRange(lo,hi,step);
             s.setTextBoxStyle(juce::Slider::TextBoxRight,false,86,24);s.setTextValueSuffix(suffix);
@@ -506,11 +506,36 @@ public:
         energy.onClick=[this]{repaint();};addAndMakeVisible(energy);
         originalView.setButtonText(juce::String::fromUTF8("Comparer au réglage initial (visuel)"));
         originalView.onClick=[this]{repaint();};addAndMakeVisible(originalView);
+        presets.addItem(juce::String::fromUTF8("Linéaire"),1);
+        presets.addItem(juce::String::fromUTF8("Puissance égale"),2);
+        presets.addItem(juce::String::fromUTF8("Transition douce"),3);
+        presets.addItem(juce::String::fromUTF8("Entrée rapide"),4);
+        presets.addItem(juce::String::fromUTF8("Sortie rapide"),5);
+        presets.addItem(juce::String::fromUTF8("Réglage initial"),6);
+        presets.setTextWhenNothingSelected(juce::String::fromUTF8("Préréglages de transition"));
+        presets.onChange=[this]{
+            const int p=presets.getSelectedId();
+            if(p==6){
+                setCurve(incoming,inBias,original.crossfadeCurve);
+                setCurve(outgoing,outBias,original.crossfadeOutCurve<0?original.crossfadeCurve:original.crossfadeOutCurve);
+                duration.setValue(original.autoCrossfadeInEnd-original.autoCrossfadeInStart,juce::dontSendNotification);
+                center.setValue(original.crossfadeCenter*100,juce::dontSendNotification);
+                energy.setToggleState(original.crossfadeEnergy,juce::dontSendNotification);
+            }else if(p>=1&&p<=5){
+                const int in=p==1?0:p==2?1:p==3?7:p==4?3:4;
+                const int out=p==1?0:p==2?1:p==3?7:p==4?4:3;
+                setCurve(incoming,inBias,in);setCurve(outgoing,outBias,out);
+                energy.setToggleState(p==2,juce::dontSendNotification);
+            }
+            presets.setSelectedId(0,juce::dontSendNotification);repaint();
+        };addAndMakeVisible(presets);
         confirm.setButtonText(juce::String::fromUTF8("APPLIQUER"));cancel.setButtonText(juce::String::fromUTF8("ANNULER"));
         addAndMakeVisible(confirm);addAndMakeVisible(cancel);
         confirm.onClick=[this]{if(apply&&apply(values()))close();};cancel.onClick=[this]{close();};
         // Bounded source overview, not a post-Warp or timeline-aligned waveform.
-        overview(left,waveLeft);overview(right,waveRight);
+        overview(left,waveLeft,right.autoCrossfadeOverlapStart,limit);
+        overview(right,waveRight,right.autoCrossfadeOverlapStart,limit);
+        mappedWarp=left.warp.enabled||right.warp.enabled;
     }
     AudioClip values()const{
         auto c=original;
@@ -524,12 +549,13 @@ public:
         incoming.setBounds(150,266,210,26);inBias.setBounds(368,266,232,26);
         outgoing.setBounds(150,298,210,26);outBias.setBounds(368,298,232,26);
         energy.setBounds(18,334,280,28);originalView.setBounds(18,366,400,28);
-        cancel.setBounds(342,410,120,32);confirm.setBounds(480,410,120,32);
+        presets.setBounds(18,402,300,28);
+        cancel.setBounds(342,462,120,32);confirm.setBounds(480,462,120,32);
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffe9f6ff));
         g.setFont(15.f);
-        g.drawText(juce::String::fromUTF8("Sources audio — aperçu non aligné"),18,8,584,22,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8(mappedWarp?"Sources — repères Warp (aperçu)":"Sources — chevauchement sur la timeline"),18,8,584,22,juce::Justification::centredLeft);
         auto wave=[&](const std::array<float,160>& w,int y,juce::Colour colour){
             g.setColour(juce::Colour(0xff182f42));g.fillRect(18,y,584,28);
             g.setColour(colour);
@@ -556,22 +582,55 @@ public:
         g.drawText(juce::String::fromUTF8("Position"),18,234,125,26,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Entrée"),18,266,125,26,juce::Justification::centredLeft);
         g.drawText(juce::String::fromUTF8("Sortie"),18,298,125,26,juce::Justification::centredLeft);
+        const double step=LibertyAudioCrossfade::studioGainStep(v.crossfadeCurve,out,v.crossfadeEnergy,
+            (int)juce::jlimit(2.,4096.,len*48000.));
+        g.setColour(step>.08?juce::Colour(0xffffb46b):juce::Colour(0xffa9c9dd));
+        g.drawText(juce::String::fromUTF8(step>.08?"Pente rapide — risque de clic à vérifier":"Pente de gain contrôlée (indicateur théorique)"),18,436,584,22,juce::Justification::centredLeft);
     }
+    void mouseDown(const juce::MouseEvent& e)override{dragGraph(e);}
+    void mouseDrag(const juce::MouseEvent& e)override{dragGraph(e);}
 private:
+    void dragGraph(const juce::MouseEvent& e){
+        if(!juce::Rectangle<int>(18,98,584,88).contains(e.getPosition()))return;
+        const auto v=values();const double len=v.crossfadeDurationSeconds>0?v.crossfadeDurationSeconds:limit;
+        if(limit-len<1.e-9)return;
+        const double pos=(e.position.x-18.)/584.*limit;
+        center.setValue(100.*juce::jlimit(0.,1.,(pos-len*.5)/(limit-len)),juce::sendNotificationSync);
+    }
+    static void setCurve(juce::ComboBox& box,juce::Slider& bias,int curve){
+        box.setSelectedId(curve>=10?11:curve+1,juce::dontSendNotification);
+        bias.setValue(curve>=31?curve-131:curve>=10?(curve-20)*10:0,juce::dontSendNotification);
+        bias.setEnabled(curve>=10);
+    }
     static int selected(const juce::ComboBox& c,const juce::Slider& s){return c.getSelectedId()==11?131+(int)std::lround(s.getValue()):juce::jmax(0,c.getSelectedId()-1);}
-    static void overview(const AudioClip& c,std::array<float,160>& w){
-        if(!c.sourceBuffer)return;
+    static void overview(const AudioClip& c,std::array<float,160>& w,double start,double span){
+        if(!c.sourceBuffer||c.sourceSampleRate<=0)return;
         const int n=c.sourceBuffer->getNumSamples();
-        for(size_t i=0;i<w.size();++i){
-            const int a=(int)(i*(int64_t)n/w.size()),b=(int)((i+1)*(int64_t)n/w.size());
-            for(int j=a;j<b;j+=juce::jmax(1,(b-a)/32))
-                w[i]=juce::jmax(w[i],juce::jmin(1.f,std::abs(c.sourceBuffer->getSample(0,j))));
+        if(n<1)return;
+        for(size_t i=0;i<w.size();++i)for(int k=0;k<64;++k){
+            const double local=start+span*(double(i)+double(k)/64.)/w.size()-c.startSeconds+c.offsetSeconds;
+            double source=local*c.sourceSampleRate*std::pow(2.,c.pitchSemitones/12.);
+            double lo=c.trimStartFraction*n,hi=c.trimEndFraction*n;
+            if(c.warp.enabled&&c.warp.count>=2){
+                int m=0;
+                while(m<c.warp.count-2&&local>c.warp.target[(size_t)m+1])++m;
+                const double t0=c.warp.target[(size_t)m],t1=c.warp.target[(size_t)m+1];
+                const double p=juce::jlimit(0.,1.,(local-t0)/juce::jmax(1.e-9,t1-t0));
+                source=(c.warp.source[(size_t)m]+p*(c.warp.source[(size_t)m+1]-c.warp.source[(size_t)m]))*c.sourceSampleRate;
+                lo=0.;hi=n;
+            }
+            if(source<0||source>=hi-lo)continue;
+            const double index=c.reverse?hi-1.-source:lo+source;
+            const int j=juce::jlimit(0,n-1,(int)std::floor(index));
+            for(int ch=0;ch<juce::jmin(2,c.sourceBuffer->getNumChannels());++ch)
+                w[i]=juce::jmax(w[i],juce::jmin(1.f,std::abs(c.sourceBuffer->getSample(ch,j))));
         }
     }
     void close(){if(auto* window=findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);}
     AudioClip original;std::function<bool(const AudioClip&)> apply;double limit;
     std::array<float,160> waveLeft{},waveRight{};
-    juce::Slider duration,center,inBias,outBias;juce::ComboBox incoming,outgoing;
+    bool mappedWarp=false;
+    juce::Slider duration,center,inBias,outBias;juce::ComboBox incoming,outgoing,presets;
     juce::ToggleButton energy,originalView;juce::TextButton confirm,cancel;
 };
 bool openCrossfadeStudio(int track,const juce::String& id){
