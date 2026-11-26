@@ -367,6 +367,24 @@ jobs:
             fi
           done
 
+      - name: Warp master validation and native WAV export (macOS)
+        if: github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build-fast/warp-master
+          export LIBERTY_WARP_WAV_DIR="$PWD/build-fast/warp-master"
+          export LIBERTY_WARP_EXTENDED=1
+          /usr/bin/time -l build-fast/BSM_DAW_artefacts/Release/Liberty.app/Contents/MacOS/Liberty --audio-clip-playback-test 2>&1 | tee build-fast/warp-master/results.txt
+
+      - name: Archive native Warp master diagnostics (macOS)
+        if: always() && github.ref == 'refs/heads/feature/liberty-daw-three-editions'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Warp-Master-macOS-arm64
+          path: build-fast/warp-master/
+          if-no-files-found: warn
+
       - name: Benchmark real audio callback (macOS)
         run: |
           status=0
@@ -620,6 +638,26 @@ jobs:
         run: cmake --build build-win --config Release --parallel 2
       - name: Run native DSP and browser regressions
         run: ctest --test-dir build-win -C Release --output-on-failure -V -R "LibertyNativeFreeSpiritSmoke|LibertyFreeSpiritOriginalCoreTests|LibertyEditionCatalogSmoke|DrumSamplerSmoke|PolyphonicGridSmoke|PolyphonicGridLayoutSmoke|PolyphonicGridEditingSmoke|PolyphonicGridMidiBridgeSmoke|PolyphonicGridProfessionalSmoke|PolyphonicGridDirectEditSmoke|PolyphonicGridPagesSmoke|DockMixerDbScaleSmoke|LibertyRealtimePlanSmoke|LibertyDelayCompensationSmoke"
+      - name: Warp master validation and native WAV export (Windows)
+        shell: pwsh
+        run: |
+          $dir = Join-Path (Get-Location) 'build-win/warp-master'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $env:LIBERTY_WARP_WAV_DIR = $dir
+          $env:LIBERTY_WARP_EXTENDED = '1'
+          $app = (Resolve-Path 'build-win/BSM_DAW_artefacts/Release/Liberty.exe').Path
+          $p = Start-Process -FilePath $app -ArgumentList '--audio-clip-playback-test' -PassThru -Wait -RedirectStandardOutput (Join-Path $dir 'stdout.txt') -RedirectStandardError (Join-Path $dir 'results.txt')
+          Get-Content (Join-Path $dir 'results.txt')
+          if ($p.ExitCode -ne 0) { exit $p.ExitCode }
+
+      - name: Archive native Warp master diagnostics (Windows)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Liberty-Warp-Master-Windows-x64
+          path: build-win/warp-master/
+          if-no-files-found: warn
+
       - name: Benchmark real audio callback (Windows)
         id: cpu-benchmark-win
         shell: pwsh
