@@ -123,4 +123,21 @@ inline double signalCorrelation(const float* a,const float* b,int count) noexcep
     if(aa<=1.e-20||bb<=1.e-20)return 0.;
     return std::clamp(ab/std::sqrt(aa*bb),-1.,1.);
 }
+// Diagnostic only: do not apply correlation-based gain automatically to
+// existing projects. Negative correlation can make inverse gain unstable.
+inline double rmsDb(double rms) noexcept
+{
+    return 20.*std::log10(std::max(1.e-9,rms));
+}
+inline int nearestZeroCrossing(const float* data,int count,int center,int radius) noexcept
+{
+    if(!data||count<2||center<0||center>=count||radius<0)return -1;
+    int best=-1;
+    for(int i=std::max(1,center-radius);i<=std::min(count-1,center+radius);++i){
+        const float a=data[i-1],b=data[i];
+        if((a<0&&b>=0)||(a>0&&b<=0)||b==0.f)
+            if(best<0||std::abs(i-center)<std::abs(best-center))best=i;
+    }
+    return best;
+}
 }

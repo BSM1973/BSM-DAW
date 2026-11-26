@@ -545,8 +545,7 @@ public:
         playA.onClick=[this]{startPreview(true);};playB.onClick=[this]{startPreview(false);};
         stopPreviewButton.onClick=[this]{stopPreview();};
         loopPreview.onClick=[this]{stopPreview();};
-        if(mappedWarp){playA.setEnabled(false);playB.setEnabled(false);
-            signalReport.setText(juce::String::fromUTF8("Préécoute Warp non disponible dans cette version"),juce::dontSendNotification);}
+        if(mappedWarp)signalReport.setText(juce::String::fromUTF8("Warp : préécoute du moteur sans cache spectral"),juce::dontSendNotification);
     }
     ~CrossfadeStudioPanel()override{stopPreview();}
     AudioClip values()const{
@@ -619,7 +618,7 @@ private:
         stopPreview();
         auto report=[this](const juce::String& s){signalReport.setText(s,juce::dontSendNotification);};
         auto* device=live.getDeviceManager().getCurrentAudioDevice();
-        if(!device||live.isPlaying()||mappedWarp){report(juce::String::fromUTF8("Arrêtez le transport ; préécoute non Warp uniquement."));return;}
+        if(!device||live.isPlaying()){report(juce::String::fromUTF8("Arrêtez le transport avant la préécoute."));return;}
         const double rate=device->getCurrentSampleRate();
         if(rate<8000||rate>192000){report(juce::String::fromUTF8("Fréquence audio non prise en charge."));return;}
         try{
@@ -628,14 +627,26 @@ private:
             left.startSeconds-=origin;right.startSeconds-=origin;
             const double end=right.startSeconds+right.lengthSeconds;
             const double overlap=original.autoCrossfadeOverlapStart-origin;
-            // Bound synchronous isolated rendering; never seek or modify the live project.
+
+            // Start the isolated real callback at the requested timeline sample.
+            // The project itself is never sought, trimmed or republished.
             const double from=juce::jmax(0.,overlap-.1),until=juce::jmin(end,overlap+limit+.1);
-            if(until>12.||until<=from){report(juce::String::fromUTF8("Préécoute limitée aux transitions dans les 12 premières secondes du clip sortant."));return;}
+            if(until-from>12.||until<=from){report(juce::String::fromUTF8("Durée de préécoute maximale : 12 secondes."));return;}
+            const double firstSample=std::floor(from*rate);
+            const double seek=firstSample/rate;
+            const int frames=(int)std::ceil(until*rate-firstSample),offset=0;
+            if(frames<2)return;
             auto renderer=std::make_unique<AudioEngine>();
-            const int frames=(int)std::ceil(until*rate),offset=(int)std::floor(from*rate);
+            auto renderWindow=[&](juce::AudioBuffer<float>& destination){
+                double position=seek;
+                return renderer->renderOfflineForTesting(destination,rate,256,false,
+                    [](AudioEngine& engine,int offset,void* context){
+                        if(offset==0)engine.setCurrentTimeSeconds(*static_cast<double*>(context));
+                    },&position);
+            };
             juce::AudioBuffer<float> rendered(2,frames);
             if(!renderer->replaceArrangementAudioClips(0,{left,right})||
-               !renderer->renderOfflineForTesting(rendered,rate,256,false)){
+               !renderWindow(rendered)){
                 report(juce::String::fromUTF8("Échec du rendu de préécoute."));return;
             }
             const int count=frames-offset;
@@ -648,17 +659,28 @@ private:
             // the automatic crossfade but retaining manual clip processing.
             double correlation=0.;
             juce::AudioBuffer<float> a(2,frames),b(2,frames);
-            if(renderer->replaceArrangementAudioClips(0,{left})&&renderer->renderOfflineForTesting(a,rate,256,false)&&
-               renderer->replaceArrangementAudioClips(0,{right})&&renderer->renderOfflineForTesting(b,rate,256,false)){
-                const int start=juce::jlimit(0,frames-1,(int)std::ceil(overlap*rate));
+            if(renderer->replaceArrangementAudioClips(0,{left})&&renderWindow(a)&&
+               renderer->replaceArrangementAudioClips(0,{right})&&renderWindow(b)){
+                const int start=juce::jlimit(0,frames-1,(int)std::ceil((overlap-seek)*rate));
                 const int n=juce::jlimit(1,frames-start,(int)std::floor(limit*rate));
                 correlation=.5*(LibertyAudioCrossfade::signalCorrelation(a.getReadPointer(0,start),b.getReadPointer(0,start),n)+
                     LibertyAudioCrossfade::signalCorrelation(a.getReadPointer(1,start),b.getReadPointer(1,start),n));
             }
-            report(juce::String(initial?"A":"B")+" | "+juce::String::fromUTF8("Crête ")+juce::String(juce::jmax(l.peak,r.peak),3)+
-                " | "+juce::String::fromUTF8("Saut max. ")+juce::String(juce::jmax(l.maxStep,r.maxStep),3)+
-                " | "+juce::String::fromUTF8("Corr. ")+juce::String(correlation,2)+
-                " | "+juce::String::fromUTF8("Zéros ")+juce::String(l.zeroCrossings+r.zeroCrossings));
+
+            const double rms=std::sqrt(.5*(l.rms*l.rms+r.rms*r.rms));
+            if(initial)rmsA=rms;else rmsB=rms;
+            const double len=right.crossfadeDurationSeconds>0?juce::jlimit(juce::jmin(.01,limit),limit,right.crossfadeDurationSeconds):limit;
+            const double midpoint=overlap+right.crossfadeCenter*(limit-len)+len*.5;
+            const int mid=juce::jlimit(0,count-1,(int)std::llround((midpoint-seek)*rate));
+            const int zero=LibertyAudioCrossfade::nearestZeroCrossing(excerpt.getReadPointer(0),count,mid,(int)(rate*.01));
+            juce::String info=juce::String(initial?"A":"B")+" | RMS "+juce::String(LibertyAudioCrossfade::rmsDb(rms),1)+" dBFS | "+
+                juce::String::fromUTF8("Crête ")+juce::String(juce::jmax(l.peak,r.peak),3)+
+                " | Corr. "+juce::String(correlation,2);
+            info+="\n"+juce::String::fromUTF8("Saut max. ")+juce::String(juce::jmax(l.maxStep,r.maxStep),3);
+            if(zero>=0)info+=" | "+juce::String::fromUTF8("Zéro G : ")+juce::String((zero-mid)*1000./rate,2)+" ms";
+            if(correlation<-.7)info+=" | "+juce::String::fromUTF8("Risque de phase");
+            if(rmsA>=0&&rmsB>=0)info+=" | B/A "+juce::String(LibertyAudioCrossfade::rmsDb(rmsB)-LibertyAudioCrossfade::rmsDb(rmsA),1)+" dB";
+            report(info);
             // Protect audition boundaries without changing the measured signal.
             const int ramp=juce::jmin(count/2,(int)(rate*.005));
             if(ramp>0){excerpt.applyGainRamp(0,ramp,0.f,1.f);excerpt.applyGainRamp(count-ramp,ramp,1.f,0.f);}
@@ -710,7 +732,7 @@ private:
     void close(){if(auto* window=findParentComponentOfClass<juce::DialogWindow>())window->exitModalState(0);}
     AudioClip original,leftClip;AudioEngine& live;std::function<bool(const AudioClip&)> apply;double limit;
     juce::AudioSourcePlayer previewPlayer;std::unique_ptr<juce::MemoryAudioSource> previewSource;
-    bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.;
+    bool previewAttached=false,previewLoop=false;double previewRate=0.,previewDeadline=0.,rmsA=-1.,rmsB=-1.;
     juce::TextButton playA,playB,stopPreviewButton;juce::ToggleButton loopPreview;juce::Label signalReport;
     std::array<float,160> waveLeft{},waveRight{};
     bool mappedWarp=false;

@@ -309,6 +309,12 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             std::abs(LibertyAudioCrossfade::signalCorrelation(a,a,4)-1.)>1.e-12||
             std::abs(LibertyAudioCrossfade::signalCorrelation(a,b,4)+1.)>1.e-12)
              throw std::runtime_error("crossfade audio perfection metrics");}
+        // Audition metrics: signed nearest zero crossing and level delta.
+        {const float z[]={-.5f,-.2f,.1f,.2f,.3f,-.1f};
+         if(LibertyAudioCrossfade::nearestZeroCrossing(z,6,3,2)!=2||
+            LibertyAudioCrossfade::nearestZeroCrossing(z,6,3,0)!=-1||
+            std::abs(LibertyAudioCrossfade::rmsDb(.5)+6.020599913)>1.e-8)
+             throw std::runtime_error("crossfade intelligence metrics");}
         // Studio PRO: energy invariant for different curve pairs, and bounded
         // theoretical gain-step diagnostic (not a signal-based click detector).
         for(int in:{0,1,3,5,7,31,131,231})for(int out:{0,1,4,9,31,131,231}){
