@@ -1717,7 +1717,7 @@ class SilencePreviewPanel final:public juce::Component,private juce::Timer {
         for(size_t j=0;j<jobs.size();++j)for(size_t k=0;k<jobs[j].cuts.size();++k)if(enabled[j][k]){
             const auto& c=jobs[j].cuts[k];++count;seconds+=(c.end-c.start)/jobs[j].clip.sourceSampleRate;
         }
-        status.setText(juce::String(count)+juce::String::fromUTF8(" zones retenues — ")+juce::String(seconds,2)+" s",juce::dontSendNotification);
+        status.setText(juce::String(count)+juce::String::fromUTF8(" zones à retirer — ")+juce::String(seconds,2)+" s",juce::dontSendNotification);
         confirm.setEnabled(count>0);repaint();
     }
     void stopAudio(){
@@ -1822,8 +1822,16 @@ public:
         const auto g=graph();
         const int x=(int)std::llround(std::clamp(start()+span()*(e.position.x-g.getX())/g.getWidth(),0.,1.)*job.count);
         const int minimum=std::min(bounds.end-bounds.start,(int)std::ceil(job.clip.sourceSampleRate*.02));
-        if(dragEdge==1)cut.start=std::clamp(x,bounds.start,cut.end-minimum);
-        else cut.end=std::clamp(x,cut.start+minimum,bounds.end);
+        const int minKeep=(int)std::ceil(job.clip.sourceSampleRate*.01);
+        if(dragEdge==1){
+            int v=std::clamp(x,bounds.start,cut.end-minimum);
+            if(bounds.start==0&&v>0&&v<minKeep)v=0;
+            cut.start=v;
+        }else{
+            int v=std::clamp(x,cut.start+minimum,bounds.end);
+            if(bounds.end==job.count&&v<job.count&&job.count-v<minKeep)v=job.count;
+            cut.end=v;
+        }
         refresh();
     }
     void mouseUp(const juce::MouseEvent&)override{dragCut=-1;dragClip=-1;}
@@ -1935,8 +1943,12 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,b
         });
     });return true;
 }
+static juce::File silencePresetFile(){
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+        .getChildFile("Liberty Music Software").getChildFile("Liberty DAW").getChildFile("SmartSilencePersonal.xml");
+}
 void showSilenceSettings(){
-    auto* dialog=new juce::AlertWindow("SMART SILENCE EDITOR",juce::String::fromUTF8("Détecter les silences avant toute modification."),juce::MessageBoxIconType::NoIcon);
+    auto* dialog=new juce::AlertWindow("SMART SILENCE ULTIMATE",juce::String::fromUTF8("Analyse avant modification. Mémoriser enregistre les réglages personnels."),juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("threshold","-55",juce::String::fromUTF8("Seuil (-90 à -10 dBFS)"));
     dialog->addTextEditor("minimum","250",juce::String::fromUTF8("Durée minimale (20 à 10000 ms)"));
     dialog->addTextEditor("before","40",juce::String::fromUTF8("Marge avant (0 à 500 ms)"));
@@ -1945,26 +1957,57 @@ void showSilenceSettings(){
     dialog->addComboBox("automatic",juce::StringArray{"Non","Oui"},juce::String::fromUTF8("Seuil automatique"));
     dialog->addTextEditor("hysteresis","6",juce::String::fromUTF8("Hystérésis (0 à 18 dB)"));
     dialog->addTextEditor("fade","5",juce::String::fromUTF8("Fondus (0 à 50 ms)"));
-    dialog->addButton("Analyser",1,juce::KeyPress(juce::KeyPress::returnKey));dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
+    dialog->getComboBoxComponent("mode")->setSelectedId(1,juce::dontSendNotification);
+    dialog->getComboBoxComponent("automatic")->setSelectedId(1,juce::dontSendNotification);
+    const auto file=silencePresetFile();
+    if(file.existsAsFile()&&file.getSize()<=16384){
+        const auto xml=juce::XmlDocument::parse(file);
+        if(xml&&xml->hasTagName("SmartSilencePersonal")&&xml->getIntAttribute("version")==1){
+            for(const char* key:{"threshold","minimum","before","after","hysteresis","fade"})
+                if(xml->hasAttribute(key))dialog->getTextEditor(key)->setText(xml->getStringAttribute(key).substring(0,32),false);
+            dialog->getComboBoxComponent("mode")->setSelectedId(std::clamp(xml->getIntAttribute("mode",1),1,9),juce::dontSendNotification);
+            dialog->getComboBoxComponent("automatic")->setSelectedId(xml->getBoolAttribute("automatic")?2:1,juce::dontSendNotification);
+        }
+    }
+    dialog->addButton("Analyser",1,juce::KeyPress(juce::KeyPress::returnKey));
+    dialog->addButton(juce::String::fromUTF8("Mémoriser"),2);
+    dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto selection=selectedAudio;juce::Component::SafePointer<MultiMidiClipController> safe(this);
     dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,selection](int result){
         std::unique_ptr<juce::AlertWindow> owned(dialog);
-        if(result!=1||!safe||safe->selectedAudio!=selection)return;
+        if((result!=1&&result!=2)||!safe||safe->selectedAudio!=selection)return;
         bool ok=false;
         try{
             auto number=[&](const char* key){const auto s=owned->getTextEditorContents(key).trim().replaceCharacter(',','.').toStdString();size_t used=0;const double v=std::stod(s,&used);if(used!=s.size()||!std::isfinite(v))throw std::runtime_error("input");return v;};
             LibertySmartSilence::Settings settings{number("threshold"),number("minimum"),40.,number("hysteresis")};
             settings.beforeMs=number("before");settings.afterMs=number("after");
             const int mode=owned->getComboBoxComponent("mode")->getSelectedId();
+            const bool automatic=owned->getComboBoxComponent("automatic")->getSelectedId()==2;
+            const double fade=number("fade");
+            if(settings.threshold<-90.||settings.threshold>-10.||settings.minimumMs<20.||settings.minimumMs>10000.||
+               settings.beforeMs<0.||settings.beforeMs>500.||settings.afterMs<0.||settings.afterMs>500.||
+               settings.hysteresisDb<0.||settings.hysteresisDb>18.||fade<0.||fade>50.||mode<1||mode>9)
+                throw std::runtime_error("preset bounds");
+            if(result==2){
+                juce::XmlElement xml("SmartSilencePersonal");xml.setAttribute("version",1);
+                xml.setAttribute("threshold",settings.threshold);xml.setAttribute("minimum",settings.minimumMs);
+                xml.setAttribute("before",settings.beforeMs);xml.setAttribute("after",settings.afterMs);
+                xml.setAttribute("hysteresis",settings.hysteresisDb);xml.setAttribute("fade",fade);
+                xml.setAttribute("mode",mode);xml.setAttribute("automatic",automatic);
+                const auto file=silencePresetFile();
+                const bool saved=file.getParentDirectory().createDirectory().wasOk()&&file.replaceWithText(xml.toString());
+                safe->operationMessage=juce::String::fromUTF8(saved?"Réglages personnels mémorisés":"Échec de la mémorisation");safe->repaint();return;
+            }
             if(mode==2){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,350.);settings.beforeMs=std::max(settings.beforeMs,80.);settings.afterMs=std::max(settings.afterMs,100.);}
             if(mode==3){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,20.);}
-            if(mode==4||mode==5){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.afterMs=std::max(settings.afterMs,100.);}
+            if(mode==4){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.afterMs=std::max(settings.afterMs,100.);}
+            if(mode==5){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,300.);settings.afterMs=std::max(settings.afterMs,150.);}
             if(mode==6){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.minimumMs=std::max(settings.minimumMs,400.);settings.beforeMs=std::max(settings.beforeMs,100.);settings.afterMs=std::max(settings.afterMs,120.);}
             if(mode==7){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,30.);settings.afterMs=std::max(settings.afterMs,60.);}
             if(mode==8||mode==9){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-75.);settings.minimumMs=std::max(settings.minimumMs,500.);settings.afterMs=std::max(settings.afterMs,mode==9?300.:200.);}
             settings.detailProtection=mode>=2&&mode<=9;
             if(settings.threshold>=-90&&settings.threshold<=-10&&settings.minimumMs>=20&&settings.minimumMs<=10000&&settings.beforeMs>=0&&settings.beforeMs<=500&&settings.afterMs>=0&&settings.afterMs<=500&&settings.hysteresisDb>=0&&settings.hysteresisDb<=18)
-                ok=safe->startSilenceAnalysis(settings,number("fade"),owned->getComboBoxComponent("automatic")->getSelectedId()==2);
+                ok=safe->startSilenceAnalysis(settings,fade,automatic);
         }catch(...){}
         if(!ok){safe->operationMessage=juce::String::fromUTF8("Analyse impossible : paramètres ou clips non pris en charge");safe->repaint();}
     }),false);
