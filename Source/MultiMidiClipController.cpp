@@ -437,7 +437,7 @@ void mouseDown(const juce::MouseEvent&e)override{
             repaint();return;
         }
     }
-    if(e.eventComponent==this&&!inlineMidiMode&&e.mods.isLeftButtonDown()&&lockedMember(permanentKeyAt(ownerPoint))){
+    if(e.eventComponent==this&&e.mods.isLeftButtonDown()&&lockedMember(permanentKeyAt(ownerPoint))){
         selectPermanentAt(ownerPoint,false,true);
         arrangementFocus=true;grabKeyboardFocus();operationMessage=juce::String::fromUTF8("Groupe verrouillé");repaint();return;
     }
@@ -511,7 +511,7 @@ void mouseDown(const juce::MouseEvent&e)override{
     // Receive double-clicks from any child covering the arrangement grid.
     // JUCE reports coordinates relative to the original event component.
     const auto point=e.getEventRelativeTo(&owner).getPosition();
-    if(!inlineMidiMode&&lockedMember(permanentKeyAt(point)))return;
+    if(lockedMember(permanentKeyAt(point)))return;
     if(renameClipAt(point))return;
     if(point.y<owner.getArrangeTop()||point.y>=owner.getMixerTop())return;
     if(e.eventComponent==this&&audioLaneAt(point)>=0){owner.openAudioClipInDockAt(point);return;}
