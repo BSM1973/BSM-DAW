@@ -2426,7 +2426,7 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{"Parent…"},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
     std::vector<GroupMemberView> members;
@@ -8187,6 +8187,42 @@ bool runArrangementTests(){
             const auto file=directory.getChildFile("Silence-final.liberty");
             require(owner.saveProjectToFile(file)&&owner.loadProjectFromFile(file),"silence final project roundtrip");
             verify(false);
+        }
+        // Native hierarchy fixture: use four real audio regions and preserve
+        // their shared media through hierarchical duplication and project IO.
+        {
+            clearArrangementHistory();selectedClipIds.clear();
+            auto regions=owner.audioEngine.getArrangementAudioClips(0);
+            require(regions.size()==2,"hierarchy native seed regions");
+            for(int i=0;i<2;++i){auto copy=regions[(size_t)i];copy.id=juce::Uuid().toString();copy.startSeconds+=2.;regions.push_back(std::move(copy));}
+            require(owner.audioEngine.replaceArrangementAudioClips(0,regions),"hierarchy native publication");
+            refreshAudio(0);
+            selectedAudio={{0,regions[0].id},{0,regions[1].id}};
+            require(editPermanentGroup(54,"Parent natif",2),"hierarchy native parent");
+            const auto parent=groupFor(audioGroupKey(regions[0].id));
+            selectedAudio={{0,regions[2].id},{0,regions[3].id}};
+            require(editPermanentGroup(54,"Enfant natif",19),"hierarchy native child");
+            const auto child=groupFor(audioGroupKey(regions[2].id));
+            require(changeGroupParent(child,parent),"hierarchy native attach");
+            require(!changeGroupParent(parent,child),"hierarchy native cycle rejection");
+            require(undoArrangement(false)&&permanentGroups.at(child).parent.isEmpty(),"hierarchy undo parent");
+            require(undoArrangement(true)&&permanentGroups.at(child).parent==parent,"hierarchy redo parent");
+            selectedAudio={{0,regions[3].id}};selectedClipIds.clear();expandPermanentSelection();
+            require(selectedAudio.size()==4,"hierarchy native root selection");
+            require(editPermanentGroup(56,{},0,parent)&&lockedMember(audioGroupKey(regions[3].id)),"hierarchy native inherited lock");
+            require(!applyGroupClipOperation(10),"hierarchy locked duplicate refusal");
+            require(editPermanentGroup(56,{},0,parent),"hierarchy unlock");
+            require(applyGroupClipOperation(10),"hierarchy native duplicate");
+            require(permanentGroups.size()==4&&owner.audioEngine.getArrangementAudioClips(0).size()==8,"hierarchy copy counts");
+            const auto roots=selectedPermanentGroups();require(roots.size()==1,"hierarchy copied root");
+            const auto copied=*roots.begin();
+            require(copied!=parent&&groupDescendants({copied}).size()==2&&hierarchicalMembers({copied}).size()==4,"hierarchy copied subtree");
+            require(undoArrangement(false)&&permanentGroups.size()==2,"hierarchy undo copy");
+            require(undoArrangement(true)&&permanentGroups.size()==4,"hierarchy redo copy");
+            const auto file=directory.getChildFile("Hierarchy-final.liberty");
+            require(owner.saveProjectToFile(file)&&owner.loadProjectFromFile(file),"hierarchy native project roundtrip");
+            require(permanentGroups.size()==4&&permanentGroups.at(child).parent==parent&&
+                groupDescendants({copied}).size()==2&&hierarchicalMembers({copied}).size()==4,"hierarchy restored subtree");
         }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"ArrangementToolsSmoke: %s\n",e.what());return false;}

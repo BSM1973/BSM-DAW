@@ -1880,6 +1880,7 @@ void showInlineMidiVelocityCurveDialog(){
 // All MIDI commands are dispatched through the same validated clip context,
 // regardless of whether they originate from the navy-blue editor or a shortcut.
 bool inlineMidiExecuteAction(int choice,int clipId,bool instrument){
+    if(lockedMember(midiGroupKey(clipId)))return false;
     auto& bank=instrument?instrumentClips:midiClips;
     auto it=std::find_if(bank.begin(),bank.end(),
         [clipId](const Clip& c){return c.id==clipId;});

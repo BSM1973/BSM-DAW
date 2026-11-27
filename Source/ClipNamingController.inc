@@ -49,6 +49,7 @@ void paintClipNames(juce::Graphics& g){
     }
 }
 bool renameClipAt(juce::Point<int> p){
+    if(lockedMember(permanentKeyAt(p)))return false;
     const auto key=nameKeyAt(p);if(key.isEmpty())return false;syncClipNames();
     const auto now=juce::Time::getMillisecondCounter();
     if(renameDialogOpen||(key==lastNameKey&&now-lastNameDoubleClick<500))return true;
