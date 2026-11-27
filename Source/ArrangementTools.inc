@@ -173,6 +173,32 @@ std::vector<juce::String> matchingPermanentGroups(const juce::String& filter,int
     });
     return ids;
 }
+// Presentation only: no mutation of membership, selection or playback.
+struct GroupTreeRow{juce::String id;int depth=0;bool hasChildren=false;};
+std::vector<GroupTreeRow> visiblePermanentGroupTree(const std::set<juce::String>& collapsed)const{
+    const auto sorted=matchingPermanentGroups("",-1);
+    std::map<juce::String,std::vector<juce::String>> children;
+    for(const auto& id:sorted){
+        const auto& parent=permanentGroups.at(id).parent;
+        children[permanentGroups.count(parent)?parent:juce::String{}].push_back(id);
+    }
+    std::vector<GroupTreeRow> result;result.reserve(sorted.size());
+    std::vector<std::pair<juce::String,int>> stack;
+    const auto& roots=children[juce::String{}];
+    for(auto it=roots.rbegin();it!=roots.rend();++it)stack.emplace_back(*it,0);
+    std::set<juce::String> visited;
+    while(!stack.empty()){
+        const auto node=stack.back();stack.pop_back();
+        if(!visited.insert(node.first).second)continue;
+        const auto it=children.find(node.first);
+        const bool has=it!=children.end()&&!it->second.empty();
+        result.push_back({node.first,node.second,has});
+        if(has&&!collapsed.count(node.first))
+            for(auto child=it->second.rbegin();child!=it->second.rend();++child)
+                stack.emplace_back(*child,node.second+1);
+    }
+    return result;
+}
 struct GroupMemberView{juce::String key,label;int row=0;double start=0.;};
 std::vector<GroupMemberView> permanentMemberViews(const std::set<juce::String>& ids)const{
     const auto members=hierarchicalMembers(ids);
@@ -2426,16 +2452,24 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{juce::String::fromUTF8("Parent…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
+    std::vector<GroupTreeRow> treeRows;
+    std::set<juce::String> collapsed;
+    bool treeMode=false;
     std::vector<GroupMemberView> members;
     juce::String selected;
     int page=0,memberPage=0;
     static int pages(size_t count){return std::max(1,(int)((count+7)/8));}
     void refresh(bool resetName=true){
         if(!controller||controller->stopped.load())return;
-        ids=controller->matchingPermanentGroups(search.getText(),filter.getSelectedId()-2);
+        treeMode=search.getText().trim().isEmpty()&&filter.getSelectedId()==1;
+        treeRows.clear();
+        if(treeMode){
+            treeRows=controller->visiblePermanentGroupTree(collapsed);ids.clear();
+            for(const auto& row:treeRows)ids.push_back(row.id);
+        }else ids=controller->matchingPermanentGroups(search.getText(),filter.getSelectedId()-2);
         if(std::find(ids.begin(),ids.end(),selected)==ids.end()){selected=ids.empty()?juce::String{}:ids.front();memberPage=0;}
         page=std::clamp(page,0,pages(ids.size())-1);
         if(resetName&&selected.isNotEmpty()){
@@ -2448,7 +2482,13 @@ class PermanentGroupManager final:public juce::Component{
             button.setVisible(exists);
             if(exists){const auto& id=ids[index];const auto& g=controller->permanentGroups.at(id);
                 const auto parent=g.parent.isNotEmpty()&&controller->permanentGroups.count(g.parent)?controller->permanentGroups.at(g.parent).name:juce::String{};
-                button.setButtonText(juce::String(controller->groupLocked(id)?"[V] ":"")+(parent.isEmpty()?juce::String{}:parent+" / ")+g.name+"  ("+juce::String((int)g.members.size())+")");
+                juce::String prefix;
+                if(treeMode){
+                    const auto& row=treeRows[index];
+                    for(int d=0;d<std::min(row.depth,8);++d)prefix+="  ";
+                    prefix+=row.hasChildren?(collapsed.count(id)?"+ ":"- "):"  ";
+                }else if(parent.isNotEmpty())prefix=parent+" / ";
+                button.setButtonText(prefix+juce::String(controller->groupLocked(id)?"[V] ":"")+g.name+"  ("+juce::String((int)g.members.size())+")");
                 button.setColour(juce::TextButton::buttonColourId,permanentGroupColour(g.colour).darker(id==selected?.25f:1.0f));
                 button.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
             }
@@ -2458,6 +2498,9 @@ class PermanentGroupManager final:public juce::Component{
         memberPageLabel.setText(juce::String(memberPage+1)+" / "+juce::String(pages(members.size())),juce::dontSendNotification);
         memberPrevious.setEnabled(memberPage>0);memberNext.setEnabled(memberPage+1<pages(members.size()));
         const bool has=selected.isNotEmpty();const bool locked=has&&controller->subtreeLocked(selected);
+        const auto selectedRow=std::find_if(treeRows.begin(),treeRows.end(),[&](const auto& row){return row.id==selected;});
+        fold.setEnabled(treeMode&&selectedRow!=treeRows.end()&&selectedRow->hasChildren);
+        fold.setButtonText(juce::String::fromUTF8(collapsed.count(selected)?"Déplier":"Replier"));
         name.setEnabled(has&&!locked);colour.setEnabled(has&&!locked);
         if(resetName){name.setText(has?controller->permanentGroups.at(selected).name:juce::String{},false);
             colour.setSelectedId(has?controller->permanentGroups.at(selected).colour+1:0,juce::dontSendNotification);}
@@ -2509,7 +2552,7 @@ class PermanentGroupManager final:public juce::Component{
     }
 public:
     explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
-        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&closeButton})addAndMakeVisible(component);
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&closeButton})addAndMakeVisible(component);
         for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
         search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2521,11 +2564,12 @@ public:
         choose.onClick=[this]{act(0);};locate.onClick=[this]{act(1);};properties.onClick=[this]{act(2);};
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
         chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
+        fold.onClick=[this]{if(!treeMode||selected.isEmpty())return;if(!collapsed.erase(selected))collapsed.insert(selected);refresh();};
         parentButton.onClick=[this]{chooseParent();};closeButton.onClick=[this]{close();};setSize(800,464);refresh();
     }
     void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
-        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(230,66,136,24);
         for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
         previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
         memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
@@ -2545,7 +2589,7 @@ public:
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
         g.drawText("PROFESSIONAL GROUP MANAGER",16,4,768,28,juce::Justification::centredLeft);
-        g.setFont(13.f);g.drawText("GROUPES",16,66,350,24,juce::Justification::centredLeft);
+        g.setFont(13.f);g.drawText("GROUPES",16,66,204,24,juce::Justification::centredLeft);
         g.drawText("MEMBRES",382,66,402,24,juce::Justification::centredLeft);
         for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
             const auto& m=members[n];const int y=92+i*27;
@@ -8205,6 +8249,16 @@ bool runArrangementTests(){
             const auto child=groupFor(audioGroupKey(regions[2].id));
             require(changeGroupParent(child,parent),"hierarchy native attach");
             require(!changeGroupParent(parent,child),"hierarchy native cycle rejection");
+            {
+                const auto tree=visiblePermanentGroupTree({});
+                require(tree.size()==2&&tree[0].id==parent&&tree[0].depth==0&&tree[0].hasChildren&&
+                    tree[1].id==child&&tree[1].depth==1&&!tree[1].hasChildren,"performance tree preorder");
+                const auto folded=visiblePermanentGroupTree({parent});
+                require(folded.size()==1&&folded[0].id==parent,"performance tree collapsed");
+                require(selectPermanentIds({child})&&selectedAudio.size()==2&&
+                    selectedAudio.count({0,regions[2].id})&&selectedAudio.count({0,regions[3].id}),"performance subgroup selection");
+                PermanentGroupManager manager(this);require(manager.layoutValid(),"performance tree layout");
+            }
             require(undoArrangement(false)&&permanentGroups.at(child).parent.isEmpty(),"hierarchy undo parent");
             require(undoArrangement(true)&&permanentGroups.at(child).parent==parent,"hierarchy redo parent");
             selectedAudio={{0,regions[3].id}};selectedClipIds.clear();expandPermanentSelection();
