@@ -276,25 +276,26 @@ std::unique_ptr<juce::XmlElement> exportGroupStructure(const juce::String& root)
         const auto& g=permanentGroups.at(id);
         if(g.parent.isNotEmpty())children[g.parent].push_back(id);
     }
-    std::vector<std::pair<juce::String,int>> stack{{root,-1}};
+    struct ExportNode{juce::String first;int second;int depth;};
+    std::vector<ExportNode> stack{{root,-1,0}};
     std::set<juce::String> seen;
     int index=0;
     while(!stack.empty()){
         const auto node=stack.back();stack.pop_back();
-        if(!seen.insert(node.first).second||index>=4096)return {};
+        if(!seen.insert(node.first).second||index>=4096||node.depth>=63)return {};
         const auto& g=permanentGroups.at(node.first);
         auto* row=xml->createNewChildElement("Node");
         row->setAttribute("name",g.name);row->setAttribute("colour",g.colour);
         row->setAttribute("parent",node.second);
         const auto it=children.find(node.first);
         if(it!=children.end())for(auto child=it->second.rbegin();child!=it->second.rend();++child)
-            stack.emplace_back(*child,index);
+            stack.push_back({*child,index,node.depth+1});
         ++index;
     }
     return xml;
 }
 juce::String importGroupStructure(const juce::XmlElement& xml){
-    if(pendingEdit||!xml.hasTagName("LibertyGroupStructure")||xml.getIntAttribute("version")!=1)return {};
+    if(pendingEdit||!xml.hasTagName("LibertyGroupStructure")||xml.getStringAttribute("version")!="1")return {};
     struct Node{juce::String name;int colour,parent,depth;};
     std::vector<Node> nodes;
     for(auto* row=xml.getFirstChildElement();row;row=row->getNextElement()){
