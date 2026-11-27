@@ -285,7 +285,9 @@ std::unique_ptr<juce::XmlElement> exportGroupStructure(const juce::String& root)
         if(!seen.insert(node.first).second||index>=4096||node.depth>=63)return {};
         const auto& g=permanentGroups.at(node.first);
         auto* row=xml->createNewChildElement("Node");
-        row->setAttribute("name",g.name);row->setAttribute("colour",g.colour);
+        const auto name=g.name.trim();
+        if(name.isEmpty()||name.length()>80||g.colour<0||g.colour>31)return {};
+        row->setAttribute("name",name);row->setAttribute("colour",g.colour);
         row->setAttribute("parent",node.second);
         const auto it=children.find(node.first);
         if(it!=children.end())for(auto child=it->second.rbegin();child!=it->second.rend();++child)
@@ -2693,8 +2695,8 @@ class PermanentGroupManager final:public juce::Component{
         if(!controller||controller->stopped.load())return;
         juce::PopupMenu menu;
         menu.addSectionHeader(juce::String::fromUTF8("Modèles d'usine — structures sans clips"));
-        const bool room=controller->permanentGroups.size()<=4089;
-        menu.addItem(1,"Mixage",room);menu.addItem(2,"Composition",room);menu.addItem(3,"Mastering",room);
+        const auto count=controller->permanentGroups.size();
+        menu.addItem(1,"Mixage",count<=4090);menu.addItem(2,"Composition",count<=4089);menu.addItem(3,"Mastering",count<=4091);
         menu.addSeparator();
         menu.addItem(4,"Importer XML...",!structureChooser);
         menu.addItem(5,"Exporter la structure XML...",!structureChooser&&controller->permanentGroups.count(selected)!=0);
