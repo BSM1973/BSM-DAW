@@ -55,7 +55,7 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
+void clearArrangementHistory(){closeSilencePreview();if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
     const auto previous=captureArrangement();
@@ -1671,9 +1671,10 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
             piece.trimStartFraction=(job.sourceStart+range.start)/n;piece.trimEndFraction=(job.sourceStart+range.end)/n;
             piece.offsetSeconds=piece.envelopeLengthSeconds=0.;
             const double fade=std::min(fadeMs*.001,piece.lengthSeconds*.5);
-            piece.fadeInSeconds=range.start>0?fade:0.;
-            piece.fadeOutSeconds=range.end<job.count?fade:0.;
-            piece.fadeInCurve=piece.fadeOutCurve=2;
+            piece.fadeInSeconds=range.start>0?fade:original.fadeInSeconds;
+            piece.fadeOutSeconds=range.end<job.count?fade:original.fadeOutSeconds;
+            piece.fadeInCurve=range.start>0?2:original.fadeInCurve;
+            piece.fadeOutCurve=range.end<job.count?2:original.fadeOutCurve;
             if(!AudioEngine::validAudioClip(piece))return false;
             nextSelection.insert({job.key.first,piece.id});pieces.push_back(std::move(piece));
         }
@@ -1695,6 +1696,8 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
 class SilencePreviewPanel final:public juce::Component,private juce::Timer {
     std::vector<SilenceJob> jobs;
     std::vector<std::vector<bool>> enabled;
+    std::vector<std::vector<LibertySmartSilence::Range>> originalCuts;
+    int dragCut=-1,dragEdge=0,dragClip=-1;
     std::function<bool(const std::vector<SilenceJob>&)> apply;
     std::function<AudioEngine*()> engine;
     double fadeMs=5.;
@@ -1746,6 +1749,9 @@ class SilencePreviewPanel final:public juce::Component,private juce::Timer {
                 const double x=first+i*sr/rate;
                 while(region<keep.size()&&x>=keep[region].end)++region;
                 double envelope=1.;
+                const double t=x/sr;
+                if(job.clip.fadeInSeconds>0.)envelope=std::min(envelope,LibertyAudioCrossfade::manualFadeLevel(job.clip.fadeInCurve,t/job.clip.fadeInSeconds,true));
+                if(job.clip.fadeOutSeconds>0.)envelope=std::min(envelope,LibertyAudioCrossfade::manualFadeLevel(job.clip.fadeOutCurve,(t-(job.clip.lengthSeconds-job.clip.fadeOutSeconds))/job.clip.fadeOutSeconds,false));
                 if(edited){
                     if(region>=keep.size()||x<keep[region].start)continue;
                     const auto& k=keep[region];const double f=std::min(fadeMs*.001*sr,(k.end-k.start)*.5);
@@ -1772,7 +1778,7 @@ public:
         :jobs(std::move(j)),apply(std::move(a)),engine(std::move(e)),fadeMs(f){
         setSize(620,420);
         for(auto* c:std::initializer_list<juce::Component*>{&confirm,&cancel,&playA,&playB,&stop,&clipChoice,&zoom,&position,&status,&info})addAndMakeVisible(c);
-        for(size_t i=0;i<jobs.size();++i){enabled.emplace_back(jobs[i].cuts.size(),true);clipChoice.addItem(juce::String((int)i+1)+" | "+jobs[i].clip.sourceName,(int)i+1);}
+        for(size_t i=0;i<jobs.size();++i){enabled.emplace_back(jobs[i].cuts.size(),true);originalCuts.push_back(jobs[i].cuts);clipChoice.addItem(juce::String((int)i+1)+" | "+jobs[i].clip.sourceName,(int)i+1);}
         clipChoice.setSelectedId(1,juce::dontSendNotification);
         zoom.setRange(1.,16.,1.);zoom.setValue(1.);zoom.setTextBoxStyle(juce::Slider::TextBoxRight,false,48,24);
         position.setRange(0.,1.,.001);position.setValue(0.);position.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
@@ -1797,11 +1803,33 @@ public:
     void mouseDown(const juce::MouseEvent& e)override{
         const auto g=graph();if(!g.contains(e.getPosition()))return;
         const size_t j=(size_t)selected();const double x=(start()+span()*(e.position.x-g.getX())/g.getWidth())*jobs[j].count;
+        if(e.mods.isShiftDown()){
+            const double tolerance=7.*span()*jobs[j].count/g.getWidth();
+            double best=tolerance;dragCut=-1;
+            for(size_t k=0;k<jobs[j].cuts.size();++k){
+                const auto& c=jobs[j].cuts[k];
+                if(std::abs(x-c.start)<=best){best=std::abs(x-c.start);dragCut=(int)k;dragEdge=1;}
+                if(std::abs(x-c.end)<=best){best=std::abs(x-c.end);dragCut=(int)k;dragEdge=2;}
+            }
+            if(dragCut>=0){dragClip=(int)j;stopAudio();}return;
+        }
         for(size_t k=0;k<jobs[j].cuts.size();++k){const auto& cut=jobs[j].cuts[k];if(x>=cut.start&&x<cut.end){stopAudio();enabled[j][k]=!enabled[j][k];refresh();return;}}
     }
+    void mouseDrag(const juce::MouseEvent& e)override{
+        if(dragCut<0||dragClip!=selected())return;
+        auto& job=jobs[(size_t)dragClip];auto& cut=job.cuts[(size_t)dragCut];
+        const auto bounds=originalCuts[(size_t)dragClip][(size_t)dragCut];
+        const auto g=graph();
+        const int x=(int)std::llround(std::clamp(start()+span()*(e.position.x-g.getX())/g.getWidth(),0.,1.)*job.count);
+        const int minimum=std::min(bounds.end-bounds.start,(int)std::ceil(job.clip.sourceSampleRate*.02));
+        if(dragEdge==1)cut.start=std::clamp(x,bounds.start,cut.end-minimum);
+        else cut.end=std::clamp(x,cut.start+minimum,bounds.end);
+        refresh();
+    }
+    void mouseUp(const juce::MouseEvent&)override{dragCut=-1;dragClip=-1;}
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffd5edff));g.setFont(13.f);
-        g.drawText(juce::String::fromUTF8("Cliquez sur une zone : rouge = retirer, gris = conserver"),16,8,588,24,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8("Clic : retirer / conserver | Maj + glisser : ajuster une limite"),16,8,588,24,juce::Justification::centredLeft);
         g.drawText("Zoom",16,68,48,26,juce::Justification::centredLeft);
         g.drawText("Position",288,68,60,26,juce::Justification::centredLeft);
         if(jobs.empty())return;
@@ -1826,8 +1854,10 @@ public:
         g.setColour(juce::Colour(0xffabc6da));g.drawText(juce::String::fromUTF8("Seuil utilisé : ")+juce::String(job.threshold,1)+" dBFS | "+juce::String(start()*job.clip.lengthSeconds,2)+" - "+juce::String((start()+span())*job.clip.lengthSeconds,2)+" s",16,348,588,20,juce::Justification::centredLeft);
     }
 };
+juce::Component::SafePointer<SilencePreviewPanel> silencePreview;
+void closeSilencePreview(){if(silencePreview)silencePreview->close();}
 bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,bool automatic=false){
-    if(smartAnalysisCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>1000||
+    if(silencePreview||smartAnalysisCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>1000||
        !std::isfinite(fadeMs)||fadeMs<0.||fadeMs>50.)return false;
     const auto before=captureArrangement();const auto selection=selectedAudio;
     std::vector<SilenceJob> jobs;std::uint64_t total=0;
@@ -1837,10 +1867,12 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,b
         const auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& c){return c.id==key.second;});
         if(it==lane.end())return false;
         const auto& c=*it;
-        // Forward, sample-aligned edited clips are supported; preserve existing fades by refusing them.
+        // Ordinary full-clip fades are preserved; reject inherited split envelopes.
         if(!AudioEngine::validAudioClip(c)||!c.sourceBuffer||c.warp.enabled||c.reverse||c.muted||
            c.pitchSemitones!=0.||
-           c.fadeInSeconds!=0.||c.fadeOutSeconds!=0.||c.sourceSampleRate<8000.||c.sourceSampleRate>384000.||
+           ((c.fadeInSeconds>0.||c.fadeOutSeconds>0.)&&(c.offsetSeconds!=0.||
+            (c.envelopeLengthSeconds>0.&&std::abs(c.envelopeLengthSeconds-c.lengthSeconds)>1.e-8)))||
+           c.sourceSampleRate<8000.||c.sourceSampleRate>384000.||
            c.sourceBuffer->getNumChannels()>2)return false;
         for(const auto& other:lane)if(other.id!=c.id&&other.startSeconds<c.startSeconds+c.lengthSeconds&&
             c.startSeconds<other.startSeconds+other.lengthSeconds)return false;
@@ -1866,6 +1898,13 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,b
                 if(automatic)config.threshold=LibertySmartSilence::noiseThreshold(j.count,j.clip.sourceSampleRate,channels,settings.threshold,sample,cancel.get());
                 j.threshold=config.threshold;
                 if(!LibertySmartSilence::detect(j.count,j.clip.sourceSampleRate,channels,config,sample,j.cuts,cancel.get())){ok=false;break;}
+                const double rate=j.clip.sourceSampleRate;
+                // Do not remove any part of the existing edge fades.
+                j.cuts.erase(std::remove_if(j.cuts.begin(),j.cuts.end(),[&](const auto& c){
+                    return c.start/rate<j.clip.fadeInSeconds||c.end/rate>j.clip.lengthSeconds-j.clip.fadeOutSeconds+1.e-8;
+                }),j.cuts.end());
+                for(auto& c:j.cuts)c=LibertySmartSilence::alignInward(c,j.count,channels,(int)(rate*.005),
+                    std::min(c.end-c.start,(int)std::ceil(rate*.02)),sample);
                 for(int i=0;i<j.count;++i){
                     if((i&1023)==0&&cancel->load()){ok=false;break;}
                     auto& peak=j.waveform[(size_t)((std::uint64_t)i*j.waveform.size()/j.count)];
@@ -1891,6 +1930,7 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,b
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle="LIBERTY — SMART SILENCE EDITOR";options.dialogBackgroundColour=juce::Colour(0xff101c2b);
             options.useNativeTitleBar=false;options.escapeKeyTriggersCloseButton=true;options.resizable=false;
+            safe->silencePreview=panel;
             options.componentToCentreAround=&safe->owner;options.content.setOwned(panel);options.launchAsync();
         });
     });return true;
@@ -1901,7 +1941,7 @@ void showSilenceSettings(){
     dialog->addTextEditor("minimum","250",juce::String::fromUTF8("Durée minimale (20 à 10000 ms)"));
     dialog->addTextEditor("before","40",juce::String::fromUTF8("Marge avant (0 à 500 ms)"));
     dialog->addTextEditor("after","40",juce::String::fromUTF8("Marge après (0 à 500 ms)"));
-    dialog->addComboBox("mode",juce::StringArray{"Manuel","Voix","Batterie","Guitare",juce::String::fromUTF8("Acoustique")},juce::String::fromUTF8("Profil"));
+    dialog->addComboBox("mode",juce::StringArray{"Manuel","Voix","Batterie","Guitare","Acoustique","Podcast","Percussions","Ambiance",juce::String::fromUTF8("Réverbération")},juce::String::fromUTF8("Profil"));
     dialog->addComboBox("automatic",juce::StringArray{"Non","Oui"},juce::String::fromUTF8("Seuil automatique"));
     dialog->addTextEditor("hysteresis","6",juce::String::fromUTF8("Hystérésis (0 à 18 dB)"));
     dialog->addTextEditor("fade","5",juce::String::fromUTF8("Fondus (0 à 50 ms)"));
@@ -1919,6 +1959,10 @@ void showSilenceSettings(){
             if(mode==2){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,350.);settings.beforeMs=std::max(settings.beforeMs,80.);settings.afterMs=std::max(settings.afterMs,100.);}
             if(mode==3){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,20.);}
             if(mode==4||mode==5){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.afterMs=std::max(settings.afterMs,100.);}
+            if(mode==6){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.minimumMs=std::max(settings.minimumMs,400.);settings.beforeMs=std::max(settings.beforeMs,100.);settings.afterMs=std::max(settings.afterMs,120.);}
+            if(mode==7){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,30.);settings.afterMs=std::max(settings.afterMs,60.);}
+            if(mode==8||mode==9){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-75.);settings.minimumMs=std::max(settings.minimumMs,500.);settings.afterMs=std::max(settings.afterMs,mode==9?300.:200.);}
+            settings.detailProtection=mode>=2&&mode<=9;
             if(settings.threshold>=-90&&settings.threshold<=-10&&settings.minimumMs>=20&&settings.minimumMs<=10000&&settings.beforeMs>=0&&settings.beforeMs<=500&&settings.afterMs>=0&&settings.afterMs<=500&&settings.hysteresisDb>=0&&settings.hysteresisDb<=18)
                 ok=safe->startSilenceAnalysis(settings,number("fade"),owned->getComboBoxComponent("automatic")->getSelectedId()==2);
         }catch(...){}

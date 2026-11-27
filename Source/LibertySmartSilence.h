@@ -5,7 +5,7 @@
 #include <vector>
 namespace LibertySmartSilence {
 struct Range {int start=0,end=0;};
-struct Settings {double threshold=-55.,minimumMs=250.,marginMs=40.,hysteresisDb=6.;double beforeMs=-1.,afterMs=-1.;bool protectQuiet=false;};
+struct Settings {double threshold=-55.,minimumMs=250.,marginMs=40.,hysteresisDb=6.;double beforeMs=-1.,afterMs=-1.;bool protectQuiet=false;bool detailProtection=false;};
 // Full-wave window peak avoids stereo cancellation and preserves short attacks.
 // A silence must survive both the duration test and the safety margins.
 template<class Sample>
@@ -25,7 +25,7 @@ bool detect(int count,double rate,int channels,const Settings& s,Sample sample,
     const int after=(int)std::ceil(rate*(s.afterMs<0.?s.marginMs:s.afterMs)*.001);
     const int minKeep=(int)std::ceil(rate*.01);
     const double enter=std::pow(10.,s.threshold/20.),leave=std::pow(10.,(s.threshold+s.hysteresisDb)/20.);
-    int silence=-1;bool active=false;
+    int silence=-1;bool active=false;double previousPeak=0.;
     auto close=[&](int end){
         if(silence<0||end-silence<minimum)return;
         int a=silence==0?0:silence+after,b=end==count?count:end-before;
@@ -38,16 +38,26 @@ bool detect(int count,double rate,int channels,const Settings& s,Sample sample,
     };
     for(int pos=0;pos<count;){
         if(cancel&&cancel->load())return false;
-        const int end=pos+std::min(block,count-pos);double peak=0.;
-        for(int ch=0;ch<channels;++ch)for(int i=pos;i<end;++i){
-            const double x=sample(ch,i);if(!std::isfinite(x))return false;
-            peak=std::max(peak,std::abs(x));
+        const int end=pos+std::min(block,count-pos);double peak=0.,energy=0.,difference=0.;
+        for(int ch=0;ch<channels;++ch){
+            double last=0.;
+            for(int i=pos;i<end;++i){
+                const double x=sample(ch,i);if(!std::isfinite(x))return false;
+                peak=std::max(peak,std::abs(x));energy+=x*x;
+                if(i>pos)difference+=(x-last)*(x-last);
+                last=x;
+            }
         }
+        // Heuristic, not a speech recognizer: relative high-frequency energy
+        // and a slowly decaying envelope can indicate weak detail or a tail.
+        const bool detail=s.detailProtection&&peak>=enter*.125&&
+            ((energy>1.e-20&&difference/energy>.30)||
+             (previousPeak>0.&&peak<previousPeak&&peak>previousPeak*.70));
         if(silence>=0){
-            if(peak>=(s.protectQuiet?enter:leave)){close(pos);silence=-1;active=true;}
-        }else if(peak<enter)silence=pos;
+            if(detail||peak>=(s.protectQuiet?enter:leave)){close(pos);silence=-1;active=true;}
+        }else if(!detail&&peak<enter)silence=pos;
         else active=true;
-        pos=end;
+        previousPeak=peak;pos=end;
         if(cuts.size()>4096)return false;
     }
     close(count);
@@ -82,5 +92,26 @@ double noiseThreshold(int count,double rate,int channels,double ceiling,Sample s
     for(int i=0;i<=90;++i){cumulative+=histogram[i];if(cumulative>=std::max(1,(windows+4)/5))
         return std::clamp(std::min(ceiling,double(i-90)+6.),-90.,-10.);}
     return ceiling;
+}
+// Search only inward: never extend a proposed deletion beyond its
+// detected bounds. Both channels must cross and be quiet at the boundary.
+template<class Sample>
+Range alignInward(Range cut,int count,int channels,int radius,int minimum,Sample sample){
+    if(cut.start<0||cut.end>count||cut.end<=cut.start||channels<1||channels>2||radius<0||minimum<1)return cut;
+    const auto quietCrossing=[&](int i){
+        if(i<=0||i>=count)return false;
+        for(int ch=0;ch<channels;++ch){
+            const double a=sample(ch,i-1),b=sample(ch,i);
+            if(!std::isfinite(a)||!std::isfinite(b)||std::max(std::abs(a),std::abs(b))>.01||
+               !((a<=0.&&b>=0.)||(a>=0.&&b<=0.)))return false;
+        }
+        return true;
+    };
+    Range result=cut;
+    if(cut.start>0)for(int i=cut.start;i<=cut.start+std::min(radius,cut.end-cut.start-minimum);++i)
+        if(quietCrossing(i)){result.start=i;break;}
+    if(cut.end<count)for(int i=cut.end;i>=cut.end-std::min(radius,cut.end-result.start-minimum);--i)
+        if(quietCrossing(i)){result.end=i;break;}
+    return result.end-result.start>=minimum?result:cut;
 }
 }

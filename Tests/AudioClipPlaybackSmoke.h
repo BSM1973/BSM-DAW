@@ -53,6 +53,13 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 throw std::runtime_error("smart silence independent margins");
             const auto threshold=noiseThreshold(n,48000.,2,-50.,sample);
             if(threshold> -50.||threshold< -90.)throw std::runtime_error("smart silence noise threshold bound");
+            settings.beforeMs=0.;settings.afterMs=0.;settings.detailProtection=true;
+            auto weakDetail=[](int,int i){if(i<4800||i>=43200)return .2f;if(i>=21600&&i<24000)return (i%2==0?.001f:-.001f);return 0.f;};
+            if(!detect(n,48000.,1,settings,weakDetail,cuts)||cuts.size()!=2||cuts[0].end>21600||cuts[1].start<24000)
+                throw std::runtime_error("smart silence weak high frequency protection");
+            const auto aligned=alignInward(Range{10,90},100,2,10,20,[](int,int i){return i>=13&&i<=86?0.f:.02f;});
+            if(aligned.start!=14||aligned.end!=86)
+                throw std::runtime_error("smart silence inward alignment");
             std::atomic<bool> cancel{true};
             if(detect(n,48000.,2,settings,sample,cuts,&cancel))
                 throw std::runtime_error("smart silence cancellation");
