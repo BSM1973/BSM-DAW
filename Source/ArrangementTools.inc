@@ -3184,9 +3184,19 @@ bool runArrangementTests(){
         require(clipNames.entries.at(audioKey).manual==juce::String::fromUTF8("Prise préférée")&&clipNames.entries.at(audioKey).number==namingBefore,"audio name project persistence");
         require(clipNames.entries.at(midiKey).manual==juce::String::fromUTF8("Thème principal"),"MIDI name project persistence");
         const auto lastSerial=clipNames.counters.at("audio:0");
-        selectedAudio.clear();for(const auto& clip:loaded)selectedAudio.insert({0,clip.id});eraseArrangementSelection();
+        // This scenario deletes audio only. The group restoration test above
+        // deliberately selected its MIDI member; do not carry that selection
+        // into the unrelated audio deletion and subsequent MIDI paste test.
+        selectedClipIds.clear();
+        selectedAudio.clear();for(const auto& clip:loaded)selectedAudio.insert({0,clip.id});
+        require(permanentGroups.empty()&&selectedClipIds.empty(),"audio-only deletion selection");
+        eraseArrangementSelection();
+        require(midiClips.size()==1&&midiClips[0].id==groupMidi.id&&midiClips[0].notes[0].startTick==120,
+            "audio deletion preserves original MIDI clip");
         require(owner.saveProjectToFile(project)&&owner.loadProjectFromFile(project),"save deletion");
         require(owner.audioEngine.getArrangementAudioClips(0).empty(),"deleted media must not reappear");
+        require(midiClips.size()==1&&midiClips[0].id==groupMidi.id&&midiClips[0].notes[0].startTick==120,
+            "audio deletion project reload preserves original MIDI clip");
         activeArrangeTool=2;handleAudioDown(point(0,0));syncClipNames();
         const auto createdKey="audio:"+owner.audioEngine.getArrangementAudioClips(0).front().id;
         require(clipNames.entries.at(createdKey).number>lastSerial,"no serial recycling after project reload");
