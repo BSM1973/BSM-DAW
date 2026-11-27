@@ -2,6 +2,20 @@
 // undo never writes to a source file or to a published audio buffer.
 using AudioClip = AudioEngine::AudioClipMetadata;
 using AudioKey = std::pair<int,juce::String>;
+static juce::Colour permanentGroupColour(int index){
+    static constexpr juce::uint32 colours[]={
+        0xff4587df,0xff48cbd6,0xff55bd80,0xffe3c64d,0xffef9b4b,0xffe85f62,0xffa580e8,0xffe27db3,
+        0xff28599b,0xff237a8f,0xff26764b,0xff9b8135,0xffad5c29,0xffa33342,0xff6744ad,0xffa23e82,
+        0xff82b9ff,0xff8ce6ee,0xff9be5b5,0xfff8e69b,0xffffc491,0xffffa1a5,0xffc8b0f5,0xfff5b2d8,
+        0xff526f8f,0xff4e8d91,0xff628e77,0xff9d986a,0xffa98b77,0xffae7980,0xff827598,0xffa67e9e};
+    return juce::Colour(colours[std::clamp(index,0,31)]);
+}
+static juce::StringArray permanentColourNames(){
+    juce::StringArray names;
+    const char* base[]={"Bleu","Cyan","Vert","Jaune","Orange","Rouge","Violet","Rose"};
+    for(int i=0;i<32;++i)names.add(juce::String(base[i%8])+juce::String::fromUTF8(i<8?"":i<16?" foncé":i<24?" clair":" désaturé"));
+    return names;
+}
 struct PermanentClipGroup {
     juce::String name;
     int colour=0;
@@ -75,7 +89,7 @@ void loadPermanentGroups(const juce::XmlElement& root){
         const auto id=g->getStringAttribute("id").substring(0,128);
         if(id.isEmpty()||permanentGroups.count(id))continue;
         PermanentClipGroup group;group.name=g->getStringAttribute("name","Groupe").substring(0,80);
-        group.colour=std::clamp(g->getIntAttribute("colour"),0,7);group.locked=g->getBoolAttribute("locked");
+        group.colour=std::clamp(g->getIntAttribute("colour"),0,31);group.locked=g->getBoolAttribute("locked");
         for(auto* m=g->getFirstChildElement();m&&total++<32768;m=m->getNextElement()){
             const auto k=m->getStringAttribute("key");
             if(m->hasTagName("Member")&&k.length()<=256&&(k.startsWith("audio:")||k.startsWith("midi:"))&&!used.count(k))
@@ -84,6 +98,47 @@ void loadPermanentGroups(const juce::XmlElement& root){
         if(group.members.size()>=2){used.insert(group.members.begin(),group.members.end());permanentGroups.emplace(id,std::move(group));}
     }
     rebuildGroupIndex();
+}
+std::vector<juce::String> matchingPermanentGroups(const juce::String& filter,int colour)const{
+    std::vector<juce::String> ids;
+    for(const auto& entry:permanentGroups)
+        if((colour<0||entry.second.colour==colour)&&(filter.trim().isEmpty()||entry.second.name.containsIgnoreCase(filter.trim())))ids.push_back(entry.first);
+    std::sort(ids.begin(),ids.end(),[&](const auto& a,const auto& b){
+        const int order=permanentGroups.at(a).name.compareIgnoreCase(permanentGroups.at(b).name);
+        return order==0?a<b:order<0;
+    });
+    return ids;
+}
+struct GroupMemberView{juce::String key,label;int row=0;double start=0.;};
+std::vector<GroupMemberView> permanentMemberViews(const std::set<juce::String>& ids)const{
+    std::set<juce::String> members;
+    for(const auto& id:ids){const auto it=permanentGroups.find(id);if(it!=permanentGroups.end())members.insert(it->second.members.begin(),it->second.members.end());}
+    std::vector<GroupMemberView> views;
+    auto addMidi=[&](const auto& clips,int rowOffset){
+        for(const auto& clip:clips){const auto key=midiGroupKey(clip.id);
+            if(members.count(key))views.push_back({key,clipNames.display(key,getLibertyTrackName(rowOffset+clip.trackLane)),rowOffset+clip.trackLane,clip.startSeconds});}
+    };
+    for(int lane=0;lane<owner.getAudioTrackCount();++lane)
+        for(const auto& clip:owner.audioEngine.getArrangementAudioClips(lane)){
+            const auto key=audioGroupKey(clip.id);if(members.count(key))views.push_back({key,clipNames.display(key,getLibertyTrackName(lane)),lane,clip.startSeconds});
+        }
+    addMidi(midiClips,owner.getAudioTrackCount());
+    addMidi(instrumentClips,owner.getAudioTrackCount()+owner.getMidiTrackCount());
+    std::sort(views.begin(),views.end(),[](const auto& a,const auto& b){if(a.start!=b.start)return a.start<b.start;if(a.row!=b.row)return a.row<b.row;return a.key<b.key;});
+    return views;
+}
+bool selectPermanentIds(const std::set<juce::String>& ids,bool navigate=false){
+    const auto views=permanentMemberViews(ids);if(views.empty())return false;
+    selectedAudio.clear();selectedClipIds.clear();
+    for(const auto& view:views){
+        if(view.key.startsWith("audio:"))selectedAudio.insert({view.row,view.key.substring(6)});
+        else selectedClipIds.insert(view.key.substring(5).getIntValue());
+    }
+    if(navigate){
+        const auto& first=views.front();owner.selectedTrack=first.row;owner.setTrackScrollRows(first.row);
+        if(!owner.audioEngine.isPlaying()){owner.playheadSeconds=first.start;owner.audioEngine.setCurrentTimeSeconds(first.start);}
+    }
+    owner.repaint();repaint();return true;
 }
 void expandPermanentSelection(){
     if(groupingSuspended||permanentGroups.empty())return;
@@ -118,13 +173,13 @@ bool editPermanentGroup(int action,juce::String name={},int colour=0){
         if(keys.size()<2||!ids.empty()||permanentGroups.size()>=4096)return false;
         beginArrangementEdit();PermanentClipGroup g;
         g.name=name.isEmpty()?juce::String("Groupe ")+juce::String((int)permanentGroups.size()+1):name.substring(0,80);
-        g.colour=std::clamp(colour,0,7);g.members=keys;permanentGroups.emplace(juce::Uuid().toString(),std::move(g));
+        g.colour=std::clamp(colour,0,31);g.members=keys;permanentGroups.emplace(juce::Uuid().toString(),std::move(g));
     }else{
         if(ids.size()!=1)return false;
         const auto id=*ids.begin();auto& g=permanentGroups.at(id);
         if(g.locked&&action!=56)return false;
         beginArrangementEdit();
-        if(action==55){if(name.trim().isEmpty()){pendingEdit.reset();return false;}g.name=name.trim().substring(0,80);g.colour=std::clamp(colour,0,7);}
+        if(action==55){if(name.trim().isEmpty()){pendingEdit.reset();return false;}g.name=name.trim().substring(0,80);g.colour=std::clamp(colour,0,31);}
         else if(action==56)g.locked=!g.locked;
         else if(action==57)permanentGroups.erase(id);
         else if(action==59)g.members.insert(keys.begin(),keys.end());
@@ -140,7 +195,7 @@ void showPermanentProperties(bool create){
     if(old.locked)return;
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8(create?"Créer un groupe":"Propriétés du groupe"),juce::String::fromUTF8("Nom et couleur du groupe permanent"),juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("name",create?"Groupe "+juce::String((int)permanentGroups.size()+1):old.name,"Nom");
-    dialog->addComboBox("colour",juce::StringArray{"Bleu","Cyan","Vert","Jaune","Orange","Rouge","Violet","Rose"},"Couleur");
+    dialog->addComboBox("colour",permanentColourNames(),"Couleur");
     dialog->getComboBoxComponent("colour")->setSelectedId(old.colour+1,juce::dontSendNotification);
     dialog->addButton("Appliquer",1,juce::KeyPress(juce::KeyPress::returnKey));dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto signature=captureArrangement().signature;
@@ -153,8 +208,7 @@ void showPermanentProperties(bool create){
 }
 void paintPermanentGroup(juce::Graphics& g,const juce::String& key,juce::Rectangle<float> bounds)const{
     const auto it=permanentGroups.find(groupFor(key));if(it==permanentGroups.end()||bounds.getWidth()<8.f||bounds.getHeight()<8.f)return;
-    static constexpr juce::uint32 colours[]={0xff4587df,0xff48cbd6,0xff55bd80,0xffe3c64d,0xffef9b4b,0xffe85f62,0xffa580e8,0xffe27db3};
-    g.setColour(juce::Colour(colours[std::clamp(it->second.colour,0,7)]));
+    g.setColour(permanentGroupColour(it->second.colour));
     g.fillRect(bounds.withTrimmedTop(bounds.getHeight()-3.f).reduced(3.f,0.f));
     if(it->second.locked){g.setColour(juce::Colour(0xfff4cf72));g.drawRoundedRectangle(bounds.reduced(2.f),4.f,1.5f);}
 }
@@ -212,7 +266,7 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){closeSilencePreview();if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
+void clearArrangementHistory(){if(groupManager)groupManager->close();closeSilencePreview();if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
     const auto previous=captureArrangement();
@@ -1251,8 +1305,8 @@ void paintAudioFades(juce::Graphics& g){
 // Audio source ownership and all non-targeted MIDI note properties are retained.
 bool applyGroupClipOperation(int command,double value=0.0){
     if(selectionLocked())return false;
-    if((command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty())||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>34)return false;
+    if((command<=34?(command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty()):selectedAudio.empty()&&selectedClipIds.empty())||pendingEdit)return false;
+    if(!std::isfinite(value)||command<0||command>36)return false;
     if(command>=24&&command<=26&&(value<-60||value>(command==24?12.:0.)))return false;
     if((command==33||command==34)&&(value<-60||value>0))return false;
     if(command==27&&(value<0||value>86400))return false;
@@ -1263,7 +1317,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
     if((command==22||command==23)&&(value<-12||value>12||std::floor(value)!=value))return false;
     if(command==18&&(value<25||value>400))return false;
     if(command==19&&(value<60||value>200||!std::isfinite(owner.tempoBpm)||owner.tempoBpm<=0))return false;
-    if(command>=18&&selectedAudio.empty())return false;
+    if(command>=18&&command<=34&&selectedAudio.empty())return false;
     if(command==14&&(value<0||value>86400))return false;
     if(command==15&&(value<-60||value>12))return false;
     if(command==16&&(value<-48||value>48||std::floor(value)!=value))return false;
@@ -1303,6 +1357,7 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 if(!std::isfinite(length)||length<.01)valid=false;
                 else {changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;clip.userLength=true;}
             }
+            if(command==35||command==36){const bool muted=command==35;changed=changed||clip.muted!=muted;clip.muted=muted;}
             if(command==6||command==7||command==16){
                 const int delta=command==16?(int)value:(command==6?1:-1);
                 for(auto& note:clip.notes){
@@ -1397,8 +1452,8 @@ bool applyGroupClipOperation(int command,double value=0.0){
                     touchedAudio.insert(lane);
                 }
             }
-            if(command==30||command==31){
-                const bool muted=command==30;
+            if(command==30||command==31||command==35||command==36){
+                const bool muted=command==30||command==35;
                 changed=changed||clip.muted!=muted;clip.muted=muted;touchedAudio.insert(lane);
             }
             if(command==32){
@@ -2292,6 +2347,117 @@ void analyseSelectionAsync(const std::set<AudioKey>& selection){
         });
     });
 }
+class PermanentGroupManager final:public juce::Component{
+    juce::Component::SafePointer<MultiMidiClipController> controller;
+    juce::TextEditor search,name;
+    juce::ComboBox filter,colour;
+    juce::Label groupPageLabel,memberPageLabel,status;
+    juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
+        choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
+        lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+    std::array<juce::TextButton,8> rows;
+    std::vector<juce::String> ids;
+    std::vector<GroupMemberView> members;
+    juce::String selected;
+    int page=0,memberPage=0;
+    static int pages(size_t count){return std::max(1,(int)((count+7)/8));}
+    void refresh(bool resetName=true){
+        if(!controller||controller->stopped.load())return;
+        ids=controller->matchingPermanentGroups(search.getText(),filter.getSelectedId()-2);
+        if(std::find(ids.begin(),ids.end(),selected)==ids.end()){selected=ids.empty()?juce::String{}:ids.front();memberPage=0;}
+        page=std::clamp(page,0,pages(ids.size())-1);
+        if(resetName&&selected.isNotEmpty()){
+            const auto it=std::find(ids.begin(),ids.end(),selected);if(it!=ids.end())page=(int)std::distance(ids.begin(),it)/8;
+        }
+        groupPageLabel.setText(juce::String(page+1)+" / "+juce::String(pages(ids.size())),juce::dontSendNotification);
+        previous.setEnabled(page>0);next.setEnabled(page+1<pages(ids.size()));
+        for(int i=0;i<8;++i){
+            auto& button=rows[(size_t)i];const size_t index=(size_t)(page*8+i);const bool exists=index<ids.size();
+            button.setVisible(exists);
+            if(exists){const auto& id=ids[index];const auto& g=controller->permanentGroups.at(id);
+                button.setButtonText(juce::String(g.locked?"[V] ":"")+g.name+"  ("+juce::String((int)g.members.size())+")");
+                button.setColour(juce::TextButton::buttonColourId,permanentGroupColour(g.colour).darker(id==selected?.25f:1.0f));
+                button.setColour(juce::TextButton::textColourOffId,juce::Colours::white);
+            }
+        }
+        members=selected.isEmpty()?std::vector<GroupMemberView>{}:controller->permanentMemberViews({selected});
+        memberPage=std::clamp(memberPage,0,pages(members.size())-1);
+        memberPageLabel.setText(juce::String(memberPage+1)+" / "+juce::String(pages(members.size())),juce::dontSendNotification);
+        memberPrevious.setEnabled(memberPage>0);memberNext.setEnabled(memberPage+1<pages(members.size()));
+        const bool has=selected.isNotEmpty();const bool locked=has&&controller->permanentGroups.at(selected).locked;
+        if(resetName){name.setText(has?controller->permanentGroups.at(selected).name:juce::String{},false);
+            colour.setSelectedId(has?controller->permanentGroups.at(selected).colour+1:0,juce::dontSendNotification);}
+        choose.setEnabled(has);chooseAll.setEnabled(!ids.empty());locate.setEnabled(has);lock.setEnabled(has);
+        for(auto* button:{&properties,&duplicate,&mute,&unmute,&dissolve})button->setEnabled(has&&!locked);
+        lock.setButtonText(juce::String::fromUTF8(locked?"Déverrouiller":"Verrouiller"));
+        status.setText(juce::String((int)ids.size())+juce::String::fromUTF8(" groupes affichés — ")+juce::String((int)members.size())+" membres",juce::dontSendNotification);repaint();
+    }
+    void act(int action){
+        if(!controller||controller->stopped.load()||!controller->permanentGroups.count(selected))return;
+        if(!controller->selectPermanentIds({selected},action==1))return;
+        bool ok=true;
+        if(action==2)ok=controller->editPermanentGroup(55,name.getText(),colour.getSelectedId()-1);
+        else if(action==3)ok=controller->editPermanentGroup(56);
+        else if(action==4){ok=controller->applyGroupClipOperation(10);if(ok){const auto copied=controller->selectedPermanentGroups();if(copied.size()==1)selected=*copied.begin();}}
+        else if(action==5||action==6)ok=controller->applyGroupClipOperation(action==5?35:36);
+        else if(action==7)ok=controller->editPermanentGroup(57);
+        refresh();if(!ok)status.setText(juce::String::fromUTF8("Opération impossible ou sans changement"),juce::dontSendNotification);
+    }
+public:
+    explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&closeButton})addAndMakeVisible(component);
+        for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
+        search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
+        filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
+        colour.addItemList(permanentColourNames(),1);
+        search.onTextChange=[this]{page=0;selected.clear();refresh();};filter.onChange=[this]{page=0;selected.clear();refresh();};
+        previous.onClick=[this]{--page;refresh(false);};next.onClick=[this]{++page;refresh(false);};
+        memberPrevious.onClick=[this]{--memberPage;refresh(false);};memberNext.onClick=[this]{++memberPage;refresh(false);};
+        choose.onClick=[this]{act(0);};locate.onClick=[this]{act(1);};properties.onClick=[this]{act(2);};
+        lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
+        chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
+        closeButton.onClick=[this]{close();};setSize(800,464);refresh();
+    }
+    void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
+    void resized()override{
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);
+        for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
+        previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
+        memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
+        name.setBounds(16,344,350,28);colour.setBounds(382,344,270,28);properties.setBounds(660,344,124,28);
+        int x=16;for(auto* b:{&choose,&locate,&lock,&duplicate,&mute,&unmute,&dissolve}){b->setBounds(x,380,106,28);x+=110;}
+        chooseAll.setBounds(16,422,152,28);status.setBounds(176,422,480,28);closeButton.setBounds(668,422,116,28);
+    }
+    bool layoutValid()const{
+        std::vector<juce::Rectangle<int>> bounds;
+        for(int i=0;i<getNumChildComponents();++i){const auto r=getChildComponent(i)->getBounds();
+            if(r.isEmpty()||!getLocalBounds().contains(r))return false;
+            for(const auto& b:bounds)if(b.intersects(r))return false;
+            bounds.push_back(r);
+        }
+        return true;
+    }
+    void paint(juce::Graphics& g)override{
+        g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
+        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,768,28,juce::Justification::centredLeft);
+        g.setFont(13.f);g.drawText("GROUPES",16,66,350,24,juce::Justification::centredLeft);
+        g.drawText("MEMBRES",382,66,402,24,juce::Justification::centredLeft);
+        for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
+            const auto& m=members[n];const int y=92+i*27;
+            g.setColour(juce::Colour(0xff1a2c3e));g.fillRoundedRectangle(382.f,(float)y,402.f,25.f,3.f);
+            g.setColour(juce::Colour(0xffd9eafa));g.drawFittedText(m.label+" | P"+juce::String(m.row+1)+" | "+juce::String(m.start,2)+" s",390,y,386,25,juce::Justification::centredLeft,1);
+        }
+    }
+};
+juce::Component::SafePointer<PermanentGroupManager> groupManager;
+void showPermanentGroupManager(){
+    if(groupManager)return;
+    auto* panel=new PermanentGroupManager(this);groupManager=panel;
+    juce::DialogWindow::LaunchOptions options;options.dialogTitle="LIBERTY - PROFESSIONAL GROUP MANAGER";
+    options.dialogBackgroundColour=juce::Colour(0xff101821);options.useNativeTitleBar=false;
+    options.escapeKeyTriggersCloseButton=true;options.resizable=false;options.componentToCentreAround=&owner;
+    options.content.setOwned(panel);options.launchAsync();
+}
 bool showGroupClipMenu(juce::Point<int> p){
     if(inlineMidiMode)return false;
     const auto clickedKey=permanentKeyAt(p);
@@ -2319,6 +2485,7 @@ bool showGroupClipMenu(juce::Point<int> p){
         permanent.addItem(60,"Retirer la sélection du groupe",!locked&&groupingSuspended);
     }
     permanent.addItem(58,juce::String::fromUTF8("Suspendre le groupement"),true,groupingSuspended);
+    permanent.addItem(61,juce::String::fromUTF8("Gestionnaire des groupes…"));
     menu.addSubMenu(juce::String::fromUTF8("Groupes permanents"),permanent);
     const bool group=selectedAudio.size()+selectedClipIds.size()>=2;
     if(group){
@@ -2394,10 +2561,11 @@ bool showGroupClipMenu(juce::Point<int> p){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection,p](int choice){
-            if(!safe||choice<1||choice>60)return;
+            if(!safe||choice<1||choice>61)return;
             if(choice==52){safe->cancelSmartAnalysis();return;}
             if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice==61){safe->showPermanentGroupManager();return;}
             if(choice>=54){
                 if(choice==54||choice==55)safe->showPermanentProperties(choice==54);
                 else if(choice==58){safe->groupingSuspended=!safe->groupingSuspended;if(!safe->groupingSuspended)safe->expandPermanentSelection();safe->repaint();}
@@ -3124,6 +3292,14 @@ bool runArrangementTests(){
         require(groupId.isNotEmpty()&&groupFor(midiGroupKey(groupMidi.id))==groupId,"mixed group membership");
         selectedClipIds.clear();expandPermanentSelection();
         require(selectedClipIds.count(groupMidi.id)==1,"permanent mixed selection");
+        require(editPermanentGroup(55,juce::String::fromUTF8("Groupe témoin"),31),"group expanded palette");
+        require(matchingPermanentGroups("Groupe",31).size()==1&&matchingPermanentGroups("absent",-1).empty(),"group name and colour filter");
+        require(selectPermanentIds({groupId})&&selectedClipIds.count(groupMidi.id),"manager select mixed group");
+        {PermanentGroupManager manager(this);require(manager.layoutValid(),"group manager layout");}
+        require(editPermanentGroup(55,juce::String::fromUTF8("Groupe témoin"),3),"restore original palette");
+        require(applyGroupClipOperation(35)&&midiClips.front().muted&&owner.audioEngine.getArrangementAudioClips(0).front().muted,"group mixed mute");
+        require(undoArrangement(false),"undo group mixed mute");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
         require(editPermanentGroup(56)&&selectionLocked()&&!applyGroupClipOperation(5),"group lock collective edit");
         require(undoArrangement(false),"undo group lock");
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds.clear();expandPermanentSelection();
