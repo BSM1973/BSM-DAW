@@ -265,6 +265,85 @@ juce::String createPermanentContainer(){
     const auto id=juce::Uuid().toString();
     permanentGroups.emplace(id,std::move(g));finishArrangementEdit();owner.repaint();repaint();return id;
 }
+// Portable structure presets deliberately omit clip IDs, audio, locks and
+// parameters that are not yet implemented. Import creates empty containers.
+std::unique_ptr<juce::XmlElement> exportGroupStructure(const juce::String& root)const{
+    if(!permanentGroups.count(root))return {};
+    auto xml=std::make_unique<juce::XmlElement>("LibertyGroupStructure");
+    xml->setAttribute("version",1);
+    std::map<juce::String,std::vector<juce::String>> children;
+    for(const auto& id:matchingPermanentGroups("",-1)){
+        const auto& g=permanentGroups.at(id);
+        if(g.parent.isNotEmpty())children[g.parent].push_back(id);
+    }
+    std::vector<std::pair<juce::String,int>> stack{{root,-1}};
+    std::set<juce::String> seen;
+    int index=0;
+    while(!stack.empty()){
+        const auto node=stack.back();stack.pop_back();
+        if(!seen.insert(node.first).second||index>=4096)return {};
+        const auto& g=permanentGroups.at(node.first);
+        auto* row=xml->createNewChildElement("Node");
+        row->setAttribute("name",g.name);row->setAttribute("colour",g.colour);
+        row->setAttribute("parent",node.second);
+        const auto it=children.find(node.first);
+        if(it!=children.end())for(auto child=it->second.rbegin();child!=it->second.rend();++child)
+            stack.emplace_back(*child,index);
+        ++index;
+    }
+    return xml;
+}
+juce::String importGroupStructure(const juce::XmlElement& xml){
+    if(pendingEdit||!xml.hasTagName("LibertyGroupStructure")||xml.getIntAttribute("version")!=1)return {};
+    struct Node{juce::String name;int colour,parent,depth;};
+    std::vector<Node> nodes;
+    for(auto* row=xml.getFirstChildElement();row;row=row->getNextElement()){
+        if(!row->hasTagName("Node")||row->getFirstChildElement()||nodes.size()>=4096||
+           permanentGroups.size()+nodes.size()>=4096||!row->hasAttribute("parent")||!row->hasAttribute("colour"))return {};
+        const auto name=row->getStringAttribute("name").trim();
+        const int colour=row->getIntAttribute("colour",-1),parent=row->getIntAttribute("parent",-2);
+        if(row->getStringAttribute("parent")!=juce::String(parent)||
+           row->getStringAttribute("colour")!=juce::String(colour)||
+           name.isEmpty()||name.length()>80||colour<0||colour>31||
+           (nodes.empty()?parent!=-1:parent<0||parent>=(int)nodes.size()))return {};
+        const int depth=parent<0?0:nodes[(size_t)parent].depth+1;
+        if(depth>=63)return {};
+        nodes.push_back({name,colour,parent,depth});
+    }
+    if(nodes.empty())return {};
+    std::vector<juce::String> ids;ids.reserve(nodes.size());
+    std::set<juce::String> allocated;
+    for(size_t i=0;i<nodes.size();++i){
+        auto id=juce::Uuid().toString();
+        if(permanentGroups.count(id)||!allocated.insert(id).second)return {};
+        ids.push_back(id);
+    }
+    beginArrangementEdit();
+    for(size_t i=0;i<nodes.size();++i){
+        const auto& node=nodes[i];PermanentClipGroup g;
+        g.name=node.name;g.colour=node.colour;g.container=true;
+        if(node.parent>=0)g.parent=ids[(size_t)node.parent];
+        permanentGroups.emplace(ids[i],std::move(g));
+    }
+    rebuildGroupIndex();finishArrangementEdit();owner.repaint();repaint();return ids.front();
+}
+static std::unique_ptr<juce::XmlElement> factoryGroupStructure(int model){
+    auto xml=std::make_unique<juce::XmlElement>("LibertyGroupStructure");xml->setAttribute("version",1);
+    auto add=[&](const juce::String& name,int colour,int parent){
+        auto* node=xml->createNewChildElement("Node");node->setAttribute("name",name);
+        node->setAttribute("colour",colour);node->setAttribute("parent",parent);
+    };
+    if(model==1){
+        add("Mixage",0,-1);add("Batterie",3,0);add("Basse",2,0);add("Instruments",1,0);add("Voix",6,0);add("Effets",5,0);
+    }else if(model==2){
+        add("Composition",1,-1);add("Rythme",3,0);add("Harmonie",2,0);add(juce::String::fromUTF8("Mélodie"),6,0);
+        add("Couplet",9,0);add("Refrain",12,0);add("Pont",15,0);
+    }else if(model==3){
+        add("Mastering",6,-1);add(juce::String::fromUTF8("Références"),0,0);add("Mix original",1,0);
+        add(juce::String::fromUTF8("Versions traitées"),2,0);add("Exports",3,0);
+    }else return {};
+    return xml;
+}
 bool editPermanentGroup(int action,juce::String name={},int colour=0,juce::String explicitId={}){
     if(pendingEdit)return false;
     const auto keys=selectionKeys();const auto ids=selectedPermanentGroups();
@@ -2489,7 +2568,7 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
     std::vector<GroupTreeRow> treeRows;
@@ -2497,6 +2576,7 @@ class PermanentGroupManager final:public juce::Component{
     bool treeMode=false;
     std::vector<GroupMemberView> members;
     juce::String selected,draggedGroup;
+    std::unique_ptr<juce::FileChooser> structureChooser;
     int page=0,memberPage=0;
     static int pages(size_t count){return std::max(1,(int)((count+7)/8));}
     void refresh(bool resetName=true){
@@ -2567,6 +2647,65 @@ class PermanentGroupManager final:public juce::Component{
         else if(action==7)ok=controller->editPermanentGroup(57,{},0,selected);
         refresh();if(!ok)status.setText(juce::String::fromUTF8("Opération impossible ou sans changement"),juce::dontSendNotification);
     }
+    void revealImportedStructure(const juce::String& root){
+        if(root.isEmpty()){status.setText(juce::String::fromUTF8("Modèle invalide ou import refusé"),juce::dontSendNotification);return;}
+        search.setText({},false);filter.setSelectedId(1,juce::dontSendNotification);
+        selected=root;memberPage=0;refresh();
+        status.setText(juce::String::fromUTF8("Structure importée — sans clips"),juce::dontSendNotification);
+    }
+    void chooseStructureFile(bool exporting){
+        if(structureChooser||!controller||controller->stopped.load())return;
+        juce::String data;
+        if(exporting){
+            const auto xml=controller->exportGroupStructure(selected);
+            if(!xml)return;
+            data=xml->toString();
+        }
+        structureChooser=std::make_unique<juce::FileChooser>(
+            juce::String::fromUTF8(exporting?"Exporter une structure de groupes":"Importer une structure de groupes"),
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*.xml");
+        const int flags=exporting?(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting):
+            (juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles);
+        juce::Component::SafePointer<PermanentGroupManager> safe(this);
+        structureChooser->launchAsync(flags,[safe,exporting,data](const juce::FileChooser& chooser){
+            if(!safe)return;
+            const auto file=chooser.getResult();
+            if(file!=juce::File{}&&safe->controller&&!safe->controller->stopped.load()){
+                if(exporting){
+                    const bool ok=file.withFileExtension(".xml").replaceWithText(data);
+                    safe->status.setText(juce::String::fromUTF8(ok?"Structure exportée":"Échec de l'exportation"),juce::dontSendNotification);
+                }else if(file.existsAsFile()&&file.getSize()>0&&file.getSize()<=1024*1024){
+                    // Reject DTD/entity declarations in external XML before parsing.
+                    const auto source=file.loadFileAsString();
+                    if(source.containsIgnoreCase("<!DOCTYPE")||source.containsIgnoreCase("<!ENTITY"))
+                        safe->revealImportedStructure({});
+                    else {
+                        const auto xml=juce::XmlDocument::parse(source);
+                        safe->revealImportedStructure(xml?safe->controller->importGroupStructure(*xml):juce::String{});
+                    }
+                }else safe->revealImportedStructure({});
+            }
+            juce::MessageManager::callAsync([safe]{if(safe)safe->structureChooser.reset();});
+        });
+    }
+    void showStructurePresets(){
+        if(!controller||controller->stopped.load())return;
+        juce::PopupMenu menu;
+        menu.addSectionHeader(juce::String::fromUTF8("Modèles d'usine — structures sans clips"));
+        const bool room=controller->permanentGroups.size()<=4089;
+        menu.addItem(1,"Mixage",room);menu.addItem(2,"Composition",room);menu.addItem(3,"Mastering",room);
+        menu.addSeparator();
+        menu.addItem(4,"Importer XML...",!structureChooser);
+        menu.addItem(5,"Exporter la structure XML...",!structureChooser&&controller->permanentGroups.count(selected)!=0);
+        juce::Component::SafePointer<PermanentGroupManager> safe(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetButton),[safe](int result){
+            if(!safe||!safe->controller||safe->controller->stopped.load())return;
+            if(result>=1&&result<=3){
+                const auto xml=safe->controller->factoryGroupStructure(result);
+                if(xml)safe->revealImportedStructure(safe->controller->importGroupStructure(*xml));
+            }else if(result==4||result==5)safe->chooseStructureFile(result==5);
+        });
+    }
     void chooseParent(){
         if(!controller||!controller->permanentGroups.count(selected))return;
         const auto child=selected;
@@ -2591,7 +2730,7 @@ class PermanentGroupManager final:public juce::Component{
     }
 public:
     explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
-        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&closeButton})addAndMakeVisible(component);
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&closeButton})addAndMakeVisible(component);
         for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].addMouseListener(this,false);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
         search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2603,6 +2742,7 @@ public:
         choose.onClick=[this]{act(0);};locate.onClick=[this]{act(1);};properties.onClick=[this]{act(2);};
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
         chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
+        presetButton.onClick=[this]{showStructurePresets();};
         containerButton.onClick=[this]{if(!controller||controller->stopped.load())return;
             const auto id=controller->createPermanentContainer();if(id.isEmpty())return;
             search.setText({},false);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2634,7 +2774,7 @@ public:
     }
     void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
-        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);
         for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
         previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
         memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
@@ -2655,7 +2795,7 @@ public:
         g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
         g.drawText("PROFESSIONAL GROUP MANAGER",16,4,768,28,juce::Justification::centredLeft);
         g.setFont(13.f);g.drawText("GROUPES",16,66,102,24,juce::Justification::centredLeft);
-        g.drawText("MEMBRES",382,66,402,24,juce::Justification::centredLeft);
+        g.drawText("MEMBRES",382,66,256,24,juce::Justification::centredLeft);
         for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
             const auto& m=members[n];const int y=92+i*27;
             g.setColour(juce::Colour(0xff1a2c3e));g.fillRoundedRectangle(382.f,(float)y,402.f,25.f,3.f);
@@ -8373,6 +8513,28 @@ bool runArrangementTests(){
                 permanentGroups=original;rebuildGroupIndex();
             }
             {PermanentGroupManager manager(this);require(manager.layoutValid(),"performance container layout");}
+            {
+                const auto initial=permanentGroups.size();
+                const auto model=factoryGroupStructure(2);require(model!=nullptr,"preset factory");
+                const auto root=importGroupStructure(*model);
+                require(root.isNotEmpty()&&groupDescendants({root}).size()==7&&hierarchicalMembers({root}).empty(),"preset empty hierarchy");
+                const auto exported=exportGroupStructure(root);require(exported!=nullptr,"preset export");
+                const auto parsed=juce::XmlDocument::parse(exported->toString());require(parsed!=nullptr,"preset XML parse");
+                const auto imported=importGroupStructure(*parsed);
+                require(imported.isNotEmpty()&&imported!=root&&groupDescendants({imported}).size()==7,"preset fresh IDs");
+                const auto reexport=exportGroupStructure(imported);
+                require(reexport&&reexport->toString()==exported->toString(),"preset structure equivalence");
+                require(permanentGroups.size()==initial+14,"preset group counts");
+                require(undoArrangement(false)&&permanentGroups.size()==initial+7,"preset atomic undo");
+                require(undoArrangement(true)&&permanentGroups.size()==initial+14,"preset atomic redo");
+                auto invalid=factoryGroupStructure(1);
+                invalid->getFirstChildElement()->setAttribute("parent",0);
+                require(importGroupStructure(*invalid).isEmpty()&&permanentGroups.size()==initial+14,"preset invalid parent rejected");
+                const auto presetFile=directory.getChildFile("Group-structure-final.liberty");
+                require(owner.saveProjectToFile(presetFile)&&owner.loadProjectFromFile(presetFile),"preset project roundtrip");
+                require(groupDescendants({imported}).size()==7&&hierarchicalMembers({imported}).empty(),"preset restored structure");
+                {PermanentGroupManager manager(this);require(manager.layoutValid(),"preset manager layout");}
+            }
         }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"ArrangementToolsSmoke: %s\n",e.what());return false;}
