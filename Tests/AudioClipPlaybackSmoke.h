@@ -72,9 +72,20 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 Settings s=factoryProfile(Settings{},mode);
                 if(!s.detailProtection||!s.protectQuiet||s.threshold> -55.)throw std::runtime_error("silence factory profile");
                 std::vector<Range> cuts;
-                auto signal=[](int ch,int i){return i<4800||i>=43200?(ch==0?.1f:-.1f):0.f;};
-                if(!detect(48000,48000.,2,s,signal,cuts)||cuts.size()!=1||cuts[0].start<4800||cuts[0].end>43200)
+                auto signal=[](int ch,int i){return i<4800||i>=91200?(ch==0?.1f:-.1f):0.f;};
+                if(!detect(96000,48000.,2,s,signal,cuts)||cuts.size()!=1||cuts[0].start<4800||cuts[0].end>91200)
                     throw std::runtime_error("silence factory fixture");
+            }
+            // After a quiet first second the local threshold must not erase
+            // a subsequent weak sustained event that is below the global gate.
+            {
+                Settings adaptive;adaptive.threshold=-50.;adaptive.minimumMs=100.;
+                adaptive.marginMs=0.;adaptive.adaptiveNoise=true;adaptive.protectQuiet=true;
+                std::vector<Range> cuts;
+                auto varying=[](int,int i){return i<800||i>=19200?.1f:i>=9600&&i<14400?.001f:0.f;};
+                if(!detect(20000,8000.,1,adaptive,varying,cuts)||cuts.size()!=2||
+                   cuts[0].end>9600||cuts[1].start<14400)
+                    throw std::runtime_error("silence adaptive quiet event");
             }
             // Bounded detector benchmark, no arrangement publication or UI.
             Settings s; s.minimumMs=50.;s.marginMs=10.;s.detailProtection=true;s.adaptiveNoise=true;
@@ -88,6 +99,25 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
                 std::printf("smart_silence_batch,%d,%.3f,%zu\n",countClips,ms,cuts.capacity()*sizeof(Range));
             }
+        }
+        // Compare A and B through the native playback path. Removed samples
+        // and new fade regions are already silent, so the entire output must match.
+        {
+            auto pcm=std::make_shared<juce::AudioBuffer<float>>(2,count);pcm->clear();
+            for(int i=0;i<count;++i)if(i<960||i>=3840)
+                for(int ch=0;ch<2;++ch)pcm->setSample(ch,i,.15f*std::sin(i*.09f)*(ch==0?1.f:-1.f));
+            auto original=clip;original.id="silence-A";original.sourceBuffer=pcm;
+            original.fadeInSeconds=.005;original.fadeOutSeconds=.005;
+            original.fadeInCurve=5;original.fadeOutCurve=3;
+            const auto a=render(original,127);
+            auto left=original,right=original;
+            left.lengthSeconds=.025;left.trimEndFraction=.25;left.fadeOutSeconds=.002;left.fadeOutCurve=2;
+            right.id="silence-B-right";right.startSeconds=.075;right.lengthSeconds=.025;
+            right.trimStartFraction=.75;right.fadeInSeconds=.002;right.fadeInCurve=2;
+            if(!engine.replaceAudioClips(0,{left,right}))throw std::runtime_error("silence B publication");
+            juce::AudioBuffer<float> b(2,count);
+            if(!engine.renderOfflineForTesting(b,48000,257))throw std::runtime_error("silence B native render");
+            for(int ch=0;ch<2;++ch)for(int i=0;i<count;++i)near(b.getSample(ch,i),a.getSample(ch,i));
         }
         auto normal=render(clip);near(normal.getSample(0,1200),.25f);
         // Real BUS signal path: exactly one source contribution reaches Master.

@@ -1804,6 +1804,17 @@ public:
         cancel.onClick=[this]{close();};refresh();
     }
     ~SilencePreviewPanel()override{stopAudio();}
+    bool controlsWithinBoundsForTest()const{
+        std::vector<juce::Rectangle<int>> boxes;
+        for(int i=0;i<getNumChildComponents();++i){
+            const auto* child=getChildComponent(i);
+            const auto b=child->getBounds();
+            if(b.isEmpty()||!getLocalBounds().contains(b)||graph().intersects(b))return false;
+            for(const auto& previous:boxes)if(previous.intersects(b))return false;
+            boxes.push_back(b);
+        }
+        return getLocalBounds().contains(graph())&&getWidth()<=1280&&getHeight()<=720;
+    }
     void close(){stopAudio();if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
         clipChoice.setBounds(16,36,588,26);zoom.setBounds(64,68,220,26);position.setBounds(350,68,254,26);
@@ -7569,6 +7580,8 @@ bool runArrangementTests(){
             SilenceJob job;job.key={0,fixture.id};job.clip=fixture;job.count=48000;job.cuts={{14400,33600}};
             const auto selection=selectedAudio;
             const auto signature=captureArrangement().signature;
+            SilencePreviewPanel panel({job},[](const std::vector<SilenceJob>&){return false;},[]()->AudioEngine*{return nullptr;},5.);
+            require(panel.controlsWithinBoundsForTest(),"silence final layout non-overlap");
             require(!applySilencePlan({job},"stale",selection,5.),"silence stale plan rejected");
             require(applySilencePlan({job},signature,selection,5.),"silence final apply");
             auto verify=[&](bool shared){
