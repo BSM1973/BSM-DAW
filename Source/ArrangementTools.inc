@@ -2385,6 +2385,7 @@ class PermanentGroupManager final:public juce::Component{
         memberPageLabel.setText(juce::String(memberPage+1)+" / "+juce::String(pages(members.size())),juce::dontSendNotification);
         memberPrevious.setEnabled(memberPage>0);memberNext.setEnabled(memberPage+1<pages(members.size()));
         const bool has=selected.isNotEmpty();const bool locked=has&&controller->permanentGroups.at(selected).locked;
+        name.setEnabled(has&&!locked);colour.setEnabled(has&&!locked);
         if(resetName){name.setText(has?controller->permanentGroups.at(selected).name:juce::String{},false);
             colour.setSelectedId(has?controller->permanentGroups.at(selected).colour+1:0,juce::dontSendNotification);}
         choose.setEnabled(has);chooseAll.setEnabled(!ids.empty());locate.setEnabled(has);lock.setEnabled(has);
@@ -2398,7 +2399,15 @@ class PermanentGroupManager final:public juce::Component{
         bool ok=true;
         if(action==2)ok=controller->editPermanentGroup(55,name.getText(),colour.getSelectedId()-1);
         else if(action==3)ok=controller->editPermanentGroup(56);
-        else if(action==4){ok=controller->applyGroupClipOperation(10);if(ok){const auto copied=controller->selectedPermanentGroups();if(copied.size()==1)selected=*copied.begin();}}
+        else if(action==4){
+            // Explicit duplication from the manager creates a group even when
+            // automatic grouping gestures are temporarily suspended.
+            const bool suspended=controller->groupingSuspended;
+            controller->groupingSuspended=false;
+            ok=controller->applyGroupClipOperation(10);
+            controller->groupingSuspended=suspended;
+            if(ok){const auto copied=controller->selectedPermanentGroups();if(copied.size()==1)selected=*copied.begin();}
+        }
         else if(action==5||action==6)ok=controller->applyGroupClipOperation(action==5?35:36);
         else if(action==7)ok=controller->editPermanentGroup(57);
         refresh();if(!ok)status.setText(juce::String::fromUTF8("Opération impossible ou sans changement"),juce::dontSendNotification);
@@ -2411,7 +2420,8 @@ public:
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
         colour.addItemList(permanentColourNames(),1);
         search.onTextChange=[this]{page=0;selected.clear();refresh();};filter.onChange=[this]{page=0;selected.clear();refresh();};
-        previous.onClick=[this]{--page;refresh(false);};next.onClick=[this]{++page;refresh(false);};
+        previous.onClick=[this]{if(page>0){--page;selected=ids[(size_t)page*8];memberPage=0;refresh();}};
+        next.onClick=[this]{if(page+1<pages(ids.size())){++page;selected=ids[(size_t)page*8];memberPage=0;refresh();}};
         memberPrevious.onClick=[this]{--memberPage;refresh(false);};memberNext.onClick=[this]{++memberPage;refresh(false);};
         choose.onClick=[this]{act(0);};locate.onClick=[this]{act(1);};properties.onClick=[this]{act(2);};
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
@@ -3285,6 +3295,32 @@ bool runArrangementTests(){
         require(owner.audioEngine.getArrangementAudioClips(0).size()==groupAudio.size(),"collective split restored");
         selectedAudio={{0,groupAudio.front().id}};selectAudioOnSelectedTracks();
         require(selectedAudio.size()==groupAudio.size(),"select all audio on chosen lane");
+        // Metadata-only stress tests: the synthetic IDs intentionally have no
+        // live media; this measures indexing/filtering/XML, not audio playback.
+        {
+            require(permanentGroups.empty(),"group stress fixture starts empty");
+            for(int count:{100,500,1000}){
+                const auto start=std::chrono::steady_clock::now();
+                for(int n=0;n<count;++n){
+                    PermanentClipGroup g;g.name="Stress "+juce::String(n);g.colour=n%32;g.locked=(n%2==0);
+                    g.members.insert("audio:stress-"+juce::String(n));
+                    g.members.insert("midi:"+juce::String(100000+n));
+                    permanentGroups.emplace("stress-"+juce::String(n),std::move(g));
+                }
+                rebuildGroupIndex();
+                require(matchingPermanentGroups("Stress",-1).size()==(size_t)count&&memberGroups.size()==(size_t)count*2,"group stress index");
+                require(matchingPermanentGroups("Stress",31).size()==(size_t)(count/32),"group stress colour filter");
+                juce::XmlElement xml("Project");savePermanentGroups(xml);
+                const auto serialised=xml.toString();
+                const auto loaded=juce::XmlDocument::parse(serialised);
+                require(loaded!=nullptr,"group stress XML parse");loadPermanentGroups(*loaded);
+                require(permanentGroups.size()==(size_t)count&&memberGroups.size()==(size_t)count*2,"group stress restore");
+                require(permanentGroups.at("stress-31").colour==31&&permanentGroups.at("stress-0").locked,"group stress metadata fidelity");
+                const double elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+                std::fprintf(stderr,"group_manager_metadata,%d,%.3f,%d\n",count,elapsed,(int)serialised.getNumBytesAsUTF8());
+                permanentGroups.clear();rebuildGroupIndex();
+            }
+        }
         // Permanent mixed groups: explicit membership, lock, persistence and Undo.
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
         require(editPermanentGroup(54,juce::String::fromUTF8("Groupe témoin"),3),"create permanent group");
