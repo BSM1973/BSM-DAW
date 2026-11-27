@@ -22,6 +22,10 @@ int main()
     m.resetLoudness();assert(!std::isfinite(m.get().integrated));
     TruePeak tp;for(int i=0;i<1024;++i){const float x=.9f*std::sin(3.141592653589793*.5*i+3.141592653589793*.25);tp.push({x,x});}
     assert(tp.dbtp()>-1.5&&tp.dbtp()<.1);
+    assert(std::abs(boundedLoudnessGainDb(-24.,-3.,-14.,12.)-2.)<1.e-12);
+    assert(std::abs(boundedLoudnessGainDb(-24.,-14.,-18.,12.)-6.)<1.e-12);
+    assert(std::abs(boundedLoudnessGainDb(-36.,-30.,-10.,12.)-12.)<1.e-12);
+    assert(!std::isfinite(boundedLoudnessGainDb(unavailable,-3.,-14.,12.)));
     m.finish();
     m.configure(44100.);assert(m.duration()==0.);
     std::cout<<"PASS: K filters, loudness gate, LRA, stereo sine, independent resets and intersample peak\n";

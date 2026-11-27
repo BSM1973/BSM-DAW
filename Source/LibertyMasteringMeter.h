@@ -91,6 +91,13 @@ public:
     }
     double dbtp() const noexcept {return amplitudeDb(maximum);}
 };
+// Gain in dB for offline clip normalization; TP is an estimate.
+inline double boundedLoudnessGainDb(double integrated,double truePeak,double target,double maxGainDb,double ceiling=-1.) noexcept
+{
+    if(!std::isfinite(integrated)||!std::isfinite(truePeak)||!std::isfinite(target)||
+        !std::isfinite(maxGainDb)||!std::isfinite(ceiling))return unavailable;
+    return std::min({target-integrated,ceiling-truePeak,maxGainDb});
+}
 struct Reading {double momentary=unavailable,shortTerm=unavailable,integrated=unavailable,lra=unavailable,truePeak=unavailable;};
 class Meter
 {

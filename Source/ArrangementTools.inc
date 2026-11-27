@@ -12,7 +12,7 @@ struct ArrangementState {
 struct ArrangementEdit { ArrangementState before,after; };
 std::vector<ArrangementEdit> undoEdits,redoEdits;
 std::unique_ptr<ArrangementState> pendingEdit;
-std::shared_ptr<std::atomic<bool>> asyncStretchCancel;
+std::shared_ptr<std::atomic<bool>> asyncStretchCancel,smartAnalysisCancel;
 std::set<AudioKey> selectedAudio;
 std::map<AudioKey,double> audioOrigins;
 AudioClip audioClipboard,audioDragOriginal;
@@ -55,7 +55,7 @@ void finishArrangementEdit(){
     }
     pendingEdit.reset();
 }
-void clearArrangementHistory(){if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
+void clearArrangementHistory(){if(smartAnalysisCancel)smartAnalysisCancel->store(true);if(asyncStretchCancel)asyncStretchCancel->store(true);undoEdits.clear();redoEdits.clear();pendingEdit.reset();selectedAudio.clear();audioOrigins.clear();audioClipboardValid=false;audioDragTrack=-1;audioDuplicateId.clear();}
 bool restoreArrangement(const ArrangementState& state){
     if(state.audio.size()!=(size_t)owner.getAudioTrackCount())return false;
     const auto previous=captureArrangement();
@@ -1511,10 +1511,142 @@ void showCollectiveInspector(){
         });
     }),false);
 }
+juce::ThreadPool smartAnalysisPool{1};
+bool cancelSmartAnalysis(){
+    if(!smartAnalysisCancel)return false;
+    smartAnalysisCancel->store(true);
+    operationMessage=juce::String::fromUTF8("Annulation de l’analyse demandée…");repaint();return true;
+}
+struct SmartSourceJob{
+    AudioKey key;AudioClip clip;int start=0,end=0,channels=0;
+    double peak=0.,rms=0.,integrated=LibertyMastering::unavailable,tp=LibertyMastering::unavailable;
+};
+bool startSmartAudioAnalysis(int mode,double target=-23.){
+    if(smartAnalysisCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>1000||
+       (mode!=0&&mode!=35&&mode!=36)||!std::isfinite(target)||target<-36.||target>0.)return false;
+    const auto before=captureArrangement();const auto selection=selectedAudio;
+    std::vector<SmartSourceJob> jobs;std::uint64_t total=0;
+    for(const auto& key:selection){
+        if(key.first<0||key.first>=(int)before.audio.size())return false;
+        const auto& lane=before.audio[(size_t)key.first];
+        const auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& c){return c.id==key.second;});
+        if(it==lane.end())return false;
+        const auto& c=*it;
+        if(!AudioEngine::validAudioClip(c)||!c.sourceBuffer||c.warp.enabled||c.pitchSemitones!=0.||
+           c.sourceSampleRate<8000.||c.sourceSampleRate>384000.||c.sourceBuffer->getNumChannels()<1||
+           c.sourceBuffer->getNumChannels()>2||c.muted)return false;
+        const int n=c.sourceBuffer->getNumSamples();
+        const double lo=c.trimStartFraction*n,hi=c.trimEndFraction*n;
+        const double a=c.offsetSeconds*c.sourceSampleRate,b=(c.offsetSeconds+c.lengthSeconds)*c.sourceSampleRate;
+        if(!std::isfinite(a)||!std::isfinite(b)||a<0.||a>=hi-lo)return false;
+        const double low=c.reverse?hi-std::min(b,hi-lo):lo+a;
+        const double high=c.reverse?hi-a:lo+std::min(b,hi-lo);
+        const int start=juce::jlimit(0,n,(int)std::floor(low));
+        const int end=juce::jlimit(start,n,(int)std::ceil(high));
+        if(end<=start)return false;
+        total+=(std::uint64_t)(end-start);
+        if(total>8000000ull)return false;
+        jobs.push_back({key,c,start,end,c.sourceBuffer->getNumChannels()});
+    }
+    const auto cancel=std::make_shared<std::atomic<bool>>(false);smartAnalysisCancel=cancel;
+    const auto signature=before.signature;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    operationMessage=juce::String::fromUTF8("Analyse audio : 0 % — Échap pour annuler");repaint();
+    smartAnalysisPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),total,mode,target]() mutable{
+        bool ok=true;std::uint64_t processed=0;int progress=-1;
+        try{
+            auto meter=std::make_unique<LibertyMastering::Meter>();
+            std::array<LibertyImmersive::Frame,1024> frames{};
+            for(auto& job:jobs){
+                if(cancel->load()){ok=false;break;}
+                meter->configure(job.clip.sourceSampleRate);
+                double energy=0.;
+                for(int offset=0;offset<job.end-job.start&&!cancel->load();offset+=1024){
+                    const int count=std::min(1024,job.end-job.start-offset);
+                    for(int i=0;i<count;++i){
+                        const int j=job.clip.reverse?job.end-1-offset-i:job.start+offset+i;
+                        const float l=job.clip.sourceBuffer->getSample(0,j);
+                        const float r=job.channels==2?job.clip.sourceBuffer->getSample(1,j):0.f;
+                        if(!std::isfinite(l)||!std::isfinite(r)){ok=false;break;}
+                        frames[(size_t)i]={l,r};
+                        energy+=(double)l*l+(double)r*r;
+                        job.peak=std::max({job.peak,std::abs((double)l),std::abs((double)r)});
+                    }
+                    if(!ok)break;
+                    meter->push(frames.data(),(size_t)count);processed+=count;
+                    const int p=(int)(processed*100/total);
+                    if(p/5!=progress/5){progress=p;
+                        juce::MessageManager::callAsync([safe,cancel,p]{
+                            if(!safe||safe->stopped.load()||safe->smartAnalysisCancel!=cancel||cancel->load())return;
+                            safe->operationMessage=juce::String::fromUTF8("Analyse audio : ")+juce::String(p)+juce::String::fromUTF8(" % — Échap pour annuler");safe->repaint();
+                        });
+                    }
+                }
+                if(!ok||cancel->load()){ok=false;break;}
+                meter->finish();const auto reading=meter->get();
+                job.integrated=reading.integrated;job.tp=reading.truePeak;
+                job.rms=std::sqrt(energy/(double(job.end-job.start)*job.channels));
+            }
+        }catch(...){ok=false;}
+        juce::MessageManager::callAsync([safe,cancel,signature,selection,jobs=std::move(jobs),mode,target,ok]() mutable{
+            if(!safe||safe->stopped.load()||safe->smartAnalysisCancel!=cancel)return;
+            safe->smartAnalysisCancel.reset();
+            if(!ok||cancel->load()||safe->pendingEdit||safe->selectedAudio!=selection||
+               safe->captureArrangement().signature!=signature){
+                safe->operationMessage=juce::String::fromUTF8("Analyse annulée ou arrangement modifié — clips conservés");safe->repaint();return;
+            }
+            auto number=[](double n){return std::isfinite(n)?juce::String(n,1):juce::String("--");};
+            if(mode==0){
+                juce::String report=juce::String::fromUTF8("Sources à gain unitaire, avant fondus et mixage. True Peak estimé 8x.\n");
+                int shown=0;
+                for(const auto& j:jobs){
+                    if(shown++>=12)break;
+                    report+=j.clip.sourceName+" | P "+number(LibertyMastering::amplitudeDb(j.peak))+" | RMS "+number(LibertyMastering::amplitudeDb(j.rms))+
+                        " dBFS | "+number(j.integrated)+" LUFS | "+number(j.tp)+" dBTP\n";
+                }
+                if(jobs.size()>12)report+=juce::String::fromUTF8("Affichage limité aux 12 premiers clips.");
+                safe->operationMessage.clear();safe->repaint();
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,juce::String::fromUTF8("Analyse audio collective"),report);return;
+            }
+            const auto previous=safe->captureArrangement();auto audio=previous.audio;std::set<int> lanes;
+            const double maxGainDb=20.*std::log10(4.);
+            double commonLufs=LibertyMastering::unavailable,commonTp=LibertyMastering::unavailable,commonMax=maxGainDb;
+            bool valid=true;
+            for(const auto& j:jobs){
+                if(!std::isfinite(j.integrated)||!std::isfinite(j.tp)||(mode==36&&j.clip.clipGain<=0.)){valid=false;break;}
+                const double oldDb=LibertyMastering::amplitudeDb(j.clip.clipGain);
+                commonLufs=std::max(commonLufs,j.integrated+oldDb);commonTp=std::max(commonTp,j.tp+oldDb);
+                commonMax=std::min(commonMax,maxGainDb-oldDb);
+            }
+            const double relative=LibertyMastering::boundedLoudnessGainDb(commonLufs,commonTp,target,commonMax);
+            if(mode==36&&!std::isfinite(relative))valid=false;
+            if(valid)for(const auto& j:jobs){
+                auto& lane=audio[(size_t)j.key.first];
+                auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& c){return c.id==j.key.second;});
+                if(it==lane.end()){valid=false;break;}
+                const double db=mode==35?LibertyMastering::boundedLoudnessGainDb(j.integrated,j.tp,target,maxGainDb):LibertyMastering::amplitudeDb(j.clip.clipGain)+relative;
+                if(!std::isfinite(db)){valid=false;break;}
+                it->clipGain=(float)std::min(4.,std::pow(10.,db/20.));
+                if(!AudioEngine::validAudioClip(*it)){valid=false;break;}
+                lanes.insert(j.key.first);
+            }
+            if(!valid){safe->operationMessage=juce::String::fromUTF8("Sonie indisponible ou clip silencieux — clips conservés");safe->repaint();return;}
+            safe->beginArrangementEdit();std::vector<int> published;
+            for(int lane:lanes){
+                if(!safe->owner.audioEngine.replaceArrangementAudioClips(lane,audio[(size_t)lane])){valid=false;break;}
+                published.push_back(lane);
+            }
+            if(!valid)for(int lane:published)safe->owner.audioEngine.replaceArrangementAudioClips(lane,previous.audio[(size_t)lane]);
+            for(int lane:published)safe->refreshAudio(lane);
+            safe->finishArrangementEdit();safe->operationMessage=juce::String::fromUTF8(valid?"Normalisation LUFS source appliquée — plafond estimé -1 dBTP":"Normalisation non appliquée — clips conservés");safe->repaint();
+        });
+    });
+    return true;
+}
 void showPrecisionValueDialog(int command){
-    const auto label=juce::String::fromUTF8(command==24?"Gain absolu en dB (-60 à +12)":command==27?"Durée de chaque fondu en secondes":command==33||command==34?"Cible RMS source en dBFS (-60 à 0)":"Cible Peak source en dBFS (-60 à 0)");
+    const auto label=juce::String::fromUTF8(command==35||command==36?"Cible LUFS source (-36 à 0), plafond estimé -1 dBTP":command==24?"Gain absolu en dB (-60 à +12)":command==27?"Durée de chaque fondu en secondes":command==33||command==34?"Cible RMS source en dBFS (-60 à 0)":"Cible Peak source en dBFS (-60 à 0)");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("PRÉCISION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
-    dialog->addTextEditor("value",command==24?"0":command==27?"0.01":command==33||command==34?"-18":"-1");
+    dialog->addTextEditor("value",command==35||command==36?"-23":command==24?"0":command==27?"0.01":command==33||command==34?"-18":"-1");
     dialog->addButton("Appliquer",1,juce::KeyPress(juce::KeyPress::returnKey));
     dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
     const auto selection=selectedAudio;const auto midiSelection=selectedClipIds;
@@ -1526,7 +1658,7 @@ void showPrecisionValueDialog(int command){
         try{
             const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
             size_t used=0;const double value=std::stod(input,&used);
-            if(used==input.size())ok=safe->applyGroupClipOperation(command,value);
+            if(used==input.size())ok=command==35||command==36?safe->startSmartAudioAnalysis(command,value):safe->applyGroupClipOperation(command,value);
         }catch(...){}
         if(!ok){safe->operationMessage=juce::String::fromUTF8("Valeur invalide ou opération impossible — clips conservés");safe->repaint();}
     }),false);
@@ -1622,6 +1754,12 @@ bool showGroupClipMenu(juce::Point<int> p){
     menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
     }else menu.addItem(29,juce::String::fromUTF8("Éditer le clip audio…"));
     juce::PopupMenu precision;
+    juce::PopupMenu analysis;
+    analysis.addItem(49,juce::String::fromUTF8("Analyser Peak / RMS / LUFS / True Peak…"),!selectedAudio.empty()&&!smartAnalysisCancel);
+    analysis.addItem(50,juce::String::fromUTF8("Normaliser LUFS individuellement…"),!selectedAudio.empty()&&!smartAnalysisCancel);
+    analysis.addItem(51,juce::String::fromUTF8("Normaliser LUFS collectivement…"),!selectedAudio.empty()&&!smartAnalysisCancel);
+    analysis.addItem(52,juce::String::fromUTF8("Annuler l’analyse"),smartAnalysisCancel!=nullptr);
+    menu.addSubMenu(juce::String::fromUTF8("Analyse audio intelligente"),analysis);
     precision.addItem(46,juce::String::fromUTF8("Inspecteur collectif…"),!selectedAudio.empty());
     precision.addItem(47,juce::String::fromUTF8("Découper à la tête de lecture"),!selectedAudio.empty());
     precision.addItem(48,juce::String::fromUTF8("Sélectionner les clips des pistes concernées"),!selectedAudio.empty());
@@ -1663,9 +1801,12 @@ bool showGroupClipMenu(juce::Point<int> p){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection,p](int choice){
-            if(!safe||choice<1||choice>48)return;
+            if(!safe||choice<1||choice>52)return;
+            if(choice==52){safe->cancelSmartAnalysis();return;}
             if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice==49){if(!safe->startSmartAudioAnalysis(0)){safe->operationMessage=juce::String::fromUTF8("Analyse impossible : sélection ou durée non prise en charge");safe->repaint();}return;}
+            if(choice==50||choice==51){safe->showPrecisionValueDialog(choice==50?35:36);return;}
             if(choice==46){safe->showCollectiveInspector();return;}
             if(choice==47){if(!safe->splitSelectedAudioAt(safe->owner.audioEngine.getCurrentTimeSeconds())){safe->operationMessage=juce::String::fromUTF8("Aucun clip sélectionné traversé par la tête de lecture");safe->repaint();}return;}
             if(choice==48){safe->selectAudioOnSelectedTracks();return;}
