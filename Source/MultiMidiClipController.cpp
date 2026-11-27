@@ -435,7 +435,7 @@ void mouseDown(const juce::MouseEvent&e)override{
         }
     }
     if(e.eventComponent==this&&!inlineMidiMode&&e.mods.isLeftButtonDown()&&lockedMember(permanentKeyAt(ownerPoint))){
-        if(!groupingSuspended)selectPermanentAt(ownerPoint,false);
+        selectPermanentAt(ownerPoint,false,true);
         arrangementFocus=true;grabKeyboardFocus();operationMessage=juce::String::fromUTF8("Groupe verrouillé");repaint();return;
     }
     if(e.eventComponent==this&&e.mods.isLeftButtonDown()&&e.mods.isShiftDown()&&

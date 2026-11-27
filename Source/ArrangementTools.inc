@@ -102,9 +102,9 @@ juce::String permanentKeyAt(juce::Point<int> p)const{
     bool instrument=false;const int index=findClipAt(p,instrument);
     return index<0?juce::String{}:midiGroupKey((instrument?instrumentClips:midiClips)[(size_t)index].id);
 }
-bool selectPermanentAt(juce::Point<int> p,bool preserve){
+bool selectPermanentAt(juce::Point<int> p,bool preserve,bool allowSuspended=false){
     const auto key=permanentKeyAt(p);
-    if(key.isEmpty()||groupFor(key).isEmpty()||groupingSuspended)return false;
+    if(key.isEmpty()||groupFor(key).isEmpty()||(groupingSuspended&&!allowSuspended))return false;
     if(!preserve||!selectionKeys().count(key)){selectedAudio.clear();selectedClipIds.clear();}
     const int lane=audioLaneAt(p);
     if(lane>=0)selectedAudio.insert({lane,audioAt(p)});
@@ -1527,6 +1527,22 @@ bool applyGroupClipOperation(int command,double value=0.0){
 }
 bool toggleGroupClipSelection(juce::Point<int> p){
     if(inlineMidiMode||activeArrangeTool!=0)return false;
+    const auto clicked=permanentKeyAt(p);const auto groupId=groupFor(clicked);
+    if(!groupingSuspended&&groupId.isNotEmpty()){
+        const auto& members=permanentGroups.at(groupId).members;
+        if(selectionKeys().count(clicked)){
+            for(auto it=selectedAudio.begin();it!=selectedAudio.end();)
+                if(members.count(audioGroupKey(it->second)))it=selectedAudio.erase(it);else ++it;
+            for(auto it=selectedClipIds.begin();it!=selectedClipIds.end();)
+                if(members.count(midiGroupKey(*it)))it=selectedClipIds.erase(it);else ++it;
+        }else{
+            const int lane=audioLaneAt(p);
+            if(lane>=0)selectedAudio.insert({lane,audioAt(p)});
+            else {bool instrument=false;const int index=findClipAt(p,instrument);if(index>=0)selectedClipIds.insert((instrument?instrumentClips:midiClips)[(size_t)index].id);}
+            expandPermanentSelection();
+        }
+        arrangementFocus=true;grabKeyboardFocus();repaint();return true;
+    }
     const int track=audioLaneAt(p);
     if(track>=0){
         const auto id=audioAt(p);if(id.isEmpty())return false;
@@ -2278,7 +2294,8 @@ void analyseSelectionAsync(const std::set<AudioKey>& selection){
 }
 bool showGroupClipMenu(juce::Point<int> p){
     if(inlineMidiMode)return false;
-    if(!permanentKeyAt(p).isEmpty()&&!groupFor(permanentKeyAt(p)).isEmpty()&&!selectionKeys().count(permanentKeyAt(p)))selectPermanentAt(p,false);
+    const auto clickedKey=permanentKeyAt(p);
+    if(!clickedKey.isEmpty()&&!groupFor(clickedKey).isEmpty()&&!selectionKeys().count(clickedKey))selectPermanentAt(p,false,true);
     if(selectedAudio.empty()&&selectedClipIds.size()<2&&selectedPermanentGroups().empty())return false;
     const int track=audioLaneAt(p);
     bool hit=track>=0&&selectedAudio.count({track,audioAt(p)})!=0;
@@ -3111,6 +3128,15 @@ bool runArrangementTests(){
         require(undoArrangement(false),"undo group lock");
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds.clear();expandPermanentSelection();
         require(!selectionLocked()&&selectedClipIds.count(groupMidi.id),"unlock restored");
+        require(applyGroupClipOperation(10),"duplicate permanent group");
+        require(permanentGroups.size()==2&&selectedPermanentGroups().size()==1&&
+            *selectedPermanentGroups().begin()!=groupId,"duplicate gets independent group");
+        require(undoArrangement(false)&&permanentGroups.size()==1,"undo duplicate permanent group");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        groupingSuspended=true;selectedClipIds.clear();expandPermanentSelection();
+        require(selectedClipIds.empty(),"suspended group selection");
+        groupingSuspended=false;expandPermanentSelection();
+        require(selectedClipIds.count(groupMidi.id),"resume permanent group selection");
         juce::XmlElement groupXml("Project");savePermanentGroups(groupXml);loadPermanentGroups(groupXml);
         require(permanentGroups.at(groupId).colour==3&&permanentGroups.at(groupId).name==juce::String::fromUTF8("Groupe témoin"),"group XML roundtrip");
         require(editPermanentGroup(57)&&permanentGroups.empty(),"dissolve group");
@@ -3133,6 +3159,9 @@ bool runArrangementTests(){
         }
         // Exercise the real project writer, relative media paths and reader.
         const auto project=directory.getChildFile("Régions.liberty");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        require(editPermanentGroup(54,juce::String::fromUTF8("Groupe portable"),2),"group project seed");
+        const auto portableGroup=groupFor(audioGroupKey(groupAudio.front().id));
         require(owner.saveProjectToFile(project),"save project");
         const auto saved=owner.audioEngine.getArrangementAudioClips(0);
         const auto moved=directory.getChildFile("Déplacé");moved.createDirectory();
@@ -3144,6 +3173,12 @@ bool runArrangementTests(){
         require(loaded.size()==saved.size()&&loaded[0].id==saved[0].id&&loaded[0].muted==saved[0].muted
             &&loaded[0].offsetSeconds==saved[0].offsetSeconds&&loaded[0].clipGain==saved[0].clipGain,"project properties");
         require(loaded[0].sourceBuffer&&loaded[1].sourceBuffer,"project media");
+        require(groupFor(audioGroupKey(loaded[0].id))==portableGroup&&groupFor(midiGroupKey(groupMidi.id))==portableGroup&&
+            permanentGroups.at(portableGroup).name=="Groupe portable"&&permanentGroups.at(portableGroup).colour==2,
+            "permanent group native project roundtrip");
+        selectedAudio={{0,loaded[0].id}};selectedClipIds.clear();expandPermanentSelection();
+        require(selectedClipIds.count(groupMidi.id),"restored permanent selection");
+        require(editPermanentGroup(57),"dissolve restored group");
         for(int i=0;i<48000;++i)require(std::abs(loaded[0].sourceBuffer->getSample(0,i)-source->getSample(0,i))<.000001f,"saved media fidelity");
         require(midiClips.size()==1&&midiClips[0].notes[0].startTick==120,"project MIDI");
         require(clipNames.entries.at(audioKey).manual==juce::String::fromUTF8("Prise préférée")&&clipNames.entries.at(audioKey).number==namingBefore,"audio name project persistence");
