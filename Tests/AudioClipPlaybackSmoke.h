@@ -48,6 +48,11 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                 throw std::runtime_error("smart silence retained intervals");
             if(!detect(n,48000.,1,settings,[](int,int){return 0.f;},cuts)||!cuts.empty())
                 throw std::runtime_error("smart silence protects empty clip");
+            settings.beforeMs=50.;settings.afterMs=10.;
+            if(!detect(n,48000.,2,settings,sample,cuts)||cuts.size()!=2||cuts[0].start!=5280||cuts[0].end!=19200)
+                throw std::runtime_error("smart silence independent margins");
+            const auto threshold=noiseThreshold(n,48000.,2,-50.,sample);
+            if(threshold> -50.||threshold< -90.)throw std::runtime_error("smart silence noise threshold bound");
             std::atomic<bool> cancel{true};
             if(detect(n,48000.,2,settings,sample,cuts,&cancel))
                 throw std::runtime_error("smart silence cancellation");

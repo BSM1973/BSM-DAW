@@ -1644,8 +1644,10 @@ bool startSmartAudioAnalysis(int mode,double target=-23.){
     return true;
 }
 struct SilenceJob {
-    AudioKey key;AudioClip clip;int count=0;
+    AudioKey key;AudioClip clip;int count=0,sourceStart=0;
     std::vector<LibertySmartSilence::Range> cuts;
+    std::array<float,2048> waveform{};
+    double threshold=-55.;
 };
 bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& signature,
                       const std::set<AudioKey>& selection,double fadeMs){
@@ -1666,7 +1668,7 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
             if(!pieces.empty())piece.id=juce::Uuid().toString();
             piece.startSeconds=original.startSeconds+range.start/rate;
             piece.lengthSeconds=std::min(original.lengthSeconds,range.end/rate)-range.start/rate;
-            piece.trimStartFraction=range.start/n;piece.trimEndFraction=range.end/n;
+            piece.trimStartFraction=(job.sourceStart+range.start)/n;piece.trimEndFraction=(job.sourceStart+range.end)/n;
             piece.offsetSeconds=piece.envelopeLengthSeconds=0.;
             const double fade=std::min(fadeMs*.001,piece.lengthSeconds*.5);
             piece.fadeInSeconds=range.start>0?fade:0.;
@@ -1690,41 +1692,141 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
     for(int lane:published)refreshAudio(lane);
     finishArrangementEdit();return ok;
 }
-class SilencePreviewPanel final:public juce::Component {
+class SilencePreviewPanel final:public juce::Component,private juce::Timer {
     std::vector<SilenceJob> jobs;
-    std::function<bool()> apply;
-    juce::TextButton confirm{"APPLIQUER"},cancel{"ANNULER"};
-    juce::Label status;
-public:
-    SilencePreviewPanel(std::vector<SilenceJob> j,std::function<bool()> a):jobs(std::move(j)),apply(std::move(a)){
-        setSize(620,420);addAndMakeVisible(confirm);addAndMakeVisible(cancel);addAndMakeVisible(status);
+    std::vector<std::vector<bool>> enabled;
+    std::function<bool(const std::vector<SilenceJob>&)> apply;
+    std::function<AudioEngine*()> engine;
+    double fadeMs=5.;
+    juce::TextButton confirm{"APPLIQUER"},cancel{"ANNULER"},playA{"A"},playB{"B"},stop{"STOP"};
+    juce::ComboBox clipChoice;
+    juce::Slider zoom,position;
+    juce::Label status,info;
+    juce::AudioSourcePlayer player;
+    std::unique_ptr<juce::MemoryAudioSource> source;
+    bool attached=false;double deadline=0.,previewRate=0.;
+    int selected()const{return std::clamp(clipChoice.getSelectedId()-1,0,(int)jobs.size()-1);}
+    double span()const{return 1./zoom.getValue();}
+    double start()const{return position.getValue()*(1.-span());}
+    juce::Rectangle<int> graph()const{return {16,102,588,184};}
+    void refresh(){
         int count=0;double seconds=0.;
-        for(const auto& job:jobs)for(const auto& cut:job.cuts){++count;seconds+=(cut.end-cut.start)/job.clip.sourceSampleRate;}
-        status.setText(juce::String(count)+juce::String::fromUTF8(" zones — ")+juce::String(seconds,2)+juce::String::fromUTF8(" s à retirer, sans déplacement"),juce::dontSendNotification);
-        confirm.setEnabled(count>0);
-        confirm.onClick=[this]{if(apply&&apply())close();else status.setText(juce::String::fromUTF8("Arrangement modifié ou opération impossible — rien appliqué"),juce::dontSendNotification);};
-        cancel.onClick=[this]{close();};
-    }
-    void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
-    void resized()override{status.setBounds(16,338,588,28);cancel.setBounds(342,378,120,28);confirm.setBounds(480,378,124,28);}
-    void paint(juce::Graphics& g)override{
-        g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffd5edff));g.setFont(14.f);
-        g.drawText(juce::String::fromUTF8("Zones rouges : silences proposés à la suppression"),16,8,588,24,juce::Justification::centredLeft);
-        int row=0;
-        for(const auto& job:jobs){
-            if(row>=6)break;
-            const int y=42+row*46;
-            g.setColour(juce::Colour(0xffd5edff));g.setFont(12.f);
-            g.drawFittedText(job.clip.sourceName,16,y,588,16,juce::Justification::centredLeft,1);
-            g.setColour(juce::Colour(0xff286d89));g.fillRect(16,y+18,588,20);
-            g.setColour(juce::Colour(0xffaf594f));
-            for(const auto& cut:job.cuts){const float x=16.f+588.f*cut.start/job.count,w=588.f*(cut.end-cut.start)/job.count;g.fillRect(x,(float)y+18.f,std::max(1.f,w),20.f);}
-            ++row;
+        for(size_t j=0;j<jobs.size();++j)for(size_t k=0;k<jobs[j].cuts.size();++k)if(enabled[j][k]){
+            const auto& c=jobs[j].cuts[k];++count;seconds+=(c.end-c.start)/jobs[j].clip.sourceSampleRate;
         }
-        if(jobs.size()>6){g.setColour(juce::Colour(0xffabc6da));g.drawText(juce::String::fromUTF8("Aperçu : 6 premiers clips, application à toute la sélection"),16,320,588,16,juce::Justification::centredLeft);}
+        status.setText(juce::String(count)+juce::String::fromUTF8(" zones retenues — ")+juce::String(seconds,2)+" s",juce::dontSendNotification);
+        confirm.setEnabled(count>0);repaint();
+    }
+    void stopAudio(){
+        stopTimer();
+        if(attached){if(auto* e=engine())e->getDeviceManager().removeAudioCallback(&player);attached=false;}
+        player.setSource(nullptr);source.reset();
+    }
+    void timerCallback()override{
+        auto* e=engine();auto* d=e?e->getDeviceManager().getCurrentAudioDevice():nullptr;
+        if(!e||!d||e->isPlaying()||d->getCurrentSampleRate()!=previewRate||juce::Time::getMillisecondCounterHiRes()>=deadline)stopAudio();
+    }
+    void audition(bool edited){
+        stopAudio();auto* e=engine();auto* d=e?e->getDeviceManager().getCurrentAudioDevice():nullptr;
+        if(!d||e->isPlaying()){info.setText(juce::String::fromUTF8("Arrêtez le transport pour écouter."),juce::dontSendNotification);return;}
+        const auto j=(size_t)selected();const auto& job=jobs[j];const double rate=d->getCurrentSampleRate(),sr=job.clip.sourceSampleRate;
+        if(rate<8000.||rate>192000.)return;
+        try{
+            const double first=start()*job.count;
+            const double last=std::min({double(job.count),(start()+span())*job.count,first+12.*sr});
+            const int frames=(int)std::floor((last-first)*rate/sr);
+            if(frames<2)return;
+            std::vector<LibertySmartSilence::Range> cuts;
+            for(size_t k=0;k<job.cuts.size();++k)if(enabled[j][k])cuts.push_back(job.cuts[k]);
+            const auto keep=LibertySmartSilence::retained(job.count,cuts);
+            juce::AudioBuffer<float> buffer(2,frames);buffer.clear();size_t region=0;
+            // Common, conservative gain for both variants, without per-variant normalization.
+            const float gain=std::min(job.clip.clipGain,.95f/std::max(.000001f,*std::max_element(job.waveform.begin(),job.waveform.end())));
+            for(int i=0;i<frames;++i){
+                const double x=first+i*sr/rate;
+                while(region<keep.size()&&x>=keep[region].end)++region;
+                double envelope=1.;
+                if(edited){
+                    if(region>=keep.size()||x<keep[region].start)continue;
+                    const auto& k=keep[region];const double f=std::min(fadeMs*.001*sr,(k.end-k.start)*.5);
+                    if(f>0.&&k.start>0)envelope=std::min(envelope,LibertyAudioCrossfade::manualFadeLevel(2,(x-k.start)/f,true));
+                    if(f>0.&&k.end<job.count)envelope=std::min(envelope,LibertyAudioCrossfade::manualFadeLevel(2,(x-(k.end-f))/f,false));
+                }
+                const int i0=std::clamp((int)std::floor(x),0,job.count-1);
+                const int i1=std::min(i0+1,job.count-1);
+                for(int ch=0;ch<2;++ch){
+                    const int c=std::min(ch,job.clip.sourceBuffer->getNumChannels()-1);
+                    const float a=job.clip.sourceBuffer->getSample(c,job.sourceStart+i0),b=job.clip.sourceBuffer->getSample(c,job.sourceStart+i1);
+                    buffer.setSample(ch,i,(float)((a+(b-a)*(x-i0))*gain*envelope));
+                }
+            }
+            const int ramp=std::min(frames/2,(int)(rate*.005));
+            if(ramp>0){buffer.applyGainRamp(0,ramp,0.f,1.f);buffer.applyGainRamp(frames-ramp,ramp,1.f,0.f);}
+            source=std::make_unique<juce::MemoryAudioSource>(buffer,true);player.setSource(source.get());
+            e->getDeviceManager().addAudioCallback(&player);attached=true;previewRate=rate;deadline=juce::Time::getMillisecondCounterHiRes()+1000.*frames/rate;startTimer(30);
+            info.setText(juce::String::fromUTF8(edited?"B : silences sélectionnés retirés":"A : source originale")+juce::String::fromUTF8(" — 12 s max."),juce::dontSendNotification);
+        }catch(...){stopAudio();info.setText(juce::String::fromUTF8("Préécoute indisponible."),juce::dontSendNotification);}
+    }
+public:
+    SilencePreviewPanel(std::vector<SilenceJob> j,std::function<bool(const std::vector<SilenceJob>&)> a,std::function<AudioEngine*()> e,double f)
+        :jobs(std::move(j)),apply(std::move(a)),engine(std::move(e)),fadeMs(f){
+        setSize(620,420);
+        for(auto* c:std::initializer_list<juce::Component*>{&confirm,&cancel,&playA,&playB,&stop,&clipChoice,&zoom,&position,&status,&info})addAndMakeVisible(c);
+        for(size_t i=0;i<jobs.size();++i){enabled.emplace_back(jobs[i].cuts.size(),true);clipChoice.addItem(juce::String((int)i+1)+" | "+jobs[i].clip.sourceName,(int)i+1);}
+        clipChoice.setSelectedId(1,juce::dontSendNotification);
+        zoom.setRange(1.,16.,1.);zoom.setValue(1.);zoom.setTextBoxStyle(juce::Slider::TextBoxRight,false,48,24);
+        position.setRange(0.,1.,.001);position.setValue(0.);position.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        clipChoice.onChange=[this]{stopAudio();repaint();};
+        zoom.onValueChange=[this]{stopAudio();repaint();};position.onValueChange=[this]{stopAudio();repaint();};
+        playA.onClick=[this]{audition(false);};playB.onClick=[this]{audition(true);};stop.onClick=[this]{stopAudio();};
+        confirm.onClick=[this]{
+            stopAudio();auto plan=jobs;
+            for(size_t i=0;i<plan.size();++i){plan[i].cuts.clear();for(size_t k=0;k<jobs[i].cuts.size();++k)if(enabled[i][k])plan[i].cuts.push_back(jobs[i].cuts[k]);}
+            if(apply&&apply(plan))close();else status.setText(juce::String::fromUTF8("Arrangement modifié ou opération impossible"),juce::dontSendNotification);
+        };
+        cancel.onClick=[this]{close();};refresh();
+    }
+    ~SilencePreviewPanel()override{stopAudio();}
+    void close(){stopAudio();if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
+    void resized()override{
+        clipChoice.setBounds(16,36,588,26);zoom.setBounds(64,68,220,26);position.setBounds(350,68,254,26);
+        info.setBounds(16,290,588,24);status.setBounds(16,320,588,24);
+        playA.setBounds(16,378,55,28);playB.setBounds(78,378,55,28);stop.setBounds(140,378,72,28);
+        cancel.setBounds(342,378,120,28);confirm.setBounds(480,378,124,28);
+    }
+    void mouseDown(const juce::MouseEvent& e)override{
+        const auto g=graph();if(!g.contains(e.getPosition()))return;
+        const size_t j=(size_t)selected();const double x=(start()+span()*(e.position.x-g.getX())/g.getWidth())*jobs[j].count;
+        for(size_t k=0;k<jobs[j].cuts.size();++k){const auto& cut=jobs[j].cuts[k];if(x>=cut.start&&x<cut.end){stopAudio();enabled[j][k]=!enabled[j][k];refresh();return;}}
+    }
+    void paint(juce::Graphics& g)override{
+        g.fillAll(juce::Colour(0xff101c2b));g.setColour(juce::Colour(0xffd5edff));g.setFont(13.f);
+        g.drawText(juce::String::fromUTF8("Cliquez sur une zone : rouge = retirer, gris = conserver"),16,8,588,24,juce::Justification::centredLeft);
+        g.drawText("Zoom",16,68,48,26,juce::Justification::centredLeft);
+        g.drawText("Position",288,68,60,26,juce::Justification::centredLeft);
+        if(jobs.empty())return;
+        const size_t j=(size_t)selected();const auto& job=jobs[j];const auto box=graph();
+        g.setColour(juce::Colour(0xff1b3042));g.fillRect(box);
+        const auto xFor=[&](double sample){return box.getX()+box.getWidth()*(sample/job.count-start())/span();};
+        {
+            juce::Graphics::ScopedSaveState clip(g);g.reduceClipRegion(box);
+            for(size_t k=0;k<job.cuts.size();++k){
+                const auto& c=job.cuts[k];const float x=(float)xFor(c.start),w=(float)(xFor(c.end)-x);
+                g.setColour(juce::Colour(enabled[j][k]?0xff934d49:0xff536271));g.fillRect(x,(float)box.getY(),std::max(1.f,w),(float)box.getHeight());
+            }
+            g.setColour(juce::Colour(0xffb9e1f6));
+            for(int x=0;x<box.getWidth();++x){
+                const int a=std::clamp((int)std::floor((start()+span()*x/box.getWidth())*job.waveform.size()),0,(int)job.waveform.size()-1);
+                const int b=std::clamp((int)std::ceil((start()+span()*(x+1)/box.getWidth())*job.waveform.size()),a+1,(int)job.waveform.size());
+                float peak=0.f;for(int i=a;i<b;++i)peak=std::max(peak,job.waveform[(size_t)i]);
+                const float h=std::min(1.f,peak)*box.getHeight()*.48f;
+                g.drawVerticalLine(box.getX()+x,box.getCentreY()-h,box.getCentreY()+h);
+            }
+        }
+        g.setColour(juce::Colour(0xffabc6da));g.drawText(juce::String::fromUTF8("Seuil utilisé : ")+juce::String(job.threshold,1)+" dBFS | "+juce::String(start()*job.clip.lengthSeconds,2)+" - "+juce::String((start()+span())*job.clip.lengthSeconds,2)+" s",16,348,588,20,juce::Justification::centredLeft);
     }
 };
-bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs){
+bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,bool automatic=false){
     if(smartAnalysisCancel||pendingEdit||selectedAudio.empty()||selectedAudio.size()>1000||
        !std::isfinite(fadeMs)||fadeMs<0.||fadeMs>50.)return false;
     const auto before=captureArrangement();const auto selection=selectedAudio;
@@ -1735,30 +1837,41 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs){
         const auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& c){return c.id==key.second;});
         if(it==lane.end())return false;
         const auto& c=*it;
-        // First edition: raw forward clips only, no pre-existing fades or overlaps.
+        // Forward, sample-aligned edited clips are supported; preserve existing fades by refusing them.
         if(!AudioEngine::validAudioClip(c)||!c.sourceBuffer||c.warp.enabled||c.reverse||c.muted||
-           c.pitchSemitones!=0.||c.trimStartFraction!=0.||c.trimEndFraction!=1.||c.offsetSeconds!=0.||
+           c.pitchSemitones!=0.||
            c.fadeInSeconds!=0.||c.fadeOutSeconds!=0.||c.sourceSampleRate<8000.||c.sourceSampleRate>384000.||
            c.sourceBuffer->getNumChannels()>2)return false;
         for(const auto& other:lane)if(other.id!=c.id&&other.startSeconds<c.startSeconds+c.lengthSeconds&&
             c.startSeconds<other.startSeconds+other.lengthSeconds)return false;
-        const double frames=c.lengthSeconds*c.sourceSampleRate;
-        if(!std::isfinite(frames)||frames<1.||frames>c.sourceBuffer->getNumSamples()+1.e-6||
-           std::abs(frames-std::round(frames))>1.e-5)return false;
-        const int count=(int)std::llround(frames);
+        const double frames=c.lengthSeconds*c.sourceSampleRate,n=c.sourceBuffer->getNumSamples();
+        const double first=c.trimStartFraction*n+c.offsetSeconds*c.sourceSampleRate;
+        const double end=c.trimEndFraction*n;
+        if(!std::isfinite(frames)||!std::isfinite(first)||frames<1.||first<0.||first+frames>end+1.e-6||
+           std::abs(frames-std::round(frames))>1.e-5||std::abs(first-std::round(first))>1.e-5)return false;
+        const int count=(int)std::llround(frames),sourceStart=(int)std::llround(first);
         total+=(std::uint64_t)count;if(total>32000000ull)return false;
-        jobs.push_back({key,c,count,{}});
+        SilenceJob job;job.key=key;job.clip=c;job.count=count;job.sourceStart=sourceStart;jobs.push_back(std::move(job));
     }
     const auto cancel=std::make_shared<std::atomic<bool>>(false);smartAnalysisCancel=cancel;
     const auto signature=before.signature;
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     operationMessage=juce::String::fromUTF8("Analyse des silences : 0 % — Échap pour annuler");repaint();
-    smartAnalysisPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),settings,fadeMs,total]() mutable{
+    smartAnalysisPool.addJob([safe,cancel,signature,selection,jobs=std::move(jobs),settings,fadeMs,total,automatic]() mutable{
         bool ok=true;std::uint64_t processed=0;int last=-1;
         try{
             for(auto& j:jobs){
-                if(!LibertySmartSilence::detect(j.count,j.clip.sourceSampleRate,j.clip.sourceBuffer->getNumChannels(),
-                    settings,[&j](int ch,int i){return j.clip.sourceBuffer->getSample(ch,i);},j.cuts,cancel.get())){ok=false;break;}
+                auto config=settings;const auto sample=[&j](int ch,int i){return j.clip.sourceBuffer->getSample(ch,j.sourceStart+i);};
+                const int channels=j.clip.sourceBuffer->getNumChannels();
+                if(automatic)config.threshold=LibertySmartSilence::noiseThreshold(j.count,j.clip.sourceSampleRate,channels,settings.threshold,sample,cancel.get());
+                j.threshold=config.threshold;
+                if(!LibertySmartSilence::detect(j.count,j.clip.sourceSampleRate,channels,config,sample,j.cuts,cancel.get())){ok=false;break;}
+                for(int i=0;i<j.count;++i){
+                    if((i&1023)==0&&cancel->load()){ok=false;break;}
+                    auto& peak=j.waveform[(size_t)((std::uint64_t)i*j.waveform.size()/j.count)];
+                    for(int ch=0;ch<channels;++ch)peak=std::max(peak,std::abs(sample(ch,i)));
+                }
+                if(!ok)break;
                 processed+=j.count;const int p=(int)(processed*100/total);
                 if(p/5!=last/5){last=p;juce::MessageManager::callAsync([safe,cancel,p]{
                     if(safe&&!safe->stopped.load()&&safe->smartAnalysisCancel==cancel&&!cancel->load()){
@@ -1772,10 +1885,9 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs){
             safe->smartAnalysisCancel.reset();safe->operationMessage.clear();safe->repaint();
             if(!ok||cancel->load()||safe->pendingEdit||safe->selectedAudio!=selection||
                safe->captureArrangement().signature!=signature)return;
-            auto shared=std::make_shared<std::vector<SilenceJob>>(std::move(jobs));
-            auto* panel=new SilencePreviewPanel(*shared,[safe,shared,signature,selection,fadeMs]{
-                return safe&&!safe->stopped.load()&&safe->applySilencePlan(*shared,signature,selection,fadeMs);
-            });
+            auto* panel=new SilencePreviewPanel(std::move(jobs),[safe,signature,selection,fadeMs](const std::vector<SilenceJob>& plan){
+                return safe&&!safe->stopped.load()&&safe->applySilencePlan(plan,signature,selection,fadeMs);
+            },[safe]()->AudioEngine*{return safe?&safe->owner.audioEngine:nullptr;},fadeMs);
             juce::DialogWindow::LaunchOptions options;
             options.dialogTitle="LIBERTY — SMART SILENCE EDITOR";options.dialogBackgroundColour=juce::Colour(0xff101c2b);
             options.useNativeTitleBar=false;options.escapeKeyTriggersCloseButton=true;options.resizable=false;
@@ -1787,7 +1899,10 @@ void showSilenceSettings(){
     auto* dialog=new juce::AlertWindow("SMART SILENCE EDITOR",juce::String::fromUTF8("Détecter les silences avant toute modification."),juce::MessageBoxIconType::NoIcon);
     dialog->addTextEditor("threshold","-55",juce::String::fromUTF8("Seuil (-90 à -10 dBFS)"));
     dialog->addTextEditor("minimum","250",juce::String::fromUTF8("Durée minimale (20 à 10000 ms)"));
-    dialog->addTextEditor("margin","40",juce::String::fromUTF8("Marge (0 à 500 ms)"));
+    dialog->addTextEditor("before","40",juce::String::fromUTF8("Marge avant (0 à 500 ms)"));
+    dialog->addTextEditor("after","40",juce::String::fromUTF8("Marge après (0 à 500 ms)"));
+    dialog->addComboBox("mode",juce::StringArray{"Manuel","Voix","Batterie","Guitare",juce::String::fromUTF8("Acoustique")},juce::String::fromUTF8("Profil"));
+    dialog->addComboBox("automatic",juce::StringArray{"Non","Oui"},juce::String::fromUTF8("Seuil automatique"));
     dialog->addTextEditor("hysteresis","6",juce::String::fromUTF8("Hystérésis (0 à 18 dB)"));
     dialog->addTextEditor("fade","5",juce::String::fromUTF8("Fondus (0 à 50 ms)"));
     dialog->addButton("Analyser",1,juce::KeyPress(juce::KeyPress::returnKey));dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
@@ -1798,9 +1913,14 @@ void showSilenceSettings(){
         bool ok=false;
         try{
             auto number=[&](const char* key){const auto s=owned->getTextEditorContents(key).trim().replaceCharacter(',','.').toStdString();size_t used=0;const double v=std::stod(s,&used);if(used!=s.size()||!std::isfinite(v))throw std::runtime_error("input");return v;};
-            LibertySmartSilence::Settings settings{number("threshold"),number("minimum"),number("margin"),number("hysteresis")};
-            if(settings.threshold>=-90&&settings.threshold<=-10&&settings.minimumMs>=20&&settings.minimumMs<=10000&&settings.marginMs>=0&&settings.marginMs<=500&&settings.hysteresisDb>=0&&settings.hysteresisDb<=18)
-                ok=safe->startSilenceAnalysis(settings,number("fade"));
+            LibertySmartSilence::Settings settings{number("threshold"),number("minimum"),40.,number("hysteresis")};
+            settings.beforeMs=number("before");settings.afterMs=number("after");
+            const int mode=owned->getComboBoxComponent("mode")->getSelectedId();
+            if(mode==2){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,350.);settings.beforeMs=std::max(settings.beforeMs,80.);settings.afterMs=std::max(settings.afterMs,100.);}
+            if(mode==3){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,20.);}
+            if(mode==4||mode==5){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.afterMs=std::max(settings.afterMs,100.);}
+            if(settings.threshold>=-90&&settings.threshold<=-10&&settings.minimumMs>=20&&settings.minimumMs<=10000&&settings.beforeMs>=0&&settings.beforeMs<=500&&settings.afterMs>=0&&settings.afterMs<=500&&settings.hysteresisDb>=0&&settings.hysteresisDb<=18)
+                ok=safe->startSilenceAnalysis(settings,number("fade"),owned->getComboBoxComponent("automatic")->getSelectedId()==2);
         }catch(...){}
         if(!ok){safe->operationMessage=juce::String::fromUTF8("Analyse impossible : paramètres ou clips non pris en charge");safe->repaint();}
     }),false);
