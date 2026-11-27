@@ -1651,17 +1651,28 @@ struct SilenceJob {
 };
 bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& signature,
                       const std::set<AudioKey>& selection,double fadeMs){
-    if(pendingEdit||selectedAudio!=selection||captureArrangement().signature!=signature)return false;
+    if(pendingEdit||selectedAudio!=selection||captureArrangement().signature!=signature||
+       !std::isfinite(fadeMs)||fadeMs<0.||fadeMs>50.)return false;
     const auto before=captureArrangement();auto audio=before.audio;auto nextSelection=selection;
     std::set<int> lanes;
     for(const auto& job:jobs){
         if(job.cuts.empty())continue;
+        if(job.key.first<0||job.key.first>=(int)audio.size()||!selection.count(job.key)||
+           job.count<1||job.sourceStart<0)return false;
+        int last=0;
+        for(const auto& cut:job.cuts){
+            if(cut.start<last||cut.end<=cut.start||cut.end>job.count)return false;
+            last=cut.end;
+        }
         auto& lane=audio[(size_t)job.key.first];
         const auto it=std::find_if(lane.begin(),lane.end(),[&](const auto& c){return c.id==job.key.second;});
         if(it==lane.end())return false;
         const auto index=(size_t)std::distance(lane.begin(),it);
         const auto original=*it;const double rate=original.sourceSampleRate;
+        if(!original.sourceBuffer||rate<=0.||job.sourceStart>original.sourceBuffer->getNumSamples()-job.count)return false;
         const double n=original.sourceBuffer->getNumSamples();
+        for(const auto& cut:job.cuts)
+            if(cut.start/rate<original.fadeInSeconds||cut.end/rate>original.lengthSeconds-original.fadeOutSeconds+1.e-8)return false;
         std::vector<AudioClip> pieces;
         for(const auto& range:LibertySmartSilence::retained(job.count,job.cuts)){
             auto piece=original;
@@ -1678,7 +1689,7 @@ bool applySilencePlan(const std::vector<SilenceJob>& jobs,const juce::String& si
             if(!AudioEngine::validAudioClip(piece))return false;
             nextSelection.insert({job.key.first,piece.id});pieces.push_back(std::move(piece));
         }
-        if(pieces.empty()||lane.size()+pieces.size()>4096)return false;
+        if(pieces.empty()||lane.size()-1+pieces.size()>4096)return false;
         lane.erase(lane.begin()+(int)index);
         lane.insert(lane.begin()+(int)index,pieces.begin(),pieces.end());lanes.insert(job.key.first);
     }
@@ -1904,6 +1915,7 @@ bool startSilenceAnalysis(LibertySmartSilence::Settings settings,double fadeMs,b
                 auto config=settings;const auto sample=[&j](int ch,int i){return j.clip.sourceBuffer->getSample(ch,j.sourceStart+i);};
                 const int channels=j.clip.sourceBuffer->getNumChannels();
                 if(automatic)config.threshold=LibertySmartSilence::noiseThreshold(j.count,j.clip.sourceSampleRate,channels,settings.threshold,sample,cancel.get());
+                config.adaptiveNoise=automatic;
                 j.threshold=config.threshold;
                 if(!LibertySmartSilence::detect(j.count,j.clip.sourceSampleRate,channels,config,sample,j.cuts,cancel.get())){ok=false;break;}
                 const double rate=j.clip.sourceSampleRate;
@@ -1998,14 +2010,7 @@ void showSilenceSettings(){
                 const bool saved=file.getParentDirectory().createDirectory().wasOk()&&file.replaceWithText(xml.toString());
                 safe->operationMessage=juce::String::fromUTF8(saved?"Réglages personnels mémorisés":"Échec de la mémorisation");safe->repaint();return;
             }
-            if(mode==2){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,350.);settings.beforeMs=std::max(settings.beforeMs,80.);settings.afterMs=std::max(settings.afterMs,100.);}
-            if(mode==3){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,20.);}
-            if(mode==4){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.afterMs=std::max(settings.afterMs,100.);}
-            if(mode==5){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-65.);settings.minimumMs=std::max(settings.minimumMs,300.);settings.afterMs=std::max(settings.afterMs,150.);}
-            if(mode==6){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-60.);settings.minimumMs=std::max(settings.minimumMs,400.);settings.beforeMs=std::max(settings.beforeMs,100.);settings.afterMs=std::max(settings.afterMs,120.);}
-            if(mode==7){settings.protectQuiet=true;settings.beforeMs=std::max(settings.beforeMs,30.);settings.afterMs=std::max(settings.afterMs,60.);}
-            if(mode==8||mode==9){settings.protectQuiet=true;settings.threshold=std::min(settings.threshold,-75.);settings.minimumMs=std::max(settings.minimumMs,500.);settings.afterMs=std::max(settings.afterMs,mode==9?300.:200.);}
-            settings.detailProtection=mode>=2&&mode<=9;
+            settings=LibertySmartSilence::factoryProfile(settings,mode);
             if(settings.threshold>=-90&&settings.threshold<=-10&&settings.minimumMs>=20&&settings.minimumMs<=10000&&settings.beforeMs>=0&&settings.beforeMs<=500&&settings.afterMs>=0&&settings.afterMs<=500&&settings.hysteresisDb>=0&&settings.hysteresisDb<=18)
                 ok=safe->startSilenceAnalysis(settings,fade,automatic);
         }catch(...){}
@@ -7549,6 +7554,43 @@ bool runArrangementTests(){
         auto preview=owner.createComponentSnapshot({owner.trackHeaderWidth,owner.getArrangeTop(),900,juce::jmin(1000,owner.getMixerTop()-owner.getArrangeTop())});
         auto output=juce::File("/private/tmp/Liberty-build-arm64/clip-names-preview.png").createOutputStream();
         if(output){juce::PNGImageFormat format;format.writeImageToStream(preview,*output);}
+        // Test the actual silence transaction, source preservation, Undo/Redo
+        // and native project writer/reader with an independent fixture.
+        {
+            clearArrangementHistory();inlineMidiMode=false;
+            auto pcm=std::make_shared<juce::AudioBuffer<float>>(2,48000);pcm->clear();
+            for(int i=0;i<48000;++i)if(i<12000||i>=36000)
+                for(int ch=0;ch<2;++ch)pcm->setSample(ch,i,.15f*std::sin(i*.09f));
+            AudioClip fixture;fixture.id="silence-final-fixture";fixture.sourceName="Silence test";
+            fixture.sourceBuffer=pcm;fixture.sourceSampleRate=48000.;fixture.lengthSeconds=1.;
+            fixture.fadeInSeconds=.02;fixture.fadeOutSeconds=.03;fixture.fadeInCurve=5;fixture.fadeOutCurve=3;
+            require(owner.audioEngine.replaceArrangementAudioClips(0,{fixture}),"silence final seed");
+            refreshAudio(0);selectedAudio={{0,fixture.id}};
+            SilenceJob job;job.key={0,fixture.id};job.clip=fixture;job.count=48000;job.cuts={{14400,33600}};
+            const auto selection=selectedAudio;
+            const auto signature=captureArrangement().signature;
+            require(!applySilencePlan({job},"stale",selection,5.),"silence stale plan rejected");
+            require(applySilencePlan({job},signature,selection,5.),"silence final apply");
+            auto verify=[&](bool shared){
+                const auto clips=owner.audioEngine.getArrangementAudioClips(0);
+                require(clips.size()==2,"silence final two regions");
+                require(std::abs(clips[0].lengthSeconds-.3)<1.e-8&&std::abs(clips[1].startSeconds-.7)<1.e-8,
+                    "silence final fixed timeline");
+                require(clips[0].fadeInSeconds==.02&&clips[0].fadeInCurve==5&&clips[1].fadeOutSeconds==.03&&clips[1].fadeOutCurve==3,
+                    "silence final preserves edge fades");
+                require(std::abs(clips[0].fadeOutSeconds-.005)<1.e-9&&std::abs(clips[1].fadeInSeconds-.005)<1.e-9,
+                    "silence final automatic fades");
+                require(clips[0].sourceBuffer&&clips[1].sourceBuffer,"silence final source buffers");
+                if(shared)require(clips[0].sourceBuffer==pcm&&clips[1].sourceBuffer==pcm,"silence final zero source copies");
+                require(std::abs(clips[1].trimStartFraction-.7)<1.e-8,"silence final source position");
+            };
+            verify(true);
+            require(undoArrangement(false)&&owner.audioEngine.getArrangementAudioClips(0).size()==1,"silence final undo");
+            require(undoArrangement(true),"silence final redo");verify(true);
+            const auto file=directory.getChildFile("Silence-final.liberty");
+            require(owner.saveProjectToFile(file)&&owner.loadProjectFromFile(file),"silence final project roundtrip");
+            verify(false);
+        }
         return true;
     }catch(const std::exception& e){std::fprintf(stderr,"ArrangementToolsSmoke: %s\n",e.what());return false;}
 }

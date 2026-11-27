@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <fstream>
+#include <cstdio>
 inline bool runLibertyAudioClipPlaybackSmoke()
 {
     try {
@@ -63,6 +64,30 @@ inline bool runLibertyAudioClipPlaybackSmoke()
             std::atomic<bool> cancel{true};
             if(detect(n,48000.,2,settings,sample,cuts,&cancel))
                 throw std::runtime_error("smart silence cancellation");
+        }
+        {
+            using namespace LibertySmartSilence;
+            // Test every factory profile on a short synthetic stereo fixture.
+            for(int mode=2;mode<=9;++mode){
+                Settings s=factoryProfile(Settings{},mode);
+                if(!s.detailProtection||!s.protectQuiet||s.threshold> -55.)throw std::runtime_error("silence factory profile");
+                std::vector<Range> cuts;
+                auto signal=[](int ch,int i){return i<4800||i>=43200?(ch==0?.1f:-.1f):0.f;};
+                if(!detect(48000,48000.,2,s,signal,cuts)||cuts.size()!=1||cuts[0].start<4800||cuts[0].end>43200)
+                    throw std::runtime_error("silence factory fixture");
+            }
+            // Bounded detector benchmark, no arrangement publication or UI.
+            Settings s; s.minimumMs=50.;s.marginMs=10.;s.detailProtection=true;s.adaptiveNoise=true;
+            const auto sample=[](int ch,int i){return i<800||i>=3200?(ch==0?.1f:-.1f):0.f;};
+            std::vector<Range> cuts;
+            for(int countClips:{100,500,1000}){
+                const auto started=std::chrono::steady_clock::now();
+                for(int i=0;i<countClips;++i)
+                    if(!detect(4000,8000.,2,s,sample,cuts)||cuts.size()!=1)
+                        throw std::runtime_error("silence batch");
+                const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+                std::printf("smart_silence_batch,%d,%.3f,%zu\n",countClips,ms,cuts.capacity()*sizeof(Range));
+            }
         }
         auto normal=render(clip);near(normal.getSample(0,1200),.25f);
         // Real BUS signal path: exactly one source contribution reaches Master.
