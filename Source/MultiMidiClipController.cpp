@@ -7,6 +7,7 @@
 #include "MidiClipEditing.h"
 #include "AudioCrossfadeCurve.h"
 #include "LibertyMasteringMeter.h"
+#include "LibertySmartSilence.h"
 #include "ClipNames.h"
 #include "LibertyDesignSystem.h"
 #include "InlineMidiVelocityCurve.h"

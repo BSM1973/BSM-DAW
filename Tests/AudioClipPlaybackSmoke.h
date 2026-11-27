@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioEngine.h"
 #include "AudioCrossfadeCurve.h"
+#include "LibertySmartSilence.h"
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -31,6 +32,26 @@ inline bool runLibertyAudioClipPlaybackSmoke()
                     + std::to_string(comparisonIndex) + ": actual="
                     + std::to_string(actual) + ", expected=" + std::to_string(expected));
         };
+        // Silence detector: synthetic stereo events, silence, safety margins,
+        // quiet breath-like burst and cancellation.
+        {
+            using namespace LibertySmartSilence;
+            Settings settings;settings.threshold=-50.;settings.minimumMs=100.;settings.marginMs=25.;
+            constexpr int n=48000;
+            std::vector<Range> cuts;
+            auto sample=[](int ch,int i){return (i<4800||i>=43200||(i>=21600&&i<24000))?(ch==0?.2f:-.2f):0.f;};
+            if(!detect(n,48000.,2,settings,sample,cuts)||cuts.size()!=2||
+               cuts[0].start!=6000||cuts[0].end!=20400||cuts[1].start!=25200||cuts[1].end!=42000)
+                throw std::runtime_error("smart silence stereo margins");
+            const auto keep=retained(n,cuts);
+            if(keep.size()!=3||keep[1].start!=20400||keep[1].end!=25200)
+                throw std::runtime_error("smart silence retained intervals");
+            if(!detect(n,48000.,1,settings,[](int,int){return 0.f;},cuts)||!cuts.empty())
+                throw std::runtime_error("smart silence protects empty clip");
+            std::atomic<bool> cancel{true};
+            if(detect(n,48000.,2,settings,sample,cuts,&cancel))
+                throw std::runtime_error("smart silence cancellation");
+        }
         auto normal=render(clip);near(normal.getSample(0,1200),.25f);
         // Real BUS signal path: exactly one source contribution reaches Master.
         if(engine.addMixerBus()!=0)throw std::runtime_error("bus creation");
