@@ -2656,17 +2656,23 @@ class PermanentGroupManager final:public juce::Component{
         selected=root;memberPage=0;refresh();
         status.setText(juce::String::fromUTF8("Structure importée — sans clips"),juce::dontSendNotification);
     }
+    static juce::File groupPresetDirectory(){
+        const auto folder=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            .getChildFile("Liberty Music Software").getChildFile("Group Presets");
+        if(folder.createDirectory().wasOk())return folder;
+        return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    }
     void chooseStructureFile(bool exporting){
         if(structureChooser||!controller||controller->stopped.load())return;
         juce::String data;
         if(exporting){
             const auto xml=controller->exportGroupStructure(selected);
-            if(!xml)return;
+            if(!xml){status.setText(juce::String::fromUTF8("Structure non exportable"),juce::dontSendNotification);return;}
             data=xml->toString();
         }
         structureChooser=std::make_unique<juce::FileChooser>(
             juce::String::fromUTF8(exporting?"Exporter une structure de groupes":"Importer une structure de groupes"),
-            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),"*.xml");
+            groupPresetDirectory(),"*.xml");
         const int flags=exporting?(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting):
             (juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles);
         juce::Component::SafePointer<PermanentGroupManager> safe(this);
@@ -2675,7 +2681,7 @@ class PermanentGroupManager final:public juce::Component{
             const auto file=chooser.getResult();
             if(file!=juce::File{}&&safe->controller&&!safe->controller->stopped.load()){
                 if(exporting){
-                    const bool ok=file.withFileExtension(".xml").replaceWithText(data);
+                    const bool ok=file.replaceWithText(data);
                     safe->status.setText(juce::String::fromUTF8(ok?"Structure exportée":"Échec de l'exportation"),juce::dontSendNotification);
                 }else if(file.existsAsFile()&&file.getSize()>0&&file.getSize()<=1024*1024){
                     // Reject DTD/entity declarations in external XML before parsing.
