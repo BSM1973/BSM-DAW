@@ -1158,8 +1158,8 @@ bool applyGroupClipOperation(int command,double value=0.0){
     // Source-peak normalization is intentionally restricted to ordinary
     // unwarped, unpitched clips. Scan the audible source window, not the
     // entire file. No mixer, crossfade or rendered-peak claim is made.
-    std::map<AudioKey,double> peaks;
-    double commonPeak=0.;std::uint64_t scanned=0;
+    std::map<AudioKey,double> peaks,sourcePeaks;
+    double commonPeak=0.,commonSourcePeak=0.;std::uint64_t scanned=0;
     if(command==25||command==26||command==33||command==34){
         for(int lane=0;lane<(int)audio.size();++lane)
             for(const auto& clip:audio[(size_t)lane])if(selectedAudio.count({lane,clip.id})){
@@ -1185,6 +1185,8 @@ bool applyGroupClipOperation(int command,double value=0.0){
                         peak=std::max(peak,std::abs((double)p[i]));energy+=(double)p[i]*p[i];
                     }
                 }
+                sourcePeaks[{lane,clip.id}]=peak;
+                commonSourcePeak=std::max(commonSourcePeak,peak*clip.clipGain);
                 if(command==33||command==34)peak=std::sqrt(energy/(double(channels)*(end-start)));
                 if(peak<=1.e-9)return false;
                 peaks[{lane,clip.id}]=peak;
@@ -1247,7 +1249,12 @@ bool applyGroupClipOperation(int command,double value=0.0){
             }
             if((command>=24&&command<=26)||command==33||command==34){
                 const double target=std::pow(10.,value/20.);
-                const double gain=command==24?target:(command==25||command==33)?target/peaks.at({lane,clip.id}):clip.clipGain*target/commonPeak;
+                double gain=command==24?target:(command==25||command==33)?target/peaks.at({lane,clip.id}):clip.clipGain*target/commonPeak;
+                // Sample-peak ceiling of -1 dBFS for RMS operations; common
+                // attenuation in collective mode preserves relative levels.
+                constexpr double ceiling=.8912509381337456;
+                if(command==33)gain=std::min(gain,ceiling/sourcePeaks.at({lane,clip.id}));
+                if(command==34&&commonSourcePeak>1.e-9)gain=clip.clipGain*std::min(target/commonPeak,ceiling/commonSourcePeak);
                 if(!std::isfinite(gain)||gain>4.||gain<0.){valid=false;continue;}
                 changed=changed||clip.clipGain!=(float)gain;clip.clipGain=(float)gain;touchedAudio.insert(lane);
             }
@@ -1437,6 +1444,73 @@ bool startAsyncStretch(double percent,int tonal=0){
     });
     return true;
 }
+bool splitSelectedAudioAt(double seconds){
+    if(pendingEdit||selectedAudio.empty()||!std::isfinite(seconds)||seconds<0.)return false;
+    const auto before=captureArrangement();auto audio=before.audio;
+    auto selection=selectedAudio;std::set<int> lanes;
+    for(int lane=0;lane<(int)audio.size();++lane){
+        auto& clips=audio[(size_t)lane];
+        for(size_t i=0;i<clips.size();++i){
+            auto& left=clips[i];
+            if(!selectedAudio.count({lane,left.id}))continue;
+            const double cut=seconds-left.startSeconds;
+            if(cut<=1.e-6||cut>=left.lengthSeconds-1.e-6)continue;
+            auto right=left;right.id=juce::Uuid().toString();right.startSeconds=seconds;
+            if(left.envelopeLengthSeconds<=0)left.envelopeLengthSeconds=left.offsetSeconds+left.lengthSeconds;
+            right.envelopeLengthSeconds=left.envelopeLengthSeconds;
+            right.offsetSeconds+=cut;right.lengthSeconds-=cut;left.lengthSeconds=cut;
+            if(!AudioEngine::validAudioClip(left)||!AudioEngine::validAudioClip(right))return false;
+            selection.insert({lane,right.id});
+            clips.insert(clips.begin()+(int)i+1,std::move(right));++i;lanes.insert(lane);
+        }
+    }
+    if(lanes.empty())return false;
+    beginArrangementEdit();std::vector<int> published;
+    for(int lane:lanes){
+        if(!owner.audioEngine.replaceArrangementAudioClips(lane,audio[(size_t)lane])){
+            for(int previous:published){owner.audioEngine.replaceArrangementAudioClips(previous,before.audio[(size_t)previous]);refreshAudio(previous);}
+            finishArrangementEdit();return false;
+        }
+        published.push_back(lane);
+    }
+    selectedAudio=std::move(selection);
+    for(int lane:published)refreshAudio(lane);
+    finishArrangementEdit();operationMessage=juce::String::fromUTF8("Découpage collectif appliqué");repaint();return true;
+}
+void selectAudioOnSelectedTracks(){
+    std::set<int> lanes;for(const auto& key:selectedAudio)lanes.insert(key.first);
+    for(int lane:lanes)for(const auto& clip:owner.audioEngine.getArrangementAudioClips(lane))
+        selectedAudio.insert({lane,clip.id});
+    operationMessage=juce::String((int)selectedAudio.size())+juce::String::fromUTF8(" clips audio sélectionnés");repaint();
+}
+void showCollectiveInspector(){
+    int count=0,muted=0,reversed=0;double total=0.,minGain=1.e30,maxGain=0.;
+    std::set<int> lanes;
+    for(const auto& key:selectedAudio)lanes.insert(key.first);
+    for(int lane:lanes)for(const auto& c:owner.audioEngine.getArrangementAudioClips(lane))
+        if(selectedAudio.count({lane,c.id})){
+            ++count;muted+=c.muted?1:0;reversed+=c.reverse?1:0;total+=c.lengthSeconds;
+            minGain=std::min(minGain,(double)c.clipGain);maxGain=std::max(maxGain,(double)c.clipGain);
+        }
+    if(count==0)return;
+    const auto db=[](double gain){return juce::String(20.*std::log10(std::max(1.e-9,gain)),1)+" dB";};
+    juce::String summary=juce::String(count)+juce::String::fromUTF8(" clips audio — ")+juce::String((int)lanes.size())+juce::String::fromUTF8(" pistes\n");
+    summary+=juce::String::fromUTF8("Durée cumulée : ")+juce::String(total,3)+" s\n";
+    summary+=juce::String::fromUTF8("Gain min. / max. : ")+db(minGain)+" / "+db(maxGain)+"\n";
+    summary+=juce::String::fromUTF8("Muets : ")+juce::String(muted)+juce::String::fromUTF8(" — Inversés : ")+juce::String(reversed);
+    auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("INSPECTEUR COLLECTIF"),summary,juce::MessageBoxIconType::NoIcon);
+    dialog->addButton("Gain",1);dialog->addButton("Fondus",2);dialog->addButton("Fermer",0,juce::KeyPress(juce::KeyPress::escapeKey));
+    const auto selection=selectedAudio;const auto midiSelection=selectedClipIds;
+    juce::Component::SafePointer<MultiMidiClipController> safe(this);
+    dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,selection,midiSelection](int result){
+        std::unique_ptr<juce::AlertWindow> owned(dialog);
+        if(!safe||safe->selectedAudio!=selection||safe->selectedClipIds!=midiSelection)return;
+        if(result==1||result==2)juce::MessageManager::callAsync([safe,result,selection,midiSelection]{
+            if(safe&&safe->selectedAudio==selection&&safe->selectedClipIds==midiSelection)
+                safe->showPrecisionValueDialog(result==1?24:27);
+        });
+    }),false);
+}
 void showPrecisionValueDialog(int command){
     const auto label=juce::String::fromUTF8(command==24?"Gain absolu en dB (-60 à +12)":command==27?"Durée de chaque fondu en secondes":command==33||command==34?"Cible RMS source en dBFS (-60 à 0)":"Cible Peak source en dBFS (-60 à 0)");
     auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("PRÉCISION COLLECTIVE"),label,juce::MessageBoxIconType::NoIcon);
@@ -1548,6 +1622,10 @@ bool showGroupClipMenu(juce::Point<int> p){
     menu.addSubMenu(juce::String::fromUTF8("Édition avancée"),advanced);
     }else menu.addItem(29,juce::String::fromUTF8("Éditer le clip audio…"));
     juce::PopupMenu precision;
+    precision.addItem(46,juce::String::fromUTF8("Inspecteur collectif…"),!selectedAudio.empty());
+    precision.addItem(47,juce::String::fromUTF8("Découper à la tête de lecture"),!selectedAudio.empty());
+    precision.addItem(48,juce::String::fromUTF8("Sélectionner les clips des pistes concernées"),!selectedAudio.empty());
+    precision.addSeparator();
     precision.addItem(37,juce::String::fromUTF8("Gain absolu personnalisé…"),!selectedAudio.empty());
     precision.addItem(38,juce::String::fromUTF8("Normalisation Peak individuelle…"),!selectedAudio.empty());
     precision.addItem(39,juce::String::fromUTF8("Normalisation Peak collective…"),!selectedAudio.empty());
@@ -1585,9 +1663,12 @@ bool showGroupClipMenu(juce::Point<int> p){
     juce::Component::SafePointer<MultiMidiClipController> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea({screen.x,screen.y,1,1}),
         [safe,audioSelection,midiSelection,p](int choice){
-            if(!safe||choice<1||choice>45)return;
+            if(!safe||choice<1||choice>48)return;
             if(choice==27){safe->cancelAsyncStretch();return;}
             if(safe->selectedAudio!=audioSelection||safe->selectedClipIds!=midiSelection)return;
+            if(choice==46){safe->showCollectiveInspector();return;}
+            if(choice==47){if(!safe->splitSelectedAudioAt(safe->owner.audioEngine.getCurrentTimeSeconds())){safe->operationMessage=juce::String::fromUTF8("Aucun clip sélectionné traversé par la tête de lecture");safe->repaint();}return;}
+            if(choice==48){safe->selectAudioOnSelectedTracks();return;}
             if(choice>=37&&choice<=42){
                 const int commands[]={24,25,26,33,34,27};
                 safe->showPrecisionValueDialog(commands[choice-37]);return;
@@ -2284,6 +2365,14 @@ bool runArrangementTests(){
         require(owner.audioEngine.getArrangementAudioClips(0).front().muted==wasMuted,"restore mute value");
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
         require(!applyGroupClipOperation(24,13),"reject absolute gain overflow");
+        selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
+        const auto splitStart=groupAudio.front().startSeconds,splitLength=groupAudio.front().lengthSeconds;
+        require(splitSelectedAudioAt(splitStart+splitLength*.5),"collective playhead split");
+        require(owner.audioEngine.getArrangementAudioClips(0).size()==groupAudio.size()+1,"collective split count");
+        require(undoArrangement(false),"undo collective split");
+        require(owner.audioEngine.getArrangementAudioClips(0).size()==groupAudio.size(),"collective split restored");
+        selectedAudio={{0,groupAudio.front().id}};selectAudioOnSelectedTracks();
+        require(selectedAudio.size()==groupAudio.size(),"select all audio on chosen lane");
         // Naming uses the actual clip identities, without changing notes or media.
         syncClipNames();const auto audioKey="audio:"+owner.audioEngine.getArrangementAudioClips(0).front().id;
         const auto midiKey="midi:"+juce::String(midiClips.front().id);
