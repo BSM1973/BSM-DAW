@@ -1489,7 +1489,9 @@ void paintAudioFades(juce::Graphics& g){
 bool applyGroupClipOperation(int command,double value=0.0){
     if(selectionLocked())return false;
     if((command<=34?(command<20?selectedAudio.size()+selectedClipIds.size()<2:selectedAudio.empty()):selectedAudio.empty()&&selectedClipIds.empty())||pendingEdit)return false;
-    if(!std::isfinite(value)||command<0||command>36)return false;
+    if(!std::isfinite(value)||command<0||command>39)return false;
+    if((command==37||command==38)&&(selectedAudio.empty()||value<-60.||value>12.))return false;
+    if(command==39&&(selectedClipIds.empty()||value<-48.||value>48.||std::floor(value)!=value))return false;
     if(command>=24&&command<=26&&(value<-60||value>(command==24?12.:0.)))return false;
     if((command==33||command==34)&&(value<-60||value>0))return false;
     if(command==27&&(value<0||value>86400))return false;
@@ -1541,8 +1543,8 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 else {changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;clip.userLength=true;}
             }
             if(command==35||command==36){const bool muted=command==35;changed=changed||clip.muted!=muted;clip.muted=muted;}
-            if(command==6||command==7||command==16){
-                const int delta=command==16?(int)value:(command==6?1:-1);
+            if(command==6||command==7||command==16||command==39){
+                const int delta=(command==16||command==39)?(int)value:(command==6?1:-1);
                 for(auto& note:clip.notes){
                     const int pitch=(int)note.pitch+delta;
                     if(pitch<0||pitch>127){valid=false;continue;}
@@ -1669,8 +1671,9 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 auto& fade=command==14?clip.fadeInSeconds:clip.fadeOutSeconds;
                 changed=changed||fade!=value;fade=value;touchedAudio.insert(lane);
             }
-            if(command==4||command==5||command==15){
-                const float gain=clip.clipGain*(command==15?(float)std::pow(10.0,value/20.0):(command==4?1.41253754f:0.70794578f));
+            if(command==4||command==5||command==15||command==37||command==38){
+                const float factor=(command==15||command==37||command==38)?(float)std::pow(10.0,value/20.0):(command==4?1.41253754f:0.70794578f);
+                const float gain=command==37?factor:clip.clipGain*factor;
                 if(gain>4.f||!std::isfinite(gain)){valid=false;continue;}
                 changed=changed||gain!=clip.clipGain;clip.clipGain=gain;touchedAudio.insert(lane);
             }
@@ -2571,7 +2574,7 @@ class PermanentGroupManager final:public juce::Component{
     juce::Label groupPageLabel,memberPageLabel,status;
     juce::TextButton previous{"<"},next{">"},memberPrevious{"<"},memberNext{">"},
         choose{juce::String::fromUTF8("Sélectionner")},chooseAll{juce::String::fromUTF8("Tout sélectionner")},locate{"Localiser"},properties{"Appliquer"},
-        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
+        parentButton{juce::String::fromUTF8("Parent…")},fold{juce::String::fromUTF8("Replier")},containerButton{"+ Conteneur"},presetButton{juce::String::fromUTF8("Modèles…")},controlButton{juce::String::fromUTF8("Contrôles…")},lock{"Verrouiller"},duplicate{"Dupliquer"},mute{"Muet"},unmute{juce::String::fromUTF8("Réactiver")},dissolve{"Dissocier"},closeButton{"Fermer"};
     std::array<juce::TextButton,8> rows;
     std::vector<juce::String> ids;
     std::vector<GroupTreeRow> treeRows;
@@ -2627,7 +2630,7 @@ class PermanentGroupManager final:public juce::Component{
         choose.setEnabled(has&&!members.empty());chooseAll.setEnabled(!ids.empty());locate.setEnabled(has&&!members.empty());
         containerButton.setEnabled(controller->permanentGroups.size()<4096);lock.setEnabled(has&&!controller->groupLocked(has?controller->permanentGroups.at(selected).parent:juce::String{}));parentButton.setEnabled(has&&!locked);
         for(auto* button:{&properties,&dissolve})button->setEnabled(has&&!locked);
-        for(auto* button:{&duplicate,&mute,&unmute})button->setEnabled(has&&!locked&&!members.empty());
+        for(auto* button:{&duplicate,&mute,&unmute,&controlButton})button->setEnabled(has&&!locked&&!members.empty());
         lock.setButtonText(juce::String::fromUTF8(has&&controller->permanentGroups.at(selected).locked?"Déverrouiller":"Verrouiller"));
         status.setText(juce::String((int)ids.size())+juce::String::fromUTF8(" groupes affichés — ")+juce::String((int)members.size())+" membres",juce::dontSendNotification);repaint();
     }
@@ -2697,6 +2700,41 @@ class PermanentGroupManager final:public juce::Component{
             juce::MessageManager::callAsync([safe]{if(safe)safe->structureChooser.reset();});
         });
     }
+    void showGroupControls(){
+        if(!controller||controller->stopped.load()||!controller->permanentGroups.count(selected)||controller->subtreeLocked(selected))return;
+        const auto root=selected;
+        const auto keys=controller->hierarchicalMembers({root});
+        bool hasAudio=false,hasMidi=false;
+        for(const auto& key:keys){hasAudio=hasAudio||key.startsWith("audio:");hasMidi=hasMidi||key.startsWith("midi:");}
+        auto* dialog=new juce::AlertWindow(juce::String::fromUTF8("Contrôles collectifs"),
+            juce::String::fromUTF8("Gain audio : -60 à +12 dB. MIDI : -48 à +48 demi-tons entiers. Modification statique, annulable."),juce::MessageBoxIconType::NoIcon);
+        juce::StringArray labels;std::vector<int> commands;
+        if(hasAudio){labels.add("Gain audio absolu");commands.push_back(37);labels.add("Gain audio relatif");commands.push_back(38);}
+        if(hasMidi){labels.add("Transposition MIDI");commands.push_back(39);}
+        if(commands.empty()){delete dialog;return;}
+        dialog->addComboBox("control",labels,juce::String::fromUTF8("Paramètre"));
+        dialog->getComboBoxComponent("control")->setSelectedId(1,juce::dontSendNotification);
+        dialog->addTextEditor("value","0", "Valeur");
+        dialog->addButton("Appliquer",1,juce::KeyPress(juce::KeyPress::returnKey));
+        dialog->addButton("Annuler",0,juce::KeyPress(juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<PermanentGroupManager> safe(this);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe,dialog,root,keys,commands](int result){
+            std::unique_ptr<juce::AlertWindow> owned(dialog);
+            if(result!=1||!safe||!safe->controller||safe->controller->stopped.load())return;
+            auto* c=safe->controller.getComponent();
+            if(!c->permanentGroups.count(root)||c->subtreeLocked(root)||c->hierarchicalMembers({root})!=keys)return;
+            const int option=owned->getComboBoxComponent("control")->getSelectedId()-1;
+            bool ok=false;
+            try{
+                const auto input=owned->getTextEditorContents("value").trim().replaceCharacter(',','.').toStdString();
+                size_t used=0;const double value=std::stod(input,&used);
+                if(option>=0&&option<(int)commands.size()&&used==input.size()&&std::isfinite(value)&&c->selectPermanentIds({root}))
+                    ok=c->applyGroupClipOperation(commands[(size_t)option],value);
+            }catch(...){}
+            safe->refresh();
+            safe->status.setText(juce::String::fromUTF8(ok?"Contrôle appliqué":"Valeur invalide ou aucun changement"),juce::dontSendNotification);
+        }),false);
+    }
     void showStructurePresets(){
         if(!controller||controller->stopped.load())return;
         juce::PopupMenu menu;
@@ -2739,7 +2777,7 @@ class PermanentGroupManager final:public juce::Component{
     }
 public:
     explicit PermanentGroupManager(MultiMidiClipController* c):controller(c){
-        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&closeButton})addAndMakeVisible(component);
+        for(auto* component:std::initializer_list<juce::Component*>{&search,&name,&filter,&colour,&groupPageLabel,&memberPageLabel,&status,&previous,&next,&memberPrevious,&memberNext,&choose,&chooseAll,&locate,&properties,&lock,&duplicate,&mute,&unmute,&dissolve,&parentButton,&fold,&containerButton,&presetButton,&controlButton,&closeButton})addAndMakeVisible(component);
         for(size_t i=0;i<rows.size();++i){addAndMakeVisible(rows[i]);rows[i].addMouseListener(this,false);rows[i].onClick=[this,i]{const size_t n=(size_t)page*8+i;if(n<ids.size()){selected=ids[n];memberPage=0;refresh();}};}
         search.setTextToShowWhenEmpty("Rechercher un groupe",juce::Colour(0xff9eb4c5));name.setInputRestrictions(80);
         filter.addItem("Toutes les couleurs",1);filter.addItemList(permanentColourNames(),2);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2751,7 +2789,7 @@ public:
         choose.onClick=[this]{act(0);};locate.onClick=[this]{act(1);};properties.onClick=[this]{act(2);};
         lock.onClick=[this]{act(3);};duplicate.onClick=[this]{act(4);};mute.onClick=[this]{act(5);};unmute.onClick=[this]{act(6);};dissolve.onClick=[this]{act(7);};
         chooseAll.onClick=[this]{if(controller&&!controller->stopped.load())controller->selectPermanentIds(std::set<juce::String>(ids.begin(),ids.end()));};
-        presetButton.onClick=[this]{showStructurePresets();};
+        presetButton.onClick=[this]{showStructurePresets();};controlButton.onClick=[this]{showGroupControls();};
         containerButton.onClick=[this]{if(!controller||controller->stopped.load())return;
             const auto id=controller->createPermanentContainer();if(id.isEmpty())return;
             search.setText({},false);filter.setSelectedId(1,juce::dontSendNotification);
@@ -2783,7 +2821,7 @@ public:
     }
     void close(){if(auto* w=findParentComponentOfClass<juce::DialogWindow>())w->exitModalState(0);}
     void resized()override{
-        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);
+        search.setBounds(16,36,350,28);filter.setBounds(382,36,402,28);fold.setBounds(260,66,106,24);containerButton.setBounds(126,66,126,24);presetButton.setBounds(646,66,138,24);controlButton.setBounds(646,4,138,28);
         for(int i=0;i<8;++i)rows[(size_t)i].setBounds(16,92+i*27,350,25);
         previous.setBounds(16,310,36,26);groupPageLabel.setBounds(56,310,270,26);next.setBounds(330,310,36,26);
         memberPrevious.setBounds(382,310,36,26);memberPageLabel.setBounds(422,310,322,26);memberNext.setBounds(748,310,36,26);
@@ -2802,7 +2840,7 @@ public:
     }
     void paint(juce::Graphics& g)override{
         g.fillAll(juce::Colour(0xff101821));g.setColour(juce::Colour(0xffd9eafa));g.setFont(16.f);
-        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,768,28,juce::Justification::centredLeft);
+        g.drawText("PROFESSIONAL GROUP MANAGER",16,4,622,28,juce::Justification::centredLeft);
         g.setFont(13.f);g.drawText("GROUPES",16,66,102,24,juce::Justification::centredLeft);
         g.drawText("MEMBRES",382,66,256,24,juce::Justification::centredLeft);
         for(int i=0;i<8;++i){const auto n=(size_t)(memberPage*8+i);if(n>=members.size())break;
@@ -3702,6 +3740,24 @@ bool runArrangementTests(){
         require(selectPermanentIds({groupId})&&selectedClipIds.count(groupMidi.id),"manager select mixed group");
         {PermanentGroupManager manager(this);require(manager.layoutValid(),"group manager layout");}
         require(editPermanentGroup(55,juce::String::fromUTF8("Groupe témoin"),3),"restore original palette");
+        {
+            const auto initialGain=owner.audioEngine.getArrangementAudioClips(0).front().clipGain;
+            const auto initialNotes=midiClips.front().notes;
+            require(!initialNotes.empty(),"control MIDI fixture");
+            const auto initialPitch=initialNotes.front().pitch;
+            require(selectPermanentIds({groupId})&&applyGroupClipOperation(37,-6.),"control absolute audio gain");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-std::pow(10.,-.3))<1.e-5&&midiClips.front().notes.front().pitch==initialPitch,"control absolute isolated audio");
+            require(applyGroupClipOperation(38,-6.),"control relative audio gain");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-std::pow(10.,-.6))<1.e-5,"control relative gain");
+            const auto audioPitch=owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones;
+            const int delta=initialPitch<127?1:-1;
+            require(applyGroupClipOperation(39,delta),"control MIDI only transpose");
+            require(midiClips.front().notes.front().pitch==(int)initialPitch+delta&&owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones==audioPitch,"control MIDI isolated transpose");
+            require(!applyGroupClipOperation(37,13.)&&!applyGroupClipOperation(39,.5),"control invalid input");
+            require(undoArrangement(false)&&undoArrangement(false)&&undoArrangement(false),"control undo chain");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-initialGain)<1.e-6&&midiClips.front().notes.front().pitch==initialPitch,"control restored baseline");
+            require(selectPermanentIds({groupId}),"control restore selection");
+        }
         require(applyGroupClipOperation(35)&&midiClips.front().muted&&owner.audioEngine.getArrangementAudioClips(0).front().muted,"group mixed mute");
         require(undoArrangement(false),"undo group mixed mute");
         selectedAudio={{0,groupAudio.front().id}};selectedClipIds={groupMidi.id};
@@ -8520,6 +8576,23 @@ bool runArrangementTests(){
                 const auto folded=visiblePermanentGroupTree({container});
                 require(folded.size()==6,"performance large tree collapsed");
                 permanentGroups=original;rebuildGroupIndex();
+                for(int total:{1000,2000,4000}){
+                    const auto start=std::chrono::steady_clock::now();
+                    for(int i=(int)original.size();i<total;++i){
+                        PermanentClipGroup folder;folder.name="Stress "+juce::String(i);folder.container=true;folder.parent=container;
+                        permanentGroups.emplace("hierarchy-stress-"+juce::String(i),std::move(folder));
+                    }
+                    require(visiblePermanentGroupTree({}).size()==(size_t)total,"control stress hierarchy size");
+                    require(visiblePermanentGroupTree({container}).size()==6,"control stress collapsed size");
+                    require(groupDescendants({container}).size()==(size_t)(total-5),"control stress descendants");
+                    juce::XmlElement snapshot("Project");savePermanentGroups(snapshot);
+                    const auto serialised=snapshot.toString();const auto parsed=juce::XmlDocument::parse(serialised);
+                    require(parsed!=nullptr,"control stress XML parse");loadPermanentGroups(*parsed);
+                    require(permanentGroups.size()==(size_t)total&&groupDescendants({container}).size()==(size_t)(total-5),"control stress XML roundtrip");
+                    const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+                    std::fprintf(stderr,"group_hierarchy_stress,%d,%.3f,%d\n",total,ms,(int)serialised.getNumBytesAsUTF8());
+                    permanentGroups=original;rebuildGroupIndex();
+                }
             }
             {PermanentGroupManager manager(this);require(manager.layoutValid(),"performance container layout");}
             {
