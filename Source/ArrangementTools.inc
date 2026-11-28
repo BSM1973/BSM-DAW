@@ -923,6 +923,7 @@ class ClipAutomationPanel final:public juce::Component{
     std::vector<Point> dragOriginal,clipboard;
     int clipboardChannel=-1;
     bool marquee=false;
+    int draggedHandle=0;
     juce::Point<float> anchor;
     juce::Rectangle<float> selectionRect;
     int channel()const{return parameter.getSelectedId()==2?1:0;}
@@ -931,6 +932,23 @@ class ClipAutomationPanel final:public juce::Component{
     float high()const{return channel()==1?1.f:4.f;}
     juce::Point<float> position(const Point& p)const{
         const auto r=plot();return {r.getX()+r.getWidth()*(float)p.time,r.getBottom()-r.getHeight()*(p.value-low())/(high()-low())};
+    }
+    bool bezierSelected()const{
+        const auto& pts=curves[(size_t)channel()].points;
+        return selected>=0&&selected+1<(int)pts.size()&&pts[(size_t)selected].shape==5;
+    }
+    juce::Point<float> bezierHandlePosition(int index)const{
+        const auto& pts=curves[(size_t)channel()].points;
+        const auto& a=pts[(size_t)selected];const auto& b=pts[(size_t)selected+1];
+        const double fraction=index==1?1./3.:2./3.;
+        return position({a.time+(b.time-a.time)*fraction,a.value+(b.value-a.value)*(float)(index==1?a.handle1:a.handle2),0});
+    }
+    bool editableBezierHandles()const{
+        if(!bezierSelected())return false;
+        const auto& pts=curves[(size_t)channel()].points;
+        const auto& a=pts[(size_t)selected];const auto& b=pts[(size_t)selected+1];
+        // Cropped segments retain their exact original shape until explicitly edited.
+        return a.domainStart==0.&&a.domainEnd==1.&&std::abs(b.value-a.value)>1.e-6f;
     }
     double quantize(double t)const{
         return snap.getToggleState()&&gridStep>0.?gridOrigin+std::round((t-gridOrigin)/gridStep)*gridStep:t;
@@ -978,7 +996,7 @@ class ClipAutomationPanel final:public juce::Component{
         const bool exists=selected>=0&&selected<(int)c.points.size();
         shape.setSelectedId(exists?c.points[(size_t)selected].shape+1:1,juce::dontSendNotification);
         shape.setEnabled(exists&&selected+1<(int)c.points.size());
-        const bool bezier=exists&&selected+1<(int)c.points.size()&&c.points[(size_t)selected].shape==5;
+        const bool bezier=bezierSelected();
         handle1.setEnabled(bezier);handle2.setEnabled(bezier);
         handle1.setValue(bezier?c.points[(size_t)selected].handle1:1./3.,juce::dontSendNotification);
         handle2.setValue(bezier?c.points[(size_t)selected].handle2:2./3.,juce::dontSendNotification);
@@ -1052,8 +1070,14 @@ public:
             const auto p=position(c.points[i]);g.setColour(juce::Colour(selection.count((int)i)?0xffffd48f:0xff9addeb));
             g.fillEllipse(p.x-4.f,p.y-4.f,8.f,8.f);
         }
+        if(editableBezierHandles()){
+            const auto h1=bezierHandlePosition(1),h2=bezierHandlePosition(2);
+            const auto a=position(c.points[(size_t)selected]),b=position(c.points[(size_t)selected+1]);
+            g.setColour(juce::Colour(0xffd3ae68));g.drawLine({a,h1},1.2f);g.drawLine({b,h2},1.2f);
+            g.fillRect(h1.x-4.f,h1.y-4.f,8.f,8.f);g.fillRect(h2.x-4.f,h2.y-4.f,8.f,8.f);
+        }
         g.setColour(juce::Colour(0xffd9eafa));g.setFont(12.f);
-        g.drawText(juce::String::fromUTF8("Clic : créer | Maj : sélection multiple / rectangle | Glisser : déplacer"),20,48,620,20,juce::Justification::centredLeft);
+        g.drawText(juce::String::fromUTF8(editableBezierHandles()?"Bézier : glissez les poignées dorées verticalement.":"Clic : créer | Maj : sélection multiple / rectangle | Glisser : déplacer"),20,48,620,20,juce::Justification::centredLeft);
         if(marquee){g.setColour(juce::Colour(0x3367cce4));g.fillRect(selectionRect);g.setColour(juce::Colour(0xff67cce4));g.drawRect(selectionRect,1.f);}
         g.setColour(juce::Colour(0xffd9eafa));
         g.drawText(juce::String(high(),1),2,66,40,20,juce::Justification::centredRight);
@@ -1064,7 +1088,10 @@ public:
     }
     void mouseDown(const juce::MouseEvent& e)override{
         if(!plot().expanded(5.f).contains(e.position))return;
-        auto& pts=curves[(size_t)channel()].points;anchor=e.position;dragOriginal.clear();marquee=false;
+        auto& pts=curves[(size_t)channel()].points;anchor=e.position;dragOriginal.clear();marquee=false;draggedHandle=0;
+        if(!e.mods.isShiftDown()&&editableBezierHandles()){
+            for(int i:{1,2})if(bezierHandlePosition(i).getDistanceFrom(e.position)<=8.f){draggedHandle=i;return;}
+        }
         for(size_t i=0;i<pts.size();++i)if(position(pts[i]).getDistanceFrom(e.position)<=9.f){
             if(e.mods.isShiftDown()){
                 if(!selection.erase((int)i))selection.insert((int)i);
@@ -1086,6 +1113,13 @@ public:
     }
     void mouseDrag(const juce::MouseEvent& e)override{
         auto& pts=curves[(size_t)channel()].points;
+        if(draggedHandle&&editableBezierHandles()){
+            auto& a=pts[(size_t)selected];const auto& b=pts[(size_t)selected+1];const auto r=plot();
+            const double v=low()+(r.getBottom()-e.position.y)/r.getHeight()*(high()-low());
+            const double t=juce::jlimit(0.,1.,(v-a.value)/(b.value-a.value));
+            if(draggedHandle==1)a.handle1=std::min(t,a.handle2);else a.handle2=std::max(t,a.handle1);
+            mark();return;
+        }
         if(marquee){
             selectionRect=juce::Rectangle<float>(anchor,e.position).getIntersection(plot());
             selection.clear();for(size_t i=0;i<pts.size();++i)if(selectionRect.contains(position(pts[i])))selection.insert((int)i);
@@ -1108,7 +1142,7 @@ public:
         for(int i:selection){auto& p=pts[(size_t)i];const auto& old=dragOriginal[(size_t)i];p.time=old.time+dt;p.value=juce::jlimit(low(),high(),old.value+dv);}
         mark();
     }
-    void mouseUp(const juce::MouseEvent&)override{marquee=false;dragOriginal.clear();refresh();}
+    void mouseUp(const juce::MouseEvent&)override{marquee=false;draggedHandle=0;dragOriginal.clear();refresh();}
 };
 
 bool applyClipAutomation(const std::set<AudioKey>& keys,const std::array<AudioEngine::ClipAutomationPtr,2>& curves,
@@ -9461,6 +9495,42 @@ bool runArrangementTests(){
                 double difference=0.,error=0.;
                 for(int i=0;i<2048;++i){difference+=std::abs(all.getSample(0,i)-one.getSample(0,i));error+=std::abs(all.getSample(0,i)-restored.getSample(0,i));}
                 require(difference>1.&&error<.01,"audition acoustic filtering and restoration");
+                // Single constant signal, to isolate the actual gain transition
+                // from source transients, crossfades and waveform interpolation.
+                AudioEngine transitionEngine;
+                auto constant=left;constant.id="audition-transition";
+                constant.startSeconds=0.;constant.lengthSeconds=.25;constant.sourceSampleRate=48000.;
+                constant.sourceBuffer=std::make_shared<juce::AudioBuffer<float>>(2,12000);
+                for(int ch=0;ch<2;++ch)for(int i=0;i<12000;++i)constant.sourceBuffer->setSample(ch,i,.25f);
+                constant.trimStartFraction=0.;constant.trimEndFraction=1.;constant.offsetSeconds=0.;
+                constant.envelopeLengthSeconds=0.;constant.clipGain=1.f;constant.clipPan=0.f;
+                constant.gainAutomation.reset();constant.panAutomation.reset();constant.reverse=false;constant.pitchSemitones=0.;constant.warp={};constant.spectralCache.reset();
+                require(transitionEngine.replaceArrangementAudioClips(0,{constant}),"audition transition fixture");
+                juce::AudioBuffer<float> baseline(2,4096),transition(2,4096),macro(2,4096);
+                require(transitionEngine.renderOfflineForTesting(baseline,48000,128),"audition transition baseline");
+                auto toggle=[](AudioEngine& engine,int offset,void*){
+                    if(offset==512)engine.setGroupAudition(std::make_shared<AudioEngine::GroupAuditionMask>());
+                    if(offset==2048)engine.setGroupAudition({});
+                };
+                require(transitionEngine.renderOfflineForTesting(transition,48000,128,true,toggle,nullptr),"audition transition render");
+                const float reference=baseline.getSample(0,511);
+                require(std::abs(reference)>.01f,"audition transition nonzero fixture");
+                require(std::abs(transition.getSample(0,512)-reference)<std::abs(reference)*.02f,"audition smooth mute onset");
+                require(std::abs(transition.getSample(0,800))<1.e-5f,"audition mute settled");
+                require(std::abs(transition.getSample(0,2048))<std::abs(reference)*.02f,"audition smooth restore onset");
+                require(std::abs(transition.getSample(0,2400)-baseline.getSample(0,2400))<1.e-5f,"audition restore settled");
+                auto preview=[](AudioEngine& engine,int offset,void*){
+                    if(offset==512){
+                        auto map=std::make_shared<AudioEngine::GroupMacroPreview>();
+                        (*map)["audition-transition"]={true,true,.25f,.5f};engine.setGroupMacroPreview(map);
+                    }
+                    if(offset==2048)engine.setGroupMacroPreview({});
+                };
+                require(transitionEngine.renderOfflineForTesting(macro,48000,128,true,preview,nullptr),"macro smoothed acoustic render");
+                require(std::abs(macro.getSample(0,512)-reference)<std::abs(reference)*.02f,"macro smooth onset");
+                require(std::abs(macro.getSample(0,1900)-baseline.getSample(0,1900)*.125f)<.002f,"macro smoothed gain pan left");
+                require(std::abs(macro.getSample(1,1900)-baseline.getSample(1,1900)*.25f)<.002f,"macro smoothed gain pan right");
+                require(std::abs(macro.getSample(0,4095)-baseline.getSample(0,4095))<.001f,"macro preview cancellation settles");
             }
             require(!changeGroupParent(container,child),"performance container cycle rejection");
             require(editPermanentGroup(56,{},0,container)&&lockedMember(audioGroupKey(regions[2].id)),"performance container inherited lock");
@@ -9494,6 +9564,7 @@ bool runArrangementTests(){
                         PermanentClipGroup folder;folder.name="Stress "+juce::String(i);folder.container=true;folder.parent=container;
                         permanentGroups.emplace("hierarchy-stress-"+juce::String(i),std::move(folder));
                     }
+                    rebuildGroupIndex();
                     require(visiblePermanentGroupTree({}).size()==(size_t)total,"control stress hierarchy size");
                     require(visiblePermanentGroupTree({container}).size()==6,"control stress collapsed size");
                     require(groupDescendants({container}).size()==(size_t)(total-5),"control stress descendants");
@@ -9503,6 +9574,10 @@ bool runArrangementTests(){
                     require(permanentGroups.size()==(size_t)total&&groupDescendants({container}).size()==(size_t)(total-5),"control stress XML roundtrip");
                     const double ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
                     std::fprintf(stderr,"group_hierarchy_stress,%d,%.3f,%d\n",total,ms,(int)serialised.getNumBytesAsUTF8());
+                    const auto idleStart=std::chrono::steady_clock::now();
+                    for(int tick=0;tick<900;++tick)pollPermanentGroupMacroMidi();
+                    const double idleMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-idleStart).count();
+                    std::fprintf(stderr,"group_macro_idle_poll,%d,900,%.3f\n",total,idleMs);
                     permanentGroups=original;rebuildGroupIndex();
                 }
             }

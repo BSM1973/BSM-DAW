@@ -2327,7 +2327,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
 {
     if(rate<=0)return;
     const auto mask=applyAudition?getGroupAudition():std::shared_ptr<const GroupAuditionMask>{};
-    if(mask&&!mask->audioIds.count(track.clipId))return;
+    const float auditionTarget=mask&&!mask->audioIds.count(track.clipId)?0.f:1.f;
     do {
         if (!track.loaded.load(std::memory_order_acquire)) continue;
         const auto audioBuffer = std::atomic_load(&track.buffer);
@@ -2343,6 +2343,15 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const auto mixEnd = juce::jmin(blockEnd, clipEnd);
         const auto samplesToMix = static_cast<int>(juce::jmax<std::int64_t>(0, mixEnd - mixStart));
         if (samplesToMix <= 0) continue;
+        // Only continuous playback needs a transition; seeks and new clips
+        // start at the intended level. State is owned by this voice's renderer.
+        if(applyAudition){
+            if(track.groupAuditionNextSample!=mixStart)track.groupAuditionLevel=auditionTarget;
+            track.groupAuditionNextSample=mixEnd;
+            if(auditionTarget==0.f&&track.groupAuditionLevel==0.f)continue;
+        }
+        const bool auditionRamp=applyAudition&&track.groupAuditionLevel!=auditionTarget;
+        const float auditionStep=(float)(1./juce::jmax(1.,std::ceil(rate*.005)));
         const auto outputOffset = static_cast<int>(mixStart - position);
         const auto sourceOffset = mixStart - startSample;
         const double offsetSeconds=track.clipOffset.load();
@@ -2401,7 +2410,15 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
         const auto panCurve=std::atomic_load(&track.panAutomation);
         const double clipSamples=(double)juce::jmax<std::int64_t>(1,clipEnd-startSample);
         auto automatedGains=[&](int sample){
-            if(!gainCurve&&!panCurve&&!smooth)return std::pair<float,float>{leftGain,rightGain};
+            float audition=1.f;
+            if(auditionRamp){
+                auto& level=track.groupAuditionLevel;
+                if(level<auditionTarget)level=std::min(auditionTarget,level+auditionStep);
+                else level=std::max(auditionTarget,level-auditionStep);
+                if(std::abs(level-auditionTarget)<1.e-6f)level=auditionTarget;
+                audition=level;
+            }
+            if(!gainCurve&&!panCurve&&!smooth)return std::pair<float,float>{leftGain*audition,rightGain*audition};
             const double phase=juce::jlimit(0.,1.,(sourceOffset+sample)/clipSamples);
             float g=staticGain,p=clipPan;
             if(smooth){
@@ -2421,7 +2438,7 @@ void AudioEngine::mixAudioVoice(AudioTrackState& track,float laneGain,float lane
                 const float v=evaluateClipAutomation(*panCurve,phase);
                 p=juce::jlimit(-1.f,1.f,panCurve->relative?p+v:v);
             }
-            const float overall=laneGain*g;
+            const float overall=laneGain*g*audition;
             return std::pair<float,float>{overall*(pan>0.f?1.f-pan:1.f)*(p>0.f?1.f-p:1.f),
                                          overall*(pan<0.f?1.f+pan:1.f)*(p<0.f?1.f+p:1.f)};
         };

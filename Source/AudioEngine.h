@@ -594,6 +594,8 @@ private:
         float macroSmoothedGain=1.f,macroSmoothedPan=0.f;
         bool macroSmoothing=false;
         std::int64_t macroNextSample=-1;
+        float groupAuditionLevel=1.f;
+        std::int64_t groupAuditionNextSample=-1;
         ClipAutomationPtr gainAutomation,panAutomation;
         std::atomic<double> clipPitch { 0.0 };
         std::atomic<bool> clipReverse { false };
