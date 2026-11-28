@@ -1717,6 +1717,20 @@ float AudioEngine::evaluateClipAutomation(const ClipAutomationCurve& curve,doubl
     }
     return a.value+(b.value-a.value)*(float)x;
 }
+void AudioEngine::normalizeBezierSegment(ClipAutomationPoint& p) noexcept
+{
+    if(p.shape!=5||(p.domainStart==0.&&p.domainEnd==1.))return;
+    const double lo=p.domainStart,hi=p.domainEnd,width=hi-lo;
+    const double y0=clipAutomationShape(p,lo),y1=clipAutomationShape(p,hi),span=y1-y0;
+    auto derivative=[&](double t){const double u=1.-t;
+        return 3.*(u*u*p.handle1+2.*u*t*(p.handle2-p.handle1)+t*t*(1.-p.handle2));};
+    if(span>1.e-15){
+        const double a=juce::jlimit(0.,1.,width*derivative(lo)/(3.*span));
+        const double b=juce::jlimit(a,1.,1.-width*derivative(hi)/(3.*span));
+        p.handle1=a;p.handle2=b;
+    }else{p.handle1=1./3.;p.handle2=2./3.;}
+    p.domainStart=0.;p.domainEnd=1.;
+}
 bool AudioEngine::cropClipAutomation(ClipAutomationPtr& curve,double from,double to)
 {
     if(!curve)return true;

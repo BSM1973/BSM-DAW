@@ -432,6 +432,7 @@ public:
     static bool validClipAutomation(const ClipAutomationCurve&,bool pan) noexcept;
     static float evaluateClipAutomation(const ClipAutomationCurve&,double time) noexcept;
     static bool cropClipAutomation(ClipAutomationPtr& curve,double from,double to);
+    static void normalizeBezierSegment(ClipAutomationPoint&) noexcept;
     struct AudioClipMetadata
     {
         juce::String id;

@@ -947,7 +947,7 @@ class ClipAutomationPanel final:public juce::Component{
         if(!bezierSelected())return false;
         const auto& pts=curves[(size_t)channel()].points;
         const auto& a=pts[(size_t)selected];const auto& b=pts[(size_t)selected+1];
-        // Cropped segments retain their exact original shape until explicitly edited.
+        // Cropped cubic segments are converted to equivalent local control points.
         return a.domainStart==0.&&a.domainEnd==1.&&std::abs(b.value-a.value)>1.e-6f;
     }
     double quantize(double t)const{
@@ -1010,7 +1010,7 @@ public:
     ClipAutomationPanel(Ptr gain,Ptr pan,std::function<bool(const std::array<Ptr,2>&,const std::array<bool,2>&)> cb,double step=0.,double origin=0.):gridStep(step),gridOrigin(origin),onApply(std::move(cb)){
         const Ptr initial[]={gain,pan};
         for(size_t i=0;i<2;++i){
-            if(initial[i]){curves[i]=*initial[i];active[i]=true;}
+            if(initial[i]){curves[i]=*initial[i];for(auto& point:curves[i].points)AudioEngine::normalizeBezierSegment(point);active[i]=true;}
             else {const float neutral=i==0?1.f:0.f;curves[i].points={{0.,neutral,0},{1.,neutral,0}};}
         }
         parameter.addItem("Gain (linéaire)",1);parameter.addItem("Panoramique",2);parameter.setSelectedId(1);
@@ -1978,8 +1978,13 @@ bool applyGroupClipOperation(int command,double value=0.0){
                 else {changed=changed||length!=clip.lengthSeconds;clip.lengthSeconds=length;clip.userLength=true;}
             }
             if(command==35||command==36){const bool muted=command==35;changed=changed||clip.muted!=muted;clip.muted=muted;}
-            if(command==6||command==7||command==16||command==39){
-                const int delta=(command==16||command==39)?(int)value:(command==6?1:-1);
+            if(command==39){
+                const int target=(int)value;
+                for(const auto& note:clip.notes)if((int)note.pitch+target<0||(int)note.pitch+target>127)valid=false;
+                changed=changed||clip.transposeSemitones!=target;clip.transposeSemitones=target;
+            }
+            if(command==6||command==7||command==16){
+                const int delta=command==16?(int)value:(command==6?1:-1);
                 for(auto& note:clip.notes){
                     const int pitch=(int)note.pitch+delta;
                     if(pitch<0||pitch>127){valid=false;continue;}
@@ -3459,7 +3464,7 @@ class PermanentGroupManager final:public juce::Component{
             labels.add("Gain audio absolu");commands.push_back(37);labels.add("Gain audio relatif");commands.push_back(38);
             labels.add("Panoramique absolu (%)");commands.push_back(40);labels.add("Panoramique relatif (%)");commands.push_back(41);
         }
-        if(hasMidi){labels.add("Transposition MIDI");commands.push_back(39);}
+        if(hasMidi){labels.add(juce::String::fromUTF8("Transposition MIDI non destructive (demi-tons)"));commands.push_back(39);}
         if(commands.empty()){delete dialog;return;}
         dialog->addComboBox("control",labels,juce::String::fromUTF8("Paramètre"));
         dialog->getComboBoxComponent("control")->setSelectedId(1,juce::dontSendNotification);
@@ -3996,6 +4001,11 @@ bool runArrangementTests(){
                     require(std::abs(AudioEngine::evaluateClipAutomation(*l,t)-AudioEngine::evaluateClipAutomation(*original,.37*t))<2.e-6,"automation left shape parity");
                     require(std::abs(AudioEngine::evaluateClipAutomation(*r,t)-AudioEngine::evaluateClipAutomation(*original,.37+.63*t))<2.e-6,"automation right shape parity");
                     require(std::abs(AudioEngine::evaluateClipAutomation(*trim,t)-AudioEngine::evaluateClipAutomation(*original,-.2+1.5*t))<2.e-6,"automation extension shape parity");
+                }
+                if(shape==5){
+                    auto normalized=*r;for(auto& p:normalized.points)AudioEngine::normalizeBezierSegment(p);
+                    require(AudioEngine::validClipAutomation(normalized,false),"normalized Bezier valid");
+                    for(int i=0;i<=100;++i)require(std::abs(AudioEngine::evaluateClipAutomation(normalized,i/100.)-AudioEngine::evaluateClipAutomation(*r,i/100.))<2.e-6,"normalized Bezier exact shape");
                 }
                 auto saved=neutral;saved.gainAutomation=r;juce::XmlElement x("Clip");AudioEngine::writeAudioClipProperties(x,saved);
                 const auto restored=AudioEngine::readAudioClipProperties(x);
@@ -4603,10 +4613,15 @@ bool runArrangementTests(){
             const auto audioPitch=owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones;
             const int delta=initialPitch<127?1:-1;
             require(applyGroupClipOperation(39,delta),"control MIDI only transpose");
-            require(midiClips.front().notes.front().pitch==(int)initialPitch+delta&&owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones==audioPitch,"control MIDI isolated transpose");
+            require(midiClips.front().notes.front().pitch==initialPitch&&midiClips.front().transposeSemitones==delta&&playbackNotes(midiClips.front()).front().pitch==(int)initialPitch+delta&&owner.audioEngine.getArrangementAudioClips(0).front().pitchSemitones==audioPitch,"control MIDI isolated nondestructive transpose");
+            juce::XmlElement midiProject("Project");saveProjectClips(midiProject);
+            const auto* dynamic=midiProject.getChildByName("DynamicMidiClips");
+            bool foundTranspose=false;for(auto* node=dynamic->getFirstChildElement();node;node=node->getNextElement())
+                if(node->getIntAttribute("id")==midiClips.front().id)foundTranspose=node->getIntAttribute("transposeSemitones")==delta;
+            require(foundTranspose,"control MIDI transpose XML");
             require(!applyGroupClipOperation(37,13.)&&!applyGroupClipOperation(39,.5),"control invalid input");
             require(undoArrangement(false)&&undoArrangement(false)&&undoArrangement(false),"control undo chain");
-            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-initialGain)<1.e-6&&midiClips.front().notes.front().pitch==initialPitch,"control restored baseline");
+            require(std::abs(owner.audioEngine.getArrangementAudioClips(0).front().clipGain-initialGain)<1.e-6&&midiClips.front().notes.front().pitch==initialPitch&&midiClips.front().transposeSemitones==0,"control restored baseline");
             require(selectPermanentIds({groupId}),"control restore selection");
             const auto beforePan=owner.audioEngine.getArrangementAudioClips(0).front().clipPan;
             require(applyGroupClipOperation(40,-75.),"pan group absolute");
